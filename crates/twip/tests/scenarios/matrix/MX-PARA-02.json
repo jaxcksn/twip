@@ -1,0 +1,87 @@
+{
+  "id": "MX-PARA-02",
+  "title": "Paragraph boundary: Delete at the end and Backspace at the start join the paragraphs; Shift+Right selects the mark",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph.Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff newsletter review matter presenter advisor account. Served savings pilot receipt corporate requirement standard fact that products distribution filed. Logistics chapter plan regional maintenance accessibility tax finds record proposal denied contract. Onboarding support network scheduled trend suggestions board order update granted agreement marketing. Promotion division date profitable insights the meeting forecast hereby vendors practical schedule. State entry estimate management action budget inventory relevant group relief results region. Ledger brief usage cause colleague partner section notice claim team export staff. Newsletter review matter presenter advisor account served savings pilot receipt corporate requirement. Standard fact."
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph.Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff newsletter review matter presenter advisor account. Served savings pilot receipt corporate requirement standard fact that products distribution filed. Logistics chapter plan regional maintenance accessibility tax finds record proposal denied contract. Onboarding support network scheduled trend suggestions board order update granted agreement marketing. Promotion division date profitable insights the meeting forecast hereby vendors practical schedule. State entry estimate management action budget inventory relevant group relief results region. Ledger brief usage cause colleague partner section notice claim team export staff. Newsletter review matter presenter advisor account served savings pilot receipt corporate requirement. Standard fact."
+        },
+        "caret": {
+          "para": 1,
+          "offset": 16
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 16
+          },
+          "focus": {
+            "para": 2,
+            "offset": 0
+          }
+        }
+      }
+    }
+  ]
+}

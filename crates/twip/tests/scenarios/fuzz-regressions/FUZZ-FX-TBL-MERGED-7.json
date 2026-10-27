@@ -1,0 +1,47 @@
+{
+  "fixture": "FX-TBL-MERGED.docx",
+  "id": "FUZZ-FX-TBL-MERGED-7",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "kind": "checkbox",
+        "tag": "Fuzz/C4"
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "id": "$tag:Fuzz/C4"
+      },
+      "command": "element.remove",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"7 valid positions\", detail: \"anchor: offset Unit(25) past the end of paragraph ParaId(87283)\" }, Statement { invariant: \"7 valid positions\", detail: \"focus: offset Unit(25) past the end of paragraph ParaId(87283)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(87283), offset: Unit(25), affinity: Downstream } }) in Some(\"x\\t\\u{2028}Ünï aéaxe\\u{301}wordword.e\\u{301}\"))"
+}

@@ -1,0 +1,56 @@
+{
+  "id": "E2E-STORY-01",
+  "title": "A double-click in the header area edits the header at the click; Esc returns to the body where the double-click's first click put the caret",
+  "fixture": "FX-STORIES.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 5
+      }
+    },
+    {
+      "click": {
+        "para": 22,
+        "offset": 3
+      },
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 22,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "type": "X"
+    },
+    {
+      "expect": {
+        "text": {
+          "22": "FirXst-page header"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0
+        },
+        "text": {
+          "22": "FirXst-page header"
+        }
+      }
+    }
+  ]
+}

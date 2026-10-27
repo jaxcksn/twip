@@ -1,0 +1,78 @@
+{
+  "id": "E2E-TS-06-HDR",
+  "title": "Insert Table at a paragraph's end puts a new table after it; Delete Table removes it (in a header)",
+  "fixture": "FX-TBL-BASIC-HDR.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-06.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 15,
+        "offset": "end"
+      }
+    },
+    {
+      "command": "insert.table",
+      "arg": "2,3"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 16,
+          "offset": 0,
+          "depth": 1
+        },
+        "text": {
+          "15": "Paragraph between the first and second tables.",
+          "16": "",
+          "22": "T2 R1 C1"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ]
+      }
+    },
+    {
+      "type": "new"
+    },
+    {
+      "expect": {
+        "text": {
+          "16": "new"
+        }
+      }
+    },
+    {
+      "command": "table.delete.table"
+    },
+    {
+      "expect": {
+        "text": {
+          "16": "T2 R1 C1"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ]
+      }
+    }
+  ]
+}

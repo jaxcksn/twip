@@ -1,0 +1,171 @@
+{
+  "id": "E2E-FMT-01",
+  "title": "Ctrl+B and Ctrl+I toggle character formatting on the selection; at a caret they apply to what is typed next",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      },
+      "clicks": 2
+    },
+    {
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "runs": {
+          "1": [
+            [
+              6,
+              "b"
+            ],
+            [
+              10,
+              ""
+            ]
+          ]
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "runs": {
+          "1": [
+            [
+              16,
+              ""
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "key": "KeyI",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "runs": {
+          "1": [
+            [
+              6,
+              "i"
+            ],
+            [
+              10,
+              ""
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "runs": {
+          "1": [
+            [
+              16,
+              ""
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "type": "X"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph.X"
+        },
+        "runs": {
+          "1": [
+            [
+              16,
+              ""
+            ],
+            [
+              1,
+              "b"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "key": "KeyU",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "type": "Y"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph.YX"
+        },
+        "runs": {
+          "1": [
+            [
+              17,
+              ""
+            ],
+            [
+              1,
+              "b"
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "E2E-TS-05",
+  "title": "Split Cells into two adds an empty cell beside the caret's, the text staying in the first",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": 1
+      }
+    },
+    {
+      "command": "table.split",
+      "arg": "2"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1",
+          "14": "",
+          "15": "T2 R1 C2"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ]
+      }
+    }
+  ]
+}

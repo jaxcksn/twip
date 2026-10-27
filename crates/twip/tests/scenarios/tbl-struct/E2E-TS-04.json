@@ -1,0 +1,56 @@
+{
+  "id": "E2E-TS-04",
+  "title": "Merge Cells joins the selected cells, keeping each cell's text as its own paragraph",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      },
+      "shift": true
+    },
+    {
+      "command": "table.merge"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1",
+          "14": "T2 R1 C2",
+          "15": "T2 R1 C3"
+        },
+        "caret": {
+          "para": 13,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1",
+          "14": "T2 R1 C2"
+        }
+      }
+    }
+  ]
+}

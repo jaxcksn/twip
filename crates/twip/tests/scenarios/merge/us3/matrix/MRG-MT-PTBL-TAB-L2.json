@@ -1,0 +1,91 @@
+{
+  "id": "MRG-MT-PTBL-TAB-L2",
+  "title": "Table edge: Shift+Tab in the first cell does nothing; Tab selects the next cell's text (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-PTBL-TAB-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 2,
+          "depth": 2
+        },
+        "selection": {
+          "kind": "caret"
+        },
+        "undo_depth": 2
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 24,
+            "offset": 0
+          },
+          "focus": {
+            "para": 24,
+            "offset": 2
+          }
+        }
+      }
+    }
+  ]
+}

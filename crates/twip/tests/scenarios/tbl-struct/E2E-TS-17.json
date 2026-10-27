@@ -1,0 +1,35 @@
+{
+  "id": "E2E-TS-17",
+  "title": "Select Cell in a vertically merged cell selects all the rows it spans (data-model \u00a73)",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 11,
+        "offset": 3
+      }
+    },
+    {
+      "command": "table.select.cell"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            2,
+            0
+          ],
+          "focus": [
+            4,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

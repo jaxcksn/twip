@@ -1,0 +1,65 @@
+{
+  "id": "LTB-15",
+  "title": "Deleting a vertical merge's first row deletes its content; the next row becomes the merge's empty start",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.delete.row"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 9,
+            "cells": [6, 4, 5, 4, 4, 3, 3, 2, 1]
+          }
+        ],
+        "text": {
+          "10": "1",
+          "11": "",
+          "12": "Span 2 + vertical merge over 2 rows",
+          "16": "",
+          "17": ""
+        }
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 10,
+            "cells": [6, 4, 4, 5, 4, 4, 3, 3, 2, 1]
+          }
+        ],
+        "text": {
+          "11": "Vertical merge over 3 rows",
+          "12": "1"
+        }
+      }
+    }
+  ]
+}

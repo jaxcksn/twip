@@ -1,0 +1,72 @@
+{
+  "id": "MRG-US1-02",
+  "title": "A drop: view.drop shows the drop caret, field.insert at the hit point inserts there; a drop on a repeated header row inserts nothing",
+  "fixture": "FX-TBL-PAGES.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "view.drop",
+      "arg": {
+        "para": 3,
+        "offset": 2
+      },
+      "expect": {
+        "view": {
+          "drop": {}
+        }
+      }
+    },
+    {
+      "command": "field.insert",
+      "arg": {
+        "code": "MERGEFIELD Case.Number",
+        "target": {
+          "at": {
+            "para": 3,
+            "offset": 2
+          }
+        }
+      },
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "field",
+              "code": " MERGEFIELD Case.Number "
+            }
+          ]
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": "view.drop",
+      "arg": null
+    },
+    {
+      "command": "home.undo"
+    },
+    {
+      "command": "field.insert",
+      "arg": {
+        "code": "MERGEFIELD Case.Number",
+        "target": {
+          "at": {
+            "para": 3,
+            "offset": 2,
+            "page": 1
+          }
+        }
+      },
+      "expect": {
+        "answer": {
+          "error": "locked"
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

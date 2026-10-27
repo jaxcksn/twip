@@ -1,0 +1,43 @@
+{
+  "id": "E2E-TS-05-BOX",
+  "title": "Split Cells into two adds an empty cell beside the caret's, the text staying in the first (in a text box)",
+  "fixture": "FX-TBL-BASIC-BOX.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-05.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 1
+      }
+    },
+    {
+      "command": "table.split",
+      "arg": "2"
+    },
+    {
+      "expect": {
+        "text": {
+          "16": "T2 R1 C1",
+          "17": "",
+          "18": "T2 R1 C2"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ]
+      }
+    }
+  ]
+}

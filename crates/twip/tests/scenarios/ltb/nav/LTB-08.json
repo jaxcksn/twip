@@ -1,0 +1,27 @@
+{
+  "id": "LTB-08",
+  "title": "Down at a page's end in a table with a repeated header goes to the next page's first body row, not the header copy",
+  "fixture": "FX-TBL-PAGES.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

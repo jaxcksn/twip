@@ -1,0 +1,64 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-46",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 39,
+        "para": 20
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 6,
+        "para": 10
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 38,
+        "para": 9
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.insert-below",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C2 contiguous\", detail: \"control ControlId(200642) wraps rows [3, 5] of table 200674\" }] (Caret(Position { story: Body, place: Text { para: ParaId(200717), offset: Unit(0), affinity: Downstream } }) in Some(\"\"))"
+}

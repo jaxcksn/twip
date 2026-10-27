@@ -1,0 +1,93 @@
+{
+  "id": "MRG-MT-SPLIT-TAB-L2",
+  "title": "Table across pages: Tab from a row ending a page selects the next row's first cell on the next page; Shift+Tab comes back (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-TBL-PAGES-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-SPLIT-TAB-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 46,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 46,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 46,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 47,
+            "offset": 0
+          },
+          "focus": {
+            "para": 47,
+            "offset": 2
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 46,
+            "offset": 0
+          },
+          "focus": {
+            "para": 46,
+            "offset": 21
+          }
+        }
+      }
+    }
+  ]
+}

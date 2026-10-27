@@ -1,0 +1,61 @@
+{
+  "id": "E2E-TS-07",
+  "title": "Insert Table inside a cell nests it there; Tab in its last cell adds a row to it only",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      }
+    },
+    {
+      "command": "insert.table",
+      "arg": "1,2"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "depth": 2
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          },
+          {
+            "rows": 1
+          }
+        ]
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3
+          },
+          {
+            "rows": 2
+          }
+        ],
+        "caret": {
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

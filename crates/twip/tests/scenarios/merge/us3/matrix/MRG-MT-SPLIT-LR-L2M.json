@@ -1,0 +1,108 @@
+{
+  "id": "MRG-MT-SPLIT-LR-L2M",
+  "title": "Table across pages: Right from the last cell of a row ending a page stops at its end-of-row mark, then the next row's first cell on the next page; Left mirrors it (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-SPLIT-LR-L2M",
+  "steps": [
+    {
+      "click": {
+        "para": 25,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 25,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 25,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "row_end": {
+            "table": 3,
+            "row": 3
+          },
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "offset": 0,
+          "page": 1,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "row_end": {
+            "table": 3,
+            "row": 3
+          },
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 25,
+          "offset": 24,
+          "page": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,178 @@
+{
+  "id": "LTB-02",
+  "title": "Right, End and Ctrl+Down go through paragraphs an exact row height clips, the caret reported hidden there and visible again past them; Down into a line the row clips part-way reaches it (whether Word draws the caret on a partly clipped line isn't recorded)",
+  "fixture": "FX-EXACT-ROW.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 5,
+        "offset": 3
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "offset": 3,
+          "depth": 1,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "offset": 17,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "offset": 0,
+          "depth": 1,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "offset": 6,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 0,
+          "depth": 1,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 5,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 8,
+          "offset": 0,
+          "depth": 1,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 5,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "offset": 0,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 0,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": 3
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 10,
+          "offset": 3,
+          "depth": 1,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 10,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 10,
+          "offset": 3,
+          "hidden": null
+        }
+      }
+    }
+  ]
+}

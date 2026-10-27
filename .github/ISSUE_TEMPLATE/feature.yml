@@ -1,0 +1,15 @@
+name: Feature request
+description: A DOCX feature that isn't supported, or an API you need.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you need, and why
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example
+      description: A .docx that uses the feature, or the API call you'd like to make.

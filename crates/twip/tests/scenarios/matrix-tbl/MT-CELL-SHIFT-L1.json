@@ -1,0 +1,34 @@
+{
+  "id": "MT-CELL-SHIFT-L1",
+  "title": "Cell to cell: Shift+Down into the cell below selects a cell block (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 28,
+        "offset": 1
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 0
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

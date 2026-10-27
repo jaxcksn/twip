@@ -1,0 +1,53 @@
+{
+  "id": "E2E-RS-17",
+  "title": "After typing makes a row taller, its bottom border is grabbed where it is now, without moving the pointer first",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "K",
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": "end"
+      }
+    },
+    {
+      "type": " inventory relevant group relief results region ledger brief usage cause"
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": "bottom"
+        },
+        "to": {
+          "table": 1,
+          "row": 0,
+          "border": "bottom",
+          "dy": 20
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "heights": [
+              [
+                71.97,
+                "atLeast"
+              ],
+              null,
+              null
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

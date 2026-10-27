@@ -1,0 +1,44 @@
+{
+  "id": "MT-EMPTY-HE-L1",
+  "title": "Empty cell: End and Home stay at its only position (nesting level 1)",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      },
+      "dx": 4
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

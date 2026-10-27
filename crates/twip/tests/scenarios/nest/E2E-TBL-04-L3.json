@@ -1,0 +1,178 @@
+{
+  "id": "E2E-TBL-04-L3",
+  "title": "Tab visits a vertically merged cell in every row it spans; Shift+Tab visits the same stops back (nesting level 3)",
+  "fixture": "FX-TBL-MERGED-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from tbl-nav/E2E-TBL-04.json",
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 11,
+            "offset": 0
+          },
+          "focus": {
+            "para": 11,
+            "offset": 26
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 16,
+            "offset": 0
+          },
+          "focus": {
+            "para": 16,
+            "offset": 35
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 11,
+            "offset": 0
+          },
+          "focus": {
+            "para": 11,
+            "offset": 26
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 16,
+            "offset": 0
+          },
+          "focus": {
+            "para": 16,
+            "offset": 35
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 22,
+            "offset": 0
+          },
+          "focus": {
+            "para": 22,
+            "offset": 1
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 16,
+            "offset": 0
+          },
+          "focus": {
+            "para": 16,
+            "offset": 35
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 11,
+            "offset": 0
+          },
+          "focus": {
+            "para": 11,
+            "offset": 26
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 19,
+            "offset": 0
+          },
+          "focus": {
+            "para": 19,
+            "offset": 1
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "id": "LTB-29",
+  "title": "A checkbox and a picture at a cell's left border take the click before the table's cell zone and border: the checkbox toggles, the picture is selected",
+  "fixture": "FX-REPEAT-REGION.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    0.5,
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☒ done",
+          "10": "☒ done"
+        },
+        "caret": {
+          "para": 7,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☐ done"
+        },
+        "caret": {
+          "para": 7,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      },
+      "dx": -2
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "☒ done"
+        },
+        "caret": {
+          "para": 13,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "picture": 0,
+        "at": "left"
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object",
+          "inline": {
+            "para": 15,
+            "offset": 0
+          }
+        }
+      }
+    }
+  ]
+}

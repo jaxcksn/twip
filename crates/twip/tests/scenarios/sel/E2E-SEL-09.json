@@ -1,0 +1,60 @@
+{
+  "id": "E2E-SEL-09",
+  "title": "A double-click selects the word with its trailing spaces; a forward drag beyond the start word extends by words",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 6,
+        "offset": 2
+      },
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 6,
+            "offset": 0
+          },
+          "focus": {
+            "para": 6,
+            "offset": 12
+          }
+        }
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 2
+        },
+        "to": {
+          "para": 1,
+          "offset": 8
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 1,
+            "offset": 15
+          }
+        }
+      }
+    }
+  ]
+}

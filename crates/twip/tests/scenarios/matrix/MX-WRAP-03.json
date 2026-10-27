@@ -1,0 +1,72 @@
+{
+  "id": "MX-WRAP-03",
+  "title": "Soft wrap: Shift+Right extends across the wrap one character at a time; Enter at the wrap splits there",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 105
+          },
+          "focus": {
+            "para": 2,
+            "offset": 107
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice ",
+          "3": "claim team export staff newsletter review matter presenter advisor account. Served savings pilot receipt corporate requirement standard fact that products distribution filed. Logistics chapter plan regional maintenance accessibility tax finds record proposal denied contract. Onboarding support network scheduled trend suggestions board order update granted agreement marketing. Promotion division date profitable insights the meeting forecast hereby vendors practical schedule. State entry estimate management action budget inventory relevant group relief results region. Ledger brief usage cause colleague partner section notice claim team export staff. Newsletter review matter presenter advisor account served savings pilot receipt corporate requirement. Standard fact."
+        },
+        "caret": {
+          "para": 3,
+          "offset": 0
+        }
+      }
+    }
+  ]
+}

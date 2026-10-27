@@ -1,0 +1,98 @@
+{
+  "id": "MRG-MT-EOR-TYPE-L3",
+  "title": "End-of-row mark: text typed there goes to the next row's first cell; at the last row's mark, to the paragraph after the table (nesting level 3), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-EOR-TYPE-L3",
+  "steps": [
+    {
+      "click": {
+        "para": 20,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "20": "L3",
+          "21": "ZLevel 3, row 2"
+        },
+        "caret": {
+          "para": 21,
+          "offset": 1,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 22,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "type": "W"
+    },
+    {
+      "expect": {
+        "text": {
+          "22": "x",
+          "23": "WLevel 2, after"
+        },
+        "caret": {
+          "para": 23,
+          "offset": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

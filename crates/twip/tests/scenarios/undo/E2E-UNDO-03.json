@@ -1,0 +1,56 @@
+{
+  "id": "E2E-UNDO-03",
+  "title": "Typing is one undo step; each Backspace is its own",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "type": " more words. And a schedule"
+    },
+    {
+      "expect": {
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "undo_depth": 4,
+        "text": {
+          "1": "Short paragraph. more words. And a sched"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "undo_depth": 3,
+        "text": {
+          "1": "Short paragraph. more words. And a schedu"
+        }
+      }
+    }
+  ]
+}

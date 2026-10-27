@@ -1,0 +1,38 @@
+{
+  "id": "MRG-US7-02",
+  "title": "Typing in a shown code changes the code and keeps the result",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "key": "F9",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 20
+      }
+    },
+    {
+      "type": "X",
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "kind": "field",
+              "code": " MERGEFIELD SXtatement.Cost_Amount \\# \"$,0.00\" ",
+              "display": "«Cost_Amount»"
+            }
+          ]
+        },
+        "undo_depth": 1
+      }
+    }
+  ]
+}

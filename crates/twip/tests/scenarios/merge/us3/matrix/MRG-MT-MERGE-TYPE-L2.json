@@ -1,0 +1,86 @@
+{
+  "id": "MRG-MT-MERGE-TYPE-L2",
+  "title": "Merged cells: typing in a vertical merge goes into the merged cell; the grid is unchanged (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-TBL-MERGED-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-TYPE-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "11": "ZVertical merge over 3 rows"
+        },
+        "tables": [
+          {},
+          {
+            "cells": [
+              6,
+              4,
+              4,
+              5,
+              4,
+              4,
+              3,
+              3,
+              2,
+              1
+            ]
+          }
+        ],
+        "caret": {
+          "para": 11,
+          "offset": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

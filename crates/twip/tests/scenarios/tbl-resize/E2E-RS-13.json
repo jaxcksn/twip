@@ -1,0 +1,58 @@
+{
+  "id": "E2E-RS-13",
+  "title": "A column border drag released outside the canvas ends at the release point (the column at its minimum width), one step, and the next click places the caret",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "press": {
+        "table": 1,
+        "row": 0,
+        "border": 1
+      }
+    },
+    {
+      "move_to": {
+        "table": 1,
+        "row": 0,
+        "border": 1,
+        "dx": -30
+      }
+    },
+    {
+      "release": "outside"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              15.3,
+              296.7,
+              156
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "offset": 2
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "id": "MRG-MT-SPLIT-CLICK-L2M",
+  "title": "Table across pages: a click in a cell at the next page's top places the caret there (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-SPLIT-CLICK-L2M",
+  "steps": [
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "offset": 0,
+          "page": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

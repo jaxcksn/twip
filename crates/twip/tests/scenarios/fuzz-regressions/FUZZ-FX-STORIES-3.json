@@ -1,0 +1,151 @@
+{
+  "fixture": "FX-STORIES.docx",
+  "id": "FUZZ-FX-STORIES-3",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "click": {
+        "offset": 335,
+        "para": 0
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Delete",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "",
+          "float": 0
+        },
+        "to": {
+          "at": "",
+          "dx": -28.0,
+          "dy": 25.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-STORIES-3 (fixed 2026-10-24; first failure: assertion `left == right` failed: step 19: the caret's chain is its paragraph's nesting level ({\"affinity\":\"downstream\",\"chain\":[],\"offset\":8,\"para\":33,\"rect\":{)"
+}

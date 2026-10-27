@@ -1,0 +1,96 @@
+{
+  "id": "MRG-US4-02",
+  "title": "Design mode: a double-click on a field or a control, and Enter with a checkbox selected, report it to the host; the checkbox doesn't toggle",
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 20,
+        "offset": 0
+      }
+    },
+    {
+      "command": "field.insert",
+      "arg": {
+        "code": "MERGEFIELD Store.Name",
+        "display": "Store"
+      }
+    },
+    {
+      "command": "view.mode",
+      "arg": "design"
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": 0,
+        "dx": 3
+      },
+      "clicks": 2,
+      "expect": {
+        "events": [
+          {
+            "type": "activate"
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 9
+      },
+      "clicks": 2,
+      "expect": {
+        "events": [
+          {
+            "type": "activate"
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 6,
+        "offset": 6
+      },
+      "expect": {
+        "text": {
+          "6": "Done: ☐ done"
+        }
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "key": "Enter",
+      "expect": {
+        "events": [
+          {
+            "type": "activate"
+          }
+        ],
+        "text": {
+          "6": "Done: ☐ done"
+        }
+      }
+    },
+    {
+      "type": " ",
+      "expect": {
+        "text": {
+          "6": "Done: ☐ done"
+        }
+      }
+    }
+  ]
+}

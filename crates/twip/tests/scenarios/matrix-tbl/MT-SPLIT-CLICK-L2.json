@@ -1,0 +1,29 @@
+{
+  "id": "MT-SPLIT-CLICK-L2",
+  "title": "Table across pages: a click in a cell at the next page's top places the caret there (nesting level 2)",
+  "fixture": "FX-TBL-PAGES-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 47,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 47,
+          "offset": 0,
+          "page": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

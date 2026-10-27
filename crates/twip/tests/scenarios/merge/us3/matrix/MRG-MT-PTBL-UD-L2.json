@@ -1,0 +1,105 @@
+{
+  "id": "MRG-MT-PTBL-UD-L2",
+  "title": "Paragraph to table: Down from the paragraph before enters the first row, Up returns; Down from the last row goes to the paragraph after, Up back at the goal x (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-PTBL-UD-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 2,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 27,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

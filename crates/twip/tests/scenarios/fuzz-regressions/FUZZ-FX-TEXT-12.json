@@ -1,0 +1,60 @@
+{
+  "fixture": "FX-TEXT.docx",
+  "id": "FUZZ-FX-TEXT-12",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "kind": "picture",
+        "tag": "Fuzz/C3"
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "id": "$tag:Fuzz/C3",
+        "lock": "none",
+        "tag": "Fuzz/T1"
+      },
+      "command": "control.set",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "id": "$tag:Fuzz/T1",
+        "keep_content": false
+      },
+      "command": "control.remove",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"7 valid positions\", detail: \"anchor: offset Unit(121) past the end of paragraph ParaId(12820)\" }, Statement { invariant: \"7 valid positions\", detail: \"focus: offset Unit(121) past the end of paragraph ParaId(12820)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(12820), offset: Unit(121), affinity: Downstream } }) in Some(\"Thee\\u{301}Ünïhello éubt suggestions board order update granted agreement marketing promotion division. Date profitable wordÜn\"))"
+}

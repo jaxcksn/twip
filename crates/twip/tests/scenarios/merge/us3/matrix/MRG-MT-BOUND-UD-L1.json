@@ -1,0 +1,98 @@
+{
+  "id": "MRG-MT-BOUND-UD-L1",
+  "title": "Inner table at a cell's end: Down from the inner last row goes to the closing paragraph, then the outer cell below; Up mirrors it (nesting level 1), inside a repeating region with a content control",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-BOUND-UD-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 9,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 9,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

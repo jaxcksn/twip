@@ -1,0 +1,67 @@
+{
+  "id": "E2E-UNDO-01",
+  "title": "Continuous typing is one undo step; redo restores it",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "type": "hello world "
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "hello world Short paragraph."
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph."
+        },
+        "undo_depth": 0,
+        "caret": {
+          "para": 1,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "hello world Short paragraph."
+        },
+        "caret": {
+          "para": 1,
+          "offset": 12
+        }
+      }
+    }
+  ]
+}

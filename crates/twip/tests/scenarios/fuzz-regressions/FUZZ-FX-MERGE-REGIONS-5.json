@@ -1,0 +1,59 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-5",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 8,
+        "para": 6
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "arg": null,
+      "command": "table.insert-left",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 38,
+        "para": 20
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 31,
+        "para": 28
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(16941) has no content\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(16942) has no content\" }] (Caret(Position { story: Body, place: Text { para: ParaId(16944), offset: Unit(0), affinity: Downstream } }) in Some(\" nï👍🏽\"))"
+}

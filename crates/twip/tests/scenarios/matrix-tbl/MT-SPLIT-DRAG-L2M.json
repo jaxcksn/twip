@@ -1,0 +1,41 @@
+{
+  "id": "MT-SPLIT-DRAG-L2M",
+  "title": "Table across pages: a drag from a row ending a page into the next row on the next page is a cell block (nesting level 2)",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 24,
+          "offset": 0
+        },
+        "to": {
+          "para": 26,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 3,
+          "anchor": [
+            3,
+            0
+          ],
+          "focus": [
+            4,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

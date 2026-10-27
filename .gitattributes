@@ -1,0 +1,8 @@
+# Text is stored and checked out with LF on every platform; binaries are never touched.
+* text=auto eol=lf
+*.docx binary
+*.xlsx binary
+*.png binary
+*.jpg binary
+*.ttf binary
+*.wasm binary

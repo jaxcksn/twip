@@ -1,0 +1,177 @@
+{
+  "id": "E2E-FMT-03",
+  "title": "Ctrl+B at a caret: inside a word it bolds the word's letters; at a word's edge only the next typed text; at the paragraph end the mark too",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 8
+      }
+    },
+    {
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "runs": {
+          "1": [
+            [
+              6,
+              ""
+            ],
+            [
+              9,
+              "b"
+            ],
+            [
+              1,
+              ""
+            ]
+          ]
+        },
+        "caret": {
+          "para": 1,
+          "offset": 8
+        }
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paZragraph."
+        },
+        "runs": {
+          "1": [
+            [
+              6,
+              ""
+            ],
+            [
+              10,
+              "b"
+            ],
+            [
+              1,
+              ""
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 6
+      }
+    },
+    {
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "runs": {
+          "1": [
+            [
+              16,
+              ""
+            ]
+          ]
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "type": "X"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short Xparagraph."
+        },
+        "runs": {
+          "1": [
+            [
+              6,
+              ""
+            ],
+            [
+              1,
+              "b"
+            ],
+            [
+              10,
+              ""
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "type": "!"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph.!"
+        },
+        "runs": {
+          "1": [
+            [
+              16,
+              ""
+            ],
+            [
+              1,
+              "b"
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

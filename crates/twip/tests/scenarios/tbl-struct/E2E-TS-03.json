@@ -1,0 +1,59 @@
+{
+  "id": "E2E-TS-03",
+  "title": "Delete Rows removes the caret's row; deleting every row removes the table",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 17,
+        "offset": 1
+      }
+    },
+    {
+      "command": "table.delete.row"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 2
+          }
+        ],
+        "text": {
+          "16": "T2 R3 C1"
+        },
+        "caret": {
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 1
+      }
+    },
+    {
+      "command": "table.delete.table"
+    },
+    {
+      "expect": {
+        "text": {
+          "12": "Paragraph between the first and second tables.",
+          "13": "T3 R1 C1"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "id": "E2E-LIST-05",
+  "title": "Enter at an item's end makes an empty item; Enter in it ends the list; the caret can go back into the empty item and the item above by keys and by clicks (user report)",
+  "fixture": "FX-LISTS.docx",
+  "methods": [
+    "K",
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0
+        },
+        "text": {
+          "3": ""
+        }
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 3
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "type": "x"
+    },
+    {
+      "expect": {
+        "text": {
+          "3": "x",
+          "2": "First item"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "id": "MRG-MT-CELL-UD-L2",
+  "title": "Cell to cell: Down goes to the cell below, Up back at the goal x (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-CELL-UD-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": 1
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 24,
+          "offset": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

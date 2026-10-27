@@ -1,0 +1,133 @@
+{
+  "fixture": "FX-TBL-MERGED.docx",
+  "id": "FUZZ-FX-TBL-MERGED-12-b",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 18,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 30,
+        "para": 2
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "kind": "picture",
+        "tag": "Fuzz/C3"
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 16,
+        "para": 0
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 78,
+        "para": 0
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "id": "$tag:Fuzz/C3",
+        "keep_content": false
+      },
+      "command": "control.remove",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"7 valid positions\", detail: \"anchor: offset Unit(47) past the end of paragraph ParaId(106273)\" }, Statement { invariant: \"7 valid positions\", detail: \"focus: offset Unit(47) past the end of paragraph ParaId(106273)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(106273), offset: Unit(47), affinity: Downstream } }) in Some(\"👍🏽éx X-TBL-MERGED ar agraword. ÜnïÜnïphe\\u{301}\\u{2028} \\u{2028}Ün\"))"
+}

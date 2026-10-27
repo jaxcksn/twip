@@ -1,0 +1,45 @@
+{
+  "id": "E2E-RS-15",
+  "title": "An inner table's column border drag changes only the inner grid; the outer table's grid is unchanged",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": 1
+        },
+        "to": {
+          "table": 1,
+          "row": 0,
+          "border": 1,
+          "dx": 20
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "grid": [
+              234,
+              234
+            ]
+          },
+          {
+            "grid": [
+              131.6,
+              91.6
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    }
+  ]
+}

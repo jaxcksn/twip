@@ -1,0 +1,60 @@
+{
+  "id": "E2E-NAV-09",
+  "title": "From inside paragraph 3: Ctrl+Down to paragraph 4's start; Ctrl+Up twice to 3's start, then 2's",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 5
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 4,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 0
+        }
+      }
+    }
+  ]
+}

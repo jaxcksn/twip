@@ -1,0 +1,59 @@
+{
+  "id": "MT-EOR-ENTER-L1",
+  "title": "End-of-row mark: Enter there inserts an empty row below, with the caret in its first cell (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 28,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "29": "",
+          "30": "",
+          "31": "Level 1, row 2"
+        },
+        "caret": {
+          "para": 29,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          }
+        ]
+      }
+    }
+  ]
+}

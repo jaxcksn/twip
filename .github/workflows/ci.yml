@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Planning ids
+        run: |
+          # Planning ids (tasks, requirements, observations) mean nothing outside the prototype's specs.
+          if git grep -nIE '\bT[0-9]{3}\b|\b(FR|SC|OBS|WB)-[0-9]+\b|\(R[0-9]+\)|[;,] R[0-9]+\)' -- ':!.github/workflows/ci.yml'; then
+            echo '::error::Planning ids found (see above)'; exit 1
+          fi
+      - name: Rulebook wording
+        # The rulebook states behaviour: no word processor names, evidence or confidence wording, or fixtures.
+        run: |
+          if git grep -nIiP '\bword\b(?! ?(break|boundar|wrap))|microsoft|\boffice\b|measur|observ|inferr|confirm|evidence|research|experiment|harness|fixture|\[[MCI]\]' -- 'docs/docs/rulebook/*.md'; then
+            echo '::error::Rulebook wording (see above)'; exit 1
+          fi
+
+  pr-title:
+    # Squash merges use the PR title as the commit message, so it gets the same commitlint rules as local commits.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # moon compares with the base branch
+      # A prebuilt cargo-binstall: without it, moon setup compiles one (7 minutes) to fetch diplomat-tool.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - name: Conventional commit title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$TITLE" | pnpm exec commitlint
+
+  deny:
+    # Dependency licenses, advisories and sources (.cargo/deny.toml).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      # Skia links FreeType and Fontconfig; and metric-compatible stand-ins for the fonts documents use (Calibri,
+      # Cambria, Arial, Times New Roman, Courier New).
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  sdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # moon compares with the base branch
+      # A prebuilt cargo-binstall: without it, moon setup compiles one (7 minutes) to fetch diplomat-tool.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: .web-deps # the downloaded browser Skia and Dawn
+      # Skia links FreeType and Fontconfig; and metric-compatible stand-ins for the fonts documents use (Calibri,
+      # Cambria, Arial, Times New Roman, Courier New).
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: mymindstorm/setup-emsdk@v16
+        with:
+          version: '6.0.8'
+          actions-cache-folder: emsdk-cache
+      - run: moon run web:test dotnet:test
+      # A real browser paints through WebGL 2 and WebGPU: the runner's preinstalled Edge, so nothing to download.
+      - if: runner.os == 'Linux'
+        run: moon run web:browser-test
+        env:
+          # Software WebGPU here paints blank; WebGPU is tested on Windows locally until that's understood.
+          TWIP_SKIP_WEBGPU: '1'
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # moon compares with the base branch
+      # A prebuilt cargo-binstall: without it, moon setup compiles one (7 minutes) to fetch diplomat-tool.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - run: moon run docs:build

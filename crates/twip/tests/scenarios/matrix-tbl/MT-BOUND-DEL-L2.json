@@ -1,0 +1,59 @@
+{
+  "id": "MT-BOUND-DEL-L2",
+  "title": "Inner table at a cell's end: Delete on the closing paragraph (the cell's end) and at the inner last cell's end does nothing (nesting level 2)",
+  "fixture": "FX-NEST-2-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-BOUND-DEL-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 10,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "undo_depth": 0,
+        "text": {
+          "11": "",
+          "12": "Plain outer cell"
+        },
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "undo_depth": 0,
+        "text": {
+          "10": "Only content R2 C2"
+        }
+      }
+    }
+  ]
+}

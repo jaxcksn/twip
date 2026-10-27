@@ -1,0 +1,10 @@
+$schema: '../../.moon/cache/schemas/project.json'
+language: rust
+tags: [engine]
+
+tasks:
+  # Needs emsdk's emcc on PATH (CI: setup-emsdk; locally: emsdk_env). Downloads the prebuilt browser Skia once.
+  build:
+    command: node build-web.mjs
+    inputs: ['src/**/*', 'build.rs', 'build-web.mjs', 'Cargo.toml', '/crates/twip-ffi/src/**/*', '/crates/twip/src/**/*', '/crates/twip/cpp/**/*', '/crates/twip/build.rs']
+    outputs: ['/target/wasm32-unknown-emscripten/release/twip-wasm.js', '/target/wasm32-unknown-emscripten/release/twip_wasm.wasm']

@@ -1,0 +1,108 @@
+{
+  "id": "MT-EOR-TAB-L3",
+  "title": "End-of-row mark: Tab in a row's last cell selects the next row's first cell; Shift+Tab comes back; Tab in the last cell adds a row to this table only (nesting level 3)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 20,
+        "offset": 1
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 21,
+            "offset": 0
+          },
+          "focus": {
+            "para": 21,
+            "offset": 14
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 20,
+            "offset": 0
+          },
+          "focus": {
+            "para": 20,
+            "offset": 2
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 22,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 23,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ]
+      }
+    }
+  ]
+}

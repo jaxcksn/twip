@@ -1,0 +1,36 @@
+{
+  "id": "LTB-09",
+  "title": "A selected column, then Delete: only that column's cells are emptied",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.column"
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1",
+          "14": "",
+          "15": "T2 R1 C3",
+          "17": "",
+          "20": "",
+          "21": "T2 R3 C3"
+        }
+      }
+    }
+  ]
+}

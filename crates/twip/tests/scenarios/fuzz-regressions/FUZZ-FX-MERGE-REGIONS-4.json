@@ -1,0 +1,19 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-4",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "arg": {
+        "id": "$tag:Statement.Holders",
+        "keep_content": true
+      },
+      "command": "control.remove",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C3 item in a section\", detail: \"paragraph 214714: item ControlId(214712) not directly in a section\" }, Statement { invariant: \"C3 item in a section\", detail: \"paragraph 214716: item ControlId(214712) not directly in a section\" }] (Cells { table: TableId(214724), anchor: CellRef { row: 0, col: 0 }, focus: CellRef { row: 0, col: 2 }, shape: Rows } in None)"
+}

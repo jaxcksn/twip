@@ -1,0 +1,124 @@
+{
+  "id": "E2E-LIST-06",
+  "title": "Numbering and Bullets: a new list on plain paragraphs, the next paragraph joins it, Numbering again takes it off and the list renumbers, Bullets starts its own list; each one step",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 2
+        },
+        "to": {
+          "para": 2,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "command": "home.numbering"
+    },
+    {
+      "expect": {
+        "label": {
+          "1": "1.",
+          "2": "2.",
+          "3": null
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 2
+      }
+    },
+    {
+      "command": "home.numbering"
+    },
+    {
+      "expect": {
+        "label": {
+          "1": "1.",
+          "2": "2.",
+          "3": "3."
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 2
+      }
+    },
+    {
+      "command": "home.numbering"
+    },
+    {
+      "expect": {
+        "label": {
+          "1": "1.",
+          "2": null,
+          "3": "2."
+        },
+        "text": {
+          "2": {
+            "starts": "Inventory"
+          }
+        }
+      }
+    },
+    {
+      "command": "home.bullets"
+    },
+    {
+      "expect": {
+        "label": {
+          "1": "1.",
+          "2": "\uf0b7",
+          "3": "2."
+        },
+        "undo_depth": 4
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "label": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

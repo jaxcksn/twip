@@ -1,0 +1,96 @@
+{
+  "id": "MRG-MT-NESTIN-TAB-L3",
+  "title": "Containing-cell text to inner table: Tab in the containing cell's text moves in the outer table; Tab in the inner cell in the inner table (nesting level 3), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-NESTIN-TAB-L3",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 20,
+            "offset": 0
+          },
+          "focus": {
+            "para": 20,
+            "offset": 2
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 4,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 16,
+            "offset": 0
+          },
+          "focus": {
+            "para": 16,
+            "offset": 2
+          }
+        }
+      }
+    }
+  ]
+}

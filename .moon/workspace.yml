@@ -1,0 +1,18 @@
+$schema: './cache/schemas/workspace.json'
+projects:
+  - 'crates/*'
+  - 'bindings/*'
+  - 'packages/*'
+  - 'docs'
+vcs:
+  client: git
+  defaultBranch: main
+  # Installed into .moon/hooks (core.hooksPath) the next time any moon task runs.
+  sync: true
+  hooks:
+    commit-msg:
+      - 'pnpm exec commitlint --edit $ARG1'
+pipeline:
+  # Dependencies are installed explicitly (`pnpm install`; CI: a step before moon). moon's own install shells out
+  # through `bash`, which on Windows can be WSL's and then installs Linux packages into this checkout.
+  installDependencies: false

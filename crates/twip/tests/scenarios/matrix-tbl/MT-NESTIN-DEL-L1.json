@@ -1,0 +1,48 @@
+{
+  "id": "MT-NESTIN-DEL-L1",
+  "title": "Containing-cell text to inner table: Delete at the end of the text before moves it into the inner first cell (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Level 1, beforeLevel 2, before"
+        },
+        "caret": {
+          "para": 1,
+          "offset": 15,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Level 1, before",
+          "2": "Level 2, before"
+        }
+      }
+    }
+  ]
+}

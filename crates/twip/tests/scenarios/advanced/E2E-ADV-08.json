@@ -1,0 +1,67 @@
+{
+  "id": "E2E-ADV-08",
+  "title": "Ctrl+Alt+5 selects the first floating object; Tab and Shift+Tab go through them; Esc returns to the text",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Digit5",
+      "mods": {
+        "ctrl": true,
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object",
+          "float": 0
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object",
+          "float": 1
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object",
+          "float": 0
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+{
+  "id": "MRG-US6-01",
+  "title": "A read-only document: typing, Delete, Backspace, Ctrl+B, paste, drags and Replace All change nothing and answer \"read-only\"; clicks, selection, copy and Ctrl+arrows work; editing mode again edits",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "view.mode",
+      "arg": "readonly"
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 2
+      }
+    },
+    {
+      "type": "X",
+      "expect": {
+        "text": {
+          "0": "FX-MERGE-FIELDS"
+        },
+        "answer": {
+          "error": "read-only"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "key": "Delete",
+      "expect": {
+        "text": {
+          "0": "FX-MERGE-FIELDS"
+        },
+        "answer": {
+          "error": "read-only"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "key": "Backspace",
+      "expect": {
+        "text": {
+          "0": "FX-MERGE-FIELDS"
+        },
+        "answer": {
+          "error": "read-only"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 5
+      },
+      "shift": true,
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 0,
+            "offset": 0
+          },
+          "focus": {
+            "para": 0,
+            "offset": 5
+          }
+        }
+      }
+    },
+    {
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true
+      },
+      "expect": {
+        "text": {
+          "0": "FX-MERGE-FIELDS"
+        },
+        "answer": {
+          "error": "read-only"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "clipboard": "copy"
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 0,
+          "offset": 2
+        },
+        "to": {
+          "para": 1,
+          "offset": 0
+        }
+      },
+      "expect": {
+        "text": {
+          "0": "FX-MERGE-FIELDS"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 15
+      }
+    },
+    {
+      "clipboard": "paste",
+      "expect": {
+        "text": {
+          "0": "FX-MERGE-FIELDS"
+        },
+        "answer": {
+          "error": "read-only"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "command": "edit.replace-all",
+      "arg": "{\"find\": \"Cost\", \"with\": \"Fee\"}",
+      "expect": {
+        "answer": {
+          "error": "read-only"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true
+      },
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 4
+        }
+      }
+    },
+    {
+      "command": "view.mode",
+      "arg": "editing"
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 2
+      }
+    },
+    {
+      "type": "X",
+      "expect": {
+        "text": {
+          "0": "FXX-MERGE-FIELDS"
+        },
+        "undo_depth": 1
+      }
+    }
+  ]
+}

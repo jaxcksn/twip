@@ -1,0 +1,93 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-26",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "click": {
+        "offset": 6,
+        "para": 0
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 49,
+        "para": 0
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Fuzz/C4"
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "expect": {},
+      "key": "Delete",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(165875))] not closed in paragraph 165817\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(165875) is used but not in the document's controls\" }] (Text { anchor: Position { story: Body, place: Text { para: ParaId(165817), offset: Unit(0), affinity: Downstream } }, focus: Position { story: Body, place: Text { para: ParaId(165817), offset: Unit(117), affinity: Downstream } }, unit: Paragraph } in Some(\"hello éééword.Rows of the details table repeat; the first detail's detail cell holds a table whose rows   repeat too.\"))"
+}

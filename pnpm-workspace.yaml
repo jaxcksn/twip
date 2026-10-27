@@ -1,0 +1,8 @@
+packages:
+  - bindings/web
+  - packages/*
+  - docs
+
+# Install scripts run only for packages listed true here. core-js's only prints a funding message.
+allowBuilds:
+  core-js: false

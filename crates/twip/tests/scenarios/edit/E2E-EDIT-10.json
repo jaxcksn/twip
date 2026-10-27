@@ -1,0 +1,90 @@
+{
+  "id": "E2E-EDIT-10",
+  "title": "Enter at the end of a heading starts a paragraph in the style's next style; Enter inside it keeps the heading",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "x"
+    },
+    {
+      "expect": {
+        "style": {
+          "0": "Heading1",
+          "1": "Normal"
+        },
+        "runs": {
+          "0": [
+            [
+              7,
+              "b"
+            ]
+          ],
+          "1": [
+            [
+              1,
+              ""
+            ]
+          ]
+        },
+        "text": {
+          "1": "x"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "style": {
+          "0": "Heading1",
+          "1": "Heading1"
+        },
+        "text": {
+          "0": "FX",
+          "1": "-TEXT"
+        },
+        "runs": {
+          "1": [
+            [
+              5,
+              "b"
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

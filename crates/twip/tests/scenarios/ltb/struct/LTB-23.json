@@ -1,0 +1,45 @@
+{
+  "id": "LTB-23",
+  "title": "Typing in a cell, then undo, gives the cell back (the Table Properties open-and-cancel and the save round trip: native twin ltb_23)",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": "end"
+      }
+    },
+    {
+      "type": " typed"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1 typed"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1"
+        },
+        "caret": {
+          "para": 13,
+          "offset": 8
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

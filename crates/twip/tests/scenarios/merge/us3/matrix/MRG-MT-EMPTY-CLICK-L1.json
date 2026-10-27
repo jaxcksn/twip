@@ -1,0 +1,80 @@
+{
+  "id": "MRG-MT-EMPTY-CLICK-L1",
+  "title": "Empty cell: a click in it, or past its (empty) line, places the caret in it (nesting level 1), inside a repeating region with a content control",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-EMPTY-CLICK-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      },
+      "dx": 30
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      },
+      "dx": 4
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

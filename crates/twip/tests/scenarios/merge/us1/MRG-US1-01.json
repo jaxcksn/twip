@@ -1,0 +1,63 @@
+{
+  "id": "MRG-US1-01",
+  "title": "field.insert at the caret: a Word field with that code, the caret after it; one undo removes it",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 6
+      }
+    },
+    {
+      "command": "field.insert",
+      "arg": {
+        "code": "MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\""
+      },
+      "expect": {
+        "answer": {},
+        "elements": {
+          "added": [
+            {
+              "kind": "field",
+              "code": " MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\" "
+            }
+          ],
+          "removed": 0
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "removed": 1
+        },
+        "text": {
+          "1": "Short paragraph."
+        },
+        "caret": {
+          "para": 1,
+          "offset": 6
+        }
+      }
+    },
+    {
+      "command": "home.redo",
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "field"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

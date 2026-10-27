@@ -1,0 +1,42 @@
+{
+  "fixture": "FX-OBJ.docx",
+  "id": "FUZZ-FX-OBJ-1",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 7
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": 0.0,
+          "dy": 5.0,
+          "float": 7
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "word."
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-OBJ-1 (fixed 2026-10-24; first failure: assertion `left == right` failed: undo-all restores the original document)"
+}

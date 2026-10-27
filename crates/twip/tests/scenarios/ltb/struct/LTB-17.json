@@ -1,0 +1,65 @@
+{
+  "id": "LTB-17",
+  "title": "With three rows selected, Insert Rows adds three; Delete Rows with every row selected removes the table",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 19,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "command": "table.insert-below"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 6
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 19,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "command": "table.delete.row"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T3 R1 C1"
+        }
+      }
+    }
+  ]
+}

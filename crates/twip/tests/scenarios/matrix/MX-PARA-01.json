@@ -1,0 +1,50 @@
+{
+  "id": "MX-PARA-01",
+  "title": "Paragraph boundary: Right at the end goes to the next start, Left back; Down from the last line goes to the next paragraph",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 16
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2
+        }
+      }
+    }
+  ]
+}

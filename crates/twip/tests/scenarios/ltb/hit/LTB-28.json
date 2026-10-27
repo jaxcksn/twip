@@ -1,0 +1,82 @@
+{
+  "id": "LTB-28",
+  "title": "A click or drag just below-right of a nested table, whose resize handle isn't shown, is a text click in the outer cell",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 21,
+        "offset": 3
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 21,
+          "offset": 3,
+          "depth": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "table": 1,
+        "row": 1,
+        "border": "handle",
+        "dx": -1.5
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret"
+        },
+        "caret": {
+          "para": 6,
+          "offset": 27,
+          "depth": 1
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 1,
+          "border": "handle",
+          "dx": -1.5
+        },
+        "to": {
+          "para": 6,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 6,
+            "offset": 27
+          },
+          "focus": {
+            "para": 6,
+            "offset": 5
+          }
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

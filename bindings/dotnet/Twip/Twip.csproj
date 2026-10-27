@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Twip</RootNamespace>
+    <PackageId>Twip</PackageId>
+    <Version>0.1.0-alpha.1</Version> <!-- x-release-please-version -->
+    <Description>.NET SDK for the twip DOCX layout, editing and rendering engine. Native AOT compatible.</Description>
+    <Authors>Jackson Casey</Authors>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/jaxcksn/twip</RepositoryUrl>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The generated code documents only what the Rust side documents. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../generated/**/*.cs" />
+    <None Include="README.md" Pack="true" PackagePath="" />
+    <!-- Filled by the release workflow: runtimes/<rid>/native/<lib>. -->
+    <None Include="../runtimes/**/*" Pack="true" PackagePath="runtimes/" />
+    <!-- Generated at release time (licenses/notices.mjs). -->
+    <None Include="../../../THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" Condition="Exists('../../../THIRD-PARTY-NOTICES.md')" />
+  </ItemGroup>
+</Project>

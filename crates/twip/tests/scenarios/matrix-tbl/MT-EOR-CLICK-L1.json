@@ -1,0 +1,29 @@
+{
+  "id": "MT-EOR-CLICK-L1",
+  "title": "End-of-row mark: a click past a row's last cell text, inside the cell, goes to the cell's text end (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 28,
+        "offset": "end"
+      },
+      "dx": 12
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 28,
+          "offset": 2,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

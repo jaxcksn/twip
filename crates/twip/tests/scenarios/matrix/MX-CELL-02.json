@@ -1,0 +1,80 @@
+{
+  "id": "MX-CELL-02",
+  "title": "Cell boundaries: Delete at a cell's end and Backspace at its start do nothing; Enter adds a paragraph in the cell",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1",
+          "14": "T2 R1 C2"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1",
+          "14": "T2 R1 C2"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "new"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1",
+          "14": "new",
+          "15": "T2 R1 C2"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 14,
+          "offset": 3,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "id": "MT-MERGE-UD-L2",
+  "title": "Merged cells: Down into a cell merged over two rows lands in it; Down from it goes below the whole merge; Up comes back into it (nesting level 2)",
+  "fixture": "FX-TBL-MERGED-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-UD-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 16,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 16,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 24,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 16,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

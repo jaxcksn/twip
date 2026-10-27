@@ -1,0 +1,41 @@
+{
+  "id": "E2E-CLIP-06",
+  "title": "A copied table pasted as text only becomes paragraphs, a row each with its cells' text tab-separated",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "clipboard": "copy"
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": "end"
+      }
+    },
+    {
+      "clipboard": "paste-text"
+    },
+    {
+      "expect": {
+        "text": {
+          "12": "Paragraph between the first and second tables.T2 R1 C1\tT2 R1 C2\tT2 R1 C3",
+          "13": "T2 R2 C1\tT2 R2 C2\tT2 R2 C3"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "id": "MRG-US5-02",
+  "title": "A batch renames a calculated field in its definition part and in every field code; one undo restores both",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "data.write",
+      "arg": {
+        "namespace": "urn:store:calc",
+        "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"Cost_Plus_Fee\">Cost + Fee</field></calc>"
+      }
+    },
+    {
+      "batch": {
+        "label": "Rename calculated field",
+        "commands": [
+          {
+            "command": "data.write",
+            "arg": {
+              "namespace": "urn:store:calc",
+              "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"New_Name\">Cost + Fee</field></calc>"
+            }
+          },
+          {
+            "command": "element.replace",
+            "arg": {
+              "find": "Calc.Old_Name",
+              "replace": "Calc.New_Name",
+              "in": "code"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "elements": {
+          "changed": 40
+        },
+        "undo_depth": 2
+      }
+    },
+    {
+      "query": {
+        "q": "data",
+        "namespace": "urn:store:calc"
+      },
+      "expect": {
+        "answer": [
+          {
+            "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"New_Name\">Cost + Fee</field></calc>"
+          }
+        ]
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "changed": 40
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "query": {
+        "q": "data",
+        "namespace": "urn:store:calc"
+      },
+      "expect": {
+        "answer": [
+          {
+            "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"Cost_Plus_Fee\">Cost + Fee</field></calc>"
+          }
+        ]
+      }
+    },
+    {
+      "query": {
+        "q": "elements",
+        "match": {
+          "in": "code",
+          "text": "Calc.Old_Name"
+        }
+      },
+      "expect": {
+        "answer": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

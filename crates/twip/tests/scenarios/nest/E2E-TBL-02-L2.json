@@ -1,0 +1,85 @@
+{
+  "id": "E2E-TBL-02-L2",
+  "title": "Alt+Home/End go to the first and last cell of the row; Alt+Page Up/Down to the first and last cell of the column (nesting level 2)",
+  "fixture": "FX-TBL-BASIC-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from tbl-nav/E2E-TBL-02.json",
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": 3
+      }
+    },
+    {
+      "key": "End",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 15,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 3
+      }
+    },
+    {
+      "key": "PageDown",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 20,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "PageUp",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 14,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

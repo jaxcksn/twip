@@ -1,0 +1,72 @@
+{
+  "id": "MRG-MT-EMPTY-DEL-L2",
+  "title": "Empty cell: Delete in it does nothing (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-TBL-BASIC-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-EMPTY-DEL-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      },
+      "dx": 4
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "undo_depth": 2,
+        "text": {
+          "1": "",
+          "2": "C1"
+        },
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "id": "E2E-LIST-01",
+  "title": "Enter in an empty list item ends the list there without adding a paragraph; a second Enter adds one",
+  "fixture": "FX-LISTS.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 9,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "label": {
+          "9": null,
+          "10": "3."
+        },
+        "text": {
+          "9": "",
+          "10": "Item after the empty item"
+        },
+        "caret": {
+          "para": 9,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "label": {
+          "9": null,
+          "10": null,
+          "11": "3."
+        },
+        "text": {
+          "10": "",
+          "11": "Item after the empty item"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "label": {
+          "9": "3.",
+          "10": "4."
+        }
+      }
+    }
+  ]
+}

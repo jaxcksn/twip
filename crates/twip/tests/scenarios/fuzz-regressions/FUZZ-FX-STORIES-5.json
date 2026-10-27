@@ -1,0 +1,388 @@
+{
+  "fixture": "FX-STORIES.docx",
+  "id": "FUZZ-FX-STORIES-5",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 784,
+        "para": 5
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "PageDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "click": {
+        "offset": 380,
+        "para": 16
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyI",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 80,
+        "para": 3
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "click": {
+        "offset": 163,
+        "para": 2
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": 31.0,
+          "dy": -33.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 343,
+        "para": 7
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "top-left",
+          "float": 0
+        },
+        "to": {
+          "at": "top-left",
+          "dx": -31.0,
+          "dy": 33.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 136,
+        "para": 10
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": -30.0,
+          "dy": 28.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": -11.0,
+          "dy": 9.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": " "
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 339,
+        "para": 1
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "click": {
+        "offset": 221,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "click": {
+        "offset": 311,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 184,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "",
+          "float": 0
+        },
+        "to": {
+          "at": "",
+          "dx": 38.0,
+          "dy": 3.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-STORIES-5 (fixed 2026-10-24; first failure: assertion `left == right` failed: step 42: the caret's chain is its paragraph's nesting level ({\"affinity\":\"downstream\",\"chain\":[],\"offset\":27,\"para\":19,\"rect\":)"
+}

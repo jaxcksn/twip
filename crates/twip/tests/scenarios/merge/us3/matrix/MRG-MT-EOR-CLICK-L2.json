@@ -1,0 +1,64 @@
+{
+  "id": "MRG-MT-EOR-CLICK-L2",
+  "title": "End-of-row mark: a click past a row's last cell text, inside the cell, goes to the cell's text end (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-EOR-CLICK-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": "end"
+      },
+      "dx": 12
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 24,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

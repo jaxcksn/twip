@@ -1,0 +1,53 @@
+{
+  "id": "E2E-EDIT-02",
+  "title": "An emoji ZWJ sequence is one caret step and one Backspace",
+  "fixture": "FX-UNICODE.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 21
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 21
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 28
+        }
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 21
+        },
+        "text": {
+          "3": {
+            "starts": "Emoji ZWJ sequences:  "
+          }
+        }
+      }
+    }
+  ]
+}

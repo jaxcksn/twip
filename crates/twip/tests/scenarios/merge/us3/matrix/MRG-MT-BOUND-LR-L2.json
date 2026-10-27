@@ -1,0 +1,121 @@
+{
+  "id": "MRG-MT-BOUND-LR-L2",
+  "title": "Inner table at a cell's end: past the closing paragraph is the outer row's end-of-row mark, then the next row; Left mirrors it (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-2-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-BOUND-LR-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 10,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "row_end": {
+            "table": 1,
+            "row": 0
+          },
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 12,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "row_end": {
+            "table": 1,
+            "row": 0
+          },
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

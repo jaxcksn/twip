@@ -1,0 +1,78 @@
+{
+  "id": "MRG-MT-MERGE-HE-L1",
+  "title": "Merged cells: End and Home in a horizontally merged cell go to its text's end and start (nesting level 1), inside a repeating region with a content control",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-HE-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 7,
+        "offset": 2
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 6,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

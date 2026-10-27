@@ -1,0 +1,50 @@
+{
+  "id": "E2E-EDIT-11",
+  "title": "Enter over a selection at the start of a document's first table cell adds a paragraph before the table, the caret staying in the cell",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 0,
+            "offset": 0
+          },
+          "focus": {
+            "para": 0,
+            "offset": 2
+          }
+        }
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "",
+          "1": ", the document starts with this table"
+        },
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

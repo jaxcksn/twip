@@ -1,0 +1,15 @@
+[package]
+name = "twip-ffi"
+description = "The Diplomat bridge the .NET and WebAssembly SDKs are generated from."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+serde_json = "1.0.154"
+twip = { path = "../twip" }
+diplomat = "0.17.0"
+diplomat-runtime = "0.16.1"

@@ -1,0 +1,104 @@
+{
+  "fixture": "FX-NEST-MIXED.docx",
+  "id": "FUZZ-FX-NEST-MIXED-10",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 218,
+        "para": 7
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 38
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 25
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 13
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": "2",
+      "command": "table.split",
+      "expect": {}
+    },
+    {
+      "arg": null,
+      "command": "table.insert-left",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 41
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 4,
+        "para": 64
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "PageDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"2 grid spans\", detail: \"table 2369 row 1 spans 5 of 2 columns\" }] (Caret(Position { story: Body, place: Text { para: ParaId(2518), offset: Unit(0), affinity: Downstream } }) in Some(\"\"))"
+}

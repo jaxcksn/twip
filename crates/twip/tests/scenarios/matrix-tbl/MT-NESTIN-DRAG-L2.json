@@ -1,0 +1,64 @@
+{
+  "id": "MT-NESTIN-DRAG-L2",
+  "title": "Containing-cell text to inner table: a drag from the text into the inner table takes the inner rows whole; out of the inner table it is a text selection (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 2,
+          "offset": 0
+        },
+        "to": {
+          "para": 3,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 0
+          },
+          "focus": {
+            "row_end": {
+              "table": 2,
+              "row": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 21,
+          "offset": 0
+        },
+        "to": {
+          "para": 23,
+          "offset": "end"
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "focus": {
+            "para": 23
+          }
+        }
+      }
+    }
+  ]
+}

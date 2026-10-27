@@ -1,0 +1,41 @@
+{
+  "id": "MT-BOUND-DRAG-L1",
+  "title": "Inner table at a cell's end: a drag from an inner cell into another outer cell selects an outer cell block (nesting level 1)",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 9,
+          "offset": 0
+        },
+        "to": {
+          "para": 13,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 0,
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            1,
+            1
+          ]
+        }
+      }
+    }
+  ]
+}

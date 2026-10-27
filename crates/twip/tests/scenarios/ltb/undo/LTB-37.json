@@ -1,0 +1,44 @@
+{
+  "id": "LTB-37",
+  "title": "Backspace after a table and Delete before a cell's end change nothing and record no step",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "undo_depth": 0,
+        "caret": {
+          "para": 12,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "undo_depth": 0
+      }
+    }
+  ]
+}

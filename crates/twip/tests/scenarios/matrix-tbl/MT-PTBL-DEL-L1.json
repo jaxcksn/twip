@@ -1,0 +1,50 @@
+{
+  "id": "MT-PTBL-DEL-L1",
+  "title": "Paragraph to table: Delete at the end of the paragraph before the table moves its text into the first cell (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX-NEST-DEEP, nesting depth 6Level 1, before"
+        },
+        "paragraphs": 31,
+        "caret": {
+          "para": 0,
+          "offset": 29,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX-NEST-DEEP, nesting depth 6",
+          "1": "Level 1, before"
+        },
+        "paragraphs": 32
+      }
+    }
+  ]
+}

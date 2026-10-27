@@ -1,0 +1,65 @@
+{
+  "id": "E2E-STORY-09",
+  "title": "Tab in the last cell of a header table adds a row to that table, one undo step",
+  "fixture": "FX-HDR-TABLE.docx",
+  "methods": [
+    "K",
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 19,
+        "offset": 2
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 23,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 24,
+          "offset": 0
+        },
+        "text": {
+          "26": "Header after the table."
+        }
+      }
+    },
+    {
+      "type": "new"
+    },
+    {
+      "command": "home.undo"
+    },
+    {
+      "command": "home.undo"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          }
+        ],
+        "text": {
+          "24": "Header after the table."
+        }
+      }
+    }
+  ]
+}

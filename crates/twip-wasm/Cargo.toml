@@ -1,0 +1,12 @@
+[package]
+name = "twip-wasm"
+description = "The WebAssembly module (emscripten) the TypeScript SDK loads."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+twip-ffi = { path = "../twip-ffi" }

@@ -1,0 +1,39 @@
+{
+  "id": "LTB-04",
+  "title": "Down through a vertically merged cell visits the merged content once and continues below it",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 11,
+        "offset": 3
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

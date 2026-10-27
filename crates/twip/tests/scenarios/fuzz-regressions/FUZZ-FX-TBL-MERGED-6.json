@@ -1,0 +1,34 @@
+{
+  "fixture": "FX-TBL-MERGED.docx",
+  "id": "FUZZ-FX-TBL-MERGED-6",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 1,
+        "para": 19
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 16
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "arg": null,
+      "command": "table.delete.column",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-TBL-MERGED-6 (fixed 2026-10-24; first failure: integrity: [Statement { invariant: \"2 grid spans\", detail: \"table 90689 row 7 spans 7 of 6 columns\" }] (Caret(Position { story: Body, place: Text { para: ParaId)"
+}

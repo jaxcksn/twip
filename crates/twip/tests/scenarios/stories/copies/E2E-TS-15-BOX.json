@@ -1,0 +1,191 @@
+{
+  "id": "E2E-TS-15-BOX",
+  "title": "Delete Cells shifting left or up, Distribute Columns and Rows, and Split Cells into rows, each one step on the table (in a text box)",
+  "fixture": "FX-TBL-BASIC-BOX.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-15.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.delete.cells-left"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3,
+            "cells": [
+              2,
+              3,
+              3
+            ]
+          }
+        ],
+        "text": {
+          "17": "T2 R1 C3"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.delete.cells-up"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3,
+            "cells": [
+              3,
+              3,
+              3
+            ]
+          }
+        ],
+        "text": {
+          "17": "T2 R2 C2",
+          "20": "T2 R3 C2",
+          "23": ""
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": 1
+        },
+        "to": {
+          "table": 1,
+          "row": 0,
+          "border": 1,
+          "dx": 30
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              186,
+              126,
+              156
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.distribute"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              156,
+              156,
+              156
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "command": "table.distribute.rows"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "heights": [
+              [
+                23.0,
+                "atLeast"
+              ],
+              [
+                23.0,
+                "atLeast"
+              ],
+              [
+                23.0,
+                "atLeast"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.split-rows",
+      "arg": "2"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 4,
+            "cells": [
+              3,
+              3,
+              3,
+              3
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "fixture": "FX-LISTS.docx",
+  "id": "FUZZ-FX-LISTS-11",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "PageUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "click": {
+        "offset": 17,
+        "para": 0
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 1,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "kind": "rich_text",
+        "tag": "Fuzz/C1"
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "click": {
+        "offset": 43,
+        "para": 1
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "arg": {
+        "kind": "group",
+        "tag": "Fuzz/Wrap",
+        "wrap": true
+      },
+      "command": "control.insert",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C2 controls nest\", detail: \"end of ControlId(64696) out of place (paragraph 64694)\" }, Statement { invariant: \"C2 controls nest\", detail: \"end of ControlId(64697) out of place (paragraph 64694)\" }] (Text { anchor: Position { story: Body, place: Text { para: ParaId(64694), offset: Unit(41), affinity: Downstream } }, focus: Position { story: Body, place: Text { para: ParaId(64694), offset: Unit(47), affinity: Downstream } }, unit: Char } in Some(\"\\t ée\\u{301}e\\u{301}Ünïxe\\u{301}\\u{2028}Click or tap here to enter text.é\"))"
+}

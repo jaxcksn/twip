@@ -1,0 +1,87 @@
+{
+  "id": "MRG-MT-EMPTY-TAB-L2",
+  "title": "Empty cell: Shift+Tab into it has nothing to select; Tab from it selects the next cell's text (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-TBL-BASIC-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-EMPTY-TAB-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 1
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 0
+          },
+          "focus": {
+            "para": 2,
+            "offset": 2
+          }
+        }
+      }
+    }
+  ]
+}

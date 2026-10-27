@@ -1,0 +1,30 @@
+{
+  "id": "E2E-HIT-05",
+  "title": "Clicks right of an inner table, in its containing cell (the gap before the cell's border), resolve at the containing cell's level, never into the inner table",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": "end"
+      },
+      "dx": 48
+    },
+    {
+      "expect": {
+        "caret": {
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

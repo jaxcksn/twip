@@ -1,0 +1,306 @@
+{
+  "fixture": "FX-STORIES.docx",
+  "id": "FUZZ-FX-STORIES-10",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "PageDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 430,
+        "para": 15
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 587,
+        "para": 13
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "arg": null,
+      "command": "table.merge",
+      "expect": {}
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": -16.0,
+          "dy": 18.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 308,
+        "para": 10
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "arg": null,
+      "command": "table.insert-below",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "click": {
+        "offset": 466,
+        "para": 15
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "arg": null,
+      "command": "table.insert-above",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 244,
+        "para": 10
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": -34.0,
+          "dy": 35.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "",
+          "float": 0
+        },
+        "to": {
+          "at": "",
+          "dx": -11.0,
+          "dy": 4.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-STORIES-10 (fixed 2026-10-24; first failure: assertion `left == right` failed: step 40: the caret's chain is its paragraph's nesting level ({\"affinity\":\"downstream\",\"chain\":[],\"offset\":12,\"para\":36,\"rect\":)"
+}

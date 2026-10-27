@@ -1,0 +1,113 @@
+/* Black on white, white on black. Hierarchy comes from type, weight and rules, never from color. */
+:root {
+  --ifm-font-family-base: 'Source Serif 4', Georgia, serif;
+  --ifm-heading-font-family: var(--ifm-font-family-base);
+  --ifm-font-family-monospace: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+  --ifm-font-size-base: 112.5%;
+  --ifm-line-height-base: 1.6;
+  --ifm-heading-font-weight: 600;
+  --ifm-code-font-size: 85%;
+
+  --ifm-color-primary: #000000;
+  --ifm-color-primary-dark: #000000;
+  --ifm-color-primary-darker: #000000;
+  --ifm-color-primary-darkest: #000000;
+  --ifm-color-primary-light: #333333;
+  --ifm-color-primary-lighter: #4d4d4d;
+  --ifm-color-primary-lightest: #666666;
+
+  --ifm-background-color: #ffffff;
+  --ifm-font-color-base: #000000;
+  --ifm-color-emphasis-300: #d9d9d9;
+  --ifm-toc-border-color: #e6e6e6;
+  --ifm-hr-border-color: #e6e6e6;
+  --ifm-code-background: #f5f5f5;
+  --ifm-link-decoration: underline;
+  --ifm-link-hover-decoration: underline;
+  --ifm-navbar-shadow: none;
+  --ifm-global-shadow-lw: none;
+  --ifm-menu-color-background-active: transparent;
+  --ifm-menu-color-background-hover: transparent;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.08);
+}
+
+html[data-theme='dark'] {
+  --ifm-color-primary: #ffffff;
+  --ifm-color-primary-dark: #ffffff;
+  --ifm-color-primary-darker: #ffffff;
+  --ifm-color-primary-darkest: #ffffff;
+  --ifm-color-primary-light: #cccccc;
+  --ifm-color-primary-lighter: #b3b3b3;
+  --ifm-color-primary-lightest: #999999;
+
+  --ifm-background-color: #000000;
+  --ifm-background-surface-color: #000000;
+  --ifm-font-color-base: #ffffff;
+  --ifm-color-emphasis-300: #333333;
+  --ifm-toc-border-color: #262626;
+  --ifm-hr-border-color: #262626;
+  --ifm-code-background: #141414;
+  --ifm-navbar-background-color: #000000;
+  --ifm-table-stripe-background: #0a0a0a;
+  --docusaurus-highlighted-code-line-bg: rgba(255, 255, 255, 0.1);
+}
+
+a {
+  text-underline-offset: 0.15em;
+  text-decoration-thickness: 1px;
+}
+
+/* Navigation stays quiet: no underlines, the active item is bold. */
+.navbar a,
+.menu a,
+.table-of-contents a,
+.pagination-nav a,
+.breadcrumbs a,
+.footer a {
+  text-decoration: none;
+}
+.menu__link--active:not(.menu__link--sublist),
+.table-of-contents__link--active {
+  font-weight: 600;
+}
+
+.navbar {
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+}
+.navbar__logo {
+  height: 1.6rem;
+}
+.footer {
+  background: var(--ifm-background-color);
+  border-top: 1px solid var(--ifm-toc-border-color);
+}
+
+/* Admonitions in grayscale, marked by a rule instead of a color. */
+.alert[class*='alert--'] {
+  --ifm-alert-background-color: var(--ifm-code-background);
+  --ifm-alert-background-color-highlight: var(--ifm-code-background);
+  --ifm-alert-foreground-color: var(--ifm-font-color-base);
+  --ifm-alert-border-color: var(--ifm-font-color-base);
+  border-left-width: 3px;
+  box-shadow: none;
+}
+.alert[class*='alert--'] svg {
+  fill: currentColor;
+}
+
+:root {
+  --ifm-breadcrumb-item-background-active: transparent;
+}
+thead tr {
+  background: none;
+}
+
+.pagination-nav__link,
+.theme-code-block {
+  box-shadow: none;
+  border: 1px solid var(--ifm-toc-border-color);
+}
+
+th {
+  text-align: left;
+}

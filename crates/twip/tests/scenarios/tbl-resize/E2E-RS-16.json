@@ -1,0 +1,74 @@
+{
+  "id": "E2E-RS-16",
+  "title": "On a table that continues on later pages, a border dragged on a later page gives the same result as the same drag on page 1",
+  "fixture": "FX-TBL-PAGES.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 0,
+          "row": 25,
+          "border": 1
+        },
+        "to": {
+          "table": 0,
+          "row": 25,
+          "border": 1,
+          "dx": 30
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "grid": [
+              120,
+              159,
+              189
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 0,
+          "row": 1,
+          "border": 1
+        },
+        "to": {
+          "table": 0,
+          "row": 1,
+          "border": 1,
+          "dx": 30
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "grid": [
+              120,
+              159,
+              189
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

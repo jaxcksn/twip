@@ -1,0 +1,41 @@
+{
+  "id": "MT-EOR-DRAG-L2",
+  "title": "End-of-row mark: a drag from a row's last cell into the next row's first cell selects the rectangular cell block (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 24,
+          "offset": 0
+        },
+        "to": {
+          "para": 25,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 1,
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            1,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

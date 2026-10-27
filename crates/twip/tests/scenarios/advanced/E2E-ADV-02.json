@@ -1,0 +1,68 @@
+{
+  "id": "E2E-ADV-02",
+  "title": "A selection dragged to another paragraph moves there, selected; one undo puts it back",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      },
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 1,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 3
+        },
+        "to": {
+          "para": 6,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "paragraph.",
+          "6": {
+            "starts": "Short Multiple"
+          }
+        }
+      }
+    },
+    {
+      "command": "home.undo"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph.",
+          "6": {
+            "starts": "Multiple"
+          }
+        }
+      }
+    }
+  ]
+}

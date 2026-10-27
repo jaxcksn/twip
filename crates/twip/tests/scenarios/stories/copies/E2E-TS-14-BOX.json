@@ -1,0 +1,80 @@
+{
+  "id": "E2E-TS-14-BOX",
+  "title": "Deleting a range across a whole table keeps the two ends apart; typing over the same range joins them (in a text box)",
+  "fixture": "FX-NEST-2-BOX.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-14.json",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 2
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": 4
+      },
+      "shift": true
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "3": "FX",
+          "4": "graph after the outer table."
+        },
+        "caret": {
+          "para": 3,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 2
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": 4
+      },
+      "shift": true
+    },
+    {
+      "type": "x"
+    },
+    {
+      "expect": {
+        "text": {
+          "3": "FXxgraph after the outer table."
+        },
+        "caret": {
+          "para": 3,
+          "offset": 3
+        }
+      }
+    }
+  ]
+}

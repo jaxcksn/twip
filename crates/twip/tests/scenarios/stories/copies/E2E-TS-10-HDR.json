@@ -1,0 +1,111 @@
+{
+  "id": "E2E-TS-10-HDR",
+  "title": "A selected table: Delete empties its cells and keeps it; Backspace deletes it (in a header)",
+  "fixture": "FX-TBL-BASIC-HDR.docx",
+  "methods": [
+    "C",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-10.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "16": "",
+          "17": "",
+          "24": ""
+        },
+        "caret": {
+          "para": 16,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "15": "Paragraph between the first and second tables.",
+          "16": "T3 R1 C1"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": 1
+      }
+    },
+    {
+      "command": "table.select.row"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 2
+          }
+        ],
+        "text": {
+          "19": "T2 R3 C1"
+        }
+      }
+    }
+  ]
+}

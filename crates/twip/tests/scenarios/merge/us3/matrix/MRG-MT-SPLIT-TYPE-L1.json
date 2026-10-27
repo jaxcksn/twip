@@ -1,0 +1,73 @@
+{
+  "id": "MRG-MT-SPLIT-TYPE-L1",
+  "title": "Table across pages: text typed at the end-of-row mark of a row ending a page goes to the next row's first cell, on the next page (nesting level 1), inside a repeating region with a content control",
+  "fixture": "FX-TBL-PAGES.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-SPLIT-TYPE-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 52,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 52,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 52,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "53": "Z15"
+        },
+        "caret": {
+          "para": 53,
+          "offset": 1,
+          "page": 1,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "id": "LTB-21",
+  "title": "Typing after a command that doesn't move the caret is its own undo step",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": 0
+      }
+    },
+    {
+      "type": "a"
+    },
+    {
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "type": "b"
+    },
+    {
+      "expect": {
+        "undo_depth": 3,
+        "text": {
+          "14": "abT2 R1 C2"
+        },
+        "jc": {
+          "14": "center"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "14": "aT2 R1 C2"
+        },
+        "jc": {
+          "14": "center"
+        }
+      }
+    }
+  ]
+}

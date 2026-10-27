@@ -1,0 +1,129 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-9",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 36,
+        "para": 13
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "arg": null,
+      "command": "table.delete.column",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.insert-below",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.insert-left",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 18
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 2,
+        "para": 0
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 37,
+        "para": 54
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(29215) has no content\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(29216) has no content\" }] (Caret(Position { story: Body, place: Text { para: ParaId(29217), offset: Unit(0), affinity: Downstream } }) in Some(\"￼ MERGEFIELD Owner.Name ￼«Name»￼\"))"
+}

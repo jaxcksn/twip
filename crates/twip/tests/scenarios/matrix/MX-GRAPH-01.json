@@ -1,0 +1,99 @@
+{
+  "id": "MX-GRAPH-01",
+  "title": "Grapheme clusters: Right, Shift+Right, Delete and Backspace take a base and its combining mark together",
+  "fixture": "FX-UNICODE.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 17
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 19
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 17
+        }
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 17
+          },
+          "focus": {
+            "para": 1,
+            "offset": 19
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Combining marks:  ạ̈ ñ ố Z̵ q̣̇ café Amélie Zöe"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 17
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Combining marks:  ạ̈ ñ ố Z̵ q̣̇ café Amélie Zöe"
+        }
+      }
+    }
+  ]
+}

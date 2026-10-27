@@ -1,0 +1,62 @@
+{
+  "id": "MRG-US1-04",
+  "title": "field.set changes the code and keeps the display text, as one undo step",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "field.set",
+      "arg": {
+        "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT",
+        "code": "MERGEFIELD Shipment.Shipment_Number \\* Lower"
+      },
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "kind": "field",
+              "code": " MERGEFIELD Shipment.Shipment_Number \\* Lower ",
+              "display": "«Shipment_Number»"
+            }
+          ]
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": "field.set",
+      "arg": {
+        "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Lower",
+        "display": "C-1"
+      },
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "display": "C-1"
+            }
+          ]
+        },
+        "undo_depth": 2
+      }
+    },
+    {
+      "command": "home.undo"
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "code": " MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT "
+            }
+          ]
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "MT-EMPTY-CLICK-L1",
+  "title": "Empty cell: a click in it, or past its (empty) line, places the caret in it (nesting level 1)",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      },
+      "dx": 30
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      },
+      "dx": 4
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

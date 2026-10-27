@@ -1,0 +1,36 @@
+{
+  "id": "MT-EOR-DEL-L3",
+  "title": "End-of-row mark: Delete at the end of a row's last cell does nothing (nesting level 3)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 20,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "20": "L3",
+          "21": "Level 3, row 2"
+        },
+        "undo_depth": 0,
+        "caret": {
+          "para": 20,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

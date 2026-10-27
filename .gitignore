@@ -1,0 +1,34 @@
+# Build output
+target/
+.web-deps/
+node_modules/
+bin/
+obj/
+.moon/cache/
+.moon/docker/
+.moon/hooks/
+
+# Generated SDK code: regenerated from crates/twip-ffi by `moon run :generate-*`, never edited or committed
+bindings/dotnet/generated/
+bindings/web/generated/
+bindings/web/dist/
+bindings/dotnet/runtimes/
+
+# Planning material kept locally, not in the repo
+specs/
+.specify/
+SPEC.md
+TASKS.md
+RULES-INVENTORY.md
+
+*.user
+.vs/
+.DS_Store
+Thumbs.db
+
+# Docs site
+docs/build/
+docs/.docusaurus/
+maintainers/
+THIRD-PARTY-NOTICES.md
+API-DESIGN.md

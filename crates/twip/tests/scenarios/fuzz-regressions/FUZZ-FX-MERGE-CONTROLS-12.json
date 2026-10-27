@@ -1,0 +1,47 @@
+{
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "id": "FUZZ-FX-MERGE-CONTROLS-12",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 12,
+        "para": 12
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.delete.column",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 8,
+        "para": 2
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 5,
+        "para": 13
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C2 controls nest\", detail: \"end of ControlId(109540) out of place (paragraph 109524)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(109524), offset: Unit(0), affinity: Downstream } }) in Some(\"\"))"
+}

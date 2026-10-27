@@ -1,0 +1,85 @@
+{
+  "id": "MRG-MT-PTBL-DEL-L1",
+  "title": "Paragraph to table: Delete at the end of the paragraph before the table moves its text into the first cell (nesting level 1), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-PTBL-DEL-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX-NEST-DEEP, nesting depth 6Level 1, before"
+        },
+        "paragraphs": 31,
+        "caret": {
+          "para": 0,
+          "offset": 29,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX-NEST-DEEP, nesting depth 6",
+          "1": "Level 1, before"
+        },
+        "paragraphs": 32
+      }
+    }
+  ]
+}

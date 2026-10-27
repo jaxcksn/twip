@@ -1,0 +1,29 @@
+{
+  "id": "MT-MERGE-CLICK-L1",
+  "title": "Merged cells: a click in a vertical merge's continuation row goes into the merged cell (nesting level 1)",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "table": 0,
+        "row": 3,
+        "border": 0,
+        "dx": 20
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

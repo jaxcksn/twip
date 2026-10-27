@@ -1,0 +1,49 @@
+{
+  "id": "E2E-TS-20",
+  "title": "Delete Rows with two inner rows selected removes exactly those rows; the outer table is unchanged",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 20,
+          "offset": 2
+        },
+        "to": {
+          "para": 22,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "command": "table.delete.row"
+    },
+    {
+      "expect": {
+        "text": {
+          "18": "Long nested table, row 1",
+          "20": "Long nested table, row 4"
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "20": "Long nested table, row 2",
+          "22": "Long nested table, row 3"
+        }
+      }
+    }
+  ]
+}

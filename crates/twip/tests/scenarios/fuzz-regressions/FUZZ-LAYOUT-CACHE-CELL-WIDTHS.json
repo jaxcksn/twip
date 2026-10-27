@@ -1,0 +1,95 @@
+{
+  "fixture": "FX-STORIES.docx",
+  "id": "LAYOUT-CACHE-CELL-WIDTHS",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 2
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "command": "hf.go-header",
+      "arg": null
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "command": "hf.close",
+      "arg": null
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 9
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    }
+  ],
+  "title": "Fuzz regression: layout cache verify mode: boundary `cell widths` returned a stale result for key StoryKey { children: [Para(ShapedPara { pieces: [Piece { kind: Text, break_after: false, soft_hyphen: false, style: 0, width: 5.26904296875, ascent: 10.4736328125, descent: 2.9541015625, glyphs: (0, 1), text: (0, 1), src: Some(Unit(0)), object: None }], styles: [PieceStyle { run: RunStyle { ascii: \"Calibri\", h_ansi: \"Calibri\", east_asia: \"Calibri\", cs: \"Calibri\", east_asia_unset: false, hint_east_asia: false, size: 11.0, bold: false, italic: false, caps: false, small_caps: false, strike: false, dstrike: false, hidden: false, underline: None, color: None, highlight: None, shading: None, vert_align: Baseline, position: 0.0, spacing: 0.0, scale: 100.0, kern: 0.0, ligatures: 0, lang: \"en-US\", style_id: None, direct: Raw(None) }, face: Some(Face(Calibri 400)), size: 11.0, raise: 0.0, squeeze_avg: 0.0 }], glyph_ids: [258], glyph_advances: [981.0], glyph_dx: [0.0], text: \"a\", objects: [] }), Table(TableLayout { x0: 0.25, cols: [111.6, 111.6], rows: [RowBox { cells: [CellBox { x: 0.0, w: 111.6, cx: 5.4, margins: [0.0, 5.4, 0.0, 5.4], units: StoryLayout { units: [], height: 0.0 }, content_h: 0.0, v_align: \"top\", v_merge: None, col: 0, span: 1, edges: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })], shading: None, below: 0.0, index: 0, closing: None }, CellBox { x: 111.6, w: 111.6, cx: 5.4, margins: [0.0, 5.4, 0.0, 5.4], units: StoryLayout { units: [], height: 0.0 }, content_h: 0.0, v_align: \"top\", v_merge: None, col: 1, span: 1, edges: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })], shading: None, below: 0.0, index: 1, closing: None }], top_border: 0.5, height: 0.5, cant_split: false, header: false, exact: false, gap_top: 0.0, seams: [] }, RowBox { cells: [CellBox { x: 0.0, w: 111.6, cx: 5.4, margins: [0.0, 5.4, 0.0, 5.4], units: StoryLayout { units: [], height: 0.0 }, content_h: 0.0, v_align: \"top\", v_merge: None, col: 0, span: 1, edges: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })], shading: None, below: 0.0, index: 0, closing: None }, CellBox { x: 111.6, w: 111.6, cx: 5.4, margins: [0.0, 5.4, 0.0, 5.4], units: StoryLayout { units: [], height: 0.0 }, content_h: 0.0, v_align: \"top\", v_merge: None, col: 1, span: 1, edges: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })], shading: None, below: 0.0, index: 1, closing: None }], top_border: 0.5, height: 0.5, cant_split: false, header: false, exact: false, gap_top: 0.0, seams: [] }], bottom_border: 0.5, spacing: 0.0, id: TableId(115069), outer: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })] }), Para(ShapedPara { pieces: [], styles: [], glyph_ids: [], glyph_advances: [], glyph_dx: [], text: \"\", objects: [] })], width: 0, in_cell: true, text: TextEnv { compat: 15, default_tab: 36.0, do_not_expand_shift_return: false, split_pg_break_and_para_mark: false, allow_space_of_same_style_in_table: false, do_not_use_html_paragraph_auto_spacing: false, grow_autofit: false, balance_spaces: false, compress_punctuation: false }, fonts: 373 }"
+}

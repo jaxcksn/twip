@@ -1,0 +1,70 @@
+{
+  "id": "LTB-10",
+  "title": "A drag from an outer cell's text into the inner table of the next outer cell is an outer cell block; shading shades those two outer cells only",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 2
+        },
+        "to": {
+          "para": 7,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 0,
+          "anchor": [0, 0],
+          "focus": [0, 1]
+        }
+      }
+    },
+    {
+      "command": "table.shading",
+      "arg": "#FFFF00"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "cell_fmt": [
+              ["top:FFFF00", "top:FFFF00"],
+              ["top:-", "top:-"]
+            ]
+          },
+          {
+            "cell_fmt": [
+              ["top:-", "top:-"],
+              ["top:-", "top:-"]
+            ]
+          },
+          {
+            "cell_fmt": [
+              ["top:-", "top:-"],
+              ["top:-", "top:-"]
+            ]
+          },
+          {
+            "cell_fmt": [
+              ["top:-", "top:-"],
+              ["top:-", "top:-"],
+              ["top:-", "top:-"]
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    }
+  ]
+}

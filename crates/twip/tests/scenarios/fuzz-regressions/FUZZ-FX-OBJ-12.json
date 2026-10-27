@@ -1,0 +1,38 @@
+{
+  "fixture": "FX-OBJ.docx",
+  "id": "FUZZ-FX-OBJ-12",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "top-left",
+          "float": 4
+        },
+        "to": {
+          "at": "top-left",
+          "dx": 21.0,
+          "dy": 2.0,
+          "float": 4
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-OBJ-12 (fixed 2026-10-24; first failure: assertion `left == right` failed: undo-all restores the original document)"
+}

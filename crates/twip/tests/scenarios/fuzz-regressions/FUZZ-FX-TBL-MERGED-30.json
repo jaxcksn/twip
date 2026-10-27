@@ -1,0 +1,52 @@
+{
+  "fixture": "FX-TBL-MERGED.docx",
+  "id": "FUZZ-FX-TBL-MERGED-30",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 18
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "a"
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"3 merge has a start\", detail: \"table 142539 row 0 cell 0\" }] (Caret(Position { story: Body, place: Text { para: ParaId(142517), offset: Unit(10), affinity: Downstream } }) in Some(\"e\\u{301}hello éa\"))"
+}

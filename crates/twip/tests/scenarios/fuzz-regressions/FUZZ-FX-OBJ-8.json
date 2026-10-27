@@ -1,0 +1,92 @@
+{
+  "fixture": "FX-OBJ.docx",
+  "id": "FUZZ-FX-OBJ-8",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "at": "top-left",
+          "float": 7
+        },
+        "to": {
+          "at": "top-left",
+          "dx": -9.0,
+          "dy": -33.0,
+          "float": 7
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 13,
+        "para": 9
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Delete",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 414,
+        "para": 13
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "",
+          "float": 5
+        },
+        "to": {
+          "at": "",
+          "dx": 6.0,
+          "dy": -14.0,
+          "float": 5
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "a"
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-OBJ-8 (fixed 2026-10-24; first failure: integrity: [Statement { invariant: \"4 unique ids\", detail: \"id 45343 appears twice\" }, Statement { invariant: \"4 unique ids\", detail: \"id 45344 appears twice\" })"
+}

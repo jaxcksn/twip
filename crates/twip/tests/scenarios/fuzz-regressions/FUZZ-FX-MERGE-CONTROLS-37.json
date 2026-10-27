@@ -1,0 +1,19 @@
+{
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "id": "FUZZ-FX-MERGE-CONTROLS-37",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "arg": {
+        "id": "$tag:Content:Complaint",
+        "text": ""
+      },
+      "command": "control.fill",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C2 contiguous\", detail: \"control ControlId(158092) wraps blocks [1, 1] of section 0\" }] (Text { anchor: Position { story: Body, place: Text { para: ParaId(158096), offset: Unit(0), affinity: Downstream } }, focus: Position { story: Body, place: Text { para: ParaId(158098), offset: Unit(0), affinity: Downstream } }, unit: Paragraph } in Some(\"Done: ☐ done\"))"
+}

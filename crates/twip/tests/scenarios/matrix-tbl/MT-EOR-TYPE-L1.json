@@ -1,0 +1,63 @@
+{
+  "id": "MT-EOR-TYPE-L1",
+  "title": "End-of-row mark: text typed there goes to the next row's first cell; at the last row's mark, to the paragraph after the table (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 28,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "28": "L1",
+          "29": "ZLevel 1, row 2"
+        },
+        "caret": {
+          "para": 29,
+          "offset": 1,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 30,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "type": "W"
+    },
+    {
+      "expect": {
+        "text": {
+          "30": "x",
+          "31": "WParagraph after the outer table."
+        },
+        "caret": {
+          "para": 31,
+          "offset": 1,
+          "depth": 0
+        }
+      }
+    }
+  ]
+}

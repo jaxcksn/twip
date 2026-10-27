@@ -1,0 +1,97 @@
+{
+  "id": "E2E-TF-01-HDR",
+  "title": "Cell alignment and shading apply to the selected cells; Repeat Header Rows marks the rows from the first through the selection's last (in a header)",
+  "fixture": "FX-TBL-BASIC-HDR.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TF-01.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 16,
+          "offset": 2
+        },
+        "to": {
+          "para": 20,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "command": "table.cell-align.center"
+    },
+    {
+      "command": "table.shading",
+      "arg": "#FFF2CC"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "cell_fmt": [
+              [
+                "center:FFF2CC",
+                "center:FFF2CC",
+                "top:-"
+              ],
+              [
+                "center:FFF2CC",
+                "center:FFF2CC",
+                "top:-"
+              ],
+              [
+                "top:-",
+                "top:-",
+                "top:-"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 1
+      }
+    },
+    {
+      "command": "table.header-row"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "header_rows": 2
+          }
+        ]
+      }
+    },
+    {
+      "command": "table.header-row"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "header_rows": 0
+          }
+        ]
+      }
+    }
+  ]
+}

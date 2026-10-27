@@ -1,0 +1,40 @@
+{
+  "id": "E2E-NAV-06",
+  "title": "Down keeps the goal x: to a shorter line's end, then back to the goal x on the next long line",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 786
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 879
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 74
+        }
+      }
+    }
+  ]
+}

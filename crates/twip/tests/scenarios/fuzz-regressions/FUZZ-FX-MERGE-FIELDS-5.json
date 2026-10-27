@@ -1,0 +1,54 @@
+{
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "id": "FUZZ-FX-MERGE-FIELDS-5",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 258,
+        "para": 4
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "click": {
+        "offset": 4,
+        "para": 0
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "click": {
+        "offset": 150,
+        "para": 0
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"F1 one field\", detail: \"field FieldId(28781) begins twice (paragraph 28807)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(28782) begins twice (paragraph 28807)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(28807), offset: Unit(0), affinity: Downstream } }) in Some(\"M👍🏽.hello Calc 36: ￼ MERGEFIELD Calc.Old_Name \\\\# \\\"$,0.00\\\" ￼«Old_Name»￼ Calc 37: ￼ MERGEFIELD Calc.Old_Name \\\\@ \\\"M/d/yyyy\\\" ￼«Old_Name»￼ Calc 38é:  👍🏽ééÜnï\"))"
+}

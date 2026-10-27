@@ -1,0 +1,41 @@
+{
+  "id": "E2E-NAV-07",
+  "title": "Down from a page's last line goes to the next page's first line",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": "end",
+        "line": "last"
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "page": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 12,
+          "page": 0
+        }
+      }
+    }
+  ]
+}

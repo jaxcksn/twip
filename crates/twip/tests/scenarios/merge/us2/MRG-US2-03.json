@@ -1,0 +1,29 @@
+{
+  "id": "MRG-US2-03",
+  "title": "element.select on a footer's field enters footer editing with the field selected",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "element.select",
+      "arg": {
+        "id": "$code:NUMPAGES"
+      },
+      "expect": {
+        "context": [
+          {
+            "kind": "field",
+            "code": " NUMPAGES ",
+            "exact": true
+          }
+        ],
+        "view": {
+          "story": "HeaderFooter(0)"
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

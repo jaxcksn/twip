@@ -1,0 +1,88 @@
+{
+  "id": "MRG-MT-BOUND-BS-L2",
+  "title": "Inner table at a cell's end: Backspace on the empty closing paragraph after it does nothing (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-2-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-BOUND-BS-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 10,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "undo_depth": 2,
+        "tables": [
+          {},
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ],
+        "text": {
+          "10": "Only content R2 C2"
+        },
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

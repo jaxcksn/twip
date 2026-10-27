@@ -1,0 +1,86 @@
+{
+  "id": "MRG-US7-01",
+  "title": "Alt+F9 shows every field's code and again every result; Shift+F9 the field at the caret only; the caret goes to the code's end, then the field's start",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 6
+      }
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "alt": true
+      },
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 53
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "alt": true
+      },
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 6
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "shift": true
+      },
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 53
+        }
+      }
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "shift": true
+      },
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 6
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      }
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "shift": true
+      },
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 2
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

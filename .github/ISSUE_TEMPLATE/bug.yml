@@ -1,0 +1,30 @@
+name: Bug report
+description: Something lays out, edits or renders wrong, or crashes.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Attach the smallest .docx that shows it, if you can share one, and the steps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Twip version
+    validations:
+      required: true
+  - type: dropdown
+    id: sdk
+    attributes:
+      label: SDK
+      options: [Rust crate, .NET, Web (TypeScript), Angular, React]
+    validations:
+      required: true

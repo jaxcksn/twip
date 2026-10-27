@@ -1,0 +1,93 @@
+{
+  "id": "LTB-31",
+  "title": "After typing makes the first row taller, the rows below and the resize handle are grabbed where they are now, without moving the pointer first",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "K",
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": "end"
+      }
+    },
+    {
+      "type": " inventory relevant group relief results region ledger brief usage cause"
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 2,
+          "border": "bottom"
+        },
+        "to": {
+          "table": 1,
+          "row": 2,
+          "border": "bottom",
+          "dy": 20
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "heights": [
+              null,
+              null,
+              [
+                43.0,
+                "atLeast"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 2,
+          "border": "handle"
+        },
+        "to": {
+          "table": 1,
+          "row": 2,
+          "border": "handle",
+          "dx": -46.8
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              140.4,
+              140.4,
+              140.4
+            ],
+            "heights": [
+              null,
+              null,
+              null
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "id": "MT-EMPTY-LR-L1",
+  "title": "Empty cell: Right and Left step through it as one stop (nesting level 1)",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 39,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

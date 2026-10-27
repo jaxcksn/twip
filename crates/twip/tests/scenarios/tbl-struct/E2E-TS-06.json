@@ -1,0 +1,70 @@
+{
+  "id": "E2E-TS-06",
+  "title": "Insert Table at a paragraph's end puts a new table after it; Delete Table removes it",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": "end"
+      }
+    },
+    {
+      "command": "insert.table",
+      "arg": "2,3"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "offset": 0,
+          "depth": 1
+        },
+        "text": {
+          "12": "Paragraph between the first and second tables.",
+          "13": "",
+          "19": "T2 R1 C1"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ]
+      }
+    },
+    {
+      "type": "new"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "new"
+        }
+      }
+    },
+    {
+      "command": "table.delete.table"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "T2 R1 C1"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ]
+      }
+    }
+  ]
+}

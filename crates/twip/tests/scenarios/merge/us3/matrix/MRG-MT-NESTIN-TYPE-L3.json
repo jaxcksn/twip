@@ -1,0 +1,91 @@
+{
+  "id": "MRG-MT-NESTIN-TYPE-L3",
+  "title": "Containing-cell text to inner table: text typed beside the inner table stays in the containing cell (nesting level 3), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-NESTIN-TYPE-L3",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": "end"
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "3": "Level 3, beforeZ",
+          "4": "Level 4, before"
+        },
+        "caret": {
+          "para": 3,
+          "offset": 16,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 0
+      }
+    },
+    {
+      "type": "Y"
+    },
+    {
+      "expect": {
+        "text": {
+          "19": "YLevel 3, after"
+        },
+        "caret": {
+          "para": 19,
+          "offset": 1,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "id": "MT-MERGE-TAB-L3",
+  "title": "Merged cells: a horizontally merged cell is one Tab stop each way (nesting level 3)",
+  "fixture": "FX-TBL-MERGED-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-TAB-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 8,
+            "offset": 0
+          },
+          "focus": {
+            "para": 8,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 9,
+            "offset": 0
+          },
+          "focus": {
+            "para": 9,
+            "offset": 1
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 8,
+            "offset": 0
+          },
+          "focus": {
+            "para": 8,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 7,
+            "offset": 0
+          },
+          "focus": {
+            "para": 7,
+            "offset": 6
+          }
+        }
+      }
+    }
+  ]
+}

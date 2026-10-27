@@ -1,0 +1,122 @@
+{
+  "id": "MRG-US7-07",
+  "title": "Backspace after a field and Delete before it select it first, then delete it; with codes shown, Backspace inside the opening brace selects it too, and Shift+Right before it selects it whole",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 90
+      }
+    },
+    {
+      "key": "Backspace",
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 9
+          },
+          "focus": {
+            "para": 2,
+            "offset": 90
+          }
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "key": "Backspace",
+      "expect": {
+        "text": {
+          "2": "Shipment  issued."
+        },
+        "elements": {
+          "removed": 1
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 73
+      }
+    },
+    {
+      "key": "Delete",
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 73
+          },
+          "focus": {
+            "para": 1,
+            "offset": 131
+          }
+        }
+      }
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 6
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      },
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 6
+          },
+          "focus": {
+            "para": 1,
+            "offset": 68
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 7
+      }
+    },
+    {
+      "key": "Backspace",
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 6
+          },
+          "focus": {
+            "para": 1,
+            "offset": 68
+          }
+        },
+        "undo_depth": 1
+      }
+    }
+  ]
+}

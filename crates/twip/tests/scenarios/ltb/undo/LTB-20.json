@@ -1,0 +1,39 @@
+{
+  "id": "LTB-20",
+  "title": "A table command that can't run records no undo step and leaves the document clean",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.merge"
+    },
+    {
+      "expect": {
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.delete.row"
+    },
+    {
+      "expect": {
+        "undo_depth": 0
+      }
+    }
+  ]
+}

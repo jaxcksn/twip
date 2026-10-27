@@ -1,0 +1,86 @@
+{
+  "id": "LTB-19",
+  "title": "A header table: Tab in the last cell adds a row (one step, no failure), table commands work, a border drag resizes",
+  "fixture": "FX-HDR-TABLE.docx",
+  "methods": [
+    "K",
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 19,
+        "offset": 2
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 23,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.insert-below"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 4
+          }
+        ],
+        "undo_depth": 2
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 0,
+          "row": 0,
+          "border": 1
+        },
+        "to": {
+          "table": 0,
+          "row": 0,
+          "border": 1,
+          "dx": -36
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 4,
+            "grid": [
+              198,
+              270
+            ]
+          }
+        ],
+        "undo_depth": 3
+      }
+    }
+  ]
+}

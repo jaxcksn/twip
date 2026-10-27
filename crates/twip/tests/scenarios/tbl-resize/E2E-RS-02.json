@@ -1,0 +1,43 @@
+{
+  "id": "E2E-RS-02",
+  "title": "Shift with a column border drag changes the table's width: only the column left of it changes",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": 1
+        },
+        "to": {
+          "table": 1,
+          "row": 0,
+          "border": 1,
+          "dx": 30
+        }
+      },
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              186,
+              156,
+              156
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

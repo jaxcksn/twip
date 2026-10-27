@@ -1,0 +1,108 @@
+{
+  "id": "MRG-US1-05",
+  "title": "control.insert plain_text with a tag at the caret and at a drop; control.set changes its tag; undo and redo",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 6
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Statement/Cost_Amount"
+      },
+      "expect": {
+        "answer": {},
+        "elements": {
+          "added": [
+            {
+              "kind": "plain_text",
+              "tag": "Statement/Cost_Amount",
+              "showing_placeholder": true
+            }
+          ]
+        },
+        "text": {
+          "1": "Short Click or tap here to enter text.paragraph."
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": "control.set",
+      "arg": {
+        "id": "$last",
+        "tag": "Statement/Cost"
+      },
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "kind": "plain_text",
+              "tag": "Statement/Cost"
+            }
+          ]
+        },
+        "undo_depth": 2
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "tag": "Statement/Cost_Amount"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "removed": 1
+        },
+        "text": {
+          "1": "Short paragraph."
+        }
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Store/Name",
+        "placeholder": "Store",
+        "target": {
+          "at": {
+            "para": 1,
+            "offset": 0
+          }
+        }
+      },
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "plain_text",
+              "tag": "Store/Name"
+            }
+          ]
+        },
+        "text": {
+          "1": "StoreShort paragraph."
+        }
+      }
+    }
+  ]
+}

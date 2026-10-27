@@ -1,0 +1,444 @@
+{
+  "id": "LTB-25",
+  "title": "Tab and Shift+Tab through rows wrapped in a repeating-section content control go to the next and previous cell each time",
+  "fixture": "FX-REPEAT-REGION.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 1
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 3,
+            "offset": 0
+          },
+          "focus": {
+            "para": 3,
+            "offset": 4
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 4,
+            "offset": 0
+          },
+          "focus": {
+            "para": 4,
+            "offset": 4
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 5,
+            "offset": 0
+          },
+          "focus": {
+            "para": 5,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 6,
+            "offset": 0
+          },
+          "focus": {
+            "para": 6,
+            "offset": 10
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 7,
+            "offset": 0
+          },
+          "focus": {
+            "para": 7,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 8,
+            "offset": 0
+          },
+          "focus": {
+            "para": 8,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 9,
+            "offset": 0
+          },
+          "focus": {
+            "para": 9,
+            "offset": 10
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 10,
+            "offset": 0
+          },
+          "focus": {
+            "para": 10,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 11,
+            "offset": 0
+          },
+          "focus": {
+            "para": 11,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 12,
+            "offset": 0
+          },
+          "focus": {
+            "para": 12,
+            "offset": 10
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 13,
+            "offset": 0
+          },
+          "focus": {
+            "para": 13,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 14,
+            "offset": 0
+          },
+          "focus": {
+            "para": 14,
+            "offset": 24
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 13,
+            "offset": 0
+          },
+          "focus": {
+            "para": 13,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 12,
+            "offset": 0
+          },
+          "focus": {
+            "para": 12,
+            "offset": 10
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 11,
+            "offset": 0
+          },
+          "focus": {
+            "para": 11,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 10,
+            "offset": 0
+          },
+          "focus": {
+            "para": 10,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 9,
+            "offset": 0
+          },
+          "focus": {
+            "para": 9,
+            "offset": 10
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 8,
+            "offset": 0
+          },
+          "focus": {
+            "para": 8,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 7,
+            "offset": 0
+          },
+          "focus": {
+            "para": 7,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 6,
+            "offset": 0
+          },
+          "focus": {
+            "para": 6,
+            "offset": 10
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 5,
+            "offset": 0
+          },
+          "focus": {
+            "para": 5,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 4,
+            "offset": 0
+          },
+          "focus": {
+            "para": 4,
+            "offset": 4
+          }
+        }
+      }
+    }
+  ]
+}

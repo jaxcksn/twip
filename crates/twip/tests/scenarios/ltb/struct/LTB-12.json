@@ -1,0 +1,70 @@
+{
+  "id": "LTB-12",
+  "title": "Merging a 2x2 block gives one cell spanning both rows and columns, with all four cells' text",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 17,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "command": "table.merge"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3,
+            "cells": [
+              2,
+              2,
+              3
+            ]
+          }
+        ],
+        "text": {
+          "13": "T2 R1 C1",
+          "14": "T2 R1 C2",
+          "15": "T2 R2 C1",
+          "16": "T2 R2 C2",
+          "17": "T2 R1 C3"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3,
+            "cells": [
+              3,
+              3,
+              3
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

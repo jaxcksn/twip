@@ -1,0 +1,67 @@
+{
+  "id": "MRG-US1-06",
+  "title": "Design mode labels an empty MERGEFIELD «Cost_Amount»; a click on the label's far half puts the caret after the field",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 6
+      }
+    },
+    {
+      "command": "field.insert",
+      "arg": {
+        "code": "MERGEFIELD Cost_Amount"
+      },
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "field",
+              "code": " MERGEFIELD Cost_Amount ",
+              "display": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "command": "view.mode",
+      "arg": "design",
+      "expect": {
+        "mode": "design"
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 6,
+        "dx": 50
+      },
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 33
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 6,
+        "dx": 4
+      },
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 6
+        }
+      }
+    }
+  ]
+}

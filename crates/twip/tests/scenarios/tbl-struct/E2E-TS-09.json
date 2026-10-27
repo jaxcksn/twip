@@ -1,0 +1,96 @@
+{
+  "id": "E2E-TS-09",
+  "title": "Ctrl+Shift+Enter splits the table above the caret's row with an empty paragraph between, holding the caret; in the first row it adds a paragraph above",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 16,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Enter",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 1
+          },
+          {
+            "rows": 2
+          }
+        ],
+        "text": {
+          "16": "",
+          "17": "T2 R2 C1"
+        },
+        "caret": {
+          "para": 16,
+          "offset": 0,
+          "depth": 0
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 3
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Enter",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "13": "",
+          "14": "T2 R1 C1"
+        }
+      }
+    }
+  ]
+}

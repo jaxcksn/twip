@@ -1,0 +1,44 @@
+{
+  "id": "MT-EMPTY-ENTER-L3",
+  "title": "Empty cell: Enter adds a paragraph in it (nesting level 3)",
+  "fixture": "FX-TBL-BASIC-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-EMPTY-ENTER-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      },
+      "dx": 4
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "",
+          "2": "",
+          "3": "C1"
+        },
+        "tables": [
+          {},
+          {},
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 2,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

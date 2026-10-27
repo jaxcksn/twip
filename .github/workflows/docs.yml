@@ -1,0 +1,47 @@
+# Publishes docs/ to GitHub Pages (https://jaxcksn.github.io/twip/) whenever it changes on main.
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths: [docs/**, .github/workflows/docs.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # moon compares with the base branch
+      # A prebuilt cargo-binstall: without it, moon setup compiles one (7 minutes) to fetch diplomat-tool.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/configure-pages@v6
+      - run: moon run docs:build
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

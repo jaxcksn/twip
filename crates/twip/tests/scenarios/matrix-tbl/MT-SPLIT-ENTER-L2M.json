@@ -1,0 +1,45 @@
+{
+  "id": "MT-SPLIT-ENTER-L2M",
+  "title": "Table across pages: Enter at the end-of-row mark of a row ending a page inserts an empty row below it (nesting level 2)",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 25,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {},
+          {},
+          {
+            "rows": 33
+          }
+        ],
+        "text": {
+          "26": ""
+        },
+        "caret": {
+          "para": 26,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

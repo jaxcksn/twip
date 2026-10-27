@@ -1,0 +1,53 @@
+{
+  "id": "LTB-11",
+  "title": "A drag from an inner cell into another outer cell is an outer cell block; borders on it are one step on the outer table (the borders themselves: native twin ltb_11 in engine/src/editing/tests/ltb.rs)",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 2,
+          "offset": 2
+        },
+        "to": {
+          "para": 12,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 0,
+          "anchor": [0, 0],
+          "focus": [1, 0]
+        }
+      }
+    },
+    {
+      "command": "table.borders.all",
+      "arg": "double,1.5,C00000"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 0
+        },
+        "tables": [
+          { "rows": 2, "cells": [2, 2] },
+          { "rows": 2, "cells": [2, 2] },
+          { "rows": 2, "cells": [2, 2] },
+          { "rows": 3, "cells": [2, 2, 2] }
+        ],
+        "undo_depth": 1
+      }
+    }
+  ]
+}

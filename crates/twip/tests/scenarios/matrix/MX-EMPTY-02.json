@@ -1,0 +1,48 @@
+{
+  "id": "MX-EMPTY-02",
+  "title": "Empty cell: typing fills it; Backspace in it does nothing; Tab into it lands with nothing to select",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "undo_depth": 0
+      }
+    },
+    {
+      "type": "b1"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "b1"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "id": "MRG-MT-PTBL-BS-L1",
+  "title": "Paragraph to table: Backspace at the start of the paragraph after the table and at the first cell's start does nothing (nesting level 1), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-PTBL-BS-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 31,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 31,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 31,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 31,
+          "offset": 0,
+          "depth": 0
+        },
+        "text": {
+          "31": "Paragraph after the outer table.",
+          "30": "x"
+        },
+        "undo_depth": 2
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX-NEST-DEEP, nesting depth 6",
+          "1": "Level 1, before"
+        },
+        "undo_depth": 2
+      }
+    }
+  ]
+}

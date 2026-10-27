@@ -1,0 +1,112 @@
+{
+  "id": "MRG-MT-PTBL-TYPE-L3",
+  "title": "Paragraph to table: text typed at each side of the boundary stays on its side (nesting level 3), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-PTBL-TYPE-L3",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": "end"
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "Level 2, beforeZ",
+          "3": "Level 3, before"
+        },
+        "caret": {
+          "para": 2,
+          "offset": 16,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "type": "Y"
+    },
+    {
+      "expect": {
+        "text": {
+          "3": "YLevel 3, before"
+        },
+        "caret": {
+          "para": 3,
+          "offset": 1,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 23,
+        "offset": 0
+      }
+    },
+    {
+      "type": "W"
+    },
+    {
+      "expect": {
+        "text": {
+          "23": "WLevel 2, after"
+        },
+        "caret": {
+          "para": 23,
+          "offset": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

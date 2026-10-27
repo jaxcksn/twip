@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "include-component-in-tag": true,
+  "pull-request-title-pattern": "chore(release): release${component} ${version}",
+  "group-pull-request-title-pattern": "chore(release): release ${branch}",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "packages": {
+    ".": {
+      "component": "twip",
+      "versioning": "prerelease",
+      "release-type": "simple",
+      "include-component-in-tag": false,
+      "changelog-path": "CHANGELOG.md",
+      "exclude-paths": ["packages", "docs"],
+      "extra-files": [
+        { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" },
+        { "type": "toml", "path": "Cargo.lock", "jsonpath": "$.package[?(@.name.value=='twip' || @.name.value=='twip-ffi' || @.name.value=='twip-native' || @.name.value=='twip-wasm')].version" },
+        { "type": "json", "path": "bindings/web/package.json", "jsonpath": "$.version" },
+        { "type": "generic", "path": "bindings/dotnet/Twip/Twip.csproj" }
+      ]
+    }
+  }
+}

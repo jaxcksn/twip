@@ -1,0 +1,61 @@
+{
+  "id": "E2E-ADV-04",
+  "title": "Alt+Shift+Up in row 3 swaps it with row 2 in the same table and selects it; Alt+Shift+Down moves it back",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 19,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowUp",
+      "mods": {
+        "alt": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "16": "T2 R3 C1",
+          "19": "T2 R2 C1"
+        },
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            1,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "alt": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "16": "T2 R2 C1",
+          "19": "T2 R3 C1"
+        },
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            2,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

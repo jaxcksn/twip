@@ -1,0 +1,67 @@
+{
+  "id": "E2E-STORY-03",
+  "title": "In a footnote, Right at its end goes to the next note; Ctrl+End goes to the main document's end",
+  "fixture": "FX-STORIES.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 24,
+        "offset": 5
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 24,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 25,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 24
+        }
+      }
+    },
+    {
+      "key": "End",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 17,
+          "offset": 810
+        }
+      }
+    }
+  ]
+}

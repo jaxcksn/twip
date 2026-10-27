@@ -1,0 +1,39 @@
+{
+  "id": "MX-PTBL-02",
+  "title": "Paragraph to table: Down from the paragraph enters the first row; Up from the first row returns to it",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 12,
+          "depth": 0
+        }
+      }
+    }
+  ]
+}

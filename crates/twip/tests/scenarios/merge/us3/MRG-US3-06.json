@@ -1,0 +1,112 @@
+{
+  "id": "MRG-US3-06",
+  "title": "A region around the rows of a table at depth 6: a row inserted and deleted inside it, then undone; the outer tables don't change",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 6,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 0
+      },
+      "shift": true
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Deep"
+      },
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "repeating_section",
+              "tag": "Deep"
+            },
+            {
+              "kind": "repeating_item"
+            },
+            {
+              "kind": "repeating_item"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.insert-below",
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "repeating_item"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "command": "table.delete.row",
+      "expect": {
+        "elements": {
+          "removed": 1
+        }
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "repeating_item"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": {
+        "q": "structure",
+        "id": "$tag:Deep",
+        "depth": 0
+      },
+      "expect": {
+        "answer": [
+          {
+            "table": {
+              "rows": [
+                {},
+                {},
+                {}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX-NEST-DEEP, nesting depth 6",
+          "1": "Level 1, before",
+          "5": "Level 5, before"
+        }
+      }
+    }
+  ]
+}

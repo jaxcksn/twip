@@ -1,0 +1,73 @@
+{
+  "id": "E2E-TS-19-BOX",
+  "title": "A drag from an inner table out into the containing cell's text selects text at the containing cell's level; back into the inner table it is an inner cell block again (in a text box)",
+  "fixture": "FX-NEST-2-BOX.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-19.json",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "press": {
+        "para": 5,
+        "offset": 2
+      }
+    },
+    {
+      "move_to": {
+        "para": 9,
+        "offset": 4
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 5,
+            "offset": 0
+          },
+          "focus": {
+            "para": 9,
+            "offset": 4
+          }
+        }
+      }
+    },
+    {
+      "move_to": {
+        "para": 8,
+        "offset": 2
+      }
+    },
+    {
+      "release": {
+        "para": 8,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 1,
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            1,
+            1
+          ]
+        }
+      }
+    }
+  ]
+}

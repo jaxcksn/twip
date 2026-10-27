@@ -1,0 +1,81 @@
+{
+  "id": "LTB-01",
+  "title": "A click on the line drawn just below an exact-height row lands in that line, never in the clipped paragraph above it; not at 50%: at 50% the line is 3 CSS px tall, under a real mouse's precision",
+  "fixture": "FX-ROW-CLIP.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 4
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 4,
+          "depth": 1,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 10
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 10,
+          "depth": 1,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 4
+      },
+      "dy": 3
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 4,
+          "depth": 1,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 45
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 45,
+          "depth": 3,
+          "hidden": null
+        }
+      }
+    }
+  ]
+}

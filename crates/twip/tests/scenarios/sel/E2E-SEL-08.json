@@ -1,0 +1,151 @@
+{
+  "id": "E2E-SEL-08",
+  "title": "Drags in tables: within a cell text; into other cells a cell block; out of the table whole rows; into a table from outside whole rows",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 13,
+          "offset": 6
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 13
+          }
+        }
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 14,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            0,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 17,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            1,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 12,
+          "offset": 3
+        },
+        "to": {
+          "para": 17,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 12,
+            "offset": 3
+          },
+          "focus": {
+            "row_end": {
+              "table": 1,
+              "row": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 3
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 16,
+          "offset": 3
+        },
+        "to": {
+          "para": 12,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "row_end": {
+              "table": 1,
+              "row": 1
+            }
+          },
+          "focus": {
+            "para": 12,
+            "offset": 3
+          }
+        }
+      }
+    }
+  ]
+}

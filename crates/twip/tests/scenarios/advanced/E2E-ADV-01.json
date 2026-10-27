@@ -1,0 +1,132 @@
+{
+  "id": "E2E-ADV-01",
+  "title": "F8 repeated selects the word, the schedule, the paragraph; Esc ends extend mode and keeps the selection; a typed character extends to it",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      }
+    },
+    {
+      "key": "F8"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret"
+        }
+      }
+    },
+    {
+      "key": "F8"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 1,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "F8"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 1,
+            "offset": 16
+          }
+        }
+      }
+    },
+    {
+      "key": "F8"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          }
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret"
+        },
+        "caret": {
+          "para": 1,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "F8"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "type": "p"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 1,
+            "offset": 7
+          }
+        }
+      }
+    }
+  ]
+}

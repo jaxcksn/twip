@@ -1,0 +1,72 @@
+{
+  "id": "E2E-UNDO-02",
+  "title": "F4 repeats the last typing; Ctrl+Y redoes when there is something to redo, else repeats",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "type": "ab"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "F4"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "abSabhort paragraph."
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "abShort paragraph."
+        }
+      }
+    },
+    {
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "abSabhort paragraph."
+        }
+      }
+    },
+    {
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "abSababhort paragraph."
+        }
+      }
+    }
+  ]
+}

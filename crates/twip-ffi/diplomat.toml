@@ -1,0 +1,5 @@
+lib_name = "twip"
+
+[dotnet]
+namespace = "Twip"
+exception_trim_suffix = "Error"

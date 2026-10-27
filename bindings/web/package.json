@@ -1,0 +1,20 @@
+{
+  "name": "@twip/web",
+  "version": "0.1.0-alpha.1",
+  "description": "TypeScript SDK for the twip DOCX engine (WebAssembly). Generated from crates/twip-ffi.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {},
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

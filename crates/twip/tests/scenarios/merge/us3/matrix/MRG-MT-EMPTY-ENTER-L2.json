@@ -1,0 +1,78 @@
+{
+  "id": "MRG-MT-EMPTY-ENTER-L2",
+  "title": "Empty cell: Enter adds a paragraph in it (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-TBL-BASIC-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-EMPTY-ENTER-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      },
+      "dx": 4
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "",
+          "2": "",
+          "3": "C1"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 2,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

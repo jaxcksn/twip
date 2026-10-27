@@ -1,0 +1,50 @@
+{
+  "id": "E2E-EDIT-07",
+  "title": "Enter splits the paragraph; Shift+Enter inserts a line break",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 5
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short",
+          "2": " paragraph."
+        },
+        "caret": {
+          "para": 2,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "Enter",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "  paragraph."
+        },
+        "caret": {
+          "para": 2,
+          "offset": 1
+        }
+      }
+    }
+  ]
+}

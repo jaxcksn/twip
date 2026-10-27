@@ -1,0 +1,40 @@
+{
+  "id": "E2E-RS-06",
+  "title": "Dragging the table's right border widens its last column and the table",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": 3
+        },
+        "to": {
+          "table": 1,
+          "row": 0,
+          "border": 3,
+          "dx": 20
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              156,
+              156,
+              176
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

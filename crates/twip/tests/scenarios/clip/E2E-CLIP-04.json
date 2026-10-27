@@ -1,0 +1,86 @@
+{
+  "id": "E2E-CLIP-04",
+  "title": "Smart cut and paste: a cut word takes its doubled space with it; a pasted word gets the spaces it needs, none before punctuation",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "clipboard": "cut"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "paragraph."
+        }
+      }
+    },
+    {
+      "paste_text": "two"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "two paragraph."
+        }
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "paste_text": "x"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "two paragraph x."
+        }
+      }
+    }
+  ]
+}

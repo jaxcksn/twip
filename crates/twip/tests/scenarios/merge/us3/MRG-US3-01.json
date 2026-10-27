@@ -1,0 +1,57 @@
+{
+  "id": "MRG-US3-01",
+  "title": "region.wrap puts two rows in a repeating section, one item per row; one undo unwraps them",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 2
+      },
+      "shift": true
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Rows"
+      },
+      "expect": {
+        "answer": {},
+        "elements": {
+          "added": [
+            {
+              "kind": "repeating_section",
+              "tag": "Rows"
+            },
+            {
+              "kind": "repeating_item"
+            },
+            {
+              "kind": "repeating_item"
+            }
+          ]
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "removed": 3
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

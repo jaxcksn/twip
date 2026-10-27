@@ -1,0 +1,90 @@
+{
+  "id": "E2E-TS-01",
+  "title": "Insert Rows Below and Above add an empty row to the caret's table, with the caret in it",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.insert-below"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 4
+          }
+        ],
+        "caret": {
+          "para": 17,
+          "offset": 0,
+          "depth": 1
+        },
+        "text": {
+          "16": "",
+          "17": "",
+          "19": "T2 R2 C1"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "16": "T2 R2 C1"
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.insert-above"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 4
+          }
+        ],
+        "caret": {
+          "para": 14,
+          "offset": 0,
+          "depth": 1
+        },
+        "text": {
+          "13": "",
+          "16": "T2 R1 C1",
+          "17": "T2 R1 C2"
+        }
+      }
+    }
+  ]
+}

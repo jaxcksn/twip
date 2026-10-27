@@ -1,0 +1,130 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Twip browser paint test</title>
+<canvas id="gl" width="400" height="300"></canvas>
+<canvas id="gpu" width="400" height="300"></canvas>
+<script type="module">
+  import { Editor, Fonts, PointerKind, attachWebGpu, webGpuTarget, paintWebGpu, webGlTarget, paintWebGl } from '/web/dist/index.mjs';
+
+  const bytes = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+  const fonts = new Fonts();
+  fonts.addFont(await bytes('/font.ttf'));
+  const docx = await bytes('/hello.docx');
+
+  async function editor(canvas) {
+    const e = new Editor(fonts);
+    e.open(docx);
+    e.setViewport(0, 0, canvas.width, canvas.height, 1);
+    return e;
+  }
+
+  // Distinct colours in what the canvas shows now (read in the same task as the paint, before it's presented).
+  function colours(canvas) {
+    const copy = document.createElement('canvas');
+    [copy.width, copy.height] = [canvas.width, canvas.height];
+    const c = copy.getContext('2d');
+    c.drawImage(canvas, 0, 0);
+    const d = c.getImageData(0, 0, copy.width, copy.height).data;
+    const seen = new Set();
+    for (let i = 0; i < d.length; i += 4) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+    return seen.size;
+  }
+
+  window.paintWebGl = async () => {
+    const canvas = document.getElementById('gl');
+    const e = await editor(canvas);
+    const ok = paintWebGl(e, webGlTarget(e, canvas), 0, 0, 1);
+    return { ok, colours: colours(canvas) };
+  };
+
+  window.paintWebGpu = async () => {
+    const adapter = await navigator.gpu?.requestAdapter();
+    if (!adapter) return { skipped: 'no WebGPU adapter in this browser' };
+    const device = await adapter.requestDevice();
+    if (!attachWebGpu(device)) return { ok: false, colours: 0, error: 'the engine could not use the device' };
+    const canvas = document.getElementById('gpu');
+    const e = await editor(canvas);
+    const ok = paintWebGpu(e, webGpuTarget(canvas, device), 0, 0, 1);
+    return { ok, colours: colours(canvas) };
+  };
+  window.ready = true;
+
+  // ?view: the same two paths side by side, for a person. Click into a page and type; scroll with the wheel; open
+  // any .docx with the file picker.
+  if (new URLSearchParams(location.search).has('view')) {
+    document.body.innerHTML = `
+      <style>
+        body { font: 14px system-ui, sans-serif; margin: 16px; background: #eee; }
+        .row { display: flex; gap: 16px; flex-wrap: wrap; }
+        figure { margin: 0; } figcaption { margin: 4px 0; font-weight: 600; }
+        canvas { width: 640px; height: 720px; display: block; outline: 1px solid #bbb; background: #fff; }
+        canvas:focus { outline: 2px solid #4a7; }
+      </style>
+      <p><input type="file" id="file" accept=".docx"> Click into a page to type; scroll with the wheel.</p>
+      <div class="row">
+        <figure><figcaption id="gl-caption">WebGL 2</figcaption><canvas id="gl" tabindex="0"></canvas></figure>
+        <figure><figcaption id="gpu-caption">WebGPU</figcaption><canvas id="gpu" tabindex="0"></canvas></figure>
+      </div>`;
+    const dpr = devicePixelRatio || 1;
+    const views = [];
+
+    function view(id, paint) {
+      const canvas = document.getElementById(id);
+      [canvas.width, canvas.height] = [640 * dpr, 720 * dpr];
+      const v = { canvas, editor: new Editor(fonts), y: 0, paint };
+      v.editor.open(docx);
+      v.editor.setZoom(0.74); // a Letter page fits the 640 px canvas
+      v.draw = () => {
+        v.editor.setViewport(0, v.y, 640, 720, dpr);
+        v.paint(v);
+      };
+      const mods = (e) => ({ ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey });
+      canvas.addEventListener('keydown', (e) => {
+        if (!v.editor.key(e.code, mods(e)) && e.key.length === 1 && !e.ctrlKey && !e.metaKey) v.editor.text(e.key);
+        e.preventDefault();
+        v.draw();
+      });
+      for (const [type, kind] of [['pointerdown', PointerKind.Down], ['pointermove', PointerKind.Move], ['pointerup', PointerKind.Up]]) {
+        canvas.addEventListener(type, (e) => {
+          if (type === 'pointermove' && !e.buttons) return;
+          if (v.editor.pointer(kind, e.offsetX, e.offsetY + v.y, e.detail || 1, mods(e))) canvas.setPointerCapture(e.pointerId);
+          v.draw();
+        });
+      }
+      canvas.addEventListener('wheel', (e) => {
+        const max = Math.max(0, v.editor.contentSize().height - 720);
+        v.y = Math.min(max, Math.max(0, v.y + e.deltaY));
+        e.preventDefault();
+        v.draw();
+      }, { passive: false });
+      views.push(v);
+      return v;
+    }
+
+    const gl = view('gl', (v) => paintWebGl(v.editor, v.target, 0, v.y, dpr));
+    gl.target = webGlTarget(gl.editor, gl.canvas);
+    gl.draw();
+
+    const adapter = await navigator.gpu?.requestAdapter();
+    const device = await adapter?.requestDevice();
+    if (device && attachWebGpu(device)) {
+      const gpu = view('gpu', (v) => paintWebGpu(v.editor, v.target, 0, v.y, dpr));
+      gpu.target = webGpuTarget(gpu.canvas, device);
+      gpu.draw();
+    } else {
+      document.getElementById('gpu-caption').textContent = 'WebGPU: not available in this browser';
+    }
+
+    document.getElementById('file').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      for (const v of views) {
+        v.editor.open(bytes);
+        v.editor.setZoom(0.74);
+        v.y = 0;
+        v.draw();
+      }
+    });
+  }
+</script>

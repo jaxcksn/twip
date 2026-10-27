@@ -1,0 +1,137 @@
+{
+  "id": "MRG-MT-EOR-TAB-L2",
+  "title": "End-of-row mark: Tab in a row's last cell selects the next row's first cell; Shift+Tab comes back; Tab in the last cell adds a row to this table only (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-EOR-TAB-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": 1
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 25,
+            "offset": 0
+          },
+          "focus": {
+            "para": 25,
+            "offset": 14
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 24,
+            "offset": 0
+          },
+          "focus": {
+            "para": 24,
+            "offset": 2
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 26,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 27,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ]
+      }
+    }
+  ]
+}

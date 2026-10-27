@@ -1,0 +1,68 @@
+{
+  "id": "E2E-TS-21",
+  "title": "Merge Cells then Split Cells back to the original shape restores the grid",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 14,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "command": "table.merge"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "cells": [
+              2,
+              3,
+              3
+            ],
+            "grid": [
+              156,
+              156,
+              156
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "command": "table.split",
+      "arg": "2"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "cells": [
+              3,
+              3,
+              3
+            ],
+            "grid": [
+              156,
+              156,
+              156
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+$schema: '../../.moon/cache/schemas/project.json'
+id: dotnet
+language: csharp
+tags: [sdk]
+
+dependsOn: [twip-ffi, twip-native]
+
+tasks:
+  build:
+    command: dotnet build Twip -c Release
+    deps: [twip-ffi:generate-dotnet]
+    inputs: ['Twip/**/*', '/bindings/dotnet/generated/**/*']
+  # Native AOT publish of a console app that calls the engine: proves the bindings are trim and AOT safe.
+  test:
+    script: dotnet publish smoke -c Release -o ../../target/smoke && ../../target/smoke/smoke
+    deps: [twip-ffi:generate-dotnet, twip-native:build]
+    inputs: ['Twip/**/*', 'smoke/**/*', '/bindings/dotnet/generated/**/*']

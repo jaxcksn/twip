@@ -1,0 +1,124 @@
+{
+  "id": "MRG-US2-04",
+  "title": "element.replace renames Calc.Old_Name to Calc.New_Name in 40 codes, switches intact, as one undo step",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "element.replace",
+      "arg": {
+        "find": "Calc.Old_Name",
+        "replace": "Calc.New_Name",
+        "in": "code"
+      },
+      "expect": {
+        "answer": {
+          "changed": 40
+        },
+        "elements": {
+          "changed": 40
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "query": {
+        "q": "elements",
+        "match": {
+          "in": "code",
+          "text": "Calc.New_Name \\# \"0.00\" \\* MERGEFORMAT"
+        }
+      },
+      "expect": {
+        "answer": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    },
+    {
+      "command": "element.replace",
+      "arg": {
+        "find": "No_Such_Name",
+        "replace": "X",
+        "in": "code"
+      },
+      "expect": {
+        "answer": {
+          "changed": 0
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "changed": 40
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "query": {
+        "q": "elements",
+        "match": {
+          "in": "code",
+          "text": "Calc.Old_Name"
+        }
+      },
+      "expect": {
+        "answer": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

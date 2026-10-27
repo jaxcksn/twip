@@ -1,0 +1,69 @@
+{
+  "id": "E2E-TS-07-HDR",
+  "title": "Insert Table inside a cell nests it there; Tab in its last cell adds a row to it only (in a header)",
+  "fixture": "FX-TBL-BASIC-HDR.docx",
+  "methods": [
+    "C",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-07.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      }
+    },
+    {
+      "command": "insert.table",
+      "arg": "1,2"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 16,
+          "depth": 2
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          },
+          {
+            "rows": 1
+          }
+        ]
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3
+          },
+          {
+            "rows": 2
+          }
+        ],
+        "caret": {
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

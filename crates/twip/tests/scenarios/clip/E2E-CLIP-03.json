@@ -1,0 +1,151 @@
+{
+  "id": "E2E-CLIP-03",
+  "title": "Copied cells overwrite a selected block, repeated to fill it; at a caret they overwrite to the right and down; copied rows at a row's start go in above it",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 14,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            0,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "clipboard": "copy"
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 16,
+          "offset": 2
+        },
+        "to": {
+          "para": 20,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "clipboard": "paste"
+    },
+    {
+      "expect": {
+        "text": {
+          "16": "T2 R1 C1",
+          "17": "T2 R1 C2",
+          "18": "T2 R2 C3",
+          "19": "T2 R1 C1",
+          "20": "T2 R1 C2",
+          "21": "T2 R3 C3"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 21,
+        "offset": 2
+      }
+    },
+    {
+      "clipboard": "paste"
+    },
+    {
+      "expect": {
+        "text": {
+          "20": "T2 R3 C2",
+          "21": "T2 R1 C1"
+        },
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.row"
+    },
+    {
+      "clipboard": "copy"
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "clipboard": "paste"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 4
+          }
+        ],
+        "text": {
+          "16": "T2 R1 C1",
+          "17": "T2 R1 C2",
+          "18": "T2 R1 C3",
+          "19": "T2 R2 C1"
+        }
+      }
+    }
+  ]
+}

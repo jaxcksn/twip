@@ -1,0 +1,65 @@
+{
+  "id": "MX-WRAP-01",
+  "title": "Soft wrap: End shows at the line end (upstream); Right then moves one character; Home goes to the next line start",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 106,
+          "affinity": "upstream"
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 107,
+          "affinity": "downstream"
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 106,
+          "affinity": "downstream"
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 105
+        }
+      }
+    }
+  ]
+}

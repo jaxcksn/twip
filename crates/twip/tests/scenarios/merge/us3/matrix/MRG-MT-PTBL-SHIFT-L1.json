@@ -1,0 +1,94 @@
+{
+  "id": "MRG-MT-PTBL-SHIFT-L1",
+  "title": "Paragraph to table: Shift+Right from the paragraph before into the table, and Shift+Left from the paragraph after into it, make text selections (nesting level 1), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-PTBL-SHIFT-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 0,
+            "offset": 29
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 31,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowLeft",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 31,
+            "offset": 0
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "id": "E2E-TS-08-HDR",
+  "title": "Select Cell, Row, Column and Table make cell blocks of the caret's table; typing over one goes into its first cell (in a header)",
+  "fixture": "FX-TBL-BASIC-HDR.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-08.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.row"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            1,
+            0
+          ],
+          "focus": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "command": "table.select.column"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            2,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.column"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            2,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            2,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.cell"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            1,
+            1
+          ],
+          "focus": [
+            1,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "type": "Q"
+    },
+    {
+      "expect": {
+        "text": {
+          "20": "Q",
+          "19": "T2 R2 C1"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-10",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 4,
+        "para": 16
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 31,
+        "para": 4
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 12
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 6,
+        "para": 3
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "click": {
+        "offset": 5,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 5,
+        "para": 1
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Delete",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(84124) has no content\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(84123) has no content\" }] (Caret(Position { story: Body, place: Text { para: ParaId(84122), offset: Unit(36), affinity: Downstream } }) in Some(\"👍🏽ragraphs repeat as e\\u{301}e\\u{301}item:👍🏽éÜnïword.Name:👍🏽 ax\\té\"))"
+}

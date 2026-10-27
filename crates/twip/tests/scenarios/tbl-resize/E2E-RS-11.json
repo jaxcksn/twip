@@ -1,0 +1,68 @@
+{
+  "id": "E2E-RS-11",
+  "title": "Widening a nested table past its containing cell in an auto-fit outer table widens that column, the next column giving up the same",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": "end"
+      }
+    },
+    {
+      "command": "insert.table",
+      "arg": "2,2"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              156,
+              156,
+              156
+            ]
+          },
+          {
+            "rows": 2
+          }
+        ]
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 2,
+          "row": 0,
+          "border": 2
+        },
+        "to": {
+          "table": 2,
+          "row": 0,
+          "border": 2,
+          "dx": 60
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              156,
+              216.5,
+              95.5
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

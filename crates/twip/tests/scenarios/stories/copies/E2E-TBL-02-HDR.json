@@ -1,0 +1,92 @@
+{
+  "id": "E2E-TBL-02-HDR",
+  "title": "Alt+Home/End go to the first and last cell of the row; Alt+Page Up/Down to the first and last cell of the column (in a header)",
+  "fixture": "FX-TBL-BASIC-HDR.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-nav/E2E-TBL-02.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 3
+      }
+    },
+    {
+      "key": "End",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 18,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 16,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 3
+      }
+    },
+    {
+      "key": "PageDown",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 23,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "PageUp",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 17,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

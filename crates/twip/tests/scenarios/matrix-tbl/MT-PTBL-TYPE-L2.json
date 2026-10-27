@@ -1,0 +1,77 @@
+{
+  "id": "MT-PTBL-TYPE-L2",
+  "title": "Paragraph to table: text typed at each side of the boundary stays on its side (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Level 1, beforeZ",
+          "2": "Level 2, before"
+        },
+        "caret": {
+          "para": 1,
+          "offset": 16,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "type": "Y"
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "YLevel 2, before"
+        },
+        "caret": {
+          "para": 2,
+          "offset": 1,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 27,
+        "offset": 0
+      }
+    },
+    {
+      "type": "W"
+    },
+    {
+      "expect": {
+        "text": {
+          "27": "WLevel 1, after"
+        },
+        "caret": {
+          "para": 27,
+          "offset": 1,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

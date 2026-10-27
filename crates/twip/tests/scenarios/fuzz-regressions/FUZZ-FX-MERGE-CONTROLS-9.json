@@ -1,0 +1,27 @@
+{
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "id": "FUZZ-FX-MERGE-CONTROLS-9",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(95942))] not closed in paragraph 96023\" }, Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(95946))] not closed in paragraph 96030\" }, Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(95959))] not closed in paragraph 96035\" }, Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(95961))] not closed in paragraph 96036\" }, Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(95963))] not closed in paragraph 96037\" }, Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(95965))] not closed in paragraph 96038\" }, Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(95967))] not closed in paragraph 96039\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95937) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95965) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95961) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95967) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95950) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95948) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95963) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95969) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95944) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95939) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95946) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95959) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95942) is used but not in the document's controls\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(95935) is used but not in the document's controls\" }] (Caret(Position { story: Body, place: Text { para: ParaId(96042), offset: Unit(28), affinity: Downstream } }) in Some(\"hello After the controls.👍🏽é\"))"
+}

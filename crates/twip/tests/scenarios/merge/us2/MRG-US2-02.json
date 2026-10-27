@@ -1,0 +1,93 @@
+{
+  "id": "MRG-US2-02",
+  "title": "element.mark marks three fields; hovering one shows its message; deleting one takes its mark away and reports it removed",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "element.mark",
+      "arg": {
+        "marks": [
+          {
+            "id": "$code:MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\"",
+            "severity": "error",
+            "message": "Unknown field"
+          },
+          {
+            "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT",
+            "severity": "warning",
+            "message": "Upper on a number"
+          },
+          {
+            "id": "$code:MERGEFIELD Recipient.Last_Name",
+            "severity": "info",
+            "message": "Renamed"
+          }
+        ]
+      },
+      "expect": {
+        "view": {
+          "marks": [
+            {
+              "severity": "error"
+            },
+            {
+              "severity": "warning"
+            },
+            {
+              "severity": "info"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "move_to": {
+        "para": 1,
+        "offset": 6,
+        "dx": 4
+      },
+      "expect": {
+        "view": {
+          "tooltip": {
+            "text": "Unknown field"
+          }
+        }
+      }
+    },
+    {
+      "command": "element.remove",
+      "arg": {
+        "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT"
+      },
+      "expect": {
+        "elements": {
+          "removed": 1
+        },
+        "view": {
+          "marks": [
+            {
+              "severity": "error"
+            },
+            {
+              "severity": "info"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "command": "element.mark",
+      "arg": {
+        "marks": [],
+        "clear": true
+      },
+      "expect": {
+        "undo_depth": 1
+      }
+    }
+  ]
+}

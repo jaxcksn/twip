@@ -1,0 +1,75 @@
+{
+  "id": "LTB-30",
+  "title": "Dragging the bottom border of a row split across pages, on its second page, sets the whole row's height measured from its first page's top",
+  "fixture": "FX-TBL-PAGES.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 0,
+          "row": 14,
+          "border": "bottom",
+          "page": 1
+        },
+        "to": {
+          "table": 0,
+          "row": 14,
+          "border": "bottom",
+          "page": 1,
+          "dy": 20
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "heights": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              [
+            160.93,
+                "atLeast"
+              ],
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    }
+  ]
+}

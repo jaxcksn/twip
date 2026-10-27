@@ -1,0 +1,63 @@
+{
+  "id": "LTB-26",
+  "title": "Deleting every column removes the table and puts the caret at the start of the paragraph after it; a row height set at a caret changes that row only",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 34,
+          "offset": 2
+        },
+        "to": {
+          "para": 36,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "command": "table.delete.column"
+    },
+    {
+      "expect": {
+        "paragraphs": 46,
+        "text": {
+          "33": "",
+          "34": "The fourth and fifth tables above are separated only by an empty paragraph."
+        },
+        "caret": {
+          "para": 34,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 31,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.row-height",
+      "arg": "30,exact"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {},
+          {},
+          {
+            "rows": 2,
+            "heights": [null, [30, "exact"]]
+          }
+        ]
+      }
+    }
+  ]
+}

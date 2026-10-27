@@ -1,0 +1,78 @@
+{
+  "id": "MRG-MT-CELL-HE-L3",
+  "title": "Cell to cell: End and Home stay in the cell (nesting level 3), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-CELL-HE-L3",
+  "steps": [
+    {
+      "click": {
+        "para": 21,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 21,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 21,
+        "offset": 3
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 21,
+          "offset": 14,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 21,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

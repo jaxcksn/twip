@@ -1,0 +1,44 @@
+{
+  "id": "E2E-STORY-06",
+  "title": "A drag in a header that moves over the body keeps the selection in the header",
+  "fixture": "FX-STORIES.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 22,
+        "offset": 3
+      },
+      "clicks": 2
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 22,
+          "offset": 2
+        },
+        "to": {
+          "para": 3,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 22,
+            "offset": 2
+          },
+          "focus": {
+            "para": 22
+          }
+        }
+      }
+    }
+  ]
+}

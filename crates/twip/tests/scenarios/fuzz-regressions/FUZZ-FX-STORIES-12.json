@@ -1,0 +1,270 @@
+{
+  "fixture": "FX-STORIES.docx",
+  "id": "FUZZ-FX-STORIES-12",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "right",
+          "float": 0
+        },
+        "to": {
+          "at": "right",
+          "dx": 6.0,
+          "dy": -37.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.insert-below",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": 25.0,
+          "dy": 9.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "click": {
+        "offset": 83,
+        "para": 1
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.delete.column",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": " "
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "PageUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": " "
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": " "
+    },
+    {
+      "expect": {},
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 459,
+        "para": 2
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 327,
+        "para": 10
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 231,
+        "para": 15
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "expect": {},
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "top-left",
+          "float": 0
+        },
+        "to": {
+          "at": "top-left",
+          "dx": 21.0,
+          "dy": 2.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-STORIES-12 (fixed 2026-10-24; first failure: assertion `left == right` failed: step 30: the caret's chain is its paragraph's nesting level ({\"affinity\":\"downstream\",\"chain\":[],\"offset\":0,\"para\":31,\"rect\":{)"
+}

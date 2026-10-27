@@ -1,0 +1,16 @@
+[package]
+name = "twip-native"
+description = "The native library (cdylib) the .NET SDK loads."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "twip"
+crate-type = ["cdylib"]
+
+[dependencies]
+twip-ffi = { path = "../twip-ffi" }

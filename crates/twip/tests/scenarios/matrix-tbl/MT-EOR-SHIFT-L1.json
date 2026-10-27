@@ -1,0 +1,37 @@
+{
+  "id": "MT-EOR-SHIFT-L1",
+  "title": "End-of-row mark: Shift+Down from the last row's last cell, out of the table, selects the whole row and the text after (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 30,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 29,
+            "offset": 0
+          }
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "id": "MT-PTBL-HE-L2",
+  "title": "Paragraph to table: End in the paragraph before stays in it; Home and End in the first cell stay in the cell (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 15,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 15,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

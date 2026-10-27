@@ -1,0 +1,86 @@
+{
+  "id": "MRG-US3-04",
+  "title": "Design mode draws a region with its title when the pointer is over it; a click on the title selects its rows",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      },
+      "shift": true
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Rows"
+      }
+    },
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "command": "view.mode",
+      "arg": "design",
+      "expect": {
+        "mode": "design"
+      }
+    },
+    {
+      "move_to": {
+        "para": 17,
+        "offset": 1
+      },
+      "expect": {
+        "view": {
+          "regions": [
+            {
+              "title": "Rows"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "move_to": {
+        "para": 13,
+        "offset": 0,
+        "dy": -14
+      },
+      "expect": {
+        "view": {
+          "regions": [
+            {
+              "title": "Rows"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 0,
+        "dy": -14
+      },
+      "expect": {
+        "selection": {
+          "kind": "cells"
+        }
+      }
+    }
+  ]
+}

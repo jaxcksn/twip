@@ -1,0 +1,60 @@
+{
+  "id": "E2E-CC-01",
+  "title": "A click on a checkbox content control toggles it and selects it; Space toggles it back; undo restores it (selecting the glyph is ID-07)",
+  "fixture": "FX-REPEAT-REGION.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☒ done",
+          "10": "☒ done"
+        },
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 7,
+            "offset": 0
+          },
+          "focus": {
+            "para": 7,
+            "offset": 1
+          }
+        }
+      }
+    },
+    {
+      "type": " "
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☐ done"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☒ done"
+        }
+      }
+    }
+  ]
+}

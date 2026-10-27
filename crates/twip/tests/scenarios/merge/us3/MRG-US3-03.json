@@ -1,0 +1,175 @@
+{
+  "id": "MRG-US3-03",
+  "title": "Table edits keep a region valid: a delete or merge across its edge is refused; an inserted row is a new item; a deleted row takes its item; a merge inside an item is fine",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      },
+      "shift": true
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Rows"
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 0
+      },
+      "shift": true
+    },
+    {
+      "command": "table.delete.row",
+      "expect": {
+        "answer": {
+          "error": "region boundary"
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 0
+      },
+      "shift": true
+    },
+    {
+      "command": "table.merge",
+      "expect": {
+        "answer": {
+          "error": "region boundary"
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.insert-below",
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "repeating_item"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": {
+        "q": "structure",
+        "id": "$tag:Rows",
+        "depth": 0
+      },
+      "expect": {
+        "answer": [
+          {
+            "table": {
+              "rows": [
+                {},
+                {},
+                {}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.delete.row",
+      "expect": {
+        "elements": {
+          "removed": 1
+        }
+      }
+    },
+    {
+      "query": {
+        "q": "structure",
+        "id": "$tag:Rows",
+        "depth": 0
+      },
+      "expect": {
+        "answer": [
+          {
+            "table": {
+              "rows": [
+                {},
+                {}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 0
+      },
+      "shift": true
+    },
+    {
+      "command": "table.merge",
+      "expect": {
+        "undo_depth": 4
+      }
+    },
+    {
+      "query": {
+        "q": "elements",
+        "kind": "repeating_item"
+      },
+      "expect": {
+        "answer": [
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

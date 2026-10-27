@@ -1,0 +1,123 @@
+{
+  "id": "E2E-LIST-04",
+  "title": "Arrow keys into numbered list items: Down from above and Up from below land in the item's text, never before its number; Right and Left cross into and out of an item at its first character; Up from a bullet's text start keeps that column in the paragraph above",
+  "fixture": "FX-LISTS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 22
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 10,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 9,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 8,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 8
+        }
+      }
+    }
+  ]
+}

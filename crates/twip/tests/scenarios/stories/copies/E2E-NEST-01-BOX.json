@@ -1,0 +1,78 @@
+{
+  "id": "E2E-NEST-01-BOX",
+  "title": "Tab in the last cell of a nested table adds a row to that inner table only (in a text box)",
+  "fixture": "FX-NEST-2-BOX.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-nav/E2E-NEST-01.json",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 8,
+        "offset": "end"
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 8,
+          "depth": 2
+        },
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ]
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 9,
+          "depth": 2
+        },
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ]
+      }
+    }
+  ]
+}

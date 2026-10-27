@@ -1,0 +1,53 @@
+{
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "id": "FUZZ-FX-MERGE-CONTROLS-5",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 6,
+        "para": 2
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 16
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(8033) has no content\" }] (Caret(Position { story: Body, place: Text { para: ParaId(8034), offset: Unit(0), affinity: Downstream } }) in Some(\" nï👍🏽\"))"
+}

@@ -1,0 +1,15 @@
+# Third-party notices
+
+Twip includes the following third-party software.
+
+## Rust crates
+{{#each licenses}}
+
+### {{{name}}} ({{id}})
+
+Used by: {{#each used_by}}{{crate.name}} {{crate.version}}{{#unless @last}}, {{/unless}}{{/each}}
+
+```
+{{{text}}}
+```
+{{/each}}

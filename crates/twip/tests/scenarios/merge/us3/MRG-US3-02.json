@@ -1,0 +1,102 @@
+{
+  "id": "MRG-US3-02",
+  "title": "region.wrap refuses part of a paragraph, rows of two tables, and one side of another region's edge",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 2
+      }
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": 9
+      },
+      "shift": true
+    },
+    {
+      "command": "region.wrap",
+      "arg": {},
+      "expect": {
+        "answer": {
+          "error": "partial paragraph"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 22,
+        "offset": 2
+      },
+      "shift": true
+    },
+    {
+      "command": "region.wrap",
+      "arg": {},
+      "expect": {
+        "answer": {
+          "error": "two tables"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      },
+      "shift": true
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Rows"
+      },
+      "expect": {
+        "undo_depth": 1
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 0
+      },
+      "shift": true
+    },
+    {
+      "command": "region.wrap",
+      "arg": {},
+      "expect": {
+        "answer": {
+          "error": "region boundary"
+        },
+        "undo_depth": 1
+      }
+    }
+  ]
+}

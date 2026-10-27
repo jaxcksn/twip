@@ -1,0 +1,82 @@
+{
+  "id": "E2E-CLIP-07",
+  "title": "Cutting inner-table cells empties them; cutting whole inner rows removes them; the containing table is unchanged",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 20,
+          "offset": 2
+        },
+        "to": {
+          "para": 22,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            1,
+            0
+          ],
+          "focus": [
+            2,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "clipboard": "cut"
+    },
+    {
+      "expect": {
+        "text": {
+          "20": "",
+          "21": "Inventory relevant group.",
+          "22": "",
+          "23": "Notice claim team.",
+          "17": "A nested table long enough to span a page:"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 20,
+          "offset": 2
+        },
+        "to": {
+          "para": 21,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "clipboard": "cut"
+    },
+    {
+      "expect": {
+        "text": {
+          "20": "Long nested table, row 3",
+          "18": "Long nested table, row 1",
+          "17": "A nested table long enough to span a page:"
+        }
+      }
+    }
+  ]
+}

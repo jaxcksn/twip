@@ -1,0 +1,106 @@
+{
+  "id": "E2E-TS-13",
+  "title": "Deleting a range into a table removes the rows it touches whole; the text left before the table joins the remaining first cell",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 12,
+          "offset": 3
+        },
+        "to": {
+          "para": 17,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 1
+          }
+        ],
+        "text": {
+          "12": "ParT2 R3 C1",
+          "13": "T2 R3 C2"
+        },
+        "caret": {
+          "para": 12,
+          "offset": 3,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "12": "Paragraph between the first and second tables.",
+          "13": "T2 R1 C1"
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 1
+      }
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": 9
+      },
+      "shift": true
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "9": " between the first and second tables."
+        },
+        "caret": {
+          "para": 9,
+          "offset": 0,
+          "depth": 0
+        }
+      }
+    }
+  ]
+}

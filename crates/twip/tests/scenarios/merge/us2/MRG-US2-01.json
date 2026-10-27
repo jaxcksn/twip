@@ -1,0 +1,296 @@
+{
+  "id": "MRG-US2-01",
+  "title": "The elements query lists every field of every story in document order: body, headers and footers, notes, text boxes",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "query": {
+        "q": "elements"
+      },
+      "expect": {
+        "answer": [
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Statement.Due_Date \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " IF  = \"Paid\" \"\" \"\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Statement.Status "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Statement.Paid_Date \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Recipient.Last_Name "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Store.Name "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Store.City "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Statement.Manager "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Detail.Code "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"$,0.00\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* Upper "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"$,0.00\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* Upper "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"$,0.00\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* Upper "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"$,0.00\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* Upper "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"$,0.00\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* Upper "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"$,0.00\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* Upper "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"$,0.00\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* Upper "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"$,0.00\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\@ \"M/d/yyyy\" "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* Upper "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Store.Name "
+          },
+          {
+            "kind": "field",
+            "code": " PAGE "
+          },
+          {
+            "kind": "field",
+            "code": " NUMPAGES "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Recipient.First_Name "
+          },
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Manager.Badge "
+          }
+        ]
+      }
+    },
+    {
+      "query": {
+        "q": "elements",
+        "match": {
+          "in": "code",
+          "text": "Calc.Old_Name"
+        }
+      },
+      "expect": {
+        "answer": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

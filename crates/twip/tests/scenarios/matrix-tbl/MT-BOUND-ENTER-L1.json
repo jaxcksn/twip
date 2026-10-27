@@ -1,0 +1,46 @@
+{
+  "id": "MT-BOUND-ENTER-L1",
+  "title": "Inner table as a cell's first block: Enter at its first cell's start adds an empty paragraph before it, in the outer cell (nesting level 1)",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "",
+          "8": "Only content R1 C1"
+        },
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ],
+        "caret": {
+          "para": 7,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,212 @@
+# release-please keeps a release PR open on main for the next stable version.
+# Merging it tags the release; the jobs below then publish what was released.
+# Run by hand, the same jobs re-publish a tag, or publish a prerelease (x.y.z-pre.N) for testing and then tag it
+# and create a GitHub prerelease.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag to re-publish (v0.1.0), or branch to publish a prerelease from (main)
+        required: true
+      version:
+        description: Prerelease version to publish (0.1.1-pre.1). Empty to re-publish the tag as it is
+        required: false
+      publish:
+        description: Registries to publish to (any of crate nuget npm)
+        default: crate nuget npm
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+      sha: ${{ steps.pre.outputs.sha }}
+    steps:
+      # A manual prerelease: check the version, and pin the commit so every job builds and tags the same one.
+      - id: pre
+        if: inputs.version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-pre\.[0-9]+$' || { echo "::error::'$VERSION' is not x.y.z-pre.N"; exit 1; }
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --silent 2>/dev/null; then
+            echo "::error::v$VERSION is already tagged; raise N"; exit 1
+          fi
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$REF" --jq .sha)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - id: rp
+        uses: googleapis/release-please-action@v5
+        with:
+          target-branch: ${{ github.ref_name }}
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
+
+  crate:
+    needs: release-please
+    if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'crate')
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.sha || inputs.ref }}
+      # Skia links FreeType and Fontconfig (publish builds the package to verify it).
+      - run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+      - if: inputs.version
+        run: sh .github/stamp-version.sh "$VERSION"
+        env:
+          VERSION: ${{ inputs.version }}
+      # Trusted publishing (OIDC): a short-lived token for this run.
+      - id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - run: cargo publish -p twip ${{ inputs.version && '--allow-dirty' || '' }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  native:
+    # One native library per runtime identifier, packed together into the NuGet package. No win-arm64 yet:
+    # skia-safe has no prebuilt Skia for it with these features, and building Skia there fails.
+    needs: release-please
+    if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'nuget')
+    strategy:
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64, lib: twip.dll }
+          - { os: ubuntu-latest, rid: linux-x64, lib: libtwip.so }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64, lib: libtwip.so }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.sha || inputs.ref }}
+      # Skia links FreeType and Fontconfig.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+      - run: cargo build -p twip-native --release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.rid }}
+          path: target/release/${{ matrix.lib }}
+
+  nuget:
+    needs: [release-please, native]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.sha || inputs.ref }}
+          fetch-depth: 0 # moon compares with the base branch
+      # A prebuilt cargo-binstall: without it, moon setup compiles one (7 minutes) to fetch diplomat-tool.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: node licenses/notices.mjs THIRD-PARTY-NOTICES.md
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: artifacts
+      - name: Lay out runtimes/<rid>/native
+        run: |
+          for d in artifacts/native-*; do
+            rid=${d#artifacts/native-}
+            mkdir -p bindings/dotnet/runtimes/$rid/native && mv $d/* bindings/dotnet/runtimes/$rid/native/
+          done
+      - if: inputs.version
+        run: sh .github/stamp-version.sh "$VERSION"
+        env:
+          VERSION: ${{ inputs.version }}
+      - run: moon run twip-ffi:generate-dotnet
+      - run: dotnet pack bindings/dotnet/Twip -c Release -o out
+      # Trusted publishing (OIDC): a key valid for an hour, so it's requested just before the push.
+      - id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }} # the nuget.org profile name, not an email
+      - run: dotnet nuget push 'out/*.nupkg' --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+
+  npm:
+    needs: release-please
+    if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'npm')
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.sha || inputs.ref }}
+          fetch-depth: 0 # moon compares with the base branch
+      # A prebuilt cargo-binstall: without it, moon setup compiles one (7 minutes) to fetch diplomat-tool.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - uses: mymindstorm/setup-emsdk@v16
+        with:
+          version: '6.0.8'
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: node licenses/notices.mjs THIRD-PARTY-NOTICES.md
+      - if: inputs.version
+        run: sh .github/stamp-version.sh "$VERSION"
+        env:
+          VERSION: ${{ inputs.version }}
+      - run: moon run web:test
+      # Trusted publishing (OIDC); the dist-tag follows the version (0.1.0-pre.2 -> pre). npm only accepts
+      # provenance from public repositories, so it's added once the repo is public.
+      - name: Publish
+        working-directory: bindings/web
+        env:
+          PROVENANCE: ${{ !github.event.repository.private && '--provenance' || '' }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag=$(echo "$version" | sed -nE 's/^[0-9.]+-([a-z]+).*/\1/p'); tag=${tag:-latest}
+          pnpm publish --access public $PROVENANCE --no-git-checks --tag "$tag"
+
+  prerelease:
+    # A manual prerelease, once everything it was asked to publish is published: tag the commit and create a GitHub
+    # prerelease. release-please ignores it (it only looks for the version in its manifest).
+    needs: [release-please, crate, nuget, npm]
+    if: inputs.version && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ needs.release-please.outputs.sha }}
+        run: >
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$SHA" --prerelease
+          --title "v$VERSION" --generate-notes

@@ -1,0 +1,56 @@
+{
+  "id": "LTB-16",
+  "title": "Insert Column in a table with spans and grid offsets: beside a cell the new column is as wide as the cell, from a spanning cell as wide as the span; no row overruns the grid (row spans: native twin ltb_16)",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 1
+      }
+    },
+    {
+      "command": "table.insert-right"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 10,
+            "grid": [78, 78, 78, 78, 78, 78, 78]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 7,
+        "offset": 1
+      }
+    },
+    {
+      "command": "table.insert-left"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 10,
+            "grid": [156, 78, 78, 78, 78, 78, 78]
+          }
+        ]
+      }
+    }
+  ]
+}

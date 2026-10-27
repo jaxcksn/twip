@@ -1,0 +1,32 @@
+{
+  "id": "MRG-US5-03",
+  "title": "data.write refuses XML that isn't well-formed, and changes nothing",
+  "fixture": "FX-MERGE-DATA.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "data.write",
+      "arg": {
+        "namespace": "urn:store:calc",
+        "xml": "<calc xmlns=\"urn:store:calc\"><unclosed></calc>"
+      },
+      "expect": {
+        "answer": {
+          "error": "not well-formed"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "query": {
+        "q": "data",
+        "namespace": "urn:store:calc"
+      },
+      "expect": {
+        "answer": []
+      }
+    }
+  ]
+}

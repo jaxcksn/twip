@@ -1,0 +1,104 @@
+{
+  "fixture": "FX-MERGE-DATA.docx",
+  "id": "FUZZ-FX-MERGE-DATA-12",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 1,
+        "para": 1
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "display": "a b",
+        "id": "$code:MERGEFIELD Calc.Cost_Plus_Fee \\# \"$,0.00\""
+      },
+      "command": "field.set",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 13,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 2,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 18,
+        "para": 0
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 58,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": {
+        "code": "MERGEFIELD Fuzz.S2",
+        "id": "$code:MERGEFIELD Calc.Cost_Plus_Fee \\# \"$,0.00\""
+      },
+      "command": "field.set",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"7 valid positions\", detail: \"anchor: offset Unit(58) past the end of paragraph ParaId(252360)\" }, Statement { invariant: \"7 valid positions\", detail: \"focus: offset Unit(58) past the end of paragraph ParaId(252360)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(252360), offset: Unit(58), affinity: Downstream } }) in Some(\"\\t e\\u{301}e:￼ MERGEFIELD Fuzz.S2 ￼a b￼helélo x\\t\"))"
+}

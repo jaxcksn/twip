@@ -1,0 +1,27 @@
+{
+  "fixture": "FX-MERGE-DATA.docx",
+  "id": "FUZZ-FX-MERGE-DATA-9",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(189224) is used but not in the document's controls\" }] (Caret(Position { story: Body, place: Text { para: ParaId(189270), offset: Unit(99), affinity: Downstream } }) in Some(\"Cost éhello \\u{2028} The definition part holds calculated fields, filters and output-director settings.👍🏽é\"))"
+}

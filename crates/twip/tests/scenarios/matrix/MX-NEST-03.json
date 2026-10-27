@@ -1,0 +1,39 @@
+{
+  "id": "MX-NEST-03",
+  "title": "Vertical across an inner table: Down from its last row goes to the text after it; Up from there comes back into the last row",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 5,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

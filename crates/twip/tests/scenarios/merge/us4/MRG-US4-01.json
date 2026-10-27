@@ -1,0 +1,64 @@
+{
+  "id": "MRG-US4-01",
+  "title": "view.looks with an image for a tag draws the host image in that picture control's box in design mode; the document doesn't change",
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "view.mode",
+      "arg": "design"
+    },
+    {
+      "command": "view.looks",
+      "arg": {
+        "looks": [
+          {
+            "match": {
+              "tag": "Barcode:7"
+            },
+            "look": {
+              "image": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGP4zwAE/wEHAAH/4iOeWQAAAABJRU5ErkJggg==",
+              "mime": "image/png"
+            }
+          },
+          {
+            "match": {
+              "prefix": "Content:"
+            },
+            "look": {
+              "fill": "#FFF4CE",
+              "label": "Complaint text"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "view": {
+          "looks": [
+            {
+              "image": false,
+              "fill": "40FFF4CE"
+            },
+            {
+              "image": false,
+              "fill": "40FFF4CE"
+            },
+            {
+              "image": true
+            }
+          ]
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "command": "view.mode",
+      "arg": "editing",
+      "expect": {
+        "undo_depth": 0
+      }
+    }
+  ]
+}

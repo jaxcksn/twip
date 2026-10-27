@@ -1,0 +1,63 @@
+{
+  "id": "E2E-TS-04-BOX",
+  "title": "Merge Cells joins the selected cells, keeping each cell's text as its own paragraph (in a text box)",
+  "fixture": "FX-TBL-BASIC-BOX.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-04.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 2
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      },
+      "shift": true
+    },
+    {
+      "command": "table.merge"
+    },
+    {
+      "expect": {
+        "text": {
+          "16": "T2 R1 C1",
+          "17": "T2 R1 C2",
+          "18": "T2 R1 C3"
+        },
+        "caret": {
+          "para": 16,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "16": "T2 R1 C1",
+          "17": "T2 R1 C2"
+        }
+      }
+    }
+  ]
+}

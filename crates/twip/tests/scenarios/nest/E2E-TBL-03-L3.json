@@ -1,0 +1,99 @@
+{
+  "id": "E2E-TBL-03-L3",
+  "title": "At the end-of-row mark, typing goes to the next row's first cell and Enter adds a row below (nesting level 3)",
+  "fixture": "FX-TBL-BASIC-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from tbl-nav/E2E-TBL-03.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret",
+          "focus": {
+            "row_end": {
+              "table": 3,
+              "row": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "16": "ZT2 R2 C1"
+        },
+        "caret": {
+          "para": 16,
+          "offset": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 18,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {},
+          {},
+          {
+            "rows": 4
+          }
+        ],
+        "caret": {
+          "para": 19,
+          "offset": 0,
+          "depth": 3
+        },
+        "text": {
+          "19": ""
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {},
+          {},
+          {
+            "rows": 3
+          }
+        ]
+      }
+    }
+  ]
+}

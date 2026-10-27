@@ -1,0 +1,84 @@
+{
+  "id": "MRG-MT-MERGE-DEL-L3",
+  "title": "Merged cells: Delete at a vertical merge's text end does nothing (nesting level 3), inside a repeating region with a content control",
+  "fixture": "FX-TBL-MERGED-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-DEL-L3",
+  "steps": [
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "undo_depth": 2,
+        "text": {
+          "11": "Vertical merge over 3 rows",
+          "12": "1"
+        },
+        "tables": [
+          {},
+          {},
+          {
+            "cells": [
+              6,
+              4,
+              4,
+              5,
+              4,
+              4,
+              3,
+              3,
+              2,
+              1
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

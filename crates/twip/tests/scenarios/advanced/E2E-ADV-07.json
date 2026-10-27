@@ -1,0 +1,64 @@
+{
+  "id": "E2E-ADV-07",
+  "title": "Ctrl+Shift+F8 then arrows select a vertical block; Bold formats only the block; Esc leaves the caret at its start",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 3
+      }
+    },
+    {
+      "key": "F8",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "block",
+          "anchor": {
+            "para": 2,
+            "offset": 3
+          }
+        }
+      }
+    },
+    {
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret"
+        },
+        "caret": {
+          "para": 2,
+          "offset": 3
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "id": "E2E-UNDO-05",
+  "title": "Undoing a row added to an inner table restores it exactly, the outer table unchanged, the caret back in its cell",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 5,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 5,
+          "offset": 13,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

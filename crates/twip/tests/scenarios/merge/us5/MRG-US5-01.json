@@ -1,0 +1,87 @@
+{
+  "id": "MRG-US5-01",
+  "title": "data.write adds a part the data query then returns; the document's own parts are kept",
+  "fixture": "FX-MERGE-DATA.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "command": "data.write",
+      "arg": {
+        "namespace": "urn:store:calc",
+        "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"Cost_Plus_Fee\">Cost + Fee</field></calc>"
+      },
+      "expect": {
+        "answer": {},
+        "undo_depth": 1
+      }
+    },
+    {
+      "query": {
+        "q": "data",
+        "namespace": "urn:store:calc"
+      },
+      "expect": {
+        "answer": [
+          {
+            "namespace": "urn:store:calc",
+            "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"Cost_Plus_Fee\">Cost + Fee</field></calc>"
+          }
+        ]
+      }
+    },
+    {
+      "query": {
+        "q": "data"
+      },
+      "expect": {
+        "answer": [
+          {
+            "namespace": "urn:store:form-definition"
+          },
+          {
+            "namespace": "urn:store:form-data"
+          },
+          {
+            "namespace": "urn:store:calc"
+          }
+        ]
+      }
+    },
+    {
+      "command": "data.remove",
+      "arg": {
+        "namespace": "urn:store:calc"
+      },
+      "expect": {
+        "undo_depth": 2
+      }
+    },
+    {
+      "query": {
+        "q": "data",
+        "namespace": "urn:store:calc"
+      },
+      "expect": {
+        "answer": []
+      }
+    },
+    {
+      "command": "home.undo"
+    },
+    {
+      "query": {
+        "q": "data",
+        "namespace": "urn:store:calc"
+      },
+      "expect": {
+        "answer": [
+          {
+            "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"Cost_Plus_Fee\">Cost + Fee</field></calc>"
+          }
+        ]
+      }
+    }
+  ]
+}

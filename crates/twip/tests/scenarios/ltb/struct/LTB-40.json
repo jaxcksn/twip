@@ -1,0 +1,62 @@
+{
+  "id": "LTB-40",
+  "title": "Insert Row Below in a repeating-section row adds the row right below it; the section's other rows and their checkbox controls are intact",
+  "fixture": "FX-REPEAT-REGION.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 8,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.insert-below"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 6,
+            "cells": [3, 3, 3, 3, 3, 2]
+          }
+        ],
+        "text": {
+          "5": "Item 1",
+          "7": "☐ done",
+          "8": "Item 2",
+          "10": "☒ done",
+          "11": "",
+          "12": "",
+          "13": "",
+          "14": "Item 3",
+          "16": "☐ done",
+          "17": "Picture content control:"
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☒ done",
+          "16": "☒ done"
+        }
+      }
+    }
+  ]
+}

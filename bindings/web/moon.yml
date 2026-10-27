@@ -1,0 +1,24 @@
+$schema: '../../.moon/cache/schemas/project.json'
+id: web
+language: typescript
+tags: [sdk]
+
+dependsOn: [twip-ffi, twip-wasm]
+
+tasks:
+  build:
+    command: node build.mjs
+    deps: [twip-ffi:generate-js, twip-wasm:build]
+    inputs: ['build.mjs', 'src/**/*', '/bindings/web/generated/**/*']
+    outputs: ['dist']
+  test:
+    command: node smoke.mjs
+    deps: [build]
+    inputs: ['smoke.mjs']
+  # Paints a document through WebGL 2 and WebGPU in a real browser (the installed Edge; PW_CHANNEL=chromium in CI).
+  browser-test:
+    command: pnpm exec playwright test
+    deps: [build]
+    inputs: ['browser/**/*', 'playwright.config.mjs']
+    options:
+      cache: false

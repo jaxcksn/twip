@@ -1,0 +1,51 @@
+{
+  "id": "E2E-STORY-10",
+  "title": "A selection dragged from a header over the body stays in the header (the anchor snaps to its word)",
+  "fixture": "FX-HDR-TABLE.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 19,
+        "offset": 2
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 2
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 19,
+          "offset": 2
+        },
+        "to": {
+          "para": 3,
+          "offset": 10
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 19,
+            "offset": 0,
+            "story": "header-footer:0"
+          },
+          "focus": {
+            "story": "header-footer:0"
+          }
+        }
+      }
+    }
+  ]
+}

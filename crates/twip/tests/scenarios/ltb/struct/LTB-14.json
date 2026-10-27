@@ -1,0 +1,32 @@
+{
+  "id": "LTB-14",
+  "title": "Insert Row inside a vertical merge extends the merge over the new row",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.insert-below"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 11
+          }
+        ],
+        "text": {
+          "11": "Vertical merge over 3 rows"
+        }
+      }
+    }
+  ]
+}

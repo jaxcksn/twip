@@ -1,0 +1,59 @@
+{
+  "id": "E2E-TS-02-HDR",
+  "title": "Insert Columns Right adds a column to every row; Delete Columns removes it again (in a header)",
+  "fixture": "FX-TBL-BASIC-HDR.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-02.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.insert-right"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 18,
+          "offset": 0,
+          "depth": 1
+        },
+        "text": {
+          "17": "T2 R1 C2",
+          "18": "",
+          "19": "T2 R1 C3"
+        }
+      }
+    },
+    {
+      "command": "table.delete.column"
+    },
+    {
+      "expect": {
+        "text": {
+          "17": "T2 R1 C2",
+          "18": "T2 R1 C3"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "fixture": "FX-OBJ.docx",
+  "id": "FUZZ-FX-OBJ-6",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "at": "",
+          "float": 2
+        },
+        "to": {
+          "at": "",
+          "dx": 3.0,
+          "dy": 15.0,
+          "float": 2
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 271,
+        "para": 1
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "click": {
+        "offset": 106,
+        "para": 4
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "click": {
+        "offset": 317,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 346,
+        "para": 5
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-OBJ-6 (fixed 2026-10-24; first failure: integrity: [Statement { invariant: \"4 unique ids\", detail: \"id 27079 appears twice\" }] (Object(Floating(FloatId(27079))) in None))"
+}

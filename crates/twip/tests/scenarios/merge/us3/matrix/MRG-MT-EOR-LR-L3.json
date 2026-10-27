@@ -1,0 +1,106 @@
+{
+  "id": "MRG-MT-EOR-LR-L3",
+  "title": "End-of-row mark: Right at a row's last cell end stops at the mark, then the next row's first cell; Left mirrors it (nesting level 3), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-EOR-LR-L3",
+  "steps": [
+    {
+      "click": {
+        "para": 20,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "row_end": {
+            "table": 2,
+            "row": 0
+          },
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 21,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "row_end": {
+            "table": 2,
+            "row": 0
+          },
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 20,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

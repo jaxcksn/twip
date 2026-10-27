@@ -1,0 +1,42 @@
+{
+  "id": "MX-NEST-01",
+  "title": "Into and out of an inner table: Right at the text before it enters its first cell; Left at that cell's start leaves it",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 28,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

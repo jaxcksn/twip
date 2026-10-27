@@ -1,0 +1,82 @@
+{
+  "id": "MRG-MT-MERGE-BS-L1",
+  "title": "Merged cells: Backspace at a merged cell's start does nothing (nesting level 1), inside a repeating region with a content control",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-BS-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 8,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 8,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 8,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "undo_depth": 2,
+        "text": {
+          "7": "Span 2",
+          "8": "Span 2"
+        },
+        "tables": [
+          {
+            "cells": [
+              6,
+              4,
+              4,
+              5,
+              4,
+              4,
+              3,
+              3,
+              2,
+              1
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

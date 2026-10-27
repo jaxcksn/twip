@@ -1,0 +1,75 @@
+{
+  "id": "E2E-TS-21-BOX",
+  "title": "Merge Cells then Split Cells back to the original shape restores the grid (in a text box)",
+  "fixture": "FX-TBL-BASIC-BOX.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-21.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 16,
+          "offset": 2
+        },
+        "to": {
+          "para": 17,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "command": "table.merge"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "cells": [
+              2,
+              3,
+              3
+            ],
+            "grid": [
+              156,
+              156,
+              156
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "command": "table.split",
+      "arg": "2"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "cells": [
+              3,
+              3,
+              3
+            ],
+            "grid": [
+              156,
+              156,
+              156
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

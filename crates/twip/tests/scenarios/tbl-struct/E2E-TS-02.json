@@ -1,0 +1,51 @@
+{
+  "id": "E2E-TS-02",
+  "title": "Insert Columns Right adds a column to every row; Delete Columns removes it again",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.insert-right"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 15,
+          "offset": 0,
+          "depth": 1
+        },
+        "text": {
+          "14": "T2 R1 C2",
+          "15": "",
+          "16": "T2 R1 C3"
+        }
+      }
+    },
+    {
+      "command": "table.delete.column"
+    },
+    {
+      "expect": {
+        "text": {
+          "14": "T2 R1 C2",
+          "15": "T2 R1 C3"
+        }
+      }
+    }
+  ]
+}

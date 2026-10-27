@@ -1,0 +1,46 @@
+{
+  "id": "E2E-NAV-08",
+  "title": "Ctrl+Right in a word goes to the next word's start; Ctrl+Left back to this one's",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 6
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0
+        }
+      }
+    }
+  ]
+}

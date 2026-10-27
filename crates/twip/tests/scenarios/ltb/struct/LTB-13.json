@@ -1,0 +1,56 @@
+{
+  "id": "LTB-13",
+  "title": "Merging a cell holding a checkbox content control keeps the control: the merged cell's checkbox still toggles",
+  "fixture": "FX-REPEAT-REGION.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 6,
+          "offset": 2
+        },
+        "to": {
+          "para": 7,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "command": "table.merge"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 5,
+            "cells": [3, 2, 3, 3, 2]
+          }
+        ],
+        "text": {
+          "5": "Item 1",
+          "6": "2026-01-01",
+          "7": "☐ done",
+          "8": "Item 2"
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☒ done"
+        }
+      }
+    }
+  ]
+}

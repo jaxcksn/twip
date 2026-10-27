@@ -1,0 +1,6 @@
+$schema: '../../.moon/cache/schemas/project.json'
+id: angular
+language: typescript
+tags: [integration]
+
+dependsOn: [web]

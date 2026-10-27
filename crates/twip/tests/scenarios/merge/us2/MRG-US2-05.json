@@ -1,0 +1,87 @@
+{
+  "id": "MRG-US2-05",
+  "title": "Change lists: typing beside a field changes nothing; pasting a copied field adds one; deleting a table row with a field removes it; undo puts each back",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 4,
+        "offset": 0
+      }
+    },
+    {
+      "type": "X",
+      "expect": {
+        "elements": {
+          "added": 0,
+          "removed": 0,
+          "changed": 0
+        }
+      }
+    },
+    {
+      "command": "element.select",
+      "arg": {
+        "id": "$code:MERGEFIELD Recipient.Last_Name"
+      }
+    },
+    {
+      "clipboard": "copy"
+    },
+    {
+      "key": "End"
+    },
+    {
+      "clipboard": "paste",
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "field",
+              "code": " MERGEFIELD Recipient.Last_Name "
+            }
+          ]
+        }
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "removed": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.delete.row",
+      "expect": {
+        "elements": {
+          "removed": 1
+        }
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "added": [
+            {
+              "kind": "field",
+              "code": " MERGEFIELD Detail.Code "
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

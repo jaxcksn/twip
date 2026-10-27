@@ -1,0 +1,53 @@
+{
+  "id": "E2E-RS-12",
+  "title": "Esc during a column border drag cancels it: the columns keep their widths, nothing to undo, and the release after it does nothing",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "press": {
+        "table": 1,
+        "row": 0,
+        "border": 1
+      }
+    },
+    {
+      "move_to": {
+        "table": 1,
+        "row": 0,
+        "border": 1,
+        "dx": 30
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "release": {
+        "table": 1,
+        "row": 0,
+        "border": 1,
+        "dx": 30
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              156,
+              156,
+              156
+            ]
+          }
+        ],
+        "undo_depth": 0
+      }
+    }
+  ]
+}

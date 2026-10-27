@@ -1,0 +1,117 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-6",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 8,
+        "para": 19
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.insert-left",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 3,
+        "para": 9
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 37,
+        "para": 27
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 3
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 7,
+        "para": 0
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 1
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 17,
+        "para": 0
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "é"
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(146953) has no content\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(146952) has no content\" }] (Caret(Position { story: Body, place: Text { para: ParaId(146914), offset: Unit(18), affinity: Downstream } }) in Some(\"\\te\\u{301}Rhello ows of e\\te\\u{301}￼ MERGEFIELD Owner.Role ￼«Role»￼\"))"
+}

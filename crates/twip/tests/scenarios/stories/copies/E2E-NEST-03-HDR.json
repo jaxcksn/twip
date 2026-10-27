@@ -1,0 +1,58 @@
+{
+  "id": "E2E-NEST-03-HDR",
+  "title": "Typing that grows an inner cell keeps the caret in it; the outer table and what follows move down (in a header)",
+  "fixture": "FX-NEST-2-HDR.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-nav/E2E-NEST-03.json",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 5,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "second line"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "third line"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 10,
+          "depth": 2
+        },
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ],
+        "text": {
+          "6": "second line",
+          "7": "third line"
+        }
+      }
+    }
+  ]
+}

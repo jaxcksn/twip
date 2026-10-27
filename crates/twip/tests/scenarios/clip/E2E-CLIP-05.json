@@ -1,0 +1,47 @@
+{
+  "id": "E2E-CLIP-05",
+  "title": "Copied whole rows pasted in the paragraph right after a table join it as its last rows",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.row"
+    },
+    {
+      "clipboard": "copy"
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": 0
+      }
+    },
+    {
+      "clipboard": "paste"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 4
+          }
+        ],
+        "text": {
+          "12": "A1, the document starts with this table",
+          "14": "C1",
+          "15": "Paragraph between the first and second tables."
+        }
+      }
+    }
+  ]
+}

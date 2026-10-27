@@ -1,0 +1,30 @@
+{
+  "fixture": "FX-STORIES.docx",
+  "id": "FUZZ-FX-STORIES-1",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "at": "right",
+          "float": 0
+        },
+        "to": {
+          "at": "right",
+          "dx": -28.0,
+          "dy": 30.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-STORIES-1 (fixed 2026-10-24; first failure: assertion `left == right` failed: step 0: the caret's chain is its paragraph's nesting level ({\"affinity\":\"downstream\",\"chain\":[],\"offset\":27,\"para\":34,\"rect\":{)"
+}

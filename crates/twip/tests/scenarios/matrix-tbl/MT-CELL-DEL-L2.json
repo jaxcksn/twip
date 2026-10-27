@@ -1,0 +1,36 @@
+{
+  "id": "MT-CELL-DEL-L2",
+  "title": "Cell to cell: Delete at a cell's end does nothing (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 25,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "25": "Level 2, row 2",
+          "26": "x"
+        },
+        "undo_depth": 0,
+        "caret": {
+          "para": 25,
+          "offset": 14,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

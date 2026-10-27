@@ -1,0 +1,34 @@
+{
+  "id": "MT-SPLIT-SHIFT-L2M",
+  "title": "Table across pages: Shift+Down to the next page's row selects a cell block (nesting level 2)",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 3
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

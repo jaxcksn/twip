@@ -1,0 +1,46 @@
+{
+  "id": "E2E-HIT-02",
+  "title": "A click in a repeated header row on a later page puts the caret in the original header row",
+  "fixture": "FX-TBL-PAGES.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    0.5,
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 2,
+        "page": 1
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 2,
+          "depth": 1,
+          "page": 0
+        }
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "3": {
+            "starts": "ReZpeated"
+          }
+        }
+      }
+    }
+  ]
+}

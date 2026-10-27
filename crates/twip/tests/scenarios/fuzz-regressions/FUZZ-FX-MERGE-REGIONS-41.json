@@ -1,0 +1,265 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-41",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 2,
+        "para": 2
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "PageDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 27
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 39,
+        "para": 16
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.insert-below",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 35,
+        "para": 22
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.insert-left",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 37,
+        "para": 40
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 2,
+        "para": 10
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "drag": {
+        "from": {
+          "border": 4,
+          "dx": 0.0,
+          "dy": 0.0,
+          "row": 0,
+          "table": 0
+        },
+        "to": {
+          "border": 4,
+          "dx": 35.0,
+          "dy": -26.0,
+          "row": 0,
+          "table": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 16,
+        "para": 0
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "border": 1,
+          "dx": 0.0,
+          "dy": 0.0,
+          "row": 0,
+          "table": 0
+        },
+        "to": {
+          "border": 1,
+          "dx": 22.0,
+          "dy": 13.0,
+          "row": 0,
+          "table": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 3
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "drag": {
+        "from": {
+          "border": 3,
+          "dx": 0.0,
+          "dy": 0.0,
+          "row": 0,
+          "table": 0
+        },
+        "to": {
+          "border": 3,
+          "dx": -21.0,
+          "dy": -13.0,
+          "row": 0,
+          "table": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.insert-right",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 3,
+        "para": 6
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "drag": {
+        "from": {
+          "border": 1,
+          "dx": 0.0,
+          "dy": 0.0,
+          "row": 1,
+          "table": 1
+        },
+        "to": {
+          "border": 1,
+          "dx": -1.0,
+          "dy": 13.0,
+          "row": 1,
+          "table": 1
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression: min > max, or either was NaN. min = -0.6999999999999993, max = -4.450000000000001"
+}

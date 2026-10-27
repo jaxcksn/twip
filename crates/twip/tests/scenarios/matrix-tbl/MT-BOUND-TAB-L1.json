@@ -1,0 +1,65 @@
+{
+  "id": "MT-BOUND-TAB-L1",
+  "title": "Inner table at a cell's start: Shift+Tab into the cell selects the inner table as a cell block; Tab in the inner last cell adds an inner row only (nesting level 1)",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

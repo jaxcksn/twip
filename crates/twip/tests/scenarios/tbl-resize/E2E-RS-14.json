@@ -1,0 +1,39 @@
+{
+  "id": "E2E-RS-14",
+  "title": "A drag of the right border of rows wider than the file's grid moves the border as drawn; the narrower first row keeps its width",
+  "fixture": "FX-GRID-WIDE.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 0,
+          "row": 1,
+          "border": 2
+        },
+        "to": {
+          "table": 0,
+          "row": 1,
+          "border": 2,
+          "dx": -40
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "grid": [
+              270,
+              235.4
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    }
+  ]
+}

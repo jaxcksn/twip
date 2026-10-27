@@ -1,0 +1,2099 @@
+{
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "id": "FUZZ-FX-MERGE-FIELDS-39",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "KeyY",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Delete",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.insert-above",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "display": "",
+        "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT"
+      },
+      "command": "field.set",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 314,
+        "para": 21
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 319,
+        "para": 21
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 2,
+        "para": 7
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 306,
+        "para": 17
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 66,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "arg": {
+        "code": "MERGEFIELD Fuzz.F0",
+        "display": ""
+      },
+      "command": "field.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "",
+          "float": 0
+        },
+        "to": {
+          "at": "",
+          "dx": 11.0,
+          "dy": -29.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "key": "PageDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "drag": {
+        "from": {
+          "border": 1,
+          "dx": 0.0,
+          "dy": 0.0,
+          "row": 0,
+          "table": 1
+        },
+        "to": {
+          "border": 1,
+          "dx": -33.0,
+          "dy": -11.0,
+          "row": 0,
+          "table": 1
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "click": {
+        "offset": 144,
+        "para": 3
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 1,
+        "para": 12
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 5,
+        "para": 9
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": "2",
+      "command": "table.split",
+      "expect": {}
+    },
+    {
+      "arg": null,
+      "command": "table.insert-above",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 1,
+        "para": 16
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft"
+    },
+    {
+      "arg": "editing",
+      "command": "view.mode",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "kind": "group",
+        "tag": "Fuzz/Wrap",
+        "wrap": true
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "KeyI",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "top-left",
+          "float": 0
+        },
+        "to": {
+          "at": "top-left",
+          "dx": 19.0,
+          "dy": -30.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 13,
+        "para": 7
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "KeyI",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 3,
+        "para": 8
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": 29.0,
+          "dy": -34.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": "design",
+      "command": "view.mode",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 183,
+        "para": 19
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {},
+      "key": "KeyI",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "click": {
+        "offset": 9,
+        "para": 0
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "drag": {
+        "from": {
+          "border": 1,
+          "dx": 0.0,
+          "dy": 0.0,
+          "row": 0,
+          "table": 2
+        },
+        "to": {
+          "border": 1,
+          "dx": -25.0,
+          "dy": -8.0,
+          "row": 0,
+          "table": 2
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 41,
+        "para": 13
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "PageDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "id": "$code:NUMPAGES"
+      },
+      "command": "element.remove",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 163,
+        "para": 8
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": 19.0,
+          "dy": -13.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 10,
+        "para": 4
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "click": {
+        "offset": 62,
+        "para": 20
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 16
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": "editing",
+      "command": "view.mode",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "kind": "rich_text",
+        "tag": "Fuzz/Wrap",
+        "wrap": true
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 128,
+        "para": 23
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "arg": null,
+      "command": "table.delete.row",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "arg": null,
+      "command": "table.insert-right",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "arg": "editing",
+      "command": "view.mode",
+      "expect": {}
+    },
+    {
+      "arg": null,
+      "command": "table.insert-below",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 52,
+        "para": 5
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 316,
+        "para": 24
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": {
+        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT"
+      },
+      "command": "element.remove",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "click": {
+        "offset": 40,
+        "para": 14
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 1,
+        "para": 1
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "arg": {
+        "code": "MERGEFIELD Fuzz.F3",
+        "display": ""
+      },
+      "command": "field.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "PageUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": "design",
+      "command": "view.mode",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 1,
+        "para": 12
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 18
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "arg": "2",
+      "command": "table.split",
+      "expect": {}
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": -25.0,
+          "dy": -36.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 96,
+        "para": 8
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "type": " "
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 0
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "top-left",
+          "float": 0
+        },
+        "to": {
+          "at": "top-left",
+          "dx": 2.0,
+          "dy": 29.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "kind": "group",
+        "tag": "Fuzz/Wrap",
+        "wrap": true
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 319,
+        "para": 15
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 155,
+        "para": 3
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Delete",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 8,
+        "para": 7
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": {
+        "code": "MERGEFIELD Fuzz.F0",
+        "display": "«F»"
+      },
+      "command": "field.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 317,
+        "para": 10
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "click": {
+        "offset": 245,
+        "para": 14
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "a"
+    },
+    {
+      "arg": {
+        "display": "a b",
+        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT"
+      },
+      "command": "field.set",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "kind": "group",
+        "tag": "Fuzz/Wrap",
+        "wrap": true
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "click": {
+        "offset": 118,
+        "para": 14
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "click": {
+        "offset": 187,
+        "para": 15
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": 36.0,
+          "dy": 22.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.insert-left",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": "editing",
+      "command": "view.mode",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "right",
+          "float": 0
+        },
+        "to": {
+          "at": "right",
+          "dx": 36.0,
+          "dy": 40.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "arg": null,
+      "command": "table.insert-below",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "click": {
+        "offset": 188,
+        "para": 13
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 262,
+        "para": 13
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 330,
+        "para": 13
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "click": {
+        "offset": 242,
+        "para": 13
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "right",
+          "float": 0
+        },
+        "to": {
+          "at": "right",
+          "dx": -29.0,
+          "dy": -30.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "display": "X",
+        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"$,0.00\""
+      },
+      "command": "field.set",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "display": "",
+        "id": "$code:MERGEFIELD Calc.Old_Name \\* MERGEFORMAT"
+      },
+      "command": "field.set",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 102,
+        "para": 4
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 322,
+        "para": 13
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 54,
+        "para": 5
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "",
+          "float": 0
+        },
+        "to": {
+          "at": "",
+          "dx": -3.0,
+          "dy": -34.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 238,
+        "para": 7
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 329,
+        "para": 13
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 271,
+        "para": 7
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "right",
+          "float": 0
+        },
+        "to": {
+          "at": "right",
+          "dx": -14.0,
+          "dy": 28.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 56,
+        "para": 14
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 59,
+        "para": 4
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "arg": {
+        "display": "",
+        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"$,0.00\""
+      },
+      "command": "field.set",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 3,
+        "para": 7
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 113,
+        "para": 4
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.insert-left",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "arg": "design",
+      "command": "view.mode",
+      "expect": {}
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "right",
+          "float": 0
+        },
+        "to": {
+          "at": "right",
+          "dx": 23.0,
+          "dy": 18.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "type": " "
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "bottom-right",
+          "float": 0
+        },
+        "to": {
+          "at": "bottom-right",
+          "dx": 24.0,
+          "dy": 38.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "click": {
+        "offset": 119,
+        "para": 15
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": " "
+    },
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "at": "",
+          "float": 0
+        },
+        "to": {
+          "at": "",
+          "dx": -36.0,
+          "dy": -6.0,
+          "float": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression: assertion `left == right` failed: step 278: integrity"
+}

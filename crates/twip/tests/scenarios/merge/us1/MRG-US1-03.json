@@ -1,0 +1,38 @@
+{
+  "id": "MRG-US1-03",
+  "title": "A selected field inside a repeating region: the context is the field (exact), then the item and the section",
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 5,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      },
+      "expect": {
+        "context": [
+          {
+            "kind": "field",
+            "code": " MERGEFIELD Detail.Description ",
+            "exact": true
+          },
+          {
+            "kind": "repeating_item"
+          },
+          {
+            "kind": "repeating_section"
+          }
+        ]
+      }
+    }
+  ]
+}

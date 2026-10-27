@@ -1,0 +1,41 @@
+{
+  "fixture": "FX-NEST-MIXED.docx",
+  "id": "FUZZ-FX-NEST-MIXED-7",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 6,
+        "para": 39
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "click": {
+        "offset": 156,
+        "para": 6
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-NEST-MIXED-7 (fixed 2026-10-24; first failure: assertion `left == right` failed: undo-all restores the original document)"
+}

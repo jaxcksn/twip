@@ -1,0 +1,42 @@
+{
+  "id": "MX-PTBL-01",
+  "title": "Paragraph to table: Right at the end of the paragraph before a table enters its first cell; Left leaves it again",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 12,
+          "offset": 46,
+          "depth": 0
+        }
+      }
+    }
+  ]
+}

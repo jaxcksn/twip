@@ -1,0 +1,86 @@
+{
+  "id": "E2E-STORY-07",
+  "title": "In a header, Down goes to the same page's footer and on to the next page's header; Page Down to the next page's header; Home stays",
+  "fixture": "FX-STORIES.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 22,
+        "offset": 3
+      },
+      "clicks": 2
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 19,
+          "page": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 23,
+          "page": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 19,
+          "page": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 22,
+          "page": 0
+        }
+      }
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 23,
+          "page": 1
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 23,
+          "offset": 0,
+          "page": 1
+        }
+      }
+    }
+  ]
+}

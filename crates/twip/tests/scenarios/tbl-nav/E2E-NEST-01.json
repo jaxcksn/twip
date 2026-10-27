@@ -1,0 +1,71 @@
+{
+  "id": "E2E-NEST-01",
+  "title": "Tab in the last cell of a nested table adds a row to that inner table only",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 5,
+        "offset": "end"
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "depth": 2
+        },
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ]
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "depth": 2
+        },
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ]
+      }
+    }
+  ]
+}

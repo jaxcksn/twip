@@ -1,0 +1,39 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-1",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 5,
+        "para": 2
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 16,
+        "para": 7
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.insert-above",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(114574) has no content\" }] (Caret(Position { story: Body, place: Text { para: ParaId(114571), offset: Unit(0), affinity: Downstream } }) in Some(\"ïhello \"))"
+}

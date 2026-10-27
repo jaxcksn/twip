@@ -1,0 +1,54 @@
+{
+  "id": "E2E-TBL-05",
+  "title": "Shift+Tab in a table's first cell does nothing, outer or nested",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 2
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

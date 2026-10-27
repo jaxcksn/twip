@@ -1,0 +1,45 @@
+{
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "id": "FUZZ-FX-MERGE-FIELDS-4",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "tag": "Fuzz/R0"
+      },
+      "command": "region.wrap",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "id": "$tag:Fuzz/R0"
+      },
+      "command": "element.remove",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C3 item in a section\", detail: \"paragraph 32843: item ControlId(32777) not directly in a section\" }] (Caret(Position { story: Body, place: Text { para: ParaId(32843), offset: Unit(0), affinity: Downstream } }) in Some(\"\"))"
+}

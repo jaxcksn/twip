@@ -1,0 +1,11 @@
+$schema: '../../.moon/cache/schemas/project.json'
+language: rust
+tags: [engine]
+
+tasks:
+  build:
+    command: cargo build -p twip
+    inputs: ['src/**/*', 'Cargo.toml']
+  test:
+    command: cargo test -p twip
+    inputs: ['src/**/*', 'Cargo.toml']

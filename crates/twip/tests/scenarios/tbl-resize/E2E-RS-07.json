@@ -1,0 +1,100 @@
+{
+  "id": "E2E-RS-07",
+  "title": "With a row selected, a column border drag starting on it moves the border in that row only (the grid gains a column); one starting on another row moves it in every row",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.row"
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": 1
+        },
+        "to": {
+          "table": 1,
+          "row": 0,
+          "border": 1,
+          "dx": 30
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              156,
+              30,
+              126,
+              156
+            ],
+            "cells": [
+              3,
+              3,
+              3
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.row"
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 2,
+          "border": 1
+        },
+        "to": {
+          "table": 1,
+          "row": 2,
+          "border": 1,
+          "dx": 30
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              186,
+              126,
+              156
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

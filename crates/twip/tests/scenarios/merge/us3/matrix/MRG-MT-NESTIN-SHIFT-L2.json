@@ -1,0 +1,94 @@
+{
+  "id": "MRG-MT-NESTIN-SHIFT-L2",
+  "title": "Containing-cell text to inner table: Shift+Right into the inner table and Shift+Left into it from the text after make text selections (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-NESTIN-SHIFT-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 15
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 23,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowLeft",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 23,
+            "offset": 0
+          }
+        }
+      }
+    }
+  ]
+}

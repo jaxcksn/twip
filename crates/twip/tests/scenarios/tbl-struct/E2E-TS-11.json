@@ -1,0 +1,96 @@
+{
+  "id": "E2E-TS-11",
+  "title": "Shift+Alt+End and Shift+Alt+Page Down select from the current cell to the row's end and the column's bottom",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "key": "End",
+      "mods": {
+        "shift": true,
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            0,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "key": "PageDown",
+      "mods": {
+        "shift": true,
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            2,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "shift": true,
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

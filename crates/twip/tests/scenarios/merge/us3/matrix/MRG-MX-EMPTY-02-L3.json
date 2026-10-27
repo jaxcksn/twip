@@ -1,0 +1,84 @@
+{
+  "id": "MRG-MX-EMPTY-02-L3",
+  "title": "Empty cell: typing fills it; Backspace in it does nothing; Tab into it lands with nothing to select (nesting level 3), inside a repeating region with a content control",
+  "fixture": "FX-TBL-BASIC-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MX-EMPTY-02-L3",
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "undo_depth": 2
+      }
+    },
+    {
+      "type": "b1"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "b1"
+        }
+      }
+    }
+  ]
+}

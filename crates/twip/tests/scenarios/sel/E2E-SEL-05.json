@@ -1,0 +1,35 @@
+{
+  "id": "E2E-SEL-05",
+  "title": "Ctrl+click selects the schedule with its trailing space",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 10
+      },
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 0
+          },
+          "focus": {
+            "para": 2,
+            "offset": 91
+          }
+        }
+      }
+    }
+  ]
+}

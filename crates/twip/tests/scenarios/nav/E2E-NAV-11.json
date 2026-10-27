@@ -1,0 +1,109 @@
+{
+  "id": "E2E-NAV-11",
+  "title": "Shift with End, Home, Ctrl+Right and Down extends from the anchor to where the key alone goes",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 3
+      }
+    },
+    {
+      "key": "End",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 3
+          },
+          "focus": {
+            "para": 2,
+            "offset": 106,
+            "affinity": "upstream"
+          }
+        }
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 3
+          },
+          "focus": {
+            "para": 2,
+            "offset": 0
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 1,
+            "offset": 6
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 2
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "E2E-FMT-10",
+  "title": "Ctrl+= subscripts a selection; Ctrl+Shift+= makes it superscript instead; Strikethrough from the command bar adds to it; each toggles back off",
+  "fixture": "FX-TEXT.docx",
+  "methods": ["M", "K", "C", "S"],
+  "steps": [
+    { "click": { "para": 1, "offset": 2 }, "clicks": 2 },
+    { "key": "Equal", "mods": { "ctrl": true } },
+    { "expect": { "runs": { "1": [[6, "_"], [10, ""]] } } },
+    { "key": "Equal", "mods": { "ctrl": true, "shift": true } },
+    { "expect": { "runs": { "1": [[6, "^"], [10, ""]] } } },
+    { "command": "home.strike" },
+    { "expect": { "runs": { "1": [[6, "s^"], [10, ""]] } } },
+    { "command": "home.strike" },
+    { "key": "Equal", "mods": { "ctrl": true, "shift": true } },
+    { "expect": { "runs": { "1": [[16, ""]] } } }
+  ]
+}

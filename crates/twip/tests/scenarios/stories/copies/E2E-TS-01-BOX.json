@@ -1,0 +1,97 @@
+{
+  "id": "E2E-TS-01-BOX",
+  "title": "Insert Rows Below and Above add an empty row to the caret's table, with the caret in it (in a text box)",
+  "fixture": "FX-TBL-BASIC-BOX.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-01.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.insert-below"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 4
+          }
+        ],
+        "caret": {
+          "para": 20,
+          "offset": 0,
+          "depth": 1
+        },
+        "text": {
+          "19": "",
+          "20": "",
+          "22": "T2 R2 C1"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "19": "T2 R2 C1"
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.insert-above"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 4
+          }
+        ],
+        "caret": {
+          "para": 17,
+          "offset": 0,
+          "depth": 1
+        },
+        "text": {
+          "16": "",
+          "19": "T2 R1 C1",
+          "20": "T2 R1 C2"
+        }
+      }
+    }
+  ]
+}

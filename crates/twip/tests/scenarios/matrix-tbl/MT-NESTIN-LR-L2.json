@@ -1,0 +1,75 @@
+{
+  "id": "MT-NESTIN-LR-L2",
+  "title": "Containing-cell text to inner table: Right at the text before enters the inner first cell, Left leaves; Left from the text after goes to the inner end-of-row mark (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 15,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 23,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "row_end": {
+            "table": 2,
+            "row": 1
+          },
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 23,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

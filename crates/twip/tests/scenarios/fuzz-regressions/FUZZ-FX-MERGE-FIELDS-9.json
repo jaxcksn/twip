@@ -1,0 +1,40 @@
+{
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "id": "FUZZ-FX-MERGE-FIELDS-9",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 0,
+        "para": 18
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"F1 one field\", detail: \"field FieldId(47109) begins twice (paragraph 47262)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47110) begins twice (paragraph 47262)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47112) begins twice (paragraph 47263)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47114) begins twice (paragraph 47264)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47115) begins twice (paragraph 47264)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47116) begins twice (paragraph 47264)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47118) begins twice (paragraph 47265)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47120) begins twice (paragraph 47266)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47121) begins twice (paragraph 47266)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47123) begins twice (paragraph 47267)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47141) begins twice (paragraph 47273)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47142) begins twice (paragraph 47273)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47143) begins twice (paragraph 47273)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47144) begins twice (paragraph 47273)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47145) begins twice (paragraph 47273)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47147) begins twice (paragraph 47274)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47148) begins twice (paragraph 47274)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47149) begins twice (paragraph 47274)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47150) begins twice (paragraph 47274)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47151) begins twice (paragraph 47274)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47153) begins twice (paragraph 47275)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47154) begins twice (paragraph 47275)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47155) begins twice (paragraph 47275)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47156) begins twice (paragraph 47275)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47157) begins twice (paragraph 47275)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47159) begins twice (paragraph 47249)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47160) begins twice (paragraph 47249)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47161) begins twice (paragraph 47249)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47162) begins twice (paragraph 47249)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47163) begins twice (paragraph 47249)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47165) begins twice (paragraph 47250)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47166) begins twice (paragraph 47250)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47167) begins twice (paragraph 47250)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47168) begins twice (paragraph 47250)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47169) begins twice (paragraph 47250)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47171) begins twice (paragraph 47251)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47172) begins twice (paragraph 47251)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47173) begins twice (paragraph 47251)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47174) begins twice (paragraph 47251)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47175) begins twice (paragraph 47251)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47177) begins twice (paragraph 47252)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47178) begins twice (paragraph 47252)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47179) begins twice (paragraph 47252)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47180) begins twice (paragraph 47252)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47181) begins twice (paragraph 47252)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47183) begins twice (paragraph 47254)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47184) begins twice (paragraph 47254)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47185) begins twice (paragraph 47254)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47186) begins twice (paragraph 47254)\" }, Statement { invariant: \"F1 one field\", detail: \"field FieldId(47187) begins twice (paragraph 47254)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(47285), offset: Unit(329), affinity: Downstream } }) in Some(\"Calc 36: ￼ MERGEFIELD Calc.Old_Name \\\\# \\\"$,0.00\\\" ￼«Old_Name»￼ Calc 37: ￼ MERGEFIELD Calc.Old_Name \\\\@ \\\"M/d/yyyy\\\" ￼«Old_Name»￼ Calc 38: ￼ MERGEFIELD Calc.Old_Name \\\\* Upper ￼«Old_Name»￼ Calc 39: ￼ MERGEFIELD Calc.Old_Name \\\\* MERGEFORMAT ￼«Old_Name»￼ Calc 40: hello ￼ MERGEFIELD Calc.Old_Name \\\\# \\\"0.00\\\" \\\\* MERGEFORMAT ￼«Old_Name»￼ 👍🏽é\"))"
+}

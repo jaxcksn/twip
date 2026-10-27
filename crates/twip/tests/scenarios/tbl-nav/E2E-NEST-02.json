@@ -1,0 +1,72 @@
+{
+  "id": "E2E-NEST-02",
+  "title": "Tab into a cell that starts with a nested table selects that table; the next Tab its first cell",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 6,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells"
+        }
+      }
+    },
+    {
+      "type": "Q"
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "Q",
+          "8": "Only content R1 C2"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 6,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 7,
+            "offset": 0
+          },
+          "focus": {
+            "para": 7,
+            "offset": 18
+          }
+        }
+      }
+    }
+  ]
+}

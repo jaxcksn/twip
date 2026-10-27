@@ -1,0 +1,144 @@
+{
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "id": "FUZZ-FX-MERGE-FIELDS-8",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "arg": null,
+      "command": "table.delete.column",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "click": {
+        "offset": 4,
+        "para": 0
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "clipboard": "cut",
+      "expect": {}
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 1
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "id": "$code:MERGEFIELD Store.Name"
+      },
+      "command": "element.select",
+      "expect": {}
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 2
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    }
+  ],
+  "title": "Fuzz regression: layout cache verify mode: boundary `cell widths` returned a stale result for key StoryKey { children: [Table(TableLayout { x0: 0.25, cols: [111.45, 111.45], rows: [RowBox { cells: [CellBox { x: 0.0, w: 111.45, cx: 5.4, margins: [0.0, 5.4, 0.0, 5.4], units: StoryLayout { units: [], height: 0.0 }, content_h: 0.0, v_align: \"top\", v_merge: None, col: 0, span: 1, edges: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })], shading: None, below: 0.0, index: 0, closing: None }, CellBox { x: 111.45, w: 111.45, cx: 5.4, margins: [0.0, 5.4, 0.0, 5.4], units: StoryLayout { units: [], height: 0.0 }, content_h: 0.0, v_align: \"top\", v_merge: None, col: 1, span: 1, edges: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })], shading: None, below: 0.0, index: 1, closing: None }], top_border: 0.5, height: 0.5, cant_split: false, header: false, exact: false, gap_top: 0.0, seams: [] }, RowBox { cells: [CellBox { x: 0.0, w: 111.45, cx: 5.4, margins: [0.0, 5.4, 0.0, 5.4], units: StoryLayout { units: [], height: 0.0 }, content_h: 0.0, v_align: \"top\", v_merge: None, col: 0, span: 1, edges: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })], shading: None, below: 0.0, index: 0, closing: None }, CellBox { x: 111.45, w: 111.45, cx: 5.4, margins: [0.0, 5.4, 0.0, 5.4], units: StoryLayout { units: [], height: 0.0 }, content_h: 0.0, v_align: \"top\", v_merge: None, col: 1, span: 1, edges: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })], shading: None, below: 0.0, index: 1, closing: None }], top_border: 0.5, height: 0.5, cant_split: false, header: false, exact: false, gap_top: 0.0, seams: [] }], bottom_border: 0.5, spacing: 0.0, id: TableId(70159), outer: [Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None }), Some(Border { style: \"single\", width: 0.5, space: 0.0, color: None })] }), Para(ShapedPara { pieces: [], styles: [], glyph_ids: [], glyph_advances: [], glyph_dx: [], text: \"\", objects: [] })], width: 0, in_cell: true, text: TextEnv { compat: 15, default_tab: 36.0, do_not_expand_shift_return: false, split_pg_break_and_para_mark: false, allow_space_of_same_style_in_table: false, do_not_use_html_paragraph_auto_spacing: false, grow_autofit: false, balance_spaces: false, compress_punctuation: false }, fonts: 373 }"
+}

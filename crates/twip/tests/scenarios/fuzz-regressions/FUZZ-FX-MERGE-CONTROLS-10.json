@@ -1,0 +1,49 @@
+{
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "id": "FUZZ-FX-MERGE-CONTROLS-10",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 4,
+        "para": 18
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C2 controls nest\", detail: \"end of ControlId(15961) out of place (paragraph 15962)\" }, Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(15961))] not closed in paragraph 15974\" }] (Caret(Position { story: Body, place: Text { para: ParaId(15974), offset: Unit(0), affinity: Downstream } }) in Some(\"Locked control: cannot delete\"))"
+}

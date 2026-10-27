@@ -1,0 +1,58 @@
+{
+  "id": "MT-CELL-TAB-L1",
+  "title": "Cell to cell: Tab selects the next cell's text, Shift+Tab the previous cell's (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 29,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 30,
+            "offset": 0
+          },
+          "focus": {
+            "para": 30,
+            "offset": 1
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 29,
+            "offset": 0
+          },
+          "focus": {
+            "para": 29,
+            "offset": 14
+          }
+        }
+      }
+    }
+  ]
+}

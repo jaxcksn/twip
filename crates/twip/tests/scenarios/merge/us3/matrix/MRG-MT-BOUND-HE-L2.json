@@ -1,0 +1,84 @@
+{
+  "id": "MRG-MT-BOUND-HE-L2",
+  "title": "Inner table at a cell's end: Home and End on the closing paragraph stay there (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-2-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-BOUND-HE-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 10,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

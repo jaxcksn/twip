@@ -1,0 +1,51 @@
+{
+  "id": "E2E-IME-01",
+  "title": "A committed composition replaces the selection, once",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 0
+        },
+        "to": {
+          "para": 1,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "ime": "日本語"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "日本語 paragraph."
+        },
+        "caret": {
+          "para": 1,
+          "offset": 3,
+          "depth": 0
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph."
+        }
+      }
+    }
+  ]
+}

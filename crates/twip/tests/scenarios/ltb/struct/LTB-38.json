@@ -1,0 +1,39 @@
+{
+  "id": "LTB-38",
+  "title": "A table inserted in an auto-fit cell fits the cell's content width (the cell's width less its margins)",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": "end"
+      }
+    },
+    {
+      "command": "insert.table",
+      "arg": "2,2"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 3,
+            "cells": [3, 3, 3],
+            "grid": [156, 156, 156]
+          },
+          {
+            "rows": 2,
+            "cells": [2, 2],
+            "grid": [72.6, 72.6]
+          }
+        ],
+        "undo_depth": 1
+      }
+    }
+  ]
+}

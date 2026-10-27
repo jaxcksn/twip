@@ -1,0 +1,43 @@
+{
+  "id": "LTB-18",
+  "title": "An outside border on a 2-column span, and on a cell beside a gridAfter offset, is one step that keeps the grid (the neighbours' facing borders: native twin ltb_18)",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 23,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.borders.outside",
+      "arg": "double,1.5,C00000"
+    },
+    {
+      "click": {
+        "para": 27,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.borders.outside",
+      "arg": "double,1.5,C00000"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 10,
+            "cells": [6, 4, 4, 5, 4, 4, 3, 3, 2, 1],
+            "grid": [78, 78, 78, 78, 78, 78]
+          }
+        ],
+        "undo_depth": 2
+      }
+    }
+  ]
+}

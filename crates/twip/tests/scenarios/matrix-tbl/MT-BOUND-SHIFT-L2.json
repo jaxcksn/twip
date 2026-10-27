@@ -1,0 +1,37 @@
+{
+  "id": "MT-BOUND-SHIFT-L2",
+  "title": "Inner table at a cell's end: Shift+Down from the inner last row to the closing paragraph selects the inner row whole and the text after (nesting level 2)",
+  "fixture": "FX-NEST-2-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-BOUND-SHIFT-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 9,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 9,
+            "offset": 0
+          }
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

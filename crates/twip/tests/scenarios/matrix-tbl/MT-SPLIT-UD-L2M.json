@@ -1,0 +1,43 @@
+{
+  "id": "MT-SPLIT-UD-L2M",
+  "title": "Table across pages: Down from a row ending a page goes to the cell below on the next page; Up comes back (nesting level 2)",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "page": 1,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 24,
+          "page": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

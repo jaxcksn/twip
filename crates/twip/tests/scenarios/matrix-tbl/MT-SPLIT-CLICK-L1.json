@@ -1,0 +1,45 @@
+{
+  "id": "MT-SPLIT-CLICK-L1",
+  "title": "Table across pages: a click in a cell at the next page's top places the caret there, as does one in a split row's part there (nesting level 1)",
+  "fixture": "FX-TBL-PAGES.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 53,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 53,
+          "offset": 0,
+          "page": 1,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 51,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 51,
+          "offset": 0,
+          "page": 1,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

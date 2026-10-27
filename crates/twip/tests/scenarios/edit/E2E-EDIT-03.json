@@ -1,0 +1,29 @@
+{
+  "id": "E2E-EDIT-03",
+  "title": "A flag (two regional indicators) is one grapheme for Left",
+  "fixture": "FX-UNICODE.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 5,
+        "offset": 9
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "offset": 7
+        }
+      }
+    }
+  ]
+}

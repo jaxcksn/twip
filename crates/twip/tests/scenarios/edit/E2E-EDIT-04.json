@@ -1,0 +1,48 @@
+{
+  "id": "E2E-EDIT-04",
+  "title": "An inline picture is one caret stop; Backspace after it deletes it",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 1
+        }
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0
+        },
+        "text": {
+          "1": {
+            "starts": " Inline picture at the start"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-9-b",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 22,
+        "para": 24
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "display": "X",
+        "id": "$code:MERGEFIELD Owner.Role"
+      },
+      "command": "field.set",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"7 valid positions\", detail: \"anchor: offset Unit(38) past the end of paragraph ParaId(230737)\" }, Statement { invariant: \"7 valid positions\", detail: \"focus: offset Unit(38) past the end of paragraph ParaId(230737)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(230737), offset: Unit(38), affinity: Downstream } }) in Some(\"Role: ￼ MERGEFIELD Owner.Role ￼X￼\"))"
+}

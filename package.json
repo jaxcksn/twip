@@ -1,0 +1,30 @@
+{
+  "name": "twip-monorepo",
+  "private": true,
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "21.2.4",
+    "@commitlint/config-conventional": "21.2.4",
+    "@moonrepo/cli": "2.6.4"
+  },
+  "commitlint": {
+    "extends": ["@commitlint/config-conventional"],
+    "rules": {
+      "type-enum": [
+        2,
+        "always",
+        ["feat", "fix", "perf", "refactor", "docs", "test", "build", "ci", "chore", "revert"]
+      ],
+      "scope-enum": [
+        2,
+        "always",
+        ["layout", "editing", "render", "ffi", "dotnet", "web", "angular", "react", "harness", "docs", "release", "deps"]
+      ],
+      "subject-case": [0],
+      "header-max-length": [2, "always", 100]
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "id": "MRG-MT-SPLIT-ENTER-L2",
+  "title": "Table across pages: Enter at the end-of-row mark of a row ending a page inserts an empty row below it (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-TBL-PAGES-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-SPLIT-ENTER-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 46,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 46,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 46,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 34
+          }
+        ],
+        "text": {
+          "47": ""
+        },
+        "caret": {
+          "para": 47,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

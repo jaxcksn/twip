@@ -1,0 +1,55 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-7-b",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "kind": "checkbox",
+        "tag": "Fuzz/C4"
+      },
+      "command": "control.insert",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "id": "$tag:Fuzz/C4"
+      },
+      "command": "element.remove",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"7 valid positions\", detail: \"anchor: offset Unit(25) past the end of paragraph ParaId(219490)\" }, Statement { invariant: \"7 valid positions\", detail: \"focus: offset Unit(25) past the end of paragraph ParaId(219490)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(219490), offset: Unit(25), affinity: Downstream } }) in Some(\"x\\t\\u{2028}Ünï aéaxe\\u{301}wordword.e\\u{301}\"))"
+}

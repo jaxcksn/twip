@@ -1,0 +1,119 @@
+{
+  "fixture": "FX-TBL-MERGED.docx",
+  "id": "FUZZ-FX-TBL-MERGED-29",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "tag": "Fuzz/R1"
+      },
+      "command": "region.wrap",
+      "expect": {}
+    },
+    {
+      "arg": {
+        "id": "$tag:Fuzz/R1",
+        "lock": "content",
+        "tag": "Fuzz/T2"
+      },
+      "command": "control.set",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 3
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": "2",
+      "command": "table.split",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 2,
+        "para": 5
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "arg": {
+        "id": "$tag:Fuzz/T2",
+        "keep_content": false
+      },
+      "command": "control.remove",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"8 final paragraph\", detail: \"the body ends with table 117258\" }] (Caret(Position { story: Body, place: Text { para: ParaId(117254), offset: Unit(0), affinity: Downstream } }) in Some(\"  \"))"
+}

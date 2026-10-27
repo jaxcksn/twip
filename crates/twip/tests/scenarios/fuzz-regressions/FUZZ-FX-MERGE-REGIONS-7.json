@@ -1,0 +1,97 @@
+{
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "id": "FUZZ-FX-MERGE-REGIONS-7",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 0,
+        "para": 7
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "arg": null,
+      "command": "table.delete.table",
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "arg": "2,2",
+      "command": "insert.table",
+      "expect": {}
+    },
+    {
+      "arg": null,
+      "command": "table.insert-above",
+      "expect": {}
+    },
+    {
+      "arg": null,
+      "command": "table.insert-left",
+      "expect": {}
+    },
+    {
+      "drag": {
+        "from": {
+          "border": 1,
+          "dx": 0.0,
+          "dy": 0.0,
+          "row": 1,
+          "table": 2
+        },
+        "to": {
+          "border": 1,
+          "dx": -24.0,
+          "dy": 38.0,
+          "row": 1,
+          "table": 2
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 1,
+        "para": 20
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "arg": null,
+      "command": "table.insert-above",
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"2 grid spans\", detail: \"table 154042 row 1 spans 4 of 3 columns\" }] (Caret(Position { story: Body, place: Text { para: ParaId(154079), offset: Unit(0), affinity: Downstream } }) in Some(\"Detail\"))"
+}

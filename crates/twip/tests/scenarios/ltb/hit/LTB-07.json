@@ -1,0 +1,74 @@
+{
+  "id": "LTB-07",
+  "title": "A click in a row's gridBefore gap selects that row, not the nearest line of another row",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    0.5,
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      },
+      "dx": -40
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "shape": "rows",
+          "anchor": [
+            5,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 28,
+        "offset": 0
+      },
+      "dx": -80
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "shape": "rows",
+          "anchor": [
+            6,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 28,
+        "offset": 0
+      },
+      "dx": -20
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "shape": "rows",
+          "anchor": [
+            6,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

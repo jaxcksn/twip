@@ -1,0 +1,92 @@
+{
+  "id": "MRG-US7-06",
+  "title": "Ctrl+F11 locks the field and those nested in it, Ctrl+Shift+F11 unlocks them; Ctrl+Shift+F9 replaces a field with its result, one undo",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 6
+      }
+    },
+    {
+      "key": "F11",
+      "mods": {
+        "ctrl": true
+      },
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "locked": true
+            },
+            {
+              "locked": true
+            },
+            {
+              "locked": true
+            }
+          ]
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "F11",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      },
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "locked": false
+            },
+            {
+              "locked": false
+            },
+            {
+              "locked": false
+            }
+          ]
+        },
+        "undo_depth": 2
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 9
+      }
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      },
+      "expect": {
+        "text": {
+          "2": "Shipment «Shipment_Number» issued."
+        },
+        "elements": {
+          "removed": 1
+        },
+        "undo_depth": 3
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "added": 1
+        }
+      }
+    }
+  ]
+}

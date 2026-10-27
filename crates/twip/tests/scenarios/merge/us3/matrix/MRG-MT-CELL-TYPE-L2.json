@@ -1,0 +1,70 @@
+{
+  "id": "MRG-MT-CELL-TYPE-L2",
+  "title": "Cell to cell: typing at a cell's start goes into that cell (nesting level 2), inside a repeating region with a content control",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-CELL-TYPE-L2",
+  "steps": [
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "command": "region.wrap",
+      "arg": {
+        "tag": "Matrix"
+      }
+    },
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "command": "control.insert",
+      "arg": {
+        "kind": "plain_text",
+        "tag": "Matrix/Cell",
+        "placeholder": ""
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "type": "Q"
+    },
+    {
+      "expect": {
+        "text": {
+          "25": "Level 2, row 2",
+          "26": "Qx"
+        },
+        "caret": {
+          "para": 26,
+          "offset": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

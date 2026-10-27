@@ -1,0 +1,78 @@
+{
+  "id": "MRG-US7-05",
+  "title": "F9 sends the field to the host; the host's result is one undo step; a locked field isn't sent",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 6
+      }
+    },
+    {
+      "key": "F9",
+      "expect": {
+        "events": [
+          {
+            "type": "field_update",
+            "fields": [
+              {
+                "code": " MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\" "
+              }
+            ]
+          }
+        ],
+        "undo_depth": 0
+      }
+    },
+    {
+      "command": "field.results",
+      "arg": {
+        "results": [
+          {
+            "id": "$code:MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\"",
+            "display": "$12.00"
+          }
+        ]
+      },
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "display": "$12.00"
+            }
+          ]
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": "home.undo",
+      "expect": {
+        "elements": {
+          "changed": [
+            {
+              "display": "«Cost_Amount»"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "F11",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "F9",
+      "expect": {
+        "undo_depth": 1
+      }
+    }
+  ]
+}

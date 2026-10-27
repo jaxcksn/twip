@@ -1,0 +1,59 @@
+{
+  "id": "MT-PTBL-SHIFT-L1",
+  "title": "Paragraph to table: Shift+Right from the paragraph before into the table, and Shift+Left from the paragraph after into it, make text selections (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 0,
+            "offset": 29
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 31,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowLeft",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 31,
+            "offset": 0
+          }
+        }
+      }
+    }
+  ]
+}

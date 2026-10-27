@@ -1,0 +1,13 @@
+$schema: '../.moon/cache/schemas/project.json'
+id: docs
+language: typescript
+tags: [docs]
+
+tasks:
+  build:
+    command: docusaurus build
+    inputs: ['docs/**/*', 'src/**/*', 'static/**/*', '*.ts']
+    outputs: ['build']
+  dev:
+    command: docusaurus start
+    preset: server

@@ -1,0 +1,44 @@
+{
+  "id": "MT-CELL-ENTER-L2",
+  "title": "Cell to cell: Enter at a cell's end adds a paragraph in that cell (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 25,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "25": "Level 2, row 2",
+          "26": "",
+          "27": "x"
+        },
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ],
+        "caret": {
+          "para": 26,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

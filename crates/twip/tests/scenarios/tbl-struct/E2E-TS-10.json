@@ -1,0 +1,103 @@
+{
+  "id": "E2E-TS-10",
+  "title": "A selected table: Delete empties its cells and keeps it; Backspace deletes it",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "C",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "13": "",
+          "14": "",
+          "21": ""
+        },
+        "caret": {
+          "para": 13,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "command": "table.select.table"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "12": "Paragraph between the first and second tables.",
+          "13": "T3 R1 C1"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 1
+      }
+    },
+    {
+      "command": "table.select.row"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 2
+          }
+        ],
+        "text": {
+          "16": "T2 R3 C1"
+        }
+      }
+    }
+  ]
+}
