@@ -70,7 +70,8 @@ impl Editor {
             // Out of the clipped text: up to the cell's last drawn line, or down to the nearest drawn line below the
             // cell, at the goal x.
             let last = geo.lines.iter().filter(|l| l.chain == chain && !l.repeat).max_by(|a, b| a.top.total_cmp(&b.top))?;
-            let from = at(last.para, last.nearest(x)?.unit);
+            let s = last.nearest(x)?;
+            let from = at(s.para, s.unit);
             if !down {
                 return Some(from);
             }
@@ -81,7 +82,7 @@ impl Editor {
                 .iter()
                 .filter(|l| !l.repeat && geo.stories[l.story].story == focus.story && l.top >= bottom - 0.01)
                 .min_by(|a, b| a.top.total_cmp(&b.top).then(dx(a).total_cmp(&dx(b))));
-            return Some(match below.and_then(|l| Some(at(l.para, l.nearest(x)?.unit))) {
+            return Some(match below.and_then(|l| l.nearest(x)).map(|s| at(s.para, s.unit)) {
                 Some(p) => p,
                 None => from,
             });

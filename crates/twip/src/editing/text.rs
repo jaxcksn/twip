@@ -6,18 +6,20 @@
 
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::docx::review::{MarkupView, RunRevisions};
 use crate::docx::{BreakKind, Inline, Paragraph};
 use crate::layout::Unit;
 
 /// Object replacement: one unit that is never part of a word.
-const OBJECT: char = '\u{FFFC}';
+pub const OBJECT: char = '\u{FFFC}';
 
 /// A paragraph's units as one `char` each, with each unit's byte offset in the string.
 pub struct UnitText {
     pub text: String,
     /// Byte offset of each unit, plus the string's length at the end.
     bytes: Vec<usize>,
-    /// Units in hidden runs (STYLE-7): character steps go over them. A field showing its code hides its result too.
+    /// Units in hidden runs (STYLE-7) and masked units: character steps go over them. A field showing its code hides
+    /// its result too.
     hidden: Vec<bool>,
     /// Fields showing their result: each, from before its begin marker to after its end marker, is one
     /// caret unit. Outermost fields only; sorted.
@@ -26,15 +28,26 @@ pub struct UnitText {
 
 impl UnitText {
     pub fn of(p: &Paragraph) -> UnitText {
+        UnitText::masked(p, |_| false)
+    }
+
+    /// The units as `view` shows them: those it hides are spaces, so offsets stay the paragraph's (REV-1).
+    pub fn of_view(p: &Paragraph, view: MarkupView) -> UnitText {
+        UnitText::masked(p, |rev| view.hides(rev))
+    }
+
+    /// The units, those of runs whose revisions `mask` picks as hidden spaces.
+    pub fn masked(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool) -> UnitText {
         let mut text = String::new();
         let mut bytes = Vec::new();
         let mut hidden = Vec::new();
         for i in &p.inlines {
-            let h = i.run().is_some_and(|r| r.hidden);
+            let masked = i.run().is_some_and(|r| mask(&r.rev));
+            let h = masked || i.run().is_some_and(|r| r.hidden);
             let mut push = |c: char, text: &mut String| {
                 bytes.push(text.len());
                 hidden.push(h);
-                text.push(c);
+                text.push(if masked { ' ' } else { c });
             };
             match i {
                 Inline::Text(s, _) => s.chars().for_each(|c| push(c, &mut text)),
@@ -75,7 +88,8 @@ impl UnitText {
         self.atoms.get(k).copied().filter(|a| a.0 < u && u < a.1)
     }
 
-    fn is_hidden(&self, u: Unit) -> bool {
+    /// Whether `u` is in a hidden run, a field result its code hides, or masked.
+    pub fn is_hidden(&self, u: Unit) -> bool {
         self.hidden.get(u.0 as usize).copied().unwrap_or(false)
     }
 

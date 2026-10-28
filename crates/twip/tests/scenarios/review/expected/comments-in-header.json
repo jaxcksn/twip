@@ -1,0 +1,180 @@
+{
+  "description": "Adding a comment to text in the header.",
+  "setup": "one paragraph \"Alpha beta gamma.\" and a default header \"Header text\"",
+  "steps": [
+    {
+      "do": "add a comment \"In header\" on the header's first word \"Header\"",
+      "author": "Author A",
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-default": [
+            {
+              "text": "Header text",
+              "runs": [
+                {
+                  "text": "Header text",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-default": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": []
+      },
+      "error": "Comments, endnotes and footnotes can only be added to the main story.",
+      "storage": {
+        "parts": [],
+        "comments_extended": [],
+        "people": []
+      }
+    }
+  ]
+}

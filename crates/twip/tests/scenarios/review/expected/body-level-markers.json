@@ -1,0 +1,808 @@
+{
+  "description": "Range markers that are children of the body (between paragraphs) in a file, and where they are after the reference application opens and saves it. Each marker: its parent (body or paragraph), where it sits among the parent's content (start, middle, end), and the neighbouring paragraphs or text.",
+  "cases": {
+    "comment-range-around-paragraph": {
+      "fixture": "FX-REVIEW-COMMENTS.docx with comment 2's commentRangeStart moved to just before its paragraph and its commentRangeEnd to just after it (both children of the body)",
+      "before": [
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": " brief usage cause. ",
+          "text_after": "The meeting forecast"
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": " vendors practical. ",
+          "text_after": "The meeting forecast"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": "ng forecast hereby. ",
+          "text_after": "Regional maintenance"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": "ssibility tax finds.",
+          "text_after": " Notice claim team e"
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": "ssibility tax finds.",
+          "text_after": " Notice claim team e"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": "ssibility tax finds.",
+          "text_after": " Notice claim team e"
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "body",
+          "at": "middle",
+          "after_paragraph": 1,
+          "before_paragraph": 2
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "body",
+          "at": "middle",
+          "after_paragraph": 2,
+          "before_paragraph": 3
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 3,
+          "text_before": "ord proposal denied.",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 3,
+          "text_before": "ord proposal denied.",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 4,
+          "text_before": "",
+          "text_after": "cell text"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 4,
+          "text_before": "cell text",
+          "text_after": ""
+        }
+      ],
+      "after": [
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": " brief usage cause. ",
+          "text_after": "The meeting forecast"
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": " brief usage cause. ",
+          "text_after": "The meeting forecast"
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": " vendors practical. ",
+          "text_after": "The meeting forecast"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": "ng forecast hereby. ",
+          "text_after": "Regional maintenance"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": "ssibility tax finds.",
+          "text_after": " Notice claim team e"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 1,
+          "text_before": "ssibility tax finds.",
+          "text_after": " Notice claim team e"
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 2,
+          "text_before": "e management action.",
+          "text_after": ""
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 2,
+          "text_before": "e management action.",
+          "text_after": ""
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 3,
+          "text_before": "ord proposal denied.",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 3,
+          "text_before": "ord proposal denied.",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "commentRangeStart",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 4,
+          "text_before": "",
+          "text_after": "cell text"
+        },
+        {
+          "marker": "commentRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 4,
+          "text_before": "cell text",
+          "text_after": ""
+        }
+      ],
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Inventory relevant group relief results region ledger brief usage cause. The meeting forecast hereby vendors practical. The meeting forecast hereby. Regional maintenance accessibility tax finds. Notice claim team export staff newsletter review matter presenter advisor.",
+              "runs": [
+                {
+                  "text": "Inventory relevant group relief results region ledger brief usage cause. The meeting forecast hereby vendors practical. The meeting forecast hereby. Regional maintenance accessibility tax finds. Notice claim team export staff newsletter review matter presenter advisor.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action.",
+              "runs": [
+                {
+                  "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Regional maintenance accessibility tax finds record proposal denied.Notice claim team export staff newsletter review matter.",
+              "runs": [
+                {
+                  "text": "Regional maintenance accessibility tax finds record proposal denied.Notice claim team export staff newsletter review matter.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "table": {
+                "change": null,
+                "tblpr": [
+                  "tblBorders[bottom:color=000000,space=0,sz=4,val=single;insideH:color=000000,space=0,sz=4,val=single;insideV:color=000000,space=0,sz=4,val=single;left:color=000000,space=0,sz=4,val=single;right:color=000000,space=0,sz=4,val=single;top:color=000000,space=0,sz=4,val=single]",
+                  "tblLayout:type=fixed",
+                  "tblLook:firstColumn=1,firstRow=1,lastColumn=0,lastRow=0,noHBand=0,noVBand=1,val=04A0",
+                  "tblW:type=dxa,w=9360"
+                ],
+                "grid": [
+                  4680,
+                  4680
+                ],
+                "grid_change": null,
+                "rows": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "change": null,
+                    "ex_change": null,
+                    "trpr": [],
+                    "cells": [
+                      {
+                        "ins": null,
+                        "del": null,
+                        "merge": null,
+                        "change": null,
+                        "vmerge": null,
+                        "span": 1,
+                        "tcpr": [
+                          "tcW:type=dxa,w=4680"
+                        ],
+                        "blocks": [
+                          {
+                            "text": "cell text",
+                            "runs": [
+                              {
+                                "text": "cell text",
+                                "ins": null,
+                                "del": null,
+                                "move": null,
+                                "fmt": null,
+                                "rpr": [],
+                                "was": null
+                              }
+                            ],
+                            "mark": {
+                              "ins": null,
+                              "del": null,
+                              "move": null
+                            },
+                            "pchange": null,
+                            "ppr": [],
+                            "pwas": null,
+                            "num": null,
+                            "numchange": null
+                          }
+                        ]
+                      },
+                      {
+                        "ins": null,
+                        "del": null,
+                        "merge": null,
+                        "change": null,
+                        "vmerge": null,
+                        "span": 1,
+                        "tcpr": [
+                          "tcW:type=dxa,w=4680"
+                        ],
+                        "blocks": [
+                          {
+                            "text": "plain cell",
+                            "runs": [
+                              {
+                                "text": "plain cell",
+                                "ins": null,
+                                "del": null,
+                                "move": null,
+                                "fmt": null,
+                                "rpr": [],
+                                "was": null
+                              }
+                            ],
+                            "mark": {
+                              "ins": null,
+                              "del": null,
+                              "move": null
+                            },
+                            "pchange": null,
+                            "ppr": [],
+                            "pwas": null,
+                            "num": null,
+                            "numchange": null
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Inside the first.",
+            "scope": "The meeting forecast hereby. ",
+            "start": 120,
+            "end": 149,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "A bold and italic note.\rA second paragraph.",
+            "scope": "The meeting forecast hereby vendors practical. The meeting forecast hereby. Regional maintenance accessibility tax finds.",
+            "start": 73,
+            "end": 194,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author B",
+            "initials": "AB",
+            "text": "A reply.",
+            "scope": "The meeting forecast hereby vendors practical. The meeting forecast hereby. Regional maintenance accessibility tax finds.",
+            "start": 73,
+            "end": 194,
+            "parent": 2,
+            "done": false
+          },
+          {
+            "author": "Author C",
+            "initials": "AC",
+            "text": "Resolved.",
+            "scope": null,
+            "start": 364,
+            "end": 364,
+            "parent": null,
+            "done": true
+          },
+          {
+            "author": "Author B",
+            "initials": "AB",
+            "text": "At a point.",
+            "scope": null,
+            "start": 433,
+            "end": 433,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author C",
+            "initials": "AC",
+            "text": "In a cell.",
+            "scope": "cell text",
+            "start": 490,
+            "end": 499,
+            "parent": null,
+            "done": false
+          }
+        ]
+      }
+    },
+    "move-ranges-between-paragraphs": {
+      "fixture": "FX-REVIEW-MOVES.docx as generated: the whole-paragraph move's moveFromRangeStart/End and moveToRangeStart/End are children of the body around the moved paragraphs",
+      "before": [
+        {
+          "marker": "moveFromRangeStart",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 2,
+          "text_before": "",
+          "text_after": "Pilot receipt corpor"
+        },
+        {
+          "marker": "moveFromRangeEnd",
+          "parent": "body",
+          "at": "middle",
+          "after_paragraph": 2,
+          "before_paragraph": 3
+        },
+        {
+          "marker": "moveToRangeStart",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 4,
+          "text_before": "",
+          "text_after": "Pilot receipt corpor"
+        },
+        {
+          "marker": "moveToRangeEnd",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 5,
+          "text_before": "",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "moveFromRangeStart",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 5,
+          "text_before": "",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "moveFromRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 5,
+          "text_before": "team export staff.. ",
+          "text_after": "The meeting forecast"
+        },
+        {
+          "marker": "moveToRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 5,
+          "text_before": " management action. ",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "moveToRangeEnd",
+          "parent": "paragraph",
+          "at": "end",
+          "paragraph": 5,
+          "text_before": "team export staff.. ",
+          "text_after": ""
+        }
+      ],
+      "after": [
+        {
+          "marker": "moveFromRangeStart",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 2,
+          "text_before": "",
+          "text_after": "Pilot receipt corpor"
+        },
+        {
+          "marker": "moveFromRangeEnd",
+          "parent": "body",
+          "at": "middle",
+          "after_paragraph": 2,
+          "before_paragraph": 3
+        },
+        {
+          "marker": "moveToRangeStart",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 4,
+          "text_before": "",
+          "text_after": "Pilot receipt corpor"
+        },
+        {
+          "marker": "moveFromRangeStart",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 5,
+          "text_before": "",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "moveToRangeEnd",
+          "parent": "paragraph",
+          "at": "start",
+          "paragraph": 5,
+          "text_before": "",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "moveFromRangeEnd",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 5,
+          "text_before": "team export staff.. ",
+          "text_after": "The meeting forecast"
+        },
+        {
+          "marker": "moveToRangeStart",
+          "parent": "paragraph",
+          "at": "middle",
+          "paragraph": 5,
+          "text_before": " management action. ",
+          "text_after": "Notice claim team ex"
+        },
+        {
+          "marker": "moveToRangeEnd",
+          "parent": "paragraph",
+          "at": "end",
+          "paragraph": 5,
+          "text_before": "team export staff.. ",
+          "text_after": ""
+        }
+      ],
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group.",
+              "runs": [
+                {
+                  "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional.",
+              "runs": [
+                {
+                  "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional.",
+                  "ins": null,
+                  "del": null,
+                  "move": "from",
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": "from"
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate.",
+              "runs": [
+                {
+                  "text": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional.",
+              "runs": [
+                {
+                  "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional.",
+                  "ins": null,
+                  "del": null,
+                  "move": "to",
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": "to"
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Notice claim team export staff.. The meeting forecast hereby vendors practical schedule state entry estimate management action. Notice claim team export staff.. ",
+              "runs": [
+                {
+                  "text": "Notice claim team export staff.. ",
+                  "ins": null,
+                  "del": null,
+                  "move": "from",
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Notice claim team export staff.. ",
+                  "ins": null,
+                  "del": null,
+                  "move": "to",
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Numbered item",
+              "runs": [
+                {
+                  "text": "Numbered item",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=ListParagraph"
+              ],
+              "pwas": null,
+              "num": [
+                "ilvl:val=0",
+                "numId:val=1"
+              ],
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionMovedFrom",
+            "author": "Author A",
+            "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional.\r"
+          },
+          {
+            "type": "wdRevisionMovedTo",
+            "author": "Author A",
+            "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional.\r"
+          },
+          {
+            "type": "wdRevisionMovedFrom",
+            "author": "Author B",
+            "text": "Notice claim team export staff.. "
+          },
+          {
+            "type": "wdRevisionMovedTo",
+            "author": "Author B",
+            "text": "Notice claim team export staff.. "
+          }
+        ]
+      }
+    }
+  }
+}

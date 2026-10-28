@@ -9,5 +9,6 @@ pub mod editlatency;
 pub mod fullbench;
 pub mod memprofile;
 pub mod replay;
+pub mod reviewbench;
 pub mod roundtrip;
 pub mod units;

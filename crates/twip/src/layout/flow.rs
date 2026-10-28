@@ -11,6 +11,7 @@ use super::LayoutCtx;
 use super::float::{self, Frames, Placed, Wrap};
 use super::fragment::{BoxFragment, BoxKind, Child, Item, ParaFragment, PlacedLine, TableFragment};
 use super::job::{Memos, Yield};
+use super::join::{Joined, LaidBlock, LaidPara, laid_para, piece_para};
 use super::line::{Frame, Line, LineOrigin, ParaLines, band, border_key, break_lines, draw_label, draw_line, neighbour_borders};
 use super::node::{Notes, SectionNode};
 use super::paragraph::{gap, lines_to_take, space_after, space_before};
@@ -18,7 +19,7 @@ use super::record::PageEffects;
 use super::space::{BorderKey, ColumnSpace, ParaSpace};
 use super::story::{StoryEnv, StoryLayout, StoryUnit};
 use super::table::{CellPart, TableLayout, draw_row, draw_whole_row, whole};
-use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape, shape_space};
+use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape};
 use super::token::{At, FlowState, FlowToken, NotePart};
 
 const EPS: f64 = 1e-6;
@@ -73,6 +74,9 @@ impl NoteArea {
 pub struct PassMemo {
     tables: HashMap<(usize, u64), Rc<TableLayout>>,
     varies: HashMap<usize, bool>,
+    /// Paragraphs joined in this pass (REV-6), by their first paragraph's identity in the document and their count:
+    /// pages and balancing attempts lay them out repeatedly.
+    joined: HashMap<(usize, usize), Rc<Joined>>,
 }
 
 impl PassMemo {
@@ -319,14 +323,45 @@ fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<
 }
 
 impl<'d> PageFill<'d, '_> {
-    /// A paragraph laid out at `width` from piece `from` (0 = the whole paragraph), drawn at `x0`.
-    fn para_lines(&mut self, bi: usize, width: f64, from: usize, x0: f64, memos: &mut Memos) -> Result<(Rc<ParaLines>, &'d Paragraph), Yield> {
-        let Some(Block::Para(p)) = self.sec.blocks.get(bi) else { unreachable!("para_lines on a table block") };
-        let (prev, next) = self.sec.blocks.neighbours(bi);
-        let space = shape_space(p, self.fields, self.note_numbers, &self.ctx.env.text);
+    /// The paragraph laid out from block `bi`, and the last block it takes: `bi`, or the last of the paragraphs joined
+    /// to it (REV-6). `None` for a table.
+    fn laid(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
+        let Some(Block::Para(p)) = self.sec.blocks.get(bi) else { return None };
+        let end = self.sec.blocks.chain_end(bi, self.ctx.env.text.review.view);
+        if end == bi {
+            return Some((LaidPara::One(p), bi));
+        }
+        let key = (std::ptr::from_ref(p) as usize, end - bi);
+        let j = match self.pass.joined.get(&key) {
+            Some(j) => j.clone(),
+            None => {
+                let Some(LaidPara::Joined(j)) = laid_para(&self.sec.blocks.blocks[bi..=end]) else { return Some((LaidPara::One(p), bi)) };
+                self.pass.joined.insert(key, j.clone());
+                j
+            }
+        };
+        Some((LaidPara::Joined(j), end))
+    }
+
+    /// Paragraph `laid` (from blocks `bi..=end`) laid out at `width` from piece `from` (0 = the whole paragraph), drawn
+    /// at `x0`.
+    #[allow(clippy::too_many_arguments, reason = "the paragraph, its blocks, and the line space it is laid out in")]
+    fn para_lines(
+        &mut self,
+        laid: &LaidPara,
+        bi: usize,
+        end: usize,
+        width: f64,
+        from: usize,
+        x0: f64,
+        memos: &mut Memos,
+    ) -> Result<Rc<ParaLines>, Yield> {
+        let p = laid.para();
+        let (prev, next) = self.sec.blocks.neighbours(bi, end, self.ctx.env.text.review.view);
+        let space = laid.shape_space(self.fields, self.note_numbers, &self.ctx.env.text);
         let shaped = shape(p, &space, self.ctx.fonts, memos)?;
-        let ps = para_space(&p.style, prev, next, width, from, x0, &self.ctx);
-        Ok((break_lines(&shaped, p, &ps, self.ctx.fonts, memos)?, p))
+        let ps = para_space(p.para_style_in(self.ctx.env.text.review.view), prev, next, width, from, x0, &self.ctx);
+        break_lines(&shaped, p, &ps, self.ctx.fonts, memos)
     }
 
     /// A table laid out for `width`.
@@ -595,15 +630,22 @@ impl<'d> PageFill<'d, '_> {
             };
             let found_len = self.at.found.len();
             match self.sec.blocks.get(bi) {
-                Some(Block::Para(p)) => {
-                    let style = &p.style;
+                Some(Block::Para(_)) => {
+                    let Some((laid, end)) = self.laid(bi) else { unreachable!("a paragraph block") };
+                    let p = laid.para();
+                    let style = p.para_style_in(self.ctx.env.text.review.view);
                     if pos.at.at_start() && style.page_break_before && !(empty && page_empty) {
                         // PAGE-6: always a new page; PARA-2: its space-before is dropped in compat 15, kept in 14.
                         carry.keep_top = self.ctx.env.text.compat < 15;
                         return Ok((Stop::Page, y));
                     }
-                    let (pb, p) = self.para_lines(bi, col.width, pos.at.index(), col.x, memos)?;
-                    match self.place_para(p, &pb, pos, carry, &col, &mut y, &mut empty, area, out, memos)? {
+                    let pb = self.para_lines(&laid, bi, end, col.width, pos.at.index(), col.x, memos)?;
+                    let placed = self.place_para(p, &pb, pos, carry, &col, &mut y, &mut empty, area, out, memos)?;
+                    // A paragraph joined to the ones after it takes their blocks too (REV-6).
+                    if pos.block > bi {
+                        pos.block = end + 1;
+                    }
+                    match placed {
                         Stop::Done => {}
                         Stop::Full if pos.block == bi && pos.at.at_start() => {
                             // PAGE-9: a chain member that places nothing here moves the whole chain on, as when
@@ -682,9 +724,10 @@ impl<'d> PageFill<'d, '_> {
         let bottom = col.bottom - notes;
         match self.sec.blocks.get(bi) {
             None => Ok(true),
-            Some(Block::Para(p)) => {
-                let (pb, _) = self.para_lines(bi, col.width, 0, col.x, memos)?;
-                let s = &p.style;
+            Some(Block::Para(_)) => {
+                let Some((laid, end)) = self.laid(bi) else { unreachable!("a paragraph block") };
+                let pb = self.para_lines(&laid, bi, end, col.width, 0, col.x, memos)?;
+                let s = laid.para().para_style_in(self.ctx.env.text.review.view);
                 let g = match &carry.prev {
                     Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, s, space_before(s)),
                     None => space_before(s),
@@ -709,6 +752,8 @@ impl<'d> PageFill<'d, '_> {
 
     /// Records a paragraph placed on the page (STYLEREF) and, for its first part, its bookmarks (PAGEREF).
     fn record(&mut self, p: &Paragraph, first_part: bool) {
+        // shortcut: paragraphs joined by the view (REV-6) are recorded as their last one, so STYLEREF shows that
+        // paragraph's text alone; record the joined text to fix.
         let id = para_id(p);
         if !self.at.effects.paras.contains(&id) {
             self.at.effects.paras.push(id);
@@ -731,7 +776,7 @@ impl<'d> PageFill<'d, '_> {
         if n % ln.count_by != 0 {
             return;
         }
-        let ncols = self.sec.section.columns.num.max(1);
+        let ncols = self.sec.section.section_in(self.ctx.env.text.review.view).columns.num.max(1);
         let dist = if ln.distance > 0.0 {
             ln.distance
         } else if ncols > 1 {
@@ -755,7 +800,7 @@ impl<'d> PageFill<'d, '_> {
     )]
     fn place_para(
         &mut self,
-        p: &'d Paragraph,
+        p: &Paragraph,
         pb: &ParaLines,
         pos: &mut FlowToken,
         carry: &mut FlowState,
@@ -783,7 +828,7 @@ impl<'d> PageFill<'d, '_> {
     #[allow(clippy::too_many_arguments, reason = "as place_para")]
     fn place_plain(
         &mut self,
-        p: &'d Paragraph,
+        p: &Paragraph,
         pb: &ParaLines,
         pos: &mut FlowToken,
         carry: &mut FlowState,
@@ -794,7 +839,7 @@ impl<'d> PageFill<'d, '_> {
         out: &mut Vec<Child>,
         memos: &mut Memos,
     ) -> Result<Stop, Yield> {
-        let style = &p.style;
+        let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
         let mut before = space_before(style);
         if style.before_auto && carry.first_para {
@@ -885,7 +930,7 @@ impl<'d> PageFill<'d, '_> {
         *y = yy;
         *empty = false;
         carry.first_para = false;
-        carry.prev = Some(p.style.clone());
+        carry.prev = Some(p.para_style_in(self.ctx.env.text.review.view).clone());
         carry.prev_after = after;
         let done = take >= n;
         if done {
@@ -920,7 +965,7 @@ impl<'d> PageFill<'d, '_> {
 
     /// The space above a paragraph (PARA-1 to PARA-5): before its first line, or 0 for a continuation.
     fn para_gap(&self, p: &Paragraph, pos: &FlowToken, carry: &FlowState, empty: bool) -> f64 {
-        let style = &p.style;
+        let style = p.para_style_in(self.ctx.env.text.review.view);
         let mut before = space_before(style);
         if style.before_auto && carry.first_para {
             before = 0.0; // PARA-5
@@ -949,11 +994,12 @@ impl<'d> PageFill<'d, '_> {
         let Some(tb) = f.text_box.as_ref().filter(|_| f.auto_w) else { return Ok(f.clone()) };
         let mut w: f64 = 0.0;
         let fields = FieldValues::default();
-        for b in &tb.blocks {
-            let Block::Para(p) = b else { continue };
-            let space = shape_space(p, &fields, self.note_numbers, &self.ctx.env.text);
+        for b in super::join::laid(&tb.blocks, self.ctx.env.text.review.view) {
+            let LaidBlock::Para(laid) = b else { continue };
+            let p = laid.para();
+            let space = laid.shape_space(&fields, self.note_numbers, &self.ctx.env.text);
             let shaped = shape(p, &space, self.ctx.fonts, memos)?;
-            let ps = para_space(&p.style, None, None, width, 0, 0.0, &self.ctx);
+            let ps = para_space(p.para_style_in(self.ctx.env.text.review.view), None, None, width, 0, 0.0, &self.ctx);
             let pb = break_lines(&shaped, p, &ps, self.ctx.fonts, memos)?;
             let pieces = pb.pieces();
             for l in &pb.lines {
@@ -982,7 +1028,7 @@ impl<'d> PageFill<'d, '_> {
     )]
     fn place_wrapped(
         &mut self,
-        p: &'d Paragraph,
+        p: &Paragraph,
         pb: &ParaLines,
         pos: &mut FlowToken,
         carry: &mut FlowState,
@@ -993,7 +1039,7 @@ impl<'d> PageFill<'d, '_> {
         out: &mut Vec<Child>,
         memos: &mut Memos,
     ) -> Result<Stop, Yield> {
-        let style = &p.style;
+        let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
         let after = space_after(style);
         let at_top = *empty;
@@ -1027,7 +1073,18 @@ impl<'d> PageFill<'d, '_> {
                     Some(iv) => {
                         let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
                         let open = iv.len() == 1 && (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS;
-                        let r = band(sp, pieces, s, &ivc, first_part && bands.is_empty(), style, &p.mark, &frame, self.ctx.fonts, open);
+                        let r = band(
+                            sp,
+                            pieces,
+                            s,
+                            &ivc,
+                            first_part && bands.is_empty(),
+                            style,
+                            p.mark_in(self.ctx.env.text.review.view),
+                            &frame,
+                            self.ctx.fonts,
+                            open,
+                        );
                         match r {
                             Some((segs, e)) => {
                                 let ph = segs[0].pitch;
@@ -1075,7 +1132,7 @@ impl<'d> PageFill<'d, '_> {
         let frames = Frames {
             page_w: self.page_w,
             page_h: self.page_h,
-            margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.bottom],
+            margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
             column: (col.x, col.width),
         };
         let bi = pos.block;
@@ -1089,6 +1146,8 @@ impl<'d> PageFill<'d, '_> {
         for (k, q) in pieces.iter().enumerate() {
             let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, sp.object(pb.from + k)) else { continue };
             let Some(b) = band_of(k) else { continue };
+            // REV-6: a float is anchored in its own paragraph, joined or not.
+            let owner = piece_para(sp, pb.from + k, anchor);
             let f = &self.fit_frame(f, col.width, memos)?;
             let h = self.float_height(f, memos)?;
             let line_top = bands[b].0;
@@ -1097,8 +1156,8 @@ impl<'d> PageFill<'d, '_> {
             let mut fy = float::v_pos(f, h, &frames, para_top, line_top);
             // FLOAT-13: a wrapNone float stays where it is, and so does its paragraph. Small square or tight floats
             // beside a one-line anchor may stay too (moved up only past the page edge); not separated from FLOAT-9 yet.
-            if Placed::new((si, bi, pb.from + k), anchor, f, x, fy, h).wrap == Wrap::None {
-                anchors.push(Placed::new((si, bi, pb.from + k), anchor, f, x, fy, h));
+            if Placed::new((si, bi, pb.from + k), owner, f, x, fy, h).wrap == Wrap::None {
+                anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
                 continue;
             }
             // FLOAT-9.
@@ -1111,14 +1170,14 @@ impl<'d> PageFill<'d, '_> {
                     return Ok(Stop::Full);
                 } else {
                     // FLOAT-9: nowhere to move.
-                    let mut a = Placed::new((si, bi, pb.from + k), anchor, f, x, fy, h);
+                    let mut a = Placed::new((si, bi, pb.from + k), owner, f, x, fy, h);
                     a.wrap = Wrap::None;
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
                     anchors.push(a);
                     continue;
                 }
             }
-            anchors.push(Placed::new((si, bi, pb.from + k), anchor, f, x, fy, h));
+            anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
         }
         // Pagination over bands (PAGE-1 to PAGE-6), with the notes each band references (NOTE-9), as in `place_para`.
         let nb = bands.len();
@@ -1181,7 +1240,15 @@ impl<'d> PageFill<'d, '_> {
         self.record(p, first_part);
         let mut stop_kind = None;
         let mut end_y = top;
-        let origin = LineOrigin { shaped: sp, from: pb.from, width: col.width, x0: col.x, compat: self.ctx.env.text.compat, para: anchor };
+        let origin = LineOrigin {
+            shaped: sp,
+            from: pb.from,
+            width: col.width,
+            x0: col.x,
+            compat: self.ctx.env.text.compat,
+            para: anchor,
+            review: &self.ctx.env.text.review,
+        };
         let mut lines = Vec::new();
         let mut numbers = Vec::new();
         for (bt, segs) in &bands[..take] {
@@ -1198,7 +1265,7 @@ impl<'d> PageFill<'d, '_> {
         *y = end_y;
         *empty = false;
         carry.first_para = false;
-        carry.prev = Some(p.style.clone());
+        carry.prev = Some(p.para_style_in(self.ctx.env.text.review.view).clone());
         carry.prev_after = after;
         let done = take >= nb;
         if done {
@@ -1281,7 +1348,7 @@ impl<'d> PageFill<'d, '_> {
         let frames = Frames {
             page_w: self.page_w,
             page_h: self.page_h,
-            margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.bottom],
+            margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
             column: (col.x, col.width),
         };
         let mut placed_here = 0;
@@ -1291,7 +1358,12 @@ impl<'d> PageFill<'d, '_> {
         while pos.at.index() < n {
             let ri = pos.at.index();
             let row = &tb.rows[ri];
-            let last = ri + 1 == n;
+            // REV-1: a row the markup view hides draws nothing.
+            if row.hidden {
+                pos.at = At::Row(ri + 1);
+                continue;
+            }
+            let last = tb.is_last(ri);
             let rest = pos.at.rest().cloned();
             let at_top = *empty || placed_here == 0 && rest.is_some();
             // The row's cell contents: borrowed (a row is copied only when it splits).

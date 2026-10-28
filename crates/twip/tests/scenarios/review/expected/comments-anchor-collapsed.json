@@ -1,0 +1,288 @@
+{
+  "description": "Adding a comment at a collapsed range: inside a word, at the start of a word, and on a space.",
+  "setup": "one paragraph \"Alpha beta gamma.\", tracking off, author \"Author A\"",
+  "steps": [
+    {
+      "do": "add comment \"Inside\" at offset 8 (between \"be\" and \"ta\")",
+      "author": "Author A",
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Inside",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": null,
+            "done": false
+          }
+        ]
+      },
+      "storage": {
+        "parts": [
+          "comments.xml",
+          "commentsExtended.xml",
+          "commentsIds.xml",
+          "commentsExtensible.xml",
+          "people.xml"
+        ],
+        "comments_extended": [
+          {
+            "has_parent": false,
+            "done": false
+          }
+        ],
+        "people": [
+          "Author A"
+        ]
+      }
+    },
+    {
+      "do": "add comment \"Start\" at offset 11 (before \"gamma\")",
+      "author": "Author A",
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Inside",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Start",
+            "scope": "gamma",
+            "start": 11,
+            "end": 16,
+            "parent": null,
+            "done": false
+          }
+        ]
+      },
+      "storage": {
+        "parts": [
+          "comments.xml",
+          "commentsExtended.xml",
+          "commentsIds.xml",
+          "commentsExtensible.xml",
+          "people.xml"
+        ],
+        "comments_extended": [
+          {
+            "has_parent": false,
+            "done": false
+          },
+          {
+            "has_parent": false,
+            "done": false
+          }
+        ],
+        "people": [
+          "Author A"
+        ]
+      }
+    },
+    {
+      "do": "add comment \"Space\" at offset 5 (before the space after \"Alpha\")",
+      "author": "Author A",
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Space",
+            "scope": "Alpha",
+            "start": 0,
+            "end": 5,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Inside",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Start",
+            "scope": "gamma",
+            "start": 11,
+            "end": 16,
+            "parent": null,
+            "done": false
+          }
+        ]
+      },
+      "storage": {
+        "parts": [
+          "comments.xml",
+          "commentsExtended.xml",
+          "commentsIds.xml",
+          "commentsExtensible.xml",
+          "people.xml"
+        ],
+        "comments_extended": [
+          {
+            "has_parent": false,
+            "done": false
+          },
+          {
+            "has_parent": false,
+            "done": false
+          },
+          {
+            "has_parent": false,
+            "done": false
+          }
+        ],
+        "people": [
+          "Author A"
+        ]
+      }
+    }
+  ]
+}

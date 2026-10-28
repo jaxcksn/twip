@@ -1,0 +1,599 @@
+{
+  "description": "Pages and lines per paragraph of FX-REVIEW-TABLES.docx in each markup view, as far as they can be observed (see each view's source), plus the layouts of the tracked document, of every revision accepted and of every revision rejected.",
+  "fixture": "FX-REVIEW-TABLES.docx",
+  "views": {
+    "all-markup": {
+      "source": "fixed-format export with markup; lines mapped to the paragraphs of the tracked document (table cells not mapped)",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "lines": null
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "lines": null
+        },
+        {
+          "text": "Notice claim team export.",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "Pilot receipt corporate requirement.",
+          "lines": null
+        },
+        {
+          "text": "Regional maintenance accessibility tax.",
+          "lines": null
+        },
+        {
+          "text": "Trend suggestions board order.",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "lines": null
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "lines": null
+        },
+        {
+          "text": "Notice claim team export.",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "Pilot receipt corporate requirement.",
+          "lines": null
+        },
+        {
+          "text": "Regional maintenance accessibility tax.",
+          "lines": null
+        },
+        {
+          "text": "Trend suggestions board order.",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "lines": null
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "lines": null
+        },
+        {
+          "text": "Notice claim team export.",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "lines": 2
+        }
+      ],
+      "unmatched_lines": [
+        "The meeting forecast hereby. Inventory r",
+        "The meeting forecast hereby. Inventory r",
+        "The meeting forecast hereby. Inventory r",
+        "Formatted Table",
+        "Formatted Table"
+      ]
+    },
+    "simple-markup": {
+      "source": "not observable: neither the export nor the layout queries follow the view setting",
+      "pages": null,
+      "paragraphs": null
+    },
+    "no-markup": {
+      "source": "fixed-format export without markup; lines mapped to the paragraphs of the document with every revision accepted (table cells not mapped)",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "lines": null
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "lines": null
+        },
+        {
+          "text": "Notice claim team export.",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "Pilot receipt corporate requirement.",
+          "lines": null
+        },
+        {
+          "text": "Regional maintenance accessibility tax.",
+          "lines": null
+        },
+        {
+          "text": "Trend suggestions board order.",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "lines": null
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "lines": null
+        },
+        {
+          "text": "Notice claim team export.",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "lines": null
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "lines": null
+        },
+        {
+          "text": "Notice claim team export.",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "lines": 2
+        }
+      ],
+      "unmatched_lines": [
+        "The meeting forecast hereby. Inventory r",
+        "The meeting forecast hereby. Inventory r",
+        "The meeting forecast hereby. Inventory r"
+      ]
+    },
+    "original": {
+      "source": "layout of the document with every revision rejected",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Pilot receipt corporate requirement.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Trend suggestions board order.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        }
+      ]
+    }
+  },
+  "layouts": {
+    "tracked": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Pilot receipt corporate requirement.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Trend suggestions board order.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Pilot receipt corporate requirement.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Trend suggestions board order.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        }
+      ]
+    },
+    "accepted": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Pilot receipt corporate requirement.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Trend suggestions board order.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        }
+      ]
+    },
+    "rejected": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Pilot receipt corporate requirement.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax.",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "Trend suggestions board order.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "The meeting forecast hereby.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Inventory relevant group relief.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Notice claim team export.",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        }
+      ]
+    }
+  },
+  "error": null
+}

@@ -1,0 +1,15 @@
+{
+  "id": "REV-RESOLVE-SECTION-RECORDED",
+  "title": "A recorded page change rejected with tracking still on: the page before it comes back, and nothing is recorded.",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {"type": "Alpha beta."},
+    {"command": "review.track", "arg": "on"},
+    {"command": "review.author", "arg": "Author A"},
+    {"command": "layout.orientation.landscape"},
+    {"command": "layout.margins.wide"},
+    {"expect": {"revisions": ["SectionProperty Author A"], "review": {"sections": [{"change": "Author A", "page": [792, 612], "margins": [72, 72, 144, 144]}]}}},
+    {"command": "review.reject", "arg": "all"},
+    {"expect": {"revisions": [], "review": {"sections": [{"change": null, "page": [612, 792], "margins": [72, 72, 72, 72]}]}}}
+  ]
+}

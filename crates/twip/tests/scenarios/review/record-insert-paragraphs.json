@@ -1,0 +1,119 @@
+{
+ "id": "RECORD-INSERT-PARAGRAPHS",
+ "title": "Pasted paragraphs are inserted: their text and marks",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  {
+   "type": "First para."
+  },
+  {
+   "key": "Enter"
+  },
+  {
+   "type": "Second para."
+  },
+  {
+   "command": "review.track",
+   "arg": "on"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author A"
+  },
+  {
+   "click": {
+    "para": 1,
+    "offset": 0
+   }
+  },
+  {
+   "paste_text": "New one\nNew two\n"
+  },
+  {
+   "expect": {
+    "caret": {
+     "para": 3,
+     "offset": 0
+    },
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "First para.",
+        "runs": [
+         {
+          "text": "First para.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       },
+       {
+        "text": "New one",
+        "runs": [
+         {
+          "text": "New one",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": "Author A",
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       },
+       {
+        "text": "New two",
+        "runs": [
+         {
+          "text": "New two",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": "Author A",
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       },
+       {
+        "text": "Second para.",
+        "runs": [
+         {
+          "text": "Second para.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

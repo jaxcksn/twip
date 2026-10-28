@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 use super::command_bar::entry;
 use super::{Engine, json_str};
-use crate::docx::Inline;
 use crate::editing::Editor;
+use crate::editing::text::{OBJECT, UnitText};
 use crate::layout::{ParaId, Unit};
 
 /// A misspelled word in a paragraph (unit offsets); `repeated` marks a doubled word ("the the").
@@ -140,18 +140,17 @@ impl Speller {
     }
 }
 
-/// A paragraph's text for checking: one character per unit, text as is (hidden text as spaces), everything else a
-/// space.
+/// A paragraph's text for checking: one character per unit, the text the markup view shows as is; hidden text,
+/// deleted text (in every view), tabs, breaks and objects as spaces.
 pub fn check_text(e: &Editor, para: ParaId) -> Vec<char> {
     let Some(p) = e.index().para(e.document(), para) else { return Vec::new() };
-    let mut out = Vec::new();
-    for i in &p.inlines {
-        match i {
-            Inline::Text(t, r) if !r.hidden => out.extend(t.chars()),
-            other => out.extend(std::iter::repeat_n(' ', other.units())),
-        }
-    }
-    out
+    let view = e.document().review.view;
+    let t = UnitText::masked(p, |rev| rev.del.is_some() || view.hides(rev));
+    t.text
+        .chars()
+        .enumerate()
+        .map(|(u, c)| if t.is_hidden(Unit(u as u32)) || matches!(c, '\t' | '\u{2028}' | '\u{c}' | OBJECT) { ' ' } else { c })
+        .collect()
 }
 
 /// The selection's paragraph and unit range, when it is in one paragraph.

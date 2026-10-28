@@ -1,0 +1,14 @@
+{
+  "id": "REV-RESOLVE-MARK-INSERTED",
+  "title": "An inserted paragraph mark: accepting keeps it, rejecting joins the paragraph with the next, which gives it its properties.",
+  "fixture": "review/FX-REVIEW-MARKS.docx",
+  "steps": [
+    {"expect": {"paragraphs": 9, "revisions": ["Delete Author B", "Insert Author A", "ParagraphProperty Author C", "ParagraphProperty Author A"]}},
+    {"command": "review.accept", "arg": 2},
+    {"expect": {"text": {"4": "Trend suggestions board order update granted agreement marketing promotion division date profitable."}, "revisions": ["Delete Author B", "ParagraphProperty Author C", "ParagraphProperty Author A"], "paragraphs": 9, "jc": {"4": "left"}, "undo_depth": 1}},
+    {"command": "home.undo"},
+    {"expect": {"paragraphs": 9, "revisions": ["Delete Author B", "Insert Author A", "ParagraphProperty Author C", "ParagraphProperty Author A"]}},
+    {"command": "review.reject", "arg": 2},
+    {"expect": {"text": {"4": "Trend suggestions board order update granted agreement marketing promotion division date profitable.Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility tax finds."}, "revisions": ["Delete Author B", "ParagraphProperty Author C", "ParagraphProperty Author A"], "paragraphs": 8, "jc": {"4": "center"}, "undo_depth": 1}}
+  ]
+}

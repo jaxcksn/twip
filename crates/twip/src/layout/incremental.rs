@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::*;
+use crate::docx::review::MarkupView;
 use crate::font::Fonts;
 
 use super::LayoutCtx;
@@ -21,6 +22,7 @@ use super::env::LayoutEnv;
 use super::fragment::PageFragment;
 use super::ids::{FragmentId, LayoutRevision, ParaId, Revision, Unit};
 use super::job::{Budget, Memos, Step, Yield};
+use super::join::{chain_end, chain_start};
 use super::line::border_key;
 use super::page::{Cursor, PassRun, fields_used};
 use super::record::{HfRecord, PageRecord};
@@ -139,6 +141,7 @@ fn props(s: &Section) -> Section {
         v_align,
         page_borders,
         blocks: _,
+        change,
     } = s;
     Section {
         break_kind: *break_kind,
@@ -161,6 +164,7 @@ fn props(s: &Section) -> Section {
         v_align: v_align.clone(),
         page_borders: page_borders.clone(),
         blocks: Vec::new(),
+        change: change.clone(),
     }
 }
 
@@ -265,18 +269,26 @@ fn compare(doc: &Document, shadow: &Shadow) -> Result<Option<Span>, ()> {
     Ok(found)
 }
 
-/// The span extended to every block whose measurement depends on a changed block: a bordered paragraph
-/// next to it (PARA-7 neighbour keys). Border boxes depend only on immediate neighbours.
-fn close(span: Span, blocks: &[Block]) -> Span {
-    let bordered = |b: Option<&Block>| matches!(b, Some(Block::Para(p)) if border_key(&p.style).is_some());
+/// The span extended to every block whose measurement depends on a changed block: the paragraphs joined to it
+/// (REV-6: a paragraph before it whose mark the view hides lays out with it), and a bordered paragraph next to those
+/// (PARA-7 neighbour keys). Border boxes depend only on immediate neighbours; a joined paragraph's border is its last
+/// paragraph's.
+fn close(span: Span, blocks: &[Block], view: MarkupView) -> Span {
+    let bordered = |i: usize| matches!(blocks.get(i), Some(Block::Para(p)) if border_key(p.para_style_in(view)).is_some());
     let mut s = span;
-    if s.first > 0 && bordered(blocks.get(s.first - 1)) {
-        s.first -= 1;
+    let first = chain_start(blocks, s.first, view);
+    if first < s.first {
+        s.first = first;
         s.row = None;
     }
-    if bordered(blocks.get(s.new_end)) {
-        s.new_end += 1;
-        s.old_end += 1;
+    if s.first > 0 && bordered(s.first - 1) {
+        s.first = chain_start(blocks, s.first - 1, view);
+        s.row = None;
+    }
+    let next = chain_end(blocks, s.new_end, view);
+    if s.new_end < blocks.len() && bordered(next) {
+        s.old_end += next + 1 - s.new_end;
+        s.new_end = next + 1;
         s.row = None;
     }
     s
@@ -292,10 +304,11 @@ fn close(span: Span, blocks: &[Block]) -> Span {
 /// vertical alignment, balancing and separators (page-level). Header and footer content from elsewhere is recomposed,
 /// and a changed header height fails convergence; body page fields mean a full layout. A new rule that lets later
 /// content change earlier placement must be added here.
-fn restart_page(base: &[PageRecord], span: &Span, blocks: &[Block]) -> usize {
-    let mut g = span.first.min(blocks.len());
-    while g > 0 && matches!(&blocks[g - 1], Block::Para(p) if p.style.keep_next) {
-        g -= 1;
+fn restart_page(base: &[PageRecord], span: &Span, blocks: &[Block], view: MarkupView) -> usize {
+    // A joined paragraph (REV-6) keeps with the next by its last paragraph's style, and starts at its first.
+    let mut g = chain_start(blocks, span.first.min(blocks.len()), view);
+    while g > 0 && matches!(&blocks[g - 1], Block::Para(p) if p.para_style_in(view).keep_next) {
+        g = chain_start(blocks, g - 1, view);
     }
     let before = |pg: &PageRecord| pg.bodies.first().is_some_and(|b| (b.token.section, b.token.flow.block) < (span.section, g));
     let mut r = base.iter().rposition(before).unwrap_or(0);
@@ -762,7 +775,7 @@ impl DocumentLayout {
         if b.extras.endnote_order != job.endnotes() {
             return full(job);
         }
-        let closed = span.map(|s| close(s, &doc.sections[s.section].blocks));
+        let closed = span.map(|s| close(s, &doc.sections[s.section].blocks, doc.review.view));
         let base = &b.finished.records;
         #[cfg(test)]
         let forced = FORCE_FIRST_PAGE.get();
@@ -772,7 +785,7 @@ impl DocumentLayout {
         let r = match &closed {
             _ if forced || base.is_empty() => 0,
             Some(s) => {
-                let r = restart_page(base, s, &doc.sections[s.section].blocks);
+                let r = restart_page(base, s, &doc.sections[s.section].blocks, doc.review.view);
                 let notes = job.note_numbers().clone();
                 let latest = b.table.as_ref();
                 crate::prof::time("layout:row-restart", || {

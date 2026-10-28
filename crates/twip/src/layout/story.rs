@@ -12,11 +12,12 @@ use super::env::TextEnv;
 use super::fragment::{BoxFragment, BoxKind, Child, ImageKey, Item, PlacedLine};
 use super::ids::{FloatId, ParaId};
 use super::job::{Memos, Yield};
+use super::join::LaidBlock;
 use super::line::{break_lines, neighbour_borders};
 use super::paragraph::{contextual_in, gap, gap_plain, space_after, space_before};
 use super::space::ParaSpace;
 use super::table::TableLayout;
-use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape, shape_space};
+use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape};
 
 const EPS: f64 = 1e-6;
 
@@ -89,14 +90,14 @@ impl PartialEq for ChildId {
     }
 }
 
-/// The children of `blocks`, shaped (and nested tables laid out: at `width`, or measured when `None`) through the
-/// cache.
-pub fn child_ids(blocks: &[&Block], width: Option<f64>, env: &StoryEnv, memos: &mut Memos) -> Result<Vec<ChildId>, Yield> {
+/// The children of `blocks` (as laid out, REV-6), shaped (and nested tables laid out: at `width`, or measured when
+/// `None`) through the cache.
+pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, memos: &mut Memos) -> Result<Vec<ChildId>, Yield> {
     let mut out = Vec::with_capacity(blocks.len());
     for b in blocks {
         out.push(match b {
-            Block::Para(p) => ChildId::Para(shape(p, &shape_space(p, env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?),
-            Block::Table(t) => ChildId::Table(match width {
+            LaidBlock::Para(p) => ChildId::Para(shape(p.para(), &p.shape_space(env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?),
+            LaidBlock::Table(t) => ChildId::Table(match width {
                 Some(w) => super::table::layout(t, w, env, false, memos)?,
                 None => super::table::layout(t, 1e9, env, true, memos)?,
             }),
@@ -157,15 +158,16 @@ fn story_bytes(s: &StoryLayout) -> usize {
 /// coordinates. The height includes the first space-before and the last space-after (HDR-3, TABLE-29). Cached by
 /// [`StoryKey`].
 pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, in_cell: bool, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
-    let children = child_ids(blocks, Some(width), env, memos)?;
+    let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let children = child_ids(&blocks, Some(width), env, memos)?;
     let probe = StoryKey::new(children.clone(), Some(width), in_cell, env);
-    cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(blocks, &children, width, env, in_cell, m))
+    cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, in_cell, m))
 }
 
 /// [`layout`] without the cache, with the blocks' children already resolved (shaped paragraphs, tables laid out at
 /// `width`); blocks without one are resolved here.
 pub fn layout_with(
-    blocks: &[&Block],
+    blocks: &[LaidBlock],
     resolved: &[ChildId],
     width: f64,
     env: &StoryEnv,
@@ -173,6 +175,7 @@ pub fn layout_with(
     memos: &mut Memos,
 ) -> Result<StoryLayout, Yield> {
     let text = &env.ctx.env.text;
+    let view = text.review.view;
     let mut units = Vec::new();
     let mut y = 0.0;
     let mut prev: Option<&ParaStyle> = None;
@@ -180,22 +183,24 @@ pub fn layout_with(
     let contextual = contextual_in(text, in_cell);
     for (bi, b) in blocks.iter().enumerate() {
         match b {
-            Block::Para(p) => {
+            LaidBlock::Para(laid) => {
+                let p = laid.para();
                 let next = match blocks.get(bi + 1) {
-                    Some(Block::Para(n)) => Some(&*n.style),
+                    Some(LaidBlock::Para(n)) => Some(&**n.para().para_style_in(view)),
                     _ => None,
                 };
                 let shaped = match resolved.get(bi) {
                     Some(ChildId::Para(s)) => s.clone(),
-                    _ => shape(p, &shape_space(p, env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?,
+                    _ => shape(p, &laid.shape_space(env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?,
                 };
-                let ps = ParaSpace { width, start: 0, borders: neighbour_borders(&p.style, prev, next), x0: 0.0, env: text.clone() };
+                let style = p.para_style_in(view);
+                let ps = ParaSpace { width, start: 0, borders: neighbour_borders(style, prev, next), x0: 0.0, env: text.clone() };
                 let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
-                let (before, after) = (space_before(&p.style), space_after(&p.style));
+                let (before, after) = (space_before(style), space_after(style));
                 let g = match prev {
                     None => before,
                     Some(_) if !contextual => gap_plain(text, prev_after, before),
-                    Some(ps) => gap(text, ps, prev_after, &p.style, before),
+                    Some(ps) => gap(text, ps, prev_after, style, before),
                 };
                 y += g;
                 let id = para_id(p);
@@ -221,7 +226,8 @@ pub fn layout_with(
                             };
                             let h = float_height(f, env, memos)?;
                             let (fx, fy) = (super::float::h_pos(f, &fr), super::float::v_pos(f, h, &fr, para_top, y) - y);
-                            content.push(float_box(f, [fx, fy, fx + f.w, fy + h], id, env, memos)?);
+                            let anchor = super::join::piece_para(&lines.shaped, lines.from + k, id);
+                            content.push(float_box(f, [fx, fy, fx + f.w, fy + h], anchor, env, memos)?);
                         }
                     }
                     units.push(StoryUnit {
@@ -231,15 +237,15 @@ pub fn layout_with(
                         after: if i + 1 == lines.lines.len() { after } else { 0.0 },
                         content: content.into(),
                         block: bi,
-                        widow: p.style.widow_control,
+                        widow: style.widow_control,
                         notes: lines.notes(i).into_boxed_slice(),
                     });
                     y += line.pitch;
                 }
-                prev = Some(&p.style);
+                prev = Some(style);
                 prev_after = after;
             }
-            Block::Table(t) => {
+            LaidBlock::Table(t) => {
                 y += prev_after; // TABLE-48: the space-after before a table applies to its border edge
                 let (rows, h) = match resolved.get(bi) {
                     Some(ChildId::Table(tb)) => super::table::table_units(tb),

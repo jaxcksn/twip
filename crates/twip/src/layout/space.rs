@@ -3,6 +3,8 @@
 
 use crate::docx::props::Border;
 
+use crate::docx::review::MarkupView;
+
 use super::env::TextEnv;
 
 /// What shaping a paragraph depends on besides its content: the resolved text of its page-dependent fields, in
@@ -15,6 +17,10 @@ pub struct ShapeSpace {
     /// [`super::env::TextEnv::balance_spaces`] and [`super::env::TextEnv::compress_punctuation`].
     pub balance: bool,
     pub compress: bool,
+    /// The markup view: which revised text shapes at all.
+    pub view: MarkupView,
+    /// Where a joined paragraph's units come from (REV-6): its pieces name their own paragraphs once drawn.
+    pub join: Option<std::rc::Rc<super::join::JoinMap>>,
 }
 
 /// A paragraph's border settings, which make consecutive paragraphs share one box when identical (PARA-7):

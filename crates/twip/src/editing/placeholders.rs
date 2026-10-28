@@ -58,12 +58,12 @@ impl Editor {
         for page in pages.clone() {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
             for l in &geo.lines {
-                let Some(p) = self.index.para(&self.doc, l.para) else { continue };
-                for w in l.stops.windows(2).filter(|w| w[1].unit.0 == w[0].unit.0 + 1) {
+                for w in l.stops.windows(2).filter(|w| w[1].para == w[0].para && w[1].unit.0 == w[0].unit.0 + 1) {
+                    let Some(p) = self.index.para(&self.doc, w[0].para) else { continue };
                     let Some(Inline::Picture(pic, _)) = super::stories::inline_at(p, w[0].unit) else { continue };
                     let Some(info) = self.placeholder_of(pic.image, pic.w, pic.h) else { continue };
                     let Some(look) = self.placeholder_looks.get(&info.key).or_else(|| self.placeholder_looks.get("")) else { continue };
-                    let Some(rect) = self.inline_box(&geo, l.para, w[0].unit) else { continue };
+                    let Some(rect) = self.inline_box(&geo, w[0].para, w[0].unit) else { continue };
                     out.push(super::view::PlaceholderView {
                         page,
                         rect,

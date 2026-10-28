@@ -178,7 +178,7 @@ fn every_click_on_a_line_lands_in_its_paragraph() {
                 let x = (l.x0() + l.x1()) / 2.0;
                 let y = (l.top + l.bottom) / 2.0;
                 let hit = geo.hit_text(x, y, &|s| s == StoryId::Body).expect("a hit");
-                assert_eq!(hit.para, l.para, "{name} page {page}: click at ({x:.1}, {y:.1})");
+                assert_eq!(Some(hit.para), l.para(), "{name} page {page}: click at ({x:.1}, {y:.1})");
             }
         }
     }
@@ -252,11 +252,11 @@ fn a_click_on_any_drawn_line_lands_in_that_lines_paragraph() {
                 };
                 assert_eq!(
                     got,
-                    Some(l.para),
+                    Some(l.stops[0].para),
                     "{f}: a click at ({x:.1}, {:.1}) on a line of {:?} {:?} (page {page}, chain {:?}) landed in {:?}",
                     (l.top + l.bottom) / 2.0,
-                    txt(Some(l.para)),
-                    l.para,
+                    txt(Some(l.stops[0].para)),
+                    l.stops[0].para,
                     l.chain,
                     txt(got)
                 );
@@ -280,7 +280,7 @@ fn a_click_on_any_story_line_lands_in_that_line() {
     for (page, g) in e.page_geometries() {
         for l in g.lines.iter().filter(|l| l.stops.len() > 1) {
             let story = g.stories[l.story].story;
-            if !seen.insert((story, l.para)) {
+            if !seen.insert((story, l.stops[0].para)) {
                 continue;
             }
             let x = (l.stops[0].x + l.stops[1].x) / 2.0;
@@ -296,10 +296,10 @@ fn a_click_on_any_story_line_lands_in_that_line() {
             let got = e.selection().focus().map(|p| (p.story, p.para_offset().map(|(p, _)| p)));
             assert_eq!(
                 got,
-                Some((story, Some(l.para))),
+                Some((story, Some(l.stops[0].para))),
                 "a click on page {page} at ({x:.1}, {:.1}) on {story:?} {:?}; stories {:?}",
                 (l.top + l.bottom) / 2.0,
-                l.para,
+                l.stops[0].para,
                 g.stories.iter().map(|s| (s.story, s.rect.map(|v| v.round()))).collect::<Vec<_>>()
             );
             seq += 1;

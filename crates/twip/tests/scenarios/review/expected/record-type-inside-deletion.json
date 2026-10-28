@@ -1,0 +1,220 @@
+{
+  "description": "Typing with the caret inside deleted text, with deletions shown.",
+  "setup": "one paragraph \"Alpha beta gamma.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "Alpha beta gamma.",
+        "runs": [
+          {
+            "text": "Alpha beta gamma.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "delete \"beta \"",
+      "author": "Author B",
+      "op": {
+        "op": "delete",
+        "start": 6,
+        "end": 11
+      },
+      "selection": {
+        "start": 11,
+        "end": 11
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta ",
+                  "ins": null,
+                  "del": "Author B",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author B",
+            "text": "beta "
+          }
+        ]
+      }
+    },
+    {
+      "do": "type \"X\" inside the deletion, after \"be\"",
+      "author": "Author A",
+      "op": {
+        "op": "type",
+        "at": 8,
+        "text": "X"
+      },
+      "selection": {
+        "start": 9,
+        "end": 9
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beXta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "be",
+                  "ins": null,
+                  "del": "Author B",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "X",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "ta ",
+                  "ins": null,
+                  "del": "Author B",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author B",
+            "text": "be"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "X"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author B",
+            "text": "ta "
+          }
+        ]
+      }
+    }
+  ]
+}

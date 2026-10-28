@@ -35,6 +35,8 @@ One JSON file per scenario, run by the native runner (`crates/twip/src/editing/t
 - **`sizes`** and **`colors`** expectations are per paragraph like `runs` (`[[units, 11], …]`, `[[units, "FF0000"], …]`); **`para`** gives paragraph metrics (`ind_left`, `ind_first`, `before`, `after`, `line`, `keep_next`), numbers within half a point.
 - **`floats`** expectations list every float in document order (`[{}, {"anchor": 6}]`): the count must match, and each given field must equal the inspected one.
 - **`tables`** expectations give, per table in dump order, `rows` and optionally `cells` (cells per row).
+- **`comments`** expectations list every comment in the order of their threads' ranges, each thread's first comment then its replies: `author`, `initials`, `text` (paragraphs separated by `
+`), `scope` (the range's text), `parent` (the 1-based position of the comment replied to), `done` and `active` (on a thread's first comment).
 - **A missing fixture fails the scenario**.
 
 ## Merge template steps and expectations

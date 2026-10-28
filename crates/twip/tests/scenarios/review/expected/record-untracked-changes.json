@@ -1,0 +1,406 @@
+{
+  "description": "Changes that are not tracked: creating a header, adding a comment.",
+  "setup": "one paragraph \"Alpha beta gamma.\" (no header)",
+  "initial": {
+    "body": [
+      {
+        "text": "Alpha beta gamma.",
+        "runs": [
+          {
+            "text": "Alpha beta gamma.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "create the default header with text \"Header\"",
+      "author": "Author A",
+      "op": {
+        "op": "header",
+        "text": "Header"
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-default": [
+            {
+              "text": "Header",
+              "runs": [
+                {
+                  "text": "Header",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-default": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "Header",
+            "story": "header-default"
+          }
+        ]
+      }
+    },
+    {
+      "do": "add a comment \"Note\" on \"beta\"",
+      "author": "Author A",
+      "op": {
+        "op": "comment",
+        "start": 6,
+        "end": 10,
+        "text": "Note"
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-default": [
+            {
+              "text": "Header",
+              "runs": [
+                {
+                  "text": "Header",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-default": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "Header",
+            "story": "header-default"
+          }
+        ],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Note",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": null,
+            "done": false
+          }
+        ]
+      }
+    }
+  ]
+}

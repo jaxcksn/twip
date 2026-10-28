@@ -238,18 +238,18 @@ impl Nav<'_> {
         let at = self.line_of(pos)?;
         let l = &at.geo.lines[at.line];
         let stop = if end { l.stops.last()? } else { l.stops.first()? };
-        let wraps = end && at.geo.lines.iter().any(|m| m.para == l.para && m.first() == stop.unit && m.top > l.top);
+        let wraps = end && at.geo.lines.iter().any(|m| m.first_of(stop.para) == Some(stop.unit) && m.top > l.top);
         Some(Position {
             story: pos.story,
-            place: Place::Text { para: l.para, offset: stop.unit, affinity: if wraps { Affinity::Upstream } else { Affinity::Downstream } },
+            place: Place::Text { para: stop.para, offset: stop.unit, affinity: if wraps { Affinity::Upstream } else { Affinity::Downstream } },
         })
     }
 
     /// The caret's x on its line.
     pub fn caret_x(&mut self, pos: Position) -> Option<f64> {
         let at = self.line_of(pos)?;
-        let (_, unit) = pos.para_offset()?;
-        at.geo.lines[at.line].x_of(unit)
+        let (para, unit) = pos.para_offset()?;
+        at.geo.lines[at.line].x_of(para, unit)
     }
 
     /// The position on paragraph `para`'s first (or last) line nearest `x`.
@@ -263,10 +263,10 @@ impl Nav<'_> {
             return geo.cells.iter().any(|c| c.closing.is_some_and(|(p, _)| p == para)).then(|| Position::text(story, para, Unit(0)));
         };
         let stop = line.nearest(x)?;
-        let wraps = stop.end && geo.lines.iter().any(|m| m.para == para && m.first() == stop.unit && m.top > line.top);
+        let wraps = stop.end && geo.lines.iter().any(|m| m.first_of(stop.para) == Some(stop.unit) && m.top > line.top);
         Some(Position {
             story,
-            place: Place::Text { para, offset: stop.unit, affinity: if wraps { Affinity::Upstream } else { Affinity::Downstream } },
+            place: Place::Text { para: stop.para, offset: stop.unit, affinity: if wraps { Affinity::Upstream } else { Affinity::Downstream } },
         })
     }
 
@@ -274,29 +274,33 @@ impl Nav<'_> {
     /// first (last) line of the next (previous) content in the containment structure, entering tables at the cell
     /// under the goal x and leaving them to the cell below (above) by grid column.
     pub fn vertical(&mut self, pos: Position, x: f64, down: bool) -> Option<Position> {
+        let mut from = pos.para_offset().map(|(p, _)| p);
         if let Some(at) = self.line_of(pos) {
             let l = &at.geo.lines[at.line];
-            let para = l.para;
+            // A line showing several paragraphs (REV-6) moves on from its last one going down, its first going up.
+            let para = if down { l.paras.last() } else { l.paras.first() }.copied().or(from)?;
+            from = Some(para);
             // Another line of the same paragraph, on this page or the next.
             let same: Vec<usize> = at.geo.lines_of(para).map(|(i, _)| i).collect();
             let k = same.iter().position(|&i| i == at.line)?;
             let next = if down { same.get(k + 1) } else { k.checked_sub(1).and_then(|j| same.get(j)) };
             if let Some(&i) = next {
                 let stop = at.geo.lines[i].nearest(x)?;
-                return Some(Position::text(pos.story, para, stop.unit));
+                return Some(Position::text(pos.story, stop.para, stop.unit));
             }
             let page = if down { Some(at.page + 1) } else { at.page.checked_sub(1) };
             if let Some(g) = page.and_then(|page| self.pages.page(page, self.idx)) {
                 let lines: Vec<usize> = g.lines_of(para).map(|(i, _)| i).collect();
                 if let Some(&i) = if down { lines.first() } else { lines.last() } {
                     let stop = g.lines[i].nearest(x)?;
-                    return Some(Position::text(pos.story, para, stop.unit));
+                    return Some(Position::text(pos.story, stop.para, stop.unit));
                 }
             }
         }
         // Past the paragraph (or a row end mark): the structural neighbour.
         let target = match pos.place {
-            Place::Text { para, .. } => {
+            Place::Text { .. } => {
+                let para = from?;
                 let s = self.idx.para_slot(para)?;
                 if down { self.below(s.container, s.block, x)? } else { self.above(s.container, s.block, x)? }
             }

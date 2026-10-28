@@ -1,0 +1,326 @@
+{
+  "description": "Paragraph formatting, twice, by two authors.",
+  "setup": "two paragraphs \"First para.\" / \"Second para.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "First para.",
+        "runs": [
+          {
+            "text": "First para.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      },
+      {
+        "text": "Second para.",
+        "runs": [
+          {
+            "text": "Second para.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "centre the first paragraph",
+      "author": "Author A",
+      "op": {
+        "op": "paragraph-format",
+        "paragraph": 1,
+        "set": "align=center"
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "First para.",
+              "runs": [
+                {
+                  "text": "First para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": "Author A",
+              "ppr": [
+                "jc:val=center"
+              ],
+              "pwas": [],
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Second para.",
+              "runs": [
+                {
+                  "text": "Second para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionParagraphProperty",
+            "author": "Author A",
+            "text": "First para.\r"
+          }
+        ]
+      }
+    },
+    {
+      "do": "right-align the first paragraph",
+      "author": "Author B",
+      "op": {
+        "op": "paragraph-format",
+        "paragraph": 1,
+        "set": "align=right"
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "First para.",
+              "runs": [
+                {
+                  "text": "First para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": "Author B",
+              "ppr": [
+                "jc:val=right"
+              ],
+              "pwas": [],
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Second para.",
+              "runs": [
+                {
+                  "text": "Second para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionParagraphProperty",
+            "author": "Author B",
+            "text": "First para.\r"
+          }
+        ]
+      }
+    },
+    {
+      "do": "apply Heading 1 to the second paragraph",
+      "author": "Author A",
+      "op": {
+        "op": "paragraph-format",
+        "paragraph": 2,
+        "set": "style=Heading 1"
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "First para.",
+              "runs": [
+                {
+                  "text": "First para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": "Author B",
+              "ppr": [
+                "jc:val=right"
+              ],
+              "pwas": [],
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Second para.",
+              "runs": [
+                {
+                  "text": "Second para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": "Author A",
+              "ppr": [
+                "pStyle:val=Heading1"
+              ],
+              "pwas": [],
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionParagraphProperty",
+            "author": "Author B",
+            "text": "First para.\r"
+          },
+          {
+            "type": "wdRevisionParagraphProperty",
+            "author": "Author A",
+            "text": "Second para.\r"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "REV-COMMENTS-05",
+  "title": "A document's comments read as threads in range order; a comment added in a table cell anchors to the cell's word like one in the body",
+  "fixture": "review/FX-REVIEW-COMMENTS.docx",
+  "steps": [
+    {
+      "expect": {
+        "comments": [
+          { "author": "Author A", "text": "A bold and italic note.\nA second paragraph.", "parent": null, "done": false },
+          { "author": "Author B", "text": "A reply.", "parent": 1 },
+          { "text": "Inside the first.", "scope": "The meeting forecast hereby. " },
+          { "text": "Resolved.", "done": true },
+          { "text": "At a point.", "scope": "" },
+          { "text": "In a cell.", "scope": "cell text" }
+        ]
+      }
+    },
+    { "click": { "para": 4, "offset": 2 } },
+    { "command": "review.comment.add", "arg": "In cell" },
+    { "expect": { "comments": [{}, {}, {}, {}, {}, {}, { "text": "In cell", "scope": "plain", "active": true }] } },
+    { "command": "home.undo" },
+    { "expect": { "comments": [{}, {}, {}, {}, {}, {}] } }
+  ]
+}

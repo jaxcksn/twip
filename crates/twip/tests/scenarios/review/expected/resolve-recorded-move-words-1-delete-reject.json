@@ -1,0 +1,255 @@
+{
+  "description": "reject one end of a move recorded by cutting and pasting \"Second \" to the end of the second paragraph: revision 1, a delete.",
+  "fixture": "three paragraphs \"First para.\" / \"Second para.\" / \"Third para.\", the move recorded by author \"Author A\"",
+  "scope": "one",
+  "revision": {
+    "index": 1,
+    "type": "wdRevisionDelete",
+    "author": "Author A",
+    "text": "Second "
+  },
+  "op": "reject",
+  "before": {
+    "stories": {
+      "body": [
+        {
+          "text": "First para.",
+          "runs": [
+            {
+              "text": "First para.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Second para Second.",
+          "runs": [
+            {
+              "text": "Second ",
+              "ins": null,
+              "del": "Author A",
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "para",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": " Second",
+              "ins": "Author A",
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": ".",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Third para.",
+          "runs": [
+            {
+              "text": "Third para.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [
+      {
+        "type": "wdRevisionDelete",
+        "author": "Author A",
+        "text": "Second "
+      },
+      {
+        "type": "wdRevisionInsert",
+        "author": "Author A",
+        "text": " Second"
+      }
+    ]
+  },
+  "error": null,
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "First para.",
+          "runs": [
+            {
+              "text": "First para.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Second para Second.",
+          "runs": [
+            {
+              "text": "Second para",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": " Second",
+              "ins": "Author A",
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": ".",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Third para.",
+          "runs": [
+            {
+              "text": "Third para.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [
+      {
+        "type": "wdRevisionInsert",
+        "author": "Author A",
+        "text": " Second"
+      }
+    ]
+  }
+}

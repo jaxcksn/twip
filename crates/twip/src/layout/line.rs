@@ -10,10 +10,11 @@ use std::rc::Rc;
 
 use crate::docx::model::*;
 use crate::docx::props::{Jc, Leader, LineRule, TabKind};
+use crate::docx::review::{AuthorPalette, MarkKind, MarkupView, ReviewView};
 use crate::font::Fonts;
 
 use super::cache::{CacheKey, cached};
-use super::fragment::{GlyphRun, ImageKey, Item, LineFragment};
+use super::fragment::{Atom, GlyphRun, ImageKey, Item, LineFragment};
 use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
 use super::space::{BorderKey, ParaSpace};
@@ -106,6 +107,8 @@ pub struct ParaLines {
     /// they are drawn (table autofit, keep-with-next tests), so drawing waits for the first placement.
     drawn: Box<[OnceCell<Rc<LineFragment>>]>,
     compat: i64,
+    /// How revisions draw ([`ParaSpace::env`]).
+    review: ReviewView,
 }
 
 impl PartialEq for ParaLines {
@@ -133,7 +136,15 @@ impl ParaLines {
 
     /// Where these lines are drawn from.
     pub fn origin(&self) -> LineOrigin<'_> {
-        LineOrigin { shaped: &self.shaped, from: self.from, width: self.width, x0: self.x0, compat: self.compat, para: self.para }
+        LineOrigin {
+            shaped: &self.shaped,
+            from: self.from,
+            width: self.width,
+            x0: self.x0,
+            compat: self.compat,
+            para: self.para,
+            review: &self.review,
+        }
     }
 
     pub fn bytes(&self) -> usize {
@@ -210,11 +221,13 @@ pub fn break_lines_uncached(
     let from = space.start.min(shaped.pieces.len());
     let pieces = &shaped.pieces[from..];
     let frame = Frame::new(space);
-    let mut lines = super::job::unit("line breaking", || {
-        crate::prof::time("break", || break_paragraph(shaped, pieces, &para.style, &para.mark, &frame, fonts, from > 0))
-    });
-    let prev = if from > 0 { border_key(&para.style) } else { space.borders.0.clone() };
-    apply_borders(&mut lines, &para.style, prev.as_deref(), space.borders.1.as_deref(), space.width);
+    let view = space.env.review.view;
+    // REV-2
+    let (style, mark) = (para.para_style_in(view), para.mark_in(view));
+    let mut lines =
+        super::job::unit("line breaking", || crate::prof::time("break", || break_paragraph(shaped, pieces, style, mark, &frame, fonts, from > 0)));
+    let prev = if from > 0 { border_key(style) } else { space.borders.0.clone() };
+    apply_borders(&mut lines, style, prev.as_deref(), space.borders.1.as_deref(), space.width);
     // shortcut: line breaking is one unit per paragraph until jobs keep partial lines (JobMemo).
     memos.meter.unit_done();
     let n = lines.len();
@@ -227,6 +240,7 @@ pub fn break_lines_uncached(
         para: para_id(para),
         drawn: (0..n).map(|_| OnceCell::new()).collect(),
         compat: space.env.compat,
+        review: space.env.review.clone(),
     })
 }
 
@@ -1145,10 +1159,45 @@ pub fn symbol_unicode(family: &str, c: char) -> char {
     char::from_u32(mapped).filter(|_| mapped != 0).unwrap_or(c)
 }
 
-/// A run's text colour: automatic text is white on a dark highlight or shading (FONT-15), else black (`None`).
-fn ink(r: &RunStyle) -> Option<u32> {
+/// A run's text colour: its revision's colour in All markup (REV-3); else automatic text is white on a dark highlight
+/// or shading (FONT-15), else black (`None`).
+fn ink(r: &RunStyle, review: &ReviewView) -> Option<u32> {
+    if let Some(c) = revision_colour(r, review) {
+        return Some(c);
+    }
     let dark = |c: &u32| (0.299 * (c >> 16) as f64 + 0.587 * ((c >> 8) & 0xFF) as f64 + 0.114 * (c & 0xFF) as f64) < 110.0;
     r.color.or_else(|| r.highlight.or(r.shading).filter(dark).map(|_| 0xFFFFFF))
+}
+
+/// REV-3: in All markup, an inserted, deleted or moved run draws in its author's colour, a move in the move colour.
+/// A deleted insertion takes its deletion's.
+fn revision_colour(r: &RunStyle, review: &ReviewView) -> Option<u32> {
+    let m = r.rev.del.as_ref().or(r.rev.ins.as_ref()).filter(|_| review.view == MarkupView::All)?;
+    Some(if matches!(m.kind, MarkKind::MoveFrom | MarkKind::MoveTo) { AuthorPalette::MOVE } else { review.palette.color(m.author) })
+}
+
+/// REV-4: whether a line shows a revision: a property change of its paragraph (a list numbering change alone isn't one),
+/// revised text on it (or hidden by the view where it sits), or, on the last line, a revised paragraph mark.
+fn line_changed(o: &LineOrigin, line: &Line, src: &Paragraph) -> bool {
+    let view = o.review.view;
+    let last = line.end >= o.pieces().len();
+    if src.style.change.as_ref().is_some_and(|c| c.previous_raw.0.is_some()) || (last && !src.mark.rev.is_empty()) {
+        return true;
+    }
+    if !src.inlines.iter().any(|i| i.run().is_some_and(|r| !r.rev.is_empty())) {
+        return false;
+    }
+    let pieces = &o.pieces()[line.start..line.end];
+    let lo = pieces.iter().filter_map(|p| p.src).map(|u| u.0).min();
+    let hi = pieces.iter().filter_map(|p| p.src.map(|u| u.0 + text_of(o.shaped, p).chars().count().max(1) as u32)).max();
+    let (Some(lo), Some(hi)) = (lo, hi) else { return false };
+    let mut at = 0u32;
+    src.inlines.iter().any(|i| {
+        let (a, n) = (at, i.units() as u32);
+        at += n;
+        // Hidden content counts on the line it would sit at the end of.
+        i.run().is_some_and(|r| !r.rev.is_empty() && n > 0 && if view.hides(&r.rev) { a <= hi && a + n >= lo } else { a < hi && a + n > lo })
+    })
 }
 
 /// What drawing a paragraph's line needs: its shaped pieces from the lines' start piece, the width and origin the lines
@@ -1160,6 +1209,7 @@ pub struct LineOrigin<'a> {
     pub x0: f64,
     pub compat: i64,
     pub para: ParaId,
+    pub review: &'a ReviewView,
 }
 
 impl LineOrigin<'_> {
@@ -1194,11 +1244,37 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 out.push(Item::Glyphs(r.finish()));
             }
         };
-        let mut atoms: Vec<(f64, f64, Unit, bool)> = Vec::new();
+        let mut atoms: Vec<Atom> = Vec::new();
+        // REV-6: a joined paragraph's pieces keep their own paragraphs and units (generated text, its first's).
+        let join = sp.join.as_deref();
+        let source = |p: &Piece| match (join, p.src) {
+            (Some(j), Some(u)) => {
+                let (q, v) = j.source(u);
+                (q, Some(v))
+            }
+            (Some(j), None) => (j.first(), None),
+            (None, u) => (para, u),
+        };
+        // A paragraph that draws no characters on the line still gets a caret position there: a run without glyphs, in
+        // the paragraph mark's font, drawn before the piece it is at.
+        let mut places = caret_places(o, line).into_iter().peekable();
+        let mark = src.mark_in(o.review.view);
+        let face = places.peek().and_then(|_| fonts.face(&mark.ascii, mark.bold, mark.italic));
+        let caret = |x: f64, q: ParaId| {
+            face.as_ref().map(|f| {
+                let (glyphs, chars) = (Box::new([]), Box::new([]));
+                Item::Glyphs(GlyphRun { face: f.clone(), size: mark.size, baseline: base, x, glyphs, chars, colour: None, para: Some(q) })
+            })
+        };
         for (k, ix) in (line.start..line.end).enumerate() {
             let p = &pieces[ix];
             let st = &sp.styles[p.style as usize];
             let x = x0 + line.xs[k];
+            while let Some((_, q)) = places.next_if(|e| e.0 == Some(k)) {
+                flush(&mut run, &mut out);
+                out.extend(caret(x, q));
+            }
+            let (q, first) = source(p);
             if matches!(p.kind, Kind::Separator | Kind::ContSeparator) {
                 // NOTE-3: the separator rule.
                 let len = if p.kind == Kind::ContSeparator && o.compat <= 14 { o.width } else { 144.0 };
@@ -1210,8 +1286,8 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             if p.kind == Kind::Tab {
                 flush(&mut run, &mut out);
                 draw_leader(o, line, k, x0, base, &mut out);
-                if let Some(u) = p.src {
-                    atoms.push((x, next_x.unwrap_or(x), u, false));
+                if let Some(unit) = first {
+                    atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x), para: q, unit, brk: false });
                 }
                 continue;
             }
@@ -1220,16 +1296,16 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 if let Some(Object::Picture(pic)) = p.object.map(|o| &sp.objects[o as usize]) {
                     flush(&mut run, &mut out);
                     out.push(Item::Image { rect: [x, base - pic.h, x + pic.w, base], key: ImageKey { index: pic.image, generation: 0 } });
-                    if let Some(u) = p.src {
-                        atoms.push((x, next_x.unwrap_or(x + pic.w), u, false));
+                    if let Some(unit) = first {
+                        atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + pic.w), para: q, unit, brk: false });
                     }
                 }
                 continue;
             }
             // A break draws nothing; its unit still gets a caret stop where it sits (the end of its line).
             if matches!(p.kind, Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak) {
-                if let Some(u) = p.src {
-                    atoms.push((x, x, u, true));
+                if let Some(unit) = first {
+                    atoms.push(Atom { x0: x, x1: x, para: q, unit, brk: true });
                 }
                 continue;
             }
@@ -1241,10 +1317,10 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 continue;
             }
             let y = base - st.raise;
-            let color = ink(&st.run);
-            let same = run
-                .as_ref()
-                .is_some_and(|r| Rc::ptr_eq(&r.face, face) && (r.size - st.size).abs() < EPS && (r.y - y).abs() < EPS && r.color == color);
+            let color = ink(&st.run, o.review);
+            let same = run.as_ref().is_some_and(|r| {
+                Rc::ptr_eq(&r.face, face) && (r.size - st.size).abs() < EPS && (r.y - y).abs() < EPS && r.color == color && r.para == Some(q)
+            });
             if !same {
                 flush(&mut run, &mut out);
                 run = Some(GlyphRunBuilder {
@@ -1254,7 +1330,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                     glyphs: Vec::with_capacity(glyphs_left + 1),
                     chars: Vec::with_capacity(chars_left + 1),
                     color,
-                    para: Some(para),
+                    para: Some(q),
                     x,
                 });
             }
@@ -1264,7 +1340,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             if p.soft_hyphen {
                 if let Some(g) = face.glyph('-') {
                     r.glyphs.push((g, gx));
-                    r.chars.push(('-', gx, p.src));
+                    r.chars.push(('-', gx, first));
                 }
                 continue;
             }
@@ -1274,42 +1350,59 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
             let text = text_of(sp, p);
             for (j, c) in text.chars().enumerate() {
-                r.chars.push((symbol_unicode(&face.family, c), x, p.src.map(|u| Unit(u.0 + j as u32))));
+                r.chars.push((symbol_unicode(&face.family, c), x, first.map(|u| Unit(u.0 + j as u32))));
             }
             glyphs_left = glyphs_left.saturating_sub((p.glyphs.1 - p.glyphs.0) as usize);
             chars_left = chars_left.saturating_sub(text.len());
         }
         flush(&mut run, &mut out);
-        draw_decorations(sp, pieces, line, x0, base, rects_end, &mut out);
-        // A line without text (an empty paragraph) still gets a caret position: a run without glyphs at the line's
-        // aligned start, in the paragraph mark's font.
-        let drew = out.iter().any(|it| matches!(it, Item::Glyphs(r) if r.para == Some(para)));
-        if !drew
-            && line.start == line.end
-            && let Some(face) = fonts.face(&src.mark.ascii, src.mark.bold, src.mark.italic)
-        {
-            let s = &src.style;
-            let left = s.ind_left + if o.from == 0 { s.ind_first } else { 0.0 };
-            let right = o.width - s.ind_right;
-            let x = x0
-                + match s.jc {
+        draw_decorations(o, line, base, rects_end, &mut out);
+        // The places left are at the line's end: its aligned start when it has no pieces.
+        let end = match (line.xs.last(), line.widths.last()) {
+            (Some(x), Some(w)) => x0 + x + w,
+            _ => {
+                let s = src.para_style_in(o.review.view);
+                let left = s.ind_left + if o.from == 0 { s.ind_first } else { 0.0 };
+                let right = o.width - s.ind_right;
+                x0 + match s.jc {
                     Jc::Center => (left + right) / 2.0,
                     Jc::Right => right,
                     _ => left,
-                };
-            out.push(Item::Glyphs(GlyphRun {
-                face,
-                size: src.mark.size,
-                baseline: base,
-                x,
-                glyphs: Box::new([]),
-                chars: Box::new([]),
-                colour: None,
-                para: Some(para),
-            }));
+                }
+            }
+        };
+        for (_, q) in places.by_ref() {
+            out.extend(caret(end, q));
         }
-        LineFragment { items: out.into_boxed_slice(), pitch: line.pitch, baseline: line.baseline, atoms: atoms.into_boxed_slice() }
+        let changed = o.review.view.change_bars() && line_changed(o, line, src);
+        LineFragment { items: out.into_boxed_slice(), pitch: line.pitch, baseline: line.baseline, atoms: atoms.into_boxed_slice(), changed }
     }
+}
+
+/// The paragraphs that draw no characters on a line but have their caret position on it, in order, each with the
+/// line's piece it is before (`None`: the line's end). A line without pieces (an empty paragraph) has its paragraph's.
+/// REV-6: a joined paragraph's paragraph that draws nothing at all (empty, or hidden by the view) has its place before
+/// the next paragraph's first piece, or at the end of the last line.
+fn caret_places(o: &LineOrigin, line: &Line) -> Vec<(Option<usize>, ParaId)> {
+    let mut out = Vec::new();
+    if let Some(j) = o.shaped.join.as_deref() {
+        let all = &o.shaped.pieces;
+        let here = o.from + line.start..o.from + line.end;
+        for (q, start, end) in j.parts() {
+            if all.iter().any(|p| p.src.is_some_and(|u| u >= start && end.is_none_or(|e| u < e))) {
+                continue;
+            }
+            match all.iter().position(|p| p.src.is_some_and(|u| u >= start)) {
+                Some(g) if here.contains(&g) => out.push((Some(g - here.start), q)),
+                None if here.end >= all.len() => out.push((None, q)),
+                _ => {}
+            }
+        }
+    }
+    if line.start == line.end && !out.iter().any(|e| e.1 == o.para) {
+        out.push((None, o.para));
+    }
+    out
 }
 
 /// TAB-9: leader glyphs on a grid from the drawing origin's left edge, whole glyphs only.
@@ -1378,9 +1471,10 @@ impl GlyphRunBuilder {
 }
 
 /// A line's highlight and run shading behind its text (inserted into `out` at `bg_at`), underlines and strikethrough
-/// over it, as rectangles (FONT-15).
-fn draw_decorations(sp: &ShapedPara, all: &[Piece], line: &Line, x0: f64, base: f64, bg_at: usize, out: &mut Vec<Item>) {
-    let pieces = &all[line.start..line.end];
+/// over it, as rectangles (FONT-15), with REV-3's revision marks in All markup.
+fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, out: &mut Vec<Item>) {
+    let (sp, x0, review) = (o.shaped, o.x0, o.review);
+    let pieces = &o.pieces()[line.start..line.end];
     let content = pieces.iter().rposition(|p| p.kind != Kind::Space).map_or(0, |k| k + 1);
     let (mut bg, mut fg) = (Vec::new(), Vec::new());
     // Pieces of one run draw one decoration: adjacent rectangles join.
@@ -1408,9 +1502,15 @@ fn draw_decorations(sp: &ShapedPara, all: &[Piece], line: &Line, x0: f64, base: 
         if k >= content {
             continue;
         }
-        let ink = ink(r).unwrap_or(0);
+        let ink = ink(r, review).unwrap_or(0);
         let line_at = |v: &mut Vec<Item>, y: f64, t: f64| push(v, [x, y - t / 2.0, x + w, y + t / 2.0], ink);
-        if let Some(u) = r.underline.as_deref().filter(|u| !label && !(*u == "words" && p.kind == Kind::Space)) {
+        // REV-3: in All markup an insertion is underlined (a move's destination twice) and a deletion struck through (a
+        // move's source twice).
+        let marked = review.view == MarkupView::All && !label;
+        let kind = |m: &Option<Rc<crate::docx::review::RevisionMark>>| m.as_ref().filter(|_| marked).map(|m| m.kind);
+        let (ins, del) = (kind(&r.rev.ins), kind(&r.rev.del));
+        let rev_u = ins.map(|k| if k == MarkKind::MoveTo { "double" } else { "single" });
+        if let Some(u) = rev_u.or(r.underline.as_deref()).filter(|u| !label && !(*u == "words" && p.kind == Kind::Space)) {
             let (pos, thick) =
                 if face.underline_thick > 0.0 { (face.underline_pos, face.underline_thick) } else { (0.1 * face.upem, 0.05 * face.upem) };
             let (uy, t) = (y + pos * em, (thick * em).max(0.5));
@@ -1424,10 +1524,11 @@ fn draw_decorations(sp: &ShapedPara, all: &[Piece], line: &Line, x0: f64, base: 
                 _ => line_at(&mut fg, uy, t),
             }
         }
-        if r.strike || r.dstrike {
+        let dstrike = r.dstrike || del == Some(MarkKind::MoveFrom);
+        if r.strike || dstrike || del.is_some() {
             let t = (face.strike_thick * em).max(0.5);
             let sy = y - face.strike_pos * em;
-            if r.dstrike {
+            if dstrike {
                 line_at(&mut fg, sy - t, t);
                 line_at(&mut fg, sy + t, t);
             } else {

@@ -1,0 +1,274 @@
+{
+  "description": "accept all revisions of FX-REVIEW-COMMENTS.docx, in every story.",
+  "fixture": "FX-REVIEW-COMMENTS.docx",
+  "scope": "all",
+  "op": "accept",
+  "error": null,
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "Inventory relevant group relief results region ledger brief usage cause. The meeting forecast hereby vendors practical. The meeting forecast hereby. Regional maintenance accessibility tax finds. Notice claim team export staff newsletter review matter presenter advisor.",
+          "runs": [
+            {
+              "text": "Inventory relevant group relief results region ledger brief usage cause. The meeting forecast hereby vendors practical. The meeting forecast hereby. Regional maintenance accessibility tax finds. Notice claim team export staff newsletter review matter presenter advisor.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action.",
+          "runs": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Regional maintenance accessibility tax finds record proposal denied.Notice claim team export staff newsletter review matter.",
+          "runs": [
+            {
+              "text": "Regional maintenance accessibility tax finds record proposal denied.Notice claim team export staff newsletter review matter.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "table": {
+            "change": null,
+            "tblpr": [
+              "tblBorders[bottom:color=000000,space=0,sz=4,val=single;insideH:color=000000,space=0,sz=4,val=single;insideV:color=000000,space=0,sz=4,val=single;left:color=000000,space=0,sz=4,val=single;right:color=000000,space=0,sz=4,val=single;top:color=000000,space=0,sz=4,val=single]",
+              "tblLayout:type=fixed",
+              "tblLook:firstColumn=1,firstRow=1,lastColumn=0,lastRow=0,noHBand=0,noVBand=1,val=04A0",
+              "tblW:type=dxa,w=9360"
+            ],
+            "grid": [
+              4680,
+              4680
+            ],
+            "grid_change": null,
+            "rows": [
+              {
+                "ins": null,
+                "del": null,
+                "change": null,
+                "ex_change": null,
+                "trpr": [],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=4680"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "cell text",
+                        "runs": [
+                          {
+                            "text": "cell text",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=4680"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "plain cell",
+                        "runs": [
+                          {
+                            "text": "plain cell",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "text": "",
+          "runs": [],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [],
+    "comments": [
+      {
+        "author": "Author A",
+        "initials": "AA",
+        "text": "Inside the first.",
+        "scope": "The meeting forecast hereby. ",
+        "start": 120,
+        "end": 149,
+        "parent": null,
+        "done": false
+      },
+      {
+        "author": "Author A",
+        "initials": "AA",
+        "text": "A bold and italic note.\rA second paragraph.",
+        "scope": "The meeting forecast hereby vendors practical. The meeting forecast hereby. Regional maintenance accessibility tax finds.",
+        "start": 73,
+        "end": 194,
+        "parent": null,
+        "done": false
+      },
+      {
+        "author": "Author B",
+        "initials": "AB",
+        "text": "A reply.",
+        "scope": "The meeting forecast hereby vendors practical. The meeting forecast hereby. Regional maintenance accessibility tax finds.",
+        "start": 73,
+        "end": 194,
+        "parent": 2,
+        "done": false
+      },
+      {
+        "author": "Author C",
+        "initials": "AC",
+        "text": "Resolved.",
+        "scope": "The meeting forecast hereby vendors practical schedule state entry estimate management action.",
+        "start": 270,
+        "end": 364,
+        "parent": null,
+        "done": true
+      },
+      {
+        "author": "Author B",
+        "initials": "AB",
+        "text": "At a point.",
+        "scope": null,
+        "start": 433,
+        "end": 433,
+        "parent": null,
+        "done": false
+      },
+      {
+        "author": "Author C",
+        "initials": "AC",
+        "text": "In a cell.",
+        "scope": "cell text",
+        "start": 490,
+        "end": 499,
+        "parent": null,
+        "done": false
+      }
+    ]
+  }
+}

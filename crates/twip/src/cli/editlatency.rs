@@ -110,10 +110,40 @@ pub fn run_depth(path: &str, n: usize) -> Result<(), String> {
 }
 
 pub fn run(path: &str, n: usize) -> Result<(), String> {
+    measure(path, n, false).map(|_| ())
+}
+
+/// `editlatency --tracking <doc> [n]`: the same inputs with tracking off, then on, three times over; typing side by
+/// side, each mode by its best round (budget: tracking on within 10% of off). Alternating rounds keep load from
+/// other processes from landing on one mode only.
+pub fn run_tracking(path: &str, n: usize) -> Result<(), String> {
+    let p = |mut v: Vec<f64>, q: f64| {
+        v.sort_by(f64::total_cmp);
+        v.get(((v.len().saturating_sub(1)) as f64 * q).round() as usize).copied().unwrap_or(0.0)
+    };
+    let (mut off, mut on) = ((f64::MAX, f64::MAX), (f64::MAX, f64::MAX));
+    for round in 1..=3 {
+        for (tracking, best) in [(false, &mut off), (true, &mut on)] {
+            println!("-- round {round}, tracking {}", if tracking { "on" } else { "off" });
+            let v = measure(path, n, tracking)?;
+            *best = (best.0.min(p(v.clone(), 0.5)), best.1.min(p(v, 0.95)));
+        }
+    }
+    println!("typing p50 {:.2} ms off, {:.2} ms on; p95 {:.2} ms off, {:.2} ms on (best of 3)", off.0, on.0, off.1, on.1);
+    let ratio = on.1 / off.1.max(1e-6);
+    println!("typing p95 tracking on / off: {ratio:.2} (budget: at most 1.10)");
+    if ratio > 1.1 { Err(format!("tracking budget fails: ratio {ratio:.2}")) } else { Ok(()) }
+}
+
+/// The per-input times, with tracking on or off; returns typing's.
+fn measure(path: &str, n: usize, tracking: bool) -> Result<Vec<f64>, String> {
     let fonts = Fonts::system();
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     let t = Instant::now();
     let mut e = Editor::open(&bytes, &fonts)?;
+    if !e.set_tracking(tracking) {
+        return Err("tracking can't be turned off in this document".into());
+    }
     println!("open {:.1} ms, {} pages", t.elapsed().as_secs_f64() * 1e3, e.snapshot().pages().len());
     let t = Instant::now();
     while e.idle(&fonts) {}
@@ -164,6 +194,7 @@ pub fn run(path: &str, n: usize) -> Result<(), String> {
         }
     }
     let typed = typing.len().max(1) as f64;
+    let typing_ms = typing.clone();
     println!("typing    {}", percentiles(typing));
     typing_phases.sort_by(|a, b| b.1.total_cmp(&a.1));
     for (name, ms, calls) in &typing_phases {
@@ -179,7 +210,7 @@ pub fn run(path: &str, n: usize) -> Result<(), String> {
     e.complete(&fonts);
     let same = twip::layout::dump::page_text(&e.snapshot(), e.document()) == twip::layout::dump::page_text(&full, e.document());
     println!("matches a full layout: {same}");
-    Ok(())
+    Ok(typing_ms)
 }
 
 /// `editlatency --merge <doc> [n]`: a host's field insert and drop, the

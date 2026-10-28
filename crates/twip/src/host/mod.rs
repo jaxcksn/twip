@@ -476,7 +476,7 @@ impl Engine {
         let Some(focus) = e.selection().focus() else { return empty };
         let Place::Text { para, offset, .. } = focus.place else { return empty };
         let Some(p) = e.index().para(e.document(), para) else { return empty };
-        let t = UnitText::of(p);
+        let t = UnitText::of_view(p, e.document().review.view);
         let u16_at = |u: u32| t.text.chars().take(u as usize).map(char::len_utf16).sum::<usize>();
         let (start, end, backward) = match e.selection() {
             Selection::Text { anchor, focus, .. } => {
@@ -598,17 +598,23 @@ impl Engine {
     }
 }
 
+/// The words in the text the markup view shows; All markup counts the accepted text, its deletions left out.
 fn word_count(doc: &crate::docx::Document) -> usize {
-    fn walk(blocks: &[crate::docx::Block], n: &mut usize) {
+    use crate::docx::review::MarkupView;
+    fn walk(blocks: &[crate::docx::Block], view: MarkupView, n: &mut usize) {
         for b in blocks {
             match b {
-                crate::docx::Block::Para(p) => *n += UnitText::of(p).text.split_whitespace().count(),
-                crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, n)),
+                crate::docx::Block::Para(p) => *n += UnitText::of_view(p, view).text.split_whitespace().count(),
+                crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, view, n)),
             }
         }
     }
+    let view = match doc.review.view {
+        MarkupView::All => MarkupView::Simple,
+        v => v,
+    };
     let mut n = 0;
-    doc.sections.iter().for_each(|s| walk(&s.blocks, &mut n));
+    doc.sections.iter().for_each(|s| walk(&s.blocks, view, &mut n));
     n
 }
 

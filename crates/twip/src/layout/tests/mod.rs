@@ -22,6 +22,7 @@ mod snapshot_immutable;
 mod source_mapping;
 mod spatial_tree;
 mod sweeps;
+mod view_accessors;
 mod warm;
 
 use std::path::{Path, PathBuf};

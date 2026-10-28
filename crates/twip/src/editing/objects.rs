@@ -39,18 +39,20 @@ impl Editor {
                 // Inside a text box: its text.
                 return None;
             }
-            if left && let Some(i) = geo.lines.iter().position(|l| l.story == si && py >= l.top && py < l.bottom) {
-                let (a, b) = self.line_span_of(&geo, i);
+            if left
+                && let Some(i) = geo.lines.iter().position(|l| l.story == si && py >= l.top && py < l.bottom)
+                && let Some((a, b)) = self.line_span_of(&geo, i)
+            {
                 return Some(Selection::range(a, b, Granularity::Line));
             }
             return Some(Selection::Object(ObjectRef::Floating(f)));
         }
         for l in geo.lines.iter().filter(|l| py >= l.top && py < l.bottom && reachable(ctx, geo.stories[l.story].story)) {
             for w in l.stops.windows(2) {
-                if w[1].unit.0 == w[0].unit.0 + 1 && px >= w[0].x && px < w[1].x {
-                    let p = self.index.para(&self.doc, l.para)?;
+                if w[1].para == w[0].para && w[1].unit.0 == w[0].unit.0 + 1 && px >= w[0].x && px < w[1].x {
+                    let p = self.index.para(&self.doc, w[0].para)?;
                     if matches!(inline_at(p, w[0].unit), Some(Inline::Picture(..))) {
-                        return Some(Selection::Object(ObjectRef::Inline { para: l.para, offset: w[0].unit }));
+                        return Some(Selection::Object(ObjectRef::Inline { para: w[0].para, offset: w[0].unit }));
                     }
                 }
             }
@@ -288,7 +290,7 @@ impl Editor {
 
     /// An inline picture's box on a page: the rectangle layout drew it in.
     pub(super) fn inline_box(&self, geo: &super::geometry::PageGeometry, para: crate::layout::ParaId, offset: Unit) -> Option<[f64; 4]> {
-        geo.lines.iter().filter(|l| l.para == para).find_map(|l| l.pictures.iter().find(|(u, _)| *u == offset).map(|(_, r)| *r))
+        geo.lines.iter().find_map(|l| l.pictures.iter().find(|(p, u, _)| *p == para && *u == offset).map(|(_, _, r)| *r))
     }
 
     /// An inline picture at `offset` of `para` resized to `w` × `h` (at least 1 pt), one step.
@@ -682,14 +684,16 @@ impl Editor {
         let container = self.index.para_slot(anchor)?.container;
         let geo = self.pages.page(page, &self.index)?;
         let same = |p: crate::layout::ParaId| self.index.para_slot(p).is_some_and(|s| s.container == container);
-        let lines: Vec<&super::geometry::GLine> = geo.lines.iter().filter(|l| !l.repeat && same(l.para)).collect();
+        let lines: Vec<&super::geometry::GLine> = geo.lines.iter().filter(|l| !l.repeat && l.para().is_some_and(same)).collect();
         let l = lines
             .iter()
             .filter(|l| l.top <= y + 1e-6)
             .max_by(|a, b| a.top.total_cmp(&b.top))
             .or_else(|| lines.iter().min_by(|a, b| a.top.total_cmp(&b.top)))?;
-        let top = lines.iter().filter(|m| m.para == l.para).map(|m| m.top).fold(f64::MAX, f64::min);
-        Some((l.para, top))
+        // A line showing several paragraphs (REV-6) anchors to the one it starts with.
+        let para = l.para()?;
+        let top = lines.iter().filter(|m| m.shows(para)).map(|m| m.top).fold(f64::MAX, f64::min);
+        Some((para, top))
     }
 }
 
@@ -703,12 +707,12 @@ impl Editor {
         let ctx = self.editing();
         for l in geo.lines.iter().filter(|l| py >= l.top && py < l.bottom && reachable(ctx, geo.stories[l.story].story)) {
             for w in l.stops.windows(2) {
-                if w[1].unit.0 == w[0].unit.0 + 1 && px >= w[0].x && px < w[1].x {
-                    let p = self.index.para(&self.doc, l.para)?;
+                if w[1].para == w[0].para && w[1].unit.0 == w[0].unit.0 + 1 && px >= w[0].x && px < w[1].x {
+                    let p = self.index.para(&self.doc, w[0].para)?;
                     if let Some(Inline::Sym { control: Some(c), .. }) = inline_at(p, w[0].unit)
                         && matches!(self.doc.controls.get(c).map(|c| &c.props.kind), Some(crate::docx::ControlKind::Checkbox { .. }))
                     {
-                        return Some(Position::text(geo.stories[l.story].story, l.para, w[0].unit));
+                        return Some(Position::text(geo.stories[l.story].story, w[0].para, w[0].unit));
                     }
                 }
             }

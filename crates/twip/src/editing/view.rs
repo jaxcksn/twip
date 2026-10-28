@@ -109,6 +109,20 @@ pub struct View {
     pub regions: Vec<RegionView>,
     /// In design mode, the host's looks on picture and rich-text controls.
     pub looks: Vec<LookView>,
+    /// Commented text on the visible pages, by thread: a tint over each range, the active thread's stronger.
+    pub comments: Vec<CommentView>,
+    /// Where each thread's range starts, when that is on a visible page: its page and the point there (page
+    /// coordinates), for the host to place the thread's card beside.
+    pub comment_anchors: Vec<(crate::docx::review::CommentId, usize, [f64; 2])>,
+}
+
+/// A thread's range on the visible pages: each line's box, page coordinates.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CommentView {
+    /// The thread's first comment.
+    pub thread: crate::docx::review::CommentId,
+    pub rects: Vec<(usize, [f64; 4])>,
+    pub active: bool,
 }
 
 /// A control drawn the host's way, page coordinates: a picture control's box with a fill, label and icon or
@@ -314,6 +328,26 @@ pub fn canonical(v: &View) -> String {
                     "rects": g.rects.iter().map(|(p, r)| serde_json::json!({ "page": p, "rect": rects(r) })).collect::<Vec<_>>(),
                     "title_rect": { "page": g.title_rect.0, "rect": rects(&g.title_rect.1) },
                 }))
+                .collect::<Vec<_>>()
+        );
+    }
+    if !v.comments.is_empty() {
+        out["comments"] = serde_json::json!(
+            v.comments
+                .iter()
+                .map(|c| serde_json::json!({
+                    "thread": c.thread.0,
+                    "active": c.active,
+                    "rects": c.rects.iter().map(|(p, r)| serde_json::json!({ "page": p, "rect": rects(r) })).collect::<Vec<_>>(),
+                }))
+                .collect::<Vec<_>>()
+        );
+    }
+    if !v.comment_anchors.is_empty() {
+        out["comment_anchors"] = serde_json::json!(
+            v.comment_anchors
+                .iter()
+                .map(|(id, p, [x, y])| serde_json::json!({ "thread": id.0, "page": p, "at": [r2(*x), r2(*y)] }))
                 .collect::<Vec<_>>()
         );
     }

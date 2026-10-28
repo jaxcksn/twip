@@ -1,0 +1,192 @@
+{
+ "id": "RECORD-INSERT-OBJECTS",
+ "title": "Fields, checkboxes and breaks are inserted as their units",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  {
+   "type": "Alpha beta gamma."
+  },
+  {
+   "command": "review.track",
+   "arg": "on"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author A"
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 6
+   }
+  },
+  {
+   "command": "insert.page-number.page"
+  },
+  {
+   "expect": {
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "Alpha 1beta gamma.",
+        "runs": [
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "1",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 0
+   }
+  },
+  {
+   "command": "insert.checkbox"
+  },
+  {
+   "expect": {
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "☐Alpha 1beta gamma.",
+        "runs": [
+         {
+          "text": "☐",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "1",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": "end"
+   }
+  },
+  {
+   "command": "layout.break.line"
+  },
+  {
+   "expect": {
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "☐Alpha 1beta gamma.\n",
+        "runs": [
+         {
+          "text": "☐",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "1",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "\n",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

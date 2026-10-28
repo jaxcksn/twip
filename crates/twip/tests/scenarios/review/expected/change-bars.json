@@ -1,0 +1,781 @@
+{
+  "description": "Change bars in a fixed-format export with markup of each tracked review fixture, and of a one-paragraph document with an insertion on its first line at left margins of 18, 36, 54, 72 and 108 pt (left-margin-*): vertical rules left of the text, measured in points from the body's left edge (the leftmost text on the page) to the bar's left and right edges, with their width, vertical extent and colour (first three pages of each file).",
+  "summary": {
+    "bars": 71,
+    "offset_left_edge": [
+      4.56,
+      18.0,
+      27.0,
+      27.84,
+      36.0,
+      36.02
+    ],
+    "offset_right_edge": [
+      3.84,
+      17.28,
+      26.28,
+      27.29,
+      35.28,
+      35.3
+    ],
+    "width": [
+      0.55,
+      0.72
+    ],
+    "colour": [
+      "#000000"
+    ],
+    "kind": [
+      "fill"
+    ]
+  },
+  "fixtures": {
+    "FX-REVIEW-CELLS.docx": {
+      "left_margin": 72.0,
+      "page_width": 612.0,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 140.06,
+          "bars": [
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 718.48,
+              "bottom": 683.3,
+              "height": 35.18,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 665.21,
+              "bottom": 642.19,
+              "height": 23.02,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            }
+          ]
+        }
+      ]
+    },
+    "FX-REVIEW-COMMENTS.docx": {
+      "left_margin": 72.0,
+      "page_width": 612.0,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 140.06,
+          "bars": []
+        }
+      ]
+    },
+    "FX-REVIEW-LARGE.docx": {
+      "left_margin": 72.0,
+      "page_width": 612.0,
+      "pages_exported": 42,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 140.06,
+          "bars": [
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 736.32,
+              "bottom": 258.6,
+              "height": 477.72,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            }
+          ]
+        },
+        {
+          "page": 2,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 140.06,
+          "bars": [
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 736.32,
+              "bottom": 258.6,
+              "height": 477.72,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            }
+          ]
+        },
+        {
+          "page": 3,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 140.06,
+          "bars": [
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 736.32,
+              "bottom": 258.6,
+              "height": 477.72,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            }
+          ]
+        }
+      ]
+    },
+    "FX-REVIEW-MARKS.docx": {
+      "left_margin": 72.0,
+      "page_width": 612.0,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 140.06,
+          "bars": [
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 696.51,
+              "bottom": 679.13,
+              "height": 17.38,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 621.86,
+              "bottom": 604.51,
+              "height": 17.35,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 575.93,
+              "bottom": 564.7,
+              "height": 11.23,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 536.11,
+              "bottom": 524.88,
+              "height": 11.23,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            }
+          ]
+        }
+      ]
+    },
+    "FX-REVIEW-MOVES.docx": {
+      "left_margin": 72.0,
+      "page_width": 612.0,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 72.02,
+          "bars": [
+            {
+              "x0": 36.0,
+              "x1": 36.72,
+              "width": 0.72,
+              "top": 683.02,
+              "bottom": 646.06,
+              "height": 36.96,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.02,
+              "offset_right_edge": 35.3
+            },
+            {
+              "x0": 36.0,
+              "x1": 36.72,
+              "width": 0.72,
+              "top": 608.97,
+              "bottom": 535.03,
+              "height": 73.94,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.02,
+              "offset_right_edge": 35.3
+            }
+          ]
+        }
+      ]
+    },
+    "FX-REVIEW-PROTECTED.docx": {
+      "left_margin": 72.0,
+      "page_width": 612.0,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 72.02,
+          "bars": [
+            {
+              "x0": 36.0,
+              "x1": 36.72,
+              "width": 0.72,
+              "top": 720.0,
+              "bottom": 683.02,
+              "height": 36.98,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.02,
+              "offset_right_edge": 35.3
+            }
+          ]
+        }
+      ]
+    },
+    "FX-REVIEW-RUNS.docx": {
+      "left_margin": 72.0,
+      "page_width": 612.0,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 140.06,
+          "bars": [
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 725.09,
+              "bottom": 680.26,
+              "height": 44.83,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 651.67,
+              "bottom": 606.84,
+              "height": 44.83,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 578.25,
+              "bottom": 533.42,
+              "height": 44.83,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 504.84,
+              "bottom": 460.01,
+              "height": 44.83,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 431.33,
+              "bottom": 386.5,
+              "height": 44.83,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 357.91,
+              "bottom": 313.08,
+              "height": 44.83,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            }
+          ]
+        }
+      ]
+    },
+    "FX-REVIEW-SECTIONS.docx": {
+      "left_margin": 54.0,
+      "page_width": 792.0,
+      "pages_exported": 2,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            792.0,
+            612.0
+          ],
+          "body_left": 42.58,
+          "bars": []
+        },
+        {
+          "page": 2,
+          "mediabox": [
+            0.0,
+            0.0,
+            792.0,
+            612.0
+          ],
+          "body_left": 42.58,
+          "bars": []
+        }
+      ]
+    },
+    "FX-REVIEW-STORIES.docx": {
+      "left_margin": 72.0,
+      "page_width": 612.0,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 72.02,
+          "bars": [
+            {
+              "x0": 36.0,
+              "x1": 36.72,
+              "width": 0.72,
+              "top": 756.0,
+              "bottom": 733.56,
+              "height": 22.44,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.02,
+              "offset_right_edge": 35.3
+            },
+            {
+              "x0": 36.0,
+              "x1": 36.72,
+              "width": 0.72,
+              "top": 693.58,
+              "bottom": 671.14,
+              "height": 22.44,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.02,
+              "offset_right_edge": 35.3
+            },
+            {
+              "x0": 36.0,
+              "x1": 36.72,
+              "width": 0.72,
+              "top": 623.5,
+              "bottom": 611.26,
+              "height": 12.24,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.02,
+              "offset_right_edge": 35.3
+            },
+            {
+              "x0": 36.0,
+              "x1": 36.72,
+              "width": 0.72,
+              "top": 84.14,
+              "bottom": 71.9,
+              "height": 12.24,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.02,
+              "offset_right_edge": 35.3
+            },
+            {
+              "x0": 36.0,
+              "x1": 36.72,
+              "width": 0.72,
+              "top": 58.34,
+              "bottom": 35.88,
+              "height": 22.46,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.02,
+              "offset_right_edge": 35.3
+            }
+          ]
+        }
+      ]
+    },
+    "FX-REVIEW-TABLES.docx": {
+      "left_margin": 72.0,
+      "page_width": 612.0,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 140.06,
+          "bars": [
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 700.75,
+              "bottom": 683.3,
+              "height": 17.45,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 671.71,
+              "bottom": 648.79,
+              "height": 22.92,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 643.49,
+              "bottom": 626.14,
+              "height": 17.35,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            },
+            {
+              "x0": 112.22,
+              "x1": 112.77,
+              "width": 0.55,
+              "top": 614.54,
+              "bottom": 591.62,
+              "height": 22.92,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.84,
+              "offset_right_edge": 27.29
+            }
+          ]
+        }
+      ]
+    },
+    "left-margin-18": {
+      "left_margin": 18,
+      "page_width": 612,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 18.0,
+          "first_line": {
+            "y": 708.7,
+            "x0": 18.0,
+            "colours": [
+              "#D13438",
+              "#000000"
+            ],
+            "text": "Inserted Change bar margin test, the quick brown fox jumps over the lazy dog. Change bar margin "
+          },
+          "bars": [
+            {
+              "x0": 13.44,
+              "x1": 14.16,
+              "width": 0.72,
+              "top": 720.0,
+              "bottom": 703.06,
+              "height": 16.94,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 4.56,
+              "offset_right_edge": 3.84
+            }
+          ]
+        }
+      ]
+    },
+    "left-margin-36": {
+      "left_margin": 36,
+      "page_width": 612,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 36.0,
+          "first_line": {
+            "y": 708.7,
+            "x0": 36.0,
+            "colours": [
+              "#D13438",
+              "#000000"
+            ],
+            "text": "Inserted Change bar margin test, the quick brown fox jumps over the lazy dog. Change bar margin "
+          },
+          "bars": [
+            {
+              "x0": 18.0,
+              "x1": 18.72,
+              "width": 0.72,
+              "top": 720.0,
+              "bottom": 703.06,
+              "height": 16.94,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 18.0,
+              "offset_right_edge": 17.28
+            }
+          ]
+        }
+      ]
+    },
+    "left-margin-54": {
+      "left_margin": 54,
+      "page_width": 612,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 54.0,
+          "first_line": {
+            "y": 708.7,
+            "x0": 54.0,
+            "colours": [
+              "#D13438",
+              "#000000"
+            ],
+            "text": "Inserted Change bar margin test, the quick brown fox jumps over the lazy dog. Change bar "
+          },
+          "bars": [
+            {
+              "x0": 27.0,
+              "x1": 27.72,
+              "width": 0.72,
+              "top": 720.0,
+              "bottom": 703.06,
+              "height": 16.94,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 27.0,
+              "offset_right_edge": 26.28
+            }
+          ]
+        }
+      ]
+    },
+    "left-margin-72": {
+      "left_margin": 72,
+      "page_width": 612,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 72.02,
+          "first_line": {
+            "y": 708.7,
+            "x0": 72.02,
+            "colours": [
+              "#D13438",
+              "#000000"
+            ],
+            "text": "Inserted Change bar margin test, the quick brown fox jumps over the lazy dog. Change bar "
+          },
+          "bars": [
+            {
+              "x0": 36.0,
+              "x1": 36.72,
+              "width": 0.72,
+              "top": 720.0,
+              "bottom": 703.06,
+              "height": 16.94,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.02,
+              "offset_right_edge": 35.3
+            }
+          ]
+        }
+      ]
+    },
+    "left-margin-108": {
+      "left_margin": 108,
+      "page_width": 612,
+      "pages_exported": 1,
+      "pages": [
+        {
+          "page": 1,
+          "mediabox": [
+            0.0,
+            0.0,
+            612.0,
+            792.0
+          ],
+          "body_left": 108.02,
+          "first_line": {
+            "y": 708.7,
+            "x0": 108.02,
+            "colours": [
+              "#D13438",
+              "#000000"
+            ],
+            "text": "Inserted Change bar margin test, the quick brown fox jumps over the lazy dog. "
+          },
+          "bars": [
+            {
+              "x0": 72.02,
+              "x1": 72.74,
+              "width": 0.72,
+              "top": 720.0,
+              "bottom": 703.06,
+              "height": 16.94,
+              "colour": "#000000",
+              "kind": "fill",
+              "offset_left_edge": 36.0,
+              "offset_right_edge": 35.28
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

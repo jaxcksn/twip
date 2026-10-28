@@ -356,25 +356,31 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
             }
             for l in &g.lines {
                 // Inline pictures on the line, in order: their boxes (what handles and selection outline).
-                for w in l.stops.windows(2).filter(|w| w[1].unit.0 == w[0].unit.0 + 1) {
+                for w in l.stops.windows(2).filter(|w| w[1].para == w[0].para && w[1].unit.0 == w[0].unit.0 + 1) {
+                    let para = w[0].para;
                     let is_pic = e
                         .index
-                        .para(&e.doc, l.para)
+                        .para(&e.doc, para)
                         .and_then(|p| super::stories::inline_at(p, w[0].unit))
                         .is_some_and(|i| matches!(i, crate::docx::Inline::Picture(..)));
-                    if let Some(r) = is_pic.then(|| e.inline_box(&g, l.para, w[0].unit)).flatten() {
+                    if let Some(r) = is_pic.then(|| e.inline_box(&g, para, w[0].unit)).flatten() {
                         let (x0, y0) = to(r[0], r[1]);
                         let (x1, y1) = to(r[2], r[3]);
-                        pictures.push(json!({ "page": page, "para": o.paras.get(&l.para), "offset": w[0].unit.0, "rect": [x0, y0, x1, y1] }));
+                        pictures.push(json!({ "page": page, "para": o.paras.get(&para), "offset": w[0].unit.0, "rect": [x0, y0, x1, y1] }));
                     }
                 }
-                let (x0, y0) = to(l.x0(), l.top);
-                let (x1, y1) = to(l.x1(), l.bottom);
-                lines.push(json!({
-                    "page": page, "story": story(g.stories[l.story].story, &o), "para": o.paras.get(&l.para),
-                    "first": l.first().0, "last": l.last().0, "rect": [x0, y0, x1, y1], "repeat": l.repeat,
-                    "stops": l.stops.iter().map(|s| json!([to(s.x, 0.0).0, s.unit.0])).collect::<Vec<_>>(),
-                }));
+                // One entry per paragraph the line shows (several where the view joins paragraphs, REV-6).
+                for &para in &l.paras {
+                    let stops: Vec<_> = l.stops.iter().filter(|s| s.para == para).collect();
+                    let (Some(first), Some(last)) = (stops.first(), stops.last()) else { continue };
+                    let (x0, y0) = to(first.x, l.top);
+                    let (x1, y1) = to(last.x, l.bottom);
+                    lines.push(json!({
+                        "page": page, "story": story(g.stories[l.story].story, &o), "para": o.paras.get(&para),
+                        "first": first.unit.0, "last": last.unit.0, "rect": [x0, y0, x1, y1], "repeat": l.repeat,
+                        "stops": stops.iter().map(|s| json!([to(s.x, 0.0).0, s.unit.0])).collect::<Vec<_>>(),
+                    }));
+                }
             }
             for c in &g.cells {
                 let (x0, y0) = to(c.rect[0], c.rect[1]);

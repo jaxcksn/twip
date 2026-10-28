@@ -22,7 +22,7 @@ use super::ids::{FragmentId, LayoutRevision, ParaId, Revision, Unit};
 use super::incremental::Reuse;
 use super::job::{Budget, Memos, Meter, Step, Yield};
 use super::node::{Blocks, Notes, SectionNode};
-use super::page::{Cursor, Next, Paginator, PassInfo, PassRun, margins, story_ref};
+use super::page::{Cursor, Next, Paginator, PassInfo, PassRun, margins, story_ref_in};
 use super::record::{HfRecord, PageRecord};
 use super::snapshot::{LayoutStatus, PageMeta, Snapshot};
 use super::space::HfHeights;
@@ -188,9 +188,9 @@ impl<'d> PassCx<'d> {
             .map(|(si, s)| {
                 let mut blocks = Blocks::of(&s.blocks);
                 if si + 1 == nsec && !notes.endnotes.is_empty() {
-                    blocks.blocks.extend(notes.separator.iter());
+                    blocks.append(notes.separator.iter());
                     for id in &notes.endnotes {
-                        blocks.blocks.extend(doc.endnotes.get(id).into_iter().flatten());
+                        blocks.append(doc.endnotes.get(id).into_iter().flatten());
                     }
                 }
                 SectionNode { index: si, section: s, blocks }
@@ -242,7 +242,8 @@ impl<'d> PassCx<'d> {
 /// column. The block the endnotes start at, when that applies.
 pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
     let doc = cx.doc;
-    (si + 1 == doc.sections.len() && doc.sections[si].columns.num > 1 && !cx.notes.endnotes.is_empty()).then(|| doc.sections[si].blocks.len())
+    (si + 1 == doc.sections.len() && doc.sections[si].section_in(doc.review.view).columns.num > 1 && !cx.notes.endnotes.is_empty())
+        .then(|| doc.sections[si].blocks.len())
 }
 
 /// Whether section `si`'s body from `token` balances its last page (COL-5): before a continuous section, and the last
@@ -250,7 +251,7 @@ pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
 pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
     let doc = cx.doc;
     let nsec = doc.sections.len();
-    (doc.sections[si].columns.num > 1 && si + 1 < nsec && doc.sections[si + 1].break_kind == SectionBreak::Continuous)
+    (doc.sections[si].section_in(doc.review.view).columns.num > 1 && si + 1 < nsec && doc.sections[si + 1].break_kind == SectionBreak::Continuous)
         || endnote_split(cx, si).is_some_and(|e| token.flow.block < e)
 }
 
@@ -318,7 +319,11 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             let node = match split {
                 Some(e) => {
                     let n = &cx.nodes[si];
-                    body_only = SectionNode { index: n.index, section: n.section, blocks: Blocks { blocks: n.blocks.blocks[..e].to_vec() } };
+                    body_only = SectionNode {
+                        index: n.index,
+                        section: n.section,
+                        blocks: Blocks { blocks: n.blocks.blocks[..e].to_vec(), stories: Vec::new() },
+                    };
                     &body_only
                 }
                 None => &cx.nodes[si],
@@ -392,7 +397,9 @@ pub(crate) fn hf_parts<'d>(run: &PassRun, cx: &PassCx<'d>, i: usize) -> [Option<
     }
     let pis = run.pages[..i].iter().filter(|p| p.section == pg.section && !p.blank).count();
     let part = |footer| {
-        story_ref(&cx.doc.sections, cx.ctx.env.even_and_odd, pg.section, pis, pg.number, footer).1.filter(|p| cx.doc.stories.contains_key(*p))
+        story_ref_in(&cx.doc.sections, cx.ctx.env.text.review.view, cx.ctx.env.even_and_odd, pg.section, pis, pg.number, footer)
+            .1
+            .filter(|p| cx.doc.stories.contains_key(*p))
     };
     [part(false), part(true)]
 }
@@ -405,9 +412,10 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
         return Ok(());
     }
     let (si, num) = (pg.section, pg.number);
-    let s = &cx.doc.sections[si];
+    let sec = &cx.doc.sections[si];
     let ctx = cx.ctx;
-    let (left, right, _) = margins(s, &ctx, num);
+    let (left, right, _) = margins(sec, &ctx, num);
+    let s = sec.section_in(ctx.env.text.review.view);
     let width = s.page_w - left - right;
     let fields = hf_fields(run, cx, i);
     let parts = hf_parts(run, cx, i);
@@ -683,7 +691,7 @@ fn shows_pass_fields(doc: &Document, pg: &PageRecord) -> bool {
 fn verify(doc: &Document, records: &[PageRecord]) -> Vec<usize> {
     let mut bad = Vec::new();
     for (i, pg) in records.iter().enumerate() {
-        let (Some((top, bottom)), Some(s)) = (pg.body_area, doc.sections.get(pg.section)) else { continue };
+        let (Some((top, bottom)), Some(s)) = (pg.body_area, doc.sections.get(pg.section).map(|s| s.section_in(doc.review.view))) else { continue };
         let header = pg.hf[0].as_ref().is_some_and(|h| s.top >= 0.0 && s.header + h.height > top + EPS);
         let footer = pg.hf[1].as_ref().is_some_and(|f| s.bottom >= 0.0 && s.page_h - s.footer - f.height < bottom - EPS);
         #[cfg(test)]

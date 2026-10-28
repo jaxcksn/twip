@@ -181,7 +181,10 @@ impl Editor {
         let mut lines: std::collections::HashMap<crate::layout::ParaId, f64> = std::collections::HashMap::new();
         for (_, geo) in self.page_geometries() {
             for l in geo.lines.iter().filter(|l| !l.repeat) {
-                *lines.entry(l.para).or_default() += (l.x1() - l.x0()).max(0.0);
+                for &p in &l.paras {
+                    let (x0, x1) = l.span_of(p).unwrap_or_default();
+                    *lines.entry(p).or_default() += (x1 - x0).max(0.0);
+                }
             }
         }
         let margins = paras.iter().map(|(_, m)| *m).fold(0.0, f64::max);
@@ -206,6 +209,9 @@ impl Editor {
     /// they carry becomes a copy with a new id (its `w:id` too); the section itself is shared. An item in `inside`
     /// (the new rows went in between two of its rows) is kept: the rows join it, which stays one run of rows (C2).
     pub(super) fn fresh_items(&mut self, rows: &mut [Row], inside: &[crate::docx::ControlId]) {
+        // New `w:id`s (signed 32-bit numbers) past the document's largest: unique, and the same on every run.
+        let given = |c: &crate::docx::Control| sdt_id_at(&c.open).and_then(|r| c.open[r].parse::<i64>().ok());
+        let mut next = self.doc.controls.values().chain(self.pending_controls.iter().map(|(_, c)| c)).filter_map(given).max().unwrap_or(0);
         for row in rows {
             for id in row.controls.iter_mut() {
                 if inside.contains(id) {
@@ -216,12 +222,11 @@ impl Editor {
                 };
                 let n = crate::docx::ControlId::next();
                 let mut c = c;
-                // The control's own `w:id` (a signed 32-bit number): unique again.
-                if let Some(k) = c.open.find(":id ").or_else(|| c.open.find("<w:id "))
-                    && let Some(v) = c.open[k..].find("val=\"").map(|v| k + v + 5)
-                    && let Some(e) = c.open[v..].find('"').map(|e| v + e)
-                {
-                    c.open.replace_range(v..e, &((n.0 % 0x7fff_ffff) as i64 + 1).to_string());
+                // The control's own `w:id`: unique again.
+                if let Some(r) = sdt_id_at(&c.open) {
+                    // shortcut: past i32::MAX the ids wrap to 1 and may repeat one in the document.
+                    next = if next >= 0x7fff_ffff { 1 } else { next + 1 };
+                    c.open.replace_range(r, &next.to_string());
                 }
                 self.pending_controls.push((n, c));
                 *id = n;
@@ -571,6 +576,7 @@ impl Editor {
             direct: Default::default(),
             blocks: vec![Block::Para(cell_para())],
             controls: Vec::new(),
+            rev: Default::default(),
         };
         // Whole twips, the file's precision.
         let w = (width / ncols as f64 * 20.0).floor() / 20.0;
@@ -602,6 +608,7 @@ impl Editor {
                     cells: (0..ncols).map(|_| cell(w)).collect(),
                     src: None,
                     controls: Vec::new(),
+                    rev: Default::default(),
                 })
                 .collect(),
             src: None,
@@ -609,6 +616,8 @@ impl Editor {
             direct: Default::default(),
             // A table put inside a block-level control is in it too.
             controls: p.controls.clone(),
+            change: None,
+            grid_change: None,
         };
         let first = first_para(&table.rows[0].cells[0].blocks);
         let tid = TableId(table.id);
@@ -826,4 +835,11 @@ impl Editor {
         self.answer = Some(serde_json::json!({ "error": "region boundary" }));
         Outcome::Unchanged("region boundary")
     }
+}
+
+/// Where a control's start markup gives its `w:id` value.
+fn sdt_id_at(open: &str) -> Option<std::ops::Range<usize>> {
+    let k = open.find(":id ").or_else(|| open.find("<w:id "))?;
+    let v = k + open[k..].find("val=\"")? + 5;
+    Some(v..v + open[v..].find('"')?)
 }

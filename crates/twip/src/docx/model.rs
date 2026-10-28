@@ -4,6 +4,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::props::{Border, FramePr, Jc, Leader, LineRule, Look, Tab, TabKind, VertAlign, Width};
+use super::review::{
+    CellRevisions, CommentId, Comments, GridChange, IdCounter, ParaChange, People, Protection, RangeMark, ReviewView, RowRevisions, RunRevisions,
+    SectionChange, TableChange,
+};
 
 /// Effective character formatting of a run.
 #[derive(Clone, Debug, PartialEq)]
@@ -47,6 +51,8 @@ pub struct RunStyle {
     pub style_id: Option<String>,
     /// The `w:rPr` as written (editable reads only): what saving writes back for new runs in this formatting.
     pub direct: Raw,
+    /// Tracked insertion, deletion and formatting change of the run (or, on a paragraph's mark, of the mark).
+    pub rev: RunRevisions,
 }
 
 pub type Run = Rc<RunStyle>;
@@ -101,6 +107,8 @@ pub struct ParaStyle {
     pub list_fmt: Option<String>,
     /// The `w:pPr` as written (editable reads only), what formatting edits change and saving writes back.
     pub direct: Raw,
+    /// A tracked change of the paragraph's properties.
+    pub change: Option<Rc<ParaChange>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -282,6 +290,13 @@ pub enum Inline {
     },
     /// Start of a bookmark (for PAGEREF/REF).
     Bookmark(String),
+    /// Where a comment's or a move's range starts or ends. No units.
+    Range(RangeMark),
+    /// A comment's reference mark (`w:commentReference`): where the comment is anchored. No units.
+    CommentRef {
+        id: CommentId,
+        run: Run,
+    },
     /// Where an inline content control's content starts and ends. No units: a caret beside one is
     /// beside the control's edge.
     ControlStart(ControlId),
@@ -528,6 +543,8 @@ pub struct Cell {
     pub blocks: Vec<Block>,
     /// The cell-level controls around it, outermost first ([`Document::controls`]).
     pub controls: Vec<ControlId>,
+    /// Tracked insertion, deletion or merge of the cell, and a tracked change of its properties.
+    pub rev: CellRevisions,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -546,6 +563,8 @@ pub struct Row {
     /// The `w:tr` element's byte range in [`Source::xml`] (editable reads only): saving keeps a row it still has. A
     /// copied row needs `None`, or it would be written as the row it was copied from.
     pub src: Option<Rc<std::ops::Range<usize>>>,
+    /// Tracked insertion or deletion of the row, and tracked changes of its properties.
+    pub rev: RowRevisions,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -571,6 +590,9 @@ pub struct Table {
     pub direct: Raw,
     /// The block-level content controls around it, outermost first.
     pub controls: Vec<ControlId>,
+    /// A tracked change of the table's properties, and of its column grid.
+    pub change: Option<Rc<TableChange>>,
+    pub grid_change: Option<Rc<GridChange>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -683,6 +705,8 @@ pub struct Section {
     pub v_align: String,
     pub page_borders: Option<PageBorders>,
     pub blocks: Vec<Block>,
+    /// A tracked change of the section's properties.
+    pub change: Option<Rc<SectionChange>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -702,6 +726,11 @@ pub struct Settings {
     pub do_not_hyphenate_caps: bool,
     pub borders_do_not_surround_header: bool,
     pub borders_do_not_surround_footer: bool,
+    /// `w:trackRevisions`: edits are recorded as revisions.
+    pub track_revisions: bool,
+    pub protection: Option<Protection>,
+    /// `w:revisionView` as written, kept for saving.
+    pub revision_view_raw: Raw,
 }
 
 impl Settings {
@@ -761,6 +790,15 @@ pub struct Document {
     pub resolver: Option<Rc<super::resolve::Resolver>>,
     /// Lists made by the Numbering and Bullets commands since reading: written into the numbering part.
     pub added_lists: Vec<AddedList>,
+    /// Who made the document's revisions and comments.
+    pub people: People,
+    pub comments: Comments,
+    /// How the review shows (markup view, author colours): a view setting, never saved.
+    pub review: ReviewView,
+    /// New revision, comment and paragraph ids, past those read.
+    pub review_ids: IdCounter,
+    /// What reading couldn't keep or make sense of.
+    pub diagnostics: super::diagnostics::Diagnostics,
 }
 
 impl Document {
@@ -867,17 +905,23 @@ impl Inline {
             | Inline::Separator { run, .. }
             | Inline::FieldBegin { run, .. }
             | Inline::FieldSep { run, .. }
-            | Inline::FieldEnd { run, .. } => Some(run),
-            Inline::Bookmark(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => None,
+            | Inline::FieldEnd { run, .. }
+            | Inline::CommentRef { run, .. } => Some(run),
+            Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => None,
         }
     }
 
     /// Caret units the inline occupies: a character per character of text, one per other drawn inline, none for
-    /// bookmarks and anchored objects.
+    /// bookmarks, range markers, comment references and anchored objects.
     pub fn units(&self) -> usize {
         match self {
             Inline::Text(s, _) => s.chars().count(),
-            Inline::Bookmark(_) | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => 0,
+            Inline::Bookmark(_)
+            | Inline::Range(_)
+            | Inline::CommentRef { .. }
+            | Inline::Float(..)
+            | Inline::ControlStart(_)
+            | Inline::ControlEnd(_) => 0,
             _ => 1,
         }
     }

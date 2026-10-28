@@ -1,0 +1,128 @@
+{
+ "id": "RECORD-TYPE-INSIDE-OWN-INSERTION",
+ "title": "Typing inside the author's own insertion extends it",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  {
+   "type": "Alpha beta gamma."
+  },
+  {
+   "command": "review.track",
+   "arg": "on"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author A"
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 6
+   }
+  },
+  {
+   "type": "inserted "
+  },
+  {
+   "expect": {
+    "caret": {
+     "para": 0,
+     "offset": 15
+    },
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "Alpha inserted beta gamma.",
+        "runs": [
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "inserted ",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 9
+   }
+  },
+  {
+   "type": "X"
+  },
+  {
+   "expect": {
+    "caret": {
+     "para": 0,
+     "offset": 10
+    },
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "Alpha insXerted beta gamma.",
+        "runs": [
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "insXerted ",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

@@ -228,7 +228,55 @@ fn html(blocks: &[Block], out: &mut String) {
     }
 }
 
+/// `r` without its revisions.
+fn without_revisions(r: &Run) -> Run {
+    let mut s = RunStyle::clone(r);
+    s.rev = Default::default();
+    Rc::new(s)
+}
+
+/// `blocks` with their revisions accepted: deleted content and rows gone, insertion and formatting marks cleared.
+// shortcut: a deleted paragraph mark stays a paragraph break; join its paragraphs when copies across one need it.
+fn accept(blocks: &mut Vec<Block>) {
+    for b in blocks.iter_mut() {
+        match b {
+            Block::Para(p) => {
+                p.inlines.retain(|i| i.run().is_none_or(|r| r.rev.del.is_none()));
+                for i in &mut p.inlines {
+                    if let Some(r) = i.run().filter(|r| !r.rev.is_empty()) {
+                        *i = super::format::with_run(i, &without_revisions(r));
+                    }
+                }
+                if !p.mark.rev.is_empty() {
+                    p.mark = without_revisions(&p.mark);
+                }
+                if p.style.change.is_some() {
+                    Rc::make_mut(&mut p.style).change = None;
+                }
+            }
+            Block::Table(t) => {
+                t.rows.retain(|r| r.rev.del.is_none());
+                (t.change, t.grid_change) = (None, None);
+                for r in &mut t.rows {
+                    r.rev = Default::default();
+                    for c in &mut r.cells {
+                        c.rev = Default::default();
+                        accept(&mut c.blocks);
+                    }
+                }
+            }
+        }
+    }
+    blocks.retain(|b| !matches!(b, Block::Table(t) if t.rows.is_empty()));
+}
+
 impl Fragment {
+    /// The fragment with its revisions accepted: what a copy takes in every markup view.
+    pub fn accepted(mut self) -> Fragment {
+        accept(&mut self.blocks);
+        self
+    }
+
     pub fn text(&self) -> String {
         let mut s = String::new();
         plain(&self.blocks, &mut s);

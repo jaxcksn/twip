@@ -47,8 +47,9 @@ impl Editor {
         out
     }
 
+    /// The paragraph's units as the markup view shows them: text it hides matches nothing.
     fn chars_of(&self, para: ParaId) -> Vec<char> {
-        self.index.para(&self.doc, para).map_or_else(Vec::new, |p| UnitText::of(p).text.chars().collect())
+        self.index.para(&self.doc, para).map_or_else(Vec::new, |p| UnitText::of_view(p, self.doc.review.view).text.chars().collect())
     }
 
     /// The next match of `needle` after the selection (before it, `back`), wrapping round the document: its

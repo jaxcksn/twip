@@ -3,17 +3,33 @@
 
 use std::collections::HashMap;
 
+use crate::docx::review::MarkupView;
 use crate::docx::{Block, NoteKind, ParaStyle, Section};
 
 /// A section's or story's blocks in order. A section's may end with blocks owned by the pass (the endnote
 /// separator and endnotes, NOTE-10), so it holds references.
 pub struct Blocks<'a> {
     pub blocks: Vec<&'a Block>,
+    /// Where each story appended to a section's own blocks starts (the endnote separator and each endnote): no
+    /// paragraphs join across them (REV-6).
+    pub stories: Vec<usize>,
 }
 
 impl<'a> Blocks<'a> {
     pub fn of(blocks: &'a [Block]) -> Blocks<'a> {
-        Blocks { blocks: blocks.iter().collect() }
+        Blocks { blocks: blocks.iter().collect(), stories: Vec::new() }
+    }
+
+    /// Appends a story's blocks.
+    pub fn append(&mut self, story: impl IntoIterator<Item = &'a Block>) {
+        self.stories.push(self.blocks.len());
+        self.blocks.extend(story);
+    }
+
+    /// The last block laid out with block `i` (REV-6): `i`, unless its paragraph joins those after it.
+    pub fn chain_end(&self, i: usize, view: MarkupView) -> usize {
+        let story_end = self.stories.iter().copied().find(|&s| s > i).unwrap_or(self.blocks.len()).min(self.blocks.len());
+        super::join::chain_end(&self.blocks[..story_end], i, view)
     }
 
     pub fn len(&self) -> usize {
@@ -28,13 +44,15 @@ impl<'a> Blocks<'a> {
         self.blocks.get(i).copied()
     }
 
-    /// A paragraph's neighbours' styles (PARA-7: border boxes join identical neighbours).
-    pub fn neighbours(&self, i: usize) -> (Option<&'a ParaStyle>, Option<&'a ParaStyle>) {
+    /// The neighbours' styles in `view` of the paragraph laid out from blocks `first..=last` (PARA-7: border boxes join
+    /// identical neighbours; REV-2). A paragraph joined to others has its last one's (REV-6).
+    pub fn neighbours(&self, first: usize, last: usize, view: MarkupView) -> (Option<&'a ParaStyle>, Option<&'a ParaStyle>) {
         let style = |b: Option<&&'a Block>| match b {
-            Some(Block::Para(p)) => Some(&*p.style),
+            Some(Block::Para(p)) => Some(&**p.para_style_in(view)),
             _ => None,
         };
-        (if i > 0 { style(self.blocks.get(i - 1)) } else { None }, style(self.blocks.get(i + 1)))
+        let prev = if first > 0 { style(self.blocks.get(first - 1)) } else { None };
+        (prev, style(self.blocks.get(self.chain_end(last + 1, view))))
     }
 }
 

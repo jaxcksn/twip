@@ -53,14 +53,18 @@ pub enum Step {
     TableProps { table: TableId, props: TableProps },
     /// Add (`blocks` given) or remove a footnote or endnote: inserting a note, deleting its reference mark.
     Note { kind: crate::docx::NoteKind, id: i64, blocks: Option<Vec<Block>> },
-    /// A section's page replaced (Page Setup, margins, orientation, size, columns, different first page).
-    SectionPage { section: usize, page: crate::docx::SectionPage },
+    /// A section's page replaced (Page Setup, margins, orientation, size, columns, different first page), and its
+    /// tracked change: set by recording, dropped by resolving, else the one it has.
+    SectionPage { section: usize, page: crate::docx::SectionPage, change: Option<Rc<crate::docx::review::SectionChange>> },
     /// A content control's properties replaced, or the control added (`control` given) or removed.
     /// Its markers and memberships move with the content holding them; layout doesn't change.
     Control { id: crate::docx::ControlId, control: Option<crate::docx::Control> },
     /// A data part replaced, added (`part` given, none with its item id) or removed. Layout doesn't
     /// change.
     DataPart { item_id: String, part: Option<crate::docx::DataPart> },
+    /// A comment's metadata and body replaced, or the comment added (`after` given, none with its id) or removed. Its
+    /// range markers and reference are inlines, moved by `Text` steps; layout doesn't change.
+    Comment { id: crate::docx::review::CommentId, after: Option<crate::docx::review::Comment> },
 }
 
 /// What [`Step::TableProps`] replaces: the table's style and look, width, alignment and indent, and its borders as
@@ -228,8 +232,9 @@ pub fn run_of(i: &Inline) -> Option<&Run> {
         | Inline::Separator { run, .. }
         | Inline::FieldBegin { run, .. }
         | Inline::FieldSep { run, .. }
-        | Inline::FieldEnd { run, .. } => Some(run),
-        Inline::Bookmark(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => None,
+        | Inline::FieldEnd { run, .. }
+        | Inline::CommentRef { run, .. } => Some(run),
+        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => None,
     }
 }
 
@@ -617,12 +622,21 @@ impl Step {
                 };
                 Ok(Applied { inverse: Step::DataPart { item_id, part: old }, map: Map::Same, hint: None })
             }
-            Step::SectionPage { section, page } => {
+            Step::Comment { id, after } => {
+                let before = match after {
+                    Some(c) => doc.comments.by_id.insert(id, c),
+                    None => doc.comments.by_id.remove(&id),
+                };
+                Ok(Applied { inverse: Step::Comment { id, after: before }, map: Map::Same, hint: None })
+            }
+            Step::SectionPage { section, page, change } => {
                 let s = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
                 let old = s.page();
                 s.set_page(page);
+                let old_change = std::mem::replace(&mut s.change, change);
+                // Saving writes the section's page and its change.
                 doc.edited_sections.insert(section);
-                Ok(Applied { inverse: Step::SectionPage { section, page: old }, map: Map::Same, hint: None })
+                Ok(Applied { inverse: Step::SectionPage { section, page: old, change: old_change }, map: Map::Same, hint: None })
             }
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;

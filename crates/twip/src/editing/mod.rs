@@ -8,6 +8,7 @@ mod cell_clipboard;
 pub mod clipboard;
 mod clipped;
 pub mod commands;
+pub mod comments;
 pub mod elements;
 pub mod extend;
 pub mod find;
@@ -31,6 +32,7 @@ pub mod placeholders;
 pub mod pointer;
 pub mod position;
 mod resize;
+pub mod revisions;
 pub mod section;
 pub mod selection;
 mod smart;
@@ -162,6 +164,20 @@ pub struct Editor {
     /// The region the pointer was last over in design mode: kept while the pointer is on its title tab, which is
     /// above the region.
     hover_region: Option<crate::docx::ControlId>,
+    /// The active comment thread the host chose, and the threads' ranges.
+    comments: comments::State,
+    /// The document's revisions in order, built when navigation asks and kept until the document changes.
+    review_list: revisions::index::List,
+    /// The session's author (the name and identity revisions are recorded under), and who that is in the document's
+    /// people once a revision needs them.
+    author: (Rc<str>, Option<crate::docx::review::Identity>),
+    author_id: Option<crate::docx::review::AuthorId>,
+    /// A move being made: its transactions record it under this name.
+    move_name: Option<Rc<str>>,
+    /// The insertion and deletion the last transaction recorded (what a move is made of).
+    recorded: (Option<Rc<crate::docx::review::RevisionMark>>, Option<Rc<crate::docx::review::RevisionMark>>),
+    /// What was cut as a move with tracking on: the fragment and its deletion, a move once pasted.
+    cut_move: Option<(u64, Rc<crate::docx::review::RevisionMark>)>,
     /// Tests: how many elements change tracking looked at (a keystroke's cost doesn't grow with the
     /// document).
     #[cfg(test)]
@@ -212,6 +228,9 @@ struct Tx {
     kept: i64,
     /// How positions moved through each step (the edit locations follow them).
     maps: Vec<step::Map>,
+    /// Tracking was on when it began: its steps are recorded as revisions, by `rec` once the first one is.
+    tracked: bool,
+    rec: Option<revisions::Recording>,
 }
 
 impl Editor {
@@ -266,6 +285,13 @@ impl Editor {
             update_token: 0,
             hover: None,
             hover_region: None,
+            comments: comments::State::default(),
+            review_list: Default::default(),
+            author: ("Author".into(), None),
+            author_id: None,
+            move_name: None,
+            recorded: (None, None),
+            cut_move: None,
             #[cfg(test)]
             track_work: 0,
             clipboard: None,
@@ -308,6 +334,31 @@ impl Editor {
 
     pub fn history(&self) -> &History {
         &self.history
+    }
+
+    /// Shows revisions in `view` (REV-1): a full relayout, not an edit (no undo step, the document stays as it is).
+    pub fn set_markup_view(&mut self, view: crate::docx::review::MarkupView) -> Outcome {
+        if self.doc.review.view == view {
+            return Outcome::Unchanged("already in that view");
+        }
+        self.doc.review.view = view;
+        self.relayout_review();
+        Outcome::Moved
+    }
+
+    /// Draws `author`'s revisions in `color` (0xRRGGBB, REV-3): a full relayout, not an edit.
+    pub fn set_author_color(&mut self, author: crate::docx::review::AuthorId, color: u32) -> Outcome {
+        if self.doc.review.palette.color(author) == color {
+            return Outcome::Unchanged("already that colour");
+        }
+        Rc::make_mut(&mut self.doc.review.palette).chosen.insert(author, color);
+        self.relayout_review();
+        Outcome::Moved
+    }
+
+    fn relayout_review(&mut self) {
+        self.revision += 1;
+        self.layout.edit(Revision(self.revision), None);
     }
 
     pub fn snapshot(&self) -> Rc<Snapshot> {
@@ -435,7 +486,8 @@ impl Editor {
                 match (ours, text) {
                     (Some(f), _) => {
                         self.history.break_typing();
-                        self.paste_fragment(&f, fonts);
+                        let out = self.paste_fragment(&f, fonts);
+                        self.paste_moved(&f, &out, fonts);
                     }
                     (None, Some(t)) => {
                         self.execute(Command::PasteText(t), fonts);
@@ -547,6 +599,45 @@ impl Editor {
     /// The editing mode.
     pub fn mode(&self) -> Mode {
         self.mode
+    }
+
+    /// Whether edits are recorded as revisions (Track Changes): the document's setting, and always under
+    /// tracked-changes protection.
+    pub fn tracking(&self) -> bool {
+        self.doc.settings.track_revisions || self.tracking_locked()
+    }
+
+    fn tracking_locked(&self) -> bool {
+        self.doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking())
+    }
+
+    /// Turns tracking on or off, as the document's setting (saved with it). Refused, `false`, while protection keeps
+    /// it on.
+    pub fn set_tracking(&mut self, on: bool) -> bool {
+        if !on && self.tracking_locked() {
+            return false;
+        }
+        if self.doc.settings.track_revisions != on {
+            self.doc.settings.track_revisions = on;
+            self.dirty = true;
+        }
+        true
+    }
+
+    /// The session's author: who revisions recorded from now on are by ("Author" until set).
+    pub fn set_author(&mut self, name: &str, identity: Option<crate::docx::review::Identity>) {
+        self.author = (name.into(), identity);
+        self.author_id = None;
+    }
+
+    /// The session's author among the document's people, added on first use.
+    fn session_author(&mut self) -> crate::docx::review::AuthorId {
+        if let Some(a) = self.author_id {
+            return a;
+        }
+        let a = self.doc.people.author(&self.author.0, self.author.1.as_ref());
+        self.author_id = Some(a);
+        a
     }
 
     /// Updates the elements the host knows after a transaction or its undo (`inverses`: the steps that undo it), and
@@ -798,6 +889,27 @@ impl Editor {
                 out
             }
             Command::Merge { id, arg } => self.merge_command(&id, &arg, fonts),
+            Command::Comment(c) => self.comment_cmd(c, fonts),
+            Command::SetMarkupView(v) => self.set_markup_view(v),
+            Command::SetAuthorColor { author, color } => match self.doc.people.persons.iter().position(|p| *p.name == *author) {
+                Some(i) => self.set_author_color(crate::docx::review::AuthorId(i as u32), color),
+                None => Outcome::Unchanged("no such author"),
+            },
+            Command::ResolveRevisions { accept, scope } => self.resolve_revisions(accept, &scope, fonts),
+            Command::NextRevision { back } => self.go_to_revision(back, fonts),
+            Command::Track(on) => {
+                let on = on.unwrap_or(!self.tracking());
+                if self.set_tracking(on) {
+                    Outcome::Moved
+                } else {
+                    self.answer = Some(serde_json::json!({ "error": "tracking locked" }));
+                    Outcome::Unchanged("tracking locked")
+                }
+            }
+            Command::Author(name) => {
+                self.set_author(&name, None);
+                Outcome::Moved
+            }
             Command::SetMode(m) => {
                 let design = (self.mode == Mode::Design) != (m == Mode::Design);
                 self.mode = m;
@@ -918,9 +1030,18 @@ impl Editor {
                     }
                 }
                 Some(_) => {
+                    // With tracking, whole paragraphs or a sentence cut are a move once pasted: what was selected goes.
+                    let moving = self.tracking() && self.moves_whole();
                     // Smart cut: the space the cut would leave doubled goes too.
-                    self.smart_cut();
-                    self.delete(Dir::Back, false, fonts)
+                    if !moving {
+                        self.smart_cut();
+                    }
+                    let out = self.delete(Dir::Back, false, fonts);
+                    self.cut_move = match (&out, &self.clipboard, &self.recorded.1) {
+                        (Outcome::Changed(_), Some(f), Some(m)) if moving => Some((f.id, m.clone())),
+                        _ => None,
+                    };
+                    out
                 }
                 None => Outcome::Unchanged("nothing selected"),
             },
@@ -1042,6 +1163,8 @@ impl Editor {
             stale_tables: Vec::new(),
             kept: 0,
             maps: Vec::new(),
+            tracked: self.tracking(),
+            rec: None,
         }
     }
 
@@ -1054,6 +1177,28 @@ impl Editor {
         {
             return Err(StepError::OutOfRange);
         }
+        if !tx.tracked {
+            return self.apply_step(tx, s);
+        }
+        // Tracking: the steps recording the edit apply in its place, by the session's author at the transaction's time.
+        if tx.rec.is_none() {
+            let author = self.session_author();
+            let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()) as i64;
+            tx.rec = Some(revisions::Recording::new(author, crate::docx::review::Timestamp::from_utc(secs), self.move_name.clone(), tx.label));
+        }
+        let Some(rec) = tx.rec.as_mut() else { return self.apply_step(tx, s) };
+        let mut ids = std::mem::take(&mut self.doc.review_ids);
+        let steps = rec.record(s, &self.doc, &self.index, &mut ids);
+        self.doc.review_ids = ids;
+        let mut map = Map::Same;
+        for s in steps {
+            map = self.apply_step(tx, s)?;
+        }
+        Ok(map)
+    }
+
+    /// Applies one step to the document as it is, recording its inverse in the transaction.
+    fn apply_step(&mut self, tx: &mut Tx, s: Step) -> Result<Map, StepError> {
         let added = if self.doc.undeletable.is_empty() { 0 } else { s.pictures_of(&self.doc.undeletable) };
         let a = s.apply(&mut self.doc, &mut self.index)?;
         if !self.doc.undeletable.is_empty() {
@@ -1082,6 +1227,10 @@ impl Editor {
             self.answer = Some(serde_json::json!({ "error": "read-only" }));
             return Outcome::Unchanged("read-only");
         }
+        // Field kinds and orphans follow what the edit did: never recorded as revisions. Resolving paragraphs again
+        // and numbering are, so a recorded property change keeps what it had.
+        let tracked = std::mem::replace(&mut tx.tracked, false);
+        self.recorded = tx.rec.as_ref().map(revisions::Recording::marks).unwrap_or_default();
         for (id, c) in std::mem::take(&mut self.pending_controls) {
             let _ = self.step(&mut tx, Step::Control { id, control: Some(c) });
         }
@@ -1094,6 +1243,8 @@ impl Editor {
         }
         self.drop_orphan_notes(&mut tx);
         self.drop_orphan_controls(&mut tx);
+        self.drop_orphan_comments(&mut tx);
+        tx.tracked = tracked;
         self.reresolve_stale(&mut tx);
         // An edit that would delete an undeletable picture control ("Content control cannot be deleted") does
         // nothing.
@@ -1110,9 +1261,9 @@ impl Editor {
             return Outcome::Unchanged("no change");
         }
         self.revision += 1;
-        // Control properties and data parts don't change layout: their steps give no edit.
+        // Control properties, data parts and comments don't change layout: their steps give no edit.
         for (h, s) in tx.hints.iter().zip(&tx.undo) {
-            if !matches!(s, Step::Control { .. } | Step::DataPart { .. }) {
+            if !matches!(s, Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. }) {
                 self.layout.edit(Revision(self.revision), *h);
             }
         }
@@ -1163,7 +1314,7 @@ impl Editor {
         self.revision += 1;
         let mut pictures = false;
         for s in tx.undo.into_iter().rev() {
-            let layout = !matches!(s, Step::Control { .. } | Step::DataPart { .. });
+            let layout = !matches!(s, Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. });
             pictures |= moves_picture_controls(&s);
             match s.apply(&mut self.doc, &mut self.index) {
                 Ok(a) => {
@@ -1229,8 +1380,20 @@ impl Editor {
     }
 
     /// [`Editor::delete_range`]; `join`: the two ends of a range across a table become one paragraph (typing over it
-    /// joins them; Delete and Backspace keep them apart).
+    /// joins them; Delete and Backspace keep them apart). With tracking the deleted text stays, and the caret goes to
+    /// the range's end, after it.
     fn delete_range_joining(&mut self, tx: &mut Tx, join: bool) -> Result<Option<Position>, StepError> {
+        let end = self.selection.ordered(&self.index).map(|(_, b)| b).filter(|_| tx.tracked && matches!(self.selection, Selection::Text { .. }));
+        let from = tx.maps.len();
+        let at = self.delete_range_untracked(tx, join)?;
+        Ok(match (at, end) {
+            (Some(_), Some(b)) => Some(tx.maps[from..].iter().fold(b, |p, m| m.apply(p))),
+            _ => at,
+        })
+    }
+
+    /// [`Editor::delete_range_joining`] with the caret at the range's start.
+    fn delete_range_untracked(&mut self, tx: &mut Tx, join: bool) -> Result<Option<Position>, StepError> {
         // Over a cell block, typing replaces the first cell's text only.
         if let Selection::Cells { table, anchor, .. } = self.selection
             && let Some(t) = self.index.table(&self.doc, table)
@@ -1397,6 +1560,7 @@ impl Editor {
     /// Deletes units `range` of `para`, keeping content controls' edges: the range is
     /// cut at each control marker whose partner it leaves out, so that marker stays (and the control with what is
     /// left of it); a range touching a drop-down list's content without covering the whole control is refused.
+    /// Comment markers stay the same way, except those of a comment whose text the range takes whole: it goes too.
     fn delete_text(&mut self, tx: &mut Tx, para: ParaId, range: std::ops::Range<Unit>) -> Result<(), StepError> {
         let p = self.index.para(&self.doc, para).ok_or(StepError::Missing)?;
         let mut at = 0u32;
@@ -1425,8 +1589,13 @@ impl Editor {
                 cuts.push(u);
             }
         }
+        let (comment_cuts, emptied) = comments::deletion_cuts(p, a, b);
+        cuts.extend(comment_cuts);
         cuts.sort();
         cuts.dedup();
+        if !emptied.is_empty() {
+            self.remove_comments(tx, &emptied)?;
+        }
         // A control the range takes whole whose marker sits on the range's edge (the other inside it): that marker
         // leaves first, so the control goes whole. Removed before the deletion, it comes back with the paragraph's
         // other inlines, in place, on undo (a restyle keeps every inline).
@@ -1838,6 +2007,11 @@ impl Editor {
         let typing = |at| TypingRun { para, at, kind: if dir == Dir::Back { Typing::Backspace } else { Typing::Delete } };
         if dir == Dir::Back && off > Unit(0) {
             let from = if word { t.prev_word(off) } else { t.prev_grapheme(off) };
+            // With tracking, Backspace over deleted text moves the caret into it and changes nothing.
+            if tx.tracked && !word && self.index.para(&self.doc, para).is_some_and(|p| revisions::record::all_deleted(p, from, off)) {
+                self.set_selection(Selection::Caret(Position::text(caret.story, para, from)));
+                return Outcome::Moved;
+            }
             if self.delete_text(&mut tx, para, from..off).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("delete failed");
@@ -1847,12 +2021,16 @@ impl Editor {
         }
         if dir == Dir::Forward && off < t.len() {
             let to = if word { t.next_word(off) } else { t.next_grapheme(off) };
+            let from = tx.maps.len();
             if self.delete_text(&mut tx, para, off..to).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("delete failed");
             }
-            self.selection = Selection::Caret(Position::text(caret.story, para, off));
-            return self.commit(tx, Some(typing(off)), fonts);
+            // With tracking the deleted text stays: the caret goes past it.
+            let end = if tx.tracked { tx.maps[from..].iter().fold(Position::text(caret.story, para, to), |p, m| m.apply(p)) } else { caret };
+            let at = end.para_offset().map_or(off, |(_, u)| u);
+            self.selection = Selection::Caret(end);
+            return self.commit(tx, Some(typing(at)), fonts);
         }
         // At a paragraph boundary: join with the sibling paragraph; cells and tables never merge.
         let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
@@ -1883,12 +2061,18 @@ impl Editor {
             Dir::Forward => match (slot.block + 1 < blocks).then(|| sibling(slot.block + 1)).flatten() {
                 Some(Ok((next, _))) if controls(next) != controls(para) => Outcome::Unchanged("a block control's edge"),
                 Some(Ok((next, _))) => {
+                    let from = tx.maps.len();
                     if self.step(&mut tx, Step::Join { first: para, second: next }).is_err() {
                         self.abort(tx);
                         return Outcome::Unchanged("join failed");
                     }
                     tx.stale_paras.push(para);
-                    self.selection = Selection::Caret(Position::text(caret.story, para, off));
+                    // With tracking the deleted mark stays: the caret goes past it, to the next paragraph's start.
+                    let end = match tx.tracked {
+                        true => tx.maps[from..].iter().fold(Position::text(caret.story, next, Unit(0)), |p, m| m.apply(p)),
+                        false => Position::text(caret.story, para, off),
+                    };
+                    self.selection = Selection::Caret(end);
                     self.commit(tx, None, fonts)
                 }
                 // Before a table: the paragraph's text moves into the start of the first cell.
@@ -2211,27 +2395,29 @@ impl Editor {
         let left = self.doc.sections.get(section).map_or(72.0, |s| s.left) - 1.5 / self.viewport.zoom.max(0.1);
         let i = geo.selection_bar(px, py, left)?;
         self.near = page;
-        Some(self.line_span_of(&geo, i))
+        self.line_span_of(&geo, i)
     }
 
     /// A line's start and end; a paragraph's last line ends after its mark.
-    fn line_span_of(&mut self, geo: &geometry::PageGeometry, i: usize) -> (Position, Position) {
+    fn line_span_of(&mut self, geo: &geometry::PageGeometry, i: usize) -> Option<(Position, Position)> {
         let l = &geo.lines[i];
         let story = geo.stories[l.story].story;
-        let a = Position::text(story, l.para, l.first());
-        let len = self.index.para(&self.doc, l.para).map_or(Unit(0), para_len);
-        let b = if l.last() >= len {
-            self.after_mark(Position::text(story, l.para, len))
+        // From its first stop to its last, which belong to different paragraphs where the view joins them (REV-6).
+        let (first, last) = (l.stops.first()?, l.stops.last()?);
+        let a = Position::text(story, first.para, first.unit);
+        let len = self.index.para(&self.doc, last.para).map_or(Unit(0), para_len);
+        let b = if last.unit >= len {
+            self.after_mark(Position::text(story, last.para, len))
         } else {
-            Position::text(story, l.para, l.last()).with_affinity(Affinity::Upstream)
+            Position::text(story, last.para, last.unit).with_affinity(Affinity::Upstream)
         };
-        (a, b)
+        Some((a, b))
     }
 
     /// The line showing `p`.
     fn line_span(&mut self, p: Position) -> (Position, Position) {
         match self.nav().line_of(p) {
-            Some(at) => self.line_span_of(&at.geo, at.line),
+            Some(at) => self.line_span_of(&at.geo, at.line).unwrap_or((p, p)),
             None => (p, p),
         }
     }
@@ -2678,7 +2864,7 @@ impl Editor {
         self.pages.sync(&snapshot);
         if let Some((page, geo, i)) = self.pages.line_showing(para, unit, affinity, near, &self.index) {
             let l = &geo.lines[i];
-            let x = l.x_of(unit)?;
+            let x = l.x_of(para, unit)?;
             self.near = page;
             return Some(CaretView { page, x, top: l.top, bottom: l.bottom });
         }
@@ -2750,25 +2936,25 @@ impl Editor {
         let mut out = Vec::new();
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
-            for l in &geo.lines {
+            // Each paragraph's part of each line (a line shows several where the view joins them, REV-6).
+            for (l, para) in geo.lines.iter().flat_map(|l| l.paras.iter().map(move |&p| (l, p))) {
                 if geo.stories[l.story].story != a.story {
                     continue;
                 }
-                let first = Position::text(a.story, l.para, l.first());
-                let last = Position::text(a.story, l.para, l.last());
+                let (Some(lf), Some(ll)) = (l.first_of(para), l.last_of(para)) else { continue };
+                let first = Position::text(a.story, para, lf);
+                let last = Position::text(a.story, para, ll);
                 if self.index.cmp(&last, &a) == std::cmp::Ordering::Less || self.index.cmp(&first, &b) == std::cmp::Ordering::Greater {
                     continue;
                 }
-                let lo = if self.index.cmp(&first, &a) == std::cmp::Ordering::Less { a.para_offset().map(|(_, u)| u) } else { Some(l.first()) };
-                let hi = if self.index.cmp(&last, &b) == std::cmp::Ordering::Greater { b.para_offset().map(|(_, u)| u) } else { Some(l.last()) };
+                let lo = if self.index.cmp(&first, &a) == std::cmp::Ordering::Less { a.para_offset().map(|(_, u)| u) } else { Some(lf) };
+                let hi = if self.index.cmp(&last, &b) == std::cmp::Ordering::Greater { b.para_offset().map(|(_, u)| u) } else { Some(ll) };
                 let (Some(lo), Some(hi)) = (lo, hi) else { continue };
-                let (Some(x0), Some(x1)) = (l.x_of(lo), l.x_of(hi)) else { continue };
-                // A selection running past the paragraph's end shows its mark as a space's width.
-                let mark = if hi == l.last() && self.index.cmp(&last, &b) == std::cmp::Ordering::Less && l.stops.last().is_some_and(|s| s.end) {
-                    4.0
-                } else {
-                    0.0
-                };
+                let (Some(x0), Some(x1)) = (l.x_of(para, lo), l.x_of(para, hi)) else { continue };
+                // A selection running past the paragraph's end shows its mark as a space's width (a mark the view hides
+                // between joined paragraphs isn't on the line's end, and shows none).
+                let shown_end = l.stops.last().is_some_and(|s| s.end && s.para == para);
+                let mark = if hi == ll && self.index.cmp(&last, &b) == std::cmp::Ordering::Less && shown_end { 4.0 } else { 0.0 };
                 if x1 + mark > x0 + 0.01 {
                     out.push((page, [x0, l.top, x1 + mark, l.bottom]));
                 }
@@ -2787,13 +2973,14 @@ impl Editor {
             Selection::Object(selection::ObjectRef::Floating(f)) => self.index.float_anchor(f).and_then(|para| {
                 (0..self.pages.len()).find_map(|page| {
                     let geo = self.pages.page(page, &self.index)?;
-                    geo.lines.iter().find(|l| l.para == para).map(|l| (page, [l.x0(), l.top]))
+                    geo.lines.iter().find_map(|l| l.span_of(para).map(|(x0, _)| (page, [x0, l.top])))
                 })
             }),
             _ => None,
         };
         let visible_pages = visible.clone();
         let (marks, tooltip) = self.mark_views(visible.clone());
+        let (comments, comment_anchors) = self.comment_views(visible.clone());
         let mut fade = Vec::new();
         if matches!(story, StoryId::HeaderFooter(_)) {
             for page in visible.clone() {
@@ -2821,6 +3008,8 @@ impl Editor {
             tooltip,
             regions: self.region_views(visible_pages.clone()),
             looks: self.look_views(visible_pages.clone()),
+            comments,
+            comment_anchors,
             spelling: Vec::new(),
             gridlines: Vec::new(),
             drop: self.text_drag.filter(|d| d.moved).and_then(|d| d.drop).or(self.drop).and_then(|p| self.caret_at(p)),
@@ -2868,9 +3057,9 @@ impl Editor {
         let mut out: Vec<ParaId> = Vec::new();
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
-            for l in geo.lines.iter().filter(|l| !l.repeat && !l.stops.is_empty()) {
-                if !out.contains(&l.para) {
-                    out.push(l.para);
+            for p in geo.lines.iter().filter(|l| !l.repeat).flat_map(|l| l.paras.iter()) {
+                if !out.contains(p) {
+                    out.push(*p);
                 }
             }
         }
@@ -2882,12 +3071,13 @@ impl Editor {
         let mut out = Vec::new();
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
-            for l in geo.lines.iter().filter(|l| l.para == para && !l.repeat) {
-                let (lo, hi) = (a.max(l.first()), b.min(l.last()));
+            for (_, l) in geo.lines_of(para) {
+                let (Some(first), Some(last)) = (l.first_of(para), l.last_of(para)) else { continue };
+                let (lo, hi) = (a.max(first), b.min(last));
                 if lo >= hi {
                     continue;
                 }
-                if let (Some(x0), Some(x1)) = (l.x_of(lo), l.x_of(hi)) {
+                if let (Some(x0), Some(x1)) = (l.x_of(para, lo), l.x_of(para, hi)) {
                     out.push((page, [x0.min(x1), l.top, x0.max(x1), l.bottom]));
                 }
             }
@@ -2921,9 +3111,10 @@ impl Editor {
         self.clipboard.as_ref().map(|f| f.id)
     }
 
-    /// Copies the selection: kept as the internal fragment, and asked of the host as text and HTML with its id.
+    /// Copies the selection, its revisions accepted in every markup view: kept as the internal fragment, and asked of
+    /// the host as text and HTML with its id.
     pub fn copy(&mut self) -> Option<clipboard::Fragment> {
-        let mut f = self.copy_fragment()?;
+        let mut f = self.copy_fragment()?.accepted();
         // The copy's controls travel with it; markers its range cut off don't.
         clipboard::drop_unpaired(&mut f.blocks);
         clipboard::drop_partial(&mut f.blocks, &self.index);

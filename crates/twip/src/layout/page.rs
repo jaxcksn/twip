@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::*;
+use crate::docx::review::MarkupView;
 
 use super::LayoutCtx;
 use super::flow::{AttemptState, NoteArea, PageFill, PassMemo, Stop, stream_fill};
@@ -29,8 +30,10 @@ pub struct PassInfo {
     pub page_refs: Rc<HashMap<String, String>>,
 }
 
-/// Horizontal margins and the top margin of a page (gutter, mirror margins: HDR-13).
+/// Horizontal margins and the top margin of a page (gutter, mirror margins: HDR-13), of the section's page in the
+/// markup view (REV-2).
 pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64) {
+    let s = s.section_in(ctx.env.text.review.view);
     let (mut left, mut right, mut top) = (s.left, s.right, s.top);
     let odd = page_number % 2 == 1;
     if ctx.env.gutter_at_top {
@@ -58,8 +61,22 @@ pub fn story_ref(
     page_number: i64,
     footer: bool,
 ) -> (usize, Option<&String>) {
-    let s = &sections[si];
-    let variant = if s.title_pg && page_in_section == 0 {
+    // shortcut: callers outside layout name the story the All-markup page shows; a section whose tracked change
+    // turned its title page on or off picks the other variant in Original.
+    story_ref_in(sections, MarkupView::All, even_and_odd, si, page_in_section, page_number, footer)
+}
+
+/// [`story_ref`] for the section's page in `view` (REV-2).
+pub fn story_ref_in(
+    sections: &[Section],
+    view: MarkupView,
+    even_and_odd: bool,
+    si: usize,
+    page_in_section: usize,
+    page_number: i64,
+    footer: bool,
+) -> (usize, Option<&String>) {
+    let variant = if sections[si].section_in(view).title_pg && page_in_section == 0 {
         1
     } else if even_and_odd && page_number % 2 == 0 {
         2
@@ -70,9 +87,8 @@ pub fn story_ref(
     (variant, part)
 }
 
-/// Column boxes of a section on a page (COL-1), from `top`.
-pub fn columns(s: &Section, geo: &BodyArea, top: f64) -> Vec<ColumnSpace> {
-    let c = &s.columns;
+/// Column boxes of a section's columns on a page (COL-1), from `top`.
+pub fn columns(c: &Columns, geo: &BodyArea, top: f64) -> Vec<ColumnSpace> {
     let n = c.num.max(1);
     let mut out = Vec::new();
     if c.equal || c.cols.is_empty() {
@@ -155,6 +171,7 @@ fn row_down(r: &RowFragment, dy: f64) -> RowFragment {
             .collect(),
         borders: r.borders.iter().map(|i| item_down(i, dy)).collect(),
         repeat: r.repeat,
+        changed: r.changed,
     }
 }
 
@@ -283,7 +300,7 @@ impl<'d> Paginator<'d, '_> {
     /// Starts a page; `blank` = an inserted blank page.
     pub fn new_page(&mut self, si: usize, blank: bool) {
         self.run.page_number += 1;
-        let s = &self.sections[si];
+        let s = self.sections[si].section_in(self.ctx.env.text.review.view);
         self.run.pages.push(PageRecord {
             w: s.page_w,
             h: s.page_h,
@@ -303,11 +320,13 @@ impl<'d> Paginator<'d, '_> {
     /// The header and footer heights of the current page for section `si`, measured with this pass's body values
     /// (HDR-8 caps them).
     fn measure_hf(&self, si: usize, memos: &mut Memos) -> Result<HfHeights, Yield> {
-        let s = &self.sections[si];
+        let view = self.ctx.env.text.review.view;
+        let sec = &self.sections[si];
         if self.run.pages.last().is_some_and(|p| p.blank) {
             return Ok([None, None]);
         }
-        let (left, right, _) = margins(s, &self.ctx, self.run.page_number);
+        let (left, right, _) = margins(sec, &self.ctx, self.run.page_number);
+        let s = sec.section_in(view);
         let width = s.page_w - left - right;
         let pis = self.page_in_section(si).saturating_sub(1);
         let fields = self.fields(si);
@@ -315,8 +334,9 @@ impl<'d> Paginator<'d, '_> {
         let env = StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers };
         let mut out = [None, None];
         for (k, footer) in [false, true].into_iter().enumerate() {
-            let Some(blocks) =
-                story_ref(self.sections, self.ctx.env.even_and_odd, si, pis, self.run.page_number, footer).1.and_then(|p| self.stories.get(p))
+            let Some(blocks) = story_ref_in(self.sections, view, self.ctx.env.even_and_odd, si, pis, self.run.page_number, footer)
+                .1
+                .and_then(|p| self.stories.get(p))
             else {
                 continue;
             };
@@ -330,8 +350,9 @@ impl<'d> Paginator<'d, '_> {
     /// The current page's body space for section `si` (HDR-4 to HDR-6, HDR-13, COL-1), starting at `start` for a
     /// continuous section. A page's first body takes its header and footer heights from `hf_in` when the pass has them.
     pub(crate) fn body_space(&self, si: usize, start: Option<f64>, balance: bool, memos: &mut Memos) -> Result<BodySpace, Yield> {
-        let s = &self.sections[si];
-        let (left, right, top) = margins(s, &self.ctx, self.run.page_number);
+        let sec = &self.sections[si];
+        let (left, right, top) = margins(sec, &self.ctx, self.run.page_number);
+        let s = sec.section_in(self.ctx.env.text.review.view);
         let width = s.page_w - left - right;
         let given = if start.is_none() { self.run.hf_in.get(self.run.pages.len() - 1).copied() } else { None };
         let hf = match given {
@@ -363,7 +384,7 @@ impl<'d> Paginator<'d, '_> {
             page_h: s.page_h,
             margins: (left, right, top),
             area,
-            columns: columns(s, &area, start.unwrap_or(area.top)),
+            columns: columns(&s.columns, &area, start.unwrap_or(area.top)),
             mid_page: start.is_some(),
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| n.break_kind == SectionBreak::Continuous),
@@ -389,7 +410,8 @@ impl<'d> Paginator<'d, '_> {
         let page = self.run.pages.last_mut().expect("a page was started");
         page.body_area = page.body_area.or(Some((space.area.top, space.area.bottom)));
         page.effects.merge(&b.effects);
-        let last = b.end.flow.block.min(sec.blocks.len().saturating_sub(1));
+        // A paragraph the body ends in takes the blocks of the paragraphs joined to it (REV-6).
+        let last = sec.blocks.chain_end(b.end.flow.block, self.ctx.env.text.review.view).min(sec.blocks.len().saturating_sub(1));
         let shown = sec.blocks.blocks.get(token.flow.block..=last).unwrap_or(&[]);
         let end = b.end.clone();
         let page_h = space.page_h;
@@ -704,7 +726,10 @@ pub fn layout_body(
     } else if pos.block >= nblocks {
         section_end = Some(bottoms.iter().copied().fold(page_top, f64::max));
     }
-    separators(s, cols, page_top, earlier, &mut body);
+    separators(&s.section_in(env.ctx.env.text.review.view).columns, cols, page_top, earlier, &mut body);
+    if env.ctx.env.text.review.view.change_bars() {
+        change_bars(space, &mut body);
+    }
     if section_end.is_none() {
         if s.line_numbers.as_ref().is_some_and(|l| l.restart == "newPage") {
             carry.line_no = 0;
@@ -754,10 +779,57 @@ fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: 
     }
 }
 
+/// REV-4: a change bar beside every changed line of the body, `min(36, left margin / 2)` left of the body, 0.72 wide
+/// and black. A bar reaches down to the next line when the gap to it is no taller than the line, and the bars of
+/// consecutive changed lines join.
+// shortcut: headers and footers get no bars.
+fn change_bars(space: &BodySpace, body: &mut Vec<Child>) {
+    /// Every placed line's top, bottom and whether it changed, in page coordinates.
+    fn lines(children: &[Child], dy: f64, out: &mut dyn FnMut(f64, f64, bool)) {
+        for c in children {
+            match c {
+                Child::Box(b) => lines(&b.children, dy + b.offset.1, out),
+                Child::Group { offset, children } => lines(children, dy + offset.1, out),
+                Child::Para(p) => p.lines.iter().for_each(|l| out(dy + l.y, dy + l.y + l.line.pitch, l.line.changed)),
+                Child::Line { placed: l, .. } => out(dy + l.y, dy + l.y + l.line.pitch, l.line.changed),
+                Child::Table(t) => {
+                    for r in t.rows.iter() {
+                        let mut row = |top: f64, bottom: f64, c: bool| out(top, bottom, c || r.changed);
+                        r.cells.iter().for_each(|cell| lines(&cell.content, dy, &mut row));
+                    }
+                }
+                Child::Items(_) => {}
+            }
+        }
+    }
+    let mut changed = false;
+    lines(body, 0.0, &mut |_, _, c| changed |= c);
+    if !changed {
+        return;
+    }
+    let mut all = Vec::new();
+    lines(body, 0.0, &mut |top, bottom, c| all.push((top, bottom, c)));
+    all.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let x = space.area.left - (space.margins.0 / 2.0).min(36.0);
+    let mut bars: Vec<Item> = Vec::new();
+    for (k, &(top, bottom, c)) in all.iter().enumerate() {
+        if !c {
+            continue;
+        }
+        let next = all[k + 1..].iter().map(|l| l.0).find(|&t| t >= bottom - 0.01);
+        let bottom = next.filter(|&t| t - bottom <= bottom - top).unwrap_or(bottom);
+        match bars.last_mut() {
+            Some(Item::Rect { rect, .. }) if top <= rect[3] + 0.01 => rect[3] = rect[3].max(bottom),
+            _ => bars.push(Item::Rect { rect: [x, top, x + 0.72, bottom], colour: 0 }),
+        }
+    }
+    body.push(Child::Items(bars.into()));
+}
+
 /// COL-1: separator lines between columns that hold text: the page's text so far (earlier sections' bodies and this
 /// section's) decides which columns are used and how far down the lines go.
-fn separators(s: &Section, cols: &[ColumnSpace], top: f64, earlier: &[Rc<BoxFragment>], body: &mut Vec<Child>) {
-    if !s.columns.separator || cols.len() < 2 {
+fn separators(c: &Columns, cols: &[ColumnSpace], top: f64, earlier: &[Rc<BoxFragment>], body: &mut Vec<Child>) {
+    if !c.separator || cols.len() < 2 {
         return;
     }
     let mut runs = Vec::new();

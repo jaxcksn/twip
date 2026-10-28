@@ -1,0 +1,93 @@
+{
+ "id": "RECORD-KEYS-BACKSPACE-AFTER-DELETION",
+ "title": "Backspace with the caret right after a deletion.",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  {
+   "type": "Alpha beta gamma delta."
+  },
+  {
+   "command": "review.track",
+   "arg": "on"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author B"
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 6
+   }
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 11
+   },
+   "shift": true
+  },
+  {
+   "key": "Delete"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author A"
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 11
+   }
+  },
+  {
+   "key": "Backspace"
+  },
+  {
+   "expect": {
+    "caret": {
+     "para": 0,
+     "offset": 10
+    },
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "Alpha beta gamma delta.",
+        "runs": [
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta ",
+          "ins": null,
+          "del": "Author B",
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "gamma delta.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

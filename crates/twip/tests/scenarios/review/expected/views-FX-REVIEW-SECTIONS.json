@@ -1,0 +1,276 @@
+{
+  "description": "Pages and lines per paragraph of FX-REVIEW-SECTIONS.docx in each markup view, as far as they can be observed (see each view's source), plus the layouts of the tracked document, of every revision accepted and of every revision rejected.",
+  "fixture": "FX-REVIEW-SECTIONS.docx",
+  "views": {
+    "all-markup": {
+      "source": "fixed-format export with markup; lines mapped to the paragraphs of the tracked document (table cells not mapped)",
+      "pages": 2,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 4
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "lines": 4
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "lines": 4
+        },
+        {
+          "text": "Pilot receipt corporate requirement stan",
+          "lines": 4
+        },
+        {
+          "text": "Notice claim team export staff newslette",
+          "lines": 4
+        },
+        {
+          "text": "Inventory relevant group relief results ",
+          "lines": 4
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 4
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "lines": 4
+        }
+      ],
+      "unmatched_lines": [
+        "Formatted: Left:  0.75\", Right:  0.75\", ",
+        "Bottom:  0.75\", Width:  11\", Height:  8."
+      ]
+    },
+    "simple-markup": {
+      "source": "not observable: neither the export nor the layout queries follow the view setting",
+      "pages": null,
+      "paragraphs": null
+    },
+    "no-markup": {
+      "source": "fixed-format export without markup; lines mapped to the paragraphs of the document with every revision accepted (table cells not mapped)",
+      "pages": 2,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 4
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "lines": 4
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "lines": 4
+        },
+        {
+          "text": "Pilot receipt corporate requirement stan",
+          "lines": 4
+        },
+        {
+          "text": "Notice claim team export staff newslette",
+          "lines": 4
+        },
+        {
+          "text": "Inventory relevant group relief results ",
+          "lines": 4
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 4
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "lines": 4
+        }
+      ],
+      "unmatched_lines": null
+    },
+    "original": {
+      "source": "layout of the document with every revision rejected",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Pilot receipt corporate requirement stan",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Notice claim team export staff newslette",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Inventory relevant group relief results ",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "in_table": false,
+          "lines": 5
+        }
+      ]
+    }
+  },
+  "layouts": {
+    "tracked": {
+      "pages": 2,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Pilot receipt corporate requirement stan",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Notice claim team export staff newslette",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Inventory relevant group relief results ",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "in_table": false,
+          "lines": null
+        }
+      ]
+    },
+    "accepted": {
+      "pages": 2,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Pilot receipt corporate requirement stan",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Notice claim team export staff newslette",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Inventory relevant group relief results ",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 4
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "in_table": false,
+          "lines": null
+        }
+      ]
+    },
+    "rejected": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Pilot receipt corporate requirement stan",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Notice claim team export staff newslette",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Inventory relevant group relief results ",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 5
+        },
+        {
+          "text": "Trend suggestions board order update gra",
+          "in_table": false,
+          "lines": 5
+        }
+      ]
+    }
+  },
+  "error": null
+}

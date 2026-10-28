@@ -1,0 +1,32 @@
+{
+  "id": "REV-COMMENTS-01",
+  "title": "A comment added at a collapsed caret anchors to the word at the caret: the word the caret is in or starts, else the one it ends; undo takes each out",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    { "type": "Alpha beta gamma." },
+    { "click": { "para": 0, "offset": 8 } },
+    { "command": "review.comment.add", "arg": "Inside" },
+    { "expect": { "comments": [{ "text": "Inside", "scope": "beta", "parent": null, "done": false, "active": true }], "undo_depth": 2 } },
+    { "click": { "para": 0, "offset": 11 } },
+    { "command": "review.comment.add", "arg": "Start" },
+    { "click": { "para": 0, "offset": 5 } },
+    { "command": "review.comment.add", "arg": "Space" },
+    {
+      "expect": {
+        "text": { "0": "Alpha beta gamma." },
+        "comments": [
+          { "author": "Author", "text": "Space", "scope": "Alpha", "parent": null, "done": false },
+          { "text": "Inside", "scope": "beta", "parent": null, "done": false },
+          { "text": "Start", "scope": "gamma", "parent": null, "done": false }
+        ]
+      }
+    },
+    { "command": "home.undo" },
+    { "expect": { "comments": [{ "text": "Inside", "scope": "beta" }, { "text": "Start", "scope": "gamma" }] } },
+    { "command": "home.undo" },
+    { "command": "home.undo" },
+    { "expect": { "comments": [], "text": { "0": "Alpha beta gamma." } } },
+    { "command": "home.redo" },
+    { "expect": { "comments": [{ "text": "Inside", "scope": "beta" }] } }
+  ]
+}

@@ -11,6 +11,7 @@ use std::rc::Rc;
 use crate::docx::fields::{Shown, format_field};
 use crate::docx::model::*;
 use crate::docx::props::VertAlign;
+use crate::docx::review::run_in;
 use crate::font::{Face, Fonts, Glyph};
 
 use super::cache::{CacheKey, cached};
@@ -111,6 +112,8 @@ pub struct ShapedPara {
     pub glyph_dx: Box<[f64]>,
     pub text: Box<str>,
     pub objects: Box<[Object]>,
+    /// A joined paragraph's sources ([`ShapeSpace::join`], REV-6): piece sources are its units.
+    pub join: Option<Rc<super::join::JoinMap>>,
 }
 
 impl ShapedPara {
@@ -327,19 +330,43 @@ impl Builder<'_> {
         }
     }
 
-    /// Shapes the pending text stretch (see `paragraph`): its pieces' sources are their first characters' units.
-    fn flush_text(&mut self, pend: &mut String, run: &mut Option<Run>, units: &mut Vec<u32>) -> Result<(), Yield> {
-        let Some(r) = run.take() else { return Ok(()) };
+    /// Shapes the pending text stretch (see `paragraph`): its pieces' sources are their first characters' units, and
+    /// each piece draws in the run its first character comes from (`runs`: each run's first character, in order).
+    fn flush_text(&mut self, pend: &mut String, runs: &mut Vec<(usize, Run)>, units: &mut Vec<u32>) -> Result<(), Yield> {
+        let Some(r) = runs.first().map(|(_, r)| r.clone()) else { return Ok(()) };
         let first = self.pieces.len();
         self.text(pend, &r)?;
-        let mut c = 0usize;
+        // Styles of the stretch's own run (or the runs shaping made of it, such as small caps) with another run's
+        // revisions: (style, run index, restyled).
+        let mut restyled: Vec<(u32, usize, u32)> = Vec::new();
+        let (mut c, mut seg) = (0usize, 0usize);
         for i in first..self.pieces.len() {
             let u = units.get(c).or(units.last()).copied().unwrap_or(0);
             self.pieces[i].src = Some(Unit(u));
+            while runs.get(seg + 1).is_some_and(|(at, _)| *at <= c) {
+                seg += 1;
+            }
+            // shortcut: a cluster across two runs (a mark combining with the character before it) draws in the first.
+            if seg > 0 {
+                let old = self.pieces[i].style;
+                let style = match restyled.iter().find(|(s, k, _)| *s == old && *k == seg) {
+                    Some(&(_, _, new)) => new,
+                    None => {
+                        let mut st = self.styles[old as usize].clone();
+                        let own = &runs[seg].1;
+                        st.run = if Rc::ptr_eq(&st.run, &r) { own.clone() } else { Rc::new(RunStyle { rev: own.rev.clone(), ..(*st.run).clone() }) };
+                        let new = self.style_index(st);
+                        restyled.push((old, seg, new));
+                        new
+                    }
+                };
+                self.pieces[i].style = style;
+            }
             let (a, b) = self.pieces[i].text;
             c += self.text[a as usize..b as usize].chars().count();
         }
         pend.clear();
+        runs.clear();
         units.clear();
         Ok(())
     }
@@ -505,6 +532,7 @@ impl Builder<'_> {
     }
 
     fn paragraph(&mut self, para: &Paragraph, space: &ShapeSpace) -> Result<(), Yield> {
+        // shortcut: a list numbering change shows the current number in Original too.
         if let Some(l) = &para.list {
             let start = self.pieces.len();
             // LIST-13: the number is a separate object, not kerned.
@@ -553,15 +581,18 @@ impl Builder<'_> {
             }
         }
         // FONT-16: text in equal formatting is shaped as one stretch across what isn't drawn between it (field
-        // markers and codes, control markers); each character keeps its own unit.
+        // markers and codes, control markers); each character keeps its own unit. Runs differing only in their
+        // revisions shape as one stretch too (revision marks don't change the glyphs); each piece keeps its own run.
         let mut pend = String::new();
-        let mut pend_run: Option<Run> = None;
+        let mut pend_runs: Vec<(usize, Run)> = Vec::new();
         let mut pend_units: Vec<u32> = Vec::new();
+        let view = space.view;
         for (k, inl) in para.inlines.iter().enumerate() {
             let evaluated = matches!(inl, Inline::FieldBegin { kind: Some(_), .. });
             // STYLE-7: hidden text (and anything else in a hidden run) takes no space and draws nothing; its units
-            // still count, so the units after it keep their place, and fields and notes keep their numbering.
-            if inl.run().is_some_and(|r| r.hidden) || shown[k] == Shown::Not {
+            // still count, so the units after it keep their place, and fields and notes keep their numbering. REV-1:
+            // so does revised content the markup view hides.
+            if inl.run().is_some_and(|r| r.hidden || view.hides(&r.rev)) || shown[k] == Shown::Not {
                 match inl {
                     _ if evaluated => field += 1,
                     Inline::NoteRef { .. } | Inline::NoteMark(..) => note += 1,
@@ -571,10 +602,14 @@ impl Builder<'_> {
                 continue;
             }
             if let (Inline::Text(t, run), Shown::Itself) = (inl, &shown[k]) {
-                if pend_run.as_ref().is_some_and(|p| !(Rc::ptr_eq(p, run) || **p == **run)) {
-                    self.flush_text(&mut pend, &mut pend_run, &mut pend_units)?;
+                // REV-2: the formatting the view shows.
+                let run = run_in(run, view);
+                if pend_runs.first().is_some_and(|(_, p)| !shapes_alike(p, run)) {
+                    self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                 }
-                pend_run.get_or_insert_with(|| run.clone());
+                if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || **p == **run) {
+                    pend_runs.push((pend_units.len(), run.clone()));
+                }
                 pend.push_str(t);
                 match result_of[k] {
                     Some(b) => pend_units.extend((0..t.chars().count()).map(|_| b)),
@@ -583,11 +618,11 @@ impl Builder<'_> {
                 at += inl.units() as u32;
                 continue;
             }
-            if matches!(inl, Inline::Bookmark(_) | Inline::ControlStart(_) | Inline::ControlEnd(_)) {
+            if matches!(inl, Inline::Bookmark(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::ControlStart(_) | Inline::ControlEnd(_)) {
                 // Draws nothing and takes no units: the text on either side stays one stretch.
                 continue;
             }
-            self.flush_text(&mut pend, &mut pend_run, &mut pend_units)?;
+            self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
             let first = self.pieces.len();
             if let Shown::Value(v) = &shown[k] {
                 let text = if evaluated {
@@ -597,23 +632,24 @@ impl Builder<'_> {
                     v.clone()
                 };
                 if let (false, Some(run)) = (text.is_empty(), inl.run()) {
-                    self.text(&text, run)?;
+                    self.text(&text, run_in(run, view))?;
                 }
             }
-            match inl {
-                Inline::Text(t, run) => self.text(t, run)?,
-                Inline::Tab(run) => {
+            let run = inl.run().map(|r| run_in(r, view));
+            match (inl, run) {
+                (Inline::Text(t, _), Some(run)) => self.text(t, run)?,
+                (Inline::Tab(_), Some(run)) => {
                     let f = self.face(&run.ascii, run);
                     let p = self.new_piece(Kind::Tab, run, f, run.size, run.position);
                     self.atom(p, "\t");
                 }
-                Inline::PTab(t, run) => {
+                (Inline::PTab(t, _), Some(run)) => {
                     let f = self.face(&run.ascii, run);
                     let mut p = self.new_piece(Kind::Tab, run, f, run.size, run.position);
                     p.object = Some(Object::PTab(*t));
                     self.atom(p, "\t");
                 }
-                Inline::Break(k, run) => {
+                (Inline::Break(k, _), Some(run)) => {
                     let kind = match k {
                         BreakKind::Line => Kind::LineBreak,
                         BreakKind::Page => Kind::PageBreak,
@@ -623,7 +659,7 @@ impl Builder<'_> {
                     let p = self.new_piece(kind, run, f, run.size, 0.0);
                     self.atom(p, "");
                 }
-                Inline::Sym { ch, font, run, control } => {
+                (Inline::Sym { ch, font, control, .. }, Some(run)) => {
                     let mut r = (**run).clone();
                     r.ascii = font.clone();
                     r.h_ansi = font.clone();
@@ -634,7 +670,7 @@ impl Builder<'_> {
                     }
                     self.text(&ch.to_string(), &Rc::new(r))?;
                 }
-                Inline::Picture(pic, run) => {
+                (Inline::Picture(pic, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Object, run, None, run.size, 0.0);
                     p.width = pic.w;
                     p.ascent = pic.h;
@@ -642,12 +678,12 @@ impl Builder<'_> {
                     p.object = Some(Object::Picture(pic.clone()));
                     self.atom(p, "\u{FFFC}");
                 }
-                Inline::Float(f, run) => {
+                (Inline::Float(f, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Anchor, run, None, run.size, 0.0);
                     p.object = Some(Object::Float(Rc::new((**f).clone())));
                     self.atom(p, "");
                 }
-                Inline::NoteRef { kind, id, custom, run } => {
+                (Inline::NoteRef { kind, id, custom, .. }, Some(run)) => {
                     let number = space.notes.get(note).cloned().unwrap_or_default();
                     note += 1;
                     if !*custom {
@@ -659,20 +695,19 @@ impl Builder<'_> {
                         }
                     }
                 }
-                Inline::NoteMark(_, _, run) => {
+                (Inline::NoteMark(_, _, _), Some(run)) => {
                     let number = space.notes.get(note).cloned().unwrap_or_default();
                     note += 1;
                     self.text(&number, run)?;
                 }
-                Inline::Separator { continuation, run } => {
+                (Inline::Separator { continuation, .. }, Some(run)) => {
                     let f = self.face(&run.ascii, run);
                     let kind = if *continuation { Kind::ContSeparator } else { Kind::Separator };
                     let p = self.new_piece(kind, run, f, run.size, 0.0);
                     self.atom(p, "");
                 }
-                // Drawn above, as what they show.
-                Inline::FieldBegin { .. } | Inline::FieldSep { .. } | Inline::FieldEnd { .. } => {}
-                Inline::Bookmark(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => {}
+                // Fields draw above, as what they show; markers draw nothing.
+                _ => {}
             }
             // Sources: an atom's pieces all at its one unit (text goes through `flush_text`).
             let units = inl.units() as u32;
@@ -681,7 +716,7 @@ impl Builder<'_> {
             }
             at += units;
         }
-        self.flush_text(&mut pend, &mut pend_run, &mut pend_units)?;
+        self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
         if space.balance {
             self.balance_spaces();
         }
@@ -739,8 +774,74 @@ impl Builder<'_> {
             glyph_dx: self.glyph_dx.into_boxed_slice(),
             text: self.text.into_boxed_str(),
             objects: self.objects.into_boxed_slice(),
+            join: None,
         }
     }
+}
+
+/// Whether two runs shape alike: equal formatting, revisions aside.
+fn shapes_alike(a: &Run, b: &Run) -> bool {
+    let RunStyle {
+        ascii,
+        h_ansi,
+        east_asia,
+        cs,
+        east_asia_unset,
+        hint_east_asia,
+        size,
+        bold,
+        italic,
+        caps,
+        small_caps,
+        strike,
+        dstrike,
+        hidden,
+        underline,
+        color,
+        highlight,
+        shading,
+        vert_align,
+        position,
+        spacing,
+        scale,
+        kern,
+        ligatures,
+        em,
+        toc,
+        lang,
+        style_id,
+        direct: _,
+        rev: _,
+    } = &**a;
+    Rc::ptr_eq(a, b)
+        || (*ascii == b.ascii
+            && *h_ansi == b.h_ansi
+            && *east_asia == b.east_asia
+            && *cs == b.cs
+            && *east_asia_unset == b.east_asia_unset
+            && *hint_east_asia == b.hint_east_asia
+            && *size == b.size
+            && *bold == b.bold
+            && *italic == b.italic
+            && *caps == b.caps
+            && *small_caps == b.small_caps
+            && *strike == b.strike
+            && *dstrike == b.dstrike
+            && *hidden == b.hidden
+            && *underline == b.underline
+            && *color == b.color
+            && *highlight == b.highlight
+            && *shading == b.shading
+            && *vert_align == b.vert_align
+            && *position == b.position
+            && *spacing == b.spacing
+            && *scale == b.scale
+            && *kern == b.kern
+            && *ligatures == b.ligatures
+            && *em == b.em
+            && *toc == b.toc
+            && *lang == b.lang
+            && *style_id == b.style_id)
 }
 
 /// What a shaped paragraph depends on: the paragraph (content and identity: its lines carry its id), the values of
@@ -820,12 +921,12 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
     // shortcut: shaping is one unit per paragraph until jobs keep partial pieces (JobMemo).
     super::job::unit("shaping call", || crate::prof::time("itemize", || b.paragraph(para, space)))?;
     memos.meter.unit_done();
-    Ok(b.finish())
+    Ok(ShapedPara { join: space.join.clone(), ..b.finish() })
 }
 
 /// The field values and note numbers a paragraph's [`ShapeSpace`] holds, from the values the page or story gives.
 pub fn shape_space(para: &Paragraph, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, text: &TextEnv) -> ShapeSpace {
-    let mut space = ShapeSpace { balance: text.balance_spaces, compress: text.compress_punctuation, ..ShapeSpace::default() };
+    let mut space = ShapeSpace { balance: text.balance_spaces, compress: text.compress_punctuation, view: text.review.view, ..ShapeSpace::default() };
     let spans = crate::docx::fields::spans(&para.inlines);
     for (k, inl) in para.inlines.iter().enumerate() {
         match inl {
@@ -897,4 +998,33 @@ pub fn shape_run(text: &str, run: &Run, fonts: &Fonts) -> ShapedPara {
     // Shaping a run never yields (no budget is consulted).
     let _ = b.text(text, run);
     b.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::docx::review::{AuthorId, MarkKind, RevisionId, RevisionMark, RunRevisions};
+    use crate::layout::cache::LayoutCache;
+    use crate::layout::job::Meter;
+    use crate::layout::tests::{fonts, plain_doc};
+
+    /// Text in runs differing only in their revisions shapes as one stretch, and each piece keeps its own run.
+    #[test]
+    fn revisions_dont_split_a_stretch() {
+        let Some(doc) = plain_doc(&["one".into()]) else { return };
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { unreachable!() };
+        let mut p = p.clone();
+        let base = p.inlines.iter().find_map(Inline::run).expect("a run").clone();
+        let mark = Rc::new(RevisionMark { id: RevisionId(1), author: AuthorId(0), date: None, kind: MarkKind::Insert, move_name: None });
+        let inserted = Rc::new(RunStyle { rev: RunRevisions { ins: Some(mark), ..Default::default() }, ..(*base).clone() });
+        p.inlines = vec![Inline::Text("ab".into(), base.clone()), Inline::Text("cd".into(), inserted), Inline::Text("ef".into(), base)];
+        let (fonts, mut cache, mut meter) = (fonts(), LayoutCache::new(), Meter::unlimited());
+        let mut memos = Memos { cache: &mut cache, job: None, meter: &mut meter };
+        crate::prof::take();
+        let shaped = shape_uncached(&p, &ShapeSpace::default(), &fonts, &mut memos).expect("unlimited");
+        let stretches = crate::prof::take().iter().find(|t| t.0 == "stretch").map_or(0, |t| t.2);
+        assert_eq!(stretches, 1);
+        let inserted: Vec<bool> = (0..shaped.len()).map(|i| shaped.run(i).rev.ins.is_some()).collect();
+        assert_eq!(inserted, [false, false, true, true, false, false]);
+    }
 }

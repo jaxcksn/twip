@@ -1,0 +1,675 @@
+{
+  "description": "Inserting a field, a content control, a picture, a text box and a footnote reference.",
+  "setup": "one paragraph \"Alpha beta gamma.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "Alpha beta gamma.",
+        "runs": [
+          {
+            "text": "Alpha beta gamma.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "insert a field { = 1 + 1 } before \"beta\"",
+      "author": "Author A",
+      "op": {
+        "op": "insert-field",
+        "at": 6,
+        "code": "= 1 + 1"
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha 2beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "2"
+          }
+        ]
+      }
+    },
+    {
+      "do": "insert a plain-text content control holding \"cc\" at the start",
+      "author": "Author A",
+      "op": {
+        "op": "insert-control",
+        "at": 0,
+        "text": "cc"
+      },
+      "selection": {
+        "start": 1,
+        "end": 1
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "ccAlpha 2beta gamma.",
+              "runs": [
+                {
+                  "text": "cc",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "cc"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "2"
+          }
+        ]
+      }
+    },
+    {
+      "do": "insert an inline picture before \".\"",
+      "author": "Author A",
+      "op": {
+        "op": "insert-picture",
+        "at": "before \".\""
+      },
+      "selection": {
+        "start": 1,
+        "end": 1
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "ccAlpha 2beta gamma￼.",
+              "runs": [
+                {
+                  "text": "cc",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": ".",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "cc"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "2"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "/"
+          }
+        ]
+      }
+    },
+    {
+      "do": "insert a text box \"Box\" anchored to the paragraph",
+      "author": "Author A",
+      "op": {
+        "op": "insert-textbox",
+        "text": "Box"
+      },
+      "selection": {
+        "start": 2,
+        "end": 2
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "￼ccAlpha 2beta gamma￼.",
+              "runs": [
+                {
+                  "text": "￼cc",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": ".",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "textboxes": [
+            {
+              "text": "Box",
+              "runs": [
+                {
+                  "text": "Box",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "cc"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "2"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "/"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "Box",
+            "story": "textboxes"
+          }
+        ]
+      }
+    },
+    {
+      "do": "insert a footnote \"Note.\" after \"Alpha\"",
+      "author": "Author A",
+      "op": {
+        "op": "insert-footnote",
+        "at": "after \"Alpha\"",
+        "text": "Note."
+      },
+      "selection": {
+        "start": 2,
+        "end": 2
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "￼ccAlpha￼ 2beta gamma￼.",
+              "runs": [
+                {
+                  "text": "￼cc",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Alpha",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [
+                    "rStyle:val=FootnoteReference"
+                  ],
+                  "was": null
+                },
+                {
+                  "text": " ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": ".",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footnotes": [
+            {
+              "text": " Note.",
+              "runs": [
+                {
+                  "text": " Note.",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=FootnoteText"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "textboxes": [
+            {
+              "text": "Box",
+              "runs": [
+                {
+                  "text": "Box",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "cc"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "\u0002"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "2"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "/"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "\u0002 Note.",
+            "story": "footnotes"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "Box",
+            "story": "textboxes"
+          }
+        ]
+      }
+    }
+  ]
+}

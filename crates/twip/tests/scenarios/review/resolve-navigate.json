@@ -1,0 +1,19 @@
+{
+  "id": "REV-RESOLVE-NAVIGATE",
+  "title": "Next and previous revision select and reveal it; accepting the selected revision resolves it.",
+  "fixture": "review/FX-REVIEW-RUNS.docx",
+  "steps": [
+    {"command": "review.next"},
+    {"expect": {"selection": {"kind": "text", "anchor": {"para": 0, "offset": 143}, "focus": {"para": 0, "offset": 210}}}},
+    {"command": "review.next"},
+    {"expect": {"selection": {"kind": "text", "anchor": {"para": 0, "offset": 253}, "focus": {"para": 0, "offset": 387}}}},
+    {"command": "review.next"},
+    {"expect": {"selection": {"kind": "text", "anchor": {"para": 0, "offset": 347}, "focus": {"para": 0, "offset": 387}}}},
+    {"command": "review.previous"},
+    {"expect": {"selection": {"kind": "text", "anchor": {"para": 0, "offset": 253}, "focus": {"para": 0, "offset": 387}}}},
+    {"command": "review.accept"},
+    {"expect": {"revisions": ["Insert Author A", "Property Author C", "Insert Author A", "Delete Author B", "Insert Author A", "Property Author C", "Insert Author A", "Delete Author B", "Insert Author A", "Property Author C", "Insert Author A", "Delete Author B", "Insert Author A", "Property Author C", "Insert Author A", "Delete Author B", "Insert Author A", "Property Author C", "Insert Author A", "Delete Author B", "Insert Author A", "Property Author C"], "text": {"0": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group relief results. Inventory relevant group relief results region ledger brief usage. Notice claim team export staff newsletter. Trend suggestions board order update granted agreement. The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory."}}},
+    {"command": "review.previous"},
+    {"expect": {"selection": {"kind": "text", "anchor": {"para": 0, "offset": 143}, "focus": {"para": 0, "offset": 210}}, "undo_depth": 1}}
+  ]
+}

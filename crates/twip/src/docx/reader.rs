@@ -1,15 +1,21 @@
 //! DOCX package → [`Document`]: resolves styles (STYLE), numbering (LIST) and fields (FIELD) while reading.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
 use super::numbering::{Counters, Numbering};
 use super::props::*;
 use super::resolve::{ParaResolved, Resolver};
+use super::review::{
+    AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
+    PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange,
+    TableChange, Timestamp,
+};
 use super::styles::{Region, Styles, ThemeFonts};
 use super::xml::*;
 
@@ -93,6 +99,25 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
     let numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref());
     let theme = ThemeFonts::parse(part_of("theme").and_then(|p| pkg.read_str(&p)).as_deref());
     let settings = read_settings(part_of("settings").and_then(|p| pkg.read_str(&p)).as_deref());
+    let xml = pkg.read_str(&main).ok_or("no main document part")?;
+
+    // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
+    let mut ids = IdCounter::default();
+    seed_ids(&xml, &mut ids);
+    let id_parts = ["header", "footer", "footnotes", "endnotes", "comments", "commentsExtended", "commentsIds", "commentsExtensible"];
+    for (_, target) in rels.values().filter(|(k, _)| id_parts.contains(&k.as_str())) {
+        if let Some(x) = pkg.read_str(target) {
+            seed_ids(&x, &mut ids);
+        }
+    }
+    // The comments part is parsed first so references to missing comments are known while the body is read; the
+    // bodies are read after the document's other stories (their lists number after the body's).
+    let comments_part = part_of("comments");
+    let comments_xml = comments_part.as_deref().and_then(|p| pkg.read_str(p));
+    let comments_dom = comments_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
+    let comment_ids = comments_dom.iter().flat_map(|d| children(d.root_element(), "comment")).filter_map(|c| int(attr(c, "id"))).collect();
+    let people_xml = part_of("people").and_then(|p| pkg.read_str(&p));
+    let people_part = super::comments::people(people_xml.as_deref());
 
     let mut r = Reader {
         res: Resolver::new(styles, numbering, theme),
@@ -112,10 +137,25 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
         segs: Vec::new(),
         lossy: false,
         controls: HashMap::new(),
+        people: People::default(),
+        identities: HashMap::new(),
+        ids,
+        diagnostics: Diagnostics::default(),
+        wrap: RunRevisions::default(),
+        open_ranges: Vec::new(),
+        moves: Vec::new(),
+        pending_marks: Vec::new(),
+        comment_ids,
+        anchored: HashSet::new(),
+        orphans: HashSet::new(),
     };
+    for (name, identity) in &people_part {
+        if let Some(i) = identity {
+            r.identities.entry(name.clone()).or_insert_with(|| i.clone());
+        }
+    }
 
     let mut doc = Document::default();
-    let xml = pkg.read_str(&main).ok_or("no main document part")?;
     {
         let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
         let body = child(dom.root_element(), "body").ok_or("no body")?;
@@ -159,7 +199,8 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
         for n in children(dom.root_element(), if tag == "footnote" { "footnote" } else { "endnote" }) {
             let id = int(attr(n, "id")).unwrap_or(0);
             r.note_id = id;
-            let blocks = r.read_blocks(n, &mut pkg, None);
+            let mut blocks = r.read_blocks(n, &mut pkg, None);
+            r.close_ranges(&mut blocks);
             match attr(n, "type") {
                 Some(t @ ("separator" | "continuationSeparator" | "continuationNotice")) => {
                     doc.separators.insert(format!("{tag}:{t}"), blocks);
@@ -170,6 +211,28 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
             }
         }
         r.record = false;
+    }
+    if let (Some(path), Some(dom)) = (&comments_part, &comments_dom) {
+        r.enter_part(path, &mut pkg);
+        r.record = editable;
+        let read = r.read_comments(dom.root_element(), &mut pkg);
+        r.record = false;
+        let mut part = |kind: &str| part_of(kind).and_then(|p| pkg.read_str(&p));
+        let (extended, ids, extensible) = (part("commentsExtended"), part("commentsIds"), part("commentsExtensible"));
+        doc.comments = super::comments::link(read, extended.as_deref(), ids.as_deref(), extensible.as_deref());
+        for c in doc.comments.by_id.values() {
+            r.ids.saw_para(c.para_id);
+            if let Some(d) = c.durable_id {
+                r.ids.saw_para(d);
+            }
+        }
+        for c in doc.comments.by_id.keys().filter(|c| !r.anchored.contains(&c.0)) {
+            r.diagnostics.warn(WarningCode::CommentUnanchored, Some(path), || format!("comment {} has no range or reference", c.0));
+        }
+    }
+    // People the people part names but no revision or comment does are kept after those that do.
+    for (name, identity) in &people_part {
+        r.people.author(name, identity.as_ref());
     }
     // LNUM-1: the LineNumber character style if present, else the default paragraph font.
     doc.line_number_run = Some({
@@ -187,6 +250,9 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
     doc.controls = std::mem::take(&mut r.controls);
     doc.data_parts = data_parts(&mut pkg, &rels);
     doc.settings = r.settings;
+    doc.people = r.people;
+    doc.review_ids = r.ids;
+    doc.diagnostics = r.diagnostics;
     doc.resolver = Some(Rc::new(r.res));
     super::fields::evaluate(&mut doc);
     super::frames::convert(&mut doc);
@@ -233,6 +299,19 @@ fn read_settings(xml: Option<&str>) -> Settings {
         s.hyphenation_zone = z;
     }
     s.consecutive_hyphen_limit = child(root, "consecutiveHyphenLimit").and_then(|n| int(val(n))).unwrap_or(0);
+    s.track_revisions = flag(root, "trackRevisions").unwrap_or(false);
+    s.protection = child(root, "documentProtection").map(|n| Protection {
+        edit: match attr(n, "edit") {
+            Some("readOnly") => ProtectionKind::ReadOnly,
+            Some("comments") => ProtectionKind::Comments,
+            Some("trackedChanges") => ProtectionKind::TrackedChanges,
+            Some("forms") => ProtectionKind::Forms,
+            _ => ProtectionKind::None,
+        },
+        enforced: matches!(attr(n, "enforcement"), Some("1" | "true" | "on")),
+        raw: Raw(Some(raw(n))),
+    });
+    s.revision_view_raw = Raw(child(root, "revisionView").map(raw));
     if let Some(c) = child(root, "compat") {
         for e in c.children().filter(|e| e.is_element()) {
             if is_w(e, "compatSetting") {
@@ -295,6 +374,23 @@ struct Reader {
     lossy: bool,
     /// [`Document::controls`].
     controls: HashMap<ControlId, Control>,
+    /// Who made the revisions and comments, and the people part's identities by author name.
+    people: People,
+    identities: HashMap<String, Identity>,
+    /// New ids, past every id in the parts read.
+    ids: IdCounter,
+    diagnostics: Diagnostics,
+    /// The revision wrappers the content being read is in: `w:ins` or `w:moveTo`, and `w:del` or `w:moveFrom`.
+    wrap: RunRevisions,
+    /// Comment and move range starts the story being read hasn't ended, and the open move ranges' names.
+    open_ranges: Vec<(RangeKind, i64)>,
+    moves: Vec<(RangeKind, Rc<str>, i64)>,
+    /// Range markers between blocks, waiting for the next paragraph's start.
+    pending_marks: Vec<Inline>,
+    /// The comments part's comment ids; those a range or reference points to; those pointed to but missing.
+    comment_ids: HashSet<i64>,
+    anchored: HashSet<i64>,
+    orphans: HashSet<i64>,
 }
 
 /// Units added to `out` since `before` (its length and last inline's units then): text may grow the last inline.
@@ -319,9 +415,261 @@ impl Reader {
         let saved = (self.part.clone(), self.rels.clone());
         self.enter_part(path, pkg);
         let root = pick(dom.root_element())?;
-        let blocks = self.read_blocks(root, pkg, None);
+        let mut blocks = self.read_blocks(root, pkg, None);
+        self.close_ranges(&mut blocks);
         (self.part, self.rels) = saved;
         Some(blocks)
+    }
+
+    /// The comments part's comments, each body read as blocks, with its author, date and last paragraph's
+    /// `w14:paraId` (its replies and done flag are joined in [`super::comments::link`]).
+    fn read_comments(&mut self, root: Node, pkg: &mut Package) -> Vec<Comment> {
+        let mut out = Vec::new();
+        for c in children(root, "comment") {
+            let id = self.revision_id(c);
+            let author = self.author(c);
+            let initials: Option<Rc<str>> = attr(c, "initials").filter(|i| !i.is_empty()).map(Rc::from);
+            if let Some(p) = self.people.persons.get_mut(author.0 as usize)
+                && p.initials.is_none()
+            {
+                p.initials = initials.clone();
+            }
+            let mut body = self.read_blocks(c, pkg, None);
+            self.close_ranges(&mut body);
+            let last = c.descendants().rfind(|d| is_w(*d, "p"));
+            let para_id = last.and_then(|p| super::comments::hex(p.attribute((W14, "paraId")))).unwrap_or_else(|| self.ids.next_para_id());
+            out.push(Comment {
+                id: CommentId(id.0),
+                author,
+                initials,
+                date: attr(c, "date").map(Timestamp::parse),
+                date_utc: None,
+                body,
+                para_id,
+                durable_id: None,
+                parent: None,
+                done: false,
+                extensible: Raw::default(),
+            });
+        }
+        out
+    }
+
+    // ---------------- revisions and comments ----------------
+
+    fn warn(&mut self, code: WarningCode, message: impl FnOnce() -> String) {
+        self.diagnostics.warn(code, Some(&self.part), message);
+    }
+
+    /// An element's `w:id`; a new one, reported, when it has none.
+    fn revision_id(&mut self, e: Node) -> RevisionId {
+        match int(attr(e, "id")) {
+            Some(id) => {
+                self.ids.saw_revision(id);
+                RevisionId(id)
+            }
+            None => {
+                let name = e.tag_name().name();
+                self.warn(WarningCode::RevisionIdMissing, || format!("a w:{name} has no w:id"));
+                RevisionId(self.ids.next_revision_id())
+            }
+        }
+    }
+
+    /// An element's `w:author`, with the people part's identity for that name; an empty name, reported, when it has none.
+    fn author(&mut self, e: Node) -> AuthorId {
+        let name = attr(e, "author").unwrap_or_else(|| {
+            let tag = e.tag_name().name();
+            self.warn(WarningCode::AuthorMissing, || format!("a w:{tag} has no w:author"));
+            ""
+        });
+        self.people.author(name, self.identities.get(name))
+    }
+
+    /// The revision `e` records (`w:ins`, `w:del`, `w:rPrChange`, ...). Moves take the name of the move range they
+    /// are in. A property change's kind is `Insert`: what changed is the element holding it.
+    fn mark(&mut self, e: Node, kind: MarkKind) -> Rc<RevisionMark> {
+        let (id, author) = (self.revision_id(e), self.author(e));
+        let range = match kind {
+            MarkKind::MoveFrom => Some(RangeKind::MoveFromStart),
+            MarkKind::MoveTo => Some(RangeKind::MoveToStart),
+            MarkKind::Insert | MarkKind::Delete | MarkKind::Format => None,
+        };
+        let move_name = range.and_then(|k| self.moves.iter().rev().find(|m| m.0 == k)).map(|m| m.1.clone());
+        Rc::new(RevisionMark { id, author, date: attr(e, "date").map(Timestamp::parse), kind, move_name })
+    }
+
+    /// `e`'s child `name` as a revision of `kind`.
+    fn mark_at(&mut self, e: Option<Node>, name: &str, kind: MarkKind) -> Option<Rc<RevisionMark>> {
+        let c = child(e?, name)?;
+        Some(self.mark(c, kind))
+    }
+
+    /// A property change (`w:tblPrChange`, `w:trPrChange`, ...: `name` in `e`), with the properties before it as written
+    /// and as `previous` resolves them (given the earlier properties element, if any).
+    fn table_change<'a, 'i>(
+        &mut self,
+        e: Option<Node<'a, 'i>>,
+        name: &str,
+        previous: impl FnOnce(&Self, Option<Node<'a, 'i>>) -> Option<PreviousProps>,
+    ) -> Option<Rc<TableChange>> {
+        let c = child(e?, name)?;
+        let before = c.children().find(|n| n.is_element());
+        let (previous_raw, previous) = (Raw(before.map(raw)), previous(self, before));
+        Some(Rc::new(TableChange { mark: self.mark(c, MarkKind::Format), previous_raw, previous }))
+    }
+
+    /// A move mark with no move yet, named by the move range of its kind open now; `None` for any other mark.
+    fn named_at_end(&self, m: &Option<Rc<RevisionMark>>) -> Option<Rc<RevisionMark>> {
+        let m = m.as_ref().filter(|m| m.move_name.is_none())?;
+        let range = match m.kind {
+            MarkKind::MoveFrom => RangeKind::MoveFromStart,
+            MarkKind::MoveTo => RangeKind::MoveToStart,
+            MarkKind::Insert | MarkKind::Delete | MarkKind::Format => return None,
+        };
+        let name = self.moves.iter().rev().find(|o| o.0 == range)?.1.clone();
+        Some(Rc::new(RevisionMark { move_name: Some(name), ..(**m).clone() }))
+    }
+
+    /// A run's revisions: the wrappers it is in and its `w:rPrChange` (the previous formatting resolved over `base`).
+    fn run_revisions(&mut self, base: &RunProps, rpr: Option<Node>) -> RunRevisions {
+        RunRevisions { ins: self.wrap.ins.clone(), del: self.wrap.del.clone(), fmt: self.format_change(base, rpr) }
+    }
+
+    /// A paragraph mark's revisions: inserted, deleted or moved (`w:ins`, ... in the mark's `w:rPr`), and its
+    /// formatting change.
+    fn mark_revisions(&mut self, base: &RunProps, rpr: Option<Node>) -> RunRevisions {
+        let ins = self.mark_at(rpr, "ins", MarkKind::Insert).or_else(|| self.mark_at(rpr, "moveTo", MarkKind::MoveTo));
+        let del = self.mark_at(rpr, "del", MarkKind::Delete).or_else(|| self.mark_at(rpr, "moveFrom", MarkKind::MoveFrom));
+        RunRevisions { ins, del, fmt: self.format_change(base, rpr) }
+    }
+
+    fn format_change(&mut self, base: &RunProps, rpr: Option<Node>) -> Option<Rc<FormatChange>> {
+        let c = child(rpr?, "rPrChange")?;
+        let before = child(c, "rPr");
+        let mut previous = self.run_style(&self.run_props(base, before));
+        if self.record {
+            Rc::make_mut(&mut previous).direct = Raw(before.map(raw));
+        }
+        Some(Rc::new(FormatChange { mark: self.mark(c, MarkKind::Format), previous, previous_raw: Raw(before.map(raw)) }))
+    }
+
+    /// `run` with the revisions it is read in.
+    fn tracked(&mut self, mut run: Run, base: &RunProps, rpr: Option<Node>) -> Run {
+        let rev = self.run_revisions(base, rpr);
+        if !rev.is_empty() {
+            Rc::make_mut(&mut run).rev = rev;
+        }
+        run
+    }
+
+    /// A paragraph's property change (`w:pPrChange`, the previous properties resolved as the paragraph is), and its
+    /// list's numbering change (`w:numberingChange`, kept as written). A numbering change alone keeps the
+    /// paragraph's properties as the previous ones.
+    fn para_change(&mut self, ppr: Option<Node>, region: Option<&Region>, current: &ParaStyle) -> Option<Rc<ParaChange>> {
+        let ppr = ppr?;
+        let numbering = child(ppr, "numPr").and_then(|n| child(n, "numberingChange"));
+        let change = child(ppr, "pPrChange");
+        let mark = self.mark(change.or(numbering)?, MarkKind::Format);
+        // With both, the numbering change's own id is kept clear of new ids too.
+        if let (Some(_), Some(n)) = (change, numbering) {
+            self.revision_id(n);
+        }
+        let before = change.and_then(|c| child(c, "pPr"));
+        let previous = match change {
+            Some(_) => {
+                let mut s = self.res.paragraph(&ParaProps::parse(before), region).style;
+                if self.record {
+                    s.direct = Raw(before.map(raw));
+                }
+                s
+            }
+            None => current.clone(),
+        };
+        Some(Rc::new(ParaChange { mark, previous: Rc::new(previous), previous_raw: Raw(before.map(raw)), numbering_change: Raw(numbering.map(raw)) }))
+    }
+
+    /// Whether comment `id` exists; a missing one is reported once.
+    fn comment_exists(&mut self, id: i64) -> bool {
+        self.ids.saw_revision(id);
+        self.anchored.insert(id);
+        if self.comment_ids.contains(&id) {
+            return true;
+        }
+        if self.orphans.insert(id) {
+            self.warn(WarningCode::CommentReferenceOrphan, || format!("comment {id} is referenced but the comments part doesn't have it"));
+        }
+        false
+    }
+
+    /// A comment or move range marker, paired with the other end in the story being read. An end with no start, and
+    /// a comment range or reference whose comment is missing, are reported and left out.
+    fn range(&mut self, e: Node) -> Option<RangeMark> {
+        if e.tag_name().namespace() != Some(W) {
+            return None;
+        }
+        let kind = match e.tag_name().name() {
+            "commentRangeStart" => RangeKind::CommentStart,
+            "commentRangeEnd" => RangeKind::CommentEnd,
+            "moveFromRangeStart" => RangeKind::MoveFromStart,
+            "moveFromRangeEnd" => RangeKind::MoveFromEnd,
+            "moveToRangeStart" => RangeKind::MoveToStart,
+            "moveToRangeEnd" => RangeKind::MoveToEnd,
+            _ => return None,
+        };
+        let Some(id) = int(attr(e, "id")) else {
+            self.warn(WarningCode::RangeUnpaired, || format!("a w:{} has no w:id", e.tag_name().name()));
+            return None;
+        };
+        let start = match kind {
+            RangeKind::CommentEnd => RangeKind::CommentStart,
+            RangeKind::MoveFromEnd => RangeKind::MoveFromStart,
+            RangeKind::MoveToEnd => RangeKind::MoveToStart,
+            k => k,
+        };
+        if kind == start {
+            if kind == RangeKind::CommentStart {
+                if !self.comment_exists(id) {
+                    return None;
+                }
+            } else {
+                self.ids.saw_revision(id);
+            }
+            let name: Option<Rc<str>> = (kind != RangeKind::CommentStart).then(|| attr(e, "name")).flatten().map(Rc::from);
+            if let Some(n) = &name {
+                self.moves.push((kind, n.clone(), id));
+            }
+            self.open_ranges.push((kind, id));
+            return Some(RangeMark { kind, id, name });
+        }
+        // The end of a range whose start was left out goes with it.
+        if kind == RangeKind::CommentEnd && self.orphans.contains(&id) {
+            return None;
+        }
+        let Some(k) = self.open_ranges.iter().rposition(|o| *o == (start, id)) else {
+            self.warn(WarningCode::RangeUnpaired, || format!("range {id} ends without a start"));
+            return None;
+        };
+        self.open_ranges.remove(k);
+        self.moves.retain(|m| (m.0, m.2) != (start, id));
+        Some(RangeMark { kind, id, name: None })
+    }
+
+    /// The end of a story: range starts it never ended are reported and taken out of its blocks.
+    fn close_ranges(&mut self, blocks: &mut [Block]) {
+        let open = self.unended();
+        strip_ranges(blocks, &open);
+    }
+
+    /// The end of a story: the range starts it never ended, reported. Markers after its last paragraph go.
+    fn unended(&mut self) -> Vec<(RangeKind, i64)> {
+        self.pending_marks.clear();
+        self.moves.clear();
+        let open = std::mem::take(&mut self.open_ranges);
+        for (_, id) in &open {
+            self.warn(WarningCode::RangeUnpaired, || format!("range {id} has no end"));
+        }
+        open
     }
 
     // ---------------- blocks ----------------
@@ -349,6 +697,11 @@ impl Reader {
         }
         sec.blocks = blocks;
         sections.push(sec);
+        // Ranges pair across the body's sections.
+        let open = self.unended();
+        for s in &mut sections {
+            strip_ranges(&mut s.blocks, &open);
+        }
         sections
     }
 
@@ -397,6 +750,21 @@ impl Reader {
                 && let Some(c) = n.children().find(|c| is(*c, MC, "Choice")).or_else(|| n.children().find(|c| is(*c, MC, "Fallback")))
             {
                 out.extend(self.walk_blocks(c, pkg, table));
+            } else if let Some(m) = self.range(n) {
+                self.pending_marks.push(Inline::Range(m));
+            }
+        }
+        // Markers after the container's last paragraph end it.
+        if !self.pending_marks.is_empty() {
+            let last = match &mut self.pending_hidden {
+                Some(p) => Some(p),
+                None => match out.last_mut() {
+                    Some((Some(Block::Para(p)), _)) => Some(p),
+                    _ => None,
+                },
+            };
+            if let Some(p) = last {
+                p.inlines.append(&mut self.pending_marks);
             }
         }
         out
@@ -424,10 +792,11 @@ impl Reader {
             v_align: "top".into(),
             page_borders: None,
             blocks: Vec::new(),
+            change: None,
         }
     }
 
-    fn read_sect(&self, s: Node) -> Section {
+    fn read_sect(&mut self, s: Node) -> Section {
         let mut sec = self.default_sect();
         if let Some(t) = child(s, "type").and_then(val) {
             sec.break_kind = match t {
@@ -510,6 +879,15 @@ impl Reader {
                 surround_footer: !self.settings.borders_do_not_surround_footer,
             });
         }
+        if let Some(c) = child(s, "sectPrChange") {
+            let mark = self.mark(c, MarkKind::Format);
+            let before = child(c, "sectPr");
+            let previous = match before {
+                Some(b) => self.read_sect(b).page(),
+                None => self.default_sect().page(),
+            };
+            sec.change = Some(Rc::new(SectionChange { mark, previous, previous_raw: Raw(before.map(raw)) }));
+        }
         sec
     }
 
@@ -545,11 +923,16 @@ impl Reader {
         if self.record {
             para_style.direct = Raw(ppr_node.map(raw));
         }
+        para_style.change = self.para_change(ppr_node, table.map(|t| &*t.region), &para_style);
         let para_style = Rc::new(para_style);
 
         let mark_rpr_node = ppr_node.and_then(|p| child(p, "rPr"));
         let mark_props = self.run_props(&base, mark_rpr_node);
-        let mark = self.with_direct(self.run_style(&mark_props), mark_rpr_node);
+        let mut mark = self.with_direct(self.run_style(&mark_props), mark_rpr_node);
+        let mark_rev = self.mark_revisions(&base, mark_rpr_node);
+        if !mark_rev.is_empty() {
+            Rc::make_mut(&mut mark).rev = mark_rev;
+        }
 
         // List label (LIST-6): mark formatting, then the level's rPr.
         let list = match (&level, num_id) {
@@ -567,11 +950,20 @@ impl Reader {
             _ => None,
         };
 
-        let mut inlines = Vec::new();
+        // Range markers just before the paragraph start it.
+        let mut inlines = std::mem::take(&mut self.pending_marks);
         let outer = (std::mem::take(&mut self.segs), std::mem::replace(&mut self.lossy, false));
         self.para_count += 1;
         let outer_para = std::mem::replace(&mut self.para_no, self.para_count);
         self.read_inlines(n, &base, pkg, &mut inlines);
+        // A moved mark is in the move range open where the paragraph ends: one starting inside the paragraph, after
+        // its properties, takes the mark in too.
+        let (ins, del) = (self.named_at_end(&mark.rev.ins), self.named_at_end(&mark.rev.del));
+        if ins.is_some() || del.is_some() {
+            let rev = &mut Rc::make_mut(&mut mark).rev;
+            rev.ins = ins.or(rev.ins.take());
+            rev.del = del.or(rev.del.take());
+        }
         self.cut_spanning_fields(&mut inlines);
         self.para_no = outer_para;
         let (segs, lossy) = (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1));
@@ -634,8 +1026,30 @@ impl Reader {
                         self.read_inlines(e, base, pkg, out);
                         out.push(Inline::ControlEnd(id));
                     }
-                    "hyperlink" | "ins" | "moveTo" | "smartTag" | "customXml" | "bdo" | "dir" | "fldSimple" => {
+                    "hyperlink" | "smartTag" | "customXml" | "bdo" | "dir" | "fldSimple" => {
                         self.read_inlines(e, base, pkg, out);
+                    }
+                    // Revision wrappers: their runs carry the revision (one mark for all of them), nested ones both.
+                    name @ ("ins" | "moveTo" | "del" | "moveFrom") => {
+                        let (kind, ins) = match name {
+                            "ins" => (MarkKind::Insert, true),
+                            "moveTo" => (MarkKind::MoveTo, true),
+                            "del" => (MarkKind::Delete, false),
+                            _ => (MarkKind::MoveFrom, false),
+                        };
+                        let m = Some(self.mark(e, kind));
+                        let outer = if ins { std::mem::replace(&mut self.wrap.ins, m) } else { std::mem::replace(&mut self.wrap.del, m) };
+                        self.read_inlines(e, base, pkg, out);
+                        if ins {
+                            self.wrap.ins = outer;
+                        } else {
+                            self.wrap.del = outer;
+                        }
+                    }
+                    "commentRangeStart" | "commentRangeEnd" | "moveFromRangeStart" | "moveFromRangeEnd" | "moveToRangeStart" | "moveToRangeEnd" => {
+                        if let Some(m) = self.range(e) {
+                            out.push(Inline::Range(m));
+                        }
                     }
                     "sdt" => {
                         let Some(c) = child(e, "sdtContent") else { continue };
@@ -663,7 +1077,7 @@ impl Reader {
                             out.push(Inline::Bookmark(name.to_string()));
                         }
                     }
-                    // w:del, w:moveFrom, comments, proofing marks: not shown.
+                    // Proofing marks, permissions, bookmark ends: not shown.
                     _ => {}
                 }
             } else if is(e, MC, "AlternateContent")
@@ -683,7 +1097,8 @@ impl Reader {
             direct.style = None;
         }
         let props = self.res.run_props(base, &direct);
-        let mut run = self.with_direct(self.run_style(&props), child(r, "rPr"));
+        let run = self.with_direct(self.run_style(&props), child(r, "rPr"));
+        let mut run = self.tracked(run, base, child(r, "rPr"));
         if toc {
             Rc::make_mut(&mut run).toc = true;
         }
@@ -762,7 +1177,7 @@ impl Reader {
             }
             if let Some(f) = self.fields.last_mut() {
                 if !f.in_result {
-                    if name == "instrText" && !f.spanning {
+                    if matches!(name, "instrText" | "delInstrText") && !f.spanning {
                         f.first_code_run.get_or_insert(run.clone());
                         if let Some(t) = c.text().filter(|t| !t.is_empty()) {
                             push_text(out, t, &run);
@@ -770,16 +1185,25 @@ impl Reader {
                     }
                     continue;
                 }
-                if name == "t" {
+                if matches!(name, "t" | "delText") {
                     f.first_result_run.get_or_insert(run.clone());
                 }
+            }
+            // A comment's anchor, shown or not.
+            if name == "commentReference" {
+                match int(attr(c, "id")) {
+                    Some(id) if self.comment_exists(id) => out.push(Inline::CommentRef { id: CommentId(id), run: run.clone() }),
+                    Some(_) => {}
+                    None => self.warn(WarningCode::CommentReferenceOrphan, || "a comment reference has no w:id".into()),
+                }
+                continue;
             }
             if run.hidden {
                 // STYLE-7: hidden runs take no space.
                 continue;
             }
             match name {
-                "t" => {
+                "t" | "delText" => {
                     if let Some(t) = c.text().filter(|t| !t.is_empty()) {
                         // A line break inside w:t shows as a space.
                         if t.contains(['\n', '\r']) {
@@ -896,7 +1320,8 @@ impl Reader {
             c.props.kind = ControlKind::Checkbox { checked: on, unchecked: off };
             c.read = Some(c.props.clone());
         }
-        out.push(Inline::Sym { ch, font, run: Rc::new(run), control: Some(id) });
+        let run = self.tracked(Rc::new(run), base, rpr);
+        out.push(Inline::Sym { ch, font, run, control: Some(id) });
     }
 
     /// A content control (`w:sdt`) or custom XML wrapper at any level as a control: its properties, and
@@ -966,6 +1391,7 @@ impl Reader {
         let first = e.children().find(|c| is_w(*c, "r"));
         let rpr = first.and_then(|r| child(r, "rPr"));
         let run = self.with_direct(self.run_style(&self.run_props(base, rpr)), rpr);
+        let run = self.tracked(run, base, rpr);
         let (mark, segs) = (units_mark(out), self.segs.len());
         let id = FieldId::next();
         let flag = |a: &str| attr(e, a).is_some_and(|v| v == "1" || v == "true" || v == "on");
@@ -1132,9 +1558,10 @@ impl Reader {
             let has_line = ln.is_some_and(|l| !l.children().any(|c| is(c, A, "noFill")));
             let outline = if has_line { ln.and_then(|l| emu(l.attribute("w"))).unwrap_or(0.75) } else { 0.0 };
             let auto_fit = body.is_some_and(|b| b.children().any(|c| is(c, A, "spAutoFit")));
-            let saved = std::mem::take(&mut self.fields);
+            // A text box is its own content: the anchor's fields and revision wrappers don't reach into it.
+            let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
             let blocks = self.read_blocks(t, pkg, None);
-            self.fields = saved;
+            (self.fields, self.wrap) = saved;
             TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit }
         });
         self.float_order += 1;
@@ -1177,8 +1604,34 @@ impl Reader {
         let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
         let mut tbl = style_region.tbl.clone();
         tbl.merge(&direct);
-        let grid: Vec<f64> =
-            child(t, "tblGrid").map(|g| children(g, "gridCol").map(|c| attr_twips(c, "w").unwrap_or(0.0)).collect()).unwrap_or_default();
+        let widths = |g: Node| children(g, "gridCol").map(|c| attr_twips(c, "w").unwrap_or(0.0)).collect::<Vec<f64>>();
+        let grid_node = child(t, "tblGrid");
+        let grid = grid_node.map(widths).unwrap_or_default();
+        // The earlier properties resolve over the earlier table style, as the table's own do over its style. Earlier
+        // properties without borders leave the table's borders as they are (FX-REVIEW-TABLES and its rejected twin).
+        let now = &tbl.borders;
+        let change = self.table_change(child(t, "tblPr"), "tblPrChange", |r, before| {
+            let prev = TblProps::parse(before);
+            let style_id = r.res.styles.table_style(prev.style.as_deref()).map(str::to_string);
+            let mut tbl = r.res.styles.table_region(style_id.as_deref(), &[]).tbl.clone();
+            tbl.merge(&prev);
+            let b = if before.and_then(|n| child(n, "tblBorders")).is_some() { &tbl.borders } else { now };
+            Some(PreviousProps::Table {
+                style_id,
+                width: tbl.width.unwrap_or(Width::Auto),
+                jc: tbl.jc.unwrap_or(Jc::Left),
+                ind: tbl.ind.unwrap_or(0.0),
+                borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
+                fixed: tbl.fixed.unwrap_or(false),
+                cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
+                look: tbl.look,
+                bands: (tbl.row_band.unwrap_or(0), tbl.col_band.unwrap_or(0)),
+            })
+        });
+        let grid_change = grid_node.and_then(|g| child(g, "tblGridChange")).map(|c| {
+            let previous = child(c, "tblGrid").map(widths).unwrap_or_default();
+            Rc::new(GridChange { mark: self.mark(c, MarkKind::Format), previous })
+        });
         let look = tbl.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
         let row_nodes: Vec<(Node, Vec<ControlId>)> = self.rows_of(t, &[]);
         let nrows = row_nodes.len();
@@ -1194,16 +1647,16 @@ impl Reader {
             for (ci, (cn, cell_controls)) in cell_nodes.iter().enumerate() {
                 let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols)));
                 let mut tcp = region.tc.clone();
-                tcp.merge(&TcProps::parse(child(*cn, "tcPr")));
-                let ctx = TableCtx { region: region.clone() };
-                let blocks = self.read_blocks(*cn, pkg, Some(&ctx));
-                let m = |v: Option<f64>, d: Option<f64>| v.or(d).unwrap_or(0.0);
+                let tc_pr = child(*cn, "tcPr");
+                tcp.merge(&TcProps::parse(tc_pr));
                 // TABLE-2: left and right margins of a table with no table style at all (no tblStyle and no default
                 // "Normal Table") and no tcMar or tblCellMar are 10 twips, not 0; with a table style, even one that sets no
                 // margins, they stay 0.
                 let unset = if style_id.is_none() { 0.5 } else { 0.0 };
-                let side = |v: Option<f64>, d: Option<f64>| v.or(d).unwrap_or(unset);
                 let tm = &tbl.margins;
+                let rev = self.cell_revisions(tc_pr, &region.tc, tm, unset);
+                let ctx = TableCtx { region: region.clone() };
+                let blocks = self.read_blocks(*cn, pkg, Some(&ctx));
                 let bv = |b: &Option<Border>| b.clone();
                 cells.push(Cell {
                     width: tcp.width,
@@ -1218,20 +1671,27 @@ impl Reader {
                     bottom: bv(&tcp.borders.bottom),
                     right: bv(&tcp.borders.right),
                     shading: tcp.shading.flatten(),
-                    margins: [
-                        m(tcp.margins.top, tm.top),
-                        side(tcp.margins.left, tm.left),
-                        m(tcp.margins.bottom, tm.bottom),
-                        side(tcp.margins.right, tm.right),
-                    ],
+                    margins: cell_margins(&tcp, tm, unset),
                     v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
                     text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
                     no_wrap: tcp.no_wrap.unwrap_or(false),
                     direct: Raw(child(*cn, "tcPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
                     blocks,
                     controls: cell_controls.clone(),
+                    rev,
                 });
             }
+            let tr_pr = child(*rn, "trPr");
+            let rev = RowRevisions {
+                ins: self.mark_at(tr_pr, "ins", MarkKind::Insert),
+                del: self.mark_at(tr_pr, "del", MarkKind::Delete),
+                change: self.table_change(tr_pr, "trPrChange", |_, before| {
+                    let mut tr = style_region.tr.clone();
+                    tr.merge(&TrProps::parse(before));
+                    Some(PreviousProps::Row { height: tr.height, cant_split: tr.cant_split.unwrap_or(false), header: tr.header.unwrap_or(false) })
+                }),
+                ex_change: self.table_change(child(*rn, "tblPrEx"), "tblPrExChange", |_, _| None),
+            };
             rows.push(Row {
                 height: trp.height.clone(),
                 cant_split: trp.cant_split.unwrap_or(false),
@@ -1243,6 +1703,7 @@ impl Reader {
                 cells,
                 controls: row_controls.clone(),
                 src: self.record.then(|| Rc::new(rn.range())),
+                rev,
             });
         }
         let b = &tbl.borders;
@@ -1263,8 +1724,60 @@ impl Reader {
             id: next_para_id(),
             direct: Raw(child(t, "tblPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
             controls: Vec::new(),
+            change,
+            grid_change,
         }
     }
+
+    /// A cell's tracked insertion, deletion or merge (`w:cellIns`, `w:cellDel`, `w:cellMerge`), and its property
+    /// change, its earlier properties resolved over `base` (the cell's style region) and the table's cell margins `tm`.
+    fn cell_revisions(&mut self, tc_pr: Option<Node>, base: &TcProps, tm: &Margins, unset: f64) -> CellRevisions {
+        let merge = |v: Option<&str>| match v {
+            Some("rest") => Some(VMerge::Restart),
+            Some("cont") => Some(VMerge::Continue),
+            _ => None,
+        };
+        let found = tc_pr.into_iter().flat_map(|p| p.children()).filter(|c| c.tag_name().namespace() == Some(W)).find_map(|c| {
+            let kind = match c.tag_name().name() {
+                "cellIns" => CellMarkKind::Insert,
+                "cellDel" => CellMarkKind::Delete,
+                "cellMerge" => CellMarkKind::Merge { v_merge: merge(attr(c, "vMerge")), v_merge_orig: merge(attr(c, "vMergeOrig")) },
+                _ => return None,
+            };
+            Some((c, kind))
+        });
+        let structural = found.map(|(e, kind)| {
+            let mark_kind = match kind {
+                CellMarkKind::Insert => MarkKind::Insert,
+                CellMarkKind::Delete => MarkKind::Delete,
+                CellMarkKind::Merge { .. } => MarkKind::Format,
+            };
+            (self.mark(e, mark_kind), kind)
+        });
+        let change = self.table_change(tc_pr, "tcPrChange", |_, before| {
+            let mut tcp = base.clone();
+            tcp.merge(&TcProps::parse(before));
+            let b = &tcp.borders;
+            Some(PreviousProps::Cell {
+                width: tcp.width,
+                borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone()],
+                shading: tcp.shading.flatten(),
+                margins: cell_margins(&tcp, tm, unset),
+                v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
+                text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
+                no_wrap: tcp.no_wrap.unwrap_or(false),
+            })
+        });
+        CellRevisions { structural, change }
+    }
+}
+
+/// A cell's margins (top, left, bottom, right) from its properties, else its table's `tm`; left and right default to
+/// `unset` (TABLE-2).
+fn cell_margins(tcp: &TcProps, tm: &Margins, unset: f64) -> [f64; 4] {
+    let m = |v: Option<f64>, d: Option<f64>| v.or(d).unwrap_or(0.0);
+    let side = |v: Option<f64>, d: Option<f64>| v.or(d).unwrap_or(unset);
+    [m(tcp.margins.top, tm.top), side(tcp.margins.left, tm.left), m(tcp.margins.bottom, tm.bottom), side(tcp.margins.right, tm.right)]
 }
 
 fn position(p: Option<Node>) -> (String, Option<String>, f64) {
@@ -1290,6 +1803,55 @@ fn push_text(out: &mut Vec<Inline>, t: &str, run: &Run) {
         return;
     }
     out.push(Inline::Text(t.to_string(), run.clone()));
+}
+
+/// Takes the range markers `gone` names out of `blocks`, text boxes and table cells included.
+fn strip_ranges(blocks: &mut [Block], gone: &[(RangeKind, i64)]) {
+    if gone.is_empty() {
+        return;
+    }
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                p.inlines.retain(|i| !matches!(i, Inline::Range(m) if gone.contains(&(m.kind, m.id))));
+                for i in &mut p.inlines {
+                    if let Inline::Float(f, _) = i
+                        && let Some(tb) = &mut f.text_box
+                    {
+                        strip_ranges(&mut tb.blocks, gone);
+                    }
+                }
+            }
+            Block::Table(t) => t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| strip_ranges(&mut c.blocks, gone)),
+        }
+    }
+}
+
+/// Keeps new ids past every `w:id` (revisions, comments and ranges share them), `w14:paraId` and
+/// `w16cid:durableId` in a part's XML. Other attributes named `id` only push new ids further on.
+fn seed_ids(xml: &str, ids: &mut IdCounter) {
+    let values = |name: &'static str| {
+        xml.match_indices(name).filter_map(move |(at, _)| {
+            // The attribute's whole local name: `w:id`, not `rsid`.
+            if !xml[..at].ends_with([':', ' ', '\t', '\n', '\r']) {
+                return None;
+            }
+            let rest = xml[at + name.len()..].trim_start().strip_prefix('=')?.trim_start();
+            let quote = rest.chars().next().filter(|q| matches!(q, '"' | '\''))?;
+            let v = &rest[1..];
+            v.find(quote).map(|end| &v[..end])
+        })
+    };
+    for v in values("id") {
+        if let Ok(id) = v.trim().parse::<i64>() {
+            ids.saw_revision(id);
+        }
+    }
+    for v in values("paraId").chain(values("durableId")) {
+        if let Ok(id) = u32::from_str_radix(v.trim(), 16) {
+            ids.saw_para(id);
+        }
+    }
 }
 
 pub fn is_symbol_font(f: &str) -> bool {

@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 
 use crate::docx::props::{Jc, VertAlign};
+use crate::docx::review::RangeKind;
 use crate::docx::{Block, Document, FieldKind, Inline, NoteKind, Paragraph, Run};
 
 /// Every feature name [`of`] can report, in the order the CLI lists them.
@@ -29,6 +30,8 @@ pub const ALL: &[&str] = &[
     "valign",
     "drop_caps",
     "hidden",
+    "revisions",
+    "comments",
 ];
 
 /// The features `doc` uses: its body, notes, headers and footers, and text boxes.
@@ -51,7 +54,13 @@ pub fn of(doc: &Document) -> BTreeSet<&'static str> {
         if referenced.into_iter().any(|name| doc.stories.get(name).is_some_and(|b| !b.is_empty())) {
             f.insert("header_footer");
         }
+        if s.change.is_some() {
+            f.insert("revisions");
+        }
         blocks(&s.blocks, 0, &mut f);
+    }
+    if !doc.comments.by_id.is_empty() {
+        f.insert("comments");
     }
     if doc.settings.compat_mode != 15 || !doc.settings.compat.is_empty() {
         f.insert("compat_non15");
@@ -71,6 +80,10 @@ fn blocks(bs: &[Block], depth: usize, f: &mut BTreeSet<&'static str>) {
                 if depth > 0 {
                     f.insert("nested_tables");
                 }
+                let row_revised = |r: &crate::docx::Row| r.rev != Default::default() || r.cells.iter().any(|c| c.rev != Default::default());
+                if t.change.is_some() || t.grid_change.is_some() || t.rows.iter().any(row_revised) {
+                    f.insert("revisions");
+                }
                 for c in t.rows.iter().flat_map(|r| &r.cells) {
                     blocks(&c.blocks, depth + 1, f);
                 }
@@ -81,6 +94,9 @@ fn blocks(bs: &[Block], depth: usize, f: &mut BTreeSet<&'static str>) {
 
 fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
     let st = &p.style;
+    if st.change.is_some() {
+        f.insert("revisions");
+    }
     if matches!(st.jc, Jc::Both | Jc::Distribute) {
         f.insert("justified");
     }
@@ -145,6 +161,16 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
                 run(r, f);
             }
             Inline::FieldSep { run: r, .. } | Inline::FieldEnd { run: r, .. } => run(r, f),
+            Inline::Range(m) => {
+                f.insert(match m.kind {
+                    RangeKind::CommentStart | RangeKind::CommentEnd => "comments",
+                    _ => "revisions",
+                });
+            }
+            Inline::CommentRef { run: r, .. } => {
+                f.insert("comments");
+                run(r, f);
+            }
             Inline::Bookmark(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => {}
         }
     }
@@ -156,6 +182,9 @@ fn run(r: &Run, f: &mut BTreeSet<&'static str>) {
     }
     if r.hidden {
         f.insert("hidden");
+    }
+    if !r.rev.is_empty() {
+        f.insert("revisions");
     }
 }
 

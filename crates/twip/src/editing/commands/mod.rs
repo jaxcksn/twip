@@ -205,6 +205,29 @@ pub enum Command {
         id: String,
         arg: serde_json::Value,
     },
+    /// Adding, replying to, editing, deleting, resolving and reopening comments, and the active thread.
+    Comment(super::comments::CommentCmd),
+    /// How revisions show (`view.markup`): not an edit.
+    SetMarkupView(crate::docx::review::MarkupView),
+    /// An author's revision colour, 0xRRGGBB, by the author's name (`view.author-color`): not an edit.
+    SetAuthorColor {
+        author: String,
+        color: u32,
+    },
+    // ---------------- review: accept, reject and go to revisions ----------------
+    /// Accept (`true`) or reject the revisions `scope` covers, as one undo step.
+    ResolveRevisions {
+        accept: bool,
+        scope: super::revisions::resolve::Scope,
+    },
+    /// Select and reveal the next or (`back`) previous revision, across stories.
+    NextRevision {
+        back: bool,
+    },
+    /// Track Changes on (`Some(true)`), off, or toggled (`None`): refused while protection keeps it on.
+    Track(Option<bool>),
+    /// The session's author: who the revisions recorded from now on are by.
+    Author(String),
 }
 
 impl Command {
@@ -230,7 +253,8 @@ impl Command {
             | Command::BlockSelect
             | Command::SelectRange { .. }
             | Command::PlaceholderLook { .. }
-            | Command::SetMode(_) => false,
+            | Command::SetMode(_)
+            | Command::Author(_) => false,
             Command::Merge { id, .. } => !matches!(
                 id.as_str(),
                 "view.drop" | "field.labels" | "element.mark" | "element.select" | "view.looks" | "view.field-codes" | "field.update"
@@ -278,8 +302,13 @@ impl Command {
             | Command::InsertHyperlink { .. }
             | Command::MoveRows { .. }
             | Command::AutoFitColumn { .. }
-            | Command::ReplaceAll { .. } => true,
+            | Command::ReplaceAll { .. }
+            | Command::Track(_) => true,
             Command::Batch { commands, .. } => commands.iter().any(Command::mutates),
+            Command::Comment(c) => !matches!(c, super::comments::CommentCmd::Activate(_)),
+            Command::SetMarkupView(_) | Command::SetAuthorColor { .. } => false,
+            Command::ResolveRevisions { .. } => true,
+            Command::NextRevision { .. } => false,
         }
     }
 }
@@ -608,9 +637,73 @@ impl Command {
             "edit.select_word" => Command::Select(Granularity::Word),
             "edit.select_sentence" => Command::Select(Granularity::Sentence),
             "edit.select_paragraph" => Command::Select(Granularity::Paragraph),
+            // Comments. `add` takes the body; `reply` and `edit` "id\nbody" (or JSON `{"id", "body"}`); `delete`,
+            // `resolve` and `reopen` the id; `activate` the id, or none for the thread at the selection. A body is
+            // plain text, or rich text as JSON (`{"paragraphs": [{"runs": [{"text", "bold", ...}]}]}`).
+            "review.comment.add" => Command::Comment(super::comments::CommentCmd::Add(match arg {
+                Some(v @ serde_json::Value::Object(_)) => super::comments::RichText::from_json(v).ok_or(Unknown)?,
+                _ => super::comments::RichText::plain(&text()?),
+            })),
+            "review.comment.reply" | "review.comment.edit" => {
+                use super::comments::{CommentCmd, RichText};
+                let (to, body) = match arg {
+                    Some(v @ serde_json::Value::Object(_)) => {
+                        (comment_id(v.get("id")).ok_or(Unknown)?, RichText::from_json(&v["body"]).ok_or(Unknown)?)
+                    }
+                    _ => {
+                        let t = text()?;
+                        let (to, body) = t.split_once('\n').ok_or(Unknown)?;
+                        (comment_id(Some(&serde_json::Value::from(to))).ok_or(Unknown)?, RichText::plain(body))
+                    }
+                };
+                Command::Comment(if id == "review.comment.reply" { CommentCmd::Reply { to, body } } else { CommentCmd::Edit { id: to, body } })
+            }
+            "review.comment.delete" => Command::Comment(super::comments::CommentCmd::Delete(comment_id(arg).ok_or(Unknown)?)),
+            "review.comment.resolve" | "review.comment.reopen" => {
+                Command::Comment(super::comments::CommentCmd::Resolve { id: comment_id(arg).ok_or(Unknown)?, done: id == "review.comment.resolve" })
+            }
+            "review.comment.activate" => Command::Comment(super::comments::CommentCmd::Activate(comment_id(arg))),
+            "view.markup" => {
+                use crate::docx::review::MarkupView as V;
+                Command::SetMarkupView(match text()?.as_str() {
+                    "all" => V::All,
+                    "simple" => V::Simple,
+                    "none" => V::NoMarkup,
+                    "original" => V::Original,
+                    _ => return Err(Unknown),
+                })
+            }
+            "view.author-color" => {
+                // "author name\nRRGGBB".
+                let t = text()?;
+                let (author, hex) = t.rsplit_once('\n').ok_or(Unknown)?;
+                let color = u32::from_str_radix(hex.trim().trim_start_matches('#'), 16).ok().filter(|c| *c <= 0xFF_FFFF).ok_or(Unknown)?;
+                Command::SetAuthorColor { author: author.to_string(), color }
+            }
+            // Review: the argument is "selection" (the default), "all", "author:<name>" or a revision id.
+            "review.accept" | "review.reject" => {
+                Command::ResolveRevisions { accept: id == "review.accept", scope: super::revisions::resolve::Scope::from_host(arg).ok_or(Unknown)? }
+            }
+            "review.next" => Command::NextRevision { back: false },
+            "review.previous" => Command::NextRevision { back: true },
+            // "on", "off", or no argument: toggled.
+            "review.track" => Command::Track(match arg.and_then(|a| a.as_str()) {
+                None => None,
+                Some("on") => Some(true),
+                Some("off") => Some(false),
+                Some(_) => return Err(Unknown),
+            }),
+            "review.author" => Command::Author(text()?),
             _ => return Err(Unknown),
         })
     }
+}
+
+/// A comment id argument: a number, a string holding one, or either as `{"id": …}`.
+fn comment_id(arg: Option<&serde_json::Value>) -> Option<crate::docx::review::CommentId> {
+    let v = arg?;
+    let v = v.get("id").unwrap_or(v);
+    v.as_i64().or_else(|| v.as_str()?.trim().parse().ok()).map(crate::docx::review::CommentId)
 }
 
 /// Standard base64 (padding and whitespace allowed); `None` on any other character.

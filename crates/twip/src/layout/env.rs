@@ -1,6 +1,7 @@
 //! Document-wide inputs to layout: the settings text layout reads, and the ones page layout adds. Both are
 //! compared by equality wherever results are reused; a change sets `Accumulated.full`.
 
+use crate::docx::review::ReviewView;
 use crate::docx::{Document, Run};
 
 /// What text layout reads from the document settings. Values are kept as written; each algorithm interprets them
@@ -21,6 +22,8 @@ pub struct TextEnv {
     pub balance_spaces: bool,
     /// `w:characterSpacingControl` compressPunctuation (BREAK-8: no break after a hyphen in East Asian runs).
     pub compress_punctuation: bool,
+    /// The markup view and author colours: which revisions show, and how.
+    pub review: ReviewView,
 }
 
 impl TextEnv {
@@ -36,6 +39,7 @@ impl TextEnv {
             grow_autofit: s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),
             compress_punctuation: s.compress_punctuation,
+            review: doc.review.clone(),
         }
     }
 }

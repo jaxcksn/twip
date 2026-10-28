@@ -1,0 +1,253 @@
+{
+  "description": "Pages and lines per paragraph of FX-REVIEW-COMMENTS.docx in each markup view, as far as they can be observed (see each view's source), plus the layouts of the tracked document, of every revision accepted and of every revision rejected.",
+  "fixture": "FX-REVIEW-COMMENTS.docx",
+  "views": {
+    "all-markup": {
+      "source": "fixed-format export with markup; lines mapped to the paragraphs of the tracked document (table cells not mapped)",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Inventory relevant group relief results ",
+          "lines": 3
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "lines": 2
+        },
+        {
+          "text": "cell text",
+          "lines": null
+        },
+        {
+          "text": "plain cell",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": 0
+        }
+      ],
+      "unmatched_lines": [
+        "Commented [AA1]: Inside the first. ",
+        "Commented [AA2]: A bold and italic note.",
+        "A second paragraph. ",
+        "Commented [AB3R2]: A reply. ",
+        "Commented [AC4]: Resolved. ",
+        "Commented [AB5]: At a point. ",
+        "Commented [AC6]: In a cell. "
+      ]
+    },
+    "simple-markup": {
+      "source": "not observable: neither the export nor the layout queries follow the view setting",
+      "pages": null,
+      "paragraphs": null
+    },
+    "no-markup": {
+      "source": "fixed-format export without markup; lines mapped to the paragraphs of the document with every revision accepted (table cells not mapped)",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Inventory relevant group relief results ",
+          "lines": 3
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "lines": 2
+        },
+        {
+          "text": "cell text",
+          "lines": null
+        },
+        {
+          "text": "plain cell",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": 0
+        }
+      ],
+      "unmatched_lines": null
+    },
+    "original": {
+      "source": "layout of the document with every revision rejected",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Inventory relevant group relief results ",
+          "in_table": false,
+          "lines": 3
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        },
+        {
+          "text": "cell text",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "plain cell",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": false,
+          "lines": 1
+        }
+      ]
+    }
+  },
+  "layouts": {
+    "tracked": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Inventory relevant group relief results ",
+          "in_table": false,
+          "lines": 3
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        },
+        {
+          "text": "cell text",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "plain cell",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": false,
+          "lines": 1
+        }
+      ]
+    },
+    "accepted": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Inventory relevant group relief results ",
+          "in_table": false,
+          "lines": 3
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        },
+        {
+          "text": "cell text",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "plain cell",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": false,
+          "lines": 1
+        }
+      ]
+    },
+    "rejected": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Inventory relevant group relief results ",
+          "in_table": false,
+          "lines": 3
+        },
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        },
+        {
+          "text": "cell text",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "plain cell",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": false,
+          "lines": 1
+        }
+      ]
+    }
+  },
+  "error": null
+}

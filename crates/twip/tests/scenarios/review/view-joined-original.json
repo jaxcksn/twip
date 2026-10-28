@@ -1,0 +1,31 @@
+{
+ "id": "VIEW-JOINED-ORIGINAL",
+ "title": "Original joins a paragraph whose mark is inserted with the next: the caret, clicks, typing and deleting work across the pair",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  { "type": "Alpha beta gamma." },
+  { "command": "review.track", "arg": "on" },
+  { "command": "review.author", "arg": "Author A" },
+  { "click": { "para": 0, "offset": 10 } },
+  { "key": "Enter" },
+  { "command": "view.markup", "arg": "original" },
+  { "expect": { "caret": { "para": 1, "offset": 0, "page": 0 }, "paragraphs": 2 } },
+  { "key": "Home" },
+  { "expect": { "caret": { "para": 0, "offset": 0 } } },
+  { "key": "End" },
+  { "expect": { "caret": { "para": 1, "offset": 7 } } },
+  { "click": { "para": 1, "offset": 3 } },
+  { "expect": { "caret": { "para": 1, "offset": 3 } } },
+  { "click": { "para": 0, "offset": 10, "dx": -1 } },
+  { "expect": { "caret": { "para": 0, "offset": 10 } } },
+  { "key": "ArrowRight" },
+  { "expect": { "caret": { "para": 1, "offset": 0, "page": 0 } } },
+  { "command": "review.track", "arg": "off" },
+  { "type": "Z" },
+  { "expect": { "caret": { "para": 1, "offset": 1 }, "text": { "0": "Alpha beta", "1": "Z gamma." } } },
+  { "key": "Backspace" },
+  { "command": "review.track", "arg": "on" },
+  { "key": "Backspace" },
+  { "expect": { "caret": { "para": 0, "offset": 10 }, "paragraphs": 1, "text": { "0": "Alpha beta gamma." } } }
+ ]
+}

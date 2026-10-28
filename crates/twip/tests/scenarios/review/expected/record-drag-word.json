@@ -1,0 +1,223 @@
+{
+  "description": "Dragging one word (double-click selected) to the start of another paragraph.",
+  "setup": "three paragraphs \"First paragraph has some words here.\" / \"Second one. It has two sentences.\" / \"Third paragraph ends here.\", tracking on, author \"Author A\"",
+  "initial": {
+    "body": [
+      {
+        "text": "First paragraph has some words here.",
+        "runs": [
+          {
+            "text": "First paragraph has some words here.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      },
+      {
+        "text": "Second one. It has two sentences.",
+        "runs": [
+          {
+            "text": "Second one. It has two sentences.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      },
+      {
+        "text": "Third paragraph ends here.",
+        "runs": [
+          {
+            "text": "Third paragraph ends here.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "double-click \"some\", drag it to the start of the third paragraph",
+      "author": "Author A",
+      "selected": {
+        "start": 20,
+        "end": 25,
+        "text": "some "
+      },
+      "selection": {
+        "start": 71,
+        "end": 76
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "First paragraph has some words here.",
+              "runs": [
+                {
+                  "text": "First paragraph has ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "some ",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "words here.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Second one. It has two sentences.",
+              "runs": [
+                {
+                  "text": "Second one. It has two sentences.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "some Third paragraph ends here.",
+              "runs": [
+                {
+                  "text": "some ",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Third paragraph ends here.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "some "
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "some "
+          }
+        ]
+      }
+    }
+  ]
+}

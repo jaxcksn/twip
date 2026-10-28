@@ -1,0 +1,578 @@
+{
+  "description": "accept one revision of FX-REVIEW-CELLS.docx: number 1 in document order, a cell-insertion by Author A.",
+  "fixture": "FX-REVIEW-CELLS.docx",
+  "scope": "one",
+  "revision": {
+    "index": 1,
+    "type": "wdRevisionCellInsertion",
+    "author": "Author A",
+    "text": "b1\r\u0007c1\r\u0007\r\u0007"
+  },
+  "op": "accept",
+  "error": null,
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "Cells",
+          "runs": [
+            {
+              "text": "Cells",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "table": {
+            "change": null,
+            "tblpr": [
+              "tblBorders[bottom:color=000000,space=0,sz=4,val=single;insideH:color=000000,space=0,sz=4,val=single;insideV:color=000000,space=0,sz=4,val=single;left:color=000000,space=0,sz=4,val=single;right:color=000000,space=0,sz=4,val=single;top:color=000000,space=0,sz=4,val=single]",
+              "tblLayout:type=fixed",
+              "tblLook:firstColumn=1,firstRow=1,lastColumn=0,lastRow=0,noHBand=0,noVBand=1,val=04A0",
+              "tblW:type=dxa,w=9360"
+            ],
+            "grid": [
+              3120,
+              3120,
+              3120
+            ],
+            "grid_change": "",
+            "rows": [
+              {
+                "ins": null,
+                "del": null,
+                "change": null,
+                "ex_change": null,
+                "trpr": [],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "a1",
+                        "runs": [
+                          {
+                            "text": "a1",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "b1",
+                        "runs": [
+                          {
+                            "text": "b1",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "c1",
+                        "runs": [
+                          {
+                            "text": "c1",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "ins": null,
+                "del": null,
+                "change": null,
+                "ex_change": null,
+                "trpr": [],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "a2",
+                        "runs": [
+                          {
+                            "text": "a2",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": "Author B",
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "b2",
+                        "runs": [
+                          {
+                            "text": "b2",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "c2",
+                        "runs": [
+                          {
+                            "text": "c2",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "ins": null,
+                "del": null,
+                "change": null,
+                "ex_change": null,
+                "trpr": [],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": "restart",
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "a3",
+                        "runs": [
+                          {
+                            "text": "a3",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "b3",
+                        "runs": [
+                          {
+                            "text": "b3",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "c3",
+                        "runs": [
+                          {
+                            "text": "c3",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "ins": null,
+                "del": null,
+                "change": "Author C",
+                "ex_change": "Author C",
+                "trpr": [],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": {
+                      "author": "Author A",
+                      "vmerge": "cont",
+                      "orig": "rest"
+                    },
+                    "change": "Author C",
+                    "vmerge": "continue",
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "",
+                        "runs": [],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": "Author C",
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "b4",
+                        "runs": [
+                          {
+                            "text": "b4",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": "Author C",
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "c4",
+                        "runs": [
+                          {
+                            "text": "c4",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "text": "",
+          "runs": [],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [
+      {
+        "type": "wdRevisionCellDeletion",
+        "author": "Author B",
+        "text": "b2\r\u0007c2\r\u0007\r\u0007"
+      },
+      {
+        "type": "wdRevisionCellMerge",
+        "author": "Author A",
+        "text": "\r\u0007b4\r\u0007c4\r\u0007\r\u0007"
+      },
+      {
+        "type": "wdRevisionTableProperty",
+        "author": "Author C",
+        "text": "\r\u0007b4\r\u0007c4\r\u0007\r\u0007"
+      }
+    ]
+  }
+}

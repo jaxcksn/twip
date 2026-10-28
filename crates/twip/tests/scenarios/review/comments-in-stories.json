@@ -1,0 +1,21 @@
+{
+  "id": "REV-COMMENTS-04",
+  "title": "Headers and footnotes take no new comments; a text box does, as the body does",
+  "fixture": "FX-STORIES.docx",
+  "steps": [
+    { "click": { "para": 22, "offset": 3 }, "clicks": 2 },
+    { "command": "review.comment.add", "arg": "In header", "expect": { "answer": { "error": "unavailable" }, "comments": [], "undo_depth": 0 } },
+    { "key": "Escape" },
+    { "click": { "para": 33, "offset": 3 } },
+    { "command": "review.comment.add", "arg": "In text box" },
+    { "expect": { "comments": [{ "text": "In text box", "scope": "Text", "active": true }], "undo_depth": 1 } },
+    { "click": { "para": 2, "offset": 5 } },
+    { "command": "insert.footnote" },
+    { "type": "Note" },
+    { "command": "review.comment.add", "arg": "In note", "expect": { "answer": { "error": "unavailable" }, "comments": [{ "text": "In text box" }] } },
+    { "command": "home.undo" },
+    { "command": "home.undo" },
+    { "command": "home.undo" },
+    { "expect": { "comments": [], "undo_depth": 0 } }
+  ]
+}

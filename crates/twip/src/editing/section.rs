@@ -90,8 +90,9 @@ impl Editor {
         if page == s.page() {
             return Outcome::Unchanged("already so");
         }
+        let change = s.change.clone();
         let mut tx = self.begin(label);
-        if self.step(&mut tx, Step::SectionPage { section, page }).is_err() {
+        if self.step(&mut tx, Step::SectionPage { section, page, change }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("no section");
         }

@@ -1,0 +1,13 @@
+{
+  "id": "REV-RESOLVE-TABLE-PROPERTIES",
+  "title": "A row property change with the table's own property and grid changes: accepting keeps the row height, rejecting restores the height before it.",
+  "fixture": "review/FX-REVIEW-TABLES.docx",
+  "steps": [
+    {"expect": {"revisions": ["Insert Author A", "TableProperty Author C", "Delete Author B", "TableProperty Author C"], "tables": [{"heights": [null, null, [36, "atLeast"], null, null]}]}},
+    {"command": "review.accept", "arg": 1},
+    {"expect": {"revisions": ["Insert Author A", "Delete Author B", "TableProperty Author C"], "tables": [{"heights": [null, null, [36, "atLeast"], null, null]}], "undo_depth": 1}},
+    {"command": "home.undo"},
+    {"command": "review.reject", "arg": 1},
+    {"expect": {"revisions": ["Insert Author A", "Delete Author B", "TableProperty Author C"], "tables": [{"heights": [null, null, [18, "atLeast"], null, null]}], "undo_depth": 1}}
+  ]
+}

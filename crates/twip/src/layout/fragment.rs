@@ -76,10 +76,22 @@ pub struct LineFragment {
     /// The line's pitch and baseline (from its top).
     pub pitch: f64,
     pub baseline: f64,
-    /// Units drawn without characters (inline pictures, tabs, breaks): x from and to, the unit, and whether it is a
-    /// break (a line ending in a break ends before it), in the items' coordinates. Editing places caret stops at them;
-    /// painting ignores them.
-    pub atoms: Box<[(f64, f64, Unit, bool)]>,
+    /// Units drawn without characters (inline pictures, tabs, breaks). Editing places caret stops at them; painting
+    /// ignores them.
+    pub atoms: Box<[Atom]>,
+    /// The line shows a revision: its page draws a change bar beside it (REV-4).
+    pub changed: bool,
+}
+
+/// A unit drawn without characters on a line: x from and to (the items' coordinates), its paragraph and unit, and
+/// whether it is a break (a line ending in a break ends before it).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Atom {
+    pub x0: f64,
+    pub x1: f64,
+    pub para: ParaId,
+    pub unit: Unit,
+    pub brk: bool,
 }
 
 /// A line placed in its parent.
@@ -159,6 +171,8 @@ pub struct RowFragment {
     /// A header row repeated at the top of a continuation page (TABLE-46): drawn, but an artefact for the semantic
     /// traversal (its text belongs to the first occurrence).
     pub repeat: bool,
+    /// The row or one of its cells was inserted, deleted or changed: its lines get change bars (REV-4).
+    pub changed: bool,
 }
 
 #[derive(Clone, Debug)]

@@ -3,6 +3,9 @@
 //! as P/H1–H6, list items as L/LI/LBody, tables as Table/TR/TH/TD, pictures as Figures; headers, footers, notes, text
 //! boxes, list numbers, borders and shading as artifacts. A bookmarks outline from the headings, and title, language
 //! and creation date (with XMP) metadata.
+//!
+//! The pages show the markup view the snapshot was laid out in: its revision marks and change bars are layout items.
+//! Only layout items are drawn, so view overlays (comment tints, the selection, squiggles) never reach the PDF.
 // shortcut: no hyperlink annotations, figure alt text or Note elements: the docx model carries no hyperlinks, alt
 // text or story of a run yet.
 

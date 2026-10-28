@@ -70,7 +70,189 @@ pub fn check(doc: &Document, idx: &DocIndex, selection: &Selection) -> Vec<Viola
     position(selection.anchor(), "anchor");
     position(selection.focus(), "focus");
     elements(doc, idx, &mut out);
+    review(doc, &mut out);
     out
+}
+
+/// The invariants of revisions and comments: revision ids name one change each, revision slots hold their kinds,
+/// comment ranges are paired and anchored to comments that exist, moves have both ends, and threads have no cycles.
+fn review(doc: &Document, out: &mut Vec<Violation>) {
+    use crate::docx::review::{CommentId, MarkKind, RangeKind, RevisionId, RevisionMark};
+    use crate::docx::{Inline, RunStyle};
+    use std::collections::{HashMap, HashSet};
+    use std::rc::Rc;
+
+    #[derive(Default)]
+    struct Seen<'a> {
+        marks: HashMap<RevisionId, &'a RevisionMark>,
+        move_from: HashSet<Rc<str>>,
+        move_to: HashSet<Rc<str>>,
+        refs: HashSet<CommentId>,
+        ranged: HashSet<CommentId>,
+    }
+    /// The insertion slot holds insertions and moves to, the deletion slot deletions and moves from.
+    #[derive(Clone, Copy)]
+    enum Slot {
+        Ins,
+        Del,
+        Any,
+    }
+    fn mark<'a>(m: &'a RevisionMark, slot: Slot, seen: &mut Seen<'a>, out: &mut Vec<Violation>) {
+        if let Some(prev) = seen.marks.insert(m.id, m)
+            && *prev != *m
+        {
+            out.push(Violation { invariant: "review: unique revision ids", detail: format!("revision {} names two changes", m.id.0) });
+        }
+        let fits = match slot {
+            Slot::Any => true,
+            Slot::Ins => matches!(m.kind, MarkKind::Insert | MarkKind::MoveTo),
+            Slot::Del => matches!(m.kind, MarkKind::Delete | MarkKind::MoveFrom),
+        };
+        if !fits {
+            out.push(Violation { invariant: "review: slot kinds", detail: format!("revision {} is a {:?} in the wrong slot", m.id.0, m.kind) });
+        }
+        if let Some(name) = &m.move_name {
+            match m.kind {
+                MarkKind::MoveFrom => {
+                    seen.move_from.insert(name.clone());
+                }
+                MarkKind::MoveTo => {
+                    seen.move_to.insert(name.clone());
+                }
+                MarkKind::Insert | MarkKind::Delete | MarkKind::Format => {}
+            }
+        }
+    }
+    fn run<'a>(r: &'a RunStyle, seen: &mut Seen<'a>, out: &mut Vec<Violation>) {
+        if let Some(m) = &r.rev.ins {
+            mark(m, Slot::Ins, seen, out);
+        }
+        if let Some(m) = &r.rev.del {
+            mark(m, Slot::Del, seen, out);
+        }
+        if let Some(f) = &r.rev.fmt {
+            mark(&f.mark, Slot::Any, seen, out);
+        }
+    }
+    fn unended(open: &mut Vec<CommentId>, out: &mut Vec<Violation>) {
+        for id in open.drain(..) {
+            out.push(Violation { invariant: "review: comment ranges", detail: format!("comment {} has no range end", id.0) });
+        }
+    }
+    fn blocks<'a>(bs: &'a [Block], open: &mut Vec<CommentId>, seen: &mut Seen<'a>, doc: &Document, out: &mut Vec<Violation>) {
+        for b in bs {
+            match b {
+                Block::Para(p) => {
+                    run(&p.mark, seen, out);
+                    if let Some(c) = &p.style.change {
+                        mark(&c.mark, Slot::Any, seen, out);
+                    }
+                    for i in &p.inlines {
+                        if let Some(r) = i.run() {
+                            run(r, seen, out);
+                        }
+                        match i {
+                            Inline::Range(m) if matches!(m.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => {
+                                let id = CommentId(m.id);
+                                if !doc.comments.by_id.contains_key(&id) {
+                                    out.push(Violation { invariant: "review: comment ranges", detail: format!("range of missing comment {}", m.id) });
+                                }
+                                if m.kind == RangeKind::CommentStart {
+                                    open.push(id);
+                                    seen.ranged.insert(id);
+                                } else if let Some(k) = open.iter().rposition(|o| *o == id) {
+                                    open.remove(k);
+                                } else {
+                                    out.push(Violation {
+                                        invariant: "review: comment ranges",
+                                        detail: format!("comment {} ends before it starts", m.id),
+                                    });
+                                }
+                            }
+                            Inline::CommentRef { id, .. } => {
+                                if !doc.comments.by_id.contains_key(id) {
+                                    out.push(Violation {
+                                        invariant: "review: comment ranges",
+                                        detail: format!("reference to missing comment {}", id.0),
+                                    });
+                                }
+                                seen.refs.insert(*id);
+                            }
+                            Inline::Float(f, _) => {
+                                if let Some(tb) = &f.text_box {
+                                    blocks(&tb.blocks, open, seen, doc, out);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Block::Table(t) => {
+                    for m in [t.change.as_ref().map(|c| &c.mark), t.grid_change.as_ref().map(|c| &c.mark)].into_iter().flatten() {
+                        mark(m, Slot::Any, seen, out);
+                    }
+                    for r in &t.rows {
+                        if let Some(m) = &r.rev.ins {
+                            mark(m, Slot::Ins, seen, out);
+                        }
+                        if let Some(m) = &r.rev.del {
+                            mark(m, Slot::Del, seen, out);
+                        }
+                        for c in [&r.rev.change, &r.rev.ex_change].into_iter().flatten() {
+                            mark(&c.mark, Slot::Any, seen, out);
+                        }
+                        for c in &r.cells {
+                            if let Some((m, _)) = &c.rev.structural {
+                                mark(m, Slot::Any, seen, out);
+                            }
+                            if let Some(ch) = &c.rev.change {
+                                mark(&ch.mark, Slot::Any, seen, out);
+                            }
+                            blocks(&c.blocks, open, seen, doc, out);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut seen = Seen::default();
+    for s in &doc.sections {
+        if let Some(c) = &s.change {
+            mark(&c.mark, Slot::Any, &mut seen, out);
+        }
+    }
+    // Ranges pair within a story: the body (its sections in order), then each other story on its own.
+    let mut open = Vec::new();
+    for s in &doc.sections {
+        blocks(&s.blocks, &mut open, &mut seen, doc, out);
+    }
+    unended(&mut open, out);
+    let others = doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values());
+    for b in others.chain(doc.comments.by_id.values().map(|c| &c.body)) {
+        blocks(b, &mut open, &mut seen, doc, out);
+        unended(&mut open, out);
+    }
+    for id in seen.ranged.difference(&seen.refs) {
+        out.push(Violation { invariant: "review: comment ranges", detail: format!("comment {} has a range but no reference", id.0) });
+    }
+    for name in seen.move_from.symmetric_difference(&seen.move_to) {
+        out.push(Violation { invariant: "review: moves", detail: format!("move {name} has one end") });
+    }
+    for c in doc.comments.by_id.values() {
+        let Some(p) = c.parent else { continue };
+        if !doc.comments.by_id.contains_key(&p) {
+            out.push(Violation { invariant: "review: threads", detail: format!("comment {} replies to missing comment {}", c.id.0, p.0) });
+        }
+        let (mut at, mut steps) = (p, 0);
+        while let Some(next) = doc.comments.by_id.get(&at).and_then(|x| x.parent) {
+            steps += 1;
+            if next == c.id || steps > doc.comments.by_id.len() {
+                out.push(Violation { invariant: "review: threads", detail: format!("comment {} is in a reply cycle", c.id.0) });
+                break;
+            }
+            at = next;
+        }
+    }
 }
 
 /// The invariants of fields, content controls and data parts.

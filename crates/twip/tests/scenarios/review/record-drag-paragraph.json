@@ -1,0 +1,137 @@
+{
+ "id": "RECORD-DRAG-PARAGRAPH",
+ "title": "Dragging a whole paragraph records a move",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  {
+   "type": "First paragraph has some words here."
+  },
+  {
+   "key": "Enter"
+  },
+  {
+   "type": "Second one. It has two sentences."
+  },
+  {
+   "key": "Enter"
+  },
+  {
+   "type": "Third paragraph ends here."
+  },
+  {
+   "command": "review.track",
+   "arg": "on"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author A"
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 0
+   }
+  },
+  {
+   "click": {
+    "para": 1,
+    "offset": 0
+   },
+   "shift": true
+  },
+  {
+   "drag": {
+    "from": {
+     "para": 0,
+     "offset": 10
+    },
+    "to": {
+     "para": 2,
+     "offset": 0
+    }
+   }
+  },
+  {
+   "expect": {
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "First paragraph has some words here.",
+        "runs": [
+         {
+          "text": "First paragraph has some words here.",
+          "ins": null,
+          "del": null,
+          "move": "from",
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": "from"
+        },
+        "pchange": null
+       },
+       {
+        "text": "Second one. It has two sentences.",
+        "runs": [
+         {
+          "text": "Second one. It has two sentences.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       },
+       {
+        "text": "First paragraph has some words here.",
+        "runs": [
+         {
+          "text": "First paragraph has some words here.",
+          "ins": null,
+          "del": null,
+          "move": "to",
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": "to"
+        },
+        "pchange": null
+       },
+       {
+        "text": "Third paragraph ends here.",
+        "runs": [
+         {
+          "text": "Third paragraph ends here.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

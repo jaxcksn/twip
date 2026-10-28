@@ -1,0 +1,88 @@
+{
+  "description": "accept all revisions of FX-REVIEW-PROTECTED.docx, in every story.",
+  "fixture": "FX-REVIEW-PROTECTED.docx",
+  "scope": "all",
+  "op": "accept",
+  "error": "This command is not available.",
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Pilot receipt corporate requirement standard.",
+          "runs": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Pilot receipt corporate requirement standard.",
+              "ins": "Author A",
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Regional maintenance accessibility tax finds record proposal denied contract onboarding support network.",
+          "runs": [
+            {
+              "text": "Regional maintenance accessibility tax finds record proposal denied contract onboarding support network.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [
+      {
+        "type": "wdRevisionInsert",
+        "author": "Author A",
+        "text": "Pilot receipt corporate requirement standard."
+      }
+    ]
+  }
+}

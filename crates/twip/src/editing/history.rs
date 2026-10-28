@@ -192,5 +192,6 @@ pub fn step_bytes(s: &Step) -> usize {
         Step::Rows { with, .. } => 32 + with.iter().flat_map(|r| r.cells.iter()).map(|c| 64 + blocks(&c.blocks)).sum::<usize>(),
         Step::Control { control, .. } => 32 + control.as_ref().map_or(0, |c| c.open.len() + c.close.len() + 128),
         Step::DataPart { part, .. } => 32 + part.as_ref().map_or(0, |p| p.xml.len()),
+        Step::Comment { after, .. } => 128 + after.as_ref().map_or(0, |c| blocks(&c.body)),
     }
 }

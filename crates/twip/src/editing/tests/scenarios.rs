@@ -30,7 +30,8 @@ pub(crate) fn scenario_files() -> Vec<PathBuf> {
         let mut v: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
         v.sort();
         for p in v {
-            if p.is_dir() {
+            // `expected/` folders hold recorded results that scenarios compare against, not scenarios.
+            if p.is_dir() && !p.ends_with("expected") {
                 walk(&p, out);
             } else if p.extension().is_some_and(|x| x == "json") {
                 out.push(p);
@@ -382,6 +383,10 @@ impl Run {
             let got = inspect(&mut self.e, "view", true)["view"].clone();
             assert!(partial(&got, w), "{where_}: view: {got} for {w}");
         }
+        if let Some(w) = want.get("review") {
+            let got = review_state(self.e.document());
+            assert!(partial(&got, w), "{where_}: review: {got} for {w}");
+        }
     }
 
     pub fn check(&mut self, want: &Value, where_: &str) {
@@ -446,8 +451,22 @@ impl Run {
                 }
             }
         }
+        if let Some(w) = want.get("comments") {
+            let got = comment_list(&mut self.e);
+            assert!(partial(&got, w), "{where_}: comments: {got} for {w}");
+        }
         if let Some(n) = want.get("paragraphs") {
             assert_eq!(&json!(st["dump"]["paragraphs"].as_array().map_or(0, Vec::len)), n, "{where_}: paragraph count");
+        }
+        // `revisions`: the document's revisions in order, every story, as "<kind> <author>".
+        if let Some(w) = want.get("revisions") {
+            let doc = self.e.document();
+            let name = |a| doc.people.get(a).map_or("", |p| &*p.name);
+            let got: Vec<Value> = crate::editing::revisions::index::revisions(doc, self.e.index())
+                .iter()
+                .map(|r| json!(format!("{} {}", r.kind.name(), name(r.author))))
+                .collect();
+            assert_eq!(&json!(got), w, "{where_}: revisions");
         }
         if let Some(n) = want.get("undo_depth") {
             assert_eq!(&st["undo"]["undo_depth"], n, "{where_}: undo depth");
@@ -486,6 +505,161 @@ impl Run {
             }
         }
     }
+}
+
+/// The comments in the order of their threads' ranges, each thread's first comment then its replies: `author`,
+/// `initials`, `text`, `scope` (the range's text), `parent` (the 1-based position of the comment replied to), `done`
+/// and `active` (a thread's first comment, while the thread is active).
+fn comment_list(e: &mut Editor) -> Value {
+    let mut out = Vec::new();
+    for t in e.comment_threads() {
+        let at = out.len() + 1;
+        let doc = e.document();
+        for (k, id) in std::iter::once(t.root).chain(t.replies).enumerate() {
+            let Some(c) = doc.comments.by_id.get(&id) else { continue };
+            out.push(json!({
+                "author": doc.people.get(c.author).map(|p| p.name.to_string()),
+                "initials": c.initials.as_deref(),
+                "text": crate::editing::comments::RichText::from_blocks(&c.body).to_plain(),
+                "scope": t.scope,
+                "parent": if k == 0 { Value::Null } else { json!(at) },
+                "done": c.done,
+                "active": t.active && k == 0,
+            }));
+        }
+    }
+    Value::Array(out)
+}
+
+/// The document's revisions in the form of the recorded results (tests/scenarios/review/expected/README.md): per
+/// story its paragraphs and tables, each run's text with the authors of its insertion, deletion and formatting change
+/// and its move end, adjacent runs alike merged; and each section's change, page size and margins (top, bottom, left,
+/// right).
+pub(crate) fn review_state(doc: &crate::docx::Document) -> Value {
+    use crate::docx::review::{MarkKind, RevisionMark, RunRevisions};
+    use crate::docx::{Block, BreakKind, Inline};
+    let name = |m: &RevisionMark| doc.people.get(m.author).map_or(String::new(), |p| p.name.to_string());
+    let who = |m: &Option<std::rc::Rc<RevisionMark>>, moved: bool| match m {
+        Some(m) if matches!(m.kind, MarkKind::MoveFrom | MarkKind::MoveTo) == moved => json!(name(m)),
+        _ => Value::Null,
+    };
+    let flags = |r: &RunRevisions| {
+        let moved = match (&r.ins, &r.del) {
+            (_, Some(m)) if m.kind == MarkKind::MoveFrom => json!("from"),
+            (Some(m), _) if m.kind == MarkKind::MoveTo => json!("to"),
+            _ => Value::Null,
+        };
+        json!({ "ins": who(&r.ins, false), "del": who(&r.del, false), "move": moved, "fmt": r.fmt.as_ref().map(|f| name(&f.mark)) })
+    };
+    type Flags<'a> = &'a dyn Fn(&RunRevisions) -> Value;
+    fn blocks(bs: &[Block], boxes: &mut Vec<Value>, f: Flags, name: &dyn Fn(&RevisionMark) -> String) -> Vec<Value> {
+        let mut out = Vec::new();
+        for b in bs {
+            match b {
+                Block::Para(p) => {
+                    let mut runs: Vec<(Value, String)> = Vec::new();
+                    // Inside a field's code: not shown.
+                    let mut code = 0usize;
+                    for i in &p.inlines {
+                        let text = match i {
+                            Inline::FieldBegin { .. } => {
+                                code += 1;
+                                continue;
+                            }
+                            Inline::FieldSep { .. } => {
+                                code = code.saturating_sub(1);
+                                continue;
+                            }
+                            Inline::FieldEnd { .. } => continue,
+                            _ if code > 0 => continue,
+                            Inline::Text(t, _) => t.clone(),
+                            Inline::Tab(_) | Inline::PTab(..) => "\t".into(),
+                            Inline::Break(BreakKind::Page, _) => "\u{c}".into(),
+                            Inline::Break(..) => "\n".into(),
+                            Inline::Sym { ch, .. } => ch.to_string(),
+                            Inline::Picture(..) | Inline::NoteRef { .. } => "\u{fffc}".into(),
+                            Inline::Float(fl, _) => {
+                                if let Some(tb) = &fl.text_box {
+                                    let inner = blocks(&tb.blocks, &mut Vec::new(), f, name);
+                                    boxes.extend(inner);
+                                }
+                                "\u{fffc}".into()
+                            }
+                            _ => continue,
+                        };
+                        let Some(r) = i.run() else { continue };
+                        let fl = f(&r.rev);
+                        match runs.last_mut() {
+                            Some((lf, lt)) if *lf == fl => lt.push_str(&text),
+                            _ => runs.push((fl, text)),
+                        }
+                    }
+                    runs.retain(|(_, t)| !t.is_empty());
+                    let text: String = runs.iter().map(|(_, t)| t.as_str()).collect();
+                    let runs: Vec<Value> = runs
+                        .into_iter()
+                        .map(|(mut fl, t)| {
+                            fl["text"] = json!(t);
+                            fl
+                        })
+                        .collect();
+                    let m = f(&p.mark.rev);
+                    out.push(json!({
+                        "text": text,
+                        "runs": runs,
+                        "mark": { "ins": m["ins"], "del": m["del"], "move": m["move"] },
+                        "pchange": p.style.change.as_ref().map(|c| name(&c.mark)),
+                    }));
+                }
+                Block::Table(t) => {
+                    let rows: Vec<Value> = t
+                        .rows
+                        .iter()
+                        .map(|r| {
+                            let cells: Vec<Value> = r.cells.iter().map(|c| json!({ "blocks": blocks(&c.blocks, boxes, f, name) })).collect();
+                            json!({
+                                "ins": r.rev.ins.as_ref().map(|m| name(m)),
+                                "del": r.rev.del.as_ref().map(|m| name(m)),
+                                "change": r.rev.change.as_ref().map(|c| name(&c.mark)),
+                                "cells": cells,
+                            })
+                        })
+                        .collect();
+                    out.push(json!({ "table": { "change": t.change.as_ref().map(|c| name(&c.mark)), "rows": rows } }));
+                }
+            }
+        }
+        out
+    }
+    let mut boxes = Vec::new();
+    let body: Vec<Block> = doc.sections.iter().flat_map(|s| s.blocks.iter().cloned()).collect();
+    let mut stories = serde_json::Map::new();
+    stories.insert("body".into(), json!(blocks(&body, &mut boxes, &flags, &name)));
+    let mut notes: Vec<(&i64, &Vec<Block>)> = doc.footnotes.iter().filter(|(id, _)| **id > 0).collect();
+    notes.sort_by_key(|(id, _)| **id);
+    let notes: Vec<Block> = notes.into_iter().flat_map(|(_, b)| b.iter().cloned()).collect();
+    if !notes.is_empty() {
+        stories.insert("footnotes".into(), json!(blocks(&notes, &mut boxes, &flags, &name)));
+    }
+    if let Some(s) = doc.sections.first() {
+        for (refs, kind) in [(&s.headers, "header"), (&s.footers, "footer")] {
+            for (slot, part) in refs.iter().enumerate() {
+                if let Some(b) = part.as_ref().and_then(|p| doc.stories.get(p)) {
+                    let k = ["default", "first", "even"][slot.min(2)];
+                    stories.insert(format!("{kind}-{k}"), json!(blocks(b, &mut boxes, &flags, &name)));
+                }
+            }
+        }
+    }
+    if !boxes.is_empty() {
+        stories.insert("textboxes".into(), json!(boxes));
+    }
+    let sections: Vec<Value> = doc
+        .sections
+        .iter()
+        .map(|s| json!({ "change": s.change.as_ref().map(|c| name(&c.mark)), "page": [s.page_w, s.page_h], "margins": [s.top, s.bottom, s.left, s.right] }))
+        .collect();
+    json!({ "stories": stories, "sections": sections })
 }
 
 /// `got` has everything `want` gives: objects by the keys given, arrays element by element (same length), numbers

@@ -180,6 +180,7 @@ class Doc:
         self.even_and_odd = False
         self.custom_xml = []  # (xml, ds:itemID) per custom XML part (data parts)
         self.glossary = False  # a glossary part with the default content-control placeholder
+        self.settings_extra = ""  # settings elements before w:compat (tracking, protection)
 
     def uid(self):
         self.ids += 1
@@ -278,7 +279,7 @@ class Doc:
                 notes_pr += f'<w:{kind}Pr><w:{kind} w:id="-1"/><w:{kind} w:id="0"/></w:{kind}Pr>'
         settings = (
             f'{XML_DECL}<w:settings xmlns:w="{NS["w"]}"><w:defaultTabStop w:val="720"/>'
-            f'{"<w:evenAndOddHeaders/>" if self.even_and_odd else ""}{notes_pr}'
+            f'{self.settings_extra}{"<w:evenAndOddHeaders/>" if self.even_and_odd else ""}{notes_pr}'
             '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'
         )
         files.append(("word/settings.xml", settings, f"{CT}settings+xml"))
@@ -1172,6 +1173,363 @@ def fx_grid_wide(d):
     return table + P(""), margins
 
 
+# ---- review: tracked revisions and comments ---------------------------------------------------------------------
+#
+# Each tracked fixture can also be written "accepted" (every revision accepted) and "rejected" (every revision
+# rejected), as a twin to compare layouts with. A joined paragraph (a deleted mark accepted, an inserted mark
+# rejected) takes the second paragraph's properties.
+
+W15 = "http://schemas.microsoft.com/office/word/2012/wordml"
+W16CID = "http://schemas.microsoft.com/office/word/2016/wordml/cid"
+W16CEX = "http://schemas.microsoft.com/office/word/2018/wordml/cex"
+AUTHORS = {"A": "Author A", "B": "Author B", "C": "Author C"}
+IDENTITIES = {"A": ("AD", "author.a@example.com"), "B": ("AD", "author.b@example.com")}
+
+
+class Review:
+    """Revision markup in one of three modes: tracked, accepted or rejected."""
+
+    def __init__(self, d, mode="tracked"):
+        self.d, self.mode = d, mode
+        self.day = 0
+
+    def attrs(self, who):
+        self.day += 1
+        return f'w:id="{self.d.uid()}" w:author="{AUTHORS[who]}" w:date="2026-01-{1 + self.day % 28:02d}T10:00:00Z"'
+
+    def ins(self, text, who="A", rpr=""):
+        if self.mode == "rejected":
+            return ""
+        run = r(text, rpr)
+        return f"<w:ins {self.attrs(who)}>{run}</w:ins>" if self.mode == "tracked" else run
+
+    def dele(self, text, who="B", rpr=""):
+        if self.mode == "accepted":
+            return ""
+        if self.mode == "rejected":
+            return r(text, rpr)
+        rpr = f"<w:rPr>{rpr}</w:rPr>" if rpr else ""
+        return f'<w:del {self.attrs(who)}><w:r>{rpr}<w:delText xml:space="preserve">{escape(text)}</w:delText></w:r></w:del>'
+
+    def ins_del(self, text, ins_who="A", del_who="B"):
+        """Text one author inserted and another deleted: gone whether accepted or rejected."""
+        if self.mode != "tracked":
+            return ""
+        return (
+            f"<w:ins {self.attrs(ins_who)}><w:del {self.attrs(del_who)}><w:r>"
+            f'<w:delText xml:space="preserve">{escape(text)}</w:delText></w:r></w:del></w:ins>'
+        )
+
+    def fmt(self, text, new, old, who="C"):
+        """A run formatted `new` that was `old`."""
+        if self.mode == "accepted":
+            return r(text, new)
+        if self.mode == "rejected":
+            return r(text, old)
+        return r(text, f"{new}<w:rPrChange {self.attrs(who)}><w:rPr>{old}</w:rPr></w:rPrChange>")
+
+    def ppr(self, new, old, who="C"):
+        """Paragraph properties `new` that were `old`."""
+        if self.mode == "accepted":
+            return new
+        if self.mode == "rejected":
+            return old
+        return f"{new}<w:pPrChange {self.attrs(who)}><w:pPr>{old}</w:pPr></w:pPrChange>"
+
+    def joined(self, first, second, ppr_first, ppr_second, mark, who="B"):
+        """Two paragraphs whose first mark was deleted ("del") or inserted ("ins"): two paragraphs where the mark
+        stays, one (with the second's properties) where it goes."""
+        goes = (mark == "del" and self.mode == "accepted") or (mark == "ins" and self.mode == "rejected")
+        if goes:
+            return p(first + second, ppr_second)
+        tag = f"<w:rPr><w:{mark} {self.attrs(who)}/></w:rPr>" if self.mode == "tracked" else ""
+        return p(first, ppr_first + tag) + p(second, ppr_second)
+
+    def row(self, cells, kind, who="A"):
+        """A row inserted ("ins") or deleted ("del")."""
+        if (kind == "ins" and self.mode == "rejected") or (kind == "del" and self.mode == "accepted"):
+            return ""
+        if self.mode != "tracked":
+            return tr(cells)
+        return tr(cells, f"<w:{kind} {self.attrs(who)}/>")
+
+
+def comment_parts(d, comments):
+    """The comment parts for `comments`: (id, who, para_id, durable_id, parent_para_id, done, body paragraphs)."""
+    body, ex, ids, cex, people = [], [], [], [], {}
+    for cid, who, para, durable, parent, done, paras in comments:
+        last = len(paras) - 1
+        ps = []
+        for k, content in enumerate(paras):
+            mark = '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:annotationRef/></w:r>' if k == 0 else ""
+            attr = f' w14:paraId="{para:08X}" w14:textId="77777777"' if k == last else ""
+            ps.append(f'<w:p{attr}><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>{mark}{content}</w:p>')
+        initials = "".join(part[0] for part in AUTHORS[who].split())
+        body.append(f'<w:comment w:id="{cid}" w:author="{AUTHORS[who]}" w:date="2026-02-{1 + cid % 28:02d}T09:00:00Z" w:initials="{initials}">{"".join(ps)}</w:comment>')
+        parent_attr = f' w15:paraIdParent="{parent:08X}"' if parent is not None else ""
+        ex.append(f'<w15:commentEx w15:paraId="{para:08X}"{parent_attr} w15:done="{int(done)}"/>')
+        ids.append(f'<w16cid:commentId w16cid:paraId="{para:08X}" w16cid:durableId="{durable:08X}"/>')
+        cex.append(f'<w16cex:commentExtensible w16cex:durableId="{durable:08X}" w16cex:dateUtc="2026-02-{1 + cid % 28:02d}T09:00:00Z"/>')
+        people[who] = AUTHORS[who]
+    parts = [
+        ("comments.xml", f"{XML_DECL}<w:comments {NAMESPACES}>{''.join(body)}</w:comments>", f"{CT}comments+xml", REL + "comments"),
+        ("commentsExtended.xml", f'{XML_DECL}<w15:commentsEx xmlns:w15="{W15}">{"".join(ex)}</w15:commentsEx>', f"{CT}commentsExtended+xml",
+         "http://schemas.microsoft.com/office/2011/relationships/commentsExtended"),
+        ("commentsIds.xml", f'{XML_DECL}<w16cid:commentsIds xmlns:w16cid="{W16CID}">{"".join(ids)}</w16cid:commentsIds>', f"{CT}commentsIds+xml",
+         "http://schemas.microsoft.com/office/2016/09/relationships/commentsIds"),
+        ("commentsExtensible.xml", f'{XML_DECL}<w16cex:commentsExtensible xmlns:w16cex="{W16CEX}">{"".join(cex)}</w16cex:commentsExtensible>',
+         f"{CT}commentsExtensible+xml", "http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible"),
+    ]
+    persons = []
+    for who, name in people.items():
+        presence = ""
+        if who in IDENTITIES:
+            provider, user = IDENTITIES[who]
+            presence = f'<w15:presenceInfo w15:providerId="{provider}" w15:userId="{user}"/>'
+        persons.append(f'<w15:person w15:author="{name}">{presence}</w15:person>')
+    parts.append(("people.xml", f'{XML_DECL}<w15:people xmlns:w15="{W15}">{"".join(persons)}</w15:people>', f"{CT}people+xml",
+                  "http://schemas.microsoft.com/office/2011/relationships/people"))
+    for name, xml, ctype, rel_type in parts:
+        d.parts.append((name, xml, ctype))
+        d.rels.append((f"rId{len(d.rels) + 10}", rel_type, name))
+
+
+def anchored(cid, content):
+    """`content` (runs) inside comment `cid`'s range, with its reference after it."""
+    return (
+        f'<w:commentRangeStart w:id="{cid}"/>{content}<w:commentRangeEnd w:id="{cid}"/>'
+        f'<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="{cid}"/></w:r>'
+    )
+
+
+def fx_review_runs(d, mode="tracked"):
+    """Insertions, deletions, a deleted insertion and a formatting change by three authors, spread over paragraphs
+    long enough to wrap, so accepting or rejecting changes where lines break."""
+    v = Review(d, mode)
+    paras = []
+    for k in range(6):
+        paras.append(p(
+            r(filler(18, k * 7) + " ")
+            + v.ins(filler(9, k * 3 + 1) + " ", "A")
+            + r(filler(6, k * 5 + 2) + " ")
+            + v.dele(filler(11, k * 2 + 3) + " ", "B")
+            + v.ins_del(filler(4, k + 4) + " ", "A", "B")
+            + v.fmt(filler(7, k * 4 + 5) + " ", "<w:b/>", "", "C")
+            + r(filler(14, k * 6 + 6))
+        ))
+    return "".join(paras)
+
+
+def fx_review_marks(d, mode="tracked"):
+    """A deleted paragraph mark and an inserted one (paragraphs joined or not), and paragraph property changes."""
+    v = Review(d, mode)
+    centred, left = '<w:jc w:val="center"/>', ""
+    return (
+        P(filler(20))
+        + v.joined(r(filler(16, 3)), r(filler(16, 9)), centred, left, "del", "B")
+        + P(filler(20, 12))
+        + v.joined(r(filler(12, 5)), r(filler(18, 15)), left, centred, "ins", "A")
+        + p(r(filler(30, 20)), v.ppr('<w:ind w:left="1440"/><w:jc w:val="right"/>', "", "C"))
+        + p(r(filler(30, 25)), v.ppr('<w:spacing w:after="480"/>', '<w:spacing w:after="0"/>', "A"))
+        + P(filler(20, 30))
+    )
+
+
+def fx_review_tables(d, mode="tracked"):
+    """An inserted row, a deleted row, and table, row, cell and grid property changes."""
+    v = Review(d, mode)
+    widths = split(TEXT_WIDTH, 3)
+    cells = lambda k: [tc(P(filler(4, k * 3 + i)), w) for i, w in enumerate(widths)]
+    height_new, height_old = '<w:trHeight w:val="720"/>', '<w:trHeight w:val="360"/>'
+    tracked = mode == "tracked"
+    row_change = (height_new + f'<w:trPrChange {v.attrs("C")}><w:trPr>{height_old}</w:trPr></w:trPrChange>') if tracked else (
+        height_new if mode == "accepted" else height_old)
+    shade_new, shade_old = '<w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/>', ""
+    shade = (shade_new + f'<w:tcPrChange {v.attrs("C")}><w:tcPr><w:tcW w:w="{widths[0]}" w:type="dxa"/></w:tcPr></w:tcPrChange>') if tracked else (
+        shade_new if mode == "accepted" else shade_old)
+    rows = [
+        tr(cells(0)),
+        v.row(cells(1), "ins", "A"),
+        tr(cells(2), row_change),
+        v.row(cells(3), "del", "B"),
+        tr([tc(P(filler(4, 30)), widths[0], shade)] + cells(4)[1:]),
+    ]
+    jc_new, jc_old = '<w:jc w:val="center"/>', ""
+    jc = (jc_new + f'<w:tblPrChange {v.attrs("C")}><w:tblPr><w:tblW w:w="{TEXT_WIDTH}" w:type="dxa"/></w:tblPr></w:tblPrChange>') if tracked else (
+        jc_new if mode == "accepted" else jc_old)
+    old_widths = split(TEXT_WIDTH, 3)[::-1]
+    grid_xml = "".join(f'<w:gridCol w:w="{w}"/>' for w in (widths if mode != "rejected" else old_widths))
+    old_grid = "".join(f'<w:gridCol w:w="{w}"/>' for w in old_widths)
+    grid_change = f'<w:tblGridChange {v.attrs("C")}><w:tblGrid>{old_grid}</w:tblGrid></w:tblGridChange>' if tracked else ""
+    table = (
+        f'<w:tbl><w:tblPr><w:tblW w:w="{TEXT_WIDTH}" w:type="dxa"/><w:tblBorders>{BORDERS}</w:tblBorders>{jc}<w:tblLayout w:type="fixed"/></w:tblPr>'
+        f"<w:tblGrid>{grid_xml}{grid_change}</w:tblGrid>{''.join(rows)}</w:tbl>"
+    )
+    return P(filler(12)) + table + P(filler(12, 40))
+
+
+def fx_review_cells(d):
+    """Cell insertions, deletions and merges, and a row's table exceptions changed (no twins)."""
+    v = Review(d)
+    widths = split(TEXT_WIDTH, 3)
+    ex = f'<w:tblPrEx><w:tblBorders>{BORDERS}</w:tblBorders><w:tblPrExChange {v.attrs("C")}><w:tblPrEx/></w:tblPrExChange></w:tblPrEx>'
+    rows = [
+        tr([tc(P("a1"), widths[0]), tc(P("b1"), widths[1], f'<w:cellIns {v.attrs("A")}/>'), tc(P("c1"), widths[2])]),
+        tr([tc(P("a2"), widths[0]), tc(P("b2"), widths[1], f'<w:cellDel {v.attrs("B")}/>'), tc(P("c2"), widths[2])]),
+        tr([tc(P("a3"), widths[0], '<w:vMerge w:val="restart"/>'), tc(P("b3"), widths[1]), tc(P("c3"), widths[2])]),
+        f"<w:tr>{ex}"
+        + tc(P(""), widths[0], f'<w:vMerge/><w:cellMerge {v.attrs("A")} w:vMerge="cont" w:vMergeOrig="rest"/>')
+        + tc(P("b4"), widths[1]) + tc(P("c4"), widths[2]) + "</w:tr>",
+    ]
+    return P("Cells") + tbl(rows, widths) + P("")
+
+
+def fx_review_sections(d, mode="tracked"):
+    """A section whose margins and orientation changed."""
+    new = '<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="720" w:footer="720" w:gutter="0"/>'
+    old = '<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+    v = Review(d, mode)
+    props = {"accepted": new, "rejected": old}.get(mode, new + f'<w:sectPrChange {v.attrs("C")}><w:sectPr>{old}</w:sectPr></w:sectPrChange>')
+    body = "".join(P(filler(60, k * 11)) for k in range(8))
+    return body, f'<w:sectPr>{props}<w:cols w:space="720"/></w:sectPr>'
+
+
+def fx_review_moves(d):
+    """A paragraph moved, a sentence moved within a paragraph, and a list paragraph's numbering changed (no twins)."""
+    # Laid out as a recorded move is saved: one author and date for all of a move's parts; each range starts
+    # inside its paragraph, after the properties; a moved paragraph's mark is marked in its run properties; the
+    # range ends after the moved paragraph (moveFrom) or at the start of the next one (moveTo); range ids differ
+    # from the revision ids.
+    d.numbering = True
+    v = Review(d)
+    name, part = "move123", "move456"
+    moved = filler(14, 3)
+    sentence = filler(5, 8) + ". "
+
+    def at(who, date):
+        return f'w:id="{d.uid()}" w:author="{AUTHORS[who]}" w:date="{date}"'
+
+    a, b = "2026-01-05T10:00:00Z", "2026-01-06T10:00:00Z"
+    # Revision ids 1 and 2 for the moved text, 3 and 4 for the marks (the resolve scenarios name them).
+    from_text, to_text, from_mark, to_mark = at("A", a), at("A", a), at("A", a), at("A", a)
+    return (
+        P(filler(16))
+        + p(f'<w:moveFromRangeStart w:id="901" w:author="Author A" w:date="{a}" w:name="{name}"/>'
+            f'<w:moveFrom {from_text}>{r(moved)}</w:moveFrom>', f'<w:rPr><w:moveFrom {from_mark}/></w:rPr>')
+        + '<w:moveFromRangeEnd w:id="901"/>'
+        + P(filler(16, 20))
+        + p(f'<w:moveToRangeStart w:id="902" w:author="Author A" w:date="{a}" w:name="{name}"/>'
+            f'<w:moveTo {to_text}>{r(moved)}</w:moveTo>', f'<w:rPr><w:moveTo {to_mark}/></w:rPr>')
+        + p(
+            '<w:moveToRangeEnd w:id="902"/>'
+            + f'<w:moveFromRangeStart w:id="903" w:author="Author B" w:date="{b}" w:name="{part}"/>'
+            + f'<w:moveFrom {at("B", b)}>{r(sentence)}</w:moveFrom><w:moveFromRangeEnd w:id="903"/>'
+            + r(filler(12, 30) + " ")
+            + f'<w:moveToRangeStart w:id="904" w:author="Author B" w:date="{b}" w:name="{part}"/>'
+            + f'<w:moveTo {at("B", b)}>{r(sentence)}</w:moveTo><w:moveToRangeEnd w:id="904"/>'
+        )
+        + p(r("Numbered item"), f'<w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/>'
+            f'<w:numberingChange {v.attrs("C")} w:original="%1."/></w:numPr>')
+    )
+
+
+def fx_review_comments(d):
+    """Threads (a reply, a resolved thread), rich comment bodies, people with identities, overlapping and nested
+    ranges, a range with no text, and a comment in a table."""
+    rich = r("A ") + r("bold", "<w:b/>") + r(" and ") + r("italic", "<w:i/>") + r(" note.")
+    comments = [
+        (0, "A", 0x10, 0x1A000001, None, False, [rich, r("A second paragraph.")]),
+        (1, "B", 0x11, 0x1A000002, 0x10, False, [r("A reply.")]),
+        (2, "C", 0x12, 0x1A000003, None, True, [r("Resolved.")]),
+        (3, "A", 0x13, 0x1A000004, None, False, [r("Inside the first.")]),
+        (4, "B", 0x14, 0x1A000005, None, False, [r("At a point.")]),
+        (5, "C", 0x15, 0x1A000006, None, False, [r("In a cell.")]),
+    ]
+    comment_parts(d, comments)
+    widths = split(TEXT_WIDTH, 2)
+    nested = (
+        '<w:commentRangeStart w:id="0"/>' + r(filler(6) + " ")
+        + anchored(3, r(filler(4, 6) + " "))
+        + r(filler(5, 10)) + '<w:commentRangeEnd w:id="0"/>'
+        + '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="0"/></w:r>'
+        + '<w:commentRangeStart w:id="1"/><w:commentRangeEnd w:id="1"/>'
+        + '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="1"/></w:r>'
+    )
+    return (
+        p(r(filler(10, 1) + " ") + nested + r(" " + filler(10, 20)))
+        + p(anchored(2, r(filler(12, 30))))
+        + p(r(filler(8, 40)) + anchored(4, "") + r(filler(8, 50)))
+        + grid([[p(anchored(5, r("cell text"))), "plain cell"]], widths)
+        + P("")
+    )
+
+
+def fx_review_stories(d):
+    """Revisions and comments outside the body: a header, a footer, a footnote, an endnote and a text box."""
+    v = Review(d)
+    comment_parts(d, [(7, "A", 0x20, 0x2A000001, None, False, [r("In a footnote.")]),
+                      (8, "B", 0x21, 0x2A000002, None, False, [r("In a text box.")]),
+                      (9, "C", 0x22, 0x2A000003, None, False, [r("In a header.")])])
+    header = d.story("header", "default", p(r("Header ") + v.ins("inserted", "A") + anchored(9, r(" commented"))))
+    footer = d.story("footer", "default", p(r("Footer ") + v.dele("deleted", "B")))
+    note = d.footnote("note ")
+    end = d.endnote("end ")
+    d.footnotes[-1] = d.footnotes[-1].replace("</w:p></w:footnote>", v.ins(" inserted in a note", "A") + anchored(7, r(" commented")) + "</w:p></w:footnote>")
+    d.endnotes[-1] = d.endnotes[-1].replace("</w:p></w:endnote>", v.dele(" deleted in a note", "B") + "</w:p></w:endnote>")
+    box = d.textbox(p(r("Box ") + v.ins("inserted", "A") + anchored(8, r(" commented"))), 2.0, 1.0, anchor_at())
+    body = p(r(filler(10)) + note + r(" ") + end) + p(box + r(filler(20, 10)))
+    return body, sect(header + footer)
+
+
+def fx_review_protected(d):
+    """Tracking on, and protected so that every edit is tracked."""
+    d.settings_extra = '<w:trackRevisions/><w:documentProtection w:edit="trackedChanges" w:enforcement="1"/>'
+    v = Review(d)
+    return p(r(filler(12) + " ") + v.ins(filler(5, 3), "A")) + P(filler(12, 10))
+
+
+def fx_review_malformed(d):
+    """Review data that doesn't add up: an insertion with no id, a range end with no start, a revision with no
+    author, a comment nothing points to, and a reference to a comment that doesn't exist."""
+    comment_parts(d, [(0, "A", 0x30, 0x3A000001, None, False, [r("Anchored.")]), (7, "B", 0x31, 0x3A000002, None, False, [r("Unanchored.")])])
+    return (
+        p(r("start ") + '<w:ins w:author="Author A" w:date="2026-01-01T10:00:00Z">' + r("no id") + "</w:ins>")
+        + p('<w:commentRangeEnd w:id="5"/>' + r("an end with no start"))
+        + p('<w:del w:id="77" w:date="2026-01-01T10:00:00Z"><w:r><w:delText>no author</w:delText></w:r></w:del>' + r(" kept"))
+        + p(anchored(0, r("anchored")))
+        + p(r("orphan ") + '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="99"/></w:r>')
+    )
+
+
+def fx_review_large(d):
+    """5,000 revisions and 500 comments, for timing."""
+    v = Review(d)
+    comments, paras = [], []
+    for k in range(500):
+        runs = ""
+        for j in range(10):
+            text = filler(3, k + j) + " "
+            runs += v.ins(text, "ABC"[j % 3]) if j % 2 == 0 else v.dele(text, "ABC"[(j + 1) % 3])
+        paras.append(p(anchored(k, r(filler(4, k))) + r(" ") + runs))
+        comments.append((k, "ABC"[k % 3], 0x1000 + k, 0x4A000000 + k, None, k % 7 == 0, [r(f"Comment {k}.")]))
+    comment_parts(d, comments)
+    return "".join(paras)
+
+
+REVIEW = {
+    **{f"FX-REVIEW-{name}{suffix}": (lambda d, b=build, m=mode: b(d, m))
+       for name, build in (("RUNS", fx_review_runs), ("MARKS", fx_review_marks), ("TABLES", fx_review_tables), ("SECTIONS", fx_review_sections))
+       for suffix, mode in (("", "tracked"), ("-ACCEPTED", "accepted"), ("-REJECTED", "rejected"))},
+    "FX-REVIEW-CELLS": fx_review_cells,
+    "FX-REVIEW-MOVES": fx_review_moves,
+    "FX-REVIEW-COMMENTS": fx_review_comments,
+    "FX-REVIEW-STORIES": fx_review_stories,
+    "FX-REVIEW-PROTECTED": fx_review_protected,
+    "FX-REVIEW-MALFORMED": fx_review_malformed,
+    "FX-REVIEW-LARGE": fx_review_large,
+}
+
+
 FIXTURES = {
     "FX-ROW-CLIP": fx_row_clip,
     "FX-GRID-WIDE": fx_grid_wide,
@@ -1219,7 +1577,7 @@ FIXTURES = {
 def main():
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent / "editor"
     out.mkdir(parents=True, exist_ok=True)
-    sets = [(out, FIXTURES), (out / "merge-set", MERGE_SET)]
+    sets = [(out, FIXTURES), (out / "merge-set", MERGE_SET), (out / "review", REVIEW)]
     for folder, builds in sets:
         folder.mkdir(parents=True, exist_ok=True)
         for name, build in builds.items():
@@ -1227,7 +1585,7 @@ def main():
             result = build(d)
             body, sect_pr = result if isinstance(result, tuple) else (result, None)
             d.write(folder / f"{name}.docx", body, sect_pr)
-    print(f"wrote {len(FIXTURES)} fixtures to {out} and {len(MERGE_SET)} to {out / 'merge-set'}")
+    print(f"wrote {len(FIXTURES)} fixtures to {out}, {len(MERGE_SET)} to {out / 'merge-set'} and {len(REVIEW)} to {out / 'review'}")
 
 
 if __name__ == "__main__":

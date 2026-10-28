@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::docx::model::*;
 use crate::docx::props::{Border, Jc, Width};
+use crate::docx::review::{MarkupView, ReviewView};
 
 use super::autofit;
 use super::cache::{CacheKey, cached};
@@ -12,10 +13,11 @@ use super::env::TextEnv;
 use super::fragment::{BoxKind, CellFragment, CellPlace, Child, GlyphRun, Item, LineFragment, PlacedLine, RowFragment, TableFragment};
 use super::ids::{ParaId, TableId, Unit};
 use super::job::{Memos, Yield};
+use super::join::LaidBlock;
 use super::line::{break_lines, neighbour_borders};
 use super::space::ParaSpace;
 use super::story::{StoryEnv, StoryKey, StoryLayout, StoryUnit, child_ids};
-use super::text::{Kind, shape, shape_space};
+use super::text::{Kind, shape};
 
 const EPS: f64 = 1e-6;
 
@@ -98,11 +100,30 @@ impl CacheKey for TableKey {
 /// A table's properties without its cells' content (which its key holds by identity). The destructuring is
 /// exhaustive, so a field added to the model must be decided on here and in [`same_shell`].
 fn shell(t: &Table) -> Table {
-    let Table { style_id, width, jc, ind, borders, fixed, cell_spacing, look, bands, floating, grid, rows, src: _, id, direct: _, controls: _ } = t;
+    let Table {
+        style_id,
+        width,
+        jc,
+        ind,
+        borders,
+        fixed,
+        cell_spacing,
+        look,
+        bands,
+        floating,
+        grid,
+        rows,
+        src: _,
+        id,
+        direct: _,
+        controls: _,
+        change,
+        grid_change,
+    } = t;
     let rows = rows
         .iter()
         .map(|r| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, cells, src: _, controls: _ } = r;
+            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, cells, src: _, controls: _, rev } = r;
             let cells = cells
                 .iter()
                 .map(|c| {
@@ -122,6 +143,7 @@ fn shell(t: &Table) -> Table {
                         blocks: _,
                         direct: _,
                         controls: _,
+                        rev,
                     } = c;
                     Cell {
                         width: *width,
@@ -139,6 +161,7 @@ fn shell(t: &Table) -> Table {
                         blocks: Vec::new(),
                         direct: Default::default(),
                         controls: Vec::new(),
+                        rev: rev.clone(),
                     }
                 })
                 .collect();
@@ -153,6 +176,7 @@ fn shell(t: &Table) -> Table {
                 cells,
                 src: None,
                 controls: Vec::new(),
+                rev: rev.clone(),
             }
         })
         .collect();
@@ -173,12 +197,33 @@ fn shell(t: &Table) -> Table {
         id: *id,
         direct: Default::default(),
         controls: Vec::new(),
+        change: change.clone(),
+        grid_change: grid_change.clone(),
     }
 }
 
 /// Whether `t`'s properties equal the shell's (cells' content not compared).
 pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
-    let Table { style_id, width, jc, ind, borders, fixed, cell_spacing, look, bands, floating, grid, rows, src: _, id, direct: _, controls: _ } = s;
+    let Table {
+        style_id,
+        width,
+        jc,
+        ind,
+        borders,
+        fixed,
+        cell_spacing,
+        look,
+        bands,
+        floating,
+        grid,
+        rows,
+        src: _,
+        id,
+        direct: _,
+        controls: _,
+        change,
+        grid_change,
+    } = s;
     *style_id == t.style_id
         && *width == t.width
         && *jc == t.jc
@@ -191,9 +236,11 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         && *floating == t.floating
         && *grid == t.grid
         && *id == t.id
+        && *change == t.change
+        && *grid_change == t.grid_change
         && rows.len() == t.rows.len()
         && rows.iter().zip(&t.rows).all(|(r, q)| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, cells, src: _, controls: _ } = r;
+            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, cells, src: _, controls: _, rev } = r;
             *height == q.height
                 && *cant_split == q.cant_split
                 && *header == q.header
@@ -201,6 +248,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 && *grid_after == q.grid_after
                 && *w_before == q.w_before
                 && *w_after == q.w_after
+                && *rev == q.rev
                 && cells.len() == q.cells.len()
                 && cells.iter().zip(&q.cells).all(|(c, d)| {
                     let Cell {
@@ -219,6 +267,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         blocks: _,
                         direct: _,
                         controls: _,
+                        rev,
                     } = c;
                     *width == d.width
                         && *span == d.span
@@ -232,6 +281,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         && *v_align == d.v_align
                         && *text_direction == d.text_direction
                         && *no_wrap == d.no_wrap
+                        && *rev == d.rev
                 })
         })
 }
@@ -290,6 +340,17 @@ pub struct RowBox {
     /// the cell below, which draws its own top from another cell, TABLE-38): left, right (table coordinates) and
     /// border.
     pub seams: Vec<(f64, f64, Border)>,
+    /// The markup view hides the row (REV-1): it has no cells and takes no space, and the fill skips it.
+    pub hidden: bool,
+    /// The row or one of its cells was inserted, deleted or changed, and the view draws change bars (REV-4).
+    pub changed: bool,
+}
+
+impl TableLayout {
+    /// Whether row `ri` is the last one shown (the rows after it are hidden by the markup view, REV-1).
+    pub fn is_last(&self, ri: usize) -> bool {
+        self.rows.get(ri + 1..).is_none_or(|rest| rest.iter().all(|r| r.hidden))
+    }
 }
 
 /// A table laid out for a width.
@@ -449,9 +510,9 @@ fn gap(s: f64, outer: bool) -> f64 {
 /// Content min, max and hard minimum of blocks in twips (TABLE-7), cached and width-free (LayoutNG's
 /// min/max sizes).
 fn content_widths(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result<(i64, i64, i64), Yield> {
-    let refs: Vec<&Block> = blocks.iter().collect();
-    let probe = StoryKey::new(child_ids(&refs, None, env, memos)?, None, true, env);
-    cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(blocks, env, m)).map(|w| *w)
+    let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let probe = StoryKey::new(child_ids(&laid, None, env, memos)?, None, true, env);
+    cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, m)).map(|w| *w)
 }
 
 /// Points to twips, rounded up (TABLE-6: content widths round up).
@@ -466,17 +527,18 @@ fn twips(x: f64) -> i64 {
 
 /// TABLE-7, TABLE-8: the widest unbreakable piece and the widest unwrapped line, with the paragraph's indents.
 /// A nested table supplies its own autofit's minimum, width with A = MAXW, and hard minimum (TABLE-11).
-fn content_widths_uncached(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result<(i64, i64, i64), Yield> {
+fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, memos: &mut Memos) -> Result<(i64, i64, i64), Yield> {
     let (mut mn, mut mx, mut hard) = (0i64, 0i64, 0i64);
     let old = env.ctx.env.text.compat < 15;
     for b in blocks {
         match b {
-            Block::Para(p) => {
-                let space = shape_space(p, env.fields, env.notes, &env.ctx.env.text);
+            LaidBlock::Para(laid) => {
+                let p = laid.para();
+                let space = laid.shape_space(env.fields, env.notes, &env.ctx.env.text);
                 let shaped = shape(p, &space, env.ctx.fonts, memos)?;
-                let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(&p.style, None, None), x0: 0.0, env: env.ctx.env.text.clone() };
+                let s = p.para_style_in(env.ctx.env.text.review.view);
+                let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone() };
                 let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
-                let s = &p.style;
                 let ind = if old { s.ind_left + s.ind_right + s.ind_first.min(0.0) } else { s.ind_left + s.ind_right };
                 let pieces = pb.pieces();
                 // TABLE-9: hyphen runs in the minimum.
@@ -519,9 +581,11 @@ fn content_widths_uncached(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) 
                     mx = mx.max(up(w));
                 }
             }
-            Block::Table(t) => {
+            &LaidBlock::Table(t) => {
                 // The text width it takes: its widths less TABLE-17's edge allowances (TABLE-11), or laid out
                 // in a cell that wide its A falls short and its words break.
+                let shown = in_view(t, env.ctx.env.text.review.view);
+                let t = shown.as_ref().map_or(t, |v| &v.table);
                 let f = fit(t, 0.0, env, Some(autofit::MAXW), memos)?;
                 let (al, ar) = edge_add(env.ctx.env.text.compat, t);
                 let e = twips(al) + twips(ar) - twips(t.ind);
@@ -694,6 +758,115 @@ pub fn relayout_rows(
 }
 
 fn layout_with(
+    t: &Table,
+    text_w: f64,
+    env: &StoryEnv,
+    measure: bool,
+    reuse: Option<(&TableLayout, std::ops::RangeInclusive<usize>)>,
+    memos: &mut Memos,
+) -> Result<Rc<TableLayout>, Yield> {
+    match in_view(t, env.ctx.env.text.review.view) {
+        None => layout_shown(t, text_w, env, measure, reuse, memos),
+        Some(v) => Ok(v.expand(&*layout_shown(&v.table, text_w, env, measure, None, memos)?)),
+    }
+}
+
+/// A table as the markup view shows it (REV-1, REV-2): without the rows and cells the view hides, with the grid,
+/// vertical merges and table, row and cell properties before their tracked changes in Original. `rows`: per model row,
+/// its cells' model indices, or `None` when hidden.
+struct ViewTable {
+    table: Table,
+    rows: Vec<Option<Vec<usize>>>,
+}
+
+/// The table `view` shows, when it isn't `t` itself.
+// shortcut: in Original a cell keeps the formatting its current table style gives it, even when the table's earlier
+// properties name another style; resolving the cells again over that style would show it.
+fn in_view(t: &Table, view: MarkupView) -> Option<ViewTable> {
+    let original = view == MarkupView::Original;
+    let grid = t.table_grid_in(view);
+    let differs = |c: &Cell| view.hides_cell(&c.rev) || c.v_merge_in(view) != c.v_merge || original && c.rev.change.is_some();
+    let hides = t.rows.iter().any(|r| view.hides_row(&r.rev) || original && r.rev.change.is_some() || r.cells.iter().any(differs));
+    if !hides && grid == t.grid.as_slice() && !(original && t.change.is_some()) {
+        return None;
+    }
+    let mut table = t.clone();
+    table.grid = grid.to_vec();
+    if let Some(p) = t.change.as_ref().and_then(|c| c.previous.as_ref()).filter(|_| original) {
+        p.restore_table(&mut table);
+    }
+    let previous = |c: &Option<std::rc::Rc<crate::docx::review::TableChange>>| c.as_ref().filter(|_| original).and_then(|c| c.previous.clone());
+    let mut rows = Vec::with_capacity(t.rows.len());
+    table.rows = std::mem::take(&mut table.rows)
+        .into_iter()
+        .filter_map(|mut r| {
+            if view.hides_row(&r.rev) {
+                rows.push(None);
+                return None;
+            }
+            let keep: Vec<usize> = (0..r.cells.len()).filter(|&k| !view.hides_cell(&r.cells[k].rev)).collect();
+            r.cells = std::mem::take(&mut r.cells).into_iter().filter(|c| !view.hides_cell(&c.rev)).collect();
+            if let Some(p) = previous(&r.rev.change) {
+                p.restore_row(&mut r);
+            }
+            for c in &mut r.cells {
+                c.v_merge = c.v_merge_in(view);
+                if let Some(p) = previous(&c.rev.change) {
+                    p.restore_cell(c);
+                }
+            }
+            rows.push(Some(keep));
+            Some(r)
+        })
+        .collect();
+    Some(ViewTable { table, rows })
+}
+
+impl ViewTable {
+    /// The shown table's layout with the model's rows: a hidden row takes no space, and cells keep their model index.
+    fn expand(&self, tb: &TableLayout) -> Rc<TableLayout> {
+        let (mut shown, mut fit) = (tb.rows.iter().zip(tb.fit.iter()), Vec::with_capacity(self.rows.len()));
+        let mut rows = Vec::with_capacity(self.rows.len());
+        for keep in &self.rows {
+            let Some((keep, (r, f))) = keep.as_ref().and_then(|k| Some((k, shown.next()?))) else {
+                let row = RowBox {
+                    cells: Vec::new(),
+                    top_border: 0.0,
+                    height: 0.0,
+                    cant_split: false,
+                    header: false,
+                    exact: false,
+                    gap_top: 0.0,
+                    seams: Vec::new(),
+                    hidden: true,
+                    changed: false,
+                };
+                rows.push(row);
+                fit.push(Vec::new());
+                continue;
+            };
+            let mut r = r.clone();
+            for c in &mut r.cells {
+                c.index = keep.get(c.index).copied().unwrap_or(c.index);
+            }
+            rows.push(r);
+            fit.push(f.clone());
+        }
+        Rc::new(TableLayout {
+            x0: tb.x0,
+            cols: tb.cols.clone(),
+            rows,
+            bottom_border: tb.bottom_border,
+            spacing: tb.spacing,
+            id: tb.id,
+            outer: tb.outer.clone(),
+            fit: fit.into(),
+        })
+    }
+}
+
+/// [`layout_with`] for a table as shown.
+fn layout_shown(
     t: &Table,
     text_w: f64,
     env: &StoryEnv,
@@ -916,10 +1089,12 @@ fn assemble(
     let mut stories = stories.iter();
     let mut closings = closings.iter();
     let mut rows = Vec::new();
+    let review = &env.ctx.env.text.review;
     for ((ri, r), cells_geo) in t.rows.iter().enumerate().zip(geo) {
         let mut cells = Vec::new();
         for g in cells_geo {
             let c = &r.cells[g.ci];
+            let shading = tint(review, r, c);
             let units = stories.next().cloned().flatten().unwrap_or_default();
             let content_h = units.height;
             cells.push(CellBox {
@@ -935,12 +1110,18 @@ fn assemble(
                 col: g.col,
                 span: g.span,
                 edges: g.edges.clone(),
-                shading: c.shading,
+                shading,
                 below: 0.0,
                 index: g.ci,
                 closing: closings.next().copied().flatten(),
             });
         }
+        // REV-4: a revised row or cell marks the row's lines.
+        let changed = review.view.change_bars()
+            && (r.rev.ins.is_some()
+                || r.rev.del.is_some()
+                || r.rev.change.is_some()
+                || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
         let mut top_border = cells.iter().map(|c| bw(&c.edges[0])).fold(0.0, f64::max);
         // TABLE-38: a bottom border over part of a wider cell, counted in this row's top border.
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
@@ -975,7 +1156,7 @@ fn assemble(
             Some((h, rule)) if rule != "auto" => (top_border + content.max(*h), false),
             _ => (top_border + content, false),
         };
-        rows.push(RowBox { cells, top_border, height, cant_split: r.cant_split, header: r.header, exact, gap_top, seams });
+        rows.push(RowBox { cells, top_border, height, cant_split: r.cant_split, header: r.header, exact, gap_top, seams, hidden: false, changed });
     }
     // TABLE-31: a vertically merged region's extra height goes to its last row.
     for ri in 0..rows.len() {
@@ -1003,6 +1184,19 @@ fn assemble(
     }
     let outer = [t.borders[0].clone(), t.borders[1].clone(), t.borders[2].clone(), t.borders[3].clone()];
     TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit }
+}
+
+/// REV-5: in All markup an inserted or deleted row or cell is tinted with its author's colour at a quarter over its
+/// shading.
+fn tint(review: &ReviewView, r: &Row, c: &Cell) -> Option<u32> {
+    let cell =
+        c.rev.structural.as_ref().filter(|(_, k)| matches!(k, crate::docx::review::CellMarkKind::Insert | crate::docx::review::CellMarkKind::Delete));
+    let Some(m) = cell.map(|(m, _)| m).or(r.rev.del.as_ref()).or(r.rev.ins.as_ref()).filter(|_| review.view == MarkupView::All) else {
+        return c.shading;
+    };
+    let (a, b) = (review.palette.color(m.author), c.shading.unwrap_or(0xFFFFFF));
+    let mix = |s: u32| ((((a >> s) & 0xFF) + 3 * ((b >> s) & 0xFF)) / 4) << s;
+    Some(mix(16) | mix(8) | mix(0))
 }
 
 /// A cell's units to draw: a slice of its story's units, and the top they are rebased to 0 from (a split row's part).
@@ -1078,8 +1272,14 @@ fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[C
                     other => Some(other.clone()),
                 })
                 .collect();
-            let atoms = placed.line.atoms.iter().copied().filter(|a| (lo..hi).contains(&(dx + a.0))).collect();
-            let line = Rc::new(LineFragment { items: items.into_boxed_slice(), pitch: placed.line.pitch, baseline: placed.line.baseline, atoms });
+            let atoms = placed.line.atoms.iter().copied().filter(|a| (lo..hi).contains(&(dx + a.x0))).collect();
+            let line = Rc::new(LineFragment {
+                items: items.into_boxed_slice(),
+                pitch: placed.line.pitch,
+                baseline: placed.line.baseline,
+                atoms,
+                changed: placed.line.changed,
+            });
             Child::Line { para: *para, placed: PlacedLine { line, ..placed.clone() } }
         }
         other => other.clone(),
@@ -1246,6 +1446,7 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         cells: cells.into_boxed_slice(),
         borders: borders.into_boxed_slice(),
         repeat: false,
+        changed: row.changed,
     }
 }
 
@@ -1286,6 +1487,7 @@ pub struct RowProbe<'a> {
 /// Rows equal for drawing: their cells' content the same layouts, everything else equal.
 fn same_row(a: &RowBox, b: &RowBox) -> bool {
     a.top_border == b.top_border
+        && a.changed == b.changed
         && a.exact == b.exact
         && a.gap_top == b.gap_top
         && a.seams == b.seams
@@ -1370,10 +1572,11 @@ pub fn table_units(tb: &TableLayout) -> (Vec<StoryUnit>, f64) {
     let mut y = 0.0;
     let mut units = Vec::new();
     let n = tb.rows.len();
-    for ri in 0..n {
+    for ri in (0..n).filter(|&ri| !tb.rows[ri].hidden) {
         let h = tb.rows[ri].height;
-        let row = draw_row(tb, ri, 0.0, 0.0, h, None, ri + 1 == n);
-        let extra = if ri + 1 == n { tb.bottom_border } else { 0.0 };
+        let last = tb.is_last(ri);
+        let row = draw_row(tb, ri, 0.0, 0.0, h, None, last);
+        let extra = if last { tb.bottom_border } else { 0.0 };
         let notes: Vec<(NoteKind, i64)> = tb.rows[ri].cells.iter().flat_map(|c| c.units.units.iter().flat_map(|u| u.notes.iter().copied())).collect();
         let fragment = Child::Table(TableFragment { table: tb.id, rows: Box::new([row]) });
         units.push(StoryUnit {

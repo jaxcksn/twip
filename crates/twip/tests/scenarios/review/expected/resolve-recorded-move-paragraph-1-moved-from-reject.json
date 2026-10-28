@@ -1,0 +1,228 @@
+{
+  "description": "reject one end of a move recorded by cutting and pasting the whole first paragraph to the start of the third: revision 1, a moved-from.",
+  "fixture": "three paragraphs \"First para.\" / \"Second para.\" / \"Third para.\", the move recorded by author \"Author A\"",
+  "scope": "one",
+  "revision": {
+    "index": 1,
+    "type": "wdRevisionMovedFrom",
+    "author": "Author A",
+    "text": "First para.\r"
+  },
+  "op": "reject",
+  "before": {
+    "stories": {
+      "body": [
+        {
+          "text": "First para.",
+          "runs": [
+            {
+              "text": "First para.",
+              "ins": null,
+              "del": null,
+              "move": "from",
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": "from"
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Second para.",
+          "runs": [
+            {
+              "text": "Second para.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "First para.",
+          "runs": [
+            {
+              "text": "First para.",
+              "ins": null,
+              "del": null,
+              "move": "to",
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": "to"
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Third para.",
+          "runs": [
+            {
+              "text": "Third para.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [
+      {
+        "type": "wdRevisionMovedFrom",
+        "author": "Author A",
+        "text": "First para.\r"
+      },
+      {
+        "type": "wdRevisionMovedTo",
+        "author": "Author A",
+        "text": "First para.\r"
+      }
+    ]
+  },
+  "error": null,
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "First para.",
+          "runs": [
+            {
+              "text": "First para.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Second para.",
+          "runs": [
+            {
+              "text": "Second para.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Third para.",
+          "runs": [
+            {
+              "text": "Third para.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": []
+  }
+}

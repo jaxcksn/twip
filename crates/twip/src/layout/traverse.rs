@@ -240,7 +240,7 @@ pub fn excluded(page: &PageFragment) -> Vec<(Option<ParaId>, Vec<Unit>)> {
 }
 
 /// A line on a page, for hit testing and the caret: its rectangle (page coordinates) and the paragraph units it
-/// shows (those with a source).
+/// shows (those with a source). A line showing several paragraphs (REV-6) has one per paragraph.
 #[derive(Clone, Debug)]
 pub struct SpatialLine {
     pub rect: [f64; 4],
@@ -281,19 +281,31 @@ pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
             if runs.peek().is_some() && runs.all(|it| below_page(it, y, h)) {
                 return;
             }
-            let mut units: Option<(Unit, Unit)> = None;
-            let mut right = x;
+            // One entry per paragraph the line shows: several where the view joins paragraphs (REV-6).
+            let first = lines.len();
             for it in p.line.items.iter() {
-                if let Item::Glyphs(r) = it {
-                    for &(_, cx, u) in r.chars.iter() {
-                        right = right.max(cx + x);
-                        if let Some(u) = u {
-                            units = Some(units.map_or((u, u), |(a, b)| (a.min(u), b.max(u))));
-                        }
+                let Item::Glyphs(r) = it else { continue };
+                let q = r.para.or(para);
+                let k = match lines[first..].iter().position(|l| l.para == q) {
+                    Some(k) => first + k,
+                    None => {
+                        // The line's first entry starts at its left edge, a later one where its text does.
+                        let left = if lines.len() == first { x } else { r.x + x };
+                        lines.push(SpatialLine { rect: [left, y, left, y + p.line.pitch], para: q, units: None });
+                        lines.len() - 1
+                    }
+                };
+                let l = &mut lines[k];
+                for &(_, cx, u) in r.chars.iter() {
+                    l.rect[2] = l.rect[2].max(cx + x);
+                    if let Some(u) = u {
+                        l.units = Some(l.units.map_or((u, u), |(a, b)| (a.min(u), b.max(u))));
                     }
                 }
             }
-            lines.push(SpatialLine { rect: [x, y, right, y + p.line.pitch], para, units });
+            if lines.len() == first {
+                lines.push(SpatialLine { rect: [x, y, x, y + p.line.pitch], para, units: None });
+            }
         }
     }
     fn walk(children: &[Child], dx: f64, dy: f64, h: f64, lines: &mut Vec<SpatialLine>, rows: &mut Vec<SpatialRow>) {
@@ -365,7 +377,8 @@ pub enum SpatialNode<'a> {
     Table(TableNode<'a>),
 }
 
-/// A drawn line: its glyph runs are relative to (`x`, `y`), the line's top left.
+/// A drawn line: its glyph runs are relative to (`x`, `y`), the line's top left. `para` is the paragraph laid out;
+/// the glyph runs and atoms name the paragraphs they show, several where the view joins paragraphs (REV-6).
 pub struct LineNode<'a> {
     pub para: Option<ParaId>,
     pub x: f64,
@@ -603,7 +616,7 @@ mod tests {
         PlacedLine {
             x: 5.0,
             y: 0.0,
-            line: Rc::new(LineFragment { items: Box::new([rect(0.0, colour)]), pitch: 12.0, baseline: 9.0, atoms: Box::new([]) }),
+            line: Rc::new(LineFragment { items: Box::new([rect(0.0, colour)]), pitch: 12.0, baseline: 9.0, atoms: Box::new([]), changed: false }),
         }
     }
 
@@ -632,6 +645,7 @@ mod tests {
                 }]),
                 borders: Box::new([rect(70.0, 3)]),
                 repeat: false,
+                changed: false,
             }]),
         };
         let column = BoxBuilder::new();
@@ -712,7 +726,13 @@ mod tests {
         let line = PlacedLine {
             x: 0.0,
             y: 0.0,
-            line: Rc::new(LineFragment { items: Box::new([run(100.0), run(900.0)]), pitch: 12.0, baseline: 9.0, atoms: Box::new([]) }),
+            line: Rc::new(LineFragment {
+                items: Box::new([run(100.0), run(900.0)]),
+                pitch: 12.0,
+                baseline: 9.0,
+                atoms: Box::new([]),
+                changed: false,
+            }),
         };
         let mut body = BoxBuilder::new();
         body.push(Child::Para(ParaFragment { para: ParaId(1), lines: Box::new([line]), line_numbers: Box::new([]) }));

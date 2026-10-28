@@ -1,0 +1,22 @@
+{
+  "id": "REV-RESOLVE-MOVES",
+  "title": "A move resolves both ends together from either end: accepting removes the text moved from, rejecting the text moved to.",
+  "fixture": "review/FX-REVIEW-MOVES.docx",
+  "steps": [
+    {"expect": {"revisions": ["MovedFrom Author A", "MovedTo Author A", "MovedFrom Author B", "MovedTo Author B"], "paragraphs": 6}},
+    {"command": "review.accept", "arg": 5},
+    {"expect": {"revisions": ["MovedFrom Author A", "MovedTo Author A"], "text": {"4": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Notice claim team export staff.. "}, "undo_depth": 1}},
+    {"command": "home.undo"},
+    {"command": "review.accept", "arg": 6},
+    {"expect": {"revisions": ["MovedFrom Author A", "MovedTo Author A"], "text": {"4": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Notice claim team export staff.. "}}},
+    {"command": "home.undo"},
+    {"command": "review.reject", "arg": 6},
+    {"expect": {"revisions": ["MovedFrom Author A", "MovedTo Author A"], "text": {"4": "Notice claim team export staff.. The meeting forecast hereby vendors practical schedule state entry estimate management action. "}}},
+    {"command": "home.undo"},
+    {"command": "review.accept", "arg": 1},
+    {"expect": {"revisions": ["MovedFrom Author B", "MovedTo Author B"], "paragraphs": 5, "text": {"1": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate.", "2": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional."}}},
+    {"command": "home.undo"},
+    {"command": "review.reject", "arg": 2},
+    {"expect": {"revisions": ["MovedFrom Author B", "MovedTo Author B"], "paragraphs": 5, "text": {"1": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional.", "2": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate."}}}
+  ]
+}

@@ -86,3 +86,11 @@ fn recorded_frames_are_canonical_and_follow_the_editor() {
     assert_eq!(frames.last(), Some(&now));
     assert_eq!(now, canonical(&r.e.view(0..pages)));
 }
+
+#[test]
+fn editing_state_is_the_same_on_a_second_run() {
+    // Ids the process hands out (paragraphs, controls) have moved on by the second run: nothing in the state may
+    // depend on them. New repeating-section items here get fresh control ids.
+    let f = scenario_files().into_iter().find(|f| f.to_string_lossy().contains("FUZZ-FX-MERGE-REGIONS-41")).expect("the scenario");
+    assert_eq!(states(&f, 0), states(&f, 0));
+}

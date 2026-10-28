@@ -1,0 +1,14 @@
+{
+  "id": "REV-RESOLVE-SECTION-PAGE",
+  "title": "A section property change: accepting keeps the landscape page and its margins, rejecting restores the page before it.",
+  "fixture": "review/FX-REVIEW-SECTIONS.docx",
+  "steps": [
+    {"expect": {"revisions": ["SectionProperty Author C"], "review": {"sections": [{"change": "Author C", "page": [792, 612], "margins": [54, 54, 54, 54]}]}}},
+    {"command": "review.accept", "arg": 1},
+    {"expect": {"revisions": [], "review": {"sections": [{"change": null, "page": [792, 612], "margins": [54, 54, 54, 54]}]}, "undo_depth": 1}},
+    {"command": "home.undo"},
+    {"expect": {"revisions": ["SectionProperty Author C"], "review": {"sections": [{"change": "Author C", "page": [792, 612]}]}}},
+    {"command": "review.reject", "arg": 1},
+    {"expect": {"revisions": [], "review": {"sections": [{"change": null, "page": [612, 792], "margins": [72, 72, 72, 72]}]}, "undo_depth": 1}}
+  ]
+}

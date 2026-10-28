@@ -337,7 +337,7 @@ impl Editor {
                     let story = geo.stories[l.story].story;
                     let s = l.nearest(x)?;
                     self.near = page;
-                    return Some(Position::text(story, l.para, s.unit));
+                    return Some(Position::text(story, s.para, s.unit));
                 }
             }
             first = false;
@@ -379,6 +379,7 @@ impl Editor {
             .filter(|l| matches!(geo.stories[l.story].story, StoryId::HeaderFooter(_)) && side(l))
             .min_by(|a, b| if above { a.top.total_cmp(&b.top) } else { b.top.total_cmp(&a.top) })?;
         self.near = page;
-        Some(Position::text(geo.stories[l.story].story, l.para, l.nearest(x)?.unit))
+        let s = l.nearest(x)?;
+        Some(Position::text(geo.stories[l.story].story, s.para, s.unit))
     }
 }

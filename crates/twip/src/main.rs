@@ -59,7 +59,11 @@ fn main() {
                 let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --depth <doc.docx> [n]".into())) };
                 return exit_on_error(cli::editlatency::run_depth(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(300)));
             }
-            let Some(doc) = a.first() else { return exit_on_error(Err("usage: editlatency [--depth] <doc.docx> [n]".into())) };
+            if a.first().is_some_and(|x| x == "--tracking") {
+                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --tracking <doc.docx> [n]".into())) };
+                return exit_on_error(cli::editlatency::run_tracking(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(100)));
+            }
+            let Some(doc) = a.first() else { return exit_on_error(Err("usage: editlatency [--depth|--merge|--tracking] <doc.docx> [n]".into())) };
             return exit_on_error(cli::editlatency::run(doc, a.get(1).and_then(|n| n.parse().ok()).unwrap_or(100)));
         }
         Some("roundtrip") => {
@@ -81,6 +85,11 @@ fn main() {
             let a: Vec<String> = args.skip(1).collect();
             let Some(doc) = a.first() else { return exit_on_error(Err("usage: fullbench <doc.docx> [runs]".into())) };
             return exit_on_error(cli::fullbench::run(doc, a.get(1).and_then(|n| n.parse().ok()).unwrap_or(5)));
+        }
+        Some("reviewbench") => {
+            // twip reviewbench <doc.docx>: open, view switches, accept and reject all (cli/reviewbench.rs).
+            let Some(doc) = args.nth(1) else { return exit_on_error(Err("usage: reviewbench <doc.docx>".into())) };
+            return exit_on_error(cli::reviewbench::run(&doc));
         }
         Some("memprofile") => {
             let a: Vec<String> = args.skip(1).collect();

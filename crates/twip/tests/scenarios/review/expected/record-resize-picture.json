@@ -1,0 +1,108 @@
+{
+  "description": "An inline picture in untracked text; with tracking on, resize picture.",
+  "setup": "a paragraph \"Before <picture> after.\" (a 160 x 120 px picture), tracking on, author \"Author A\"",
+  "initial": {
+    "stories": {
+      "body": [
+        {
+          "text": "Before ￼ after.",
+          "runs": [
+            {
+              "text": "Before ￼ after.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": []
+  },
+  "steps": [
+    {
+      "do": "resize picture",
+      "author": "Author A",
+      "picture": {
+        "before": {
+          "width": 120.0,
+          "height": 90.0,
+          "crop_left": 0.0
+        },
+        "after": [
+          {
+            "width": 180.0,
+            "height": 90.0,
+            "crop_left": 0.0
+          }
+        ]
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Before ￼ after.",
+              "runs": [
+                {
+                  "text": "Before ￼ after.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": []
+      }
+    }
+  ]
+}

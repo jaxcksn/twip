@@ -1,0 +1,139 @@
+{
+ "id": "RECORD-DELETE-OTHER-INSERTION",
+ "title": "Deleting another author's insertion deletes it on top",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  {
+   "type": "Alpha beta gamma."
+  },
+  {
+   "command": "review.track",
+   "arg": "on"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author B"
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 6
+   }
+  },
+  {
+   "type": "new "
+  },
+  {
+   "expect": {
+    "caret": {
+     "para": 0,
+     "offset": 10
+    },
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "Alpha new beta gamma.",
+        "runs": [
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "new ",
+          "ins": "Author B",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "command": "review.author",
+   "arg": "Author A"
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 6
+   }
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 10
+   },
+   "shift": true
+  },
+  {
+   "key": "Delete"
+  },
+  {
+   "expect": {
+    "caret": {
+     "para": 0,
+     "offset": 10
+    },
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "Alpha new beta gamma.",
+        "runs": [
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "new ",
+          "ins": "Author B",
+          "del": "Author A",
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

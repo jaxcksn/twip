@@ -1,0 +1,14 @@
+{
+  "id": "REV-RESOLVE-MARK-DELETED",
+  "title": "A deleted paragraph mark: accepting joins the paragraph with the next, which gives it its properties; rejecting keeps the mark.",
+  "fixture": "review/FX-REVIEW-MARKS.docx",
+  "steps": [
+    {"expect": {"paragraphs": 9, "revisions": ["Delete Author B", "Insert Author A", "ParagraphProperty Author C", "ParagraphProperty Author A"]}},
+    {"command": "review.accept", "arg": 1},
+    {"expect": {"text": {"1": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility.Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility."}, "revisions": ["Insert Author A", "ParagraphProperty Author C", "ParagraphProperty Author A"], "paragraphs": 8, "jc": {"1": "left"}, "undo_depth": 1}},
+    {"command": "home.undo"},
+    {"expect": {"paragraphs": 9, "revisions": ["Delete Author B", "Insert Author A", "ParagraphProperty Author C", "ParagraphProperty Author A"]}},
+    {"command": "review.reject", "arg": 1},
+    {"expect": {"text": {"1": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility."}, "revisions": ["Insert Author A", "ParagraphProperty Author C", "ParagraphProperty Author A"], "paragraphs": 9, "jc": {"1": "center"}, "undo_depth": 1}}
+  ]
+}

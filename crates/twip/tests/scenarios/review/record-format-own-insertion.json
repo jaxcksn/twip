@@ -1,0 +1,138 @@
+{
+ "id": "RECORD-FORMAT-OWN-INSERTION",
+ "title": "Formatting the author's own insertion records a format change",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  {
+   "type": "Alpha beta gamma."
+  },
+  {
+   "command": "review.track",
+   "arg": "on"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author A"
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 6
+   }
+  },
+  {
+   "type": "new "
+  },
+  {
+   "expect": {
+    "caret": {
+     "para": 0,
+     "offset": 10
+    },
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "Alpha new beta gamma.",
+        "runs": [
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "new ",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 6
+   }
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 9
+   },
+   "shift": true
+  },
+  {
+   "command": "home.bold"
+  },
+  {
+   "expect": {
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "Alpha new beta gamma.",
+        "runs": [
+         {
+          "text": "Alpha ",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "new",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": "Author A"
+         },
+         {
+          "text": " ",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         },
+         {
+          "text": "beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

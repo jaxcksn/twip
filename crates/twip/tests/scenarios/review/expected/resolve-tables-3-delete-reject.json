@@ -1,0 +1,727 @@
+{
+  "description": "reject one revision of FX-REVIEW-TABLES.docx: number 3 in document order, a delete by Author B.",
+  "fixture": "FX-REVIEW-TABLES.docx",
+  "scope": "one",
+  "revision": {
+    "index": 3,
+    "type": "wdRevisionDelete",
+    "author": "Author B",
+    "text": "Pilot receipt corporate requirement.\r\u0007Regional maintenance accessibility tax.\r\u0007Trend suggestions board order.\r\u0007\r\u0007"
+  },
+  "op": "reject",
+  "error": null,
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action.",
+          "runs": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "table": {
+            "change": null,
+            "tblpr": [
+              "jc:val=center",
+              "tblBorders[bottom:color=000000,space=0,sz=4,val=single;insideH:color=000000,space=0,sz=4,val=single;insideV:color=000000,space=0,sz=4,val=single;left:color=000000,space=0,sz=4,val=single;right:color=000000,space=0,sz=4,val=single;top:color=000000,space=0,sz=4,val=single]",
+              "tblLayout:type=fixed",
+              "tblLook:firstColumn=1,firstRow=1,lastColumn=0,lastRow=0,noHBand=0,noVBand=1,val=04A0",
+              "tblW:type=dxa,w=9360"
+            ],
+            "grid": [
+              3120,
+              3120,
+              3120
+            ],
+            "grid_change": "",
+            "rows": [
+              {
+                "ins": null,
+                "del": null,
+                "change": null,
+                "ex_change": null,
+                "trpr": [
+                  "jc:val=center"
+                ],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "The meeting forecast hereby.",
+                        "runs": [
+                          {
+                            "text": "The meeting forecast hereby.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Inventory relevant group relief.",
+                        "runs": [
+                          {
+                            "text": "Inventory relevant group relief.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Notice claim team export.",
+                        "runs": [
+                          {
+                            "text": "Notice claim team export.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "ins": "Author A",
+                "del": null,
+                "change": null,
+                "ex_change": null,
+                "trpr": [
+                  "jc:val=center"
+                ],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Pilot receipt corporate requirement.",
+                        "runs": [
+                          {
+                            "text": "Pilot receipt corporate requirement.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Regional maintenance accessibility tax.",
+                        "runs": [
+                          {
+                            "text": "Regional maintenance accessibility tax.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Trend suggestions board order.",
+                        "runs": [
+                          {
+                            "text": "Trend suggestions board order.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "ins": null,
+                "del": null,
+                "change": "Author C",
+                "ex_change": "Author C",
+                "trpr": [
+                  "jc:val=center",
+                  "trHeight:val=720"
+                ],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": "Author C",
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "The meeting forecast hereby.",
+                        "runs": [
+                          {
+                            "text": "The meeting forecast hereby.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": "Author C",
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Inventory relevant group relief.",
+                        "runs": [
+                          {
+                            "text": "Inventory relevant group relief.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": "Author C",
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Notice claim team export.",
+                        "runs": [
+                          {
+                            "text": "Notice claim team export.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "ins": null,
+                "del": null,
+                "change": null,
+                "ex_change": null,
+                "trpr": [
+                  "jc:val=center"
+                ],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Pilot receipt corporate requirement.",
+                        "runs": [
+                          {
+                            "text": "Pilot receipt corporate requirement.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Regional maintenance accessibility tax.",
+                        "runs": [
+                          {
+                            "text": "Regional maintenance accessibility tax.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": null,
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Trend suggestions board order.",
+                        "runs": [
+                          {
+                            "text": "Trend suggestions board order.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "ins": null,
+                "del": null,
+                "change": "Author C",
+                "ex_change": "Author C",
+                "trpr": [
+                  "jc:val=center"
+                ],
+                "cells": [
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": "Author C",
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "shd:color=auto,fill=D9E2F3,val=clear",
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "The meeting forecast hereby.",
+                        "runs": [
+                          {
+                            "text": "The meeting forecast hereby.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": "Author C",
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Inventory relevant group relief.",
+                        "runs": [
+                          {
+                            "text": "Inventory relevant group relief.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  },
+                  {
+                    "ins": null,
+                    "del": null,
+                    "merge": null,
+                    "change": "Author C",
+                    "vmerge": null,
+                    "span": 1,
+                    "tcpr": [
+                      "tcW:type=dxa,w=3120"
+                    ],
+                    "blocks": [
+                      {
+                        "text": "Notice claim team export.",
+                        "runs": [
+                          {
+                            "text": "Notice claim team export.",
+                            "ins": null,
+                            "del": null,
+                            "move": null,
+                            "fmt": null,
+                            "rpr": [],
+                            "was": null
+                          }
+                        ],
+                        "mark": {
+                          "ins": null,
+                          "del": null,
+                          "move": null
+                        },
+                        "pchange": null,
+                        "ppr": [],
+                        "pwas": null,
+                        "num": null,
+                        "numchange": null
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "text": "Regional maintenance accessibility tax finds record proposal denied contract onboarding support network.",
+          "runs": [
+            {
+              "text": "Regional maintenance accessibility tax finds record proposal denied contract onboarding support network.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [
+      {
+        "type": "wdRevisionInsert",
+        "author": "Author A",
+        "text": "Pilot receipt corporate requirement.\r\u0007Regional maintenance accessibility tax.\r\u0007Trend suggestions board order.\r\u0007\r\u0007"
+      },
+      {
+        "type": "wdRevisionTableProperty",
+        "author": "Author C",
+        "text": "The meeting forecast hereby.\r\u0007Inventory relevant group relief.\r\u0007Notice claim team export.\r\u0007\r\u0007"
+      },
+      {
+        "type": "wdRevisionTableProperty",
+        "author": "Author C",
+        "text": "The meeting forecast hereby.\r\u0007Inventory relevant group relief.\r\u0007Notice claim team export.\r\u0007\r\u0007"
+      }
+    ]
+  }
+}

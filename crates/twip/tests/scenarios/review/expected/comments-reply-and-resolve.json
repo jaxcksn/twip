@@ -1,0 +1,537 @@
+{
+  "description": "A reply to a comment, a reply by another author, then the thread resolved and reopened.",
+  "setup": "one paragraph \"Alpha beta gamma.\" with a comment \"Root\" on \"beta\" by \"Author A\"",
+  "steps": [
+    {
+      "do": "reply \"Reply one\"",
+      "author": "Author A",
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Root",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Reply one",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": 1,
+            "done": false
+          }
+        ]
+      },
+      "storage": {
+        "parts": [
+          "comments.xml",
+          "commentsExtended.xml",
+          "commentsIds.xml",
+          "commentsExtensible.xml",
+          "people.xml"
+        ],
+        "comments_extended": [
+          {
+            "has_parent": false,
+            "done": false
+          },
+          {
+            "has_parent": true,
+            "done": false
+          }
+        ],
+        "people": [
+          "Author A"
+        ]
+      }
+    },
+    {
+      "do": "as \"Author B\": reply \"Reply two\"",
+      "author": "Author A",
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Root",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Reply one",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": 1,
+            "done": false
+          },
+          {
+            "author": "Author B",
+            "initials": "AB",
+            "text": "Reply two",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": 1,
+            "done": false
+          }
+        ]
+      },
+      "storage": {
+        "parts": [
+          "comments.xml",
+          "commentsExtended.xml",
+          "commentsIds.xml",
+          "commentsExtensible.xml",
+          "people.xml"
+        ],
+        "comments_extended": [
+          {
+            "has_parent": false,
+            "done": false
+          },
+          {
+            "has_parent": true,
+            "done": false
+          },
+          {
+            "has_parent": true,
+            "done": false
+          }
+        ],
+        "people": [
+          "Author A",
+          "Author B"
+        ]
+      }
+    },
+    {
+      "do": "mark the root comment done (resolved)",
+      "author": "Author A",
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Root",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": null,
+            "done": true
+          },
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Reply one",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": 1,
+            "done": true
+          },
+          {
+            "author": "Author B",
+            "initials": "AB",
+            "text": "Reply two",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": 1,
+            "done": true
+          }
+        ]
+      },
+      "storage": {
+        "parts": [
+          "comments.xml",
+          "commentsExtended.xml",
+          "commentsIds.xml",
+          "commentsExtensible.xml",
+          "people.xml"
+        ],
+        "comments_extended": [
+          {
+            "has_parent": false,
+            "done": true
+          },
+          {
+            "has_parent": true,
+            "done": true
+          },
+          {
+            "has_parent": true,
+            "done": true
+          }
+        ],
+        "people": [
+          "Author A",
+          "Author B"
+        ]
+      }
+    },
+    {
+      "do": "mark the root comment not done (reopened)",
+      "author": "Author A",
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Root",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Reply one",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": 1,
+            "done": false
+          },
+          {
+            "author": "Author B",
+            "initials": "AB",
+            "text": "Reply two",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": 1,
+            "done": false
+          }
+        ]
+      },
+      "storage": {
+        "parts": [
+          "comments.xml",
+          "commentsExtended.xml",
+          "commentsIds.xml",
+          "commentsExtensible.xml",
+          "people.xml"
+        ],
+        "comments_extended": [
+          {
+            "has_parent": false,
+            "done": false
+          },
+          {
+            "has_parent": true,
+            "done": false
+          },
+          {
+            "has_parent": true,
+            "done": false
+          }
+        ],
+        "people": [
+          "Author A",
+          "Author B"
+        ]
+      }
+    },
+    {
+      "do": "delete the root comment",
+      "author": "Author A",
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [],
+        "comments": [
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Root",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": null,
+            "done": false
+          },
+          {
+            "author": "Author A",
+            "initials": "AA",
+            "text": "Reply one",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": 1,
+            "done": false
+          },
+          {
+            "author": "Author B",
+            "initials": "AB",
+            "text": "Reply two",
+            "scope": "beta",
+            "start": 6,
+            "end": 10,
+            "parent": 1,
+            "done": false
+          }
+        ]
+      },
+      "error": "You can't delete this comment without also deleting its replies. You can use DeleteRecursively to delete them all.",
+      "storage": {
+        "parts": [
+          "comments.xml",
+          "commentsExtended.xml",
+          "commentsIds.xml",
+          "commentsExtensible.xml",
+          "people.xml"
+        ],
+        "comments_extended": [
+          {
+            "has_parent": false,
+            "done": false
+          },
+          {
+            "has_parent": true,
+            "done": false
+          },
+          {
+            "has_parent": true,
+            "done": false
+          }
+        ],
+        "people": [
+          "Author A",
+          "Author B"
+        ]
+      }
+    }
+  ]
+}

@@ -20,23 +20,28 @@ use super::position::{Affinity, StoryId};
 /// (table, row, model cell index).
 pub type CellKey = (TableId, usize, usize);
 
-/// A caret stop: a unit boundary's x on a line. `end` marks the line's last stop (after its last character).
+/// A caret stop: a paragraph's unit boundary's x on a line. `end` marks its paragraph's last stop on the line (after
+/// its last character there).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Stop {
     pub x: f64,
+    pub para: ParaId,
     pub unit: Unit,
     pub end: bool,
 }
 
+/// A drawn line. It shows one paragraph, or several where the markup view joins paragraphs (REV-6): its stops say
+/// whose units they are.
 #[derive(Debug)]
 pub struct GLine {
     pub story: usize,
     pub chain: Rc<[CellKey]>,
-    pub para: ParaId,
+    /// The paragraphs it shows, in order.
+    pub paras: Vec<ParaId>,
     pub top: f64,
     pub bottom: f64,
-    /// Its inline pictures as layout draws them: unit and box (page coordinates).
-    pub pictures: Vec<(Unit, [f64; 4])>,
+    /// Its inline pictures as layout draws them: paragraph, unit and box (page coordinates).
+    pub pictures: Vec<(ParaId, Unit, [f64; 4])>,
     /// Stops in x order (left to right).
     pub stops: Vec<Stop>,
     /// In a repeated header row's copy: clicks resolve to the original row's positions, and the caret and
@@ -45,12 +50,29 @@ pub struct GLine {
 }
 
 impl GLine {
-    pub fn first(&self) -> Unit {
-        self.stops.first().map_or(Unit(0), |s| s.unit)
+    /// Whether the line shows `para`.
+    pub fn shows(&self, para: ParaId) -> bool {
+        self.paras.contains(&para)
     }
 
-    pub fn last(&self) -> Unit {
-        self.stops.last().map_or(Unit(0), |s| s.unit)
+    /// The first paragraph it shows.
+    pub fn para(&self) -> Option<ParaId> {
+        self.paras.first().copied()
+    }
+
+    /// `para`'s first unit on the line (its leftmost stop).
+    pub fn first_of(&self, para: ParaId) -> Option<Unit> {
+        self.stops.iter().find(|s| s.para == para).map(|s| s.unit)
+    }
+
+    /// `para`'s last unit on the line (its rightmost stop).
+    pub fn last_of(&self, para: ParaId) -> Option<Unit> {
+        self.stops.iter().rfind(|s| s.para == para).map(|s| s.unit)
+    }
+
+    /// Where `para`'s part of the line starts and ends: its leftmost and rightmost stops' x.
+    pub fn span_of(&self, para: ParaId) -> Option<(f64, f64)> {
+        Some((self.stops.iter().find(|s| s.para == para)?.x, self.stops.iter().rfind(|s| s.para == para)?.x))
     }
 
     pub fn x0(&self) -> f64 {
@@ -61,15 +83,27 @@ impl GLine {
         self.stops.last().map_or(0.0, |s| s.x)
     }
 
-    /// The stop nearest `x`.
+    /// The stop nearest `x`. Where two paragraphs meet at one x (REV-6), a point right of it is in the later one.
     pub fn nearest(&self, x: f64) -> Option<Stop> {
-        self.stops.iter().copied().min_by(|a, b| (a.x - x).abs().total_cmp(&(b.x - x).abs()))
+        let (k, s) = self.stops.iter().enumerate().min_by(|a, b| (a.1.x - x).abs().total_cmp(&(b.1.x - x).abs()))?;
+        let same = self.stops[k..].iter().take_while(|t| (t.x - s.x).abs() < 0.01);
+        Some(*if x > s.x { same.filter(|t| t.para != s.para).last().unwrap_or(s) } else { s })
     }
 
-    /// The x of unit `u` on this line (the closest stop at or before it).
-    pub fn x_of(&self, u: Unit) -> Option<f64> {
-        self.stops.iter().filter(|s| s.unit <= u).max_by_key(|s| s.unit).map(|s| s.x)
+    /// The x of `para`'s unit `u` on this line (the closest stop at or before it).
+    pub fn x_of(&self, para: ParaId, u: Unit) -> Option<f64> {
+        self.stops.iter().filter(|s| s.para == para && s.unit <= u).max_by_key(|s| s.unit).map(|s| s.x)
     }
+}
+
+/// One paragraph's part of a line while its stops are collected: its stops, its end (x, unit), and the caret places
+/// of a line where it draws no characters (a run without glyphs, or after a list label).
+struct Part {
+    para: ParaId,
+    stops: Vec<Stop>,
+    end: Option<(f64, Unit)>,
+    empty_at: Option<f64>,
+    label_end: Option<f64>,
 }
 
 #[derive(Debug)]
@@ -184,7 +218,7 @@ impl PageGeometry {
             if g.stories[si].story != StoryId::Body || !g.lines[i].chain.is_empty() {
                 continue;
             }
-            let Some(slot) = idx.para_slot(g.lines[i].para) else { continue };
+            let Some(slot) = g.lines[i].para().and_then(|p| idx.para_slot(p)) else { continue };
             let s = idx.story(slot.container);
             if s == StoryId::Body {
                 continue;
@@ -254,18 +288,25 @@ impl PageGeometry {
     }
 
     fn line(&mut self, l: &LineNode, story: usize, chain: &Rc<[CellKey]>, repeat: bool) {
-        let Some(para) = l.para else { return };
-        let mut stops: Vec<Stop> = Vec::new();
-        let mut end: Option<(f64, Unit)> = None;
-        let mut empty_at: Option<f64> = None;
-        let mut label_end: Option<f64> = None;
+        let Some(own) = l.para else { return };
+        // Each paragraph's part of the line, in the order drawn (one, unless the view joins paragraphs, REV-6).
+        let mut parts: Vec<Part> = Vec::new();
+        fn part(parts: &mut Vec<Part>, para: ParaId) -> &mut Part {
+            let k = match parts.iter().position(|p| p.para == para) {
+                Some(k) => k,
+                None => {
+                    parts.push(Part { para, stops: Vec::new(), end: None, empty_at: None, label_end: None });
+                    parts.len() - 1
+                }
+            };
+            &mut parts[k]
+        }
         for it in l.line.items.iter() {
             let Item::Glyphs(r) = it else { continue };
-            if r.para.is_some_and(|p| p != para) {
-                continue;
-            }
+            let Part { stops, end, empty_at, label_end, para } = part(&mut parts, r.para.unwrap_or(own));
+            let para = *para;
             if r.chars.is_empty() {
-                // An empty line's caret position.
+                // An empty line's caret position, or a paragraph's that draws nothing here.
                 empty_at.get_or_insert(l.x + r.x);
                 continue;
             }
@@ -287,56 +328,78 @@ impl PageGeometry {
             }
             if r.chars.iter().all(|c| c.2.is_none()) {
                 // A list label (no units): an empty item's caret goes after it.
-                label_end = Some(label_end.map_or(l.x + end_x, |e: f64| e.max(l.x + end_x)));
+                *label_end = Some(label_end.map_or(l.x + end_x, |e: f64| e.max(l.x + end_x)));
             }
             for (k, c) in r.chars.iter().enumerate() {
                 if let Some(u) = c.2 {
-                    stops.push(Stop { x: l.x + xs[k], unit: u, end: false });
+                    stops.push(Stop { x: l.x + xs[k], para, unit: u, end: false });
                     if end.is_none_or(|(_, eu)| u.0 + 1 > eu.0) {
-                        end = Some((l.x + end_x, Unit(u.0 + 1)));
+                        *end = Some((l.x + end_x, Unit(u.0 + 1)));
                     }
                 }
             }
         }
-        // Pictures and tabs: a stop before each, and the line's end after the last.
-        if let Some(&(_, _, u, _)) = l.line.atoms.iter().filter(|a| a.3).max_by_key(|a| a.2) {
-            self.after_break.insert(para, Unit(u.0 + 1));
+        // Pictures and tabs: a stop before each, and the paragraph's end on the line after the last.
+        let mut breaks: Vec<(ParaId, Unit)> = Vec::new();
+        for a in l.line.atoms.iter().filter(|a| a.brk) {
+            match breaks.iter_mut().find(|b| b.0 == a.para) {
+                Some(b) => b.1 = b.1.max(a.unit),
+                None => breaks.push((a.para, a.unit)),
+            }
         }
-        for &(x0, x1, u, brk) in l.line.atoms.iter() {
+        for (p, u) in breaks {
+            self.after_break.insert(p, Unit(u.0 + 1));
+        }
+        for a in l.line.atoms.iter() {
+            let Part { stops, end, .. } = part(&mut parts, a.para);
             // A break ends its line: the line's last caret place is before it (End, a click past the line's end).
-            let after = if brk { u } else { Unit(u.0 + 1) };
-            if !brk {
-                stops.push(Stop { x: l.x + x0, unit: u, end: false });
+            let after = if a.brk { a.unit } else { Unit(a.unit.0 + 1) };
+            if !a.brk {
+                stops.push(Stop { x: l.x + a.x0, para: a.para, unit: a.unit, end: false });
             }
-            if end.is_none_or(|(_, eu)| after.0 > eu.0 || (brk && after.0 >= eu.0)) {
-                end = Some((l.x + if brk { x0 } else { x1 }, after));
+            if end.is_none_or(|(_, eu)| after.0 > eu.0 || (a.brk && after.0 >= eu.0)) {
+                *end = Some((l.x + if a.brk { a.x0 } else { a.x1 }, after));
             }
         }
-        // A stop for the end unit already there (an atom's) gives way to the end stop.
-        if let Some((_, eu)) = end {
-            stops.retain(|s| s.unit != eu);
+        let mut done: Vec<(ParaId, Vec<Stop>)> = Vec::new();
+        for p in parts {
+            let mut own = p.stops;
+            // A stop for the end unit already there (an atom's) gives way to the end stop.
+            if let Some((_, eu)) = p.end {
+                own.retain(|s| s.unit != eu);
+            }
+            match p.end {
+                Some((x, u)) => own.push(Stop { x, para: p.para, unit: u, end: true }),
+                None => match p.empty_at.or(p.label_end) {
+                    // An empty line: the paragraph's start, or after a trailing break its end (the units before it).
+                    Some(x) => {
+                        let unit = self
+                            .after_break
+                            .get(&p.para)
+                            .copied()
+                            .unwrap_or_else(|| self.lines.iter().filter_map(|m| m.last_of(p.para)).max().unwrap_or(Unit(0)));
+                        own.push(Stop { x, para: p.para, unit, end: true })
+                    }
+                    None => continue,
+                },
+            }
+            done.push((p.para, own));
         }
-        match end {
-            Some((x, u)) => stops.push(Stop { x, unit: u, end: true }),
-            None => match empty_at.or(label_end) {
-                // An empty line: the paragraph's start, or after a trailing break its end (the units before it).
-                Some(x) => {
-                    let unit = self
-                        .after_break
-                        .get(&para)
-                        .copied()
-                        .unwrap_or_else(|| self.lines.iter().filter(|m| m.para == para).map(|m| m.last()).max().unwrap_or(Unit(0)));
-                    stops.push(Stop { x, unit, end: true })
-                }
-                None => return,
-            },
+        if done.is_empty() {
+            return;
         }
-        stops.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.unit.cmp(&b.unit)));
+        // Paragraphs side by side (REV-6) in order: by where they start, and where two meet at one x, as drawn.
+        let left = |s: &[Stop]| s.iter().map(|s| s.x).fold(f64::INFINITY, f64::min);
+        done.sort_by(|a, b| left(&a.1).total_cmp(&left(&b.1)));
+        let paras: Vec<ParaId> = done.iter().map(|d| d.0).collect();
+        let mut stops: Vec<Stop> = done.into_iter().flat_map(|d| d.1).collect();
+        let order = |q: ParaId| paras.iter().position(|&p| p == q);
+        stops.sort_by(|a, b| a.x.total_cmp(&b.x).then(order(a.para).cmp(&order(b.para))).then(a.unit.cmp(&b.unit)));
         // A field's drawn value or label is one unit: only its first glyph is a stop, so a click on its far half
         // goes after it (to the next unit's stop).
-        stops.dedup_by(|b, a| a.unit == b.unit && !b.end);
+        stops.dedup_by(|b, a| a.para == b.para && a.unit == b.unit && !b.end);
         if !repeat {
-            self.paras.insert(para);
+            self.paras.extend(paras.iter().copied());
         }
         // The drawn picture items, each the atom that starts where it does.
         let pictures = l
@@ -345,11 +408,11 @@ impl PageGeometry {
             .iter()
             .filter_map(|it| if let Item::Image { rect, .. } = it { Some(*rect) } else { None })
             .filter_map(|r| {
-                let &(_, _, u, _) = l.line.atoms.iter().find(|a| !a.3 && (a.0 - r[0]).abs() < 0.01)?;
-                Some((u, [l.x + r[0], l.y + r[1], l.x + r[2], l.y + r[3]]))
+                let a = l.line.atoms.iter().find(|a| !a.brk && (a.x0 - r[0]).abs() < 0.01)?;
+                Some((a.para, a.unit, [l.x + r[0], l.y + r[1], l.x + r[2], l.y + r[3]]))
             })
             .collect();
-        self.lines.push(GLine { story, chain: chain.clone(), para, top: l.y, bottom: l.y + l.line.pitch, pictures, stops, repeat });
+        self.lines.push(GLine { story, chain: chain.clone(), paras, top: l.y, bottom: l.y + l.line.pitch, pictures, stops, repeat });
     }
 
     pub fn shows_para(&self, p: ParaId) -> bool {
@@ -362,21 +425,23 @@ impl PageGeometry {
 
     /// The lines showing `para`, in flow order (not repeated header copies).
     pub fn lines_of(&self, para: ParaId) -> impl Iterator<Item = (usize, &GLine)> {
-        self.lines.iter().enumerate().filter(move |(_, l)| l.para == para && !l.repeat)
+        self.lines.iter().enumerate().filter(move |(_, l)| l.shows(para) && !l.repeat)
     }
 
     /// The line showing unit `u` of `para` with the given affinity: at a wrap the same unit ends one line (upstream)
     /// and starts the next (downstream).
     pub fn line_at(&self, para: ParaId, u: Unit, affinity: Affinity) -> Option<usize> {
-        let mut found: Vec<usize> = self.lines_of(para).filter(|(_, l)| l.first() <= u && u <= l.last()).map(|(i, _)| i).collect();
+        let first = |l: &GLine| l.first_of(para).unwrap_or_default();
+        let last = |l: &GLine| l.last_of(para).unwrap_or_default();
+        let mut found: Vec<usize> = self.lines_of(para).filter(|(_, l)| first(l) <= u && u <= last(l)).map(|(i, _)| i).collect();
         if found.is_empty() {
             // A unit without a stop of its own (inside a field): the last line starting at or before it.
-            return self.lines_of(para).filter(|(_, l)| l.first() <= u).map(|(i, _)| i).last();
+            return self.lines_of(para).filter(|(_, l)| first(l) <= u).map(|(i, _)| i).last();
         }
         if found.len() > 1 {
             let i = match affinity {
-                Affinity::Upstream => *found.iter().find(|&&i| self.lines[i].last() == u).unwrap_or(&found[0]),
-                Affinity::Downstream => *found.iter().rev().find(|&&i| self.lines[i].first() == u).unwrap_or(&found[found.len() - 1]),
+                Affinity::Upstream => *found.iter().find(|&&i| last(&self.lines[i]) == u).unwrap_or(&found[0]),
+                Affinity::Downstream => *found.iter().rev().find(|&&i| first(&self.lines[i]) == u).unwrap_or(&found[found.len() - 1]),
             };
             found = vec![i];
         }
@@ -387,7 +452,7 @@ impl PageGeometry {
     pub fn caret(&self, para: ParaId, u: Unit, affinity: Affinity) -> Option<CaretRect> {
         if let Some(i) = self.line_at(para, u, affinity) {
             let l = &self.lines[i];
-            let x = l.x_of(u)?;
+            let x = l.x_of(para, u)?;
             return Some(CaretRect { x, top: l.top, bottom: l.bottom });
         }
         // A closing paragraph after a nested table.
@@ -549,10 +614,10 @@ impl PageGeometry {
                 .min_by(|a, b| line_dist(a, x, y).total_cmp(&line_dist(b, x, y)))?,
         };
         let stop = line.nearest(x)?;
-        let wraps = stop.end && self.lines.iter().any(|m| m.para == line.para && m.first() == stop.unit && !std::ptr::eq(m, line));
+        let wraps = stop.end && self.lines.iter().any(|m| m.first_of(stop.para) == Some(stop.unit) && !std::ptr::eq(m, line));
         Some(TextHit {
             story,
-            para: line.para,
+            para: stop.para,
             unit: stop.unit,
             affinity: if wraps { Affinity::Upstream } else { Affinity::Downstream },
             repeat: line.repeat,
@@ -669,12 +734,12 @@ impl Pages {
             let Some(i) = geo.line_at(para, u, affinity) else { continue };
             let l = &geo.lines[i];
             if affinity == Affinity::Downstream
-                && l.last() == u
-                && l.first() != u
+                && l.last_of(para) == Some(u)
+                && l.first_of(para) != Some(u)
                 && let Some(&next) = pages.get(k + 1)
                 && let Some(g2) = self.page(next, idx)
             {
-                let j = g2.lines_of(para).find(|(_, m)| m.first() == u).map(|(j, _)| j);
+                let j = g2.lines_of(para).find(|(_, m)| m.first_of(para) == Some(u)).map(|(j, _)| j);
                 if let Some(j) = j {
                     return Some((next, g2, j));
                 }

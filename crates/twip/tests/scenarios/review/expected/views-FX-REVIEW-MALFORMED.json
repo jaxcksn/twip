@@ -1,0 +1,5 @@
+{
+  "description": "FX-REVIEW-MALFORMED.docx is refused on open (reported as corrupted), so it has no views.",
+  "fixture": "FX-REVIEW-MALFORMED.docx",
+  "opens": false
+}

@@ -110,6 +110,7 @@ impl Resolver {
             lang: p.lang.clone().unwrap_or_default(),
             style_id: p.style.clone(),
             direct: Raw::default(),
+            rev: Default::default(),
         })
     }
 
@@ -155,6 +156,7 @@ impl Resolver {
             num: None,
             list_fmt: None,
             direct: Raw::default(),
+            change: None,
         }
     }
 
@@ -351,12 +353,17 @@ mod tests {
                     if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
                         continue;
                     }
-                    let r = res.para_from_xml(p.style.direct.0.as_deref(), region, cx);
+                    // Revisions aren't formatting: they come from the elements around the direct XML, so they're
+                    // carried over before comparing.
+                    let mut r = res.para_from_xml(p.style.direct.0.as_deref(), region, cx);
+                    r.style.change = p.style.change.clone();
                     assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
-                    assert_eq!(*p.mark, *res.run_from_xml(&r.base, p.mark.direct.0.as_deref(), cx), "{what}: the mark of {:?}", p.id);
+                    let with_rev = |again: Run, read: &Run| RunStyle { rev: read.rev.clone(), ..(*again).clone() };
+                    let mark = with_rev(res.run_from_xml(&r.base, p.mark.direct.0.as_deref(), cx), &p.mark);
+                    assert_eq!(*p.mark, mark, "{what}: the mark of {:?}", p.id);
                     for i in &p.inlines {
                         if let Inline::Text(t, run) = i {
-                            assert_eq!(**run, *res.rerun(&r.base, run, cx), "{what}: run {t:?} of {:?}", p.id);
+                            assert_eq!(**run, with_rev(res.rerun(&r.base, run, cx), run), "{what}: run {t:?} of {:?}", p.id);
                             *checked += 1;
                         }
                     }

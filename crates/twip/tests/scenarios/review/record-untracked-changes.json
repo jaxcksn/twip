@@ -1,0 +1,72 @@
+{
+ "id": "RECORD-UNTRACKED-CHANGES",
+ "title": "Making a header is untracked; text typed in it is tracked",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  {
+   "type": "Alpha beta gamma."
+  },
+  {
+   "command": "review.track",
+   "arg": "on"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author A"
+  },
+  {
+   "command": "insert.header"
+  },
+  {
+   "type": "Header"
+  },
+  {
+   "expect": {
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "Alpha beta gamma.",
+        "runs": [
+         {
+          "text": "Alpha beta gamma.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ],
+      "header-default": [
+       {
+        "text": "Header",
+        "runs": [
+         {
+          "text": "Header",
+          "ins": "Author A",
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": null
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

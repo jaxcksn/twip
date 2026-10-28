@@ -111,21 +111,28 @@ impl Editor {
         let n = self.nav().pages.len();
         'pages: for page in 0..n {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
-            for l in geo.lines.iter().filter(|l| !l.repeat && geo.stories[l.story].story == anchor.story) {
-                let (first, last) = (l.first(), l.last());
-                let hits = [on(&anchor, l.para, first, last), on(&focus, l.para, first, last)];
+            // Each paragraph's part of each line (a line shows several where the view joins them, REV-6).
+            let parts = geo
+                .lines
+                .iter()
+                .filter(|l| !l.repeat && geo.stories[l.story].story == anchor.story)
+                .flat_map(|l| l.paras.iter().map(move |&p| (l, p)));
+            for (l, para) in parts {
+                let (Some(first), Some(last)) = (l.first_of(para), l.last_of(para)) else { continue };
+                let hits = [on(&anchor, para, first, last), on(&focus, para, first, last)];
                 let starts = hits.iter().any(|h| *h);
                 if !inside && !starts {
                     continue;
                 }
-                let same_level = self.index.para_slot(l.para).map(|s| self.index.chain(s.container)) == Some(chain.clone());
+                let same_level = self.index.para_slot(para).map(|s| self.index.chain(s.container)) == Some(chain.clone());
                 if same_level {
-                    let lo = l.stops.iter().filter(|s| s.x >= x0 - 0.01).min_by(|a, b| a.x.total_cmp(&b.x));
-                    let hi = l.stops.iter().filter(|s| s.x <= x1 + 0.01).max_by(|a, b| a.x.total_cmp(&b.x));
+                    let stops = || l.stops.iter().filter(|s| s.para == para);
+                    let lo = stops().filter(|s| s.x >= x0 - 0.01).min_by(|a, b| a.x.total_cmp(&b.x));
+                    let hi = stops().filter(|s| s.x <= x1 + 0.01).max_by(|a, b| a.x.total_cmp(&b.x));
                     if let (Some(lo), Some(hi)) = (lo, hi)
                         && lo.unit < hi.unit
                     {
-                        out.push((page, [lo.x, l.top, hi.x, l.bottom], l.para, lo.unit, hi.unit));
+                        out.push((page, [lo.x, l.top, hi.x, l.bottom], para, lo.unit, hi.unit));
                     }
                 }
                 let both = hits[0] && hits[1];

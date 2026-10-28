@@ -1,0 +1,86 @@
+{
+ "id": "RECORD-APPLY-LIST",
+ "title": "Numbering is recorded as a paragraph property change",
+ "fixture": "FX-EMPTY.docx",
+ "steps": [
+  {
+   "type": "First para."
+  },
+  {
+   "key": "Enter"
+  },
+  {
+   "type": "Second para."
+  },
+  {
+   "command": "review.track",
+   "arg": "on"
+  },
+  {
+   "command": "review.author",
+   "arg": "Author A"
+  },
+  {
+   "click": {
+    "para": 0,
+    "offset": 0
+   }
+  },
+  {
+   "click": {
+    "para": 1,
+    "offset": 12
+   },
+   "shift": true
+  },
+  {
+   "command": "home.numbering"
+  },
+  {
+   "expect": {
+    "review": {
+     "stories": {
+      "body": [
+       {
+        "text": "First para.",
+        "runs": [
+         {
+          "text": "First para.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": "Author A"
+       },
+       {
+        "text": "Second para.",
+        "runs": [
+         {
+          "text": "Second para.",
+          "ins": null,
+          "del": null,
+          "move": null,
+          "fmt": null
+         }
+        ],
+        "mark": {
+         "ins": null,
+         "del": null,
+         "move": null
+        },
+        "pchange": "Author A"
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

@@ -34,3 +34,20 @@ fn omitted_key_is_caught() {
     let message = message.downcast_ref::<String>().map(String::as_str).unwrap_or_default();
     assert!(message.contains("boundary `lines`"), "{message}");
 }
+
+/// Shaping depends on the markup view (deleted text shapes in one view and not in another), so the view is in
+/// the shaping key, and in every key that holds the text settings.
+#[test]
+fn markup_view_is_in_the_keys() {
+    use crate::docx::review::MarkupView;
+    use crate::layout::env::TextEnv;
+    use crate::layout::text::{FieldValues, shape_space};
+    let Some(mut doc) = plain_doc(&[words(3)]) else { return };
+    let Block::Para(p) = doc.sections[0].blocks[0].clone() else { unreachable!() };
+    let all = TextEnv::new(&doc);
+    doc.review.view = MarkupView::NoMarkup;
+    let none = TextEnv::new(&doc);
+    assert_ne!(all, none);
+    let notes = Default::default();
+    assert_ne!(shape_space(&p, &FieldValues::default(), &notes, &all), shape_space(&p, &FieldValues::default(), &notes, &none));
+}

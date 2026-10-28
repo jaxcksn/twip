@@ -202,6 +202,15 @@ impl Renderer {
                     }
                 }
             }
+            // Commented text: an amber tint over each thread's range, stronger for the active thread. A view
+            // overlay, never printed.
+            for c in &view.comments {
+                let mut tint = Paint::default();
+                tint.set_color(Color::from_argb(if c.active { 110 } else { 45 }, 255, 185, 0));
+                for (_, [x0, y0, x1, y1]) in c.rects.iter().filter(|(pg, _)| *pg == i) {
+                    canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &tint);
+                }
+            }
             // Element marks: a tint over the element and a wavy line twice the spelling line's
             // weight, in the severity's colour, so they read apart from misspellings.
             for m in view.marks.iter().filter(|m| m.page == i) {
