@@ -47,6 +47,38 @@ export interface ClientPoint {
   clientY: number;
 }
 
+/** The colours of what the editor draws over the document (`view.setOverlayColors`). */
+export interface OverlayColors {
+  /** The caret. Default black. */
+  caret: Color;
+  /** The selection, blended under the text (multiply), so black text stays black. Default `'#4A90D9'`. */
+  selection: Color;
+  /** A selected object's outline and handles. Default `'#606060'`. */
+  object: Color;
+  /** The drop caret of a drag. Default `'#404040'`. */
+  drop: Color;
+  /** Formatting marks and text boundaries. Default `'#2F6FB5'`. */
+  marks: Color;
+  /** The markup pane's leader lines. Default `'#767676'`. */
+  leaders: Color;
+}
+
+/** What a mounted editor's frames have cost so far (`view.frameStats()`): for benchmarks and tests. */
+export interface FrameStats {
+  /** Frames drawn. */
+  frames: number;
+  /** Page recordings made: an unchanged page is recorded once. */
+  pagesRecorded: number;
+  /** Pages drawn again from their recordings. */
+  pagesReused: number;
+  /** The page recordings kept now, bytes. */
+  recordingBytes: number;
+  /** The last frame's time, ms. */
+  lastFrameMs: number;
+  /** The 95th percentile of the last 120 frames' times, ms. */
+  p95FrameMs: number;
+}
+
 /** A rectangle relative to the browser viewport, in CSS pixels. */
 export interface ClientRect {
   /** The left edge. */

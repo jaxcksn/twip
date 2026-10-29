@@ -23,6 +23,7 @@ public sealed class EditorHost : IDisposable
     private double _width, _height, _dpi = 96;
     private double _scrollX, _scrollY;
     private double _contentWidth, _contentHeight;
+    private (double X, double Y)? _scrollTarget; // engine thread only: a zoom's scroll, for after the next frame
     private bool _renderQueued; // engine thread only
     private bool _hidden, _missedFrame; // engine thread only
     private bool _window; // engine thread only: frames go to the attached window, with the GPU
@@ -31,6 +32,9 @@ public sealed class EditorHost : IDisposable
     private TabSelector _tabSelector;
     private double _markupPaneWidth;
     private Color _background = Color.FromArgb(0xE6, 0xE6, 0xE6);
+    private TimeSpan? _caretBlink = TimeSpan.FromMilliseconds(530), _caretBlinkStopAfter;
+    private OverlayColors _overlayColors = OverlayColors.Default;
+    private PaintBudget _paintBudget = PaintBudget.Default;
 
     internal EditorHost(EditorSession session, IEditorHostAdapter adapter)
     {
@@ -71,6 +75,13 @@ public sealed class EditorHost : IDisposable
         }, default);
         return attached.Wait(TimeSpan.FromSeconds(5)) ? attached.Result : null;
     }
+
+    /// <summary>Testing: loses the GPU device as a driver reset would; the next frame finds it lost.</summary>
+    internal void LoseGpu() => Fire(id =>
+    {
+        TwipNative.TestLoseGpu(_session.Engine, id);
+        ScheduleRender();
+    });
 
     /// <summary>Asks for a new frame, as a change does.</summary>
     internal void RequestFrame() => Fire(_ => ScheduleRender());
@@ -297,6 +308,11 @@ public sealed class EditorHost : IDisposable
     /// <returns>The hit.</returns>
     public Task<HitResult> HitTestAsync(double x, double y) => _session.CallAsync<HitResult>(Method.HostHitTest, Point(x, y), default);
 
+    /// <summary>What the frames have cost so far: for benchmarks and tests.</summary>
+    /// <param name="ct">Cancels the wait; the engine answers anyway.</param>
+    /// <returns>The counts and frame times.</returns>
+    public Task<FrameStats> GetFrameStatsAsync(CancellationToken ct = default) => _session.CallAsync<FrameStats>(Method.HostFrameStats, [], ct);
+
     // View settings that belong to the presentation
 
     /// <summary>Whether the engine draws the horizontal ruler.</summary>
@@ -337,6 +353,108 @@ public sealed class EditorHost : IDisposable
             var css = _markupPaneWidth * 96 / _dpi;
             SendAndDraw(Method.HostSetMarkupPaneWidth, Json(w => WireJson.WriteNumber(w, css)));
         }
+    }
+
+    /// <summary>A phase of the caret's blink (at least 100 ms); null is a steady caret. Default 530 ms.</summary>
+    public TimeSpan? CaretBlink
+    {
+        get => _caretBlink;
+        set
+        {
+            _caretBlink = value;
+            SendCaretBlink();
+        }
+    }
+
+    /// <summary>Blinking stops after this long without input, the caret left visible; null is never (the default).</summary>
+    public TimeSpan? CaretBlinkStopAfter
+    {
+        get => _caretBlinkStopAfter;
+        set
+        {
+            _caretBlinkStopAfter = value;
+            SendCaretBlink();
+        }
+    }
+
+    private void SendCaretBlink()
+    {
+        static int? Ms(TimeSpan? t) => t is { } v ? (int)Math.Clamp(v.TotalMilliseconds, 0, int.MaxValue) : null;
+        var (interval, stop) = (Ms(_caretBlink), Ms(_caretBlinkStopAfter));
+        Send(Method.HostSetCaretBlink, Json(w =>
+        {
+            w.WriteStartObject();
+            if (interval is { } i && i > 0) w.WriteNumber("intervalMs", i);
+            else w.WriteNull("intervalMs");
+            if (stop is { } s) w.WriteNumber("stopAfterMs", s);
+            else w.WriteNull("stopAfterMs");
+            w.WriteEndObject();
+        }));
+    }
+
+    /// <summary>The colours of what the editor draws over the document. Default <see cref="OverlayColors.Default"/>.</summary>
+    public OverlayColors OverlayColors
+    {
+        get => _overlayColors;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _overlayColors = value;
+            static string Hex(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+            SendAndDraw(Method.HostSetOverlayPalette, Json(w =>
+            {
+                w.WriteStartObject();
+                w.WriteString("caret", Hex(value.Caret));
+                w.WriteString("selection", Hex(value.Selection));
+                w.WriteString("object", Hex(value.Object));
+                w.WriteString("drop", Hex(value.Drop));
+                w.WriteString("marks", Hex(value.Marks));
+                w.WriteString("leaders", Hex(value.Leaders));
+                w.WriteEndObject();
+            }));
+        }
+    }
+
+    /// <summary>The memory the editor keeps pages' drawing in. Default <see cref="PaintBudget.Default"/>.</summary>
+    public PaintBudget PaintBudget
+    {
+        get => _paintBudget;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _paintBudget = value;
+            Send(Method.HostSetPaintBudget, Json(w =>
+            {
+                w.WriteStartObject();
+                w.WriteNumber("recordings", Math.Max(value.Recordings, 0));
+                w.WriteEndObject();
+            }));
+        }
+    }
+
+    /// <summary>The engine draws these leader lines (polylines in client pixels) in the markup pane's colours; empty draws none.</summary>
+    internal void SetLeaders(IReadOnlyList<IReadOnlyList<PointF>> leaders)
+    {
+        var (s, sx, sy) = (Scale, _scrollX, _scrollY);
+        SendAndDraw(Method.HostSetLeaders, Json(w =>
+        {
+            w.WriteStartArray();
+            foreach (var line in leaders)
+            {
+                w.WriteStartArray();
+                foreach (var p in line)
+                {
+                    w.WriteStartObject();
+                    w.WritePropertyName("x");
+                    WireJson.WriteNumber(w, p.X / s + sx);
+                    w.WritePropertyName("y");
+                    WireJson.WriteNumber(w, p.Y / s + sy);
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+            }
+            w.WriteEndArray();
+        }));
     }
 
     /// <summary>The background around the pages; the paper stays white.</summary>
@@ -464,6 +582,10 @@ public sealed class EditorHost : IDisposable
                 var (sx, sy) = (Reveal(scroll.X, scroll.Width, _scrollX, vw), Reveal(scroll.Y, scroll.Height, _scrollY, vh));
                 if (sx != _scrollX || sy != _scrollY) Post(() => Adapter.ScrollTo(sx * s, sy * s));
                 break;
+            case ScrollRequest scroll:
+                // The engine draws from there already; the adapter can scroll that far once the frame sized the content.
+                _scrollTarget = (scroll.X, scroll.Y);
+                break;
             case A11yRequest a11y:
                 Post(() => Adapter.UpdateAccessibility(a11y.Tree));
                 break;
@@ -522,7 +644,7 @@ public sealed class EditorHost : IDisposable
             if (status == Status.Ok)
             {
                 (_contentWidth, _contentHeight) = (info.ContentWidth, info.ContentHeight);
-                Post(Adapter.RequestRender);
+                Presented();
                 return;
             }
             // The GPU can't draw now (the device was lost): CPU pixels from here on.
@@ -539,7 +661,18 @@ public sealed class EditorHost : IDisposable
             (_front, _back) = (_back, _front);
             (_frameWidth, _frameHeight) = (w, h);
         }
+        Presented();
+    }
+
+    /// <summary>Asks the adapter to paint the frame, then to scroll where a zoom put the view.</summary>
+    private void Presented()
+    {
         Post(Adapter.RequestRender);
+        if (_scrollTarget is not { } at) return;
+        _scrollTarget = null;
+        (_scrollX, _scrollY) = at;
+        var s = Scale;
+        Post(() => Adapter.ScrollTo(at.X * s, at.Y * s));
     }
 
     private void SendRulers()

@@ -95,6 +95,14 @@ pub enum HostRequest {
         /// A collapsed selection shows a caret.
         visible: bool,
     },
+    /// Scroll so the viewport's top-left is at this point: a zoom keeps the caret's line in place. The engine already
+    /// draws from there. The content takes the size the next frame reports, so a host scrolls after that frame.
+    Scroll {
+        /// The left.
+        x: f64,
+        /// The top.
+        y: f64,
+    },
     /// Scroll so this rectangle shows.
     ScrollTo {
         /// Its left.
@@ -144,6 +152,121 @@ pub struct FrameInfo {
     pub pages: u32,
 }
 
+/// The colours of what the editor draws over the document ([`HostSurface::set_overlay_palette`]). The defaults are at
+/// least 3:1 against the page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OverlayPalette {
+    /// The caret. Default black.
+    pub caret: Color,
+    /// The selection, blended under the content (multiply), so black text stays black over it. Default `#4A90D9`.
+    pub selection: Color,
+    /// A selected object's outline and handles. Default `#606060`.
+    pub object: Color,
+    /// The drop caret of a drag. Default `#404040`.
+    pub drop: Color,
+    /// Formatting marks and text boundaries. Default `#2F6FB5`.
+    pub marks: Color,
+    /// The markup pane's leader lines. Default `#767676`.
+    pub leaders: Color,
+}
+
+impl Default for OverlayPalette {
+    fn default() -> OverlayPalette {
+        OverlayPalette {
+            caret: Color(0x000000),
+            selection: Color(0x4A90D9),
+            object: Color(0x606060),
+            drop: Color(0x404040),
+            marks: Color(0x2F6FB5),
+            leaders: Color(0x767676),
+        }
+    }
+}
+
+/// The memory a session keeps its pages' drawing in ([`HostSurface::set_paint_budget`]): past it, what was drawn
+/// longest ago goes first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PaintBudget {
+    /// The pages' recordings, bytes. Default 32 MB.
+    pub recordings: u64,
+}
+
+impl Default for PaintBudget {
+    fn default() -> PaintBudget {
+        PaintBudget { recordings: 32 << 20 }
+    }
+}
+
+/// How the caret blinks ([`HostSurface::set_caret_blink`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CaretBlink {
+    /// A phase's length, ms (at least 100); none is a steady caret.
+    pub interval_ms: Option<u32>,
+    /// Blinking stops after this long without input, ms, the caret left visible; none is never.
+    pub stop_after_ms: Option<u32>,
+}
+
+impl Default for CaretBlink {
+    fn default() -> CaretBlink {
+        CaretBlink { interval_ms: Some(530), stop_after_ms: None }
+    }
+}
+
+/// What the frames have cost so far: for benchmarks and tests. Counts run from the session's start.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FrameStats {
+    /// Frames drawn.
+    pub frames: u64,
+    /// Page recordings made: an unchanged page is recorded once.
+    pub pages_recorded: u64,
+    /// Pages drawn again from their recordings.
+    pub pages_reused: u64,
+    /// The page recordings kept now, bytes.
+    pub recording_bytes: u64,
+    /// The last frame's time, ms.
+    pub last_frame_ms: f64,
+    /// The 95th percentile of the last 120 frames' times, ms.
+    pub p95_frame_ms: f64,
+}
+
+/// The frame counters and the last frames' times, for [`FrameStats`].
+#[derive(Default)]
+struct FrameCounters {
+    stats: FrameStats,
+    /// The last frames' times, ms, oldest first.
+    times: std::collections::VecDeque<f64>,
+}
+
+impl FrameCounters {
+    const WINDOW: usize = 120;
+
+    fn frame(&mut self, ms: f64) {
+        if self.times.len() == Self::WINDOW {
+            self.times.pop_front();
+        }
+        self.times.push_back(ms);
+        self.stats.frames += 1;
+        self.stats.last_frame_ms = ms;
+    }
+
+    fn stats(&self, retained: &crate::render::retained::Retained) -> FrameStats {
+        let mut sorted: Vec<f64> = self.times.iter().copied().collect();
+        sorted.sort_by(f64::total_cmp);
+        let p95 = sorted.get(((sorted.len().saturating_sub(1)) as f64 * 0.95).round() as usize).copied().unwrap_or(0.0);
+        FrameStats {
+            p95_frame_ms: p95,
+            pages_recorded: retained.counts.recorded,
+            pages_reused: retained.counts.reused,
+            recording_bytes: retained.bytes() as u64,
+            ..self.stats
+        }
+    }
+}
+
 /// A press on a ruler, until its release: the marker it moves (none: a click on the text area), the view then, where
 /// it was and is (viewport CSS px), and whether it moved.
 #[derive(Clone, Debug)]
@@ -189,6 +312,8 @@ pub(super) struct Presentation {
     focused: bool,
     /// Room right of the pages for comment balloons, CSS px.
     markup_pane: f64,
+    /// The balloons' leader lines the engine draws ([`HostSurface::set_leaders`]): polylines, content CSS px.
+    leaders: Vec<Vec<Point>>,
     sink: Sink,
     /// The built-in rulers: which show, their unit (none: the language's), what a click adds, the drag under way, and
     /// the view `rulerChanged` last reported.
@@ -197,6 +322,18 @@ pub(super) struct Presentation {
     pub(super) tab_selector: TabSelector,
     pub(super) ruler_drag: Option<RulerDrag>,
     ruler_seen: Option<RulerView>,
+    counters: FrameCounters,
+    /// Each CPU frame is drawn a second time from scratch and compared ([`HostSurface::set_verify_frames`]).
+    verify: bool,
+    /// Verified frames that differed.
+    verify_failures: u64,
+    /// Timers the session wants armed: `(timer, ms)`, taken by [`HostSurface::take_timers`].
+    timers: Vec<(u32, u32)>,
+    /// Something visible changed with no new state (a blink phase): the host should draw a frame.
+    frame_wanted: bool,
+    pub(super) blink: super::blink::Blink,
+    /// The selection the blink last restarted for.
+    blink_selection: Option<crate::editing::selection::Selection>,
     /// Unique on the thread: names this session's WebGL canvas or GPU window.
     #[cfg_attr(not(any(target_os = "emscripten", twip_dawn)), allow(dead_code, reason = "no GPU target in this build"))]
     serial: u64,
@@ -206,7 +343,7 @@ impl Default for Presentation {
     fn default() -> Presentation {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Presentation {
-            renderer: Renderer::default(),
+            renderer: Renderer::retaining(),
             width: 0.0,
             height: 0.0,
             dpr: 1.0,
@@ -214,21 +351,38 @@ impl Default for Presentation {
             zoom: 1.0,
             focused: false,
             markup_pane: 0.0,
+            leaders: Vec::new(),
             sink: Sink::default(),
             rulers: Bands::default(),
             ruler_unit: None,
             tab_selector: TabSelector::default(),
             ruler_drag: None,
             ruler_seen: None,
+            counters: FrameCounters::default(),
+            verify: false,
+            verify_failures: 0,
+            timers: Vec::new(),
+            frame_wanted: false,
+            blink: super::blink::Blink::default(),
+            blink_selection: None,
             serial: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
 }
 
 impl Presentation {
+    /// Arms the blink timer and asks for a frame, as a blink step says.
+    fn blinked(&mut self, step: super::blink::Step) {
+        if let Some(ms) = step.arm {
+            self.timers.push((super::blink::TIMER, ms));
+        }
+        self.frame_wanted |= step.frame;
+    }
+
     /// Forgets what the last document's frames cached.
     pub(super) fn clear(&mut self) {
         self.renderer.clear_images();
+        self.renderer.retained.clear();
         self.sink.a11y = None;
     }
 
@@ -239,10 +393,6 @@ impl Presentation {
     /// The zoom, as a factor (1 is 100%).
     pub(super) fn zoom(&self) -> f64 {
         self.zoom
-    }
-
-    pub(super) fn set_zoom(&mut self, factor: f64) {
-        self.zoom = factor;
     }
 
     /// A viewport point, CSS px, in document points.
@@ -258,7 +408,8 @@ impl Presentation {
 
     /// The frame for a viewport of `width` x `height` device pixels.
     fn frame(&self, width: f64, height: f64) -> Frame {
-        Frame { origin_x: -self.scroll.0, origin_y: -self.scroll.1, width, height, dpr: self.dpr, px_per_pt: self.px_per_pt() }
+        let caret = self.focused && self.blink.visible();
+        Frame { origin_x: -self.scroll.0, origin_y: -self.scroll.1, width, height, dpr: self.dpr, px_per_pt: self.px_per_pt(), caret }
     }
 
     /// The unit the rulers show.
@@ -280,9 +431,32 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
     state.view.rulers = crate::api::state::RulerVisibility { horizontal: p.rulers.horizontal, vertical: p.rulers.vertical };
     state.view.ruler_unit = p.unit(&s.language);
     state.view.tab_selector = p.tab_selector;
+    state.view.formatting_marks = s.formatting_marks;
+    state.view.text_boundaries = s.text_boundaries;
 }
 
 impl Session {
+    /// Sets the zoom (a factor, 1 is 100%) about the caret's line, or the viewport's centre when the caret isn't in
+    /// view: that point keeps its place in the viewport. The scroll moves now, and the host is asked to follow.
+    pub(super) fn set_zoom(&mut self, factor: f64) {
+        let k = self.presentation.px_per_pt();
+        let stack = self.editor.stack();
+        let caret = self.editor.caret_view().and_then(|c| stack.to_doc(c.page, c.x, c.top));
+        let p = &mut self.presentation;
+        let ((sx, sy), (w, h)) = (p.scroll, (p.width, p.height));
+        let shows = |&(x, y): &(f64, f64)| (0.0..w).contains(&(x * k - sx)) && (0.0..h).contains(&(y * k - sy));
+        let (ax, ay) = caret.filter(shows).unwrap_or(((sx + w / 2.0) / k, (sy + h / 2.0) / k));
+        let (on_x, on_y) = (ax * k - sx, ay * k - sy);
+        p.zoom = factor;
+        let k = p.px_per_pt();
+        let (cw, ch) = (stack.width * k + p.markup_pane, stack.height * k);
+        // The SDKs centre content narrower than the viewport.
+        let x = if cw < w { -((w - cw) / 2.0).floor() } else { (ax * k - on_x).clamp(0.0, cw - w) };
+        let y = (ay * k - on_y).clamp(0.0, (ch - h).max(0.0));
+        p.scroll = (x, y);
+        self.request(HostRequest::Scroll { x, y });
+    }
+
     /// The ruler model with its viewport mapping: the caret's page's left and top edges in the viewport.
     pub(super) fn ruler_view(&self) -> RulerView {
         let p = &self.presentation;
@@ -295,6 +469,20 @@ impl Session {
             horizontal: RulerAxis { origin: x * k - p.scroll.0, scale: k },
             vertical: RulerAxis { origin: y * k - p.scroll.1, scale: k },
             unit: p.unit(&self.language),
+        }
+    }
+
+    /// An edit or a caret move restarts the blink from visible.
+    pub(super) fn blink_follow(&mut self) {
+        let selection = self.editor.selection();
+        let p = &mut self.presentation;
+        if p.blink_selection.as_ref() == Some(&selection) {
+            return;
+        }
+        p.blink_selection = Some(selection);
+        if p.focused {
+            let step = p.blink.input(std::time::Instant::now());
+            p.blinked(step);
         }
     }
 
@@ -347,7 +535,7 @@ impl Session {
             s.cursor = Some(cursor);
             out.push(HostRequest::Cursor { cursor });
         }
-        let info = self.host().frame_info();
+        let info = self.host().caret_info();
         let caret = (info.caret_x, info.caret_y, info.caret_height, info.caret_visible);
         let (scroll, s) = (self.presentation.scroll, &mut self.presentation.sink);
         if s.caret != Some(caret) {
@@ -433,7 +621,27 @@ impl HostSurface<'_> {
 
     /// Whether the host's view has the keyboard focus.
     pub fn set_focus(&mut self, focused: bool) {
-        self.session.presentation.focused = focused;
+        let p = &mut self.session.presentation;
+        if p.focused == focused {
+            return;
+        }
+        p.focused = focused;
+        // The caret comes or goes; focus back restarts its blink from visible.
+        p.frame_wanted = true;
+        if focused {
+            let step = p.blink.input(std::time::Instant::now());
+            p.blinked(step);
+        }
+    }
+
+    /// How the caret blinks: `interval` is a phase's length (none: a steady caret; at least 100 ms), and blinking
+    /// stops, the caret visible, after `stop_after` without input (none: never). Default: 530 ms, never.
+    pub fn set_caret_blink(&mut self, blink: CaretBlink) {
+        let ms = |v: Option<u32>| v.map(|m| std::time::Duration::from_millis(u64::from(m)));
+        let p = &mut self.session.presentation;
+        let step = p.blink.set(ms(blink.interval_ms), ms(blink.stop_after_ms), std::time::Instant::now());
+        p.blinked(step);
+        p.frame_wanted = true;
     }
 
     /// Whether the host's view has the keyboard focus.
@@ -454,7 +662,52 @@ impl HostSurface<'_> {
             return Err(Error::invalid("the pixel buffer can't be drawn into"));
         };
         self.draw(surface.canvas(), f64::from(width), f64::from(height));
+        drop(surface);
+        if self.session.presentation.verify {
+            let mut again = vec![0u8; pixels.len()];
+            if let Some(mut direct) = skia_safe::surfaces::wrap_pixels(&info, &mut again, row, None) {
+                self.session.presentation.renderer.direct = true;
+                self.draw_frame(direct.canvas(), f64::from(width), f64::from(height));
+                self.session.presentation.renderer.direct = false;
+            }
+            if again[..] != pixels[..row * height as usize] {
+                let p = &mut self.session.presentation;
+                p.verify_failures += 1;
+                let diffs = again.iter().zip(&pixels[..row * height as usize]).map(|(a, b)| a.abs_diff(*b));
+                let (n, worst) = diffs.fold((0usize, 0u8), |(n, w), d| (n + usize::from(d > 0), w.max(d)));
+                let at: Vec<usize> =
+                    again.iter().zip(&pixels[..row * height as usize]).enumerate().filter(|(_, (a, b))| a != b).map(|(i, _)| i / 4).collect();
+                let (xs, ys): (Vec<usize>, Vec<usize>) = at.iter().map(|i| (i % width as usize, i / width as usize)).unzip();
+                eprintln!(
+                    "verify: frame {} differs in {n} bytes, by at most {worst}, x {:?}..{:?} y {:?}..{:?}",
+                    p.counters.stats.frames,
+                    xs.iter().min(),
+                    xs.iter().max(),
+                    ys.iter().min(),
+                    ys.iter().max()
+                );
+            }
+        }
         Ok(self.frame_info())
+    }
+
+    /// Test builds and tools: each CPU frame ([`HostSurface::frame_rgba`]) is drawn a second time from scratch,
+    /// past the retained page content, and compared pixel for pixel.
+    #[doc(hidden)]
+    pub fn set_verify_frames(&mut self, on: bool) {
+        self.session.presentation.verify = on;
+    }
+
+    /// Tools: draw frames from scratch (`false`), past the retained page content, to time them.
+    #[doc(hidden)]
+    pub fn set_retained(&mut self, on: bool) {
+        self.session.presentation.renderer.retain = on;
+    }
+
+    /// The verified frames that differed from their from-scratch drawing.
+    #[doc(hidden)]
+    pub fn verify_failures(&self) -> u64 {
+        self.session.presentation.verify_failures
     }
 
     /// Adopts the current WebGL 2 context (the page made it current) for this session's canvas.
@@ -495,6 +748,14 @@ impl HostSurface<'_> {
         crate::render::window::detach(self.session.presentation.serial);
     }
 
+    /// Testing: loses the GPU device as a driver reset would. Window frames fail `unavailable` until the next
+    /// [`HostSurface::attach_window`], which makes a new device. Nothing without a GPU build.
+    #[doc(hidden)]
+    pub fn lose_gpu_device(&mut self) {
+        #[cfg(twip_dawn)]
+        crate::render::window::lose_device();
+    }
+
     /// Draws the viewport into the attached window, `width` x `height` device pixels, and presents it. Fails
     /// `unavailable` when no window is attached or the GPU can't draw now (the device was lost): draw with
     /// [`HostSurface::frame_rgba`] then.
@@ -513,24 +774,56 @@ impl HostSurface<'_> {
     /// Draws the viewport on `canvas`, `width` x `height` device pixels: the GPU paths hand their canvas here.
     #[doc(hidden)]
     pub fn draw(&mut self, canvas: &skia_safe::Canvas, width: f64, height: f64) {
+        let started = std::time::Instant::now();
+        self.draw_frame(canvas, width, height);
+        let ms = started.elapsed().as_secs_f64() * 1e3;
+        self.session.presentation.counters.frame(ms);
+    }
+
+    /// What the frames have cost so far.
+    pub fn frame_stats(&self) -> FrameStats {
+        let p = &self.session.presentation;
+        p.counters.stats(&p.renderer.retained)
+    }
+
+    fn draw_frame(&mut self, canvas: &skia_safe::Canvas, width: f64, height: f64) {
         let s = &mut *self.session;
         let p = &mut s.presentation;
         let f = p.frame(width, height);
         let fonts = s.fonts.fonts();
         // Lay out the visible pages first (they may be provisional), then build the frame's view from that snapshot.
-        let probe = s.editor.view(0..0);
-        let visible = Renderer::visible(&probe, &f);
+        let visible = Renderer::visible(&s.editor.stack(), &f);
         if visible.end > 0 {
             s.editor.ensure_page(visible.end - 1, &fonts);
         }
         let marks = s.services.spelling.squiggles(&mut s.editor, visible.clone(), &s.language);
+        let formatting_marks = if s.formatting_marks { s.editor.formatting_marks(visible.clone()) } else { Vec::new() };
+        let boundaries = if s.text_boundaries { s.editor.text_boundaries(visible.clone()) } else { Vec::new() };
         let mut view = s.editor.view(visible);
         view.spelling = marks;
+        view.formatting_marks = formatting_marks;
+        view.boundaries = boundaries;
+        p.renderer.gridlines = s.gridlines;
         p.renderer.draw(canvas, &view, &s.editor.document().images, &f);
         if p.markup_pane > 0.0 {
             let left = (view.stack.width * f.px_per_pt + f.origin_x) * f.dpr;
             let r = skia_safe::Rect::from_xywh(left as f32, 0.0, (p.markup_pane * f.dpr) as f32, height as f32);
             canvas.draw_rect(r, &skia_safe::Paint::new(skia_safe::Color4f::from(p.pane_color()), None));
+        }
+        // The balloons' leaders, over everything: from each comment's text to its card, one device pixel wide.
+        if !p.leaders.is_empty() {
+            let mut line = skia_safe::Paint::default();
+            line.set_anti_alias(true);
+            line.set_style(skia_safe::paint::Style::Stroke);
+            line.set_color(p.renderer.palette.leaders);
+            line.set_stroke_width(f.dpr.round().max(1.0) as f32);
+            for polyline in &p.leaders {
+                let points: Vec<skia_safe::Point> = polyline
+                    .iter()
+                    .map(|q| skia_safe::Point::new(((q.x + f.origin_x) * f.dpr) as f32, ((q.y + f.origin_y) * f.dpr) as f32))
+                    .collect();
+                canvas.draw_points(skia_safe::canvas::PointMode::Polygon, &points, &line);
+            }
         }
         drop(fonts);
         // The rulers sit over the viewport's top and left edges, the document scrolling under them.
@@ -562,8 +855,19 @@ impl HostSurface<'_> {
         s.deliver_requests();
     }
 
-    /// The document's size and the caret after the last frame.
+    /// The document's size and the caret after the last frame: `caret_visible` is whether the frame drew the caret
+    /// (focused, collapsed, in the blink's visible phase).
     pub fn frame_info(&mut self) -> FrameInfo {
+        let p = &self.session.presentation;
+        let drawn = p.focused && p.blink.visible();
+        let mut info = self.caret_info();
+        info.caret_visible &= drawn;
+        info
+    }
+
+    /// The document's size and the caret, `caret_visible` for a collapsed selection whatever the focus and blink:
+    /// what the IME and the system caret follow.
+    fn caret_info(&mut self) -> FrameInfo {
         let k = self.session.presentation.px_per_pt();
         let e = &mut self.session.editor;
         let stack = e.stack();
@@ -587,10 +891,29 @@ impl HostSurface<'_> {
         crate::api::services::ClientPoint { client_x: f.caret_x - x, client_y: f.caret_y + f.caret_height - y }
     }
 
+    /// The one-shot timers the session wants armed since the last call, as `(timer, ms)`: the host arms each and calls
+    /// [`HostSurface::timer_fired`] with its number when it goes off. Timer 1 (background layout) isn't among them:
+    /// the host arms it while `pages.complete` is false.
+    pub fn take_timers(&mut self) -> Vec<(u32, u32)> {
+        std::mem::take(&mut self.session.presentation.timers)
+    }
+
+    /// Whether something visible changed since the last call with no new state (the caret's blink phase): the host
+    /// draws a frame then, as after a state change.
+    pub fn take_frame_request(&mut self) -> bool {
+        std::mem::take(&mut self.session.presentation.frame_wanted)
+    }
+
     /// A timer the engine asked for (`set_timer`) went off: the C ABI arms one while background layout is pending,
     /// and each runs one slice of it ([`HostSurface::idle`]).
     pub fn timer_fired(&mut self, timer: u32) {
-        let _ = timer;
+        if timer == super::blink::TIMER {
+            let s = &mut *self.session;
+            let active = s.presentation.focused && s.editor.selection().is_collapsed();
+            let step = s.presentation.blink.fired(active, std::time::Instant::now());
+            s.presentation.blinked(step);
+            return;
+        }
         self.idle();
     }
 
@@ -605,6 +928,33 @@ impl HostSurface<'_> {
             s.changed(Vec::new());
         }
         !complete
+    }
+
+    /// The comment balloons' leader lines, polylines in content CSS px (they scroll with the document): the engine
+    /// draws them over the frame in the overlay palette's leader colour, so a host drawing on the GPU draws nothing
+    /// over it. An empty list draws none.
+    pub fn set_leaders(&mut self, leaders: Vec<Vec<Point>>) {
+        self.session.presentation.leaders = leaders;
+        self.session.presentation.frame_wanted = true;
+    }
+
+    /// The memory the session keeps its pages' drawing in.
+    pub fn set_paint_budget(&mut self, budget: PaintBudget) {
+        self.session.presentation.renderer.retained.budget = usize::try_from(budget.recordings).unwrap_or(usize::MAX);
+    }
+
+    /// The colours of what the editor draws over the document.
+    pub fn set_overlay_palette(&mut self, palette: OverlayPalette) {
+        let c = |c: Color| crate::render::rgb(c.0);
+        self.session.presentation.renderer.palette = crate::render::Palette {
+            caret: c(palette.caret),
+            selection: c(palette.selection),
+            object: c(palette.object),
+            drop: c(palette.drop),
+            marks: c(palette.marks),
+            leaders: c(palette.leaders),
+        };
+        self.session.presentation.frame_wanted = true;
     }
 
     /// The background around the pages; the paper stays white.

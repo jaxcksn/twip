@@ -1028,6 +1028,16 @@ export interface FontRequest {
 }
 
 // @public
+export interface FrameStats {
+    frames: number;
+    lastFrameMs: number;
+    p95FrameMs: number;
+    pagesRecorded: number;
+    pagesReused: number;
+    recordingBytes: number;
+}
+
+// @public
 export type GestureAction = 'default' | 'emit' | 'none' | {
     op: Op;
 };
@@ -1228,9 +1238,16 @@ export interface MountedReview extends Review {
 // @public
 export interface MountOptions extends SessionOptions {
     background?: Color;
+    caretBlink?: number;
+    caretBlinkStopAfter?: number;
     document?: Uint8Array;
+    drawLeaders?: boolean;
     execution?: 'auto' | 'main' | 'worker';
     markupPaneWidth?: number;
+    overlayColors?: Partial<OverlayColors>;
+    paintBudget?: {
+        recordings?: number;
+    };
     rulers?: boolean | {
         horizontal?: boolean;
         vertical?: boolean;
@@ -1281,6 +1298,16 @@ export type OpArgs<K extends CommandId> = Parameters<Commands[K]> extends [] ? {
 } : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [object] ? Exclude<Parameters<Commands[K]>[0], undefined> : {
     value: Exclude<Parameters<Commands[K]>[0], undefined>;
 };
+
+// @public
+export interface OverlayColors {
+    caret: Color;
+    drop: Color;
+    leaders: Color;
+    marks: Color;
+    object: Color;
+    selection: Color;
+}
 
 // @public
 export interface PageFormatting {
@@ -1760,8 +1787,11 @@ export type UnderlineStyle = 'none' | 'single' | 'words' | 'double' | 'thick' | 
 
 // @public
 export interface View {
+    frameStats(): Promise<FrameStats>;
     revealSelection(): Promise<void>;
     setBackground(color: Color): Promise<void>;
+    setCaretBlink(ms: number, stopAfterMs?: number): Promise<void>;
+    setOverlayColors(colors: Partial<OverlayColors>): Promise<void>;
     visiblePages(): {
         page: number;
         rect: ClientRect_2;

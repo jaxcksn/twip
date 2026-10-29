@@ -122,9 +122,6 @@ for (const renderer of ['webgpu', 'webgl', 'cpu'] as const) {
     await ready(page, 'main');
     const got = await backend(page);
     test.skip(got !== renderer, `no ${renderer} on this machine (the editor drew with ${got})`);
-    // shortcut: the CPU path draws the whole viewport each frame, and at devicePixelRatio 2 the draw alone takes 12 to
-    // 24 ms on a desktop; expected to fail until it draws only what changed (or rasters faster).
-    test.fail(renderer === 'cpu', 'the CPU draw at devicePixelRatio 2 takes longer than a refresh');
     const typed = await measure(page, 'a', true);
     p95(`${renderer} keystroke draw`, typed.draw);
     expect(p95(`${renderer} keystroke frame`, typed.frame)).toBeLessThanOrEqual(REFRESH);

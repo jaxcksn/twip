@@ -123,9 +123,13 @@ impl FontLibrary {
 
     /// Where requests for faces the library lacks go, replacing an earlier receiver. Each family and style is
     /// requested once; answer with [`FontLibrary::add`] or [`FontLibrary::mark_unresolved`]. With no receiver, a
-    /// missing face is unresolved at once. The receiver must not call the library: it queues the work instead.
+    /// missing face is unresolved at once, and requested once there is one: the sessions ask at their next
+    /// [`Engine::sync_fonts`](crate::api::engine::Engine::sync_fonts). The receiver must not call the library: it
+    /// queues the work instead.
     pub fn on_request(&self, f: impl FnMut(&FontRequest) + 'static) {
-        self.inner.borrow_mut().requester = Some(Box::new(f));
+        let mut lib = self.inner.borrow_mut();
+        lib.requester = Some(Box::new(f));
+        lib.generation += 1;
     }
 
     /// No receiver from now on: a missing face is unresolved at once.
@@ -162,12 +166,17 @@ impl FontLibrary {
                     continue;
                 }
                 let lower = family.to_lowercase();
-                let answered = *asked.entry((lower.clone(), bold, italic)).or_insert_with(|| {
-                    if requester.is_some() {
+                let key = (lower.clone(), bold, italic);
+                let answered = match asked.get(&key) {
+                    Some(&answered) => answered,
+                    // Unresolved for now, and not remembered: a receiver set later is asked.
+                    None if requester.is_none() => true,
+                    None => {
+                        asked.insert(key, false);
                         requests.push(FontRequest { family: family.to_string(), bold, italic });
+                        false
                     }
-                    requester.is_none()
-                });
+                };
                 if answered { &mut unresolved } else { &mut pending }.entry(lower).or_insert_with(|| family.to_string());
             }
         }
@@ -186,5 +195,30 @@ impl FontLibrary {
 impl std::fmt::Debug for FontLibrary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FontLibrary").field("generation", &self.generation()).finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use super::FontLibrary;
+
+    #[test]
+    fn a_face_missing_before_there_is_a_receiver_is_requested_once_there_is_one() {
+        let lib = FontLibrary::empty();
+        assert_eq!(lib.check([("Carlito", false, false)]).unresolved, ["Carlito"]);
+        let asked: Rc<RefCell<Vec<String>>> = Rc::default();
+        let sink = asked.clone();
+        let generation = lib.generation();
+        lib.on_request(move |r| sink.borrow_mut().push(r.family.clone()));
+        assert_ne!(lib.generation(), generation, "the sessions check again");
+        let state = lib.check([("Carlito", false, false)]);
+        assert_eq!((state.pending, state.unresolved), (vec!["Carlito".to_string()], vec![]));
+        assert_eq!(*asked.borrow(), ["Carlito"]);
+        // Asked once.
+        lib.check([("Carlito", false, false)]);
+        assert_eq!(asked.borrow().len(), 1);
     }
 }

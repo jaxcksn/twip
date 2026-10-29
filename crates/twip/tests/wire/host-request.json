@@ -25,6 +25,11 @@
     "y": 120.0
   },
   {
+    "type": "scroll",
+    "x": -12.0,
+    "y": 1180.5
+  },
+  {
     "height": 18.5,
     "type": "scroll_to",
     "width": 1.5,

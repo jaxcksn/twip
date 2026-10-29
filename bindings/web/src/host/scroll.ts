@@ -1,6 +1,6 @@
 // Native scrolling: the content element is as large as the document at the zoom, so the scroller scrolls natively
-// and its position goes to the engine (`twip_scroll`). Content narrower than the viewport is centred. The
-// `scroll_to` host request scrolls the scroller; Ctrl+wheel (and a trackpad's pinch, which arrives as one) zooms.
+// and its position goes to the engine (`twip_scroll`). Content narrower than the viewport is centred. The `scroll_to`
+// and `scroll` host requests scroll the scroller; Ctrl+wheel (and a trackpad's pinch, which arrives as one) zooms.
 import type { Session } from '../editor.js';
 import { type FrameInfo, Kind, type HostRequest, type Message } from '../transport/protocol.js';
 import type { Dom, Ledger } from './dom.js';
@@ -21,6 +21,8 @@ export function startScroll(s: Session, dom: Dom, ledger: Ledger, frames: Frames
   let offset = 0;
   let sent = { x: NaN, y: NaN };
   let size = { width: 0, height: 0 };
+  // A `scroll` request (a zoom), applied once the next frame has sized the content for it.
+  let pending: { x: number; y: number } | undefined;
 
   const send = () => {
     const at = { x: scroller.scrollLeft - offset, y: scroller.scrollTop };
@@ -39,6 +41,13 @@ export function startScroll(s: Session, dom: Dom, ledger: Ledger, frames: Frames
       offset = centred;
       content.style.marginLeft = `${offset}px`;
     }
+    if (pending) {
+      // The engine drew this frame from there already: report only where the scroller couldn't go.
+      scroller.scrollLeft = pending.x + offset;
+      scroller.scrollTop = pending.y;
+      sent = pending;
+      pending = undefined;
+    }
     send();
   };
   ledger.listen(scroller, 'scroll', send, { passive: true });
@@ -55,7 +64,9 @@ export function startScroll(s: Session, dom: Dom, ledger: Ledger, frames: Frames
   };
   const onMessage = (m: Message) => {
     const r = m.payload as HostRequest;
-    if (m.kind === Kind.HostRequest && r.type === 'scroll_to') scrollTo(r);
+    if (m.kind !== Kind.HostRequest) return;
+    if (r.type === 'scroll_to') scrollTo(r);
+    else if (r.type === 'scroll') pending = { x: r.x, y: r.y };
   };
   s.hostListeners.add(onMessage);
   s.disposers.push(() => s.hostListeners.delete(onMessage));

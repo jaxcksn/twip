@@ -56,6 +56,12 @@ internal sealed record BalloonsLaidOutPayload([property: JsonPropertyName("value
 /// <summary>Where the SDK placed an attached comment card, and its leader line.</summary>
 internal sealed record BalloonPlacement(CommentId Thread, double Top, double Left, IReadOnlyList<PointF> Leader);
 
+/// <summary>The caret blink settings on the wire (<c>EditorHost.CaretBlink</c> sends them).</summary>
+internal sealed record CaretBlinkWire(int? IntervalMs, int? StopAfterMs);
+
+/// <summary>The overlay colours on the wire, as <c>#RRGGBB</c> (<c>EditorHost.OverlayColors</c> sends them).</summary>
+internal sealed record OverlayPaletteWire(string Caret, string Selection, string Object, string Drop, string Marks, string Leaders);
+
 internal sealed record TooltipPayload([property: JsonPropertyName("value")] TooltipWire? Tooltip);
 
 internal sealed record TooltipWire(
@@ -77,6 +83,7 @@ internal sealed record EmptyPayload;
 [JsonDerivedType(typeof(ReleaseRequest), "release")]
 [JsonDerivedType(typeof(ClipboardRequest), "clipboard")]
 [JsonDerivedType(typeof(CaretRequest), "caret")]
+[JsonDerivedType(typeof(ScrollRequest), "scroll")]
 [JsonDerivedType(typeof(ScrollToRequest), "scroll_to")]
 [JsonDerivedType(typeof(A11yRequest), "a11y")]
 internal record HostRequest;
@@ -95,6 +102,9 @@ internal sealed record ClipboardRequest(ClipboardContent Data) : HostRequest;
 
 /// <summary>The caret moved: for the IME window and the system caret.</summary>
 internal sealed record CaretRequest(double X, double Y, double Height, bool Visible) : HostRequest;
+
+/// <summary>Scroll the view's top-left to this point (a zoom), once the next frame has sized the content.</summary>
+internal sealed record ScrollRequest(double X, double Y) : HostRequest;
 
 /// <summary>Scroll so this rectangle shows.</summary>
 internal sealed record ScrollToRequest(double X, double Y, double Width, double Height) : HostRequest;

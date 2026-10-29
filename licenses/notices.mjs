@@ -16,7 +16,12 @@ const native = [
   ['zlib', 'Zlib', 'native', 'zlib.txt'],
   ['Vulkan Memory Allocator', 'MIT', 'native', 'vulkan-memory-allocator.txt'],
   ['FreeType', 'FTL', 'WebAssembly', 'freetype-ftl.txt'],
-  ['Dawn (WebGPU C++ bindings)', 'BSD-3-Clause', 'WebAssembly', 'dawn.txt'],
+  // Native Dawn (with Tint) is in the Windows native library only, with the libraries it links.
+  ['Dawn and Tint', 'BSD-3-Clause', 'both', 'dawn.txt'],
+  ['Abseil', 'Apache-2.0', 'native', 'abseil.txt'],
+  ['SPIRV-Tools', 'Apache-2.0', 'native', 'spirv-tools.txt'],
+  ['SPIRV-Headers', 'MIT', 'native', 'spirv-headers.txt'],
+  ['Vulkan-Headers', 'Apache-2.0 OR MIT', 'native', 'vulkan-headers.txt'],
   ['Emscripten WebGPU port', 'MIT OR NCSA', 'WebAssembly', 'emscripten-webgpu.txt'],
 ];
 // cargo about refuses to write to a pipe on Windows, so it writes a file.

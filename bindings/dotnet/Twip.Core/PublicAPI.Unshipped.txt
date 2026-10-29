@@ -3986,3 +3986,70 @@ virtual Twip.MenuTarget.PrintMembers(System.Text.StringBuilder! builder) -> bool
 ~override Twip.ZoomLevel.ToString() -> string
 
 Twip.Hosting.EditorKey.IntlBackslash = 88 -> Twip.Hosting.EditorKey
+Twip.FrameStats
+Twip.FrameStats.<Clone>$() -> Twip.FrameStats!
+Twip.FrameStats.Equals(Twip.FrameStats? other) -> bool
+Twip.FrameStats.Frames.get -> long
+Twip.FrameStats.Frames.init -> void
+Twip.FrameStats.LastFrameMs.get -> double
+Twip.FrameStats.LastFrameMs.init -> void
+Twip.FrameStats.P95FrameMs.get -> double
+Twip.FrameStats.P95FrameMs.init -> void
+Twip.FrameStats.PagesRecorded.get -> long
+Twip.FrameStats.PagesRecorded.init -> void
+Twip.FrameStats.RecordingBytes.get -> long
+Twip.FrameStats.RecordingBytes.init -> void
+Twip.Hosting.EditorHost.GetFrameStatsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.FrameStats!>!
+override Twip.FrameStats.Equals(object? obj) -> bool
+override Twip.FrameStats.GetHashCode() -> int
+override Twip.FrameStats.ToString() -> string!
+static Twip.FrameStats.operator !=(Twip.FrameStats? left, Twip.FrameStats? right) -> bool
+static Twip.FrameStats.operator ==(Twip.FrameStats? left, Twip.FrameStats? right) -> bool
+Twip.Hosting.EditorHost.CaretBlink.get -> System.TimeSpan?
+Twip.Hosting.EditorHost.CaretBlink.set -> void
+Twip.Hosting.EditorHost.CaretBlinkStopAfter.get -> System.TimeSpan?
+Twip.Hosting.EditorHost.CaretBlinkStopAfter.set -> void
+Twip.Hosting.EditorHost.OverlayColors.get -> Twip.OverlayColors!
+Twip.Hosting.EditorHost.OverlayColors.set -> void
+Twip.OverlayColors
+Twip.OverlayColors.<Clone>$() -> Twip.OverlayColors!
+Twip.OverlayColors.Caret.get -> System.Drawing.Color
+Twip.OverlayColors.Caret.init -> void
+Twip.OverlayColors.Deconstruct(out System.Drawing.Color Caret, out System.Drawing.Color Selection, out System.Drawing.Color Object, out System.Drawing.Color Drop, out System.Drawing.Color Marks, out System.Drawing.Color Leaders) -> void
+Twip.OverlayColors.Drop.get -> System.Drawing.Color
+Twip.OverlayColors.Drop.init -> void
+Twip.OverlayColors.Equals(Twip.OverlayColors? other) -> bool
+Twip.OverlayColors.Leaders.get -> System.Drawing.Color
+Twip.OverlayColors.Leaders.init -> void
+Twip.OverlayColors.Marks.get -> System.Drawing.Color
+Twip.OverlayColors.Marks.init -> void
+Twip.OverlayColors.Object.get -> System.Drawing.Color
+Twip.OverlayColors.Object.init -> void
+Twip.OverlayColors.OverlayColors(System.Drawing.Color Caret, System.Drawing.Color Selection, System.Drawing.Color Object, System.Drawing.Color Drop, System.Drawing.Color Marks, System.Drawing.Color Leaders) -> void
+Twip.OverlayColors.Selection.get -> System.Drawing.Color
+Twip.OverlayColors.Selection.init -> void
+override Twip.OverlayColors.Equals(object? obj) -> bool
+override Twip.OverlayColors.GetHashCode() -> int
+override Twip.OverlayColors.ToString() -> string!
+static Twip.OverlayColors.Default.get -> Twip.OverlayColors!
+static Twip.OverlayColors.operator !=(Twip.OverlayColors? left, Twip.OverlayColors? right) -> bool
+static Twip.OverlayColors.operator ==(Twip.OverlayColors? left, Twip.OverlayColors? right) -> bool
+Twip.Hosting.EditorHost.PaintBudget.get -> Twip.PaintBudget!
+Twip.Hosting.EditorHost.PaintBudget.set -> void
+Twip.PaintBudget
+Twip.PaintBudget.<Clone>$() -> Twip.PaintBudget!
+Twip.PaintBudget.Equals(Twip.PaintBudget? other) -> bool
+Twip.PaintBudget.Recordings.get -> long
+Twip.PaintBudget.Recordings.init -> void
+override Twip.PaintBudget.Equals(object? obj) -> bool
+override Twip.PaintBudget.GetHashCode() -> int
+override Twip.PaintBudget.ToString() -> string!
+static Twip.PaintBudget.Default.get -> Twip.PaintBudget!
+static Twip.PaintBudget.operator !=(Twip.PaintBudget? left, Twip.PaintBudget? right) -> bool
+static Twip.PaintBudget.operator ==(Twip.PaintBudget? left, Twip.PaintBudget? right) -> bool
+Twip.FrameStats.Deconstruct(out long Frames, out long PagesRecorded, out long PagesReused, out long RecordingBytes, out double LastFrameMs, out double P95FrameMs) -> void
+Twip.FrameStats.FrameStats(long Frames, long PagesRecorded, long PagesReused, long RecordingBytes, double LastFrameMs, double P95FrameMs) -> void
+Twip.FrameStats.PagesReused.get -> long
+Twip.FrameStats.PagesReused.init -> void
+Twip.PaintBudget.Deconstruct(out long Recordings) -> void
+Twip.PaintBudget.PaintBudget(long Recordings) -> void

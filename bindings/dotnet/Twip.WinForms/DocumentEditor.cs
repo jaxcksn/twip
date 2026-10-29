@@ -29,8 +29,13 @@ public class DocumentEditor : Control
     private Bitmap? _frame;
     private GpuCanvas? _canvas; // while the engine draws with the GPU
     private bool _gpu = true;
+    private int _gpuLosses; // counts device losses: a retry belongs to the latest
     private PaintEventHandler? _paintMarkupPane;
+    private bool _leadersSent; // the engine draws leader lines now
     private bool _printing; // a WM_PRINTCLIENT paint (DrawToBitmap), which can't see the GPU's swap chain
+    private TimeSpan? _caretBlink;
+    private bool _caretBlinkSet; // the application set CaretBlink: Windows' blink time no longer applies
+    private OverlayColors? _overlayColors; // the application's; until set, the default or high contrast's
     private char _highSurrogate;
     private Keys _routed; // the key ProcessCmdKey already gave the engine
     private bool _readOnly;
@@ -66,6 +71,7 @@ public class DocumentEditor : Control
         Controls.Add(_vertical);
         session.StateChanged += OnStateChanged;
         session.CommentAnchorsChanged += OnCommentAnchorsChanged;
+        if (!_designTime) Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
     }
 
     /// <summary>The session this control presents.</summary>
@@ -189,11 +195,13 @@ public class DocumentEditor : Control
         {
             _paintMarkupPane += value;
             DetachGpu(); // GDI can't draw over the GPU's swap chain
+            SendLeaders([]); // the handler draws them
         }
         remove
         {
             _paintMarkupPane -= value;
             AttachGpu();
+            if (_paintMarkupPane is null) PlaceBalloons(); // the engine draws the leaders again
         }
     }
 
@@ -209,6 +217,53 @@ public class DocumentEditor : Control
             if (value) AttachGpu();
             else DetachGpu();
         }
+    }
+
+    /// <summary>
+    /// A phase of the caret's blink (at least 100 ms); null is a steady caret. Until set, it follows Windows' caret
+    /// blink rate (Control Panel's keyboard settings), and is steady when Windows doesn't blink the caret.
+    /// </summary>
+    [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public TimeSpan? CaretBlink
+    {
+        get => _caretBlinkSet ? _caretBlink : SystemCaretBlink();
+        set
+        {
+            (_caretBlink, _caretBlinkSet) = (value, true);
+            if (_host is { } h) h.CaretBlink = value;
+        }
+    }
+
+    /// <summary>
+    /// The colours of what the editor draws over the document. Until set, the engine's defaults, or Windows' system
+    /// colours while high contrast is on.
+    /// </summary>
+    [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public OverlayColors OverlayColors
+    {
+        get => _overlayColors ?? SystemOverlayColors();
+        set
+        {
+            _overlayColors = value;
+            if (_host is { } h) h.OverlayColors = value;
+        }
+    }
+
+    private static OverlayColors SystemOverlayColors() => SystemInformation.HighContrast
+        ? new OverlayColors(SystemColors.WindowText, SystemColors.Highlight, SystemColors.WindowText, SystemColors.WindowText, SystemColors.GrayText, SystemColors.GrayText)
+        : OverlayColors.Default;
+
+    /// <summary>Windows' caret blink: <c>GetCaretBlinkTime</c>, which is -1 (INFINITE) when the caret doesn't blink.</summary>
+    private static TimeSpan? SystemCaretBlink() => SystemInformation.CaretBlinkTime is > 0 and var ms ? TimeSpan.FromMilliseconds(ms) : null;
+
+    private void OnUserPreferenceChanged(object? sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
+    {
+        if (_host is not { } h) return;
+        BeginInvoke(() =>
+        {
+            if (!_caretBlinkSet) h.CaretBlink = SystemCaretBlink();
+            if (_overlayColors is null) h.OverlayColors = SystemOverlayColors();
+        });
     }
 
     /// <summary>The GPU backend the editor draws with ("D3D12", "D3D11" or "Vulkan"), or null when it draws with the CPU.</summary>
@@ -261,8 +316,28 @@ public class DocumentEditor : Control
         _host.OnVisible(Visible);
         if (Focused) _host.OnFocus(true);
         State.Update(Session.State);
-        _host.GpuLost += () => BeginInvoke(DetachGpu);
+        _host.GpuLost += () => BeginInvoke(OnGpuLost);
+        _host.CaretBlink = CaretBlink;
+        if (_overlayColors is not null || SystemInformation.HighContrast) _host.OverlayColors = OverlayColors;
         AttachGpu();
+    }
+
+    /// <summary>The waits before each try at the GPU again after a device loss; CPU frames for the session after them.</summary>
+    private static readonly TimeSpan[] GpuRetries = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30)];
+
+    /// <summary>CPU frames while the GPU recovers, then the GPU again (a new device) when one of the retries gets it.</summary>
+    private async void OnGpuLost()
+    {
+        DetachGpu();
+        var loss = ++_gpuLosses;
+        foreach (var wait in GpuRetries)
+        {
+            await Task.Delay(wait);
+            // Another loss, the GPU turned off, or the window gone: those decide from here.
+            if (loss != _gpuLosses || !_gpu || _host is null || IsDisposed) return;
+            AttachGpu();
+            if (_canvas is not null) return;
+        }
     }
 
     /// <summary>Has the engine draw into a child window with the GPU, when it can and nothing paints over the frame.</summary>
@@ -511,7 +586,11 @@ public class DocumentEditor : Control
     /// <summary>Stacks the attached cards beside their threads' lines, and hides the cards whose thread isn't in view.</summary>
     private void PlaceBalloons()
     {
-        if (_balloons.Count == 0) return;
+        if (_balloons.Count == 0)
+        {
+            SendLeaders([]);
+            return;
+        }
         var anchors = _anchors.Where(a => _balloons.ContainsKey(a.Thread)).ToList();
         var gap = 8 * DeviceDpi / 96.0;
         var tops = Session.Review.StackBalloons(anchors, [.. anchors.Select(a => (double)_balloons[a.Thread].Height)], gap);
@@ -530,7 +609,19 @@ public class DocumentEditor : Control
             if (!anchors.Exists(a => a.Thread == thread)) card.Visible = false;
         }
         BalloonsLaidOut?.Invoke(this, new BalloonsLaidOutEventArgs(placements));
+        SendLeaders(placements);
         if (_markupPaneWidth > 0) Invalidate();
+    }
+
+    /// <summary>The engine draws the leader lines while no <see cref="PaintMarkupPane"/> handler draws them, so balloons
+    /// keep the GPU path.</summary>
+    private void SendLeaders(IReadOnlyList<BalloonPlacement> placements)
+    {
+        if (_host is null) return;
+        var lines = _paintMarkupPane is null ? placements.Select(p => (IReadOnlyList<PointF>)[.. p.Leader.Select(q => (PointF)q)]).ToList() : [];
+        if (lines.Count == 0 && !_leadersSent) return;
+        _leadersSent = lines.Count > 0;
+        _host.SetLeaders(lines);
     }
 
     private sealed class Balloon(Action remove) : IDisposable
@@ -712,6 +803,7 @@ public class DocumentEditor : Control
         {
             Session.StateChanged -= OnStateChanged;
             Session.CommentAnchorsChanged -= OnCommentAnchorsChanged;
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _caret.Destroy();
             _host?.Dispose();
             _host = null;

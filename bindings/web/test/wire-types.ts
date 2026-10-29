@@ -104,6 +104,9 @@ const types: Record<string, string> = {
   'export-options': "Parameters<T.HeadlessEditor['export']>[0]",
   'field-kind': "T.FieldInfo['kind']",
   'font-style': "Known<T.DialogValues['font']['style']>",
+  'frame-stats': 'T.FrameStats',
+  'overlay-palette': 'T.OverlayColors',
+  'paint-budget': "Required<NonNullable<T.MountOptions['paintBudget']>>",
   'gesture-target': "T.GestureEvent['target']",
   'header-footer-kind': "NonNullable<T.SelectionSummary['headerFooter']>['kind']",
   'header-footer-type': "NonNullable<T.SelectionSummary['headerFooter']>['type']",
@@ -164,6 +167,7 @@ const types: Record<string, string> = {
 /** Fixtures with no public type: the C ABI's own shapes, and input the SDK forwards. */
 const skip: Record<string, string> = {
   balloons: 'not a type: the cases review.stackBalloons must give (anchors, heights, gap, tops)',
+  'caret-blink': 'the C ABI blink settings; the SDK takes ms (view.setCaretBlink)',
   'clipboard-data': 'the C ABI copy and paste payload; the SDK owns the system clipboard',
   commit: "the C ABI's command result; the SDK resolves the promise and emits documentChanged",
   'composition-phase': 'IME input the SDK forwards',

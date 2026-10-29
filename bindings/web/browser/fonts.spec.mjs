@@ -24,20 +24,26 @@ test('Google Fonts’ stylesheet and font files are readable from the page (CORS
   expect(sizes[1]).toBeGreaterThan(1000);
 });
 
-test('the font fixture’s families arrive within 2 s of mount', async ({ page }) => {
-  const started = await page.evaluate(async (docx) => {
-    const { Editor, FontLibrary } = await import('/web/dist/index.js');
-    const fonts = FontLibrary.default();
-    fonts.useGoogleFonts();
-    fonts.substitute({ 'Times New Roman': 'Tinos' });
-    const container = Object.assign(document.createElement('div'), { style: 'width: 640px; height: 480px' });
-    document.body.append(container);
-    window.editor = await Editor.mount(container, { document: new Uint8Array(docx) });
-    window.fonts = fonts;
-    return performance.now();
-  }, fixture);
-  await expect
-    .poll(() => page.evaluate(async () => [window.editor.getState().fonts, await window.fonts.families()]), { timeout: 2000 })
-    .toEqual([{ pending: [], unresolved: ['Zzyzx Unknown'] }, expect.arrayContaining(['Tinos', 'Roboto Slab'])]);
-  expect(await page.evaluate(() => performance.now())).toBeLessThan(started + 2000);
-});
+// In worker mode the library's settings, made before the worker exists, reach it after the editor's session does.
+for (const execution of ['main', 'worker']) {
+  test(`the font fixture’s families arrive within 2 s of mount (${execution})`, async ({ page }) => {
+    const started = await page.evaluate(
+      async ({ docx, execution }) => {
+        const { Editor, FontLibrary } = await import('/web/dist/index.js');
+        const fonts = FontLibrary.default();
+        fonts.useGoogleFonts();
+        fonts.substitute({ 'Times New Roman': 'Tinos' });
+        const container = Object.assign(document.createElement('div'), { style: 'width: 640px; height: 480px' });
+        document.body.append(container);
+        window.editor = await Editor.mount(container, { document: new Uint8Array(docx), execution });
+        window.fonts = fonts;
+        return performance.now();
+      },
+      { docx: fixture, execution },
+    );
+    await expect
+      .poll(() => page.evaluate(async () => [window.editor.getState().fonts, await window.fonts.families()]), { timeout: 2000 })
+      .toEqual([{ pending: [], unresolved: ['Zzyzx Unknown'] }, expect.arrayContaining(['Tinos', 'Roboto Slab'])]);
+    expect(await page.evaluate(() => performance.now())).toBeLessThan(started + 2000);
+  });
+}

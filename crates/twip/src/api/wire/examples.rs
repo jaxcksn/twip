@@ -18,7 +18,9 @@ use crate::api::input::{ClipboardData, CompositionPhase, Key, Modifiers, Point, 
 use crate::api::record::{Author, ChangeSummary, Identity, Origin, Timestamp, TransactionRecord};
 use crate::api::review::*;
 use crate::api::services::*;
-use crate::api::session::{Commit, Cursor, Export, ExportFormat, ExportOptions, FrameInfo, HostRequest};
+use crate::api::session::{
+    CaretBlink, Commit, Cursor, Export, ExportFormat, ExportOptions, FrameInfo, FrameStats, HostRequest, OverlayPalette, PaintBudget,
+};
 use crate::api::state::*;
 use crate::api::value::*;
 use crate::api::warning::{Location, Warning, WarningCode};
@@ -322,6 +324,18 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("export-options", ExportOptions, vec![ExportOptions { format: ExportFormat::Pdf }]),
         fixture!("export", Export, vec![Export { bytes: Bytes(b"PK".to_vec()), revision: 7, warnings: vec![warning()] }]),
         fixture!("frame-info", FrameInfo, vec![frame_info()]),
+        fixture!("frame-stats", FrameStats, vec![frame_stats()]),
+        fixture!("overlay-palette", OverlayPalette, vec![OverlayPalette::default()]),
+        fixture!("paint-budget", PaintBudget, vec![PaintBudget::default()]),
+        fixture!(
+            "caret-blink",
+            CaretBlink,
+            vec![
+                CaretBlink::default(),
+                CaretBlink { interval_ms: None, stop_after_ms: None },
+                CaretBlink { interval_ms: Some(600), stop_after_ms: Some(5000) }
+            ]
+        ),
         fixture!(
             "host-request",
             HostRequest,
@@ -331,6 +345,7 @@ pub fn fixtures() -> Vec<Fixture> {
                 HostRequest::Release,
                 HostRequest::Clipboard { data: clipboard() },
                 HostRequest::Caret { x: 96.5, y: 120.0, height: 18.5, visible: true },
+                HostRequest::Scroll { x: -12.0, y: 1180.5 },
                 HostRequest::ScrollTo { x: 96.5, y: 1240.0, width: 1.5, height: 18.5 },
                 HostRequest::A11y { tree: accessible() },
             ]
@@ -1246,6 +1261,10 @@ fn session_options() -> SessionOptions {
 
 fn clipboard() -> ClipboardData {
     ClipboardData { text: "copied".into(), html: Some("<b>copied</b>".into()), internal: Some("3.17".into()) }
+}
+
+fn frame_stats() -> FrameStats {
+    FrameStats { frames: 120, pages_recorded: 4, pages_reused: 1062, recording_bytes: 524_288, last_frame_ms: 1.5, p95_frame_ms: 2.5 }
 }
 
 fn frame_info() -> FrameInfo {

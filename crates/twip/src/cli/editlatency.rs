@@ -388,3 +388,222 @@ pub fn run_api(path: &str, n: usize) -> Result<(), String> {
     println!("typing p95 engine {a:.3} ms, api {b:.3} ms; api overhead {o:.3} ms (median of 3; budget: under 1 ms)");
     if o < 1.0 { Ok(()) } else { Err(format!("api budget fails: {o:.3} ms")) }
 }
+
+/// `editlatency --select <doc.docx> [dpr]`: a selection dragged across the viewport's paragraphs, then extended a
+/// line at a time with Shift+Down, through the API session as an SDK drives it (the listener encodes each event).
+/// Per step, the engine's own time (the input, the state it builds, the events) and the frame after it, apart.
+pub fn run_select(path: &str, dpr: f64) -> Result<(), String> {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use twip::api::engine::{Engine, SessionOptions};
+    use twip::api::event::Event;
+    use twip::api::fonts::FontLibrary;
+    use twip::api::input::{Key, Modifiers, Point, PointerButton, PointerKind};
+    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    let stats = |name: &str, mut v: Vec<f64>| {
+        v.sort_by(f64::total_cmp);
+        let at = |q: f64| v.get(((v.len().saturating_sub(1)) as f64 * q).round() as usize).copied().unwrap_or(0.0);
+        println!("{name}: p50 {:.2} p95 {:.2} max {:.2} ms (n {})", at(0.5), at(0.95), at(1.0), v.len());
+    };
+    let mut engine = Engine::new(FontLibrary::system());
+    let encoded = Rc::new(Cell::new(0usize));
+    let sink = encoded.clone();
+    engine.set_listener(move |_, event| {
+        let json = match event {
+            Event::StateChanged(state) => serde_json::to_vec(state),
+            e => serde_json::to_vec(e),
+        };
+        sink.set(sink.get() + json.map_or(0, |j| j.len()));
+    });
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).ok_or("no session")?;
+    s.open(&bytes).map_err(|e| e.message)?;
+    let (css_w, css_h) = (1000.0, 800.0);
+    let (w, h) = ((css_w * dpr) as u32, (css_h * dpr) as u32);
+    let mut pixels = vec![0u8; (w * h * 4) as usize];
+    s.host().set_size(css_w, css_h, dpr);
+    s.host().set_focus(true);
+    // An idle host has laid out the whole document by the time a user selects (the background layout timer).
+    while s.host().idle() {}
+    s.host().frame_rgba(&mut pixels, w, h).map_err(|e| e.message)?;
+    let t = Instant::now();
+    s.host().frame_rgba(&mut pixels, w, h).map_err(|e| e.message)?;
+    println!("an unchanged frame: {:.2} ms at {w}x{h}", t.elapsed().as_secs_f64() * 1e3);
+    let (mut input, mut frame) = (Vec::new(), Vec::new());
+    let mut step = |s: &mut twip::api::session::Session, f: &mut dyn FnMut(&mut twip::api::session::Session)| -> Result<(), String> {
+        let t = Instant::now();
+        f(s);
+        input.push(t.elapsed().as_secs_f64() * 1e3);
+        let t = Instant::now();
+        s.host().frame_rgba(&mut pixels, w, h).map_err(|e| e.message)?;
+        frame.push(t.elapsed().as_secs_f64() * 1e3);
+        Ok(())
+    };
+    let before = encoded.get();
+    let drawn = s.host().frame_stats();
+    let at = |x: f64, y: f64| Point { x, y };
+    step(s, &mut |s| s.pointer(PointerKind::Down, at(250.0, 150.0), PointerButton::Primary, 1, Modifiers::default()))?;
+    for i in 1..=60 {
+        let (x, y) = (250.0 + (i % 7) as f64 * 60.0, 150.0 + i as f64 * 10.0);
+        step(s, &mut |s| s.pointer(PointerKind::Move, at(x, y), PointerButton::Primary, 1, Modifiers::default()))?;
+    }
+    step(s, &mut |s| s.pointer(PointerKind::Up, at(310.0, 750.0), PointerButton::Primary, 1, Modifiers::default()))?;
+    let shift = Modifiers { shift: true, ..Modifiers::default() };
+    for _ in 0..60 {
+        step(s, &mut |s| {
+            let _ = s.key(Key::ArrowDown, shift);
+        })?;
+    }
+    let after = s.host().frame_stats();
+    println!(
+        "during the selection: {} pages recorded, {} replayed",
+        after.pages_recorded - drawn.pages_recorded,
+        after.pages_reused - drawn.pages_reused
+    );
+    stats("selection input (state and events)", input);
+    stats("frame after it", frame);
+    println!("{} KB of JSON a step", (encoded.get() - before) / 122 / 1024);
+    Ok(())
+}
+
+/// An API session on `path` for the frame benchmarks: a 1000 x 800 CSS px viewport at `dpr`, focused, the first frame
+/// drawn. Returns the engine (it owns the session), the session id and the pixel buffer's size.
+fn frame_session(path: &str, dpr: f64) -> Result<(twip::api::engine::Engine, twip::api::engine::SessionId, u32, u32), String> {
+    use twip::api::engine::{Engine, SessionOptions};
+    use twip::api::fonts::FontLibrary;
+    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).ok_or("no session")?;
+    s.open(&bytes).map_err(|e| e.message)?;
+    let (w, h) = ((1000.0 * dpr) as u32, (800.0 * dpr) as u32);
+    s.host().set_size(1000.0, 800.0, dpr);
+    Ok((engine, id, w, h))
+}
+
+/// `editlatency --scroll <doc.docx> [dpr]`: scrolls from the first page to the last and back, 200 CSS px a frame,
+/// drawing each; reports frame times and what the retained page content kept.
+pub fn run_scroll(path: &str, dpr: f64) -> Result<(), String> {
+    let (mut engine, id, w, h) = frame_session(path, dpr)?;
+    let s = engine.session(id).ok_or("no session")?;
+    let mut pixels = vec![0u8; (w * h * 4) as usize];
+    s.host().frame_rgba(&mut pixels, w, h).map_err(|e| e.message)?;
+    // Lay the whole document out, so the scroll covers every page.
+    while s.host().idle() {}
+    let height = s.host().frame_rgba(&mut pixels, w, h).map_err(|e| e.message)?.content_height;
+    let mut times = Vec::new();
+    let positions: Vec<f64> = (0..).map(|i| f64::from(i) * 200.0).take_while(|y| *y < height).collect();
+    for &y in positions.iter().chain(positions.iter().rev()) {
+        s.host().set_scroll(0.0, y);
+        let t = Instant::now();
+        s.host().frame_rgba(&mut pixels, w, h).map_err(|e| e.message)?;
+        times.push(t.elapsed().as_secs_f64() * 1e3);
+    }
+    let over = times.iter().filter(|t| **t > 16.7).count();
+    times.sort_by(f64::total_cmp);
+    let at = |q: f64| times.get(((times.len().saturating_sub(1)) as f64 * q).round() as usize).copied().unwrap_or(0.0);
+    let stats = s.host().frame_stats();
+    println!(
+        "scroll frames: p50 {:.2} p95 {:.2} max {:.2} ms (n {}), {over} over 16.7 ms; {} pages recorded, {} replayed; {:.1} MB recordings",
+        at(0.5),
+        at(0.95),
+        at(1.0),
+        times.len(),
+        stats.pages_recorded,
+        stats.pages_reused,
+        stats.recording_bytes as f64 / 1048576.0
+    );
+    Ok(())
+}
+
+/// `editlatency --blink <doc.docx>`: 10 s unfocused, then 10 s focused with the caret placed, run as an SDK runs the
+/// engine (its timers armed and fired on time, a frame drawn whenever one is asked for); reports the frames each
+/// produced and a blink frame's time against a frame drawn from scratch.
+pub fn run_blink(path: &str) -> Result<(), String> {
+    use twip::api::command::Command;
+    let (mut engine, id, w, h) = frame_session(path, 1.0)?;
+    let s = engine.session(id).ok_or("no session")?;
+    let mut pixels = vec![0u8; (w * h * 4) as usize];
+    s.host().frame_rgba(&mut pixels, w, h).map_err(|e| e.message)?;
+    while s.host().idle() {}
+    let mut run = |s: &mut twip::api::session::Session, secs: f64| -> Result<(usize, Vec<f64>), String> {
+        let start = Instant::now();
+        let mut due: Vec<(Instant, u32)> = Vec::new();
+        let (mut frames, mut times) = (0, Vec::new());
+        while start.elapsed().as_secs_f64() < secs {
+            for (timer, ms) in s.host().take_timers() {
+                due.push((Instant::now() + std::time::Duration::from_millis(u64::from(ms)), timer));
+            }
+            let now = Instant::now();
+            let (fire, wait): (Vec<_>, Vec<_>) = due.into_iter().partition(|(at, _)| *at <= now);
+            due = wait;
+            for (_, timer) in fire {
+                s.host().timer_fired(timer);
+            }
+            if s.host().take_frame_request() {
+                let t = Instant::now();
+                s.host().frame_rgba(&mut pixels, w, h).map_err(|e| e.message)?;
+                times.push(t.elapsed().as_secs_f64() * 1e3);
+                frames += 1;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        Ok((frames, times))
+    };
+    let (idle, _) = run(s, 10.0)?;
+    s.host().set_focus(true);
+    let _ = s.run(Command::MoveSelection(twip::api::command::MoveSelection {
+        by: twip::api::command::MoveUnit::Document,
+        direction: twip::api::value::Direction::Backward,
+        extend: None,
+    }));
+    let (blinking, times) = run(s, 10.0)?;
+    let scratch = {
+        s.host().set_retained(false);
+        let mut times: Vec<f64> = (0..20)
+            .map(|_| {
+                let t = Instant::now();
+                let _ = s.host().frame_rgba(&mut pixels, w, h);
+                t.elapsed().as_secs_f64() * 1e3
+            })
+            .collect();
+        s.host().set_retained(true);
+        times.sort_by(f64::total_cmp);
+        times[times.len() / 2]
+    };
+    let blink = times.iter().sum::<f64>() / times.len().max(1) as f64;
+    println!(
+        "unfocused 10 s: {idle} frames; focused 10 s: {blinking} frames; a blink frame {blink:.2} ms, a frame from scratch {scratch:.2} ms ({:.0}%)",
+        100.0 * blink / scratch.max(1e-9)
+    );
+    Ok(())
+}
+
+/// `editlatency --frames <doc.docx> [dpr]`: an unchanged frame's median time with the pages' drawing kept
+/// (replayed) and drawn from scratch, on the first screen and one a few pages in.
+pub fn run_frames(path: &str, dpr: f64) -> Result<(), String> {
+    let (mut engine, id, w, h) = frame_session(path, dpr)?;
+    let s = engine.session(id).ok_or("no session")?;
+    let mut pixels = vec![0u8; (w * h * 4) as usize];
+    while s.host().idle() {}
+    for scroll in [0.0, 3000.0] {
+        s.host().set_scroll(0.0, scroll);
+        let mut median = |s: &mut twip::api::session::Session, retained: bool| {
+            s.host().set_retained(retained);
+            let _ = s.host().frame_rgba(&mut pixels, w, h);
+            let mut t: Vec<f64> = (0..30)
+                .map(|_| {
+                    let at = Instant::now();
+                    let _ = s.host().frame_rgba(&mut pixels, w, h);
+                    at.elapsed().as_secs_f64() * 1e3
+                })
+                .collect();
+            t.sort_by(f64::total_cmp);
+            t[15]
+        };
+        let (kept, scratch) = (median(s, true), median(s, false));
+        println!("scroll {scroll}: kept {kept:.2} ms, from scratch {scratch:.2} ms at {w}x{h}");
+    }
+    s.host().set_retained(true);
+    Ok(())
+}

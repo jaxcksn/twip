@@ -57,7 +57,7 @@ typedef struct TwipFrameInfo {
 #define TWIP_KIND_REQUEST_FRAME 3 /* no payload: draw a frame */
 #define TWIP_KIND_SET_TIMER 4     /* {"timer", "ms"}: arm a one-shot timer, then call twip_timer_fired */
 #define TWIP_KIND_FONT_REQUEST 5  /* api::FontRequest: resolve, then twip_font_add or FontMarkUnresolved */
-#define TWIP_KIND_HOST_REQUEST 6  /* {"type": cursor | capture | release | clipboard | caret | scroll_to | a11y | announce} */
+#define TWIP_KIND_HOST_REQUEST 6  /* {"type": cursor | capture | release | clipboard | caret | scroll | scroll_to | a11y | announce} */
 
 typedef void (*twip_callback)(void* ctx, uint32_t session, uint32_t kind, const uint8_t* ptr, size_t len);
 
@@ -143,7 +143,12 @@ enum TwipMethod {
     TWIP_OPEN_DISCARD = 67,           /* token (twip_open_prepare) -> null */
     TWIP_DIALOG_SELECT_ISSUE = 68,    /* string (an accessibility issue id) -> null */
     TWIP_FONT_SET_RESOLVER = 69,      /* bool: the SDK has a resolver (font requests come as kind 5) -> null */
-    TWIP_PLACEHOLDERS = 70            /* -> PlaceholderInfo[] (the unfilled picture placeholders) */
+    TWIP_PLACEHOLDERS = 70,           /* -> PlaceholderInfo[] (the unfilled picture placeholders) */
+    TWIP_HOST_SET_CARET_BLINK = 71,   /* CaretBlink { intervalMs, stopAfterMs } -> null */
+    TWIP_HOST_FRAME_STATS = 72,       /* -> FrameStats (what the frames have cost so far) */
+    TWIP_HOST_SET_OVERLAY_PALETTE = 73, /* OverlayPalette (colours #RRGGBB) -> null */
+    TWIP_HOST_SET_PAINT_BUDGET = 74,  /* PaintBudget { recordings } bytes -> null */
+    TWIP_HOST_SET_LEADERS = 75        /* Point[][] (content CSS px) -> null: the balloons' leader lines */
 };
 
 int32_t twip_call(TwipEngine* engine, uint32_t session, uint32_t method, const uint8_t* req, size_t len, TwipBuf* out);
@@ -209,10 +214,13 @@ int32_t twip_frame_webgpu(TwipEngine* engine, uint32_t session, uintptr_t textur
 int32_t twip_attach_webgl(TwipEngine* engine, uint32_t session);
 int32_t twip_frame_webgl(TwipEngine* engine, uint32_t session, uint32_t width, uint32_t height, TwipFrameInfo* info);
 /* Windows GPU frames: Graphite on Dawn into the host's window (D3D12, then D3D11, then Vulkan). twip_attach_window
- * returns the backend (1 D3D12, 2 D3D11, 3 Vulkan) or fails TWIP_E_UNAVAILABLE; twip_frame_rgba is the fallback. */
+ * returns the backend (1 D3D12, 2 D3D11, 3 Vulkan) or fails TWIP_E_UNAVAILABLE; twip_frame_rgba is the fallback.
+ * After a device loss twip_frame_window fails TWIP_E_UNAVAILABLE; the next twip_attach_window makes a new device.
+ * twip_test_lose_gpu loses the device as a driver reset would, for tests. */
 int32_t twip_attach_window(TwipEngine* engine, uint32_t session, void* hwnd);
 void twip_detach_window(TwipEngine* engine, uint32_t session);
 int32_t twip_frame_window(TwipEngine* engine, uint32_t session, uint32_t width, uint32_t height, TwipFrameInfo* info);
+void twip_test_lose_gpu(TwipEngine* engine, uint32_t session);
 void twip_timer_fired(TwipEngine* engine, uint32_t session, uint32_t timer);
 
 #ifdef __cplusplus

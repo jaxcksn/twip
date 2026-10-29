@@ -187,6 +187,16 @@ methods! {
     FontSetResolver = 69,
     /// → `PlaceholderInfo[]`: the unfilled picture placeholders.
     Placeholders = 70,
+    /// `{ intervalMs, stopAfterMs }` (`CaretBlink`) → `null`.
+    HostSetCaretBlink = 71,
+    /// → `FrameStats`: what the frames have cost so far.
+    HostFrameStats = 72,
+    /// `OverlayPalette` (colours `#RRGGBB`) → `null`.
+    HostSetOverlayPalette = 73,
+    /// `{ recordings }` (`PaintBudget`, bytes) → `null`.
+    HostSetPaintBudget = 74,
+    /// `Point[][]` (content CSS px) → `null`: the balloons' leader lines the engine draws.
+    HostSetLeaders = 75,
 }
 
 #[derive(Deserialize)]
@@ -359,7 +369,9 @@ fn engine_call(e: &mut TwipEngine, method: Method, json: &[u8]) -> Option<Result
         }
         _ => return None,
     };
-    if result.is_ok() && matches!(method, Method::FontSetSubstitutions | Method::FontSetDefault | Method::FontMarkUnresolved) {
+    if result.is_ok()
+        && matches!(method, Method::FontSetSubstitutions | Method::FontSetDefault | Method::FontSetResolver | Method::FontMarkUnresolved)
+    {
         e.engine.sync_fonts();
     }
     Some(result)
@@ -526,6 +538,23 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
             Ok(none)
         }
         Method::HostVisiblePages => to_value(s.host().visible_pages()),
+        Method::HostFrameStats => to_value(s.host().frame_stats()),
+        Method::HostSetLeaders => {
+            s.host().set_leaders(request(json)?);
+            Ok(none)
+        }
+        Method::HostSetPaintBudget => {
+            s.host().set_paint_budget(request(json)?);
+            Ok(none)
+        }
+        Method::HostSetOverlayPalette => {
+            s.host().set_overlay_palette(request(json)?);
+            Ok(none)
+        }
+        Method::HostSetCaretBlink => {
+            s.host().set_caret_blink(request(json)?);
+            Ok(none)
+        }
         // `call` answers these before looking for a session.
         Method::Catalog
         | Method::FontFamilies

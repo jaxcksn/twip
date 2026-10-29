@@ -65,7 +65,7 @@ the UI thread. Bind a toggle button's `CheckState` to `BoldCheckState`, `ItalicC
 The control's view settings are properties: `ShowHorizontalRuler`, `ShowVerticalRuler`, `RulerUnit`, `TabSelector`,
 `MarkupPaneWidth`, and `BackColor` for the background around the pages (the paper stays white). WinForms shows no
 system context menu, so `ContextMenuRequested` is where you show yours. Comment balloons are your own controls,
-placed by `AttachBalloon`: see [Review](review).
+placed by `AttachBalloon`: see [Review](review). The caret blink, overlay colours and the GPU: see [Rendering](rendering).
 
 ## Hosting a session in another UI framework
 

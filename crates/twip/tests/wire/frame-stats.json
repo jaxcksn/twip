@@ -1,0 +1,10 @@
+[
+  {
+    "frames": 120,
+    "lastFrameMs": 1.5,
+    "p95FrameMs": 2.5,
+    "pagesRecorded": 4,
+    "pagesReused": 1062,
+    "recordingBytes": 524288
+  }
+]

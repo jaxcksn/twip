@@ -58,6 +58,8 @@ public sealed class WireTests
         ["clipboarddata"] = Ctx.ClipboardContent,
         ["point"] = Ctx.PointF,
         ["contentpoint"] = Ctx.PointF,
+        ["caretblink"] = Ctx.CaretBlinkWire,
+        ["overlaypalette"] = Ctx.OverlayPaletteWire,
         ["clientrect"] = Ctx.RectangleF,
         ["key"] = Ctx.EditorKey,
         ["modifiers"] = Ctx.KeyModifiers,

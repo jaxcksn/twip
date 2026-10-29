@@ -111,3 +111,7 @@ static Twip.WinForms.BalloonPlacement.operator ==(Twip.WinForms.BalloonPlacement
 Twip.WinForms.DocumentEditor.GpuBackend.get -> string?
 Twip.WinForms.DocumentEditor.UseGpu.get -> bool
 Twip.WinForms.DocumentEditor.UseGpu.set -> void
+Twip.WinForms.DocumentEditor.CaretBlink.get -> System.TimeSpan?
+Twip.WinForms.DocumentEditor.CaretBlink.set -> void
+Twip.WinForms.DocumentEditor.OverlayColors.get -> Twip.OverlayColors!
+Twip.WinForms.DocumentEditor.OverlayColors.set -> void

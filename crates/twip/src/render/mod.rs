@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 
+mod overlay;
+pub mod retained;
 pub mod ruler;
 #[cfg(target_os = "emscripten")]
 pub mod web;
@@ -12,7 +14,7 @@ pub mod window;
 
 use skia_safe::{Canvas, Color, Data, Font, FontMgr, Image, Paint, Point, RRect, Rect, Typeface, font::Edging};
 
-use crate::editing::view::{SelectionView, View};
+use crate::editing::view::View;
 use crate::font::Face;
 use crate::layout::fragment::{ImageKey, Item};
 use crate::layout::traverse::paint;
@@ -27,6 +29,8 @@ pub struct Frame {
     pub height: f64,
     pub dpr: f64,
     pub px_per_pt: f64,
+    /// Draw the caret (the view's, when it has one): the host's view is focused and the blink is in its visible phase.
+    pub caret: bool,
 }
 
 /// Skia objects made from the layout's faces and the document's pictures, kept between frames.
@@ -43,6 +47,37 @@ pub struct Renderer {
     pub gridlines: bool,
     /// Glyph runs carry their characters (text blobs with clusters), so a PDF's text extracts as the document's.
     pub with_text: bool,
+    /// Keep each page's content and draw it again from that ([`retained`]): on screen, not for PDF export.
+    pub retain: bool,
+    pub retained: retained::Retained,
+    /// Draw everything from scratch, past any retained page content: what a verified frame is compared with.
+    pub direct: bool,
+    pub palette: Palette,
+}
+
+/// The colours of the overlays the host can set: each at least 3:1 against the page by default.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Palette {
+    pub caret: Color,
+    /// Blended under the content (multiply), so text over it keeps its contrast.
+    pub selection: Color,
+    pub object: Color,
+    pub drop: Color,
+    pub marks: Color,
+    pub leaders: Color,
+}
+
+impl Default for Palette {
+    fn default() -> Palette {
+        Palette {
+            caret: Color::BLACK,
+            selection: Color::from_rgb(0x4A, 0x90, 0xD9),
+            object: Color::from_rgb(0x60, 0x60, 0x60),
+            drop: Color::from_rgb(0x40, 0x40, 0x40),
+            marks: Color::from_rgb(0x2F, 0x6F, 0xB5),
+            leaders: Color::from_rgb(0x76, 0x76, 0x76),
+        }
+    }
 }
 
 pub fn rgb(c: u32) -> Color {
@@ -50,6 +85,11 @@ pub fn rgb(c: u32) -> Color {
 }
 
 impl Renderer {
+    /// A renderer for the screen: it keeps each page's content ([`retained`]).
+    pub fn retaining() -> Renderer {
+        Renderer { retain: true, ..Renderer::default() }
+    }
+
     /// Forgets decoded pictures (a new document).
     pub fn clear_images(&mut self) {
         self.images.clear();
@@ -67,12 +107,12 @@ impl Renderer {
     }
 
     /// The pages a frame shows.
-    pub fn visible(view: &View, f: &Frame) -> std::ops::Range<usize> {
+    pub fn visible(stack: &crate::editing::view::PageStack, f: &Frame) -> std::ops::Range<usize> {
         let k = f.px_per_pt;
         let (top, bottom) = (-f.origin_y, -f.origin_y + f.height / f.dpr);
-        let shown: Vec<usize> = (0..view.stack.pages.len())
+        let shown: Vec<usize> = (0..stack.pages.len())
             .filter(|&i| {
-                let [_, y, _, h] = view.stack.pages[i];
+                let [_, y, _, h] = stack.pages[i];
                 !((y + h) * k < top || y * k > bottom)
             })
             .collect();
@@ -93,185 +133,39 @@ impl Renderer {
         shadow.set_anti_alias(true);
         let mut white = Paint::default();
         white.set_color(Color::WHITE);
-        let mut highlight = Paint::default();
-        highlight.set_color(Color::from_argb(90, 0, 120, 212));
-        let mut fade = Paint::default();
-        fade.set_color(Color::from_argb(130, 255, 255, 255));
-        let mut outline = Paint::default();
-        outline.set_color(Color::from_rgb(0x60, 0x60, 0x60));
-        outline.set_style(skia_safe::paint::Style::Stroke);
-        outline.set_stroke_width(0.75);
         for i in view.pages_visible.clone() {
             let Some(page) = view.snapshot.pages().get(i) else { continue };
             let [x, y, w, h] = view.stack.pages[i];
             let r = Rect::from_xywh((x * k) as f32, (y * k) as f32, (w * k) as f32, (h * k) as f32);
+            // The shadow only shows around the paper: clipping the paper out saves filling its whole area four times.
+            canvas.save();
+            canvas.clip_rect(r, skia_safe::ClipOp::Difference, false);
             for (inflate, drop, alpha) in [(4.0, 3.0, 6), (3.0, 2.5, 10), (2.0, 2.0, 14), (1.0, 1.0, 22)] {
                 shadow.set_color(Color::from_argb(alpha, 0, 0, 0));
                 let s = Rect::new(r.left - inflate, r.top - inflate + drop, r.right + inflate, r.bottom + inflate + drop);
                 canvas.draw_rrect(RRect::new_rect_xy(s, inflate + 2.0, inflate + 2.0), &shadow);
             }
+            canvas.restore();
             canvas.draw_rect(r, &white);
             canvas.save();
             canvas.translate((r.left, r.top));
             canvas.scale((k as f32, k as f32));
-            // Gridlines: dashed light blue cell edges, 1 device pixel, under the content (borders paint over them).
-            if view.gridlines.iter().any(|(pg, _)| *pg == i) {
-                let px = (k * f.dpr).max(0.01) as f32;
-                let mut grid = Paint::default();
-                grid.set_color(Color::from_rgb(0x9C, 0xC2, 0xE5));
-                grid.set_style(skia_safe::paint::Style::Stroke);
-                grid.set_stroke_width(1.0 / px);
-                grid.set_path_effect(skia_safe::PathEffect::dash(&[3.0 / px, 2.0 / px], 0.0));
-                for (_, [x0, y0, x1, y1]) in view.gridlines.iter().filter(|(pg, _)| *pg == i) {
-                    canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &grid);
-                }
+            if self.retain && !self.direct {
+                let mut kept = std::mem::take(&mut self.retained);
+                kept.draw(canvas, page, retained::Inputs { gridlines: self.gridlines }, (w, h), |c| {
+                    paint(page, &mut |p| self.item(c, &p.absolute(), images));
+                });
+                self.retained = kept;
+            } else {
+                paint(page, &mut |p| self.item(canvas, &p.absolute(), images));
             }
-            paint(page, &mut |p| self.item(canvas, &p.absolute(), images));
-            for (_, [x0, y0, x1, y1]) in view.fade.iter().filter(|(pg, _)| *pg == i) {
-                canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &fade);
-            }
-            for ph in view.placeholders.iter().filter(|p| p.page == i) {
-                self.placeholder(canvas, ph);
-            }
-            // Misspellings: a wavy red line along each word's bottom, 1 device pixel wide.
-            let px = (k * f.dpr).max(0.01);
-            let mut wave = Paint::default();
-            wave.set_color(Color::from_rgb(230, 0, 0));
-            wave.set_style(skia_safe::paint::Style::Stroke);
-            wave.set_anti_alias(true);
-            wave.set_stroke_width((1.0 / px) as f32);
-            let (step, amp) = (2.0 / px, 1.5 / px);
-            for (_, [x0, _, x1, y1]) in view.spelling.iter().filter(|(pg, _)| *pg == i) {
-                let y = y1 - 1.5 * amp;
-                let mut pts = vec![Point::new(*x0 as f32, y as f32)];
-                let mut x = x0 + step;
-                while x <= x1 + step / 2.0 {
-                    pts.push(Point::new(x as f32, (if pts.len() % 2 == 1 { y + amp } else { y }) as f32));
-                    x += step;
-                }
-                canvas.draw_points(skia_safe::canvas::PointMode::Polygon, &pts, &wave);
-            }
-            // Design-mode looks: the host's image scaled into a picture control's box keeping its
-            // aspect ratio, or a fill, label and icon drawn as a placeholder's are.
-            for l in view.looks.iter().filter(|l| l.page == i) {
-                let [x0, y0, x1, y1] = l.rect;
-                if let Some(bytes) = &l.image {
-                    let key = std::rc::Rc::as_ptr(bytes) as usize;
-                    let img = self.look_images.entry(key).or_insert_with(|| Image::from_encoded(Data::new_copy(bytes))).clone();
-                    if let Some(img) = img {
-                        let (iw, ih) = (img.width() as f64, img.height() as f64);
-                        let s = ((x1 - x0) / iw).min((y1 - y0) / ih);
-                        let (w, h) = (iw * s, ih * s);
-                        let (cx, cy) = (x0 + (x1 - x0 - w) / 2.0, y0 + (y1 - y0 - h) / 2.0);
-                        canvas.draw_image_rect(&img, None, Rect::new(cx as f32, cy as f32, (cx + w) as f32, (cy + h) as f32), &Paint::default());
-                    }
-                } else {
-                    let ph = crate::editing::view::PlaceholderView {
-                        page: i,
-                        rect: l.rect,
-                        color: l.fill.unwrap_or(0),
-                        label: l.label.clone().unwrap_or_default(),
-                        icon: l.icon.clone(),
-                    };
-                    self.placeholder(canvas, &ph);
-                }
-            }
-            // Design-mode regions: a dashed boundary and a title tab above its top left.
-            for g in &view.regions {
-                let mut line = Paint::default();
-                line.set_anti_alias(true);
-                line.set_style(skia_safe::paint::Style::Stroke);
-                line.set_color(Color::from_rgb(0, 120, 212));
-                line.set_stroke_width((1.0 / px) as f32);
-                line.set_path_effect(skia_safe::PathEffect::dash(&[(3.0 / px) as f32, (2.0 / px) as f32], 0.0));
-                for (_, [x0, y0, x1, y1]) in g.rects.iter().filter(|(pg, _)| *pg == i) {
-                    canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &line);
-                }
-                if g.title_rect.0 == i {
-                    let [x0, y0, x1, y1] = g.title_rect.1;
-                    let mut tab = Paint::default();
-                    tab.set_color(Color::from_rgb(0, 120, 212));
-                    let r = Rect::new(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
-                    canvas.draw_rect(r, &tab);
-                    if let Some(tf) = self.typefaces.values().flatten().next().cloned() {
-                        let font = Font::from_typeface(tf, 9.0);
-                        let mut text = Paint::default();
-                        text.set_anti_alias(true);
-                        text.set_color(Color::WHITE);
-                        canvas.save();
-                        canvas.clip_rect(r, None, true);
-                        canvas.draw_str(&g.title, ((x0 + 4.0) as f32, (y1 - 4.0) as f32), &font, &text);
-                        canvas.restore();
-                    }
-                }
-            }
-            // Commented text: an amber tint over each thread's range, stronger for the active thread. A view
-            // overlay, never printed.
-            for c in &view.comments {
-                let mut tint = Paint::default();
-                tint.set_color(Color::from_argb(if c.active { 110 } else { 45 }, 255, 185, 0));
-                for (_, [x0, y0, x1, y1]) in c.rects.iter().filter(|(pg, _)| *pg == i) {
-                    canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &tint);
-                }
-            }
-            // Element marks: a tint over the element and a wavy line twice the spelling line's
-            // weight, in the severity's colour, so they read apart from misspellings.
-            for m in view.marks.iter().filter(|m| m.page == i) {
-                let (r, g, b) = match m.severity {
-                    crate::editing::view::Severity::Error => (209, 52, 56),
-                    crate::editing::view::Severity::Warning => (193, 156, 0),
-                    crate::editing::view::Severity::Info => (0, 120, 212),
-                };
-                let [x0, y0, x1, y1] = m.rect;
-                let mut tint = Paint::default();
-                tint.set_color(Color::from_argb(28, r, g, b));
-                canvas.draw_rect(Rect::new(x0 as f32, y0 as f32, x1 as f32, y1 as f32), &tint);
-                let mut line = wave.clone();
-                line.set_color(Color::from_rgb(r, g, b));
-                line.set_stroke_width((2.0 / px) as f32);
-                let y = y1 - 1.5 * amp;
-                let mut pts = vec![Point::new(x0 as f32, y as f32)];
-                let mut x = x0 + step;
-                while x <= x1 + step / 2.0 {
-                    pts.push(Point::new(x as f32, (if pts.len() % 2 == 1 { y + amp } else { y }) as f32));
-                    x += step;
-                }
-                canvas.draw_points(skia_safe::canvas::PointMode::Polygon, &pts, &line);
-            }
-            if let Some(c) = view.drop.as_ref().filter(|c| c.page == i) {
-                let mut dash = outline.clone();
-                dash.set_path_effect(skia_safe::PathEffect::dash(&[1.5, 1.5], 0.0));
-                canvas.draw_line((c.x as f32, c.top as f32), (c.x as f32, c.bottom as f32), &dash);
-            }
-            if let Some((_, [x0, y0, x1, y1])) = view.guide.filter(|(pg, _)| *pg == i) {
-                canvas.draw_line((x0 as f32, y0 as f32), (x1 as f32, y1 as f32), &outline);
-            }
-            match &view.selection {
-                SelectionView::Text(rects) | SelectionView::Cells(rects) => {
-                    for (_, [x0, y0, x1, y1]) in rects.iter().filter(|(pg, _)| *pg == i) {
-                        canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &highlight);
-                    }
-                }
-                SelectionView::Object(rects, handles) => {
-                    // The outline and eight handles.
-                    for (_, [x0, y0, x1, y1]) in rects.iter().filter(|(pg, _)| *pg == i) {
-                        canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &outline);
-                        if !handles {
-                            continue;
-                        }
-                        let (xm, ym) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-                        for (hx, hy) in [(*x0, *y0), (xm, *y0), (*x1, *y0), (*x1, ym), (*x1, *y1), (xm, *y1), (*x0, *y1), (*x0, ym)] {
-                            let h = Rect::from_xywh(hx as f32 - 3.0, hy as f32 - 3.0, 6.0, 6.0);
-                            canvas.draw_rect(h, &white);
-                            canvas.draw_rect(h, &outline);
-                        }
-                    }
-                }
-                SelectionView::None => {}
-            }
+            self.overlays(canvas, view, i, f);
             canvas.restore();
         }
         canvas.restore();
+        if self.retain {
+            self.retained.trim();
+        }
     }
 
     /// An unfilled placeholder the host's way: its box tinted, a border in the colour, the icon at its left and
@@ -453,4 +347,32 @@ fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>> {
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WCAG relative luminance.
+    fn luminance(c: Color) -> f64 {
+        let lin = |v: u8| {
+            let v = f64::from(v) / 255.0;
+            if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+        };
+        0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b())
+    }
+
+    #[test]
+    fn the_default_overlay_colours_have_3_to_1_contrast_with_the_page_and_the_canvas() {
+        let p = Palette::default();
+        for (name, c) in
+            [("caret", p.caret), ("selection", p.selection), ("object", p.object), ("drop", p.drop), ("marks", p.marks), ("leaders", p.leaders)]
+        {
+            for back in [Color::WHITE, Color::from_rgb(0xf3, 0xf3, 0xf3)] {
+                let (a, b) = (luminance(c), luminance(back));
+                let ratio = (a.max(b) + 0.05) / (a.min(b) + 0.05);
+                assert!(ratio >= 3.0, "{name} against {back:?}: {ratio:.2}");
+            }
+        }
+    }
 }

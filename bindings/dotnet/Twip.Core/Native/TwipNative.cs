@@ -110,6 +110,11 @@ internal enum Method : uint
     DialogSelectIssue = 68,
     FontSetResolver = 69,
     Placeholders = 70,
+    HostSetCaretBlink = 71,
+    HostFrameStats = 72,
+    HostSetOverlayPalette = 73,
+    HostSetPaintBudget = 74,
+    HostSetLeaders = 75,
 }
 
 /// <summary>Status codes the C functions return.</summary>
@@ -188,6 +193,9 @@ internal static unsafe partial class TwipNative
 
     [DllImport(Library, EntryPoint = "twip_frame_window")]
     public static extern int FrameWindow(nint engine, uint session, uint width, uint height, TwipFrameInfo* info);
+
+    [DllImport(Library, EntryPoint = "twip_test_lose_gpu")]
+    public static extern void TestLoseGpu(nint engine, uint session);
 
     [DllImport(Library, EntryPoint = "twip_timer_fired")]
     public static extern void TimerFired(nint engine, uint session, uint timer);

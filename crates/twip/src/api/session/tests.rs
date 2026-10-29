@@ -278,6 +278,7 @@ fn a_relayout_no_edit_laid_out_is_laid_out_before_the_caret_and_clicks_read_it()
     s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
     s.host().attach(|_| {});
     s.host().set_size(800.0, 600.0, 1.0);
+    s.host().set_focus(true);
     assert!(!s.host().frame_info().caret_visible, "no font: no lines, no caret");
     // A font arrives: the whole document lays out again, and no edit asks for it.
     let font = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/fonts/stand-in-serif.ttf");
@@ -335,4 +336,257 @@ fn applying_a_font_checks_it_against_the_library() {
     );
     assert!(events.iter().any(|e| matches!(e, Event::Warning(w) if w.message.contains("Zorble Sans"))), "{events:?}");
     assert!(s.state().fonts.unresolved.iter().any(|f| f == "Zorble Sans"), "the state has it too");
+}
+
+#[test]
+fn verified_frames_match_their_drawing_from_scratch() {
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Hello".into())).expect("types");
+    s.host().set_size(400.0, 300.0, 1.0);
+    s.host().set_verify_frames(true);
+    let mut pixels = vec![0u8; 400 * 300 * 4];
+    for _ in 0..3 {
+        s.host().frame_rgba(&mut pixels, 400, 300).expect("a frame");
+    }
+    assert_eq!(s.host().verify_failures(), 0);
+    let stats = s.host().frame_stats();
+    assert_eq!(stats.frames, 3, "verification draws don't count: {stats:?}");
+}
+
+/// The darkest pixel of a frame's column `x` over rows `y0..y1`, RGBA rows of `width` pixels.
+fn darkest(pixels: &[u8], width: usize, x: usize, y0: usize, y1: usize) -> u8 {
+    (y0..y1).map(|y| pixels[(y * width + x) * 4]).min().unwrap_or(255)
+}
+
+#[test]
+fn the_caret_is_drawn_and_blinks_while_focused() {
+    use crate::api::session::CaretBlink;
+    // System fonts: with none, an empty document has no line for a caret.
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.host().set_size(400.0, 300.0, 1.0);
+    let mut pixels = vec![0u8; 400 * 300 * 4];
+    let caret_at = |s: &mut crate::api::session::Session, pixels: &mut Vec<u8>| {
+        let info = s.host().frame_rgba(pixels, 400, 300).expect("a frame");
+        let (x, y) = (info.caret_x.floor() as usize, info.caret_y as usize);
+        // The bar covers the pixel its left edge falls in, or the next one.
+        let ink = (x.saturating_sub(1)..=x + 1).map(|x| darkest(pixels, 400, x, y + 2, y + info.caret_height as usize - 2)).min();
+        (info.caret_visible, ink.unwrap_or(255))
+    };
+    // Unfocused: no caret, no blink.
+    let (shown, ink) = caret_at(s, &mut pixels);
+    assert!(!shown && ink > 200, "unfocused: no caret ({ink})");
+    assert!(s.host().take_timers().is_empty());
+    s.host().set_focus(true);
+    assert!(s.host().take_frame_request(), "focus asks for a frame");
+    assert_eq!(s.host().take_timers(), [(2, 530)], "the blink's first phase");
+    let (shown, ink) = caret_at(s, &mut pixels);
+    assert!(shown && ink < 60, "focused: the caret is drawn ({ink})");
+    // A faster blink, to see a phase end.
+    s.host().set_caret_blink(CaretBlink { interval_ms: Some(100), stop_after_ms: None });
+    std::thread::sleep(std::time::Duration::from_millis(110));
+    s.host().take_frame_request();
+    s.host().timer_fired(2); // the 530 ms arm fires late: the 100 ms phase has ended
+    assert!(s.host().take_frame_request(), "a phase change asks for a frame");
+    assert_eq!(s.host().take_timers(), [(2, 100)], "the next phase");
+    let (shown, ink) = caret_at(s, &mut pixels);
+    assert!(!shown && ink > 200, "the hidden phase draws no caret ({ink})");
+    // Typing shows it at once.
+    s.run(Command::InsertText("Hi".into())).expect("types");
+    let (shown, ink) = caret_at(s, &mut pixels);
+    assert!(shown && ink < 60, "input shows the caret ({ink})");
+    // A range: no caret.
+    s.run(Command::SelectAll).expect("selects");
+    assert!(!s.host().frame_info().caret_visible, "a range draws no caret");
+    // Steady: no blink timers, and the caret stays.
+    s.run(Command::MoveSelection(crate::api::command::MoveSelection {
+        by: crate::api::command::MoveUnit::Document,
+        direction: crate::api::value::Direction::Forward,
+        extend: None,
+    }))
+    .expect("moves");
+    s.host().take_timers();
+    s.host().set_caret_blink(CaretBlink { interval_ms: None, stop_after_ms: None });
+    assert!(s.host().take_timers().is_empty(), "steady: no timer");
+    s.host().timer_fired(2);
+    assert!(s.host().frame_info().caret_visible, "steady: always drawn");
+    // Losing focus hides it, and a late timer arms nothing.
+    s.host().set_caret_blink(CaretBlink::default());
+    s.host().set_focus(false);
+    s.host().take_timers();
+    s.host().timer_fired(2);
+    assert!(s.host().take_timers().is_empty(), "unfocused: the blink stops");
+    assert!(!s.host().frame_info().caret_visible);
+}
+
+#[test]
+fn formatting_marks_and_text_boundaries_draw_when_shown() {
+    use crate::api::command::ViewOptions;
+    use crate::editing::view::MarkKind;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("a b\tc".into())).expect("types");
+    s.host().set_size(500.0, 300.0, 1.0);
+    let mut plain = vec![0u8; 500 * 300 * 4];
+    s.host().frame_rgba(&mut plain, 500, 300).expect("a frame");
+    s.run(Command::SetViewOptions(ViewOptions { formatting_marks: Some(true), text_boundaries: Some(true), ..ViewOptions::default() }))
+        .expect("shows the marks");
+    assert!(s.state().view.formatting_marks && s.state().view.text_boundaries);
+    let kinds: Vec<MarkKind> = s.editor.formatting_marks(0..1).iter().map(|m| m.kind).collect();
+    for k in [MarkKind::Space, MarkKind::Tab, MarkKind::Paragraph] {
+        assert!(kinds.contains(&k), "{k:?} in {kinds:?}");
+    }
+    assert!(!s.editor.text_boundaries(0..1).is_empty(), "the body's text area");
+    let mut marked = vec![0u8; 500 * 300 * 4];
+    s.host().frame_rgba(&mut marked, 500, 300).expect("a frame");
+    assert_ne!(plain, marked, "the marks and boundaries are drawn");
+    s.run(Command::SetViewOptions(ViewOptions { formatting_marks: Some(false), text_boundaries: Some(false), ..ViewOptions::default() }))
+        .expect("hides");
+    s.host().frame_rgba(&mut marked, 500, 300).expect("a frame");
+    assert_eq!(plain, marked, "off again: the frame as before");
+}
+
+#[test]
+fn frames_from_retained_pages_equal_frames_drawn_from_scratch() {
+    use crate::api::command::Zoom;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/objects.docx");
+    s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+    s.host().set_verify_frames(true);
+    s.host().set_focus(true);
+    let mut frames = 0;
+    for (dpr, zoom, scroll) in [(1.0, 100.0, 0.0), (1.5, 100.0, 333.5), (2.0, 125.0, 120.25), (1.0, 75.0, 900.0), (2.0, 100.0, 1500.0)] {
+        let (w, h) = (700u32, 500u32);
+        s.host().set_size(f64::from(w) / dpr, f64::from(h) / dpr, dpr);
+        s.run(Command::SetZoom(Zoom::Percent(zoom))).expect("zooms");
+        s.host().set_scroll(0.0, scroll);
+        let mut pixels = vec![0u8; (w * h * 4) as usize];
+        for step in 0..3 {
+            if step == 1 {
+                s.run(Command::SelectAll).expect("selects");
+            }
+            if step == 2 {
+                s.run(Command::InsertText("edited ".into())).expect("types");
+            }
+            s.host().frame_rgba(&mut pixels, w, h).expect("a frame");
+            frames += 1;
+        }
+    }
+    assert_eq!(s.host().verify_failures(), 0, "{frames} frames verified");
+    let stats = s.host().frame_stats();
+    assert!(stats.pages_reused > 0 && stats.pages_recorded > 0, "{stats:?}");
+}
+
+#[test]
+fn zoom_keeps_the_caret_line_or_the_viewport_centre_in_place() {
+    use crate::api::command::Zoom;
+    use crate::api::session::HostRequest;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    for _ in 0..60 {
+        s.run(Command::InsertText("Line".into())).expect("types");
+        s.run(Command::InsertParagraph).expect("splits");
+    }
+    let scrolls = Rc::new(RefCell::new(Vec::new()));
+    let sink = scrolls.clone();
+    s.host().attach(move |r| {
+        if let HostRequest::Scroll { x, y } = r {
+            sink.borrow_mut().push((x, y));
+        }
+    });
+    s.host().set_size(800.0, 600.0, 1.0);
+    while s.host().idle() {}
+    // The host carries out the scroll request, as the SDKs do.
+    let zoom = |s: &mut crate::api::session::Session, percent: f64| {
+        s.run(Command::SetZoom(Zoom::Percent(percent))).expect("zooms");
+        let (x, y) = scrolls.borrow_mut().pop().expect("a scroll request");
+        s.host().set_scroll(x, y);
+        y
+    };
+    // The caret in view, above the centre: its line's screen y stays.
+    let caret = s.host().frame_info().caret_y;
+    s.host().set_scroll(0.0, caret - 150.0);
+    for percent in [200.0, 50.0, 100.0] {
+        let y = zoom(s, percent);
+        let on_screen = s.host().frame_info().caret_y - y;
+        assert!((on_screen - 150.0).abs() <= 1.0, "at {percent}%: the caret line moved to {on_screen}");
+    }
+    // The caret out of view: the content point at the viewport's centre stays.
+    s.host().set_scroll(0.0, 400.0);
+    let mut centre = (400.0 + 300.0) / (96.0 / 72.0);
+    for percent in [200.0, 50.0] {
+        let y = zoom(s, percent);
+        let k = percent / 100.0 * 96.0 / 72.0;
+        assert!((y + 300.0 - centre * k).abs() <= 1.0, "at {percent}%: the centre moved to {}", (y + 300.0) / k);
+        centre = (y + 300.0) / k;
+    }
+}
+
+#[test]
+fn retained_pages_record_once_and_again_only_where_layout_changed() {
+    use crate::api::command::Zoom;
+    use crate::api::session::PaintBudget;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/big.docx");
+    s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+    while s.host().idle() {}
+    // Tall enough for two pages at 50%.
+    let (w, h) = (900u32, 1400u32);
+    s.host().set_size(f64::from(w), f64::from(h), 1.0);
+    s.run(Command::SetZoom(Zoom::Percent(50.0))).expect("zooms");
+    let mut pixels = vec![0u8; (w * h * 4) as usize];
+    let mut frame = |s: &mut crate::api::session::Session| {
+        s.host().frame_rgba(&mut pixels, w, h).expect("a frame");
+        s.host().frame_stats()
+    };
+    let first = frame(s);
+    assert!(first.pages_recorded >= 2, "two pages on screen: {first:?}");
+    let again = frame(s);
+    assert_eq!(again.pages_recorded, first.pages_recorded, "nothing changed: nothing recorded");
+    assert!(again.pages_reused > first.pages_reused, "the pages replayed");
+    // Typing on the first page records that page again, not the second.
+    s.run(Command::InsertText("x".into())).expect("types");
+    // Layout makes the pages after the edit anew; those that draw the same lines keep their recordings.
+    while s.host().idle() {}
+    let typed = frame(s);
+    assert_eq!(typed.pages_recorded, again.pages_recorded + 1, "{again:?} then {typed:?}");
+    // A zoom replays the same recordings at the new scale.
+    s.run(Command::SetZoom(Zoom::Percent(60.0))).expect("zooms");
+    let zoomed = frame(s);
+    assert_eq!(zoomed.pages_recorded, typed.pages_recorded, "a zoom records nothing");
+    assert!(zoomed.pages_reused > typed.pages_reused, "it replays them");
+    // A small budget: the recordings stay within it after the frame.
+    s.host().set_paint_budget(PaintBudget { recordings: 8 << 10 });
+    s.run(Command::SetZoom(Zoom::Percent(100.0))).expect("zooms");
+    let small = frame(s);
+    assert!(small.recording_bytes <= 8 << 10, "trimmed to the budget: {small:?}");
+}
+
+#[test]
+fn leaders_draw_over_the_frame_until_cleared() {
+    use crate::api::input::Point;
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.host().set_size(400.0, 300.0, 1.0);
+    let mut plain = vec![0u8; 400 * 300 * 4];
+    s.host().frame_rgba(&mut plain, 400, 300).expect("a frame");
+    s.host().set_leaders(vec![vec![Point { x: 10.0, y: 150.5 }, Point { x: 390.0, y: 150.5 }]]);
+    assert!(s.host().take_frame_request(), "new leaders ask for a frame");
+    let mut lined = vec![0u8; 400 * 300 * 4];
+    s.host().frame_rgba(&mut lined, 400, 300).expect("a frame");
+    let px = |b: &[u8], x: usize, y: usize| [b[(y * 400 + x) * 4], b[(y * 400 + x) * 4 + 1], b[(y * 400 + x) * 4 + 2]];
+    assert_eq!(px(&lined, 200, 150), [0x76, 0x76, 0x76], "the palette's leader colour");
+    s.host().set_leaders(Vec::new());
+    s.host().frame_rgba(&mut lined, 400, 300).expect("a frame");
+    assert_eq!(plain, lined, "cleared: the frame as before");
 }

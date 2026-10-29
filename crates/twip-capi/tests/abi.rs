@@ -443,3 +443,25 @@ fn a_layout_timer_runs_background_layout_to_the_end() {
     assert_eq!(state["ok"]["pages"]["complete"], true, "{}", state["ok"]["pages"]);
     assert!(timers(&f.take_log()).is_empty(), "nothing to arm once complete");
 }
+
+#[test]
+fn focus_arms_the_caret_blink_and_its_timer_comes_back() {
+    let f = Fixture::new();
+    let s = f.session();
+    // SAFETY: a live engine and session.
+    unsafe { twip_surface(f.engine, s, 200.0, 100.0, 1.0) };
+    f.take_log();
+    // SAFETY: as above.
+    unsafe { twip_focus(f.engine, s, 1) };
+    let log = f.take_log();
+    let blink =
+        |log: &[(u32, u32, Value)]| log.iter().filter(|m| m.1 == kind::SET_TIMER && m.2["timer"] == 2).map(|m| m.2["ms"].clone()).collect::<Vec<_>>();
+    assert_eq!(blink(&log), [json!(530)], "{log:?}");
+    assert!(log.iter().any(|m| m.1 == kind::REQUEST_FRAME), "the caret shows: a frame");
+    // Fired before its phase ends: armed again for the rest, with no frame.
+    // SAFETY: as above.
+    unsafe { twip_timer_fired(f.engine, s, 2) };
+    let log = f.take_log();
+    assert!(matches!(blink(&log)[..], [ref ms] if ms.as_u64().is_some_and(|ms| ms <= 530)), "{log:?}");
+    assert!(!log.iter().any(|m| m.1 == kind::REQUEST_FRAME), "{log:?}");
+}

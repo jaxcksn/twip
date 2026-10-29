@@ -45,6 +45,40 @@ namespace Twip
     /// <param name="Page">The page number.</param>
     /// <param name="Bounds">Its bounds, in control client pixels.</param>
     public sealed record PageRect(int Page, [property: JsonPropertyName("rect")] RectangleF Bounds);
+
+    /// <summary>The colours of what the editor draws over the document.</summary>
+    /// <param name="Caret">The caret.</param>
+    /// <param name="Selection">The selection, blended under the text (multiply), so black text stays black.</param>
+    /// <param name="Object">A selected object's outline and handles.</param>
+    /// <param name="Drop">The drop caret of a drag.</param>
+    /// <param name="Marks">Formatting marks and text boundaries.</param>
+    /// <param name="Leaders">The markup pane's leader lines.</param>
+    public sealed record OverlayColors(Color Caret, Color Selection, Color Object, Color Drop, Color Marks, Color Leaders)
+    {
+        /// <summary>The engine's colours: each at least 3:1 against the page.</summary>
+        public static OverlayColors Default { get; } = new(
+            Color.Black, Color.FromArgb(0x4A, 0x90, 0xD9), Color.FromArgb(0x60, 0x60, 0x60), Color.FromArgb(0x40, 0x40, 0x40),
+            Color.FromArgb(0x2F, 0x6F, 0xB5), Color.FromArgb(0x76, 0x76, 0x76));
+    }
+
+    /// <summary>The memory the editor keeps pages' drawing in; past it, what was drawn longest ago goes first.</summary>
+    /// <param name="Recordings">The pages' recordings, bytes (default 32 MB).</param>
+    public sealed record PaintBudget(long Recordings)
+    {
+        /// <summary>32 MB of recordings.</summary>
+        public static PaintBudget Default { get; } = new(32L << 20);
+    }
+
+    /// <summary>What the frames have cost so far: for benchmarks and tests. Counts run from the session's start.</summary>
+    /// <param name="Frames">Frames drawn.</param>
+    /// <param name="PagesRecorded">Page recordings made: an unchanged page is recorded once.</param>
+    /// <param name="PagesReused">Pages drawn again from their recordings.</param>
+    /// <param name="RecordingBytes">The page recordings kept now, bytes.</param>
+    /// <param name="LastFrameMs">The last frame's time, ms.</param>
+    /// <param name="P95FrameMs">The 95th percentile of the last 120 frames' times, ms.</param>
+    public sealed record FrameStats(
+        long Frames, long PagesRecorded, long PagesReused, long RecordingBytes,
+        double LastFrameMs, [property: JsonPropertyName("p95FrameMs")] double P95FrameMs);
 }
 
 namespace Twip.Hosting

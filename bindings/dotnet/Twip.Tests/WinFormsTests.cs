@@ -116,6 +116,46 @@ public sealed class WinFormsTests
         return Task.CompletedTask;
     });
 
+    /// <summary>The dark pixels in the control's frame: text, and the caret when it's drawn.</summary>
+    private static int Ink(Control control)
+    {
+        using var shot = Ui.Snapshot(control);
+        var n = 0;
+        for (var y = 0; y < shot.Height; y += 1)
+            for (var x = 0; x < shot.Width; x += 1)
+                if (shot.GetPixel(x, y).R < 80) n++;
+        return n;
+    }
+
+    [Fact]
+    public void TheCaretIsDrawnWhileFocusedAndBlinks() => Ui.Run(async () =>
+    {
+        using var editor = new DocumentEditor { Width = 500, Height = 400, CaretBlink = null };
+        _ = editor.Handle;
+        await Ui.FirstFrame(editor);
+        var host = editor.Session.Host!;
+        var unfocused = Ink(editor);
+        host.OnFocus(true);
+        await Ui.Until(() => Ink(editor) > unfocused, "the caret");
+        var steady = Ink(editor);
+        await Task.Delay(700);
+        Assert.Equal(steady, Ink(editor)); // CaretBlink = null: steady
+        // Blinking: both phases show up.
+        editor.CaretBlink = TimeSpan.FromMilliseconds(150);
+        bool sawHidden = false, sawShown = false;
+        var until = DateTime.UtcNow.AddSeconds(3);
+        while (DateTime.UtcNow < until && !(sawHidden && sawShown))
+        {
+            var ink = Ink(editor);
+            sawHidden |= ink == unfocused;
+            sawShown |= ink > unfocused;
+            await Task.Delay(20);
+        }
+        Assert.True(sawHidden && sawShown, $"hidden {sawHidden}, shown {sawShown}");
+        host.OnFocus(false);
+        await Ui.Until(() => Ink(editor) == unfocused, "no caret once unfocused");
+    });
+
     [Fact]
     public void TurningTheGpuOffAndOnKeepsTheFrame() => Ui.Run(async () =>
     {
@@ -130,6 +170,28 @@ public sealed class WinFormsTests
         editor.UseGpu = true;
         Assert.Equal(backend, editor.GpuBackend);
         await Ui.FirstFrame(editor);
+    });
+
+    [Fact]
+    public void ALostGpuDeviceIsMadeAgain() => Ui.Run(async () =>
+    {
+        using var editor = new DocumentEditor { Width = 800, Height = 600 };
+        _ = editor.Handle;
+        await Ui.FirstFrame(editor);
+        var backend = editor.GpuBackend;
+        if (backend is null) Assert.Skip("no usable GPU");
+        editor.Session.Host!.LoseGpu();
+        // The next frame finds the device lost: CPU frames, then a new device at the first retry, a second later.
+        await Ui.Until(() => editor.GpuBackend is null, "the loss", seconds: 5);
+        await Ui.FirstFrame(editor);
+        await Ui.Until(() => editor.GpuBackend == backend, "the GPU again", seconds: 10);
+        await Ui.FirstFrame(editor);
+        Ui.Type(editor, "Hi");
+        await Ui.Until(() => editor.Session.State.Modified, "typing on the new device");
+        // The typing's frame went to the new device (a failed one would have let the GPU go again).
+        await Ui.FirstFrame(editor);
+        await Task.Delay(100);
+        Assert.Equal(backend, editor.GpuBackend);
     });
 
     [Fact]

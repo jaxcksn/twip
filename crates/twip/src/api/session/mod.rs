@@ -2,6 +2,7 @@
 //! submodule holds one area's methods.
 #![warn(missing_docs)]
 
+mod blink;
 mod commands;
 mod documents;
 mod edit;
@@ -16,7 +17,7 @@ use std::rc::Rc;
 
 pub use documents::{Export, ExportFormat, ExportOptions, OpenToken};
 pub use edit::Commit;
-pub use host::{Cursor, FrameInfo, HostRequest, HostSurface};
+pub use host::{CaretBlink, Cursor, FrameInfo, FrameStats, HostRequest, HostSurface, OverlayPalette, PaintBudget};
 pub use input::{Gestures, Shortcuts};
 pub use services::Spelling;
 
@@ -44,6 +45,10 @@ pub struct Session {
     records: u64,
     /// Table gridlines show where cells have no borders.
     gridlines: bool,
+    /// Formatting marks (paragraph ends, spaces, tabs, breaks, hidden text) show.
+    formatting_marks: bool,
+    /// The text areas' and cells' boundaries show.
+    text_boundaries: bool,
     presentation: host::Presentation,
     watch: fonts::Watch,
     services: crate::services::Services,
@@ -67,6 +72,8 @@ impl Session {
             track_changes: options.track_changes,
             records: 0,
             gridlines: false,
+            formatting_marks: false,
+            text_boundaries: false,
             presentation: host::Presentation::default(),
             watch: fonts::Watch::default(),
             services: crate::services::Services::default(),
@@ -144,6 +151,7 @@ impl Session {
         if self.state.selection != selection {
             self.emit(Event::SelectionChanged(self.state.selection.clone()));
         }
+        self.blink_follow();
         self.deliver_requests();
     }
 

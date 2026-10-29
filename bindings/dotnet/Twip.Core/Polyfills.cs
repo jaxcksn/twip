@@ -23,6 +23,11 @@ internal static class Polyfills
         }
     }
 
+    extension(Math)
+    {
+        public static double Clamp(double value, double min, double max) => value < min ? min : value > max ? max : value;
+    }
+
     extension(double)
     {
         public static bool IsFinite(double d) => !double.IsNaN(d) && !double.IsInfinity(d);

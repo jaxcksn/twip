@@ -78,6 +78,42 @@ public sealed class WinFormsChromeTests
     });
 
     [Fact]
+    public void TheEngineDrawsLeadersUnlessTheApplicationPaintsThePane() => Ui.Run(async () =>
+    {
+        using var editor = Editor();
+        _ = editor.Handle;
+        editor.MarkupPaneWidth = 300;
+        await editor.Commands.InsertTextAsync("Commented");
+        await editor.Commands.SelectAllAsync();
+        var thread = await editor.Commands.AddCommentAsync("A note");
+        await editor.Commands.MoveSelectionAsync(MoveUnit.Character, Direction.Forward);
+        await Ui.FirstFrame(editor);
+        var gpu = editor.GpuBackend; // null without a usable GPU
+        using var shotBefore = Ui.Snapshot(editor);
+        using var card = new Panel { Width = 200, Height = 60 };
+        IReadOnlyList<BalloonPlacement> placed = [];
+        editor.BalloonsLaidOut += (_, e) => placed = e.Placements;
+        using var placement = editor.AttachBalloon(thread, card);
+        await Ui.Until(() => card.Visible && placed.Count > 0, "the card to be placed");
+        // No PaintMarkupPane handler: the engine draws the leader, and the GPU stays on.
+        var leader = placed[0].Leader;
+        var (a, b) = (leader[1], leader[2]); // the page edge to the card
+        var mid = new Point((a.X + b.X) / 2, (a.Y + b.Y) / 2);
+        await Ui.Until(() =>
+        {
+            using var shot = Ui.Snapshot(editor);
+            return shot.GetPixel(mid.X, mid.Y).ToArgb() != shotBefore.GetPixel(mid.X, mid.Y).ToArgb();
+        }, "the leader line to be drawn");
+        Assert.Equal(gpu, editor.GpuBackend);
+        // A handler draws the pane: CPU frames, and the engine stops drawing leaders.
+        PaintEventHandler paint = (_, _) => { };
+        editor.PaintMarkupPane += paint;
+        Assert.Null(editor.GpuBackend);
+        editor.PaintMarkupPane -= paint;
+        Assert.Equal(gpu, editor.GpuBackend);
+    });
+
+    [Fact]
     public void ContextMenuRequestedCarriesTheModelAndTheClientLocation() => Ui.Run(async () =>
     {
         using var editor = Editor();

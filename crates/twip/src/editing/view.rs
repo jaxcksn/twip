@@ -95,9 +95,6 @@ pub struct View {
     pub placeholders: Vec<PlaceholderView>,
     /// Misspellings to underline (the host's spell checker fills these): page and the words' box, page coordinates.
     pub spelling: Vec<(usize, [f64; 4])>,
-    /// Table gridlines to show (View → Gridlines, the host's setting): each cell's box, drawn under the content so
-    /// borders cover them.
-    pub gridlines: Vec<(usize, [f64; 4])>,
     /// Where a text drag would drop: a dashed caret there.
     pub drop: Option<CaretView>,
     /// The host's element marks on the visible pages: each line's box of a marked element.
@@ -114,6 +111,35 @@ pub struct View {
     /// Where each thread's range starts, when that is on a visible page: its page and the point there (page
     /// coordinates), for the host to place the thread's card beside.
     pub comment_anchors: Vec<(crate::docx::review::CommentId, usize, [f64; 2])>,
+    /// Formatting marks on the visible pages (the host's setting fills these).
+    pub formatting_marks: Vec<FormattingMark>,
+    /// The text areas' and table cells' boundaries on the visible pages (the host's setting fills these): page and box.
+    pub boundaries: Vec<(usize, [f64; 4])>,
+}
+
+/// A formatting mark to draw over a page (formatting marks on): its page, kind, and box (page coordinates; the box's
+/// height is the line's).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FormattingMark {
+    pub page: usize,
+    pub kind: MarkKind,
+    pub at: [f64; 4],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarkKind {
+    /// A paragraph's end: a pilcrow after its last character.
+    Paragraph,
+    /// A space: a dot in its middle.
+    Space,
+    /// A tab: an arrow across it.
+    Tab,
+    /// A line break: a return arrow.
+    LineBreak,
+    /// A page or column break: a dotted line along the rest of the line.
+    Break,
+    /// Hidden text: a dotted underline.
+    Hidden,
 }
 
 /// A thread's range on the visible pages: each line's box, page coordinates.

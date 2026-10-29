@@ -210,15 +210,17 @@ impl Session {
                         (factor * 100.0).clamp(10.0, 500.0)
                     }
                 };
-                self.presentation.set_zoom(percent / 100.0);
+                self.set_zoom(percent / 100.0);
             }
-            // shortcut: formatting marks and text boundaries aren't drawn yet.
             Command::SetViewOptions(v) => {
-                if v.formatting_marks == Some(true) || v.text_boundaries == Some(true) {
-                    return Some(Err(Error::unsupported("formatting marks and text boundaries")));
-                }
                 if let Some(g) = v.gridlines {
                     self.gridlines = g;
+                }
+                if let Some(m) = v.formatting_marks {
+                    self.formatting_marks = m;
+                }
+                if let Some(b) = v.text_boundaries {
+                    self.text_boundaries = b;
                 }
             }
             Command::SetMode(m) => self.set_mode(*m),

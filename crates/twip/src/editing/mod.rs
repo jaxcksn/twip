@@ -2600,10 +2600,11 @@ impl Editor {
     }
 
     /// Selection rectangles per page and line.
-    fn selection_view(&mut self) -> SelectionView {
+    /// The selection's highlight on `pages`.
+    fn selection_view(&mut self, pages: std::ops::Range<usize>) -> SelectionView {
         if let Selection::Object(o) = self.selection {
             let mut out = Vec::new();
-            for page in 0..self.nav().pages.len() {
+            for page in pages {
                 let Some(geo) = self.pages.page(page, &self.index) else { continue };
                 match o {
                     // While dragged, where the drag puts it (the preview).
@@ -2619,14 +2620,15 @@ impl Editor {
             return SelectionView::Object(out, !self.object_fixed(o));
         }
         if let Selection::Block { .. } = self.selection {
-            return SelectionView::Text(self.block_pieces().into_iter().map(|(page, r, ..)| (page, r)).collect());
+            return SelectionView::Text(
+                self.block_pieces().into_iter().filter(|(page, ..)| pages.contains(page)).map(|(page, r, ..)| (page, r)).collect(),
+            );
         }
         if let Selection::Cells { table, anchor, focus, .. } = self.selection {
             let (r0, r1) = (anchor.row.min(focus.row), anchor.row.max(focus.row));
             let (c0, c1) = (anchor.col.min(focus.col), anchor.col.max(focus.col));
             let mut out = Vec::new();
-            let n = self.nav().pages.len();
-            for page in 0..n {
+            for page in pages {
                 let Some(geo) = self.pages.page(page, &self.index) else { continue };
                 for c in &geo.cells {
                     let Some(&(t, row, _)) = c.chain.last() else { continue };
@@ -2641,8 +2643,7 @@ impl Editor {
         if a.same_place(&b) {
             return SelectionView::None;
         }
-        let n = self.nav().pages.len();
-        SelectionView::Text(self.range_rects(a, b, 0..n))
+        SelectionView::Text(self.range_rects(a, b, pages))
     }
 
     /// Each drawn line's box of the text from `a` to `b` (in one story) on `pages`: page coordinates.
@@ -2681,7 +2682,7 @@ impl Editor {
     pub fn view(&mut self, visible: std::ops::Range<usize>) -> View {
         let caret = self.caret_view();
         let caret_hidden = if caret.is_none() { self.caret_hidden() } else { None };
-        let selection = self.selection_view();
+        let selection = self.selection_view(visible.clone());
         let story = self.editing();
         let anchor = match self.selection {
             Selection::Object(selection::ObjectRef::Floating(f)) => self.index.float_anchor(f).and_then(|para| {
@@ -2725,7 +2726,8 @@ impl Editor {
             comments,
             comment_anchors,
             spelling: Vec::new(),
-            gridlines: Vec::new(),
+            formatting_marks: Vec::new(),
+            boundaries: Vec::new(),
             drop: self.text_drag.filter(|d| d.moved).and_then(|d| d.drop).or(self.drop).and_then(|p| self.caret_at(p)),
             cursor: match self.border_drag.map(|d| d.border) {
                 Some(resize::Border::Column(_)) => "col-resize",
@@ -2747,12 +2749,79 @@ impl Editor {
     /// Whether a document point is on the selection's highlight (a right-click there keeps the selection).
     pub fn selection_contains(&mut self, x: f64, y: f64) -> bool {
         let Some((page, px, py)) = self.stack().page_at(x, y) else { return false };
-        match self.selection_view() {
+        match self.selection_view(page..page + 1) {
             SelectionView::Text(r) | SelectionView::Cells(r) | SelectionView::Object(r, _) => {
                 r.iter().any(|(p, [x0, y0, x1, y1])| *p == page && px >= *x0 && px <= *x1 && py >= *y0 && py <= *y1)
             }
             SelectionView::None => false,
         }
+    }
+
+    /// The formatting marks on `pages`: each paragraph end, space, tab, break and hidden run there, from the lines'
+    /// caret stops and the paragraphs' units.
+    pub fn formatting_marks(&mut self, pages: std::ops::Range<usize>) -> Vec<view::FormattingMark> {
+        use view::{FormattingMark, MarkKind};
+        let mut out = Vec::new();
+        let mut texts: HashMap<ParaId, UnitText> = HashMap::new();
+        for page in pages {
+            let Some(geo) = self.pages.page(page, &self.index) else { continue };
+            for line in &geo.lines {
+                for &para in &line.paras {
+                    let text = match texts.entry(para) {
+                        std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+                        std::collections::hash_map::Entry::Vacant(e) => {
+                            let Some(p) = self.index.para(&self.doc, para) else { continue };
+                            e.insert(UnitText::of_view(p, self.doc.review.view))
+                        }
+                    };
+                    let stops: Vec<&geometry::Stop> = line.stops.iter().filter(|s| s.para == para).collect();
+                    let (top, bottom) = (line.top, line.bottom);
+                    for w in stops.windows(2) {
+                        let (a, b) = (w[0], w[1]);
+                        if b.unit.0 != a.unit.0 + 1 {
+                            continue;
+                        }
+                        let mut mark = |kind, x0: f64, x1: f64| out.push(FormattingMark { page, kind, at: [x0, top, x1, bottom] });
+                        if text.is_hidden(a.unit) {
+                            mark(MarkKind::Hidden, a.x, b.x);
+                        }
+                        match text.char_at(a.unit) {
+                            Some(' ') => mark(MarkKind::Space, a.x, b.x),
+                            Some('\t') => mark(MarkKind::Tab, a.x, b.x),
+                            Some('\u{2028}') => mark(MarkKind::LineBreak, a.x, b.x),
+                            Some('\u{c}') => mark(MarkKind::Break, a.x, geo.w),
+                            _ => {}
+                        }
+                    }
+                    if let Some(end) = stops.iter().find(|s| s.unit == text.len()) {
+                        out.push(FormattingMark { page, kind: MarkKind::Paragraph, at: [end.x, top, end.x, bottom] });
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The text areas' and table cells' boundaries on `pages`: (page, box), page coordinates.
+    pub fn text_boundaries(&mut self, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+        let snapshot = self.layout.snapshot();
+        let mut out = Vec::new();
+        for page in pages {
+            if let Some(fragment) = snapshot.pages().get(page) {
+                for child in fragment.children.iter() {
+                    let b = match child {
+                        crate::layout::fragment::PageChild::Body(b) => &**b,
+                        crate::layout::fragment::PageChild::Header(b) | crate::layout::fragment::PageChild::Footer(b) => b,
+                    };
+                    let ((x, y), (w, h)) = (b.offset, b.size);
+                    out.push((page, [x, y, x + w, y + h]));
+                }
+            }
+            if let Some(geo) = self.pages.page(page, &self.index) {
+                out.extend(geo.cells.iter().map(|c| (page, c.rect)));
+            }
+        }
+        out
     }
 
     /// Every table cell's box on `pages` (gridlines): (page, rect), page coordinates.

@@ -1,7 +1,7 @@
 import type { Op } from '../commands.js';
 import type { Session } from '../editor.js';
 import { Method } from '../transport/protocol.js';
-import type { ClientPoint, ClientRect, Color } from '../types.js';
+import type { ClientPoint, ClientRect, Color, FrameStats, OverlayColors } from '../types.js';
 import type { MenuTarget } from './menus.js';
 
 /** The view of a mounted editor. Zoom and the other view settings are the view commands. */
@@ -15,6 +15,18 @@ export interface View {
   setBackground(color: Color): Promise<void>;
   /** The pages on screen, for a page navigator or a thumbnails strip. */
   visiblePages(): { page: number; rect: ClientRect }[];
+  /** What the frames have cost so far: for benchmarks and tests. */
+  frameStats(): Promise<FrameStats>;
+  /**
+   * How the caret blinks: `ms` per phase (0 for a steady caret), and stop blinking, the caret left visible, after
+   * `stopAfterMs` without input. The editor stops following the platform's reduced-motion setting.
+   */
+  setCaretBlink(ms: number, stopAfterMs?: number): Promise<void>;
+  /**
+   * The colours of what the editor draws over the document; the ones not given keep theirs. The editor stops following
+   * the platform's forced-colours mode.
+   */
+  setOverlayColors(colors: Partial<OverlayColors>): Promise<void>;
 }
 
 /** What the engine's pointer gestures do, on a mounted editor. */

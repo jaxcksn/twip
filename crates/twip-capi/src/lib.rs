@@ -185,13 +185,25 @@ impl TwipEngine {
         for m in &messages {
             self.emit(m.session, m.kind, &m.payload);
         }
-        for s in changed.intersection(&self.surfaces) {
-            self.emit(*s, kind::REQUEST_FRAME, &[]);
+        let wanted: Vec<u32> = [session]
+            .into_iter()
+            .chain(changed.iter().copied())
+            .filter(|s| self.engine.session(SessionId(*s)).is_some_and(|x| x.host().take_frame_request()))
+            .collect();
+        for s in changed.iter().chain(wanted.iter().filter(|s| !changed.contains(s))) {
+            if self.surfaces.contains(s) {
+                self.emit(*s, kind::REQUEST_FRAME, &[]);
+            }
         }
         for s in changed.into_iter().chain([session]) {
-            let pending = self.engine.session(SessionId(s)).is_some_and(|x| !x.state().pages.complete);
+            let Some(x) = self.engine.session(SessionId(s)) else { continue };
+            let pending = !x.state().pages.complete;
+            let timers = x.host().take_timers();
             if pending && self.armed.insert(s) {
                 self.emit(s, kind::SET_TIMER, format!(r#"{{"timer":{LAYOUT_TIMER},"ms":0}}"#).as_bytes());
+            }
+            for (timer, ms) in timers {
+                self.emit(s, kind::SET_TIMER, format!(r#"{{"timer":{timer},"ms":{ms}}}"#).as_bytes());
             }
         }
     }
@@ -854,6 +866,20 @@ pub unsafe extern "C" fn twip_attach_window(engine: *mut TwipEngine, session: u3
 pub unsafe extern "C" fn twip_detach_window(engine: *mut TwipEngine, session: u32) {
     let _ = guard(engine, session, |e| {
         e.session(session)?.host().detach_window();
+        Ok(())
+    });
+}
+
+/// Windows, testing: loses the GPU device as a driver reset would. twip_frame_window fails `unavailable` until the
+/// next twip_attach_window, which makes a new device.
+///
+/// # Safety
+/// `engine` is from twip_engine_new.
+#[doc(hidden)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twip_test_lose_gpu(engine: *mut TwipEngine, session: u32) {
+    let _ = guard(engine, session, |e| {
+        e.session(session)?.host().lose_gpu_device();
         Ok(())
     });
 }

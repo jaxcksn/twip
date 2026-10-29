@@ -19,9 +19,8 @@ fn states(path: &Path, mode: usize) -> Vec<Value> {
             let mut renderer = Renderer::default();
             let mut surface = skia_safe::surfaces::raster_n32_premul((480, 360)).expect("a raster surface");
             r.frame = Some(Box::new(move |e| {
-                let f = Frame { origin_x: 0.0, origin_y: 0.0, width: 480.0, height: 360.0, dpr: 1.0, px_per_pt: 4.0 / 3.0 };
-                let probe = e.view(0..0);
-                let visible = Renderer::visible(&probe, &f);
+                let f = Frame { origin_x: 0.0, origin_y: 0.0, width: 480.0, height: 360.0, dpr: 1.0, px_per_pt: 4.0 / 3.0, caret: false };
+                let visible = Renderer::visible(&e.stack(), &f);
                 if visible.end > 0 {
                     e.ensure_page(visible.end - 1, crate::editing::tests::fonts());
                 }

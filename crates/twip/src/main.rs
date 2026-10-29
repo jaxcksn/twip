@@ -64,6 +64,22 @@ fn main() {
                 let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --api <doc.docx> [n]".into())) };
                 return exit_on_error(cli::editlatency::run_api(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(100)));
             }
+            if a.first().is_some_and(|x| x == "--frames") {
+                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --frames <doc.docx> [dpr]".into())) };
+                return exit_on_error(cli::editlatency::run_frames(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(1.0)));
+            }
+            if a.first().is_some_and(|x| x == "--scroll") {
+                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --scroll <doc.docx> [dpr]".into())) };
+                return exit_on_error(cli::editlatency::run_scroll(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(1.0)));
+            }
+            if a.first().is_some_and(|x| x == "--blink") {
+                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --blink <doc.docx>".into())) };
+                return exit_on_error(cli::editlatency::run_blink(doc));
+            }
+            if a.first().is_some_and(|x| x == "--select") {
+                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --select <doc.docx> [dpr]".into())) };
+                return exit_on_error(cli::editlatency::run_select(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(1.0)));
+            }
             if a.first().is_some_and(|x| x == "--tracking") {
                 let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --tracking <doc.docx> [n]".into())) };
                 return exit_on_error(cli::editlatency::run_tracking(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(100)));

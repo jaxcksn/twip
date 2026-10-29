@@ -13,6 +13,12 @@ You need:
   must be on `PATH` (see below). Use exactly 6.0.8: the prebuilt browser Skia was built with it, and linking needs
   the same version.
 
+Skia is never built from source. Native builds use skia-safe's prebuilts, except on Windows:
+`node crates/twip-capi/build-native.mjs` downloads the pinned Skia with Graphite on Dawn (a
+[skia-wasm-webgpu](https://github.com/jaxcksn/skia-wasm-webgpu) release), so the native library draws on the GPU.
+It passes other cargo arguments through (`node crates/twip-capi/build-native.mjs test --workspace`); a plain cargo
+build on Windows draws with the CPU only.
+
 Then:
 
 ```sh
@@ -94,7 +100,7 @@ cargo run -p twip --bin twip-tools -- wire-fixtures --check   # the wire fixture
 cargo run -p twip --example session                          # the Rust API end to end
 pnpm moon run web:test            # builds the wasm module (emsdk), then the unit, wire, contract and API report checks
 pnpm moon run web:browser-test    # a mounted editor in a real browser
-pnpm moon run dotnet:test         # builds twip-capi, then the wire, contract and Native AOT smoke tests
+pnpm moon run dotnet:test         # builds twip-capi (build-native.mjs), then the wire, contract and Native AOT smoke tests
 pnpm moon run docs:examples       # the guides' TypeScript and C# examples
 pnpm moon run docs:dev            # the docs site, locally
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings

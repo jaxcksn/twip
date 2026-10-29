@@ -4,6 +4,7 @@
 import type { MountOptions, Session } from '../editor.js';
 import { EditorError } from '../errors.js';
 import type { RulerView } from '../services/ruler.js';
+import { Method } from '../transport/protocol.js';
 import type { ClientPoint } from '../types.js';
 import { startA11y } from './a11y.js';
 import { type Chrome, startChrome } from './chrome.js';
@@ -67,6 +68,14 @@ export async function mountHost(container: HTMLElement, s: Session, options: Mou
   startA11y(s, dom, ledger);
 
   await chrome.view.setBackground(options.background ?? '#E6E6E6');
+  if (options.overlayColors) await chrome.view.setOverlayColors(options.overlayColors);
+  if (options.drawLeaders) chrome.drawLeaders(true);
+  if (options.paintBudget) {
+    await s.call(Method.HostSetPaintBudget, { recordings: options.paintBudget.recordings ?? 32 << 20 });
+  }
+  if (options.caretBlink !== undefined || options.caretBlinkStopAfter !== undefined) {
+    await chrome.view.setCaretBlink(options.caretBlink ?? 530, options.caretBlinkStopAfter);
+  }
   if (options.markupPaneWidth) await chrome.setMarkupPaneWidth(options.markupPaneWidth);
   if (options.zoom !== undefined && options.zoom !== 100) await s.run({ type: 'setZoom', value: options.zoom });
   return { ...chrome, ...clipboard, focus: input.focus, ready: () => frames.drawn() };

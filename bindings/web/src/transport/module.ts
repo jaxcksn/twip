@@ -47,6 +47,7 @@ export interface TwipModule {
   GL?: {
     createContext(canvas: unknown, attributes: Record<string, number>): number;
     makeContextCurrent(handle: number): boolean;
+    deleteContext(handle: number): void;
   };
 }
 

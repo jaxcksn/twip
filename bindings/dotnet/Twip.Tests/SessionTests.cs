@@ -72,16 +72,32 @@ public sealed class SessionTests : IDisposable
         await session.Commands.InsertTextAsync("new", Ct);
         var path = Path.Combine(_dir, "doc.docx");
         await File.WriteAllTextAsync(path, "old", Ct);
-        File.SetAttributes(path, FileAttributes.ReadOnly);
+        // A read-only file refuses the replace on Windows; on Unix a rename replaces it anyway, so the folder refuses
+        // the temp file there.
+        Refuse(path, true);
 
         await Assert.ThrowsAnyAsync<Exception>(() => session.SaveAsync(path, Ct));
         Assert.Equal("old", await File.ReadAllTextAsync(path, Ct));
         Assert.Equal([path], Directory.GetFiles(_dir)); // no temp file left beside it
 
-        File.SetAttributes(path, FileAttributes.Normal);
+        Refuse(path, false);
         await session.SaveAsync(path, Ct);
         Assert.True(IsZip(await File.ReadAllBytesAsync(path, Ct)));
         Assert.Equal([path], Directory.GetFiles(_dir));
+    }
+
+    /// <summary>Makes a save to <paramref name="path"/> fail, or work again.</summary>
+    static void Refuse(string path, bool refuse)
+    {
+#if NET
+        if (!OperatingSystem.IsWindows())
+        {
+            var mode = UnixFileMode.UserRead | UnixFileMode.UserExecute | (refuse ? 0 : UnixFileMode.UserWrite);
+            File.SetUnixFileMode(Path.GetDirectoryName(path)!, mode);
+            return;
+        }
+#endif
+        File.SetAttributes(path, refuse ? FileAttributes.ReadOnly : FileAttributes.Normal);
     }
 
     [Fact]

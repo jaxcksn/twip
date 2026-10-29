@@ -1,6 +1,7 @@
 //! Windows GPU target: Graphite on native Dawn, presenting to the host's window through a swap chain. One device and
 //! Graphite context for the process (`cpp/dawn_native.cpp`: D3D12, then D3D11, then Vulkan), a surface per window.
-//! The engine thread draws and presents; every call here is on it.
+//! The engine thread draws and presents; every call here is on it. After a device loss, frames fail until the next
+//! attach, which lets go of the context and every window's surface and makes them again on a new device.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -17,6 +18,7 @@ unsafe extern "C" {
     // cpp/dawn_native.cpp
     fn twip_dawn_device(instance: *mut *mut c_void, device: *mut *mut c_void, queue: *mut *mut c_void) -> i32;
     fn twip_dawn_lost() -> bool;
+    fn twip_dawn_test_lose();
     fn twip_dawn_surface(hwnd: *mut c_void) -> *mut c_void;
     fn twip_dawn_surface_release(surface: *mut c_void);
     fn twip_dawn_configure(surface: *mut c_void, width: u32, height: u32, bgra: *mut bool) -> bool;
@@ -34,9 +36,10 @@ pub enum Backend {
     Vulkan = 3,
 }
 
+/// The recorder drops before its context.
 struct Graphite {
-    context: graphite::Context,
     recorder: graphite::Recorder,
+    context: graphite::Context,
     backend: Backend,
 }
 
@@ -55,9 +58,11 @@ impl Drop for Window {
 
 #[derive(Default)]
 struct State {
-    /// `None` until the first attach; `Some(None)` when there is no usable GPU.
+    /// `None` until the first attach, and again after a device loss; `Some(None)` when there is no usable GPU.
     graphite: Option<Option<Graphite>>,
     windows: HashMap<u64, Window>,
+    /// A device was lost: an attach while there is no usable GPU tries to make one again.
+    lost: bool,
 }
 
 thread_local! {
@@ -65,6 +70,14 @@ thread_local! {
 }
 
 fn graphite(state: &mut State) -> Option<&mut Graphite> {
+    // SAFETY: no pointers; asks the device's flag.
+    let lost = unsafe { twip_dawn_lost() };
+    if lost || (state.lost && matches!(state.graphite, Some(None))) {
+        // What was made with the lost device goes before it does: the next device is made below.
+        state.windows.clear();
+        state.graphite = None;
+        state.lost = true;
+    }
     state
         .graphite
         .get_or_insert_with(|| {
@@ -86,8 +99,12 @@ fn graphite(state: &mut State) -> Option<&mut Graphite> {
             Some(Graphite { context, recorder: recorder?, backend })
         })
         .as_mut()
-        // SAFETY: no pointers; asks the device's flag.
-        .filter(|_| !unsafe { twip_dawn_lost() })
+}
+
+/// Testing: loses the GPU device as a driver reset would. Frames fail `unavailable` until the next attach.
+pub fn lose_device() {
+    // SAFETY: no pointers.
+    unsafe { twip_dawn_test_lose() };
 }
 
 /// Draws `key`'s frames into the window `hwnd` from now on. The backend, or `None` with no usable GPU (draw with the
@@ -116,7 +133,7 @@ pub fn detach(key: u64) {
 /// isn't attached or the GPU can't draw (the device was lost): draw with the CPU then.
 pub fn frame(key: u64, width: u32, height: u32, draw: impl FnOnce(&Canvas)) -> bool {
     STATE.with_borrow_mut(|s| {
-        let State { graphite: g, windows } = s;
+        let State { graphite: g, windows, .. } = s;
         let (Some(Some(g)), Some(w)) = (g.as_mut(), windows.get_mut(&key)) else { return false };
         // SAFETY: no pointers.
         if unsafe { twip_dawn_lost() } || width == 0 || height == 0 {

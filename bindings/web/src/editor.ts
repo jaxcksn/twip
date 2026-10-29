@@ -18,7 +18,7 @@ import type { EditorState } from './state.js';
 import { directTransport } from './transport/direct.js';
 import { chooseExecution, workerTransport } from './transport/worker.js';
 import { decodeEvent, type FrameInfo, Kind, Method, type Input, type Message, type Transport } from './transport/protocol.js';
-import type { Author, Color, Warning, WordCount } from './types.js';
+import type { Author, Color, OverlayColors, Warning, WordCount } from './types.js';
 
 /** Options for a new session. */
 export interface SessionOptions {
@@ -54,6 +54,28 @@ export interface MountOptions extends SessionOptions {
   zoom?: number | 'pageWidth' | 'wholePage';
   /** The background around the pages. Default `'#E6E6E6'`; the paper stays white. */
   background?: Color;
+  /**
+   * The caret's blink: ms per phase, 0 for a steady caret. Default 530, or steady while the platform asks for reduced
+   * motion (`prefers-reduced-motion`), which the editor then follows.
+   */
+  caretBlink?: number;
+  /** Stop blinking after this many ms without input, the caret left visible. Default: never. */
+  caretBlinkStopAfter?: number;
+  /**
+   * The colours of what the editor draws over the document. Default: the engine's, or the system's colours while the
+   * platform is in forced-colours (high contrast) mode, which the editor then follows.
+   */
+  overlayColors?: Partial<OverlayColors>;
+  /**
+   * The memory the editor keeps pages' drawing in, bytes: their recordings (default 32 MB). Past it, what was drawn
+   * longest ago goes first.
+   */
+  paintBudget?: { recordings?: number };
+  /**
+   * The editor draws each attached balloon's leader line (from `balloonsLaidOut`'s placements) in the overlay colours'
+   * `leaders` colour, so the application draws only the cards. Default false: the application draws them.
+   */
+  drawLeaders?: boolean;
   /** Aborts the mount; everything it created is released. */
   signal?: AbortSignal;
 }

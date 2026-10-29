@@ -16,6 +16,7 @@ std::unique_ptr<dawn::native::Instance> gInstance;
 wgpu::Adapter gAdapter;
 wgpu::Device gDevice;
 std::atomic<bool> gLost{false};
+bool gEverLost = false;
 
 wgpu::DawnTogglesDescriptor Toggles(const char* const* toggles, size_t count) {
     wgpu::DawnTogglesDescriptor desc;
@@ -43,9 +44,19 @@ std::vector<wgpu::FeatureName> Features(const wgpu::Adapter& adapter) {
 
 // Creates the device on the first call: the first hardware adapter of the preferred backends. Writes borrowed
 // instance, device and queue handles (the process keeps them) and returns the backend: 1 D3D12, 2 D3D11, 3 Vulkan;
-// 0 when there is none (no GPU, or only a software adapter, which the CPU raster beats).
+// 0 when there is none (no GPU, or only a software adapter, which the CPU raster beats). After a loss, the next call
+// lets go of the lost device, its adapter and instance (the caller released what it made with them) and starts over,
+// and so does each call while none can be made again.
 extern "C" int twip_dawn_device(WGPUInstance* instance, WGPUDevice* device, WGPUQueue* queue) {
     static int backend = -1;
+    if (gLost || (gEverLost && backend == 0)) {
+        gDevice = nullptr;
+        gAdapter = nullptr;
+        gInstance.reset();
+        gEverLost = true;
+        gLost = false;
+        backend = -1;
+    }
     if (backend < 0) {
         backend = 0;
         dawnProcSetProcs(&dawn::native::GetProcs());
@@ -81,9 +92,10 @@ extern "C" int twip_dawn_device(WGPUInstance* instance, WGPUDevice* device, WGPU
                 dd.requiredFeatures = features.data();
                 dd.requiredLimits = &limits;
                 dd.nextInChain = &adapterToggles;
+                // A driver reset, update or removal. Not the device's release, a dropped instance or a failed create.
                 dd.SetDeviceLostCallback(wgpu::CallbackMode::AllowSpontaneous,
                                          [](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView) {
-                                             if (reason != wgpu::DeviceLostReason::Destroyed) gLost = true;
+                                             if (reason == wgpu::DeviceLostReason::Unknown) gLost = true;
                                          });
                 dd.SetUncapturedErrorCallback([](const wgpu::Device&, wgpu::ErrorType, wgpu::StringView) {});
                 wgpu::Device created = adapter.CreateDevice(&dd);
@@ -103,8 +115,16 @@ extern "C" int twip_dawn_device(WGPUInstance* instance, WGPUDevice* device, WGPU
     return backend;
 }
 
-// Whether the device was lost (a driver reset or update): the windows draw with the CPU from then on.
+// Whether the device was lost (a driver reset or update): the windows draw with the CPU until the next attach makes a
+// new one.
 extern "C" bool twip_dawn_lost() { return gLost; }
+
+// Testing: loses the device as a driver reset would.
+extern "C" void twip_dawn_test_lose() {
+    if (!gDevice) return;
+    gDevice.ForceLoss(wgpu::DeviceLostReason::Unknown, "a test loss");
+    gLost = true;
+}
 
 // A surface on the window (the caller releases it with twip_dawn_surface_release).
 extern "C" WGPUSurface twip_dawn_surface(HWND hwnd) {

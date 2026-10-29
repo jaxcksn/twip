@@ -56,7 +56,10 @@ pub unsafe fn attach_webgpu(instance: usize, device: usize, queue: usize) -> boo
     // SAFETY: as above, for graphite::Recorder. Its image provider uploads pictures (cpp/dawn.cpp).
     let recorder: Option<graphite::Recorder> = unsafe { std::mem::transmute(editor_graphite_make_recorder(std::mem::transmute_copy(&context))) };
     let Some(recorder) = recorder else { return false };
-    STATE.with_borrow_mut(|s| s.graphite = Some(Graphite { context, recorder }));
+    let lost = STATE.with_borrow_mut(|s| s.graphite.replace(Graphite { context, recorder }));
+    // shortcut: a lost device's context keeps work that can never finish, and Skia aborts on freeing it then; it is
+    // leaked instead, a context's memory for each device loss of the page (the web SDK adopts no new device after 3).
+    std::mem::forget(lost);
     true
 }
 
@@ -82,12 +85,16 @@ pub unsafe fn webgpu_frame(texture: usize, bgra: bool, draw: impl FnOnce(&Canvas
     painted
 }
 
-/// Adopts the current WebGL 2 context (made current by the page) for `key`'s canvas.
+/// Adopts the current WebGL 2 context (made current by the page) for `key`'s canvas. Again after a context loss: the
+/// lost context's objects went with it, so its Ganesh context is abandoned, not freed.
 pub fn attach_gl(key: u64) -> bool {
     let Some(context) = gpu::gl::Interface::new_native().and_then(|i| gpu::direct_contexts::make_gl(i, None)) else {
         return false;
     };
-    STATE.with_borrow_mut(|s| s.ganesh.insert(key, Ganesh { context, surface: None }));
+    let old = STATE.with_borrow_mut(|s| s.ganesh.insert(key, Ganesh { context, surface: None }));
+    if let Some(mut old) = old {
+        old.context.abandon();
+    }
     true
 }
 

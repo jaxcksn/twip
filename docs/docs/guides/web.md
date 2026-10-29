@@ -102,4 +102,5 @@ rejects new operations, and `destroy()` still works.
 - [Events](events) and [Services](services): menus, dialogs, find, spelling, the clipboard, placeholders and more.
 - [Review](review): track changes and comments.
 - [Fonts](fonts): what the browser needs to lay documents out right.
+- [Rendering](rendering): the caret, overlay colours, the GPU and frame statistics.
 - [React and Angular](adapters).

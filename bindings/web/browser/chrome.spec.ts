@@ -130,7 +130,10 @@ test('hovering a link emits a tooltip', async ({ page }) => {
   await mount(page);
   await editor(page).click({ position: { x: 300, y: 120 } });
   await page.evaluate(() => (window as any).editor.commands.insertHyperlink({ address: 'https://example.com/', text: 'a link here' }));
+  const end = await caret(page);
   await page.keyboard.press('Home');
+  // The input element follows the caret when the engine's request arrives, after the key.
+  await expect.poll(async () => (await caret(page)).x).toBeLessThan(end.x);
   const start = await caret(page);
   await page.evaluate(() => {
     const w = window as any;
@@ -145,9 +148,12 @@ test('hovering a link emits a tooltip', async ({ page }) => {
 });
 
 test('a field dragged from a list outside the editor shows the drop caret and inserts on drop', async ({ page }) => {
-  await mount(page);
+  // A steady caret: only the drop caret changes the pixels.
+  await mount(page, { mount: { caretBlink: 0 } });
   await editor(page).click({ position: { x: 300, y: 120 } });
   await page.keyboard.type('Dear ');
+  // The input element is at the caret once the typing is in.
+  await expect.poll(() => text(page)).toContain('Dear');
   await page.evaluate(() => {
     const w = window as any;
     const item = Object.assign(document.createElement('div'), { id: 'field', textContent: 'FirstName', draggable: true });

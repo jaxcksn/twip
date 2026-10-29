@@ -79,6 +79,11 @@ export const Method = {
   DialogSelectIssue: 68,
   FontSetResolver: 69,
   Placeholders: 70,
+  HostSetCaretBlink: 71,
+  HostFrameStats: 72,
+  HostSetOverlayPalette: 73,
+  HostSetPaintBudget: 74,
+  HostSetLeaders: 75,
 } as const;
 
 /** A structured call number. */
@@ -126,6 +131,8 @@ export type HostRequest =
   | { type: 'clipboard'; data: ClipboardData }
   /** The caret moved: for the IME and the system caret. */
   | { type: 'caret'; x: number; y: number; height: number; visible: boolean }
+  /** Scroll the viewport's top-left to this point, after the next frame sizes the content (a zoom). */
+  | { type: 'scroll'; x: number; y: number }
   /** Scroll so this rectangle shows. */
   | { type: 'scroll_to'; x: number; y: number; width: number; height: number }
   /** The accessibility tree changed: mirror it. */
