@@ -2,6 +2,7 @@
 //! that need fixtures or system fonts skip themselves when those are missing.
 
 mod attempts;
+mod breaking;
 mod cache_keys;
 mod continuation;
 mod convergence;
@@ -20,6 +21,7 @@ mod showcase;
 mod signatures;
 mod snapshot_immutable;
 mod source_mapping;
+mod spacing;
 mod spatial_tree;
 mod sweeps;
 mod view_accessors;

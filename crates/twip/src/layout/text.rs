@@ -676,6 +676,11 @@ impl Builder<'_> {
                     p.ascent = pic.h;
                     p.descent = 0.0;
                     p.object = Some(Object::Picture(pic.clone()));
+                    // BREAK-3: a line may end before and after an inline picture.
+                    p.break_after = true;
+                    if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
+                        q.break_after = true;
+                    }
                     self.atom(p, "\u{FFFC}");
                 }
                 (Inline::Float(f, _), Some(run)) => {
@@ -743,7 +748,8 @@ impl Builder<'_> {
     /// font when that is one, or its own when the East Asian slot is the theme's empty one (FONT-14, STYLE-8).
     fn east_asia_face(&self, style: u32) -> Option<Rc<Face>> {
         let st = &self.styles[style as usize];
-        if st.run.east_asia_unset { st.face.clone() } else { self.face(&st.run.east_asia, &st.run).filter(|f| f.east_asian) }
+        let named = || self.face(&st.run.east_asia, &st.run).filter(|f| f.east_asian);
+        named().or_else(|| if st.run.east_asia_unset { st.face.clone() } else { None })
     }
 
     /// Widens runs of two or more spaces (FONT-14).

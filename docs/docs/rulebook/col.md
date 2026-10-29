@@ -23,7 +23,7 @@ Work from the body area ([HDR-4](hdr#hdr-4), [HDR-6](hdr#hdr-6)): its left edge 
 
 - A column that is full continues in the next column; after the last column, on the next page.
 - `w:br w:type="column"` ends the column; the text after it starts the next column. A column break that ends its paragraph leaves the paragraph's empty remainder as the first line of the next column.
-- Space-before at a column top: dropped after natural flow ([PARA-2](para#para-2)). If a paragraph's first line ends in a column break, the rest of that paragraph keeps the paragraph's space-before at the top of the next column.
+- Space-before at a column top: dropped after natural flow ([PARA-2](para#para-2)). If a paragraph's first character is a column break, the rest of that paragraph keeps the paragraph's space-before at the top of the next column; a column break after text in the paragraph drops it.
 - Widow/orphan control and keeps apply at every column bottom, not only at page bottoms.
 - Lay out tables against the column width (`pct` 5000 = the column width). A fixed table wider than the column overflows it, unclipped.
 - A section break of type `nextColumn` acts as a next-page break.

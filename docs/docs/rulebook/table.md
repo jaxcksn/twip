@@ -393,7 +393,7 @@ Place the table's left border centre `x0`, from the left edge of the text column
 - `w:jc="center"`: `x0 = (textW − Σ columns)/2` (the indent is ignored).
 - `w:jc="right"` (or `end`): `x0 = textW − Σ columns − (table right border width)/2`.
 
-Each cell then spans from `x0 + edge[col]` to `x0 + edge[col + span]` ([TABLE-21](#table-21)).
+Each cell then spans from `x0 + edge[col]` to `x0 + edge[col + span]` ([TABLE-21](#table-21)). A row with its own indent: [TABLE-50](#table-50).
 
 Example: compat 15, 0.5pt borders: `x0 = 0.25pt`. Compat 12, 5.4pt margins, 0.5pt borders: `x0 = −5.4pt`.
 
@@ -419,6 +419,8 @@ shift = lw′/2 + max(lm, halfBorder(lw′))
 where `lw′` is the first cell's **own** left border width if the cell has a left border element (a `nil` or `none` one counts as 0), else the table's left border, and `lm` the first cell's left margin. Centred and right-aligned nested tables aren't moved.
 
 Example: compat 12, a nested table whose cells have a `nil` left border and whose table border is single 0.5pt: `lw′ = 0`, so shift = the cell margin.
+
+In compat ≤ 14 a nested table's negative `tblInd` counts as 0: `tblInd = -720` puts it where `0` does. A positive one is used as it is.
 
 ### TABLE-26. The paragraph after a nested table {#table-26}
 
@@ -454,11 +456,20 @@ Example: one 13.44pt line, top and bottom margins 0: a 0.5pt top border gives a 
 
 ### TABLE-29. Cell content {#table-29}
 
-Lay out a cell's blocks top-down at its content width with the normal paragraph rules. Its content height includes its first paragraph's space-before and its last paragraph's space-after. A paragraph's space-after before a nested table applies at that table's top border edge. Floats anchored in a cell: see [FLOAT-14](float#float-14).
+Lay out a cell's blocks top-down at its content width with the normal paragraph rules. Its content height includes its first paragraph's space-before and its last paragraph's space-after, except where contextual spacing drops them against the neighbouring cells or the row's end mark ([PARA-4](para#para-4)). A paragraph's space-after before a nested table applies at that table's top border edge. Floats anchored in a cell: see [FLOAT-14](float#float-14).
 
 ### TABLE-30. Vertical alignment {#table-30}
 
 With `free = rowPitch − topBorder − topMargin − bottomMargin − contentHeight` (over a merged region, `rowPitch` is the region's total, [TABLE-32](#table-32)), offset the cell's content by `w:vAlign`: `top` (default) 0, `center` `max(0, free/2)`, `bottom` `max(0, free)`.
+
+A cell that anchors a float laid out in it (`layoutInCell="1"`, [FLOAT-14](float#float-14)), any wrap, picture or text box:
+
+- with `w:compat/w:doNotVertAlignCellWithSp` in compat ≤ 14, its offset is 0, for `center` and `bottom` alike (compat 15 ignores the flag);
+- otherwise the float counts in `contentHeight`: `contentHeight = max(contentHeight, bottom of each float in the cell − cell content top)`, the float where a top-aligned cell puts it (for a `paragraph`-relative one, anchor paragraph top + `posOffset` + its height). The float still doesn't make the row taller.
+
+A `layoutInCell="0"` float in compat ≤ 14 is outside the cell and doesn't count; an inline picture counts only as its line.
+
+Example: a 60pt row, a 13.43pt line and a 20pt float 10pt below the paragraph top, without the flag: a `center` cell's offset is `(60 − 30)/2 = 15`, a `bottom` cell's 30.
 
 `contentHeight` of a whole cell is its content's height as the row's height counts it ([TABLE-27](#table-27)), its last paragraph's space-after included. In the part of a split row on a page ([TABLE-41](#table-41)) it is the height of the lines that part holds.
 
@@ -477,6 +488,9 @@ A merged region is a cell with `w:vMerge w:val="restart"` and, in the rows below
 - There is no border inside the region: continuation cells draw no top border. The border between the region's rows still takes its row's top-border space ([TABLE-27](#table-27)), and the region's bottom border is the last row's.
 - If the restart cell's row is exact, the whole region clips at the region's bottom ([TABLE-34](#table-34)).
 - Across pages the region's rows split and move like any rows; its content isn't repeated on the next page.
+- When the region's last row splits ([TABLE-41](#table-41)) and its first row is on the same page, the region's content splits with it: it keeps the lines that fit above the room's bottom, tested as a cell's ([TABLE-44](#table-44)), from the region's content top. The rest continues in the region's column of that row's continuation, at its top like any continued cell. The part on this page is as tall as the taller of the row's own kept content and the region's.
+
+Example: a two-row region of 14.52pt lines beside a last row holding "(initial)", near the body bottom: three lines stay, with "(initial)" beside the third. The fourth line's text would end 1.8pt above the body bottom but its pitch ends 0.5pt past it, so it starts the next page's continuation with the rest.
 
 ### TABLE-33. Vertical text {#table-33}
 
@@ -496,7 +510,8 @@ So text can show in a row a little shorter than its line: capitals whose ink top
 Cell content is laid out as written, even when a negative indent makes it run past the cell. Then clip each line to the cell's box, from its left border centre to its right border centre, whatever the margins and whatever the next cell holds:
 
 - a glyph whose ink overlaps the box is drawn (whole); one whose ink lies wholly outside is dropped (a glyph without ink is kept if its origin is inside);
-- rectangles drawn with the text (underlines, highlights) are cut at the box edges.
+- rectangles drawn with the text (underlines, highlights) are cut at the box edges;
+- a nested table's lines are clipped this way to the box of every cell that holds it, not only their own cell's.
 
 Example: in "…FFFF" running past the edge, the last F whose ink still touches the box is drawn; in "…F02-1", a final "1" whose ink starts past the edge is not.
 
@@ -568,6 +583,9 @@ A row that doesn't fit splits by default ([TABLE-45](#table-45) for the exceptio
 2. Each cell keeps, from its content, the lines (and nested-table rows) that fit in `room − topMargin − bottomMargin` ([TABLE-43](#table-43), [TABLE-44](#table-44) say which); the rest goes on.
 3. If the split is allowed ([TABLE-42](#table-42)), draw the part on this page with height `topBorder + max over cells of (topMargin + kept height + bottomMargin)`, where a cell whose part ends its content also counts its last space-after. Give it a closing bottom border (each cell's bottom edge, [TABLE-37](#table-37)). The page is then full.
 4. The continuation starts the next column with the row's top border and top margin again, and its height is worked out the same way (a part that ends its cell includes that cell's last space-after, like a whole row). It may split again.
+5. A cell whose continuation starts with a new paragraph (the cut fell between paragraphs) keeps at its top what the gap to the previous paragraph ([PARA-1](para#para-1)) leaves after that paragraph's space-after, which stayed on the page before, as after a next-page section break ([PAGE-7](page#page-7)). A cut inside a paragraph keeps nothing.
+
+Example: a cell cut after an empty paragraph with no space-after; the next paragraph has a 9.4pt space-before, so the continuation's first line starts 9.4pt below the cell's top margin (compat 12, measured on two documents: 9.4pt and 0.7pt kept).
 
 Each cell breaks at its own line boundary.
 
@@ -583,7 +601,9 @@ Example: a five-line cell paragraph, widow control on, four lines of room: three
 
 ### TABLE-44. Space-after at a row split {#table-44}
 
-At a row split a cell paragraph's space-after is never dropped: a cell line that ends its paragraph stays only if its space-after fits below it too. (A line with no space-after to fit is tested without the extra space below its text, as in [PAGE-2](page#page-2).)
+At a row split a cell line stays only if its full pitch fits, `lineTop + pitch ≤ room`: the extra space multiple line spacing adds below its text counts, with none of [PAGE-2](page#page-2)'s allowance. A cell paragraph's space-after is never dropped either: a line that ends its paragraph stays only if its space-after fits below it too. Each cell keeps what fits by this test, so a short neighbour cell keeps all of its content.
+
+Example: three one-line paragraphs at 1.15 spacing whose last text ends 2pt above the body bottom but whose pitch ends 0.03pt past it: the first two lines stay and the third goes on. A one-line row in that place keeps nothing, so it moves whole ([TABLE-42](#table-42)).
 
 Example: a cell whose first paragraph is one 13.44pt line with 20pt space-after, 15pt of room: the line doesn't stay, so the row moves whole ([TABLE-42](#table-42)).
 
@@ -603,8 +623,8 @@ If a table starts below other content in a column and the first row after its he
 
 ### TABLE-48. Paragraphs around a table {#table-48}
 
-- The space-after of the paragraph before a table applies, in full, above the table's top border edge (not if the table starts at the top of an empty column).
-- The paragraph after a table takes its full space-before, from the table's bottom border edge; nothing collapses against the table.
+- The space-after of the paragraph before a table applies, in full, above the table's top border edge (not if the table starts at the top of an empty column), unless contextual spacing drops it ([PARA-4](para#para-4)).
+- The paragraph after a table takes its full space-before, from the table's bottom border edge, unless contextual spacing drops it ([PARA-4](para#para-4)); nothing collapses against the table.
 - A `w:keepNext` paragraph before a table keeps with its first row: if the table can't place its first row (or a first part of it) in this column, the keepNext chain moves on with it ([PAGE-6](page#page-6)).
 
 ### TABLE-49. Floating table position {#table-49}
@@ -612,3 +632,14 @@ If a table starts below other content in a column and the first row after its he
 - Horizontally, `w:tblpX` takes `w:tblInd`'s place ([TABLE-23](#table-23)), from the column. With `w:tblpXSpec`, `left` puts the table where `tblpX` 0 would, `right` as `w:jc` right does, and `center` puts the left border centre at `(textW − total + lm) / 2`, `lm` the first cell's left margin: a centred floating table sits half that margin right of a centred inline one.
 - Vertically, a floating table that starts a column moves up to its anchored top: `w:tblpY` below the page's top edge (`w:vertAnchor="page"`, never above the page), the top margin (`margin`) or where the table stands in the flow (`text`). What follows flows below its bottom border edge.
 - Not done: a floating table anchored below where it stands, one that doesn't start a column, `w:horzAnchor` (always the column), and text beside a floating table narrower than the column.
+
+### TABLE-50. A row's own indent {#table-50}
+
+A row's `w:tblPrEx` (table property exceptions) can carry its own `w:tblInd`. In compat ≤ 14:
+
+- In an **autofit** table, the row moves by `rowInd − tblInd`: all its cells shift by that much, keeping their widths. The other rows keep the table's indent.
+- In a **fixed** table (`w:tblLayout w:type="fixed"`), the row's indent is ignored: every row sits at the table's `tblInd`.
+
+Example: an autofit table at `tblInd` 513 twips whose third row has `tblInd` 0 draws that row 25.65pt left of the others; the same rows in a fixed table line up.
+
+Measured on left-aligned tables that don't float, whose exceptions also set `w:tblLayout` fixed; centred, right-aligned and floating tables and compat 15 weren't checked, and keep the table's indent here.

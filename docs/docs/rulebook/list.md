@@ -21,7 +21,7 @@ Example: `w:left="720" w:hanging="360"`, a right-aligned "iii." 12.5pt wide: it 
 
 `w:suff`:
 
-- `tab` (the default): a tab character after the number, resolved like any tab ([TAB-1](tab#tab-1) to [TAB-3](tab#tab-3)): the next custom stop past the number's end, else the next default stop; but when the number ends left of `left` and that stop lies beyond `left`, the left indent itself. A number wider than the hanging indent therefore goes to the next stop after its end.
+- `tab` (the default): a tab character after the number, resolved like any tab ([TAB-1](tab#tab-1) to [TAB-3](tab#tab-3)): the next custom stop past the number's end, else the next default stop; but when the number ends left of `left` and that stop lies beyond `left`, or there is no custom stop past it, the left indent itself (default stops before `left` don't count). A number wider than the hanging indent therefore goes to the next stop after its end.
 - `space`: one space in the number's font and size.
 - `nothing`: the text starts right after the number.
 

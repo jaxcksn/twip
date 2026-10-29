@@ -21,7 +21,7 @@ Example: pen at 36pt with a 36pt grid: the stop is 72pt, not 36pt.
 
 ### TAB-3. The left indent acts as a stop {#tab-3}
 
-When the pen is left of the left indent and the chosen stop (custom or default) is beyond it, the tab goes to the left indent instead, as a left stop without a leader. This is what puts the text after a list number, or after a hanging first line's tab, at the indent ([LIST-2](list#list-2)).
+When the pen is left of the left indent and the chosen stop (custom or default) is beyond it, the tab goes to the left indent instead, as a left stop without a leader. Default stops before the left indent don't count: with no custom stop past the pen, the tab goes to the left indent. This is what puts the text after a list number, or after a hanging first line's tab, at the indent ([LIST-2](list#list-2)).
 
 ### TAB-4. Left tabs {#tab-4}
 
@@ -55,10 +55,15 @@ tabWidth = rightEdge − (penAtTab + w) + trail
 
 ### TAB-7. Stops past the right edge {#tab-7}
 
-- **Compat 15**: a right, centre or decimal stop past `rightEdge` moves to `rightEdge`, keeping its kind. Right-tab text then ends at `rightEdge`; decimal-tab text too, through [TAB-6](tab#tab-6).
-- **Compat ≤ 14**: the stop is used where it is. Text after a right or decimal stop past `rightEdge` aligns at the stop and may run past the margin, even off the page; after a right or centre stop the fit test uses the stop as the line's limit.
-- In either mode, text after a centre stop at the line's limit can't fit: half of it would pass the limit ([TAB-5](tab#tab-5)'s fit test), so the line ends after the tab and the text wraps to the next line.
-- Left stops and default stops are used where they are in every mode.
+- **Compat 15, a right, centre or decimal stop** past `rightEdge` whose text runs to the end of the paragraph (no later tab): the stop moves to `rightEdge`. Right-tab text then ends at `rightEdge`; decimal-tab text too, through [TAB-6](tab#tab-6); centre-tab text also *ends* at `rightEdge` (it works as a right tab there) and doesn't wrap.
+- **Compat 15, any other custom stop past `rightEdge`** (a left stop, or a right, centre or decimal one whose text another tab follows): the tab ends the line before it and starts the next line. A tab first on its line stays, but the text after it can't fit and starts the next line at the left edge, so each such tab costs a line.
+- **Compat ≤ 14**: custom stops are used where they are. Text after a right or decimal stop past `rightEdge` aligns at the stop and may run past the margin, even off the page; after a right stop the fit test uses the stop as the line's limit. Once a tab has gone to a custom stop past `rightEdge` (left, centre or right), the rest of the line doesn't wrap: text after a left stop starts at it, text after a centre stop is centred on it, and later default stops are used where they are, on the same line, even off the page.
+- Text after a centre stop at the line's limit can't fit: half of it would pass the limit ([TAB-5](tab#tab-5)'s fit test), so the line ends after the tab and the text wraps to the next line. A centre stop past `rightEdge` follows the bullets above instead.
+- **Default stops, every mode**: a tab whose stop is a default stop past `rightEdge` ends the line before it, and starts the next line, where it goes to the next stop from the line's start ([TAB-1](tab#tab-1), [TAB-2](tab#tab-2)). This also holds when trailing spaces have already carried the pen past the edge ([BREAK-2](break#break-2)), but not in compat ≤ 14 on a line where an earlier tab went to a custom stop past `rightEdge` (above). A tab first on its line always stays.
+
+Example (450pt column): "Aa", a tab to a right stop at 480, "Bb": compat 14 ends "Bb" at 480, compat 15 at 450. "A", a tab to a left stop at 480, "Bb", a tab, "Cc": compat 14 keeps one line, "Bb" at 480 and "Cc" at the default stop 504; compat 15 puts the tab alone on line 2, "Bb" on line 3 at 0, the second tab alone on line 4 and "Cc" on line 5 at 0.
+
+Example: "Signed this the 15th day of January, 2026." followed by twelve tabs in a 450pt column with 36pt default stops: the tabs up to 432pt stay on the line, the rest start a second, empty-looking line, so the next paragraph is one line lower.
 
 ### TAB-8. No negative tabs {#tab-8}
 

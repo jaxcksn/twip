@@ -386,7 +386,8 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
 }
 
 /// One band of a paragraph wrapped around floats (FLOAT-7): the free `intervals` (column coordinates), filled one after
-/// another word by word, each a segment sharing the band's height. None when no interval takes the next word.
+/// another word by word, each a segment sharing the band's height. When the band can't take the next word, the
+/// trial height a compat <= 14 retry steps down by (FLOAT-4).
 #[allow(
     clippy::too_many_arguments,
     reason = "the measured line-breaking helpers take the shaped paragraph, its pieces, style and frame separately, as they were ported"
@@ -402,20 +403,24 @@ pub fn band(
     frame: &Frame,
     fonts: &Fonts,
     force: bool,
-) -> Option<(Vec<Line>, usize)> {
+) -> Result<(Vec<Line>, usize), f64> {
     let n = pieces.len();
     let right_edge = frame.width - style.ind_right;
     let mut segs: Vec<Line> = Vec::new();
     let mut s = start;
+    let mut gap = None;
     for &(a, b) in intervals {
         if s >= n && !segs.is_empty() {
             break;
         }
-        let ind = style.ind_left + if first_line && segs.is_empty() { style.ind_first } else { 0.0 };
-        let (left, right) = (a.max(ind), b.min(right_edge));
+        let first = if first_line && segs.is_empty() { style.ind_first } else { 0.0 };
+        // FLOAT-7: beside a float the interval's edge stands in for the left indent; the first-line indent still adds.
+        let left = if a > EPS { a.max(style.ind_left) + first } else { a.max(style.ind_left + first) };
+        let right = b.min(right_edge);
         if right - left <= EPS {
             continue;
         }
+        gap.get_or_insert(right - left);
         // BREAK-6 in the interval too (compat-15 justified), unless its segment has tabs.
         let planned = if style.jc == Jc::Both && frame.compat >= 15 && s < n {
             let seg_end = segment_end(pieces, s);
@@ -440,8 +445,29 @@ pub fn band(
             break;
         }
     }
+    // FLOAT-4 (compat <= 14): the trial height is what was placed when the fit failed, else the failing item's own
+    // height: the piece the first gap's width ends in (an inline picture's height alone, a font's line height).
+    let own = |k: usize| pieces[k].ascent + pieces[k].descent;
     if segs.is_empty() {
-        return None;
+        let mut x = 0.0;
+        let k = (start..n).filter(|&k| pieces[k].kind != Kind::Anchor).find(|&k| {
+            x += pieces[k].width;
+            x > gap.unwrap_or(0.0) + EPS
+        });
+        return Err(k.or((start..n).find(|&k| pieces[k].kind != Kind::Anchor)).map_or(0.0, own));
+    }
+    // FLOAT-4 (compat <= 14): tabs alone before content that fits in no gap don't make the line fit; the line retries
+    // lower with their height.
+    if !force
+        && frame.compat <= 14
+        && s < n
+        && matches!(pieces[s].kind, Kind::Text | Kind::Object)
+        && segs.last().is_some_and(|l| l.hard.is_none())
+        && pieces[start..s].iter().all(|q| matches!(q.kind, Kind::Tab | Kind::Anchor))
+    {
+        let placed = start..s;
+        let a = placed.clone().map(|k| pieces[k].ascent).fold(0.0, f64::max);
+        return Err(a + placed.map(|k| pieces[k].descent).fold(0.0, f64::max));
     }
     // The band's height covers every segment (LINE-1 over the band's pieces).
     let mut merged = segs[0].clone();
@@ -454,7 +480,7 @@ pub fn band(
         l.baseline = merged.baseline;
         l.below = merged.below;
     }
-    Some((segs, s))
+    Ok((segs, s))
 }
 
 /// A `w:ptab`'s stop (TAB-10): left, centre or right of the text area or of the paragraph's indents, whatever stops it passes.
@@ -479,13 +505,8 @@ fn next_stop(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leade
             (s, TabKind::Left, Leader::None)
         }
     };
-    // TAB-7: stops past the right limit.
-    let right = frame.width - style.ind_right;
-    if frame.compat >= 15 && matches!(kind, TabKind::Right | TabKind::Center | TabKind::Decimal) && stop > right {
-        stop = right;
-    }
-    // TAB-3: a hanging indent's left edge acts as a left stop.
-    if pen < style.ind_left - EPS && stop > style.ind_left + EPS {
+    // TAB-3: a hanging indent's left edge acts as a left stop, and default stops before it don't count.
+    if pen < style.ind_left - EPS && (stop > style.ind_left + EPS || custom.is_none()) {
         stop = style.ind_left;
         kind = TabKind::Left;
         leader = Leader::None;
@@ -580,6 +601,7 @@ fn fit_line(
     let mut leaders: Vec<(usize, Leader)> = Vec::new();
     // BREAK-9: the word squeezed in past the right edge (its first piece) and the line's space shrink available.
     let mut squeeze: Option<(usize, f64)> = None;
+    let mut past_custom = false;
     let n = pieces.len();
     let mut i = start;
     while i < n {
@@ -605,10 +627,34 @@ fn fit_line(
                 if let Some(pt) = pending.take() {
                     pen = resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i, right);
                 }
-                let (stop, kind, leader) = match p.object.map(|o| &sp.objects[o as usize]) {
+                let (mut stop, mut kind, leader) = match p.object.map(|o| &sp.objects[o as usize]) {
                     Some(Object::PTab(t)) => ptab_stop(t, style, frame),
                     _ => next_stop(pen, style, frame),
                 };
+                // TAB-7: a default stop past the right edge starts the next line with the tab, unless (compat <= 14) a
+                // custom stop past the edge came first on this line.
+                let stop_custom = style.tabs.iter().any(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
+                let custom = p.object.is_some() || stop_custom;
+                if !custom && stop > right + EPS && !past_custom && i > start && limit_end.is_none() {
+                    return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
+                }
+                // TAB-7 (compat 15): a right, centre or decimal stop past the right edge moves to it when its text runs
+                // to the paragraph's end (centred text then ends there too). Any other custom stop past the edge ends
+                // the line before the tab; a tab first on its line stays, and its text starts the next line.
+                let edge = frame.width - style.ind_right;
+                if frame.compat >= 15 && p.object.is_none() && stop_custom && stop > edge {
+                    if kind != TabKind::Left && !pieces[i + 1..].iter().any(|q| q.kind == Kind::Tab) {
+                        stop = edge;
+                        if kind == TabKind::Center {
+                            kind = TabKind::Right;
+                        }
+                    } else if i > start && limit_end.is_none() {
+                        return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
+                    } else {
+                        kind = TabKind::Left;
+                    }
+                }
+                past_custom |= frame.compat <= 14 && custom && stop > right + EPS;
                 if leader != Leader::None {
                     leaders.push((i - start, leader));
                 }
@@ -663,9 +709,12 @@ fn fit_line(
             _ => pen + p.width,
         };
         let forced = limit_end.is_some();
-        // A right/center stop past the right limit is used as is: the text runs to the stop, past the margin (TAB-7).
+        // TAB-7 (compat <= 14): a right stop past the right limit is used as is: the text runs to the stop, past the
+        // margin. After any other custom stop past the limit the line doesn't wrap: text is centred on a centre stop,
+        // and later default stops are used where they are.
         let limit = match &pending {
-            Some(pt) if matches!(pt.kind, TabKind::Right | TabKind::Center) && pt.stop > right => pt.stop,
+            Some(pt) if pt.kind == TabKind::Right && pt.stop > right => pt.stop,
+            _ if past_custom => f64::INFINITY,
             _ => right,
         };
         // BREAK-9: the word crossing the right edge may squeeze in (`shrink` is 0 where the rule doesn't apply).
@@ -674,8 +723,8 @@ fn fit_line(
         let room: f64 = match squeeze {
             _ if !over => 0.0,
             Some((w, cap)) if w == word => cap,
-            None if frame.compat <= 14 && word > start && pending.is_none() && !pieces[start..word].iter().any(|q| q.kind == Kind::Tab) => {
-                (start..word).map(|k| shrink(sp, pieces, k)).sum()
+            None if frame.compat <= 14 && word > start && pending.is_none() => {
+                (squeeze_from(pieces, start, word)..word).map(|k| shrink(sp, pieces, k)).sum()
             }
             _ => 0.0,
         };
@@ -739,6 +788,12 @@ fn fit_line(
     Fit { end: i, xs, widths: ws, hard: None, hyphen, leaders }
 }
 
+/// BREAK-9: the first piece whose space may give way before the squeezed-in word `word`: the line's start, or just
+/// after its last tab (spaces before a tab only move the tab's text, which the tab takes back).
+fn squeeze_from(pieces: &[Piece], start: usize, word: usize) -> usize {
+    pieces[start..word].iter().rposition(|q| q.kind == Kind::Tab).map_or(start, |t| start + t + 1)
+}
+
 /// BREAK-9: what piece `k` may give up when its line squeezes.
 fn shrink(sp: &ShapedPara, pieces: &[Piece], k: usize) -> f64 {
     let p = &pieces[k];
@@ -760,7 +815,7 @@ fn shrink_spaces(sp: &ShapedPara, pieces: &[Piece], start: usize, word: usize, c
         return;
     }
     let f = (over / cap).min(1.0);
-    for k in 0..(word - start).min(ws.len()) {
+    for k in squeeze_from(pieces, start, word) - start..(word - start).min(ws.len()) {
         ws[k] -= shrink(sp, pieces, start + k) * f;
     }
     for k in 1..xs.len() {
@@ -1082,6 +1137,16 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         desc = desc.max(d);
         un_asc = un_asc.max(a + e);
         un_desc = un_desc.max(d);
+    }
+    // LINE-4: a paragraph's last line holding pictures but no text is at least the mark's single height, all of it above
+    // the baseline (the pictures' bottom stays on the line's bottom).
+    if last
+        && object
+        && un_text_asc + un_text_desc + num_asc == 0.0
+        && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
+    {
+        let (a, d, e) = metrics(&f, mark.size);
+        asc = asc.max(a + e + d);
     }
     let asc = asc.max(num_asc); // LIST-7: the number's ascent, not its descent
     // LIST-7: a line multiple scales the text's height, not a taller number's (a line holding only the number: its).

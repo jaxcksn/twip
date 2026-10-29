@@ -213,9 +213,13 @@ fn rows(chars: &[Ch], like: &[(f64, f64, usize)]) -> Vec<(f64, Vec<Ch>)> {
             None => rest.push(s),
         }
     }
+    // A row snapped to one of Word's takes the others within the distance Word's own spans join a line by (golden:
+    // a check box and the next cell's text, 1.08pt apart, are one row of Word's); other rows within a point.
+    let snaps = out.len();
     for s in rest {
         let y = first(&s).y;
-        let near = out.iter().enumerate().map(|(r, row)| (r, (row.0 - y).abs())).filter(|&(_, d)| d < 1.0).min_by(|a, b| a.1.total_cmp(&b.1));
+        let reach = |r: usize| if r < snaps { ROW_SNAP.1 } else { 1.0 };
+        let near = out.iter().enumerate().map(|(r, row)| (r, (row.0 - y).abs())).filter(|&(r, d)| d < reach(r)).min_by(|a, b| a.1.total_cmp(&b.1));
         match near {
             Some((r, _)) => {
                 out[r].0 = out[r].0.min(y);
@@ -515,6 +519,11 @@ mod tests {
         let gold = seg("☐Appear", 36.0, 310.25, 0);
         let ours = [seg("Appear", 59.0, 310.1, 3), seg("☐", 36.0, 310.3, 2)].concat();
         assert!(compare(&[ours], &[gold]).text_ok);
+        // The same with the text 1.08 below the box (its cell's baseline): still Word's one row, so ours too.
+        let gold = seg("☐Failure", 67.0, 294.77, 0);
+        let ours = [seg("☐", 67.0, 294.7, 2), seg("Failure", 79.1, 295.78, 3)].concat();
+        let v = compare(&[ours], &[gold]);
+        assert!(v.text_ok && v.rows_matched == 1, "{v:?}");
     }
 
     #[test]

@@ -335,7 +335,13 @@ fn row_restart(
     relaid: &mut Option<LatestTable>,
 ) -> Option<usize> {
     let row = span.row?;
-    let Some(Block::Table(table)) = doc.sections.get(span.section)?.blocks.get(span.first) else { return None };
+    let blocks = &doc.sections.get(span.section)?.blocks;
+    let Some(Block::Table(table)) = blocks.get(span.first) else { return None };
+    // The paragraph before the table (PARA-4), as the column fill passes it.
+    let prev = match span.first.checked_sub(1).and_then(|i| blocks.get(i)) {
+        Some(Block::Para(p)) => Some(&**p.para_style_in(doc.review.view)),
+        _ => None,
+    };
     fn inside<'p>(pg: &'p PageRecord, span: &Span) -> Option<&'p super::record::BodyRecord> {
         pg.bodies.first().filter(|b| (b.token.section, b.token.flow.block) == (span.section, span.first) && b.start_table.is_some())
     }
@@ -359,8 +365,8 @@ fn row_restart(
     // rows are measured and laid out again. The pages' records can't stand in: a record taken over from an
     // older baseline holds the table as it was then.
     let new = match latest.filter(|l| (l.0, l.1, l.2) == (span.section, span.first, width.to_bits())) {
-        Some(l) => super::table::relayout_rows(table, width, &story, &l.3, span.first_row.min(row)..=row, &mut memos),
-        None => super::table::layout(table, width, &story, false, &mut memos),
+        Some(l) => super::table::relayout_rows(table, width, &story, prev, &l.3, span.first_row.min(row)..=row, &mut memos),
+        None => super::table::layout(table, width, &story, prev, false, &mut memos),
     }
     .ok();
     memos.cache.store_tables = true;

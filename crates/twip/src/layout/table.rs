@@ -16,7 +16,7 @@ use super::job::{Memos, Yield};
 use super::join::LaidBlock;
 use super::line::{break_lines, neighbour_borders};
 use super::space::ParaSpace;
-use super::story::{StoryEnv, StoryKey, StoryLayout, StoryUnit, child_ids};
+use super::story::{CellEnds, StoryEnv, StoryKey, StoryLayout, StoryUnit, child_ids};
 use super::text::{Kind, shape};
 
 const EPS: f64 = 1e-6;
@@ -123,7 +123,7 @@ fn shell(t: &Table) -> Table {
     let rows = rows
         .iter()
         .map(|r| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, cells, src: _, controls: _, rev } = r;
+            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, cells, src: _, controls: _, rev } = r;
             let cells = cells
                 .iter()
                 .map(|c| {
@@ -173,6 +173,7 @@ fn shell(t: &Table) -> Table {
                 grid_after: *grid_after,
                 w_before: *w_before,
                 w_after: *w_after,
+                ind: *ind,
                 cells,
                 src: None,
                 controls: Vec::new(),
@@ -240,7 +241,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         && *grid_change == t.grid_change
         && rows.len() == t.rows.len()
         && rows.iter().zip(&t.rows).all(|(r, q)| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, cells, src: _, controls: _, rev } = r;
+            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, cells, src: _, controls: _, rev } = r;
             *height == q.height
                 && *cant_split == q.cant_split
                 && *header == q.header
@@ -248,6 +249,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 && *grid_after == q.grid_after
                 && *w_before == q.w_before
                 && *w_after == q.w_after
+                && *ind == q.ind
                 && *rev == q.rev
                 && cells.len() == q.cells.len()
                 && cells.iter().zip(&q.cells).all(|(c, d)| {
@@ -307,6 +309,11 @@ pub struct CellBox {
     pub margins: [f64; 4],
     pub units: Rc<StoryLayout>,
     pub content_h: f64,
+    /// The content height TABLE-30 aligns: `content_h`, or lower, the bottom of a float that counts in it.
+    pub align_h: f64,
+    /// Floats anchored in the cell but not laid out in it (compat ≤ 14, layoutInCell="0"): the alignment offset
+    /// doesn't move them (FLOAT-14).
+    pub fixed_floats: Box<[u64]>,
     pub v_align: String,
     pub v_merge: VMerge,
     /// The grid columns this cell spans.
@@ -548,7 +555,7 @@ fn gap(s: f64, outer: bool) -> f64 {
 /// min/max sizes).
 fn content_widths(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result<Rc<(i64, i64, i64)>, Yield> {
     let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
-    let probe = StoryKey::new(child_ids(&laid, None, env, memos)?, None, true, env);
+    let probe = StoryKey::new(child_ids(&laid, None, env, memos)?, None, Some(CellEnds::default()), env);
     cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, m))
 }
 
@@ -776,8 +783,9 @@ struct CellGeo {
 
 /// Lays out a table for a column (or cell) of width `text_w`. `measure`: widths only (no content layout). The column
 /// widths and the cells' stories come from their own cache entries; the rows are cached by those results' identity.
-pub fn layout(t: &Table, text_w: f64, env: &StoryEnv, measure: bool, memos: &mut Memos) -> Result<Rc<TableLayout>, Yield> {
-    layout_with(t, text_w, env, measure, None, memos)
+/// `prev`: the paragraph before the table (PARA-4).
+pub fn layout(t: &Table, text_w: f64, env: &StoryEnv, prev: Option<&ParaStyle>, measure: bool, memos: &mut Memos) -> Result<Rc<TableLayout>, Yield> {
+    layout_with(t, text_w, env, prev, measure, None, memos)
 }
 
 /// [`layout`] after an edit inside rows `rows`, with `old` the table's layout before it: every other row's
@@ -787,27 +795,29 @@ pub fn relayout_rows(
     t: &Table,
     text_w: f64,
     env: &StoryEnv,
+    prev: Option<&ParaStyle>,
     old: &TableLayout,
     rows: std::ops::RangeInclusive<usize>,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
     if old.rows.len() != t.rows.len() || old.fit.len() != t.rows.len() {
-        return layout(t, text_w, env, false, memos);
+        return layout(t, text_w, env, prev, false, memos);
     }
-    layout_with(t, text_w, env, false, Some((old, rows)), memos)
+    layout_with(t, text_w, env, prev, false, Some((old, rows)), memos)
 }
 
 fn layout_with(
     t: &Table,
     text_w: f64,
     env: &StoryEnv,
+    prev: Option<&ParaStyle>,
     measure: bool,
     reuse: Option<(&TableLayout, std::ops::RangeInclusive<usize>)>,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
     match in_view(t, env.ctx.env.text.review.view) {
-        None => layout_shown(t, text_w, env, measure, reuse, memos),
-        Some(v) => Ok(v.expand(&*layout_shown(&v.table, text_w, env, measure, None, memos)?)),
+        None => layout_shown(t, text_w, env, prev, measure, reuse, memos),
+        Some(v) => Ok(v.expand(&*layout_shown(&v.table, text_w, env, prev, measure, None, memos)?)),
     }
 }
 
@@ -911,6 +921,7 @@ fn layout_shown(
     t: &Table,
     text_w: f64,
     env: &StoryEnv,
+    prev: Option<&ParaStyle>,
     measure: bool,
     reuse: Option<(&TableLayout, std::ops::RangeInclusive<usize>)>,
     memos: &mut Memos,
@@ -925,6 +936,21 @@ fn layout_shown(
     let geo = if cols.len() == n { place(t, &cols, &edges) } else { cell_geometry(t, &cols) };
     let mut stories = Vec::new();
     let mut closings = Vec::new();
+    // PARA-4: a cell's neighbours in document order are the previous cell's last paragraph and the next cell's
+    // first, the row's end mark (the default paragraph style) and, before the first row, the paragraph before the
+    // table. allowSpaceOfSameStyleInTable (compat <= 14) keeps a cell's spacing.
+    let contextual = super::paragraph::contextual_in(&env.ctx.env.text, true);
+    let mark = Some(&env.ctx.env.text.default_style);
+    let view = env.ctx.env.text.review.view;
+    fn style(b: Option<&Block>, view: crate::docx::review::MarkupView) -> Option<&Option<String>> {
+        match b {
+            Some(Block::Para(p)) => Some(&p.para_style_in(view).style_id),
+            _ => None,
+        }
+    }
+    let drops = |b: Option<&Block>, other: Option<&Option<String>>| {
+        contextual && matches!(b, Some(Block::Para(p)) if super::paragraph::drops_at_edge(p.para_style_in(view), other))
+    };
     for (ri, (r, cells)) in t.rows.iter().zip(&geo).enumerate() {
         let old_row = kept(ri).map(|o| &o.rows[ri]).filter(|o| o.cells.len() == cells.len());
         for (gi, g) in cells.iter().enumerate() {
@@ -941,7 +967,14 @@ fn layout_shown(
                 let n = c.blocks.len();
                 let skip = closing_para(c).is_some();
                 let blocks: Vec<&Block> = c.blocks[..if skip { n - 1 } else { n }].iter().collect();
-                Some(super::story::layout(&blocks, g.cw, env, true, memos)?)
+                let before = match g.ci {
+                    0 if ri == 0 => prev.map(|p| &p.style_id),
+                    0 => mark,
+                    ci => style(r.cells[ci - 1].blocks.last(), view),
+                };
+                let after = r.cells.get(g.ci + 1).map_or(mark, |n| style(n.blocks.first(), view));
+                let ends = CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after) };
+                Some(super::story::layout(&blocks, g.cw, env, Some(ends), memos)?)
             });
         }
     }
@@ -970,6 +1003,11 @@ fn closing_para(c: &Cell) -> Option<(ParaId, f64)> {
         [.., Block::Table(_), Block::Para(p)] if p.inlines.is_empty() => Some((ParaId(p.id), p.mark.size)),
         _ => None,
     }
+}
+
+/// Whether one of the cell's paragraphs anchors a float laid out in the cell (`layoutInCell`, FLOAT-14).
+fn holds_float(c: &Cell) -> bool {
+    c.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.inlines.iter().any(|i| matches!(i, Inline::Float(f, _) if f.layout_in_cell))))
 }
 
 /// Each cell's geometry, by row (cells outside the grid are left out).
@@ -1151,21 +1189,35 @@ fn assemble(
     let mut rows = Vec::new();
     let review = &env.ctx.env.text.review;
     for ((ri, r), cells_geo) in t.rows.iter().enumerate().zip(geo) {
+        // TABLE-50: in compat ≤ 14 an autofit table's row with its own w:tblPrEx indent moves by the difference; a
+        // fixed table's rows all keep the table's.
+        // shortcut: left-aligned, non-floating tables only (as measured); the row's width isn't re-solved.
+        let shift = match r.ind {
+            Some(i) if compat <= 14 && !t.fixed && t.jc == Jc::Left && t.floating.is_none() => i - t.ind,
+            _ => 0.0,
+        };
         let mut cells = Vec::new();
         for g in cells_geo {
             let c = &r.cells[g.ci];
             let shading = tint(review, r, c);
             let units = stories.next().cloned().flatten().unwrap_or_default();
             let content_h = units.height;
+            // TABLE-30: with doNotVertAlignCellWithSp (compat ≤ 14) a cell holding a float laid out in it isn't
+            // aligned; otherwise its floats' bottoms count in the content height it aligns.
+            let unaligned = compat <= 14 && env.ctx.env.text.do_not_vert_align_cell_with_sp && holds_float(c);
+            let align_h = content_h.max(units.float_bottom);
+            let fixed_floats = if compat <= 14 { outside_floats(c) } else { Box::default() };
             cells.push(CellBox {
-                x: g.x,
+                x: g.x + shift,
                 w: g.w,
                 cx: g.cx,
                 cw: g.cw,
                 margins: c.margins,
                 units,
                 content_h,
-                v_align: c.v_align.clone(),
+                align_h,
+                fixed_floats,
+                v_align: if unaligned { "top".into() } else { c.v_align.clone() },
                 v_merge: c.v_merge,
                 col: g.col,
                 span: g.span,
@@ -1295,11 +1347,44 @@ pub fn whole(row: &RowBox) -> Vec<CellPart<'_>> {
     row.cells.iter().map(|c| CellPart { units: &c.units.units, base: 0.0, ends: true }).collect()
 }
 
+/// The floats anchored in the cell's paragraphs with layoutInCell="0".
+fn outside_floats(c: &Cell) -> Box<[u64]> {
+    let paras = c.blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None });
+    paras
+        .flat_map(|p| p.inlines.iter())
+        .filter_map(|i| match i {
+            Inline::Float(f, _) if !f.layout_in_cell => Some(f.id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// FLOAT-14: the cell's vertical alignment (TABLE-30) doesn't move the floats in `fixed` (compat ≤ 14's
+/// layoutInCell="0" ones): they stay where a top-aligned cell puts them, `off` above the aligned content.
+fn unaligned_floats(children: &Rc<[Child]>, off: f64, fixed: &[u64]) -> Option<Rc<[Child]>> {
+    let float = |c: &Child| matches!(c, Child::Box(b) if matches!(b.kind, BoxKind::Float { float, .. } if fixed.contains(&float.0)));
+    if off == 0.0 || !children.iter().any(float) {
+        return None;
+    }
+    let up = |c: &Child| match c {
+        Child::Box(b) if float(c) => match b.kind {
+            BoxKind::Float { anchor, float, rect } => Child::Box(super::fragment::BoxFragment {
+                kind: BoxKind::Float { anchor, float, rect: [rect[0], rect[1] - off, rect[2], rect[3] - off] },
+                offset: (b.offset.0, b.offset.1 - off),
+                ..b.clone()
+            }),
+            _ => c.clone(),
+        },
+        _ => c.clone(),
+    };
+    Some(children.iter().map(up).collect())
+}
+
 /// A cell unit's lines clipped to the cell's box `lo..hi` (x in the unit's coordinates, TABLE-35). None when nothing
 /// is outside.
 // shortcut: whole glyphs are kept or dropped here; cutting a partly visible glyph at the edge is the painter's job
 // (a clip rectangle per cell), not done yet.
-fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[Child]>> {
+pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[Child]>> {
     let inside = |r: &GlyphRun, g: &(u32, f64), dx: f64, dy: f64| {
         let k = r.size / r.face.upem;
         // (Below an exact row's bottom, TABLE-34: the glyph's ink top must reach above it.)
@@ -1321,11 +1406,14 @@ fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[C
             _ => false,
         })
     };
-    if !children.iter().any(|c| matches!(c, Child::Line { placed, .. } if spills(placed))) {
+    // TABLE-35: a nested table's content is clipped to this cell's box too.
+    let nested: Vec<Option<Child>> = children.iter().map(|c| clip_nested(c, lo, hi, bottom)).collect();
+    if !children.iter().any(|c| matches!(c, Child::Line { placed, .. } if spills(placed))) && nested.iter().all(Option::is_none) {
         return None;
     }
-    let clipped = children.iter().map(|c| match c {
-        Child::Line { para, placed } if spills(placed) => {
+    let clipped = children.iter().zip(nested).map(|(c, n)| match (c, n) {
+        (_, Some(n)) => n,
+        (Child::Line { para, placed }, None) if spills(placed) => {
             let (dx, dy) = (placed.x, placed.y);
             // Characters (at their clusters' origins) follow the glyphs kept.
             let items: Vec<Item> = placed
@@ -1336,8 +1424,11 @@ fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[C
                     Item::Glyphs(r) => {
                         let glyphs: Box<[(u32, f64)]> = r.glyphs.iter().copied().filter(|g| inside(r, g, dx, dy)).collect();
                         let (from, to) = glyphs.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), g| (a.min(g.1), b.max(g.1)));
+                        // A glyph dropped between kept ones (below the clip line) takes its characters with it.
+                        let at = |g: &(u32, f64), x: f64| (g.1 - x).abs() < EPS;
+                        let dropped = |x: f64| r.glyphs.iter().any(|g| at(g, x) && !inside(r, g, dx, dy)) && !glyphs.iter().any(|g| at(g, x));
                         let chars: Box<[(char, f64, Option<Unit>)]> =
-                            r.chars.iter().copied().filter(|ch| ch.1 >= from - EPS && ch.1 <= to + EPS).collect();
+                            r.chars.iter().copied().filter(|ch| ch.1 >= from - EPS && ch.1 <= to + EPS && !dropped(ch.1)).collect();
                         (!glyphs.is_empty() || r.glyphs.is_empty()).then(|| Item::Glyphs(GlyphRun { glyphs, chars, ..r.clone() }))
                     }
                     Item::Rect { rect, colour } => {
@@ -1357,9 +1448,32 @@ fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[C
             });
             Child::Line { para: *para, placed: PlacedLine { line, ..placed.clone() } }
         }
-        other => other.clone(),
+        (other, None) => other.clone(),
     });
     Some(clipped.collect())
+}
+
+/// TABLE-35: a group's or a nested table's content clipped to an enclosing cell's box `lo..hi` (`clip_x`); None when
+/// nothing is outside.
+fn clip_nested(c: &Child, lo: f64, hi: f64, bottom: f64) -> Option<Child> {
+    match c {
+        Child::Group { offset, children } => {
+            clip_x(children, lo - offset.0, hi - offset.0, bottom - offset.1).map(|children| Child::Group { offset: *offset, children })
+        }
+        Child::Table(t) => {
+            let mut any = false;
+            let rows = t.rows.iter().map(|r| {
+                let cells = r.cells.iter().map(|cell| {
+                    let content = cell.content.iter().map(|c| clip_nested(c, lo, hi, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
+                    CellFragment { content: content.collect(), ..cell.clone() }
+                });
+                RowFragment { cells: cells.collect(), ..r.clone() }
+            });
+            let t = TableFragment { table: t.table, rows: rows.collect() };
+            any.then_some(Child::Table(t))
+        }
+        _ => None,
+    }
 }
 
 /// Draws row `ri` with its top at `top` and the column's left edge at `left`; `parts`: the units of each cell to draw
@@ -1386,7 +1500,8 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         // Merged regions: the content sits in the first cell, over the whole region (TABLE-32). TABLE-30: the cell's
         // content height as the row measured it (its last space-after included) when the cell is whole; a part of a
         // split row, its lines.
-        let ch = if part.ends && part.base == 0.0 && part.units.len() == c.units.units.len() { c.content_h } else { part.height() };
+        // shortcut: a part of a split row aligns its lines only, its floats aside.
+        let ch = if part.ends && part.base == 0.0 && part.units.len() == c.units.units.len() { c.align_h } else { part.height() };
         // A merge's content, alignment, clip, shading and side borders cover the whole region.
         let height = height + c.below;
         let inner = height - row.top_border - c.margins[0] - c.margins[2];
@@ -1415,6 +1530,7 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             }
             // Text past the cell's box (a negative indent) is clipped at its edges, in the content's coordinates.
             let children = clip_x(&u.content, -c.cx, c.w - c.cx, bottom).unwrap_or_else(|| u.content.clone());
+            let children = unaligned_floats(&children, off, &c.fixed_floats).unwrap_or(children);
             content.push(Child::Group { offset: (base_x, base_y + ut), children });
         }
         // The closing paragraph's caret place: below the cell's last content, on the part that shows it.
@@ -1569,7 +1685,7 @@ fn same_row(a: &RowBox, b: &RowBox) -> bool {
         && a.cells.len() == b.cells.len()
         && a.cells.iter().zip(&b.cells).all(|(x, y)| {
             Rc::ptr_eq(&x.units, &y.units)
-                && (x.x, x.w, x.cx, x.cw, x.content_h, x.below) == (y.x, y.w, y.cx, y.cw, y.content_h, y.below)
+                && (x.x, x.w, x.cx, x.cw, x.content_h, x.align_h, x.below) == (y.x, y.w, y.cx, y.cw, y.content_h, y.align_h, y.below)
                 && x.margins == y.margins
                 && x.v_align == y.v_align
                 && x.v_merge == y.v_merge
@@ -1647,7 +1763,7 @@ pub fn draw_whole_row(
 
 /// The units of a whole table, for stories and cells (no page breaks): one unit per row, drawn relative to its top.
 pub fn units(t: &Table, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<(Vec<StoryUnit>, f64), Yield> {
-    Ok(table_units(&*layout(t, width, env, false, memos)?))
+    Ok(table_units(&*layout(t, width, env, None, false, memos)?))
 }
 
 /// A laid-out table's rows as story units, and their height.
@@ -1678,7 +1794,7 @@ pub fn table_units(tb: &TableLayout) -> (Vec<StoryUnit>, f64) {
 }
 
 /// Exact rows: slack below the row bottom for a glyph's ink top (1 twip, TABLE-34).
-const INK_SLACK: f64 = 0.06;
+pub(super) const INK_SLACK: f64 = 0.06;
 
 /// The highest ink top among a unit's glyphs, in its coordinates.
 fn ink_top(children: &[Child]) -> Option<f64> {

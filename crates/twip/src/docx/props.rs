@@ -57,6 +57,9 @@ pub struct RunProps {
     /// The named East Asian font a theme reference above replaced: Word uses it when that theme slot is empty
     /// (BF: docDefaults eastAsia="Times New Roman" under Normal's eastAsiaTheme, the slot empty).
     pub east_asia_below: Option<FontRef>,
+    /// The theme slot a named East Asian font above overrode: Word still treats the run's East Asian slot as that
+    /// theme slot when it is empty (STYLE-8).
+    pub east_asia_theme: Option<FontRef>,
     pub cs: Option<FontRef>,
     pub hint: Option<String>,
     pub size: Option<f64>,
@@ -175,6 +178,17 @@ impl RunProps {
 
     /// Overrides every attribute `o` sets; toggles are absolute (direct formatting, or within one style chain).
     pub fn merge(&mut self, o: &RunProps) {
+        // STYLE-8: a theme slot with no named font under it, overridden by a name, is remembered; one `o` remembers
+        // counts only when nothing here names a font under it.
+        let named = matches!(self.east_asia, Some(FontRef::Name(_))) || self.east_asia_below.is_some();
+        match (&self.east_asia, &o.east_asia) {
+            (Some(FontRef::Theme(_)), Some(FontRef::Name(_))) if self.east_asia_below.is_none() => self.east_asia_theme = self.east_asia.clone(),
+            (_, Some(_)) => self.east_asia_theme = None,
+            _ => {}
+        }
+        if o.east_asia_theme.is_some() && !named {
+            self.east_asia_theme = o.east_asia_theme.clone();
+        }
         match (&self.east_asia, &o.east_asia) {
             (Some(FontRef::Name(_)), Some(FontRef::Theme(_))) => self.east_asia_below = self.east_asia.clone(),
             (_, Some(FontRef::Name(_))) => self.east_asia_below = None,

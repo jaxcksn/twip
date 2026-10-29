@@ -430,7 +430,7 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
     for (slot, footer) in [false, true].into_iter().enumerate() {
         let Some(part) = parts[slot] else { continue };
         let blocks: Vec<&Block> = cx.doc.stories[part].iter().collect();
-        let l = super::story::layout(&blocks, width, &env, false, memos)?;
+        let l = super::story::layout(&blocks, width, &env, None, memos)?;
         let cap = if clip { reserved[slot].map_or(limit, |r| limit.min(r)) } else { limit };
         let story_fields = super::page::fields_used(&fields, &blocks);
         if footer {

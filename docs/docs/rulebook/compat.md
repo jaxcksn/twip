@@ -18,7 +18,9 @@ Apply mode-15 behaviour to values ≥ 15 and the ≤ 14 behaviour to all lower v
 | Justified line breaking | per-line choice with up to 25% space shrink | greedy, expand only | [BREAK-5](break#break-5), [BREAK-6](break#break-6) |
 | Justified line ending in `w:br` | justified unless `doNotExpandShiftReturn` | not justified | [JUST-3](just#just-3) |
 | Space-before of a `pageBreakBefore` paragraph at the page top | dropped | kept | [PARA-2](para#para-2) |
-| Right, center and decimal tab stops past the right indent | text ends at the right indent | text aligns at the stop, past the margin | [TAB-7](tab#tab-7) |
+| Right, center and decimal tab stops past the right indent | text ends at the right indent (with another tab after the text: as a left stop) | text aligns at the stop, past the margin | [TAB-7](tab#tab-7) |
+| Left tab stops past the right indent | the tab ends the line (first on its line: its text does) | text starts at the stop; the line doesn't wrap | [TAB-7](tab#tab-7) |
+| A line that can't fit beside a square float | moves to the float's bottom | retries lower in steps of its trial height | [FLOAT-4](float#float-4) |
 | Table horizontal position | outer border edge at margin + `tblInd` | pulled left by `max(halfBorder, first cell's left margin)` | [TABLE-3](table#table-3) |
 | Nested table position | outer border edge at the cell content left + `tblInd` | the same as mode 15 | [TABLE-25](table#table-25) |
 | Header and footer height | no cap | capped at pageHeight / 2 | [HDR-8](hdr#hdr-8) |
@@ -37,9 +39,9 @@ Only these options change layout; ignore every other child of `w:compat`.
 | Option | Modes | Effect |
 |---|---|---|
 | `doNotExpandShiftReturn` | 15 | a justified line ending in `w:br` isn't justified ([JUST-3](just#just-3)) |
-| `doNotUseHTMLParagraphAutoSpacing` | all | the gap between paragraphs is space-after + space-before, not the larger of the two ([PARA-1](para#para-1)) |
+| `doNotUseHTMLParagraphAutoSpacing` | all | the gap between paragraphs is space-after + space-before, not the larger of the two ([PARA-1](para#para-1)); automatic spacing is 5pt and ignores lists ([PARA-5](para#para-5)) |
 | `splitPgBreakAndParaMark` | ≤ 14 | the paragraph mark after a page break that ends its paragraph moves to the next page as an empty line |
-| `allowSpaceOfSameStyleInTable` | ≤ 14 | contextual spacing isn't applied inside table cells ([PARA-4](para#para-4)) |
+| `allowSpaceOfSameStyleInTable` | ≤ 14 | contextual spacing isn't applied to paragraphs in table cells ([PARA-4](para#para-4)) |
 | `growAutofit` | all | an autofit table may grow wider than the available width |
 | `balanceSingleByteDoubleByteWidth` | all | runs of two or more spaces widen to the East Asian font's average character width ([FONT-14](font#font-14)) |
 

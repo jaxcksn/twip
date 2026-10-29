@@ -95,10 +95,11 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
     let rels = pkg.rels(&main);
     let part_of = |kind: &str| rels.values().find(|(k, _)| k == kind).map(|(_, t)| t.clone());
 
-    let styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref());
+    let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref());
     let numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref());
     let theme = ThemeFonts::parse(part_of("theme").and_then(|p| pkg.read_str(&p)).as_deref());
     let settings = read_settings(part_of("settings").and_then(|p| pkg.read_str(&p)).as_deref());
+    styles.compat15 = settings.compat_mode >= 15;
     let xml = pkg.read_str(&main).ok_or("no main document part")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
@@ -1729,6 +1730,7 @@ impl Reader {
                 grid_after: trp.grid_after.unwrap_or(0).max(0) as usize,
                 w_before: trp.w_before.unwrap_or(0.0).max(0.0),
                 w_after: trp.w_after.unwrap_or(0.0).max(0.0),
+                ind: TblProps::parse(child(*rn, "tblPrEx")).ind,
                 cells,
                 controls: row_controls.clone(),
                 src: self.record.then(|| Rc::new(rn.range())),

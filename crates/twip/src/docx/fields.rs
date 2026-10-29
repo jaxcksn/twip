@@ -178,6 +178,15 @@ pub struct Switch {
     pub arg: Option<String>,
 }
 
+/// Word's field names: a one-word code naming none of them is a bookmark reference (FIELD-2).
+const FIELD_NAMES: &str = "ADDRESSBLOCK ADVANCE ASK AUTHOR AUTONUM AUTONUMLGL AUTONUMOUT AUTOTEXT AUTOTEXTLIST BARCODE BIBLIOGRAPHY \
+    BIDIOUTLINE CITATION COMMENTS COMPARE CONTROL CREATEDATE DATA DATABASE DATE DISPLAYBARCODE DOCPROPERTY DOCVARIABLE \
+    EDITTIME EMBED EQ FILENAME FILESIZE FILLIN FORMCHECKBOX FORMDROPDOWN FORMTEXT GLOSSARY GOTOBUTTON GREETINGLINE \
+    HYPERLINK IF IMPORT INCLUDE INCLUDEPICTURE INCLUDETEXT INDEX INFO KEYWORDS LASTSAVEDBY LINK LISTNUM MACROBUTTON \
+    MERGEBARCODE MERGEFIELD MERGEREC MERGESEQ NEXT NEXTIF NOTEREF NUMCHARS NUMPAGES NUMWORDS PAGE PAGEREF PRINT PRINTDATE \
+    PRIVATE QUOTE RD REF REVNUM SAVEDATE SECTION SECTIONPAGES SEQ SET SHAPE SKIPIF STYLEREF SUBJECT SYMBOL TA TC TEMPLATE \
+    TIME TITLE TOA TOC USERADDRESS USERINITIALS USERNAME XE";
+
 /// Parses a field code. An empty code gives an empty name.
 pub fn parse(code: &str) -> FieldCode {
     // Tokens: (text, quoted).
@@ -251,6 +260,13 @@ impl FieldCode {
             "DATE" | "TIME" => FieldKind::Date,
             "IF" => FieldKind::If,
             n if !n.is_empty() && !n.starts_with(['=', '\\']) && !n.chars().all(|c| c.is_alphanumeric() || c == '_') => FieldKind::Invalid,
+            n if self.args.is_empty()
+                && !n.is_empty()
+                && !FIELD_NAMES.split_whitespace().any(|f| f == n)
+                && n.chars().all(|c| c.is_alphanumeric() || c == '_') =>
+            {
+                FieldKind::Bookmark(n.into())
+            }
             _ => return None,
         })
     }
@@ -365,6 +381,13 @@ pub fn evaluate(doc: &mut Document) {
                     }
                     // Word's result for a bookmark the document doesn't have.
                     FieldKind::Ref(name) => Some(marks.get(name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into())),
+                    // A bookmark named as the whole code (any case): its text, or Word's error.
+                    FieldKind::Bookmark(name) => Some(
+                        marks
+                            .iter()
+                            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                            .map_or_else(|| "Error! Bookmark not defined.".into(), |(_, t)| t.clone()),
+                    ),
                     FieldKind::If => if_field(&w),
                     FieldKind::Invalid => Some(String::new()),
                     FieldKind::Date => Some(date(code)),
@@ -558,6 +581,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn field_2_a_one_word_code_is_a_bookmark_reference() {
+        let field = |code: &str| {
+            format!(
+                r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>{code}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+            )
+        };
+        let body = format!(
+            r#"<w:p><w:bookmarkStart w:id="0" w:name="Here"/><w:r><w:t>marked</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p><w:p>{}</w:p><w:p>{}</w:p>"#,
+            field("here"),
+            field("umber")
+        );
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}<w:sectPr/></w:body></w:document>"#
+        );
+        let bytes = crate::docx::write::repackage(
+            &crate::docx::blank::blank_docx(),
+            &[("word/document.xml".into(), xml.into_bytes())],
+            zip::CompressionMethod::Deflated,
+        )
+        .expect("repackages");
+        let doc = crate::docx::read(&bytes).expect("reads");
+        let texts: Vec<String> = doc.sections[0].blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(text(p)) } else { None }).collect();
+        assert_eq!(texts[1..3], ["marked", "Error! Bookmark not defined."]);
+    }
+
+    #[test]
     fn if_and_words() {
         assert_eq!(words(r#"IF 1 = 1 "yes" "no""#), ["IF", "1", "=", "1", "yes", "no"]);
         assert_eq!(if_field(&words(r#"IF 1 = 1 "yes" "no""#)).as_deref(), Some("yes"));
@@ -594,6 +643,9 @@ mod tests {
             (r#""http://example.com/a""#, Some(FieldKind::Invalid)),
             ("=1+2", None),
             ("QUOTE x", None),
+            ("umber", Some(FieldKind::Bookmark("UMBER".into()))),
+            ("AUTHOR", None),
+            ("NUM PAGES", None),
         ] {
             assert_eq!(parse(code).kind(), kind, "{code}");
         }

@@ -17,8 +17,9 @@ pub struct RunStyle {
     pub h_ansi: String,
     pub east_asia: String,
     pub cs: String,
-    /// The East Asian font is the theme's empty slot (`east_asia` is then the Latin font): Word treats it as an East
-    /// Asian font for balanced space runs (FONT-14).
+    /// The East Asian font is the theme's empty slot (`east_asia` is then the Latin font, or a name above the slot,
+    /// STYLE-8): Word treats it as an East Asian font for balanced space runs and compressed punctuation (FONT-14,
+    /// BREAK-8, BREAK-9).
     pub east_asia_unset: bool,
     pub hint_east_asia: bool,
     pub size: f64,
@@ -105,6 +106,8 @@ pub struct ParaStyle {
     /// The list the paragraph is in (numId, ilvl; direct or from its style), and that level's `w:numFmt`.
     pub num: Option<(i64, i64)>,
     pub list_fmt: Option<String>,
+    /// The `w:abstractNum` its list uses: paragraphs with the same one are in the same list (PARA-5).
+    pub list: Option<i64>,
     /// The `w:pPr` as written (editable reads only), what formatting edits change and saving writes back.
     pub direct: Raw,
     /// A tracked change of the paragraph's properties.
@@ -165,6 +168,8 @@ pub enum FieldKind {
     StyleRef(String),
     Date,
     If,
+    /// A code that is one word naming no field (FIELD-2): Word reads it as `REF word`, a bookmark reference.
+    Bookmark(String),
     /// A code whose first word can be neither a field name nor a bookmark (`"http://…"` left by a merge): Word shows
     /// nothing.
     Invalid,
@@ -560,6 +565,8 @@ pub struct Row {
     /// `w:wBefore` / `w:wAfter`: the skipped columns' width, points (0: none). Autofit only (TABLE-15).
     pub w_before: f64,
     pub w_after: f64,
+    /// `w:tblPrEx/w:tblInd`: the row's own indent (twips as points, like [`Table::ind`]), when it has one (TABLE-50).
+    pub ind: Option<f64>,
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
     pub controls: Vec<ControlId>,

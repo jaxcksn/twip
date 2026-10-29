@@ -605,6 +605,7 @@ impl Editor {
                     grid_after: 0,
                     w_before: 0.0,
                     w_after: 0.0,
+                    ind: None,
                     cells: (0..ncols).map(|_| cell(w)).collect(),
                     src: None,
                     controls: Vec::new(),

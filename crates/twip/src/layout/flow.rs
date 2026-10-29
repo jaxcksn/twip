@@ -201,8 +201,9 @@ pub fn note_cut(units: &[StoryUnit], room: f64) -> usize {
 /// How many of a cell's units stay on this page when its row splits (TABLE-41, TABLE-43, TABLE-44). A cell that keeps
 /// nothing fails TABLE-42, so the row moves on whole. `continued`: the units continue a row split on an earlier page.
 fn cell_cut(units: &[StoryUnit], room: f64, continued: bool) -> usize {
-    let bottom = |u: &StoryUnit| if u.after > 0.0 { u.top + u.height + u.after } else { u.top + u.height - u.below };
-    let fit = units.iter().position(|u| bottom(u) > room + EPS).unwrap_or(units.len());
+    // TABLE-44: a cell line stays only if its full pitch fits (none of PAGE-2's allowance below the text), and its
+    // paragraph's space-after when it ends it.
+    let fit = units.iter().position(|u| u.top + u.height + u.after > room + EPS).unwrap_or(units.len());
     if fit == 0 || fit >= units.len() || units[fit - 1].block != units[fit].block || !units[fit].widow {
         return fit;
     }
@@ -213,6 +214,58 @@ fn cell_cut(units: &[StoryUnit], room: f64, continued: bool) -> usize {
     // when the earlier split fell between paragraphs; exact only for rows split across more than two pages.
     let first_part = !(continued && start == 0);
     start + lines_to_take(end - start, fit - start, false, first_part, false, true)
+}
+
+/// A merged region that splits with its last row (TABLE-32): its continuation cell `k` in that row, its restart cell
+/// `kr` in row `start` (placed whole on this page, `placed[pi]`), how many of its units stay and where they end.
+struct MergedSplit {
+    k: usize,
+    start: usize,
+    kr: usize,
+    pi: usize,
+    cut: usize,
+    bottom: f64,
+}
+
+/// TABLE-32: the merged regions that end in row `ri` and start in a row placed whole on this page (`placed`), whose
+/// content runs past `bottom`: each keeps the lines that fit (TABLE-44) and the rest continues in `ri`'s continuation.
+/// shortcut: only a top-aligned region split at its last row; a region split at an earlier row, or that keeps
+/// nothing here, still draws whole from its first row.
+fn merged_splits(tb: &TableLayout, ri: usize, placed: &[(usize, f64, usize)], bottom: f64) -> Vec<MergedSplit> {
+    let continues = |r: usize, col: usize| tb.rows.get(r).is_some_and(|row| row.cells.iter().any(|c| c.col == col && c.v_merge == VMerge::Continue));
+    let mut out = Vec::new();
+    for (k, c) in tb.rows[ri].cells.iter().enumerate() {
+        if c.v_merge != VMerge::Continue || continues(ri + 1, c.col) {
+            continue;
+        }
+        let Some(pi) = placed.iter().rposition(|p| !continues(p.0, c.col)) else { continue };
+        let (start, top, _) = placed[pi];
+        let Some(kr) = tb.rows[start].cells.iter().position(|x| x.col == c.col && x.v_merge == VMerge::Restart) else { continue };
+        let rc = &tb.rows[start].cells[kr];
+        if rc.v_align != "top" || tb.rows[start].exact || !(start + 1..ri).all(|r| continues(r, c.col)) {
+            continue;
+        }
+        let content_top = top + tb.rows[start].top_border + rc.margins[0];
+        let units = &rc.units.units;
+        let cut = cell_cut(units, bottom - rc.margins[2] - content_top, false);
+        if cut == 0 || cut == units.len() {
+            continue;
+        }
+        let end = units[cut - 1].top + units[cut - 1].height;
+        out.push(MergedSplit { k, start, kr, pi, cut, bottom: content_top + end + rc.margins[2] });
+    }
+    out
+}
+
+/// The first row of merged region `m` drawn again with only the content that stays on this page, the region ending
+/// with row `ri`'s part of height `h` (TABLE-32).
+fn draw_merged_part(tb: &TableLayout, m: &MergedSplit, ri: usize, h: f64, left: f64, top: f64) -> super::fragment::RowFragment {
+    let mut rows = tb.rows.clone();
+    rows[m.start].cells[m.kr].below = tb.rows[m.start + 1..ri].iter().map(|r| r.height).sum::<f64>() + h;
+    let t = TableLayout { rows, cols: tb.cols.clone(), outer: tb.outer.clone(), fit: tb.fit.clone(), ..*tb };
+    let mut parts = whole(&t.rows[m.start]);
+    parts[m.kr] = CellPart { units: &tb.rows[m.start].cells[m.kr].units.units[..m.cut], base: 0.0, ends: false };
+    draw_row(&t, m.start, left, top, tb.rows[m.start].height, Some(&parts), false)
 }
 
 /// Units moved up so the first starts at 0.
@@ -396,7 +449,8 @@ impl<'d> PageFill<'d, '_> {
             return Ok(tb.clone());
         }
         let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
-        let tb = crate::prof::time("table", || super::table::layout(t, width, &env, false, memos))?;
+        let prev = self.sec.blocks.neighbours(bi, bi, self.ctx.env.text.review.view).0;
+        let tb = crate::prof::time("table", || super::table::layout(t, width, &env, prev, false, memos))?;
         hold(&mut self.pass.held.tables, &tb);
         if !varies {
             self.pass.tables.insert((id, width.to_bits()), tb.clone());
@@ -408,7 +462,7 @@ impl<'d> PageFill<'d, '_> {
     fn note_units(&mut self, kind: NoteKind, id: i64, width: f64, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
         let blocks: Vec<&Block> = self.notes.blocks(kind, id).map(|b| b.iter().collect()).unwrap_or_default();
         let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
-        super::story::layout(&blocks, width, &env, false, memos)
+        super::story::layout(&blocks, width, &env, None, memos)
     }
 
     /// The separator story (NOTE-3) at `width`.
@@ -419,7 +473,7 @@ impl<'d> PageFill<'d, '_> {
                 let blocks: Vec<&Block> = b.iter().collect();
                 let fields = FieldValues::default();
                 let env = StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers };
-                super::story::layout(&blocks, width, &env, false, memos)?
+                super::story::layout(&blocks, width, &env, None, memos)?
             }
             None => Rc::new({
                 // The default separator (NOTE-3): one line of the default paragraph font with a 144pt rule.
@@ -432,6 +486,7 @@ impl<'d> PageFill<'d, '_> {
                 StoryLayout {
                     units: vec![StoryUnit { top: 0.0, height: h, below: 0.0, after: 0.0, content, block: 0, widow: false, notes: Box::new([]) }],
                     height: h,
+                    float_bottom: 0.0,
                 }
             }),
         };
@@ -763,8 +818,8 @@ impl<'d> PageFill<'d, '_> {
                 let pb = self.para_lines(&laid, bi, end, col.width, 0, col.x, memos)?;
                 let s = laid.para().para_style_in(self.ctx.env.text.review.view);
                 let g = match &carry.prev {
-                    Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, s, space_before(s)),
-                    None => space_before(s),
+                    Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, s, space_before(&self.ctx.env.text, s)),
+                    None => self.edge_before(bi, s, space_before(&self.ctx.env.text, s)),
                 };
                 let n = pb.lines.len();
                 let need = if s.keep_lines {
@@ -779,7 +834,8 @@ impl<'d> PageFill<'d, '_> {
             }
             Some(Block::Table(_)) => {
                 let tb = self.table_layout(bi, col.width, memos)?;
-                Ok(tb.rows.first().is_none_or(|r| y + carry.prev_after + r.height + tb.bottom_border <= bottom + EPS))
+                let after = self.after_above_table(bi, carry);
+                Ok(tb.rows.first().is_none_or(|r| y + after + r.height + tb.bottom_border <= bottom + EPS))
             }
         }
     }
@@ -875,11 +931,11 @@ impl<'d> PageFill<'d, '_> {
     ) -> Result<Stop, Yield> {
         let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
-        let mut before = space_before(style);
+        let mut before = space_before(&self.ctx.env.text, style);
         if style.before_auto && carry.first_para {
             before = 0.0; // PARA-5
         }
-        let after = space_after(style);
+        let after = space_after(&self.ctx.env.text, style);
         let n = pb.lines.len();
         let at_top = *empty;
         let g = if !first_part {
@@ -896,7 +952,7 @@ impl<'d> PageFill<'d, '_> {
         } else {
             match &carry.prev {
                 Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, style, before),
-                None => before,
+                None => self.edge_before(pos.block, style, before),
             }
         };
         let top = *y + g;
@@ -965,7 +1021,7 @@ impl<'d> PageFill<'d, '_> {
         *empty = false;
         carry.first_para = false;
         carry.prev = Some(p.para_style_in(self.ctx.env.text.review.view).clone());
-        carry.prev_after = after;
+        let prev_after = std::mem::replace(&mut carry.prev_after, after);
         let done = take >= n;
         if done {
             pos.next_block();
@@ -976,17 +1032,29 @@ impl<'d> PageFill<'d, '_> {
             carry.keep_top = false;
             return Ok(Stop::Full);
         }
+        // PARA-2, COL-2: whether the break that ended the first line is the paragraph's first character (a break after
+        // text drops the space-before).
+        let starts_with_break = first_part
+            && take == 1
+            && !done
+            && pb.pieces()[pb.lines[0].start..pb.lines[0].end]
+                .iter()
+                .all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak | Kind::Anchor | Kind::ListNumber));
         Ok(match stop_kind {
             Some(Kind::PageBreak) => {
                 carry.keep_top = false;
                 carry.prev = None;
+                // PARA-2: a paragraph that starts with a page break keeps on the next page what the previous
+                // paragraph's space-after left of its space-before (as PAGE-7).
+                let kept = (super::paragraph::gap_plain(&self.ctx.env.text, prev_after, before) - prev_after).max(0.0);
+                carry.break_before = if starts_with_break { kept } else { 0.0 };
                 Stop::Page
             }
             Some(Kind::ColumnBreak) => {
                 carry.keep_top = false;
                 carry.prev = None;
-                // COL-2: a paragraph that begins with a column break keeps its space-before in the next column.
-                carry.break_before = if first_part && take == 1 && !done { before } else { 0.0 };
+                // COL-2: a paragraph that starts with a column break keeps its space-before in the next column.
+                carry.break_before = if starts_with_break { before } else { 0.0 };
                 Stop::Column
             }
             _ if !done => {
@@ -1000,7 +1068,7 @@ impl<'d> PageFill<'d, '_> {
     /// The space above a paragraph (PARA-1 to PARA-5): before its first line, or 0 for a continuation.
     fn para_gap(&self, p: &Paragraph, pos: &FlowToken, carry: &FlowState, empty: bool) -> f64 {
         let style = p.para_style_in(self.ctx.env.text.review.view);
-        let mut before = space_before(style);
+        let mut before = space_before(&self.ctx.env.text, style);
         if style.before_auto && carry.first_para {
             before = 0.0; // PARA-5
         }
@@ -1018,9 +1086,29 @@ impl<'d> PageFill<'d, '_> {
         } else {
             match &carry.prev {
                 Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, style, before),
-                None => before,
+                None => self.edge_before(pos.block, style, before),
             }
         }
+    }
+
+    /// PARA-4: block `bi`'s space-before with no paragraph before it in the column. After a table its previous
+    /// paragraph is the table's last row end mark, in the default paragraph style; nothing collapses there.
+    fn edge_before(&self, bi: usize, style: &ParaStyle, before: f64) -> f64 {
+        let after_table = bi > 0 && matches!(self.sec.blocks.get(bi - 1), Some(Block::Table(_)));
+        if after_table && super::paragraph::drops_at_edge(style, Some(&self.ctx.env.text.default_style)) { 0.0 } else { before }
+    }
+
+    /// TABLE-48, PARA-4: the previous paragraph's space-after above table block `bi`, dropped when that paragraph is
+    /// contextual and has the style of the table's first paragraph (the next one in document order).
+    fn after_above_table(&self, bi: usize, carry: &FlowState) -> f64 {
+        let first = match self.sec.blocks.get(bi) {
+            Some(Block::Table(t)) => t.rows.first().and_then(|r| r.cells.first()).and_then(|c| match c.blocks.first() {
+                Some(Block::Para(p)) => Some(&p.para_style_in(self.ctx.env.text.review.view).style_id),
+                _ => None,
+            }),
+            _ => None,
+        };
+        if carry.prev.as_ref().is_some_and(|ps| super::paragraph::drops_at_edge(ps, first)) { 0.0 } else { carry.prev_after }
     }
 
     /// FRAME-1: a frame without `w` is as wide as its content (trailing spaces excluded), at most the column.
@@ -1075,7 +1163,7 @@ impl<'d> PageFill<'d, '_> {
     ) -> Result<Stop, Yield> {
         let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
-        let after = space_after(style);
+        let after = space_after(&self.ctx.env.text, style);
         let at_top = *empty;
         let top = *y + self.para_gap(p, pos, carry, *empty);
         let floats = self.at.known.clone();
@@ -1086,6 +1174,11 @@ impl<'d> PageFill<'d, '_> {
         let n = pieces.len();
         let est = pb.lines.first().map_or(13.0, |l| l.pitch);
         let (cx0, cx1) = (col.x, col.x + col.width);
+        let compat = self.ctx.env.text.compat;
+        // FLOAT-4 (compat <= 14): a paragraph holding only one inline picture is placed in the gap even when it's
+        // wider, over the float.
+        let mut content = pieces.iter().filter(|q| q.kind != Kind::Anchor);
+        let lone_picture = compat <= 14 && content.next().is_some_and(|q| q.kind == Kind::Object) && content.next().is_none();
         // Bands: (top, segments).
         let mut bands: Vec<(f64, Vec<Line>)> = Vec::new();
         let mut yy = top;
@@ -1096,6 +1189,7 @@ impl<'d> PageFill<'d, '_> {
             let mut h = est;
             let mut got = None;
             let mut blocked = false;
+            let mut trial = None;
             // FLOAT-4: a band at the column bottom ignores the floats.
             let here: &[Placed] = if yy >= col.bottom - EPS { &[] } else { &floats };
             for attempt in 0..2 {
@@ -1107,20 +1201,21 @@ impl<'d> PageFill<'d, '_> {
                     Some(iv) => {
                         let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
                         let open = iv.len() == 1 && (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS;
+                        let first = first_part && bands.is_empty();
                         let r = band(
                             sp,
                             pieces,
                             s,
                             &ivc,
-                            first_part && bands.is_empty(),
+                            first,
                             style,
                             p.mark_in(self.ctx.env.text.review.view),
                             &frame,
                             self.ctx.fonts,
-                            open,
+                            open || lone_picture,
                         );
                         match r {
-                            Some((segs, e)) => {
+                            Ok((segs, e)) => {
                                 let ph = segs[0].pitch;
                                 let done = (ph - h).abs() < EPS || attempt == 1;
                                 got = Some((segs, e));
@@ -1129,8 +1224,10 @@ impl<'d> PageFill<'d, '_> {
                                 }
                                 h = ph; // re-test the band with the line's real height
                             }
-                            None => {
+                            Err(t) => {
                                 blocked = true;
+                                // FLOAT-4: the step includes the paragraph's space-before on its first line.
+                                trial = Some(t + if first { top - *y } else { 0.0 });
                                 break;
                             }
                         }
@@ -1149,6 +1246,12 @@ impl<'d> PageFill<'d, '_> {
                     }
                 }
                 _ => {
+                    // FLOAT-4 (compat <= 14): beside square floats the line retries lower in steps of its trial height.
+                    let square = here.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
+                    if let Some(t) = trial.filter(|&t| compat <= 14 && square && t > EPS) {
+                        yy = (yy + t).min(col.bottom.max(yy + EPS));
+                        continue;
+                    }
                     // FLOAT-4, FLOAT-8: move down to the next obstacle edge and try again.
                     match float::next_edge(here, cx0, cx1, yy, yy + h) {
                         Some(b) => yy = b.min(col.bottom.max(yy + EPS)),
@@ -1359,7 +1462,7 @@ impl<'d> PageFill<'d, '_> {
         };
         // TABLE-48: the preceding space-after applies to the table's outer border edge.
         if pos.at.at_start() && !*empty {
-            *y += carry.prev_after;
+            *y += self.after_above_table(pos.block, carry);
         }
         // TABLE-49: a floating table that starts a column moves up to its anchored top (a page-anchored one no
         // higher than the page's top edge); what follows flows below it.
@@ -1402,6 +1505,8 @@ impl<'d> PageFill<'d, '_> {
             column: (col.x, col.width),
         };
         let mut placed_here = 0;
+        // Rows placed whole on this page: (row, top, index in `rows`), for a merged region that splits (TABLE-32).
+        let mut placed: Vec<(usize, f64, usize)> = Vec::new();
         self.at.starts.push((*y, pos.at.at_start()));
         // What a table starting below other content rewinds to when only its header rows would stay here.
         let rewind = (pos.at.at_start() && !*empty).then(|| (*y, area.clone(), carry.note_rest.len()));
@@ -1431,6 +1536,9 @@ impl<'d> PageFill<'d, '_> {
             if notes_ok && *y + height + tb.bottom_border + a.total() <= col.bottom + EPS + a.total().min(0.0) {
                 *area = a;
                 carry.note_rest.extend(note_rest);
+                if rest.is_none() {
+                    placed.push((ri, *y, rows.len()));
+                }
                 rows.push(match &rest {
                     // A whole row: through the cache.
                     None => {
@@ -1461,14 +1569,33 @@ impl<'d> PageFill<'d, '_> {
                     let room = avail - m[0] - m[2];
                     let cut = cell_cut(cu.units, room, rest.is_some());
                     fitted.push(CellPart { units: &cu.units[..cut], base: 0.0, ends: cu.ends && cut == cu.units.len() });
-                    left.push(rebase(&cu.units[cut..]));
+                    let mut rest = rebase(&cu.units[cut..]);
+                    // TABLE-41: a continuation that starts a new paragraph keeps what its space-before adds to the
+                    // space-after left on this page.
+                    if cut > 0 && cut < cu.units.len() && cu.units[cut].block != cu.units[cut - 1].block {
+                        let p = &cu.units[cut - 1];
+                        let keep = (cu.units[cut].top - (p.top + p.height + p.after)).max(0.0);
+                        rest.iter_mut().for_each(|u| u.top += keep);
+                    }
+                    left.push(rest);
                 }
+            }
+            let merged =
+                if can_split && rest.is_none() { merged_splits(tb, ri, &placed, col.bottom - area.total() - tb.bottom_border) } else { Vec::new() };
+            for m in &merged {
+                left[m.k] = rebase(&tb.rows[m.start].cells[m.kr].units.units[m.cut..]);
             }
             // TABLE-42.
             let any = fitted.iter().any(|f| !f.units.is_empty());
             let every = fitted.iter().zip(&parts).all(|(f, u)| u.units.is_empty() || !f.units.is_empty());
             if can_split && any && every {
-                let h = part_height(row, &fitted);
+                let h = merged.iter().map(|m| m.bottom - *y).fold(part_height(row, &fitted), f64::max);
+                for m in &merged {
+                    let (rs, top, idx) = placed[m.pi];
+                    let mut redrawn = draw_merged_part(tb, m, ri, h, col.x, top);
+                    move_floats(Some(&mut redrawn), &page_floats, &frames, tb.rows[rs].top_border);
+                    rows[idx] = redrawn;
+                }
                 rows.push(draw_row(tb, ri, col.x, *y, h, Some(&fitted), true));
                 move_floats(rows.last_mut(), &page_floats, &frames, row.top_border);
                 *y += h;

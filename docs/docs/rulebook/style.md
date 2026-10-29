@@ -46,7 +46,15 @@ A list level's `w:pPr` slots into the paragraph cascade as [STYLE-6](style#style
 
 The table style is lower in the cascade than the paragraph style, including Normal (which a paragraph without `w:pStyle` uses, [STYLE-2](style#style-2)). Whatever Normal sets (size, spacing, …) beats the table style and its regions, even when Normal sets it to the docDefaults value. Table-style properties Normal doesn't set (colour, `w:jc`, …) apply. With an empty Normal the table style's values show.
 
-One exception, font size: when the paragraph uses the default paragraph style and that style sets 11 or 12pt, a table with a style other than the default table style gives its own size instead. That size is the table style's `w:sz` (through `w:basedOn` and its regions), else the docDefaults size unless docDefaults is 10pt; with neither, Normal's size stays. So docDefaults 11pt, Normal 12pt and a table style without a size give 11pt text in the table.
+One exception, for the font size, in compat ≤ 14 only. When all of these hold:
+
+- the cell paragraph's size comes from the default paragraph style itself (no `w:pStyle`, or a style based on it that sets no size; a size set by the paragraph style, even 12pt, or by the run, blocks it);
+- that size is exactly 12pt;
+- the table (not the default table style) has a table style whose `w:basedOn` chain sets at least one paragraph or run property, or has a conditional region (`w:tblStylePr`). Only `w:tblPr`, or an empty `w:rPr`, doesn't count;
+
+the cell text takes the table style's size instead: the active conditional regions' size, else the table style's `w:sz`, else docDefaults'. If that is 10pt, or there is none, the 12pt stays. `useWord2002TableStyleRules` changes nothing.
+
+Example: compat 12, docDefaults 11pt, Normal 12pt, a table style setting only `w:rFonts`: cell text without `w:pStyle` is 11pt. With a table style `w:sz` 28 it is 14pt; with docDefaults 10pt, or Normal 11pt, it keeps Normal's size.
 
 ### STYLE-5. Paragraph-mark run properties {#style-5}
 
@@ -75,6 +83,10 @@ The paragraph mark's run properties (`w:pPr/w:rPr`, through its `w:rStyle` and t
 When a level sets `w:eastAsiaTheme` over a lower level that names an East Asian font, and the theme leaves that slot empty, the East Asian font is the one named below: the empty slot is transparent. With no named font below, the empty slot falls back to the theme's Latin font of the same group (minor or major), and the run still counts as East Asian for [FONT-14](font#font-14).
 
 Example: docDefaults `w:eastAsia="Times New Roman"` under Normal's `w:eastAsiaTheme="minorEastAsia"`, with an empty minor East Asian font in the theme: the East Asian font is Times New Roman.
+
+A named East Asian font at a higher level doesn't fill an empty slot that has no named font under it: the run still counts as East Asian with its own font for [FONT-14](font#font-14), [BREAK-8](break#break-8) and [BREAK-9](break#break-9), as if it named nothing (an East Asian font it names is used as that font).
+
+Example: docDefaults `w:eastAsiaTheme="minorEastAsia"` (empty in the theme) and a run with `w:ascii="Arial" w:eastAsia="Times New Roman"`: in compat 12 with `compressPunctuation` its Arial spaces squeeze ([BREAK-9](break#break-9)). With docDefaults `w:eastAsia="Times New Roman"` under Normal's theme slot, the same run's spaces don't.
 
 ### STYLE-9. Tab stops accumulate {#style-9}
 

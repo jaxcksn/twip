@@ -175,8 +175,9 @@ impl Face {
                 // LINE-14: an East Asian font's line is 1.3 × its win height W, half the extra above, half below,
                 // and no line gap (MS Gothic 6–72pt: +0.30 × size, split evenly; Yu Gothic 12pt: baseline 14.16 =
                 // 11.82 + 0.15 × 15.44; SimSun as MS Gothic, its line gap unused). Line spacing scales this height.
+                // The extra is whole font units, rounded half up: MS Mincho (upem 256, W 256) adds 38, not 38.4.
                 let (wa, wd) = (u16_at(d, o + 74) as f64, u16_at(d, o + 76) as f64);
-                let extra = 0.15 * (wa + wd);
+                let extra = (0.15 * (wa + wd) + 0.5).floor();
                 (asc, desc, gap) = (wa + extra, wd + extra, 0.0);
             }
         } else {

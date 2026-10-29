@@ -34,6 +34,14 @@ Example: a float at 222–322 in a column 72–540 with `largest`: 150pt on the 
 
 If no free interval in the band can take the next unbreakable piece of text, or a topAndBottom float covers the band, move the band down to the nearest exclusion bottom below its top among the floats overlapping it, and try again. Never move it below the column bottom. A band that has reached the column bottom ignores the floats: set it at the bottom, over them.
 
+**Compat ≤ 14, beside `wrapSquare` floats**, a line whose content fits no interval doesn't jump to the exclusion bottom. It retries lower in fixed steps of a trial height `h` (`y += h`) until the line at `y` overlaps no float or its content fits beside it (the same test as everywhere else). The line placed at the final `y` gets its normal height.
+
+- `h` is the height of what was placed when the fit failed. Tabs alone before the item that fits no gap don't make the line fit: `h` is their height. If nothing was placed, `h` is the failing item's own height: an inline picture's height alone (no font descent), or for text the line height (`A + E + D`) of the font where the gap's width ends inside the word (a word that starts at 11pt and turns 24pt after that width steps by the 11pt height).
+- On the paragraph's first line `h` also includes the space before it, which moves with every step.
+- A paragraph whose only content is one inline picture wider than the gap is placed in the gap anyway, over the float.
+
+Example: a tab, then a 64pt-wide 30pt-high picture, 14.65 below the top of a 112.4pt float with 45pt gaps: the tab (11pt Calibri, 13.43) fits, the picture fits no gap, so the line moves 8 × 13.43 = 107.4 down. Compat 15 moves the line straight to the exclusion bottom, as above; so do tight and through floats, which haven't been checked.
+
 ### FLOAT-5. Inline pictures {#float-5}
 
 An inline picture (`wp:inline`) is a glyph whose bottom sits on the baseline: ascent = picture height, descent 0. The line height follows [LINE-1](line#line-1): `max(pictureHeight, textAscent) + textDescent`. With exact line spacing the line keeps its height ([LINE-12](line#line-12)) and the picture overflows upward, unclipped.
@@ -75,6 +83,9 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 - A line wraps if its line box overlaps the exclusion ([FLOAT-1](float#float-1)).
 - Fill the free intervals of a band one after another, each **independently, one unbreakable piece of text at a time** (up to the next break opportunity). If the next piece doesn't fit the current interval, that interval stays as it is and the text continues in the next interval of the same band. There is no minimum interval width.
 - Several floats give several intervals.
+- An interval that starts at a float's edge (not the column's) takes the place of the left indent: its lines start at `max(edge, left indent)`, and the first line adds its first-line indent to that, so a hanging first line starts left of the edge, over the float's distance or the float itself.
+
+Example: a float's exclusion ending at 255pt beside a paragraph with `w:left="-540" w:firstLine="540"`: the first line starts at 282pt, the next ones at 255pt. With `w:hanging="540"` instead the first line starts at 228pt.
 
 ### FLOAT-8. Other wrap types {#float-8}
 
@@ -97,7 +108,7 @@ Floats positioned relative to the page or margins, and wrapNone floats ([FLOAT-1
 - Insets `bodyPr/@lIns`, `tIns`, `rIns`, `bIns` default to 7.2, 3.6, 7.2, 3.6pt. The outline (`a:ln/@w`, 0.75pt when `a:ln` has no `w`; none without `a:ln` or with `a:noFill`) is centred on the box edge.
 - Lay the content out as an ordinary story ([HDR-3](hdr#hdr-3)) at `width = boxW − lIns − rIns − outline`, starting at `(boxX + lIns + outline/2, boxY + tIns + outline/2)`.
 - `a:spAutoFit`: the box height is `content + tIns + bIns + outline`.
-- Fixed height: the content bottom is `boxBottom − bIns − outline/2`. Draw a line only if its line box starts above the content bottom; draw no later line.
+- Fixed height: the content bottom is `boxBottom − bIns − outline/2`. Draw a line only if its line box starts above the content bottom; draw no later line. The content bottom clips the lines drawn like an exact row's bottom ([TABLE-34](table#table-34)): a glyph whose ink top is at or below it is not drawn (its characters go with it); a line whose glyphs all go shows nothing.
 - Text wraps around the outer box (with its dist values).
 
 ### FLOAT-11. Floats and columns {#float-11}
@@ -122,7 +133,8 @@ A wrapNone float (in front of or behind the text) is never moved by [FLOAT-9](fl
 
 ### FLOAT-14. Floats anchored in table cells {#float-14}
 
-- Only wrapNone floats anchored in a cell are drawn; they don't make the row taller and the cell's text doesn't wrap them.
+- Floats anchored in a cell are drawn whatever their wrap.
+- The cell's vertical alignment offset ([TABLE-30](table#table-30)) moves the floats laid out in the cell with its text: `paragraph` and `line` count from the anchor where the aligned cell puts it. Their bottoms count in the content height that offset aligns, but they don't make the row taller. A compat ≤ 14 `layoutInCell="0"` float isn't moved by the offset: it is placed as in a top-aligned cell (below).
 - Position them inside the cell: every horizontal box (`column`, `margin`, `page`, …) is the cell's content box; `paragraph` and `line` count from the anchor paragraph's and line's tops in the cell; `page` and `margin` vertically count from the top of the cell's content.
 - Compat 15 ignores `layoutInCell`: the float stays in the cell.
 - Compat ≤ 14 with `layoutInCell="0"` (in a cell of a body table, not a nested one): place the float like a body float horizontally and for `page`/`margin` vertically. For `paragraph`/`line` keep its position in the cell, moved up by the row's top border height (the offsets count from the row top, not from the cell's content).

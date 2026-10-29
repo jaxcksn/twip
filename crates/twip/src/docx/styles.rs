@@ -23,9 +23,12 @@ pub struct Region {
     pub tbl: TblProps,
     pub tc: TcProps,
     pub tr: TrProps,
-    /// The size a cell's text takes when the default paragraph style sets 11 or 12pt (STYLE-4): the table style's
-    /// `w:sz`, else docDefaults' unless that is 10pt. None in the default table style.
+    /// The size a cell's text takes when its size comes from a 12pt default paragraph style (STYLE-4): the active
+    /// regions' and table style's `w:sz`, else docDefaults', unless that is 10pt. None in the default table style, in
+    /// one that sets no paragraph, run or region property, and in compat 15.
     pub size_over_normal: Option<f64>,
+    /// The region's `w:pPr` or `w:rPr` holds a property (STYLE-4).
+    pub sets_text: bool,
 }
 
 impl Region {
@@ -37,6 +40,7 @@ impl Region {
             tc: TcProps::parse(child(n, "tcPr")),
             tr: TrProps::parse(child(n, "trPr")),
             size_over_normal: None,
+            sets_text: ["pPr", "rPr"].iter().any(|k| child(n, k).is_some_and(|e| e.children().any(|c| c.is_element()))),
         }
     }
 }
@@ -131,6 +135,8 @@ pub struct Styles {
     pub default_table: Option<String>,
     pub doc_rpr: RunProps,
     pub doc_ppr: ParaProps,
+    /// compat 15: no table-style size exception (STYLE-4).
+    pub compat15: bool,
 }
 
 impl Styles {
@@ -284,8 +290,10 @@ impl Styles {
             }
         }
         out.rpr = RunProps::fold_chain(rprs.into_iter());
-        if id.is_some() && id != self.default_table.as_deref() {
-            out.size_over_normal = out.rpr.size.or(self.doc_rpr.size.filter(|s| *s != 10.0));
+        // STYLE-4's exception (compat ≤ 14): a table style that sets some paragraph, run or region property.
+        let sets = chain.iter().any(|s| s.base.sets_text || !s.regions.is_empty());
+        if !self.compat15 && id.is_some() && id != self.default_table.as_deref() && sets {
+            out.size_over_normal = out.rpr.size.or(self.doc_rpr.size).filter(|s| *s != 10.0);
         }
         out
     }

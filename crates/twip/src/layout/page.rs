@@ -341,7 +341,7 @@ impl<'d> Paginator<'d, '_> {
                 continue;
             };
             let blocks: Vec<&Block> = blocks.iter().collect();
-            let layout = super::story::layout(&blocks, width, &env, false, memos)?;
+            let layout = super::story::layout(&blocks, width, &env, None, memos)?;
             out[k] = Some(stack_limited(&layout, left, if footer { 0.0 } else { s.header }, limit).1);
         }
         Ok(out)

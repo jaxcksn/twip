@@ -20,7 +20,8 @@ A line may end after:
 - a space;
 - a hyphen-minus `-`, a hyphen U+2010 or an en dash U+2013, also before digits and also in table cells (except as [BREAK-8](break#break-8) says);
 - a soft hyphen ([BREAK-7](break#break-7));
-- a tab character.
+- a tab character;
+- before and after an inline picture, even with no space next to it.
 
 Nowhere else: not after a no-break space or a no-break hyphen, an em dash or a slash, and not between ideographs. Line breaks (`w:br`, `w:cr`) always end the line; page and column breaks end it too and move on to the next page or column ([COL-2](col#col-2)).
 
@@ -81,6 +82,8 @@ In compat ≤ 14 with `compressPunctuation`, a line whose runs are East Asian as
 1. Only single spaces (not part of a run of spaces) of such runs, before that stretch, can give way. Each may shrink to half its font's average character width: `shrink = max(0, width − xAvgCharWidth × size / upem / 2)`.
 2. If the stretch fits with all that shrink used (`rightEdge + Σ shrink`), it stays on the line. Shrink the spaces in proportion, `space −= shrink × overflow / Σ shrink`, so the last character ends at the right edge.
 3. Only the first stretch to cross squeezes in: a second crossing one wraps, so a line takes at most one squeezed stretch.
-4. The first stretch on a line, a line with a tab before the stretch, or one with a pending right or centre tab never squeezes.
+4. The first stretch on a line, or one with a pending right or centre tab, never squeezes. After a tab, only the spaces between the line's last tab and the stretch can give way.
 
 Example: Arial spaces can lose about 20% of their width this way, Courier New spaces 50%.
+
+Example: Arial 12 "⇥You are ordered … at 10:00 am with", 3.7pt wider than the 504pt after the tab, keeps "with": its 17 spaces after the tab can give 0.686pt each.

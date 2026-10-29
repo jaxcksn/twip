@@ -85,7 +85,10 @@ impl Resolver {
             }
             .unwrap_or_else(fallback),
             cs: self.font(&p.cs).unwrap_or_else(fallback),
-            east_asia_unset: p.east_asia_below.is_none() && matches!(&p.east_asia, Some(FontRef::Theme(t)) if self.theme.ea_unset(t)),
+            // STYLE-8: a named font over an inherited empty slot still leaves the slot empty.
+            east_asia_unset: p.east_asia_below.is_none()
+                && matches!(p.east_asia.as_ref().filter(|e| matches!(e, FontRef::Theme(_))).or(p.east_asia_theme.as_ref()),
+                    Some(FontRef::Theme(t)) if self.theme.ea_unset(t)),
             hint_east_asia: p.hint.as_deref() == Some("eastAsia"),
             size: p.size.unwrap_or(10.0),
             bold: p.toggle(toggle::B),
@@ -155,6 +158,7 @@ impl Resolver {
             list_jc: "left".into(),
             num: None,
             list_fmt: None,
+            list: None,
             direct: Raw::default(),
             change: None,
         }
@@ -206,6 +210,7 @@ impl Resolver {
             style.list_jc = l.jc.clone();
             style.num = num_id.map(|id| (id, ilvl));
             style.list_fmt = Some(l.fmt.clone());
+            style.list = num_id.and_then(|id| self.numbering.abstract_of(id, &self.styles));
         }
 
         let mut base = self.styles.doc_rpr.clone();
@@ -214,13 +219,12 @@ impl Resolver {
         }
         let style_rpr = self.styles.chain_rpr(style_id.as_deref());
         base.merge_level(&style_rpr);
-        // STYLE-4: an 11 or 12pt default paragraph style gives way to the table style's size.
-        if let Some(size) = region.and_then(|t| t.size_over_normal)
-            && style_id.is_some()
-            && style_id == self.styles.default_paragraph
-            && matches!(style_rpr.size, Some(s) if s == 11.0 || s == 12.0)
-        {
-            base.size = Some(size);
+        // STYLE-4: a 12pt size that comes from the default paragraph style itself gives way to the table style's.
+        if let Some(size) = region.and_then(|t| t.size_over_normal) {
+            let sizer = self.styles.chain(style_id.as_deref()).into_iter().rev().find(|s| s.base.rpr.size.is_some());
+            if sizer.is_some_and(|s| Some(&s.id) == self.styles.default_paragraph.as_ref() && s.base.rpr.size == Some(12.0)) {
+                base.size = Some(size);
+            }
         }
         ParaResolved { style, base, level, num_id, ilvl, from_style, style_id }
     }
@@ -404,25 +408,56 @@ mod tests {
     }
 
     #[test]
-    fn an_11_or_12pt_normal_gives_way_to_the_table_style_size() {
-        // (docDefaults, Normal, table style) sizes in half-points → the cell text's size in a T1 table and in a table
-        // with the default table style.
-        let size = |dd: u32, normal: u32, table: Option<u32>| {
+    fn a_12pt_normal_gives_way_to_a_table_style_that_sets_text_properties() {
+        // STYLE-4: (docDefaults, Normal) sizes in half-points, the table style T1's contents, the cell paragraph's
+        // style, compat 15 → the cell text's size in a T1 table and in a table with the default table style.
+        let size = |dd: u32, normal: u32, table: &str, p_style: Option<&str>, compat15: bool| {
             let sz = |v: u32| format!(r#"<w:rPr><w:sz w:val="{v}"/></w:rPr>"#);
             let xml = format!(
-                r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault>{}</w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0">{}</w:style><w:style w:type="table" w:default="1" w:styleId="T0"/><w:style w:type="table" w:styleId="T1"><w:basedOn w:val="T0"/>{}</w:style></w:styles>"#,
+                r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault>{}</w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0">{}</w:style><w:style w:type="paragraph" w:styleId="P1"><w:basedOn w:val="P0"/></w:style><w:style w:type="paragraph" w:styleId="P2"><w:basedOn w:val="P0"/>{}</w:style><w:style w:type="table" w:default="1" w:styleId="T0"/><w:style w:type="table" w:styleId="T1"><w:basedOn w:val="T0"/>{table}<w:tblPr/></w:style></w:styles>"#,
                 sz(dd),
                 sz(normal),
-                table.map(sz).unwrap_or_default()
+                sz(normal)
             );
-            let res = Resolver::new(Styles::parse(Some(&xml)), Numbering::default(), ThemeFonts::default());
+            let mut styles = Styles::parse(Some(&xml));
+            styles.compat15 = compat15;
+            let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
             let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
-            let in_table = |id| res.paragraph(&ParaProps::default(), Some(&res.cell_region(Some(id), look, (0, 0), (0, 0), (1, 1)))).base.size;
+            let direct = ParaProps { style: p_style.map(str::to_string), ..ParaProps::default() };
+            let in_table = |id| res.paragraph(&direct, Some(&res.cell_region(Some(id), look, (0, 0), (0, 0), (1, 1)))).base.size;
             (in_table("T1"), in_table("T0"))
         };
-        assert_eq!(size(22, 24, None), (Some(11.0), Some(12.0)));
-        assert_eq!(size(20, 24, Some(22)), (Some(11.0), Some(12.0)));
-        assert_eq!(size(20, 24, None), (Some(12.0), Some(12.0)));
-        assert_eq!(size(22, 20, None), (Some(10.0), Some(10.0)));
+        let fonts = r#"<w:rPr><w:rFonts w:ascii="Calibri"/></w:rPr>"#;
+        assert_eq!(size(22, 24, fonts, None, false), (Some(11.0), Some(12.0)));
+        assert_eq!(size(22, 24, fonts, Some("P1"), false), (Some(11.0), Some(12.0)));
+        assert_eq!(size(22, 24, r#"<w:rPr><w:sz w:val="28"/></w:rPr>"#, None, false), (Some(14.0), Some(12.0)));
+        // A table style without paragraph or run properties, an empty rPr, a resolved 10pt, a style that sets 12pt
+        // itself, an 11pt Normal, compat 15: Normal's size stays.
+        assert_eq!(size(22, 24, "", None, false), (Some(12.0), Some(12.0)));
+        assert_eq!(size(22, 24, "<w:rPr/>", None, false), (Some(12.0), Some(12.0)));
+        assert_eq!(size(20, 24, fonts, None, false), (Some(12.0), Some(12.0)));
+        assert_eq!(size(22, 24, r#"<w:rPr><w:sz w:val="20"/></w:rPr>"#, None, false), (Some(12.0), Some(12.0)));
+        assert_eq!(size(22, 24, fonts, Some("P2"), false), (Some(12.0), Some(12.0)));
+        assert_eq!(size(24, 22, fonts, None, false), (Some(11.0), Some(11.0)));
+        assert_eq!(size(22, 24, fonts, None, true), (Some(12.0), Some(12.0)));
+    }
+
+    #[test]
+    fn a_named_east_asian_font_over_an_empty_theme_slot_leaves_it_empty() {
+        // STYLE-8: (docDefaults rFonts, Normal's rFonts) under a run naming eastAsia="Times New Roman", with an empty
+        // minor East Asian theme font → whether the run's East Asian slot is the empty one.
+        let unset = |dd: &str, normal: &str| {
+            let xml = format!(
+                r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts {dd}/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0"><w:rPr><w:rFonts {normal}/></w:rPr></w:style></w:styles>"#
+            );
+            let res = Resolver::new(Styles::parse(Some(&xml)), Numbering::default(), ThemeFonts::default());
+            let base = res.paragraph(&ParaProps::default(), None).base;
+            let direct = RunProps { east_asia: Some(FontRef::Name("Times New Roman".into())), ..RunProps::default() };
+            res.run_style(&res.run_props(&base, &direct)).east_asia_unset
+        };
+        assert!(unset(r#"w:eastAsiaTheme="minorEastAsia""#, ""));
+        // A named font under the slot fills it, so the run's name stands.
+        assert!(!unset(r#"w:eastAsia="Calibri""#, r#"w:eastAsiaTheme="minorEastAsia""#));
+        assert!(!unset(r#"w:eastAsia="Calibri""#, ""));
     }
 }

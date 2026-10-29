@@ -31,6 +31,10 @@ A line with no text, picture or list number (an empty paragraph, or a line of on
 
 Example: an empty paragraph whose mark is 24pt Calibri is a 29.2969pt line, whatever the paragraph's style size.
 
+A paragraph's last line holding inline pictures but no text (pictures, tabs, spaces) is at least the mark's single height `Amark + Emark + Dmark`, all of it above the baseline: a shorter picture's bottom stays on the line's bottom, and there is no descent below it. Checked in compat 12 and 15 with one-line paragraphs; whatever the tab's or the picture run's size, the mark's counts.
+
+Example: a 10pt picture and a tab in a paragraph with an 11pt Calibri mark make a 13.4277 line with the picture's bottom 13.4277 below its top; with a 24pt mark a 20pt picture alone makes a 29.2969 line.
+
 ### LINE-5. Spaces and tabs add no height {#line-5}
 
 Spaces (U+0020, U+3000, U+2002, U+2003; a no-break space counts as text) and tab characters never raise a line: leading, between other text, trailing, or alone before a break. Leave them out of both maxima in [LINE-1](line#line-1). A tab's leader is still drawn at the tab run's size ([TAB-9](tab#tab-9)).
@@ -126,15 +130,18 @@ Example: a 60pt picture alone on the line, an 11pt Calibri mark, `w:line="225"` 
 
 ### LINE-14. East Asian font height {#line-14}
 
-For an East Asian font (`OS/2.ulCodePageRange1` has any of bits 17–21), with `W = usWinAscent + usWinDescent`:
+For an East Asian font (`OS/2.ulCodePageRange1` has any of bits 17–21), with `W = usWinAscent + usWinDescent` in font units:
 
 ```
-A = usWinAscent + 0.15 · W
-D = usWinDescent + 0.15 · W
+extra = round(0.15 · W)        // whole font units, half up
+A = usWinAscent + extra
+D = usWinDescent + extra
 E = 0
 ```
 
-so the font's single line is `1.3 · W × size / upem`, the extra split evenly above and below, and the font's line gap is never used. Line spacing then scales this height like any other.
+so the font's single line is about `1.3 · W × size / upem`, the extra split evenly above and below, and the font's line gap is never used. Line spacing then scales this height like any other. The rounding only shows for fonts with a small `upem`, such as the 256-unit MS Mincho, MS Gothic and SimSun.
+
+Example: MS Mincho (upem 256, win 220/36): W = 256, 0.15 · W = 38.4, extra = 38, so 11pt is A = 258/256 · 11 = 11.0859 and D = 74/256 · 11 = 3.1797, 14.2656 in all. A check box drawn in MS Mincho through `w:hint="eastAsia"` ([FONT-12](font#font-12)) sizes its line the same way.
 
 ### LINE-15. Emphasis marks {#line-15}
 
