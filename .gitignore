@@ -36,3 +36,5 @@ docs/.docusaurus/
 maintainers/
 THIRD-PARTY-NOTICES.md
 API-DESIGN.md
+# CI's emsdk (setup-emsdk's actions-cache-folder), inside the checkout.
+emsdk-cache/

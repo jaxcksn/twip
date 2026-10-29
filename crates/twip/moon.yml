@@ -8,13 +8,13 @@ tasks:
   # The tests and the lint build it too.
   build:
     command: node ../twip-capi/build-native.mjs build -p twip
-    inputs: ['src/**/*', 'cpp/**/*', 'build.rs', 'Cargo.toml']
+    inputs: ['src/**/*', 'cpp/**/*', 'build.rs', 'Cargo.toml', '/crates/twip-capi/build-native.mjs']
     options:
       runInCI: false
   # The unit tests and the rust contract runner (tests/contract.rs).
   test:
     command: node ../twip-capi/build-native.mjs test -p twip
-    inputs: ['src/**/*', 'cpp/**/*', 'build.rs', 'tests/**/*', 'examples/**/*', 'Cargo.toml', '/tests/contract/**/*']
+    inputs: ['src/**/*', 'cpp/**/*', 'build.rs', 'tests/**/*', 'examples/**/*', 'Cargo.toml', '/tests/contract/**/*', '/crates/twip-capi/build-native.mjs']
   example:
     command: node ../twip-capi/build-native.mjs run -p twip --example session
-    inputs: ['src/**/*', 'examples/**/*', 'Cargo.toml']
+    inputs: ['src/**/*', 'examples/**/*', 'Cargo.toml', '/crates/twip-capi/build-native.mjs']
