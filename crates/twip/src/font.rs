@@ -20,6 +20,10 @@ struct Entry {
     path: Option<String>,
     data: Option<Arc<Vec<u8>>>,
     index: u32,
+    /// A variable font's named instance (FONT-17): its number from 1, and its axis values (user space). 0 and none
+    /// for a static face.
+    instance: u32,
+    variations: Vec<([u8; 4], f32)>,
 }
 
 /// One face, with metrics in font units.
@@ -34,6 +38,10 @@ pub struct Face {
     pub sim_italic: bool,
     pub data: Arc<Vec<u8>>,
     pub index: u32,
+    /// A variable font's named instance, from 1 (0 for a static face), and its axis values: what the face draws
+    /// with (FONT-17).
+    pub instance: u32,
+    pub variations: Vec<([u8; 4], f32)>,
     pub upem: f64,
     /// FONT-1: ascent A, descent D, external leading E.
     pub ascent: f64,
@@ -112,6 +120,8 @@ impl Face {
             sim_italic,
             data: data.clone(),
             index: e.index,
+            instance: e.instance,
+            variations: e.variations.clone(),
             upem,
             ascent: 0.0,
             descent: 0.0,
@@ -126,7 +136,16 @@ impl Face {
             strike_thick: upem * 0.05,
             east_asian: false,
             avg_width: 0.0,
-            font: harfrust::Font::new(Arc::clone(&data) as Arc<dyn AsRef<[u8]> + Send + Sync>, e.index)?,
+            font: {
+                let font = harfrust::Font::new(Arc::clone(&data) as Arc<dyn AsRef<[u8]> + Send + Sync>, e.index)?;
+                if e.variations.is_empty() {
+                    font
+                } else {
+                    // shortcut: vertical metrics stay the default instance's (from OS/2 and hhea, not MVAR); fonts
+                    // rarely vary them.
+                    font.instance_builder().variations(e.variations.iter().map(|&(t, v)| (Tag::new(&t), v))).build()
+                }
+            },
             glyphs: RefCell::new(HashMap::new()),
             advances: RefCell::new(HashMap::new()),
             plans: RefCell::new(HashMap::new()),
@@ -467,19 +486,28 @@ impl Fonts {
                 path: path.clone(),
                 data: data.clone(),
                 index,
+                instance: 0,
+                variations: Vec::new(),
             };
-            // Added bytes are loaded here as layout would load them, so a face that can't be drawn isn't added. Files
-            // load on first use.
-            if let Some(data) = &data
-                && Face::load(&entry, &entry.family, data.clone(), false, false).is_none()
-            {
-                continue;
+            let table = |tag: &[u8; 4]| t.get(tag).and_then(|&(o, len)| d.get(o..o + len));
+            let instances = table(b"fvar").map(|fvar| named_instances(fvar, table(b"STAT"), &names, &entry)).unwrap_or_default();
+            for (entry, aliases) in if instances.is_empty() { vec![(entry, Vec::new())] } else { instances } {
+                // Added bytes are loaded here as layout would load them, so a face that can't be drawn isn't added.
+                // Files load on first use.
+                if let Some(data) = &data
+                    && Face::load(&entry, &entry.family, data.clone(), false, false).is_none()
+                {
+                    continue;
+                }
+                let i = self.entries.len();
+                for n in all.iter().chain(&aliases) {
+                    let list = self.by_name.entry(n.to_lowercase()).or_default();
+                    if !list.contains(&i) {
+                        list.push(i);
+                    }
+                }
+                self.entries.push(entry);
             }
-            let i = self.entries.len();
-            for n in &all {
-                self.by_name.entry(n.to_lowercase()).or_default().push(i);
-            }
-            self.entries.push(entry);
         }
         if self.entries.len() > before {
             self.changed();
@@ -618,7 +646,115 @@ impl Fonts {
     }
 }
 
-/// A font file's bytes with only the parts [`Fonts::scan`] reads filled in (headers, directories, name/OS/2/head).
+/// A variable font's named instances as faces (FONT-17), from its `fvar` table, or none. Each is named as Windows'
+/// GDI names it, the name Word writes in documents: the typographic family, then the names of the instance's axis
+/// values from `STAT` in its axis order, without elidable ones and Regular, Bold, Italic and Oblique (Bold and Italic
+/// are styles), cut at 31 characters ("Bahnschrift Light Condensed", "Segoe UI Variable Display Semib"; the Bold
+/// instance is "Bahnschrift" bold). Without `STAT`, the subfamily's words stand for the axis values. The weight,
+/// width and italic come from the instance's `wght`, `wdth`, `ital` and `slnt` values, else `base`'s. Each face's
+/// names: its GDI name, the name before the cut, and the subfamily form.
+fn named_instances(fvar: &[u8], stat: Option<&[u8]>, names: &HashMap<u16, Vec<String>>, base: &Entry) -> Vec<(Entry, Vec<String>)> {
+    let fixed = |o: usize| u32_at(fvar, o) as i32 as f32 / 65536.0;
+    let (axes, axis_count, axis_size) = (u16_at(fvar, 4) as usize, u16_at(fvar, 8) as usize, u16_at(fvar, 10) as usize);
+    let (count, size) = (u16_at(fvar, 12) as usize, u16_at(fvar, 14) as usize);
+    let tags: Vec<[u8; 4]> = (0..axis_count).filter_map(|a| fvar.get(axes + a * axis_size..axes + a * axis_size + 4)?.try_into().ok()).collect();
+    let start = axes + axis_count * axis_size;
+    if tags.len() < axis_count || size < 4 + 4 * axis_count || fvar.len() < start + count * size {
+        return Vec::new();
+    }
+    let family = names.get(&16).or(names.get(&1)).and_then(|v| v.first()).unwrap_or(&base.family);
+    let ribbi = |w: &str| ["regular", "bold", "italic", "oblique", "bold italic"].contains(&w.to_lowercase().as_str());
+    let named = |words: Vec<String>| if words.is_empty() { family.clone() } else { format!("{family} {}", words.join(" ")) };
+    (0..count)
+        .filter_map(|i| {
+            let r = start + i * size;
+            let sub = names.get(&u16_at(fvar, r))?.first()?;
+            let variations: Vec<([u8; 4], f32)> = tags.iter().enumerate().map(|(a, &t)| (t, fixed(r + 4 + 4 * a))).collect();
+            let value = |tag: &[u8; 4]| variations.iter().find(|(t, _)| t == tag).map(|&(_, v)| v);
+            let from_sub = named(sub.split_whitespace().filter(|w| !ribbi(w)).map(str::to_string).collect());
+            let full =
+                stat.and_then(|s| stat_names(s, names, &value)).map_or(from_sub.clone(), |w| named(w.into_iter().filter(|w| !ribbi(w)).collect()));
+            let gdi = String::from_utf16_lossy(&full.encode_utf16().take(31).collect::<Vec<u16>>()).trim_end().to_string();
+            let slanted = sub.split_whitespace().any(|w| w.eq_ignore_ascii_case("italic") || w.eq_ignore_ascii_case("oblique"));
+            // wdth is a percentage of normal; OS/2 width classes 1-9 are 50, 62.5, 75, 87.5, 100, 112.5, 125, 150, 200.
+            let classes = [50.0, 62.5, 75.0, 87.5, 100.0, 112.5, 125.0, 150.0, 200.0];
+            let width = value(b"wdth").map(|w| classes.iter().rposition(|&c| w >= c - 0.01).map_or(1, |c| c as u16 + 1));
+            let entry = Entry {
+                family: gdi.clone(),
+                weight: value(b"wght").map_or(base.weight, |w| w.round().clamp(1.0, 1000.0) as u16),
+                width: width.unwrap_or(base.width),
+                italic: base.italic || slanted || value(b"ital").is_some_and(|v| v >= 0.5) || value(b"slnt").is_some_and(|v| v != 0.0),
+                path: base.path.clone(),
+                data: base.data.clone(),
+                index: base.index,
+                instance: i as u32 + 1,
+                variations,
+            };
+            Some((entry, vec![gdi, full, from_sub]))
+        })
+        .collect()
+}
+
+/// The names of the `STAT` axis values an instance has (`value` is its coordinate on an axis), in the table's axis
+/// order, without elidable ones. A multi-axis value (format 4) names every axis it matches; an axis this font doesn't
+/// vary has one value, which applies.
+fn stat_names(stat: &[u8], names: &HashMap<u16, Vec<String>>, value: &dyn Fn(&[u8; 4]) -> Option<f32>) -> Option<Vec<String>> {
+    let fixed = |o: usize| u32_at(stat, o) as i32 as f32 / 65536.0;
+    let (axis_size, axis_count, axes) = (u16_at(stat, 4) as usize, u16_at(stat, 6) as usize, u32_at(stat, 8) as usize);
+    let (value_count, offsets) = (u16_at(stat, 12) as usize, u32_at(stat, 14) as usize);
+    if axis_count == 0 || stat.len() < axes + axis_count * axis_size || stat.len() < offsets + 2 * value_count {
+        return None;
+    }
+    let axis: Vec<([u8; 4], u16)> = (0..axis_count)
+        .filter_map(|a| Some((stat.get(axes + a * axis_size..axes + a * axis_size + 4)?.try_into().ok()?, u16_at(stat, axes + a * axis_size + 6))))
+        .collect();
+    let close = |a: f32, b: f32| (a - b).abs() < 0.01;
+    let at = |a: usize| axis.get(a).and_then(|(t, _)| value(t));
+    // (axis order, name id, elidable) per axis named.
+    let mut named: Vec<Option<(u16, u16, bool)>> = vec![None; axis_count];
+    let records: Vec<usize> = (0..value_count).map(|v| offsets + u16_at(stat, offsets + 2 * v) as usize).filter(|&o| o + 12 <= stat.len()).collect();
+    for &o in &records {
+        let (format, flags, name) = (u16_at(stat, o), u16_at(stat, o + 4), u16_at(stat, o + 6));
+        if format != 4 {
+            continue;
+        }
+        let pairs: Vec<(usize, f32)> =
+            (0..u16_at(stat, o + 2) as usize).map(|k| (u16_at(stat, o + 8 + 6 * k) as usize, fixed(o + 10 + 6 * k))).collect();
+        if !pairs.is_empty() && pairs.iter().all(|&(a, v)| a < axis_count && named[a].is_none() && at(a).is_some_and(|c| close(c, v))) {
+            let order = pairs.iter().map(|&(a, _)| axis[a].1).min().unwrap_or(0);
+            // The name once, on its first axis; its other axes are taken, with nothing to show.
+            for (k, &(a, _)) in pairs.iter().enumerate() {
+                named[a] = Some((order, if k == 0 { name } else { 0 }, flags & 2 != 0 || k > 0));
+            }
+        }
+    }
+    for &o in &records {
+        let (format, a, flags, name) = (u16_at(stat, o), u16_at(stat, o + 2) as usize, u16_at(stat, o + 4), u16_at(stat, o + 6));
+        if a >= axis_count || named[a].is_some() {
+            continue;
+        }
+        let v = fixed(o + 8);
+        let hit = match (format, at(a)) {
+            (1 | 3, Some(c)) => close(c, v),
+            (2, Some(c)) => fixed(o + 12) <= c && c <= fixed(o + 16),
+            (1..=3, None) => true,
+            _ => false,
+        };
+        if hit {
+            named[a] = Some((axis[a].1, name, flags & 2 != 0));
+        }
+    }
+    let mut found: Vec<(u16, String)> = named
+        .into_iter()
+        .flatten()
+        .filter(|&(_, _, elidable)| !elidable)
+        .filter_map(|(order, id, _)| Some((order, names.get(&id)?.first()?.clone())))
+        .collect();
+    found.sort_by_key(|f| f.0);
+    Some(found.into_iter().map(|f| f.1).collect())
+}
+
+/// A font file's bytes with only the parts [`Fonts::scan`] reads filled in (headers, directories, name/OS/2/head/fvar/STAT).
 fn read_sparse(path: &str) -> Option<Vec<u8>> {
     use std::io::{Read, Seek, SeekFrom};
     let mut f = std::fs::File::open(path).ok()?;
@@ -646,7 +782,7 @@ fn read_sparse(path: &str) -> Option<Vec<u8>> {
         fill(&mut f, &mut out, off + 12, 16 * n)?;
         for i in 0..n {
             let r = off + 12 + 16 * i;
-            if matches!(out.get(r..r + 4), Some(b"name") | Some(b"OS/2") | Some(b"head")) {
+            if matches!(out.get(r..r + 4), Some(b"name") | Some(b"OS/2") | Some(b"head") | Some(b"fvar") | Some(b"STAT")) {
                 let (to, tl) = (u32_at(&out, r + 8) as usize, u32_at(&out, r + 12) as usize);
                 fill(&mut f, &mut out, to, tl)?;
             }
@@ -667,7 +803,7 @@ fn read_names(t: &[u8]) -> HashMap<u16, Vec<String>> {
         }
         let (platform, enc, lang, id) = (u16_at(t, r), u16_at(t, r + 2), u16_at(t, r + 4), u16_at(t, r + 6));
         let (len, off) = (u16_at(t, r + 8) as usize, strings + u16_at(t, r + 10) as usize);
-        if !matches!(id, 1 | 6 | 16 | 21) || off + len > t.len() {
+        if !(matches!(id, 1 | 2 | 6 | 16 | 17 | 21) || id >= 256) || off + len > t.len() {
             continue;
         }
         let bytes = &t[off..off + len];
@@ -711,6 +847,9 @@ mod tests {
 
     const SERIF: &[u8] = include_bytes!("../tests/fixtures/editor/fonts/stand-in-serif.ttf");
     const ZZYZX: &[u8] = include_bytes!("../tests/fixtures/editor/fonts/zzyzx-unknown.ttf");
+    /// A weight axis from 100 to 900 and six named instances; the box glyph's advance is 300 at 100, 500 at 400 and
+    /// 800 at 900 (make-fixtures.py).
+    const VARIABLE: &[u8] = include_bytes!("../tests/fixtures/editor/fonts/stand-in-variable.ttf");
 
     /// The font's tables in tag order.
     fn sfnt_tables(d: &[u8]) -> Vec<([u8; 4], &[u8])> {
@@ -821,6 +960,36 @@ mod tests {
             assert_eq!(lib.add(bytes).map_err(|e| e.code), Err(ErrorCode::InvalidArgument), "{bytes:?}");
         }
         assert_eq!((lib.families().len(), lib.generation()), (0, 0));
+    }
+
+    #[test]
+    fn a_variable_fonts_named_instances_are_faces_named_as_windows_names_them() {
+        let mut f = Fonts::default();
+        let faces = f.add_bytes(VARIABLE.to_vec()).unwrap();
+        let got: Vec<(&str, bool)> = faces.iter().map(|i| (i.family.as_str(), i.bold)).collect();
+        let family = "Stand-in Variable";
+        let names = [("Stand-in Variable Thin", false), ("Stand-in Variable Light", false), (family, false)];
+        let bold = [("Stand-in Variable SemiBold", true), (family, true), ("Stand-in Variable Black", true)];
+        assert_eq!(got, [names, bold].concat());
+        assert_eq!(
+            f.families(),
+            ["Stand-in Variable", "Stand-in Variable Black", "Stand-in Variable Light", "Stand-in Variable SemiBold", "Stand-in Variable Thin"]
+        );
+    }
+
+    #[test]
+    fn a_variable_face_shapes_and_measures_at_its_instance() {
+        let mut f = Fonts::default();
+        f.add_bytes(VARIABLE.to_vec()).unwrap();
+        let advance = |family: &str, bold: bool| {
+            let face = f.face(family, bold, false).unwrap();
+            (face.weight, face.sim_bold, face.shape("A", true, 0)[0].advance, face.advance(face.glyph('A').unwrap()))
+        };
+        assert_eq!(advance("Stand-in Variable", false), (400, false, 500.0, 500.0));
+        // Bold is the Bold instance, not a synthesized one.
+        assert_eq!(advance("Stand-in Variable", true), (700, false, 680.0, 680.0));
+        assert_eq!(advance("Stand-in Variable Thin", false), (100, false, 300.0, 300.0));
+        assert_eq!(advance("stand-in variable black", false), (900, false, 800.0, 800.0));
     }
 
     #[test]

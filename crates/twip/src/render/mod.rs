@@ -12,7 +12,8 @@ pub mod web;
 #[cfg(twip_dawn)]
 pub mod window;
 
-use skia_safe::{Canvas, Color, Data, Font, FontMgr, Image, Paint, Point, RRect, Rect, Typeface, font::Edging};
+use skia_safe::font_arguments::{VariationPosition, variation_position::Coordinate};
+use skia_safe::{Canvas, Color, Data, Font, FontArguments, FontMgr, FourByteTag, Image, Paint, Point, RRect, Rect, Typeface, font::Edging};
 
 use crate::editing::view::View;
 use crate::font::Face;
@@ -36,7 +37,7 @@ pub struct Frame {
 /// Skia objects made from the layout's faces and the document's pictures, kept between frames.
 #[derive(Default)]
 pub struct Renderer {
-    typefaces: HashMap<(usize, u32), Option<Typeface>>,
+    typefaces: HashMap<(usize, u32, u32), Option<Typeface>>,
     images: HashMap<ImageKey, Option<Image>>,
     /// Placeholder icons as Skia paths, by the icon's address.
     icons: HashMap<usize, Vec<(skia_safe::Path, Option<u32>)>>,
@@ -97,13 +98,29 @@ impl Renderer {
 
     /// Draws `face`'s glyphs from `data` (a single-face font file) instead of its own file: PDF export's subsets.
     pub fn set_face_data(&mut self, face: &Face, data: &[u8]) {
-        let key = (std::sync::Arc::as_ptr(&face.data) as usize, face.index);
+        let key = (std::sync::Arc::as_ptr(&face.data) as usize, face.index, face.instance);
         self.typefaces.insert(key, FontMgr::new().new_from_data(Data::new_copy(data), 0));
     }
 
+    /// `face`'s typeface: a variable font's at the face's instance (FONT-17).
     fn typeface(&mut self, face: &Face) -> Option<Typeface> {
-        let key = (std::sync::Arc::as_ptr(&face.data) as usize, face.index);
-        self.typefaces.entry(key).or_insert_with(|| FontMgr::new().new_from_data(Data::new_copy(&face.data), face.index)).clone()
+        let key = (std::sync::Arc::as_ptr(&face.data) as usize, face.index, face.instance);
+        self.typefaces
+            .entry(key)
+            .or_insert_with(|| {
+                let typeface = FontMgr::new().new_from_data(Data::new_copy(&face.data), face.index)?;
+                if face.variations.is_empty() {
+                    return Some(typeface);
+                }
+                let coordinates: Vec<Coordinate> = face
+                    .variations
+                    .iter()
+                    .map(|&(t, value)| Coordinate { axis: FourByteTag::from_chars(t[0] as char, t[1] as char, t[2] as char, t[3] as char), value })
+                    .collect();
+                let arguments = FontArguments::new().set_variation_design_position(VariationPosition { coordinates: &coordinates });
+                typeface.clone_with_arguments(&arguments).or(Some(typeface))
+            })
+            .clone()
     }
 
     /// The pages a frame shows.

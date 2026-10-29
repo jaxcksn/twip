@@ -1,3 +1,7 @@
 # Rust's default emscripten linker on Windows is emcc.bat; current emsdk ships emcc.exe.
 [target.wasm32-unknown-emscripten]
 linker = "emcc"
+
+# LLD (shipped with Rust) links Windows builds, instead of MSVC's link.exe.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"

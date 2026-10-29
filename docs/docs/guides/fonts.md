@@ -19,6 +19,9 @@ session draws with a `FontLibrary`. Share one: in the browser `FontLibrary.defau
 
 - **Files you add.** `add` (`AddAsync`) takes TrueType, OpenType, a collection, WOFF or WOFF2, as bytes, a URL or a
   path, and returns the faces it added.
+- **Variable fonts.** Each named instance of a variable font is a face, named as Windows names it ("Bahnschrift
+  SemiBold", "Segoe UI Variable Display Semib"), so documents saved by Word find them, and bold picks the font's Bold
+  instance. PDF export draws variable faces as outlines (Type 3 fonts): the text stays selectable, but isn't hinted.
 - **The system** (.NET and Rust). `FontLibrary.System` loads the machine's fonts. The browser gives the engine
   none, so a web page adds what its documents use, or resolves them on demand.
 - **A resolver.** `setResolver` is called the first time a document needs a family the library doesn't have. Return

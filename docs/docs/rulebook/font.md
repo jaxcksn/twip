@@ -149,3 +149,9 @@ List numbers take no underline and no highlight. Text whose colour is automatic 
 ### FONT-16. Shaping stretches {#font-16}
 
 Shape consecutive text of equal formatting as one stretch, even across `w:r` boundaries and across things that draw nothing (hidden text, [STYLE-7](style#style-7); field markers and codes; bookmarks; content-control boundaries), so kerning and ligatures work across them. Split a stretch where the font changes ([FONT-12](font#font-12)), and at anything that is drawn or takes space (a tab, a break, a picture, a field's value).
+
+### FONT-17. Variable fonts {#font-17}
+
+A variable font's named instances (`fvar`) are its faces; the font's default location is not one unless an instance names it. Name each instance as Windows' GDI does, the name documents carry in `w:rFonts`: the typographic family (`name` 16, else 1), then the names of the instance's `STAT` axis values in `STAT`'s axis order, leaving out elidable values and Regular, Bold, Italic and Oblique, cut at 31 characters ("Bahnschrift Light Condensed", "Segoe UI Variable Display Semib"; Bahnschrift's Bold instance is "Bahnschrift", bold). Without `STAT`, the instance's subfamily words, less those four, stand for the axis values. The face's weight is its `wght` value, its width class its `wdth` value (50, 62.5, 75, 87.5, 100, 112.5, 125, 150 and 200 % are classes 1–9), and it is italic when its file is, its `ital` value is 1 or its `slnt` value isn't 0. Each instance also answers to its typographic family, so bold in "Bahnschrift" is the Bold instance (matched as any face is), not synthesized.
+
+Shape, lay out and draw a face at its instance's axis values: advances and glyph outlines vary (`HVAR`, else `gvar`'s phantom points). Vertical metrics stay the default location's ([FONT-1](font#font-1)).

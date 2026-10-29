@@ -3,7 +3,7 @@
 One FX-<ID>.docx per fixture family (see that folder's README.md for what each exercises). Standard library only and
 no randomness: the same bytes on every run. Every package is plain OOXML that Word opens without a repair prompt.
 Fonts are limited to Calibri, Times New Roman, Arial and Segoe UI Emoji, except FX-font-families, which also names a
-web-only family and an unknown one. fonts/ gets two generated stand-in fonts.
+web-only family and an unknown one. fonts/ gets three generated stand-in fonts, one variable.
 Run: python -I crates/twip/tests/fixtures/make-fixtures.py [out dir]
 """
 
@@ -1286,9 +1286,11 @@ API = {
 }
 
 
-def stand_in_font(family):
+def stand_in_font(family, variable=False):
     """A minimal TrueType font named `family`: a box glyph for every printable ASCII character, for scripts that
-    add a font to an empty library. No real font's outlines or names."""
+    add a font to an empty library. No real font's outlines or names. `variable` adds a weight axis (100-900, 400 by
+    default) and named instances (WEIGHTS); the box is 300 units wide at 100 and 800 at 900 (500 at 400), its advance
+    with it."""
 
     def checksum(data):
         data += b"\0" * (-len(data) % 4)
@@ -1301,6 +1303,8 @@ def stand_in_font(family):
     cmap4 += struct.pack(">3H", 0x20, 0x21, 0xFFFF) + struct.pack(">3H", (1 - 0x20) & 0xFFFF, 0, 1) + struct.pack(">3H", 0, 4, 0)
     cmap4 += struct.pack(">94H", *[2] * 94)
     names = [(1, family), (2, "Regular"), (4, f"{family} Regular"), (6, family.replace(" ", "") + "-Regular")]
+    if variable:
+        names += [(256, "Weight")] + [(257 + i, sub) for i, (sub, _) in enumerate(WEIGHTS)]
     strings = [text.encode("utf-16-be") for _, text in names]
     name = struct.pack(">3H", 0, len(names), 6 + 12 * len(names))
     offset = 0
@@ -1320,6 +1324,11 @@ def stand_in_font(family):
         b"name": name + b"".join(strings),
         b"post": struct.pack(">IihhIIIII", 0x00030000, 0, -100, 50, 0, 0, 0, 0, 0),
     }
+    if variable:
+        tables[b"fvar"] = struct.pack(">8H", 1, 0, 16, 2, 1, 20, len(WEIGHTS), 8) + b"wght" + struct.pack(
+            ">3iHH", 100 << 16, 400 << 16, 900 << 16, 0, 256
+        ) + b"".join(struct.pack(">2Hi", 257 + i, 0, w << 16) for i, (_, w) in enumerate(WEIGHTS))
+        tables[b"gvar"] = box_gvar()
     count = len(tables)
     out = struct.pack(">I4H", 0x00010000, count, 128, 3, count * 16 - 128)
     offset = 12 + 16 * count
@@ -1334,7 +1343,29 @@ def stand_in_font(family):
     return bytes(font_bytes)
 
 
+# The variable stand-in's named instances: subfamily name and weight.
+WEIGHTS = [("Thin", 100), ("Light", 300), ("Regular", 400), ("SemiBold", 600), ("Bold", 700), ("Black", 900)]
+
+
+def box_gvar():
+    """The box glyph's (glyph 2) deltas: its right edge and advance move 200 units in at weight 100 and 300 out at
+    900. Each tuple covers all 8 points (4 outline, then the left, advance, top and bottom phantom points)."""
+
+    def tuple_data(dx):
+        x = [0, 0, dx, dx, 0, dx, 0, 0]
+        return bytes([0, 0x40 | 7]) + struct.pack(">8h", *x) + bytes([0x80 | 7])
+
+    thin, black = tuple_data(-200), tuple_data(300)
+    data = struct.pack(">2H", 2, 4 + 2 * 6)
+    data += struct.pack(">2Hh", len(thin), 0xA000, -0x4000) + struct.pack(">2Hh", len(black), 0xA000, 0x4000)
+    data += thin + black
+    data += b"\0" * (len(data) % 2)
+    start = 20 + 4 * 4
+    return struct.pack(">4HIHHI", 1, 0, 1, 0, start, 3, 1, start) + struct.pack(">4I", 0, 0, 0, len(data)) + data
+
+
 FONTS = {"stand-in-serif.ttf": "Stand-in Serif", "zzyzx-unknown.ttf": "Zzyzx Unknown"}
+VARIABLE_FONTS = {"stand-in-variable.ttf": "Stand-in Variable"}
 
 
 # ---- review: tracked revisions and comments ---------------------------------------------------------------------
@@ -1752,8 +1783,10 @@ def main():
     (out / "fonts").mkdir(exist_ok=True)
     for file, family in FONTS.items():
         (out / "fonts" / file).write_bytes(stand_in_font(family))
+    for file, family in VARIABLE_FONTS.items():
+        (out / "fonts" / file).write_bytes(stand_in_font(family, variable=True))
     print(f"wrote {len(FIXTURES) + len(API)} fixtures to {out}, {len(MERGE_SET)} to {out / 'merge-set'}, {len(REVIEW)} to {out / 'review'}"
-          f" and {len(FONTS)} fonts to {out / 'fonts'}")
+          f" and {len(FONTS) + len(VARIABLE_FONTS)} fonts to {out / 'fonts'}")
 
 
 if __name__ == "__main__":
