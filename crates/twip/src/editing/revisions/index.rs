@@ -58,6 +58,8 @@ pub struct Revision {
     pub kind: RevisionKind,
     pub author: AuthorId,
     pub ids: Vec<RevisionId>,
+    /// The first change's date.
+    pub date: Option<crate::docx::review::Timestamp>,
 }
 
 /// The slots changes sit in. Adjacent changes join into one revision only within a slot, so an insertion another
@@ -147,7 +149,15 @@ fn revisions_of(items: &[Item]) -> Vec<Revision> {
                 open[ch] = Some((e, it.seq));
             }
             None => {
-                out.push(Revision { story: it.story, start: it.start, end: it.end, kind: it.kind, author: it.mark.author, ids: vec![it.mark.id] });
+                out.push(Revision {
+                    story: it.story,
+                    start: it.start,
+                    end: it.end,
+                    kind: it.kind,
+                    author: it.mark.author,
+                    ids: vec![it.mark.id],
+                    date: it.mark.date.clone(),
+                });
                 open[ch] = Some((out.len() - 1, it.seq));
             }
         }

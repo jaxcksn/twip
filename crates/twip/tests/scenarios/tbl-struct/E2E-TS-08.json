@@ -14,7 +14,10 @@
       }
     },
     {
-      "command": "table.select.row"
+      "command": {
+        "type": "select",
+        "value": "row"
+      }
     },
     {
       "expect": {
@@ -32,7 +35,10 @@
       }
     },
     {
-      "command": "table.select.column"
+      "command": {
+        "type": "select",
+        "value": "column"
+      }
     },
     {
       "expect": {
@@ -56,7 +62,10 @@
       }
     },
     {
-      "command": "table.select.column"
+      "command": {
+        "type": "select",
+        "value": "column"
+      }
     },
     {
       "expect": {
@@ -74,7 +83,10 @@
       }
     },
     {
-      "command": "table.select.table"
+      "command": {
+        "type": "select",
+        "value": "table"
+      }
     },
     {
       "expect": {
@@ -98,7 +110,10 @@
       }
     },
     {
-      "command": "table.select.cell"
+      "command": {
+        "type": "select",
+        "value": "cell"
+      }
     },
     {
       "expect": {

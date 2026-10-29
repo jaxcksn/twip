@@ -64,9 +64,11 @@ impl Editor {
         let hit = |want_hf: bool| geo.hit_text(px, py, &|s| matches!(s, StoryId::HeaderFooter(_)) == want_hf);
         let to = match (hf, in_body) {
             (false, false) if clicks >= 2 => {
-                let Some(h) = hit(true) else {
+                // The header above the body, the footer below it.
+                let below = body_band(&geo).is_some_and(|(_, b)| py > b);
+                let side = |s: StoryId| geo.stories.iter().any(|g| g.story == s && body_band(&geo).is_some_and(|(t, _)| (g.rect[1] >= t) == below));
+                let Some(h) = geo.hit_text(px, py, &|s| matches!(s, StoryId::HeaderFooter(_)) && side(s)) else {
                     // A page without a header (or footer) there: one is made and entered.
-                    let below = body_band(&geo).is_some_and(|(_, b)| py > b);
                     let _ = self.edit_header_footer(Some(page), below, fonts);
                     return true;
                 };

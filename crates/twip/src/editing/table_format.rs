@@ -21,13 +21,12 @@ pub enum TableFormat {
     CellBorders(Edges, Border),
     /// Top, left, bottom and right margins, in points.
     CellMargins([f64; 4]),
-    /// Repeat Header Rows: on for the table's rows from the first through the target's last, unless all of them
-    /// already repeat (then off).
-    HeaderRow,
+    /// Repeat Header Rows on for the table's rows from the first through the target's last, or off for every row.
+    HeaderRow(bool),
     /// The target rows' height and rule (`atLeast`, `exact`); `None`: auto.
     RowHeight(Option<(f64, String)>),
-    /// Allow Row to Break Across Pages, toggled for the target rows (off unless all of them are already off).
-    RowCantSplit,
+    /// Allow Row to Break Across Pages off (`true`) or on for the target rows.
+    RowCantSplit(bool),
     /// The target columns' width, in points: the other columns keep theirs, the table grows or shrinks.
     ColumnWidth(f64),
     TableWidth(Width),
@@ -211,8 +210,7 @@ impl Editor {
                     set_direct(cell, "tcBorders", x);
                 }
             }
-            TableFormat::HeaderRow => {
-                let on = !rows[..=r1].iter().all(|r| r.header);
+            &TableFormat::HeaderRow(on) => {
                 rows[..=r1].iter_mut().for_each(|r| r.header = on);
                 if !on {
                     rows.iter_mut().for_each(|r| r.header = false);
@@ -222,8 +220,7 @@ impl Editor {
                 let h = h.as_ref().map(|(v, rule)| ((v * 20.0).round() / 20.0, rule.clone()));
                 rows[r0..=r1].iter_mut().for_each(|r| r.height = h.clone());
             }
-            TableFormat::RowCantSplit => {
-                let on = !rows[r0..=r1].iter().all(|r| r.cant_split);
+            &TableFormat::RowCantSplit(on) => {
                 rows[r0..=r1].iter_mut().for_each(|r| r.cant_split = on);
             }
             TableFormat::ColumnWidth(v) => {

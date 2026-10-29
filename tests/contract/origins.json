@@ -1,0 +1,18 @@
+{
+  "name": "origins",
+  "fixture": "editor/FX-mixed-format.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "revision": 1, "history": { "canUndo": false, "canRedo": false } } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "command", "command": { "type": "setBold", "value": true } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "origin": "api", "revision": 2, "label": { "$type": "string" } }] },
+    { "op": "expectState", "match": { "revision": 2, "history": { "canUndo": true, "canRedo": false } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "origin": "undo", "revision": 3 }] },
+    { "op": "expectState", "match": { "revision": 3, "history": { "canUndo": false, "canRedo": true } } },
+    { "op": "command", "command": { "type": "redo" } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "origin": "redo", "revision": 4 }] },
+    { "op": "expectState", "match": { "revision": 4, "formatting": { "bold": true }, "history": { "canUndo": true, "canRedo": false } } }
+  ]
+}

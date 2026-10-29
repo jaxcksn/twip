@@ -7,8 +7,8 @@
   ],
   "steps": [
     {
-      "command": "element.replace",
-      "arg": {
+      "command": {
+        "type": "replaceInElements",
         "find": "Calc.Old_Name",
         "replace": "Calc.New_Name",
         "in": "code"
@@ -45,8 +45,8 @@
       }
     },
     {
-      "command": "element.replace",
-      "arg": {
+      "command": {
+        "type": "replaceInElements",
         "find": "No_Such_Name",
         "replace": "X",
         "in": "code"
@@ -59,7 +59,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "changed": 40

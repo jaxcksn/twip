@@ -4,12 +4,12 @@
 
 use std::time::Instant;
 
-use twip::editing::Editor;
-use twip::editing::commands::{Command, Dir, MoveBy};
-use twip::editing::position::{Position, StoryId};
-use twip::editing::selection::Selection;
-use twip::font::Fonts;
-use twip::layout::{ParaId, Unit};
+use twip::internal::editing::Editor;
+use twip::internal::editing::commands::{Command, Dir, MoveBy};
+use twip::internal::editing::position::{Position, StoryId};
+use twip::internal::editing::selection::Selection;
+use twip::internal::font::Fonts;
+use twip::internal::layout::{ParaId, Unit};
 
 struct Rng(u64);
 
@@ -32,16 +32,16 @@ fn percentiles(mut v: Vec<f64>) -> String {
 
 /// Body paragraphs with text, in document order.
 fn text_paras(e: &Editor) -> Vec<(ParaId, u32)> {
-    fn walk(blocks: &[twip::docx::Block], out: &mut Vec<(ParaId, u32)>) {
+    fn walk(blocks: &[twip::internal::docx::Block], out: &mut Vec<(ParaId, u32)>) {
         for b in blocks {
             match b {
-                twip::docx::Block::Para(p) => {
+                twip::internal::docx::Block::Para(p) => {
                     let n = p.inlines.iter().map(|i| i.units() as u32).sum();
                     if n > 0 {
                         out.push((ParaId(p.id), n));
                     }
                 }
-                twip::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
+                twip::internal::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
             }
         }
     }
@@ -52,11 +52,11 @@ fn text_paras(e: &Editor) -> Vec<(ParaId, u32)> {
 
 /// Body paragraphs with their nesting depth.
 fn paras_by_depth(e: &Editor) -> Vec<(ParaId, u32, usize)> {
-    fn walk(blocks: &[twip::docx::Block], depth: usize, out: &mut Vec<(ParaId, u32, usize)>) {
+    fn walk(blocks: &[twip::internal::docx::Block], depth: usize, out: &mut Vec<(ParaId, u32, usize)>) {
         for b in blocks {
             match b {
-                twip::docx::Block::Para(p) => out.push((ParaId(p.id), p.inlines.iter().map(|i| i.units() as u32).sum(), depth)),
-                twip::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, depth + 1, out)),
+                twip::internal::docx::Block::Para(p) => out.push((ParaId(p.id), p.inlines.iter().map(|i| i.units() as u32).sum(), depth)),
+                twip::internal::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, depth + 1, out)),
             }
         }
     }
@@ -83,11 +83,11 @@ pub fn run_depth(path: &str, n: usize) -> Result<(), String> {
         e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para, Unit(len))));
         let (mut times, mut editor) = (Vec::new(), Vec::new());
         for k in 0..n {
-            twip::prof::take();
+            twip::internal::prof::take();
             let t = Instant::now();
             e.execute(Command::InsertText("x".into()), &fonts);
             let ms = t.elapsed().as_secs_f64() * 1e3;
-            let layout: f64 = twip::prof::take().iter().filter(|t| t.0 == "editor:layout").map(|t| t.1).sum();
+            let layout: f64 = twip::internal::prof::take().iter().filter(|t| t.0 == "editor:layout").map(|t| t.1).sum();
             times.push(ms);
             editor.push(ms - layout);
             while e.idle(&fonts) {}
@@ -151,17 +151,17 @@ fn measure(path: &str, n: usize, tracking: bool) -> Result<Vec<f64>, String> {
     let paras = text_paras(&e);
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
     let (mut typing, mut back, mut enter, mut down, mut right, mut undo, mut idle) = (vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
-    twip::prof::take();
+    twip::internal::prof::take();
     // Where typing's time goes (the phase timers during typing only).
     let mut typing_phases: Vec<(&'static str, f64, u64)> = Vec::new();
     let mut timed = |e: &mut Editor, cmd: Command, out: &mut Vec<f64>, idle: &mut Vec<f64>| {
         let is_typing = matches!(cmd, Command::InsertText(_));
-        twip::prof::take();
+        twip::internal::prof::take();
         let t = Instant::now();
         e.execute(cmd, &fonts);
         out.push(t.elapsed().as_secs_f64() * 1e3);
         if is_typing {
-            for (name, ms, calls) in twip::prof::take() {
+            for (name, ms, calls) in twip::internal::prof::take() {
                 match typing_phases.iter_mut().find(|p| p.0 == name) {
                     Some(p) => {
                         p.1 += ms;
@@ -183,11 +183,11 @@ fn measure(path: &str, n: usize, tracking: bool) -> Result<Vec<f64>, String> {
         for _ in 0..5 {
             timed(&mut e, Command::InsertText("x".into()), &mut typing, &mut idle);
         }
-        timed(&mut e, Command::Delete { dir: Dir::Back, word: false }, &mut back, &mut idle);
-        timed(&mut e, Command::Move { by: MoveBy::Line, dir: Dir::Forward, extend: false }, &mut down, &mut idle);
-        timed(&mut e, Command::Move { by: MoveBy::Char, dir: Dir::Forward, extend: false }, &mut right, &mut idle);
+        timed(&mut e, twip::internal::editing::commands::deleting(Dir::Back, false), &mut back, &mut idle);
+        timed(&mut e, twip::internal::editing::commands::moving(MoveBy::Line, Dir::Forward, false), &mut down, &mut idle);
+        timed(&mut e, twip::internal::editing::commands::moving(MoveBy::Char, Dir::Forward, false), &mut right, &mut idle);
         if k % 10 == 0 {
-            timed(&mut e, Command::Enter, &mut enter, &mut idle);
+            timed(&mut e, Command::InsertParagraph, &mut enter, &mut idle);
         }
         if k % 5 == 0 {
             timed(&mut e, Command::Undo, &mut undo, &mut idle);
@@ -206,57 +206,61 @@ fn measure(path: &str, n: usize, tracking: bool) -> Result<Vec<f64>, String> {
     println!("right     {}", percentiles(right));
     println!("undo      {}", percentiles(undo));
     println!("idle      {}", percentiles(idle));
-    let full = twip::layout::layout(e.document(), &fonts);
+    let full = twip::internal::layout::layout(e.document(), &fonts);
     e.complete(&fonts);
-    let same = twip::layout::dump::page_text(&e.snapshot(), e.document()) == twip::layout::dump::page_text(&full, e.document());
+    let same = twip::internal::layout::dump::page_text(&e.snapshot(), e.document()) == twip::internal::layout::dump::page_text(&full, e.document());
     println!("matches a full layout: {same}");
     Ok(typing_ms)
 }
 
-/// `editlatency --merge <doc> [n]`: a host's field insert and drop, the
-/// `elements` list (budget: under 0.2 s on 2,000 elements) and a rename over 500 references (budget: under 0.5 s, one
-/// undo step), through the editor's JSON surface as a host sends them.
+/// `editlatency --merge <doc> [n]`: a field insert and drop, the `elements` list (budget: under 0.2 s on 2,000
+/// elements) and a rename over 500 references (budget: under 0.5 s, one undo step), through the editor's typed calls.
 pub fn run_merge(path: &str, n: usize) -> Result<(), String> {
+    use twip::internal::editing::elements::{self, Filter};
+    use twip::internal::editing::input::PointerKind;
+    use twip::internal::editing::keymap::Mods;
     let fonts = Fonts::system();
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     let mut e = Editor::open(&bytes, &fonts)?;
     e.complete(&fonts);
-    let mut seq = 0u64;
-    let mut send = |e: &mut Editor, mut v: serde_json::Value| -> (f64, serde_json::Value) {
-        seq += 1;
-        v["seq"] = seq.into();
+    // A command as the API's JSON gives it, timed; background layout after it isn't.
+    let run = |e: &mut Editor, v: serde_json::Value| -> Result<f64, String> {
+        let cmd: Command = serde_json::from_value(v).map_err(|err| err.to_string())?;
         let t = Instant::now();
-        let r = e.apply_json(&v.to_string(), &fonts);
+        e.execute(cmd, &fonts);
         let ms = t.elapsed().as_secs_f64() * 1e3;
         while e.idle(&fonts) {}
-        (ms, serde_json::from_str(&r).unwrap_or_default())
+        Ok(ms)
     };
     let mut list = Vec::new();
     let mut count = 0;
     for _ in 0..20 {
-        let (ms, r) = send(&mut e, serde_json::json!({ "type": "query", "q": "elements" }));
-        count = r["answer"].as_array().map_or(0, Vec::len);
-        list.push(ms);
+        let t = Instant::now();
+        count = elements::enumerate(e.document(), e.index(), &Filter::default()).len();
+        list.push(t.elapsed().as_secs_f64() * 1e3);
     }
     println!("elements     {} over {count} elements (budget: under 200 ms)", percentiles(list.clone()));
     // The rename: the code prefix with the most references (`MERGEFIELD Group.`).
-    let (_, r) = send(&mut e, serde_json::json!({ "type": "query", "q": "elements", "kind": "field" }));
+    let fields = elements::enumerate(e.document(), e.index(), &Filter { kind: Some("field".into()), ..Filter::default() });
     let mut groups: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for f in r["answer"].as_array().into_iter().flatten() {
-        let code = f["code"].as_str().unwrap_or("").trim();
+    for f in &fields {
+        let code = f.code.as_deref().unwrap_or("").trim();
         if let Some(g) = code.strip_prefix("MERGEFIELD ").and_then(|c| c.split_once('.')).map(|(g, _)| g.to_string()) {
             *groups.entry(g).or_default() += 1;
         }
     }
     let (group, refs) = groups.into_iter().max_by_key(|(g, c)| (*c, std::cmp::Reverse(g.clone()))).ok_or("no MERGEFIELD codes")?;
     let depth = e.history().undo_depth();
-    let (rename, r) = send(
+    let rename = run(
         &mut e,
-        serde_json::json!({ "type": "command", "id": "element.replace", "arg": { "find": format!("{group}."), "replace": format!("{group}Renamed."), "in": "code" } }),
-    );
-    let changed = r["answer"]["changed"].as_u64().unwrap_or(0);
+        serde_json::json!({ "type": "replaceInElements", "find": format!("{group}."), "replace": format!("{group}Renamed."), "in": "code" }),
+    )?;
+    let changed = match e.take_made() {
+        Some(twip::api::command::CommandResult::Changed { changed }) => changed,
+        _ => 0,
+    };
     let steps = e.history().undo_depth() - depth;
-    let (undo, _) = send(&mut e, serde_json::json!({ "type": "command", "id": "home.undo" }));
+    let undo = run(&mut e, serde_json::json!({ "type": "undo" }))?;
     println!(
         "element.replace {rename:.1} ms over {changed} of {refs} references in \"{group}.\", {steps} undo step; undo {undo:.1} ms (budget: under 500 ms, one step)"
     );
@@ -267,20 +271,21 @@ pub fn run_merge(path: &str, n: usize) -> Result<(), String> {
     for k in 0..n {
         let (p, len) = paras[rng.below(paras.len())];
         e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, Unit(rng.below(len as usize + 1) as u32))));
-        let code = format!("MERGEFIELD Timing.F{k}");
+        let field = serde_json::json!({ "type": "insertField", "code": format!("MERGEFIELD Timing.F{k}") });
         if k % 2 == 0 {
-            insert.push(send(&mut e, serde_json::json!({ "type": "command", "id": "field.insert", "arg": { "code": code } })).0);
+            insert.push(run(&mut e, field)?);
         } else {
-            // A drop at the caret's place: the host's point in document coordinates.
+            // A drop at the caret's place: a click at its point in document coordinates, then the field there.
             let at = e.caret_view().and_then(|c| e.stack().to_doc(c.page, c.x, (c.top + c.bottom) / 2.0));
             let Some((x, y)) = at else { continue };
-            drop.push(
-                send(
-                    &mut e,
-                    serde_json::json!({ "type": "command", "id": "field.insert", "arg": { "code": code, "target": { "at": { "x": x, "y": y } } } }),
-                )
-                .0,
-            );
+            let mut clicked = 0.0;
+            for kind in [PointerKind::Down, PointerKind::Up] {
+                let t = Instant::now();
+                e.pointer_input(kind, x, y, 1, Mods::default(), &fonts);
+                clicked += t.elapsed().as_secs_f64() * 1e3;
+                while e.idle(&fonts) {}
+            }
+            drop.push(clicked + run(&mut e, field)?);
         }
     }
     println!("field.insert {} (budget: under 100 ms)", percentiles(insert.clone()));
@@ -297,4 +302,89 @@ pub fn run_merge(path: &str, n: usize) -> Result<(), String> {
         fails.push("rename");
     }
     if fails.is_empty() { Ok(()) } else { Err(format!("{} not met", fails.join(", "))) }
+}
+
+/// `editlatency --api <doc> [n]`: typing through `api::Session` (the state rebuilt and every event encoded as JSON,
+/// as the C ABI sends them) against typing on the editor directly, the same keystrokes at the same places: `n`
+/// rounds of five keystrokes, a few lines further down each round (untimed). Neither drains background layout (a
+/// session runs it on the engine's timers, which nothing arms here). Three runs; the API's p95 overhead is the median
+/// of the three (budget: under 1 ms).
+pub fn run_api(path: &str, n: usize) -> Result<(), String> {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use twip::api::engine::{Engine, SessionOptions};
+    use twip::api::event::Event;
+    use twip::api::fonts::FontLibrary;
+    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    let p95 = |mut v: Vec<f64>| {
+        v.sort_by(f64::total_cmp);
+        v.get(((v.len().saturating_sub(1)) as f64 * 0.95).round() as usize).copied().unwrap_or(0.0)
+    };
+    // The lines each round moves down: the same in both, so both type at the same places.
+    let downs: Vec<usize> = {
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        (0..n).map(|_| 1 + rng.below(40)).collect()
+    };
+    let down = || twip::internal::editing::commands::moving(MoveBy::Line, Dir::Forward, false);
+    let (mut direct, mut api, mut overhead) = (Vec::new(), Vec::new(), Vec::new());
+    for run in 1..=3 {
+        let fonts = Fonts::system();
+        let mut e = Editor::open(&bytes, &fonts)?;
+        let mut times = Vec::new();
+        for &d in &downs {
+            for _ in 0..5 {
+                let t = Instant::now();
+                e.execute(Command::InsertText("x".into()), &fonts);
+                times.push(t.elapsed().as_secs_f64() * 1e3);
+                e.take_commits();
+            }
+            for _ in 0..d {
+                e.execute(down(), &fonts);
+            }
+            e.take_commits();
+        }
+        drop(e);
+        let mut engine = Engine::new(FontLibrary::system());
+        let encoded = Rc::new(Cell::new(0usize));
+        let sink = encoded.clone();
+        engine.set_listener(move |_, event| {
+            let json = match event {
+                Event::StateChanged(state) => serde_json::to_vec(state),
+                e => serde_json::to_vec(e),
+            };
+            sink.set(sink.get() + json.map_or(0, |j| j.len()));
+        });
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).ok_or("no session")?;
+        s.open(&bytes).map_err(|e| e.message)?;
+        let mut through = Vec::new();
+        for &d in &downs {
+            for _ in 0..5 {
+                let t = Instant::now();
+                s.text("x");
+                through.push(t.elapsed().as_secs_f64() * 1e3);
+            }
+            for _ in 0..d {
+                let _ = s.run(down());
+            }
+        }
+        let (a, b) = (p95(times.clone()), p95(through.clone()));
+        println!(
+            "run {run}: engine {}; api {}; p95 overhead {:.3} ms ({} KB of JSON a keystroke)",
+            percentiles(times),
+            percentiles(through),
+            b - a,
+            encoded.get() / 1024 / (5 * n).max(1)
+        );
+        direct.push(a);
+        api.push(b);
+        overhead.push(b - a);
+    }
+    let median = |mut v: Vec<f64>| {
+        v.sort_by(f64::total_cmp);
+        v[1]
+    };
+    let (a, b, o) = (median(direct), median(api), median(overhead));
+    println!("typing p95 engine {a:.3} ms, api {b:.3} ms; api overhead {o:.3} ms (median of 3; budget: under 1 ms)");
+    if o < 1.0 { Ok(()) } else { Err(format!("api budget fails: {o:.3} ms")) }
 }

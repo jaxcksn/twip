@@ -1,0 +1,18 @@
+[
+  {
+    "fields": {
+      "rows": {
+        "enabled": true,
+        "kind": "number",
+        "label": "Rows",
+        "min": 1.5
+      }
+    },
+    "kind": "insertTable",
+    "values": {
+      "columns": 5,
+      "kind": "insertTable",
+      "rows": 2
+    }
+  }
+]

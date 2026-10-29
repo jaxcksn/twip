@@ -1,0 +1,37 @@
+{
+  "name": "navigation",
+  "fixture": "editor/FX-outline.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "pages": { "count": 2, "complete": true }, "selection": { "page": 1 } } },
+    { "op": "call", "method": "navigation.headings", "save": "headings", "result": [
+      { "id": { "$type": "string" }, "level": 1, "text": "Overview", "page": 1 },
+      { "id": { "$type": "string" }, "level": 2, "text": "Background", "page": 1 },
+      { "id": { "$type": "string" }, "level": 3, "text": "Earlier work", "page": 1 },
+      { "id": { "$type": "string" }, "level": 1, "text": "Method", "page": 2 },
+      { "id": { "$type": "string" }, "level": 2, "text": "Data", "page": 2 },
+      { "id": { "$type": "string" }, "level": 3, "text": "Sources", "page": 2 }
+    ] },
+    { "op": "call", "method": "navigation.select", "args": [{ "$saved": "headings", "path": [{ "text": "Data" }, "id"] }] },
+    { "op": "expectState", "match": { "selection": { "page": 2 }, "paragraph": { "style": "Heading2" } } },
+    { "op": "call", "method": "navigation.select", "args": [{ "$saved": "headings", "path": [{ "text": "Earlier work" }, "id"] }] },
+    { "op": "expectState", "match": { "selection": { "page": 1 }, "paragraph": { "style": "Heading3" } } },
+
+    { "op": "call", "method": "find.all", "args": [{ "text": "survey" }], "save": "matches", "result": [
+      { "id": { "$type": "string" }, "text": "survey", "before": { "$type": "string" }, "after": { "$type": "string" }, "page": 1 },
+      { "id": { "$type": "string" }, "text": "survey", "before": { "$type": "string" }, "after": { "$type": "string" }, "page": 2 }
+    ] },
+    { "op": "call", "method": "find.select", "args": [{ "$saved": "matches", "path": [1, "id"] }] },
+    { "op": "expectState", "match": { "selection": { "kind": "text", "empty": false, "page": 2 }, "paragraph": { "style": "Normal" } } },
+    { "op": "call", "method": "find.select", "args": [{ "$saved": "matches", "path": [0, "id"] }] },
+    { "op": "expectState", "match": { "selection": { "empty": false, "page": 1 } } },
+
+    { "op": "call", "method": "styles.list", "args": [{ "type": "paragraph" }], "result": { "$has": [
+      { "id": "Normal", "name": "Normal", "type": "paragraph", "quick": true, "basedOn": null,
+        "preview": { "font": "Calibri", "size": 11, "bold": false, "italic": false } },
+      { "id": "Heading1", "type": "paragraph", "quick": true, "basedOn": "Normal",
+        "preview": { "font": "Calibri", "size": 16, "bold": true, "italic": false } }
+    ] } },
+    { "op": "expectState", "match": { "revision": 1 } }
+  ]
+}

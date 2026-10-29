@@ -1,0 +1,30 @@
+[
+  {
+    "elements": [
+      "field-1"
+    ],
+    "kind": "paragraph",
+    "textLength": 42
+  },
+  {
+    "kind": "table",
+    "rows": [
+      {
+        "cells": [
+          {
+            "blocks": [
+              {
+                "elements": [],
+                "kind": "paragraph",
+                "textLength": 5
+              }
+            ],
+            "empty": false,
+            "span": 2,
+            "verticalMerge": "start"
+          }
+        ]
+      }
+    ]
+  }
+]

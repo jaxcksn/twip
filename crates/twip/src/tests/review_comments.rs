@@ -25,7 +25,7 @@ fn alpha() -> Editor {
 
 fn select(e: &mut Editor, a: u32, b: u32) {
     let para = e.selection().focus().and_then(|p| p.para_offset()).expect("a caret").0;
-    e.execute(Command::SelectRange { para, a: Unit(a), b: Unit(b) }, fonts());
+    e.select_range(para, Unit(a), Unit(b), fonts());
 }
 
 /// The threads as (scope, comments as (author, text, done)).
@@ -114,17 +114,17 @@ fn ranges_follow_edits_and_go_with_all_their_text() {
     e.execute(Command::InsertText("XY".into()), fonts());
     assert_eq!(e.comment_threads()[0].scope.as_deref(), Some("beXYta"));
     select(&mut e, 5, 9);
-    changed(e.execute(Command::Delete { dir: Dir::Forward, word: false }, fonts()));
+    changed(e.execute(crate::editing::tests::del(Dir::Forward, false), fonts()));
     assert_eq!(e.comment_threads()[0].scope.as_deref(), Some("Yta"));
     // Split and joined again.
     select(&mut e, 6, 6);
-    changed(e.execute(Command::Enter, fonts()));
+    changed(e.execute(Command::InsertParagraph, fonts()));
     assert_eq!(e.comment_threads()[0].scope.as_deref(), Some("Y\nta"));
-    changed(e.execute(Command::Delete { dir: Dir::Back, word: false }, fonts()));
+    changed(e.execute(crate::editing::tests::del(Dir::Back, false), fonts()));
     assert_eq!(e.comment_threads()[0].scope.as_deref(), Some("Yta"));
     // All of its text deleted: the comment goes with it, and undo brings both back.
     select(&mut e, 5, 8);
-    changed(e.execute(Command::Delete { dir: Dir::Forward, word: false }, fonts()));
+    changed(e.execute(crate::editing::tests::del(Dir::Forward, false), fonts()));
     assert!(e.document().comments.by_id.is_empty());
     changed(e.execute(Command::Undo, fonts()));
     assert_eq!(e.comment_threads()[0].scope.as_deref(), Some("Yta"));
@@ -183,7 +183,7 @@ fn rich_bodies_round_trip() {
 #[test]
 fn headers_take_no_new_comments() {
     let mut e = Editor::open(&fixture("FX-STORIES.docx"), fonts()).expect("opens");
-    e.execute(Command::EditHeaderFooter { footer: false }, fonts());
+    e.execute(Command::EditHeader, fonts());
     assert!(matches!(e.selection().focus().map(|p| p.story), Some(StoryId::HeaderFooter(_))));
     assert_eq!(e.add_comment(&RichText::plain("In header"), "Author A", fonts()), Outcome::Unchanged("unavailable"));
     assert!(e.document().comments.by_id.is_empty());
@@ -210,7 +210,7 @@ fn the_view_tints_ranges_and_reports_their_anchors() {
     assert!((v.comments[1].rects[0].1[0] - beta.2[0]).abs() < 0.01, "the anchor is the range's start");
     // The host's choice holds until the selection moves.
     let first = v.comments[0].thread;
-    e.execute(Command::Comment(crate::editing::comments::CommentCmd::Activate(Some(first))), fonts());
+    e.execute(Command::SetActiveComment(Some(crate::api::record::comment_id(first))), fonts());
     assert_eq!(e.active_comment(), Some(first));
     select(&mut e, 8, 8);
     assert_ne!(e.active_comment(), Some(first));

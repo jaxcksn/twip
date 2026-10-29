@@ -1,0 +1,30 @@
+{
+  "name": "spelling",
+  "fixture": "editor/FX-services.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "spelling.loadUserWords", "args": ["en-US", ["brwon"]] },
+    { "op": "call", "method": "spelling.addDictionary", "args": [{ "language": "en-US", "aff": { "$file": "dictionaries/en_US.aff" }, "dic": { "$file": "dictionaries/en_US.dic" } }] },
+    { "op": "call", "method": "spelling.setEnabled", "args": [true] },
+    { "op": "expectState", "match": { "spelling": { "enabled": true, "language": "en-US", "misspellings": 3 } } },
+    { "op": "call", "method": "spelling.suggestions", "args": ["quikc"], "result": { "$has": ["quick"] } },
+
+    { "op": "call", "method": "spelling.next", "result": { "word": "Teh", "suggestions": { "$has": ["The"] } } },
+    { "op": "expectState", "match": { "selection": { "kind": "text", "empty": false } } },
+
+    { "op": "call", "method": "spelling.ignore", "args": ["Teh"] },
+    { "op": "expectState", "match": { "spelling": { "misspellings": 2 } } },
+
+    { "op": "call", "method": "spelling.add", "args": ["quikc"] },
+    { "op": "expectEvents", "match": [{ "type": "wordAdded", "word": "quikc", "language": "en-US" }] },
+    { "op": "expectState", "match": { "spelling": { "misspellings": 1 } } },
+
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "backward" } },
+    { "op": "expectState", "match": { "selection": { "empty": true } } },
+    { "op": "call", "method": "spelling.next", "result": { "word": "zorbly" } },
+    { "op": "expectState", "match": { "selection": { "kind": "text", "empty": false }, "revision": 1 } },
+
+    { "op": "call", "method": "spelling.setEnabled", "args": [false] },
+    { "op": "expectState", "match": { "spelling": { "enabled": false } } }
+  ]
+}

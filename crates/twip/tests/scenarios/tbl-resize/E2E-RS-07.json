@@ -15,7 +15,10 @@
       }
     },
     {
-      "command": "table.select.row"
+      "command": {
+        "type": "select",
+        "value": "row"
+      }
     },
     {
       "drag": {
@@ -65,7 +68,10 @@
       }
     },
     {
-      "command": "table.select.row"
+      "command": {
+        "type": "select",
+        "value": "row"
+      }
     },
     {
       "drag": {

@@ -7,14 +7,12 @@
 
 use std::path::{Path, PathBuf};
 
-use twip::docx::props::Jc;
-use twip::editing::commands::{Command, Dir, MoveBy};
-use twip::editing::format::Toggle;
-use twip::editing::position::{Position, StoryId};
-use twip::editing::selection::{ObjectRef, Selection};
-use twip::editing::{Editor, inspect};
-use twip::font::Fonts;
-use twip::layout::Unit;
+use twip::internal::editing::commands::{Command, Dir, MoveBy};
+use twip::internal::editing::position::{Position, StoryId};
+use twip::internal::editing::selection::{ObjectRef, Selection};
+use twip::internal::editing::{Editor, inspect};
+use twip::internal::font::Fonts;
+use twip::internal::layout::Unit;
 
 fn files(paths: &[String]) -> Vec<PathBuf> {
     fn walk(p: &Path, out: &mut Vec<PathBuf>) {
@@ -37,18 +35,45 @@ fn families() -> Vec<(&'static str, Vec<Command>)> {
         ("typing", vec![Command::InsertText("Typed text. ".into())]),
         (
             "enter",
-            vec![Command::Move { by: MoveBy::Word, dir: Dir::Forward, extend: false }, Command::Enter, Command::InsertText("New paragraph".into())],
+            vec![
+                twip::internal::editing::commands::moving(MoveBy::Word, Dir::Forward, false),
+                Command::InsertParagraph,
+                Command::InsertText("New paragraph".into()),
+            ],
         ),
-        ("delete", vec![Command::Move { by: MoveBy::Word, dir: Dir::Forward, extend: true }, Command::Delete { dir: Dir::Back, word: false }]),
-        ("join", vec![Command::Move { by: MoveBy::Para, dir: Dir::Forward, extend: false }, Command::Delete { dir: Dir::Back, word: false }]),
-        ("breaks", vec![Command::LineBreak, Command::InsertTab, Command::PageBreak]),
+        (
+            "delete",
+            vec![
+                twip::internal::editing::commands::moving(MoveBy::Word, Dir::Forward, true),
+                twip::internal::editing::commands::deleting(Dir::Back, false),
+            ],
+        ),
+        (
+            "join",
+            vec![
+                twip::internal::editing::commands::moving(MoveBy::Para, Dir::Forward, false),
+                twip::internal::editing::commands::deleting(Dir::Back, false),
+            ],
+        ),
+        ("breaks", vec![Command::InsertLineBreak, Command::InsertTab, Command::InsertPageBreak]),
         ("select-all-typing", vec![Command::SelectAll, Command::InsertText("Replaced".into())]),
         (
             "bold",
-            vec![Command::Move { by: MoveBy::Word, dir: Dir::Forward, extend: true }, Command::Toggle(Toggle::Bold), Command::InsertText("x".into())],
+            vec![
+                twip::internal::editing::commands::moving(MoveBy::Word, Dir::Forward, true),
+                Command::SetBold(true),
+                Command::InsertText("x".into()),
+            ],
         ),
-        ("italic-all", vec![Command::SelectAll, Command::Toggle(Toggle::Italic)]),
-        ("align", vec![Command::Align(Jc::Center), Command::Move { by: MoveBy::Para, dir: Dir::Forward, extend: true }, Command::Align(Jc::Right)]),
+        ("italic-all", vec![Command::SelectAll, Command::SetItalic(true)]),
+        (
+            "align",
+            vec![
+                Command::SetAlignment(twip::api::value::Alignment::Center),
+                twip::internal::editing::commands::moving(MoveBy::Para, Dir::Forward, true),
+                Command::SetAlignment(twip::api::value::Alignment::Right),
+            ],
+        ),
     ]
 }
 
@@ -58,7 +83,7 @@ fn in_table(e: &mut Editor, fonts: &Fonts) -> bool {
         if e.selection().focus().is_some_and(|p| !e.index().chain_of(&p).is_empty()) {
             return true;
         }
-        e.execute(Command::Move { by: MoveBy::Para, dir: Dir::Forward, extend: false }, fonts);
+        e.execute(twip::internal::editing::commands::moving(MoveBy::Para, Dir::Forward, false), fonts);
     }
     false
 }
@@ -69,7 +94,7 @@ fn table_family(e: &mut Editor, fonts: &Fonts) -> bool {
         if e.selection().focus().is_some_and(|p| !e.index().chain_of(&p).is_empty()) {
             break;
         }
-        e.execute(Command::Move { by: MoveBy::Para, dir: Dir::Forward, extend: false }, fonts);
+        e.execute(twip::internal::editing::commands::moving(MoveBy::Para, Dir::Forward, false), fonts);
     }
     if !e.selection().focus().is_some_and(|p| !e.index().chain_of(&p).is_empty()) {
         return false;
@@ -77,7 +102,7 @@ fn table_family(e: &mut Editor, fonts: &Fonts) -> bool {
     // Tab to the innermost table's last cell, then once more: a new row.
     for _ in 0..2000 {
         let before = e.history().undo_depth();
-        e.execute(Command::NextCell { back: false }, fonts);
+        e.execute(Command::MoveToCell(twip::api::value::Order::Next), fonts);
         if e.history().undo_depth() > before {
             e.execute(Command::InsertText("row".into()), fonts);
             return true;
@@ -88,8 +113,8 @@ fn table_family(e: &mut Editor, fonts: &Fonts) -> bool {
 
 /// The first paragraph of every story besides the body: headers and footers, notes and text boxes.
 fn story_starts(e: &Editor) -> Vec<Position> {
-    use twip::docx::{Block, Inline};
-    use twip::layout::{FloatId, ParaId};
+    use twip::internal::docx::{Block, Inline};
+    use twip::internal::layout::{FloatId, ParaId};
     let first = |b: &[Block]| b.iter().find_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None });
     let d = e.document();
     let mut out = Vec::new();
@@ -119,15 +144,15 @@ fn story_starts(e: &Editor) -> Vec<Position> {
 }
 
 /// The body's floats (document order).
-fn floats(e: &Editor) -> Vec<twip::layout::FloatId> {
-    use twip::docx::{Block, Inline};
+fn floats(e: &Editor) -> Vec<twip::internal::layout::FloatId> {
+    use twip::internal::docx::{Block, Inline};
     e.document()
         .sections
         .iter()
         .flat_map(|s| s.blocks.iter())
         .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
         .flat_map(|p| p.inlines.iter())
-        .filter_map(|i| if let Inline::Float(f, _) = i { Some(twip::layout::FloatId(f.id)) } else { None })
+        .filter_map(|i| if let Inline::Float(f, _) = i { Some(twip::internal::layout::FloatId(f.id)) } else { None })
         .collect()
 }
 
@@ -135,23 +160,29 @@ fn dump(e: &mut Editor) -> serde_json::Value {
     inspect::inspect(e, "dump", true)["dump"].clone()
 }
 
-/// Sends one host message; `pending` is set when the editor doesn't know the command yet.
-fn send(e: &mut Editor, fonts: &Fonts, mut msg: serde_json::Value, pending: &mut bool) -> serde_json::Value {
-    // Each editor wants increasing sequence numbers; one counter for all of them does.
-    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    msg["seq"] = serde_json::json!(SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-    let r: serde_json::Value = serde_json::from_str(&e.apply_json(&msg.to_string(), fonts)).unwrap_or_default();
-    if std::env::var_os("RT_TRACE").is_some() {
-        eprintln!("  {msg} -> {}", r.get("error").or(r.get("answer")).map(|v| v.to_string()).unwrap_or_default());
+/// Runs one command, given as the API's JSON; `pending` is set when the editor doesn't know the command yet.
+fn send(e: &mut Editor, fonts: &Fonts, op: serde_json::Value, pending: &mut bool) {
+    match serde_json::from_value::<Command>(op.clone()) {
+        Ok(cmd) => {
+            let out = e.execute(cmd, fonts);
+            if std::env::var_os("RT_TRACE").is_some() {
+                eprintln!("  {op} -> {out:?}");
+            }
+        }
+        Err(_) => *pending = true,
     }
-    *pending |= r["answer"]["error"] == "unknown command";
-    r
 }
 
-/// The first field's (or control's) id, from the elements query.
-fn first_element(e: &mut Editor, fonts: &Fonts, field: bool) -> Option<serde_json::Value> {
-    let r = send(e, fonts, serde_json::json!({ "type": "query", "q": "elements" }), &mut false);
-    r["answer"].as_array()?.iter().find(|x| (x["kind"] == "field") == field).map(|x| x["id"].clone())
+/// The elements in document order.
+fn elements(e: &Editor) -> Vec<twip::internal::editing::elements::Element> {
+    use twip::internal::editing::elements;
+    elements::enumerate(e.document(), e.index(), &elements::Filter::default())
+}
+
+/// The first field's (or control's) id.
+fn first_element(e: &Editor, field: bool) -> Option<serde_json::Value> {
+    use twip::internal::editing::elements;
+    elements(e).iter().find(|x| (x.kind() == "field") == field).map(|x| elements::id_str(x.id).into())
 }
 
 /// The edit families.
@@ -160,63 +191,56 @@ const MERGE: &[&str] = &["field-insert", "field-code", "field-remove", "control-
 /// Runs merge family `label`; whether it changed the document.
 fn merge_family(e: &mut Editor, fonts: &Fonts, label: &str, pending: &mut bool) -> bool {
     use serde_json::json;
-    let command = |id: &str, arg: serde_json::Value| json!({ "type": "command", "id": id, "arg": arg });
     let before = e.history().undo_depth();
-    let msg = match label {
-        "field-insert" => command("field.insert", json!({ "code": "MERGEFIELD Roundtrip.Name" })),
-        "field-code" => match first_element(e, fonts, true) {
-            Some(id) => command("field.set", json!({ "id": id, "code": "MERGEFIELD Roundtrip.Changed" })),
+    let op = match label {
+        "field-insert" => json!({ "type": "insertField", "code": "MERGEFIELD Roundtrip.Name" }),
+        "field-code" => match first_element(e, true) {
+            Some(id) => json!({ "type": "setField", "id": id, "code": "MERGEFIELD Roundtrip.Changed" }),
             None => return false,
         },
-        "field-remove" => match first_element(e, fonts, true) {
-            Some(id) => command("element.remove", json!({ "id": id })),
+        "field-remove" => match first_element(e, true) {
+            Some(id) => json!({ "type": "removeElement", "value": id }),
             None => return false,
         },
-        "control-insert" => command("control.insert", json!({ "kind": "plain_text", "tag": "Roundtrip" })),
-        "control-tag" => match first_element(e, fonts, false) {
-            Some(id) => command("control.set", json!({ "id": id, "tag": "Roundtrip:changed" })),
+        "control-insert" => json!({ "type": "insertControl", "kind": "plainText", "tag": "Roundtrip" }),
+        "control-tag" => match first_element(e, false) {
+            Some(id) => json!({ "type": "setControl", "id": id, "tag": "Roundtrip:changed" }),
             None => return false,
         },
         "region-wrap" => {
             if !in_table(e, fonts) {
                 return false;
             }
-            e.execute(Command::SelectCells(twip::editing::selection::CellShape::Rows), fonts);
-            command("region.wrap", json!({ "tag": "Roundtrip:rows" }))
+            e.execute(Command::Select(twip::api::command::SelectUnit::Row), fonts);
+            json!({ "type": "wrapInRepeatingSection", "tag": "Roundtrip:rows" })
         }
         "data-write" => {
-            command("data.write", json!({ "namespace": "urn:roundtrip", "xml": "<roundtrip xmlns=\"urn:roundtrip\"><a>1</a></roundtrip>" }))
+            json!({ "type": "writeDataPart", "namespace": "urn:roundtrip", "xml": "<roundtrip xmlns=\"urn:roundtrip\"><a>1</a></roundtrip>" })
         }
-        "data-remove" => {
-            let r = send(e, fonts, json!({ "type": "query", "q": "data" }), &mut false);
-            match r["answer"].as_array().and_then(|v| v.first()).map(|p| p["namespace"].clone()) {
-                Some(ns) => command("data.remove", json!({ "namespace": ns })),
-                None => return false,
-            }
-        }
+        "data-remove" => match e.document().data_parts.first().map(|p| p.namespace.clone()) {
+            Some(ns) => json!({ "type": "removeDataPart", "namespace": ns }),
+            None => return false,
+        },
         _ => return false,
     };
-    send(e, fonts, msg, pending);
+    send(e, fonts, op, pending);
     e.history().undo_depth() > before
 }
 
 /// What a merge edit must keep through a save: the elements (with their codes, tags and kinds) and the data parts.
-fn merge_state(e: &mut Editor, fonts: &Fonts) -> serde_json::Value {
-    let mut strip = |q: &str| {
-        let mut v = send(e, fonts, serde_json::json!({ "type": "query", "q": q }), &mut false)["answer"].take();
-        // Ids are the session's: a reread numbers them anew.
-        for x in v.as_array_mut().into_iter().flatten() {
-            if let Some(o) = x.as_object_mut() {
-                o.retain(|k, _| !["id", "parent"].contains(&k.as_str()));
-                // A text box's story is named with its session id too.
-                if let Some(s) = o.get_mut("story").filter(|s| s.as_str().is_some_and(|s| s.starts_with("text box "))) {
-                    *s = "text box".into();
-                }
-            }
-        }
-        v
-    };
-    serde_json::json!({ "elements": strip("elements"), "data": strip("data") })
+fn merge_state(e: &Editor) -> serde_json::Value {
+    use twip::internal::editing::position::StoryId;
+    let elements: Vec<String> = elements(e)
+        .iter()
+        .map(|x| {
+            // Ids are the session's: a reread numbers them anew. A text box's story is named with its session id too.
+            let story = if matches!(x.story, StoryId::TextBox(_)) { "text box".to_string() } else { format!("{:?}", x.story) };
+            let props = x.props.as_ref().map(|p| (&p.kind, &p.tag, &p.alias, format!("{:?}", p.lock), p.showing_placeholder, p.binding.is_some()));
+            format!("{:?}", (x.kind(), &x.code, &x.display, story, x.locked, props))
+        })
+        .collect();
+    let data: Vec<String> = e.document().data_parts.iter().map(|p| format!("{:?}", (&p.namespace, &p.item_id, &p.xml))).collect();
+    serde_json::json!({ "elements": elements, "data": data })
 }
 
 /// Where two [`merge_state`]s first differ: the list, the index, and the entry before and after.
@@ -247,7 +271,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         let bytes = std::fs::read(&f).map_err(|e| format!("{}: {e}", f.display()))?;
         let name = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         if edits.is_none() {
-            match twip::docx::read_editable(&bytes).and_then(|d| twip::docx::write::save(&d)) {
+            match twip::internal::docx::read_editable(&bytes).and_then(|d| twip::internal::docx::write::save(&d)) {
                 Ok(out) if out == bytes => ok += 1,
                 Ok(_) => failed.push(format!("{}: unedited save changed the bytes", f.display())),
                 Err(e) => failed.push(format!("{}: {e}", f.display())),
@@ -268,20 +292,20 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 return;
             }
             let want = dump(&mut e);
-            let want_merge = (edits.as_deref() == Some("merge")).then(|| merge_state(&mut e, &fonts));
-            let saved = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| twip::docx::write::save(e.document()))).unwrap_or_else(|p| {
-                Err(format!(
-                    "the writer panicked: {}",
-                    p.downcast_ref::<String>().cloned().or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
-                ))
-            });
+            let want_merge = (edits.as_deref() == Some("merge")).then(|| merge_state(&e));
+            let saved =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| twip::internal::docx::write::save(e.document()))).unwrap_or_else(|p| {
+                    Err(format!(
+                        "the writer panicked: {}",
+                        p.downcast_ref::<String>().cloned().or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
+                    ))
+                });
             match saved {
                 Ok(out) => {
                     if let Some(k) = &keep {
                         let _ = std::fs::write(k.join(format!("{name}.{label}.docx")), &out);
                     }
-                    match Editor::open(&out, &fonts).map(|mut again| (dump(&mut again), want_merge.as_ref().map(|_| merge_state(&mut again, &fonts))))
-                    {
+                    match Editor::open(&out, &fonts).map(|mut again| (dump(&mut again), want_merge.as_ref().map(|_| merge_state(&again)))) {
                         Ok((got, merge)) if got == want && merge == want_merge => ok += 1,
                         Ok((got, merge)) if got == want => failed.push(format!(
                             "{} {label}: the saved elements or data parts read back differently: {}",
@@ -349,10 +373,13 @@ pub fn run(args: &[String]) -> Result<(), String> {
         }
         run_family("table-row", &mut |e| table_family(e, &fonts));
         for (label, cmd) in [
-            ("insert-column", Command::InsertColumns { right: true }),
+            (
+                "insert-column",
+                Command::InsertColumns(twip::api::command::InsertColumns { side: twip::api::command::HorizontalSide::Right, count: None }),
+            ),
             ("delete-row", Command::DeleteRows),
-            ("split-cell", Command::SplitCell { cols: 2 }),
-            ("nested-table", Command::InsertTable { rows: 2, cols: 2 }),
+            ("split-cell", Command::SplitCells(twip::api::command::SplitCells { columns: 2, rows: None })),
+            ("nested-table", Command::InsertTable(twip::api::command::TableSize { rows: 2, columns: 2 })),
         ] {
             run_family(label, &mut |e| {
                 in_table(e, &fonts) && {
@@ -375,16 +402,16 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 let Some(&f) = floats(e).first() else { return false };
                 e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(f)));
                 let c = if del {
-                    Command::Delete { dir: Dir::Forward, word: false }
+                    twip::internal::editing::commands::deleting(Dir::Forward, false)
                 } else {
-                    Command::Move { by: MoveBy::Char, dir: Dir::Forward, extend: false }
+                    twip::internal::editing::commands::moving(MoveBy::Char, Dir::Forward, false)
                 };
                 e.execute(c, &fonts);
                 e.history().undo_depth() > 0
             });
         }
         run_family("new-table", &mut |e| {
-            e.execute(Command::InsertTable { rows: 2, cols: 3 }, &fonts);
+            e.execute(Command::InsertTable(twip::api::command::TableSize { rows: 2, columns: 3 }), &fonts);
             e.execute(Command::InsertText("cell".into()), &fonts);
             e.history().undo_depth() > 0
         });

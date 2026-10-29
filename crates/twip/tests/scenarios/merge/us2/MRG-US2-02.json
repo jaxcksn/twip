@@ -8,8 +8,8 @@
   ],
   "steps": [
     {
-      "command": "element.mark",
-      "arg": {
+      "command": {
+        "type": "markElements",
         "marks": [
           {
             "id": "$code:MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\"",
@@ -59,9 +59,9 @@
       }
     },
     {
-      "command": "element.remove",
-      "arg": {
-        "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT"
+      "command": {
+        "type": "removeElement",
+        "value": "$code:MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT"
       },
       "expect": {
         "elements": {
@@ -80,8 +80,8 @@
       }
     },
     {
-      "command": "element.mark",
-      "arg": {
+      "command": {
+        "type": "markElements",
         "marks": [],
         "clear": true
       },

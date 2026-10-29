@@ -3,11 +3,13 @@
 mod basics;
 mod depth;
 mod fuzz;
+mod json;
 mod merge;
 mod perf;
 pub(crate) mod recorder;
 pub(crate) mod scenarios;
 mod steps;
+mod transactions;
 
 use std::path::Path;
 
@@ -16,6 +18,8 @@ use crate::font::Fonts;
 
 use super::Editor;
 use super::text::UnitText;
+
+pub(crate) use super::commands::{deleting as del, moving as mv};
 
 /// The system fonts, loaded once per test thread (loading them takes most of a test's time; `Fonts` isn't `Sync`).
 pub fn fonts() -> &'static Fonts {

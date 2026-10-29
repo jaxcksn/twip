@@ -1,0 +1,53 @@
+[
+  {
+    "cursor": "resizeHorizontal",
+    "type": "cursor"
+  },
+  {
+    "type": "capture"
+  },
+  {
+    "type": "release"
+  },
+  {
+    "data": {
+      "html": "<b>copied</b>",
+      "internal": "3.17",
+      "text": "copied"
+    },
+    "type": "clipboard"
+  },
+  {
+    "height": 18.5,
+    "type": "caret",
+    "visible": true,
+    "x": 96.5,
+    "y": 120.0
+  },
+  {
+    "height": 18.5,
+    "type": "scroll_to",
+    "width": 1.5,
+    "x": 96.5,
+    "y": 1240.0
+  },
+  {
+    "tree": {
+      "children": [
+        {
+          "children": [],
+          "level": 1,
+          "marks": [
+            "insertion",
+            "misspelling"
+          ],
+          "role": "heading",
+          "text": "Terms"
+        }
+      ],
+      "name": "Contract",
+      "role": "document"
+    },
+    "type": "a11y"
+  }
+]

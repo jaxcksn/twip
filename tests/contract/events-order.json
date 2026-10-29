@@ -1,0 +1,24 @@
+{
+  "name": "events-order",
+  "fixture": "editor/FX-bad-image.docx",
+  "steps": [
+    { "op": "open", "match": { "warnings": { "$has": [{ "code": "image-undecodable" }] } } },
+    { "op": "expectEvents", "match": [{ "type": "warning", "code": "image-undecodable" }] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Type here." }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "moveSelection", "by": "lineEdge", "direction": "forward" } },
+    { "op": "text", "text": " Done" },
+    { "op": "key", "key": "z", "mods": ["ctrl"] },
+    { "op": "click", "text": "the example site", "mods": ["ctrl"] },
+    { "op": "key", "key": "s", "mods": ["ctrl"] },
+    { "op": "key", "key": "ContextMenu" },
+    { "op": "open" },
+    { "op": "expectEvents", "match": [
+      { "type": "documentChanged", "origin": "user" },
+      { "type": "documentChanged", "origin": "undo" },
+      { "type": "linkActivated", "address": "https://example.com/", "via": "ctrlClick" },
+      { "type": "hostCommand", "command": "save" },
+      { "type": "contextMenu", "via": "keyboard", "menu": { "items": { "$type": "array" } } },
+      { "type": "warning", "code": "image-undecodable" }
+    ] }
+  ]
+}

@@ -3,30 +3,191 @@
   "title": "A comment's range grows and shrinks with edits inside it and survives a split and a join; deleting all of its text deletes the comment, and undo brings both back",
   "fixture": "FX-EMPTY.docx",
   "steps": [
-    { "type": "Alpha beta gamma." },
-    { "click": { "para": 0, "offset": 6 } },
-    { "click": { "para": 0, "offset": 10 }, "shift": true },
-    { "command": "review.comment.add", "arg": "On beta" },
-    { "click": { "para": 0, "offset": 11 } },
-    { "click": { "para": 0, "offset": 16 }, "shift": true },
-    { "command": "review.comment.add", "arg": "On gamma" },
-    { "click": { "para": 0, "offset": 8 } },
-    { "type": "XY" },
-    { "expect": { "comments": [{ "text": "On beta", "scope": "beXYta" }, { "text": "On gamma", "scope": "gamma" }] } },
-    { "click": { "para": 0, "offset": 7 } },
-    { "click": { "para": 0, "offset": 9 }, "shift": true },
-    { "key": "Backspace" },
-    { "expect": { "text": { "0": "Alpha bYta gamma." }, "comments": [{ "scope": "bYta" }, { "scope": "gamma" }] } },
-    { "click": { "para": 0, "offset": 7 } },
-    { "key": "Enter" },
-    { "expect": { "text": { "0": "Alpha b", "1": "Yta gamma." }, "comments": [{ "scope": "b\nYta" }, { "scope": "gamma" }] } },
-    { "key": "Backspace" },
-    { "expect": { "text": { "0": "Alpha bYta gamma." }, "comments": [{ "scope": "bYta" }, { "scope": "gamma" }] } },
-    { "click": { "para": 0, "offset": 6 } },
-    { "click": { "para": 0, "offset": 10 }, "shift": true },
-    { "key": "Delete" },
-    { "expect": { "comments": [{ "text": "On gamma", "scope": "gamma" }] } },
-    { "command": "home.undo" },
-    { "expect": { "text": { "0": "Alpha bYta gamma." }, "comments": [{ "text": "On beta", "scope": "bYta" }, { "text": "On gamma", "scope": "gamma" }] } }
+    {
+      "type": "Alpha beta gamma."
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 6
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 10
+      },
+      "shift": true
+    },
+    {
+      "command": {
+        "type": "addComment",
+        "value": "On beta"
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 11
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 16
+      },
+      "shift": true
+    },
+    {
+      "command": {
+        "type": "addComment",
+        "value": "On gamma"
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 8
+      }
+    },
+    {
+      "type": "XY"
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "On beta",
+            "scope": "beXYta"
+          },
+          {
+            "text": "On gamma",
+            "scope": "gamma"
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 7
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 9
+      },
+      "shift": true
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "Alpha bYta gamma."
+        },
+        "comments": [
+          {
+            "scope": "bYta"
+          },
+          {
+            "scope": "gamma"
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 7
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "Alpha b",
+          "1": "Yta gamma."
+        },
+        "comments": [
+          {
+            "scope": "b\nYta"
+          },
+          {
+            "scope": "gamma"
+          }
+        ]
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "Alpha bYta gamma."
+        },
+        "comments": [
+          {
+            "scope": "bYta"
+          },
+          {
+            "scope": "gamma"
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 6
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 10
+      },
+      "shift": true
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "On gamma",
+            "scope": "gamma"
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "Alpha bYta gamma."
+        },
+        "comments": [
+          {
+            "text": "On beta",
+            "scope": "bYta"
+          },
+          {
+            "text": "On gamma",
+            "scope": "gamma"
+          }
+        ]
+      }
+    }
   ]
 }

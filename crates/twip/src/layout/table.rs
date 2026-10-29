@@ -290,7 +290,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
 fn table_bytes(t: &TableLayout) -> usize {
     std::mem::size_of::<TableLayout>()
         + t.rows.iter().map(|r| std::mem::size_of::<RowBox>() + r.cells.len() * std::mem::size_of::<CellBox>()).sum::<usize>()
-        + t.fit.iter().map(|r| r.len() * std::mem::size_of::<autofit::Cell>()).sum::<usize>()
+        + t.fit.iter().map(|r| r.cells.len() * std::mem::size_of::<autofit::Cell>()).sum::<usize>()
 }
 
 /// A cell's laid-out content.
@@ -334,6 +334,8 @@ pub struct RowBox {
     pub cant_split: bool,
     pub header: bool,
     pub exact: bool,
+    /// An atLeast row's minimum height (top border included), else 0: the row splits only where it fits.
+    pub min_h: f64,
     /// Cell spacing (TABLE-39): from the row top to its cell boxes (2s, plus the table's top border on row 0).
     pub gap_top: f64,
     /// Bottom borders of the row above whose cells no cell of this row starts under (their edge was resolved against
@@ -367,7 +369,15 @@ pub struct TableLayout {
     pub id: TableId,
     pub outer: [Option<Border>; 4],
     /// Each row's cells' autofit inputs (width-free): an edit in other rows reuses them.
-    pub fit: Rc<[Vec<autofit::Cell>]>,
+    pub fit: Rc<[FitRow]>,
+}
+
+/// A row's cells' autofit inputs, and the cached content widths they came from: held while the layout is, so eviction
+/// keeps them for the table's next lookup.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FitRow {
+    cells: Vec<autofit::Cell>,
+    widths: Vec<Rc<(i64, i64, i64)>>,
 }
 
 fn style_factor(style: &str) -> f64 {
@@ -449,21 +459,48 @@ fn bw(b: &Option<Border>) -> f64 {
 
 /// A border's thickness (TABLE-37).
 fn thick(b: &Border) -> f64 {
-    if b.style == "double" { 3.0 * b.width } else { b.width }
+    stripes(b).iter().sum()
 }
 
-/// Draws border `b` filling `rect` (its thickness across, horizontal or vertical): a double border as its two lines.
+/// A compound border's lines and gaps across its thickness, top or left first (lines at even indices), as Word lays
+/// them out and draws them: a thinThick border's thick line is on top and on the left on every side.
+/// shortcut: the fixed 0.75 pt and 1.5 pt widths were measured at w:sz 12 and 24 only.
+fn stripes(b: &Border) -> Vec<f64> {
+    let (w, s) = (b.width, b.style.as_str());
+    let (thin, gap, thick) = if s.ends_with("SmallGap") {
+        (0.75, 0.75, w)
+    } else if s.ends_with("MediumGap") {
+        (w / 2.0, w / 2.0, w)
+    } else if s.ends_with("LargeGap") {
+        (0.75, w, 1.5)
+    } else {
+        (w, w, w)
+    };
+    match s {
+        "double" => vec![w, w, w],
+        "triple" => vec![w; 5],
+        _ if s.starts_with("thinThickThin") => vec![thin, gap, thick, gap, thin],
+        _ if s.starts_with("thinThick") => vec![thick, gap, thin],
+        _ if s.starts_with("thickThin") => vec![thin, gap, thick],
+        _ => vec![w],
+    }
+}
+
+/// Draws border `b` filling `rect` (its thickness across, horizontal or vertical): a compound border as its lines.
 fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, b: &Border) {
     let colour = b.color.unwrap_or(0);
     let [x0, y0, x1, y1] = rect;
-    if b.style != "double" {
+    let st = stripes(b);
+    if st.len() == 1 {
         out.push(Item::Rect { rect, colour });
-    } else if horizontal {
-        out.push(Item::Rect { rect: [x0, y0, x1, y0 + b.width], colour });
-        out.push(Item::Rect { rect: [x0, y1 - b.width, x1, y1], colour });
-    } else {
-        out.push(Item::Rect { rect: [x0, y0, x0 + b.width, y1], colour });
-        out.push(Item::Rect { rect: [x1 - b.width, y0, x1, y1], colour });
+        return;
+    }
+    let mut at = if horizontal { y0 } else { x0 };
+    for (k, w) in st.iter().enumerate() {
+        if k % 2 == 0 {
+            out.push(Item::Rect { rect: if horizontal { [x0, at, x1, at + w] } else { [at, y0, at + w, y1] }, colour });
+        }
+        at += w;
     }
 }
 
@@ -509,10 +546,10 @@ fn gap(s: f64, outer: bool) -> f64 {
 
 /// Content min, max and hard minimum of blocks in twips (TABLE-7), cached and width-free (LayoutNG's
 /// min/max sizes).
-fn content_widths(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result<(i64, i64, i64), Yield> {
+fn content_widths(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result<Rc<(i64, i64, i64)>, Yield> {
     let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
     let probe = StoryKey::new(child_ids(&laid, None, env, memos)?, None, true, env);
-    cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, m)).map(|w| *w)
+    cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, m))
 }
 
 /// Points to twips, rounded up (TABLE-6: content widths round up).
@@ -626,19 +663,20 @@ fn fit_inputs<'k>(
     env: &StoryEnv,
     memos: &mut Memos,
     geo: &[Vec<CellEdges>],
-    kept: &dyn Fn(usize) -> Option<&'k Vec<autofit::Cell>>,
-) -> Result<Vec<Vec<autofit::Cell>>, Yield> {
+    kept: &dyn Fn(usize) -> Option<&'k FitRow>,
+) -> Result<Vec<FitRow>, Yield> {
     let n = grid_columns(t);
     let s2 = twips(2.0 * t.cell_spacing.max(0.0));
     let spacing = twips(t.cell_spacing.max(0.0));
     let grid_tw: Vec<i64> = (0..n).map(|i| twips(t.grid.get(i).copied().unwrap_or(0.0))).collect();
     let mut rows = Vec::with_capacity(t.rows.len());
     for (ri, (r, gs)) in t.rows.iter().zip(geo).enumerate() {
-        if let Some(k) = kept(ri).filter(|k| k.len() == gs.len()) {
+        if let Some(k) = kept(ri).filter(|k| k.cells.len() == gs.len()) {
             rows.push(k.clone());
             continue;
         }
         let mut cells: Vec<autofit::Cell> = Vec::with_capacity(gs.len());
+        let mut widths = Vec::new();
         for g in gs {
             let c = &r.cells[g.ci];
             let (bl, br) = (twips(bw(&g.edges[1])), twips(bw(&g.edges[3])));
@@ -668,7 +706,9 @@ fn fit_inputs<'k>(
                 } else if rotated {
                     (284, 284, 0) // TABLE-33: one line thick (≈ 14.2pt for Calibri 11)
                 } else {
-                    content_widths(&c.blocks, env, memos)?
+                    let w = content_widths(&c.blocks, env, memos)?;
+                    widths.push(w.clone());
+                    *w
                 };
                 if (cmn, cmx) == (0, 0) && !continuation {
                     (cmn, cmx) = (6, 6); // TABLE-7: an empty cell
@@ -681,20 +721,20 @@ fn fit_inputs<'k>(
             let explicit = matches!(c.width, Some(Width::Dxa(_)));
             cells.push(autofit::Cell { first: g.col, span: g.span, min, max, hard, kind, pref, skip: continuation && ri > 0, explicit });
         }
-        rows.push(cells);
+        rows.push(FitRow { cells, widths });
     }
     Ok(rows)
 }
 
 /// TABLE-13 to TABLE-19 from the cells' inputs: the column widths and the table's autofit minimum, width and hard
 /// minimum.
-fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, inputs: &[Vec<autofit::Cell>]) -> Fit {
+fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, inputs: &[FitRow]) -> Fit {
     let n = grid_columns(t);
     // TABLE-17: A = text width − indent + the edge allowances.
     let (add_l, add_r) = edge_add(env.ctx.env.text.compat, t);
     let a = avail.unwrap_or_else(|| twips(text_w - t.ind + add_l + add_r));
     let s2 = twips(2.0 * t.cell_spacing.max(0.0));
-    let cells: Vec<autofit::Cell> = inputs.iter().flatten().copied().collect();
+    let cells: Vec<autofit::Cell> = inputs.iter().flat_map(|r| r.cells.iter().copied()).collect();
     // TABLE-13 to TABLE-19: the columns, then the widths from the table-wide inputs.
     let gaps: Vec<autofit::Gap> = t
         .rows
@@ -836,13 +876,14 @@ impl ViewTable {
                     cant_split: false,
                     header: false,
                     exact: false,
+                    min_h: 0.0,
                     gap_top: 0.0,
                     seams: Vec::new(),
                     hidden: true,
                     changed: false,
                 };
                 rows.push(row);
-                fit.push(Vec::new());
+                fit.push(FitRow::default());
                 continue;
             };
             let mut r = r.clone();
@@ -1069,7 +1110,7 @@ fn assemble(
     geo: &[Vec<CellGeo>],
     stories: &[Option<Rc<StoryLayout>>],
     closings: &[Option<(ParaId, f64)>],
-    fit: Rc<[Vec<autofit::Cell>]>,
+    fit: Rc<[FitRow]>,
 ) -> TableLayout {
     let total: f64 = cols.iter().sum();
     let compat = env.ctx.env.text.compat;
@@ -1082,9 +1123,28 @@ fn assemble(
     // TABLE-23.
     let mut x0 = if compat >= 15 { t.ind + lw / 2.0 } else { t.ind - lmar.max(half_border(lw)) };
     match t.jc {
-        Jc::Center => x0 = (text_w - total) / 2.0,
+        // A row's empty grid before and after its cells isn't centred, only the cells (the first row's, for the table).
+        Jc::Center => {
+            let (gb, ga) = t.rows.first().map_or((0, 0), |r| (r.grid_before.min(cols.len()), r.grid_after.min(cols.len())));
+            let before: f64 = cols[..gb].iter().sum();
+            let after: f64 = cols[cols.len() - ga.min(cols.len() - gb)..].iter().sum();
+            x0 = (text_w - (total - before - after)) / 2.0 - before;
+        }
         Jc::Right => x0 = text_w - total - bw(&t.borders[3]) / 2.0,
         _ => {}
+    }
+    // TABLE-49: a floating table's tblpX takes tblInd's place; tblpXSpec aligns it in the column.
+    // shortcut: horzAnchor isn't read (measured from the column); the centred offset is Word's as measured on
+    // compat 12 tables (half the first cell's left margin right of centre).
+    if let Some(fp) = t.floating {
+        x0 = match fp.x_spec {
+            Some(Jc::Center) => (text_w - total + lmar) / 2.0,
+            Some(Jc::Right) => text_w - total - bw(&t.borders[3]) / 2.0,
+            Some(_) if compat >= 15 => lw / 2.0,
+            Some(_) => -lmar.max(half_border(lw)),
+            None if compat >= 15 => fp.x + lw / 2.0,
+            None => fp.x - lmar.max(half_border(lw)),
+        };
     }
     let mut stories = stories.iter();
     let mut closings = closings.iter();
@@ -1151,12 +1211,27 @@ fn assemble(
             cells.iter().filter(|c| c.v_merge == VMerge::None).map(|c| c.margins[0] + c.content_h + c.margins[2] + cell_bottom).fold(0.0, f64::max);
         let min_margins = cells.iter().map(|c| c.margins[0] + c.margins[2]).fold(0.0, f64::max);
         let content = content.max(min_margins);
-        let (height, exact) = match &r.height {
-            Some((h, rule)) if rule == "exact" && *h > 0.0 => (*h, true),
-            Some((h, rule)) if rule != "auto" => (top_border + content.max(*h), false),
-            _ => (top_border + content, false),
+        // TABLE-8: the cells' bottom margin is outside the row height Word was given, and an atLeast row's top margin
+        // too (as Word lays out compat 12 rows; an exact row's top margin is inside it).
+        let bottom = cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
+        let (height, exact, min_h) = match &r.height {
+            Some((h, rule)) if rule == "exact" && *h > 0.0 => (*h + bottom, true, 0.0),
+            Some((h, rule)) if rule != "auto" => (top_border + content.max(*h + min_margins), false, top_border + *h + min_margins),
+            _ => (top_border + content, false, 0.0),
         };
-        rows.push(RowBox { cells, top_border, height, cant_split: r.cant_split, header: r.header, exact, gap_top, seams, hidden: false, changed });
+        rows.push(RowBox {
+            cells,
+            top_border,
+            height,
+            cant_split: r.cant_split,
+            header: r.header,
+            exact,
+            min_h,
+            gap_top,
+            seams,
+            hidden: false,
+            changed,
+        });
     }
     // TABLE-31: a vertically merged region's extra height goes to its last row.
     for ri in 0..rows.len() {
@@ -1461,13 +1536,13 @@ impl PartialEq for DrawnRow {
     }
 }
 
-/// What drawing a whole row reads: the row (its cells' content by identity), where it goes, its height,
-/// whether it ends the table, and the table's left edge, cell spacing, columns and outer borders.
+/// What drawing a whole row reads: the row (its cells' content by identity), its left edge and height (it is drawn at
+/// the top 0), whether it ends the table, and the table's left edge, cell spacing, columns and outer borders.
 #[derive(Debug)]
 pub struct RowKey {
     row: RowBox,
     ri: usize,
-    at: [u64; 3],
+    at: [u64; 2],
     last: bool,
     x0: u64,
     spacing: u64,
@@ -1480,7 +1555,7 @@ pub struct RowKey {
 pub struct RowProbe<'a> {
     tb: &'a TableLayout,
     ri: usize,
-    at: [u64; 3],
+    at: [u64; 2],
     last: bool,
 }
 
@@ -1548,17 +1623,25 @@ impl CacheKey for RowKey {
 }
 
 /// [`draw_row`] for a whole row, through the cache: a page step draws its rows again, and while typing most
-/// are where they were.
-pub fn draw_whole_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, last_of_table: bool, memos: &mut Memos) -> RowFragment {
-    let probe = RowProbe { tb, ri, at: [left.to_bits(), top.to_bits(), height.to_bits()], last: last_of_table };
+/// are where they were or only moved down. Drawn at 0 and moved to `top`, so a moved row is a hit.
+pub fn draw_whole_row(
+    tb: &TableLayout,
+    ri: usize,
+    left: f64,
+    top: f64,
+    height: f64,
+    last_of_table: bool,
+    memos: &mut Memos,
+) -> (RowFragment, Option<Rc<DrawnRow>>) {
+    let probe = RowProbe { tb, ri, at: [left.to_bits(), height.to_bits()], last: last_of_table };
     let bytes = |d: &DrawnRow| {
         std::mem::size_of::<RowFragment>()
             + d.0.cells.len() * std::mem::size_of::<CellFragment>()
             + (d.0.borders.len() + d.0.background.len()) * std::mem::size_of::<Item>()
     };
-    match cached(memos, |c| &mut c.rows, probe, bytes, |_| Ok(DrawnRow(draw_row(tb, ri, left, top, height, None, last_of_table)))) {
-        Ok(d) => d.0.clone(),
-        Err(_) => draw_row(tb, ri, left, top, height, None, last_of_table),
+    match cached(memos, |c| &mut c.rows, probe, bytes, |_| Ok(DrawnRow(draw_row(tb, ri, left, 0.0, height, None, last_of_table)))) {
+        Ok(d) => (super::page::row_down(&d.0, top), Some(d)),
+        Err(_) => (super::page::row_down(&draw_row(tb, ri, left, 0.0, height, None, last_of_table), top), None),
     }
 }
 

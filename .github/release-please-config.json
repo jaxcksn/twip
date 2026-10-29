@@ -15,9 +15,10 @@
       "exclude-paths": ["packages", "docs"],
       "extra-files": [
         { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" },
-        { "type": "toml", "path": "Cargo.lock", "jsonpath": "$.package[?(@.name.value=='twip' || @.name.value=='twip-ffi' || @.name.value=='twip-native' || @.name.value=='twip-wasm')].version" },
+        { "type": "toml", "path": "Cargo.lock", "jsonpath": "$.package[?(@.name.value=='twip' || @.name.value=='twip-capi' || @.name.value=='twip-wasm')].version" },
         { "type": "json", "path": "bindings/web/package.json", "jsonpath": "$.version" },
-        { "type": "generic", "path": "bindings/dotnet/Twip/Twip.csproj" }
+        { "type": "generic", "path": "bindings/dotnet/Twip.Core/Twip.Core.csproj" },
+        { "type": "generic", "path": "bindings/dotnet/Twip.WinForms/Twip.WinForms.csproj" }
       ]
     }
   }

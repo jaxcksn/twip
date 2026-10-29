@@ -14,14 +14,24 @@
       }
     },
     {
-      "command": "table.insert-below"
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      }
     },
     {
       "expect": {
         "tables": [
           {
             "rows": 6,
-            "cells": [3, 3, 3, 3, 3, 2]
+            "cells": [
+              3,
+              3,
+              3,
+              3,
+              3,
+              2
+            ]
           }
         ],
         "text": {

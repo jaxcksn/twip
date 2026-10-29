@@ -30,8 +30,8 @@
       }
     },
     {
-      "command": "field.results",
-      "arg": {
+      "command": {
+        "type": "setFieldResults",
         "results": [
           {
             "id": "$code:MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\"",
@@ -51,7 +51,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "changed": [

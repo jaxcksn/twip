@@ -45,8 +45,11 @@
       "shift": false
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {

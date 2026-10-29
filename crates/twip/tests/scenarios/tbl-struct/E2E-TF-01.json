@@ -21,11 +21,16 @@
       }
     },
     {
-      "command": "table.cell-align.center"
+      "command": {
+        "type": "setCellAlignment",
+        "value": "center"
+      }
     },
     {
-      "command": "table.shading",
-      "arg": "#FFF2CC"
+      "command": {
+        "type": "setCellShading",
+        "value": "#FFF2CC"
+      }
     },
     {
       "expect": {
@@ -60,7 +65,10 @@
       }
     },
     {
-      "command": "table.header-row"
+      "command": {
+        "type": "setHeaderRow",
+        "value": true
+      }
     },
     {
       "expect": {
@@ -73,7 +81,10 @@
       }
     },
     {
-      "command": "table.header-row"
+      "command": {
+        "type": "setHeaderRow",
+        "value": false
+      }
     },
     {
       "expect": {

@@ -1,0 +1,12 @@
+$schema: '../../.moon/cache/schemas/project.json'
+language: rust
+tags: [engine]
+
+tasks:
+  # The native library the .NET SDK loads: target/release/twip.dll, libtwip.so or libtwip.dylib.
+  build:
+    command: cargo rustc -p twip-capi --release --crate-type cdylib
+    inputs: ['src/**/*', 'include/**/*', 'Cargo.toml', '/crates/twip/src/**/*', '/crates/twip/cpp/**/*', '/crates/twip/build.rs']
+  test:
+    command: cargo test -p twip-capi
+    inputs: ['src/**/*', 'tests/**/*', 'include/**/*', 'Cargo.toml', '/crates/twip/src/**/*']

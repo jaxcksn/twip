@@ -22,12 +22,6 @@ pub struct PlaceholderInfo {
     pub merge: bool,
 }
 
-impl PlaceholderInfo {
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({ "key": self.key, "label": self.label, "width": self.width, "height": self.height, "merge": self.merge })
-    }
-}
-
 impl Editor {
     /// The unfilled placeholder an inline picture shows, if it shows one.
     pub fn placeholder_of(&self, image: Option<usize>, w: f64, h: f64) -> Option<PlaceholderInfo> {
@@ -85,6 +79,7 @@ impl Editor {
         }
         match self.selected_placeholder() {
             Some(info) => {
+                self.events.push(super::input::Notice::Placeholder(info.key.clone()));
                 self.requests.push(Request::Placeholder(info));
                 true
             }

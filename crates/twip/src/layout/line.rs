@@ -626,6 +626,19 @@ fn fit_line(
                 continue;
             }
             Kind::Space | Kind::Anchor => {
+                // BREAK-4: after a character forced onto a line it overflows (wider than the line), a space doesn't
+                // hang (BREAK-2): it starts the next line, where spaces hang again.
+                // The character ends past the line, not just the spaces hanging after it.
+                let ink = (start..i).rev().find(|&j| pieces[j].kind != Kind::Space);
+                if p.kind == Kind::Space
+                    && ink.is_some_and(|j| pen - pieces[j + 1..i].iter().map(|q| q.width).sum::<f64>() > right + EPS)
+                    && squeeze.is_none()
+                    && pending.is_none()
+                    && limit_end.is_none()
+                    && !pieces[start..i].iter().any(|q| matches!(q.kind, Kind::Tab | Kind::ListNumber))
+                {
+                    return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
+                }
                 xs.push(pen);
                 ws.push(p.width);
                 pen += p.width;
@@ -1013,6 +1026,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let mut num_asc = 0.0f64;
     let mut has_content = false;
     let mut all_shifted = true;
+    let mut brk: Option<(f64, f64)> = None;
     for p in &pieces[line.start..line.end.min(pieces.len())] {
         match p.kind {
             Kind::Text | Kind::Object => {
@@ -1045,14 +1059,22 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 has_content = true;
                 num_asc = num_asc.max(p.ascent);
             }
+            Kind::LineBreak => brk = Some((p.ascent, p.descent)),
             // LINE-5: spaces and tabs don't raise a line.
             Kind::Space | Kind::Tab => {}
             _ => {}
         }
     }
+    // LINE-4: a line holding only a line break (or spaces before it) takes the break's font.
+    if !has_content && let Some((a, d)) = brk {
+        asc = a;
+        desc = d;
+        un_asc = a;
+        un_desc = d;
+    }
     // LINE-4, LINE-2, STYLE-5: an empty line (or only spaces), and a paragraph's last line holding only
     // superscript/subscript text, take the paragraph mark's font.
-    if (!has_content || (last && all_shifted))
+    else if (!has_content || (last && all_shifted))
         && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
     {
         let (a, d, e) = metrics(&f, mark.size);
@@ -1062,7 +1084,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         un_desc = un_desc.max(d);
     }
     let asc = asc.max(num_asc); // LIST-7: the number's ascent, not its descent
-    let un_asc = un_asc.max(num_asc);
+    // LIST-7: a line multiple scales the text's height, not a taller number's (a line holding only the number: its).
+    let un_asc = if un_asc > 0.0 { un_asc } else { num_asc };
     let (asc, desc) = (asc + em_up, desc + em_down);
     let h = asc + desc;
     line.ascent = asc;

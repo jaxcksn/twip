@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Twip.Core/Twip.Core.csproj" />
+  <Project Path="Twip.WinForms/Twip.WinForms.csproj" />
+  <Project Path="Twip.Tests/Twip.Tests.csproj" />
+  <Project Path="smoke/smoke.csproj" />
+</Solution>

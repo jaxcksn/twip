@@ -10,9 +10,10 @@ Twip is a DOCX layout, editing and rendering engine. It lays documents out the w
 line and page for page, and draws them with Skia. It is written in Rust and runs natively on Windows and Linux, and
 in the browser through WebAssembly.
 
-Twip is the engine under an editor, not the editor itself. It owns the document, the layout, the caret, selection,
-editing commands and undo, and it draws pages. Your application owns the window, the toolbar and everything else
-the user sees around the page.
+Twip is the engine under an editor, not the whole application. It owns the document, the layout, the caret and
+selection, editing commands and undo, input on the page and drawing; and it computes the models behind the chrome:
+the state for a toolbar, context menus, dialogs, find, spelling, rulers and review. Your application draws the
+toolbar, menus, dialogs and panes around the page from those models.
 
 :::note Pre-release
 
@@ -24,9 +25,10 @@ Twip is in its initial development phase (0.x). The API will change between mino
 
 | SDK | Package | For |
 |---|---|---|
+| Web | `@twip/web` on npm | Browsers and Node, through WebAssembly |
+| .NET | `Twip.Core` and `Twip.WinForms` on NuGet | Windows and Linux apps and services, Native AOT compatible |
 | Rust | [`twip`](https://crates.io/crates/twip) | Rust applications and services |
-| .NET | `Twip` on NuGet | Windows and Linux apps, Native AOT compatible |
-| Web | `@twip/web` on npm | Browsers, through WebAssembly |
 
-The .NET and web SDKs are generated from one binding definition, so they expose the same API with each language's
-naming. The Rust crate is the engine itself.
+Each SDK is written by hand for its language, and all of them follow one contract, the Rust crate's `twip::api`:
+the same commands, state, events and errors, with each language's naming. A shared suite of contract scripts runs
+against every SDK, so they behave the same.

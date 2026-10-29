@@ -102,7 +102,8 @@ pub fn run(a: &Path, b: &Path, features: Option<&BTreeSet<&'static str>>) -> Res
     let ib: BTreeMap<String, String> = index(b)?.into_iter().collect();
     let (mut exact, mut order, mut different, mut missing, mut skipped) = (0, 0, 0, 0, 0);
     for (source, name_a) in &ia {
-        let doc_features = std::fs::read(source).ok().and_then(|bytes| twip::docx::read(&bytes).ok()).map(|d| twip::features::of(&d));
+        let doc_features =
+            std::fs::read(source).ok().and_then(|bytes| twip::internal::docx::read(&bytes).ok()).map(|d| twip::internal::features::of(&d));
         if let Some(allowed) = features
             && !doc_features.as_ref().is_some_and(|f| f.is_subset(allowed))
         {

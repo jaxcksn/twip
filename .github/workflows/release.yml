@@ -96,7 +96,7 @@ jobs:
       # Skia links FreeType and Fontconfig.
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
-      - run: cargo build -p twip-native --release
+      - run: cargo rustc -p twip-capi --release --crate-type cdylib
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}
@@ -114,10 +114,6 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.sha || inputs.ref }}
           fetch-depth: 0 # moon compares with the base branch
-      # A prebuilt cargo-binstall: without it, moon setup compiles one (7 minutes) to fetch diplomat-tool.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-binstall
       - uses: moonrepo/setup-toolchain@v0
       - run: moon setup
       - run: pnpm install --frozen-lockfile
@@ -142,8 +138,10 @@ jobs:
         run: sh .github/stamp-version.sh "$VERSION"
         env:
           VERSION: ${{ inputs.version }}
-      - run: moon run twip-ffi:generate-dotnet
-      - run: dotnet pack bindings/dotnet/Twip -c Release -o out
+      # Twip.Core carries the native libraries; Twip.WinForms depends on it.
+      - run: |
+          dotnet pack bindings/dotnet/Twip.Core -c Release -o out
+          dotnet pack bindings/dotnet/Twip.WinForms -c Release -o out
       # Trusted publishing (OIDC): a key valid for an hour, so it's requested just before the push.
       - id: login
         uses: NuGet/login@v1
@@ -166,10 +164,6 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.sha || inputs.ref }}
           fetch-depth: 0 # moon compares with the base branch
-      # A prebuilt cargo-binstall: without it, moon setup compiles one (7 minutes) to fetch diplomat-tool.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-binstall
       - uses: moonrepo/setup-toolchain@v0
       - run: moon setup
       - run: pnpm install --frozen-lockfile
@@ -192,6 +186,8 @@ jobs:
         env:
           PROVENANCE: ${{ !github.event.repository.private && '--provenance' || '' }}
         run: |
+          # The package is dist/: the module, its types, the engine and the worker entry.
+          test -f dist/index.js && test -f dist/index.d.ts && test -f dist/worker.js
           version=$(node -p "require('./package.json').version")
           tag=$(echo "$version" | sed -nE 's/^[0-9.]+-([a-z]+).*/\1/p'); tag=${tag:-latest}
           pnpm publish --access public $PROVENANCE --no-git-checks --tag "$tag"

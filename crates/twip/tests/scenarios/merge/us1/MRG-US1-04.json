@@ -7,8 +7,8 @@
   ],
   "steps": [
     {
-      "command": "field.set",
-      "arg": {
+      "command": {
+        "type": "setField",
         "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT",
         "code": "MERGEFIELD Shipment.Shipment_Number \\* Lower"
       },
@@ -26,8 +26,8 @@
       }
     },
     {
-      "command": "field.set",
-      "arg": {
+      "command": {
+        "type": "setField",
         "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Lower",
         "display": "C-1"
       },
@@ -43,10 +43,14 @@
       }
     },
     {
-      "command": "home.undo"
+      "command": {
+        "type": "undo"
+      }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "changed": [

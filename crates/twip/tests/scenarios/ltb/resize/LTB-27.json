@@ -15,8 +15,13 @@
       }
     },
     {
-      "command": "table.row-height",
-      "arg": "92.46,exact"
+      "command": {
+        "type": "setRowHeight",
+        "value": {
+          "height": 92.46,
+          "rule": "exact"
+        }
+      }
     },
     {
       "expect": {

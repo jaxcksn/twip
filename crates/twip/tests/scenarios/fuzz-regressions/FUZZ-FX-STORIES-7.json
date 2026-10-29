@@ -15,8 +15,9 @@
       "type": "x"
     },
     {
-      "arg": null,
-      "command": "table.delete.row",
+      "command": {
+        "type": "deleteRows"
+      },
       "expect": {}
     },
     {

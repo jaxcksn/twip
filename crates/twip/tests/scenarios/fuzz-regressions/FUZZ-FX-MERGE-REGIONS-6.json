@@ -16,8 +16,10 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.insert-left",
+      "command": {
+        "type": "insertColumns",
+        "where": "left"
+      },
       "expect": {}
     },
     {
@@ -56,8 +58,9 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.delete.table",
+      "command": {
+        "type": "deleteTable"
+      },
       "expect": {}
     },
     {

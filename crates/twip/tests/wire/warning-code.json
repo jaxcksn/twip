@@ -1,0 +1,13 @@
+[
+  "unsupported-element",
+  "image-undecodable",
+  "font-unresolved",
+  "font-substituted",
+  "rewritten-content",
+  "pdf-font-fallback",
+  "revision-id-missing",
+  "range-unpaired",
+  "author-missing",
+  "comment-unanchored",
+  "comment-reference-orphan"
+]

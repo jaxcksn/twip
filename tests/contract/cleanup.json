@@ -1,0 +1,23 @@
+{
+  "name": "cleanup",
+  "fixture": "editor/FX-mixed-format.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "insertText", "value": "Edited " } },
+    { "op": "destroy" },
+    { "op": "destroy" },
+    { "op": "command", "command": { "type": "insertText", "value": "late" } },
+    { "op": "expectError", "code": "destroyed" },
+    { "op": "batch", "commands": [{ "type": "selectAll" }] },
+    { "op": "expectError", "code": "destroyed" },
+    { "op": "open" },
+    { "op": "expectError", "code": "destroyed" },
+    { "op": "export", "format": "docx" },
+    { "op": "expectError", "code": "destroyed" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Plain" }] },
+    { "op": "expectError", "code": "destroyed" },
+    { "op": "call", "method": "setReadOnly", "args": [true] },
+    { "op": "expectError", "code": "destroyed" },
+    { "op": "destroy" }
+  ]
+}

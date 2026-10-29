@@ -52,7 +52,9 @@
       }
     },
     {
-      "command": "home.undo"
+      "command": {
+        "type": "undo"
+      }
     },
     {
       "expect": {

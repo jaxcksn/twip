@@ -1,0 +1,92 @@
+{
+  "id": "E2E-OBJ-12",
+  "title": "A square-wrapped float dragged across its paragraph: after the release the text re-wraps into the place it left, and the text and paragraphs don't change",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "expect": {
+        "paragraphs": 16,
+        "floats": [
+          {
+            "anchor": 5,
+            "x": 0,
+            "y": 0,
+            "wrap": "square"
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 5,
+        "offset": 40
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "float": 0
+        },
+        "to": {
+          "float": 0,
+          "dx": 300
+        }
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {
+            "anchor": 5,
+            "x": 300,
+            "y": 0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "selection": {
+          "kind": "object",
+          "float": 0
+        },
+        "text": {
+          "5": {
+            "starts": "Square wrap. "
+          }
+        },
+        "paragraphs": 16,
+        "undo_depth": 1
+      }
+    },
+    {
+      "click": {
+        "float": 0,
+        "dx": -300
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5
+        }
+      }
+    }
+  ]
+}

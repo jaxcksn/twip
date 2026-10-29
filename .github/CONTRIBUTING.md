@@ -8,15 +8,16 @@ You need:
 
 - **Rust**: `rustup` installed. The repo pins the toolchain in `rust-toolchain.toml`; rustup picks it up on first build.
 - **Node 24+** and **pnpm** (`corepack enable`).
-- **.NET 10 SDK**: only for the .NET SDK.
-- **emsdk 6.0.8**: only for the WebAssembly build. `emcc` must be on `PATH` (see below). Use exactly 6.0.8: the
-  prebuilt browser Skia was built with it, and linking needs the same version.
+- **.NET 10 SDK**: for the .NET SDK and the docs' C# examples.
+- **emsdk 6.0.8**: for the WebAssembly build, which `web:test` and everything else in `bindings/web` needs. `emcc`
+  must be on `PATH` (see below). Use exactly 6.0.8: the prebuilt browser Skia was built with it, and linking needs
+  the same version.
 
 Then:
 
 ```sh
 pnpm install          # installs moon
-pnpm moon setup       # installs the pinned toolchains and diplomat-tool, and the commit-msg hook
+pnpm moon setup       # installs the pinned toolchains and the commit-msg hook
 ```
 
 The commit-msg hook runs [commitlint](https://commitlint.js.org) (the `commitlint` key in `package.json`) on every commit, so a
@@ -50,23 +51,52 @@ Check it with `emcc --version`.
 
 | Path | What |
 |---|---|
-| `crates/twip` | The engine: layout, editing, rendering. This is the Rust API. |
-| `crates/twip-ffi` | The binding surface, declared with [Diplomat](https://github.com/rust-diplomat/diplomat). |
-| `crates/twip-native` | Builds the bridge as a shared library for .NET. |
-| `crates/twip-wasm` | Builds the bridge as an emscripten module for the web. |
-| `bindings/dotnet` | .NET SDK. The C# in `generated/` comes from `twip-ffi`. |
-| `bindings/web` | TypeScript SDK. The JS in `generated/` comes from `twip-ffi`. |
+| `crates/twip` | The engine: layout, editing, rendering. `twip::api` is the contract every SDK follows. |
+| `crates/twip-capi` | The C ABI over `twip::api` (internal, `include/twip.h`): the native library `twip` the .NET SDK loads. |
+| `crates/twip-wasm` | Builds the C ABI as an emscripten module for the web, with `twip-host.js` for its callbacks. |
+| `bindings/web` | `@twip/web`, the TypeScript SDK, written by hand over the wasm module. |
+| `bindings/dotnet` | `Twip.Core` and `Twip.WinForms`, the .NET SDK, written by hand over the C ABI. |
+| `tests/contract` | The contract scripts every SDK runs (see its README). |
 | `packages/*` | Framework integrations (Angular, React). These version separately from the engine. |
-| `docs/rulebook` | The layout rules. Code cites them by id. |
+| `docs` | The docs site: the guides, their examples (`docs/examples`) and the API references. |
+| `docs/docs/rulebook` | The layout rules. Code cites them by id. |
 
-The SDKs are generated. Don't edit `bindings/*/generated`. Change `crates/twip-ffi/src/lib.rs` and regenerate.
+## The API and the SDKs
+
+`twip::api` (`crates/twip/src/api`) defines every operation, state field, event, error and warning. The SDKs are
+not generated: each is written by hand in its language, and each follows the contract. Three things hold them to it:
+
+- **Wire fixtures.** The api types serialize to the JSON the SDKs exchange with the engine. `crates/twip/tests/wire`
+  holds one fixture per type; both SDKs round-trip every one through their own types. After changing an api type,
+  run `cargo run -p twip --bin twip-tools -- wire-fixtures` and commit the fixtures.
+- **Contract scripts.** `tests/contract/*.json` are scripted scenarios (ordering, state, transactions, errors,
+  services, review, cleanup) that run against the Rust API, `@twip/web` headless and in a worker, and `Twip.Core`
+  unattached and attached; every runner must give the same results. A script in `tests/contract/pending.txt` waits
+  for its feature: runners fail when it passes, so remove it from the list in the change that makes it pass.
+  `python3 -I tests/contract/check.py` checks the scripts themselves: their steps, fixtures and command ids.
+- **Surface snapshots.** A change to an SDK's public surface must show in its snapshot:
+  `bindings/web/api/twip-web.api.md` (API Extractor; `pnpm exec api-extractor run --local` in `bindings/web`
+  updates it) and `bindings/dotnet/*/PublicAPI.Unshipped.txt` (the analyzer's code fix adds the entries). CI fails
+  on any difference.
+
+So a new command, for example, is a `Command` variant with its catalog entry and engine code, its wire fixture, a
+hand-written method in each SDK (`commands.ts`, `EditorCommands`), the two snapshots, and a contract script step.
+
+Every public member is documented, and the build enforces it: `twip::api` denies missing docs, the .NET packages
+fail on CS1591, and API Extractor fails on an undocumented export. The guides' examples live in `docs/examples` and
+are compiled in CI (`moon run docs:examples`), so a surface change that breaks a guide fails there.
 
 ## Common tasks
 
 ```sh
-cargo test --workspace            # engine tests
-pnpm moon run dotnet:test         # generate the .NET SDK, Native AOT publish, run the smoke test
-pnpm moon run web:test            # generate the TypeScript SDK, build the wasm module, run the smoke test
+cargo test --workspace            # the engine, the rust contract runner and the C ABI tests
+cargo run -p twip --bin twip-tools -- wire-fixtures --check   # the wire fixtures match the api types
+cargo run -p twip --example session                          # the Rust API end to end
+pnpm moon run web:test            # builds the wasm module (emsdk), then the unit, wire, contract and API report checks
+pnpm moon run web:browser-test    # a mounted editor in a real browser
+pnpm moon run dotnet:test         # builds twip-capi, then the wire, contract and Native AOT smoke tests
+pnpm moon run docs:examples       # the guides' TypeScript and C# examples
+pnpm moon run docs:dev            # the docs site, locally
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings
 ```
 

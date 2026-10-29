@@ -32,8 +32,9 @@
       }
     },
     {
-      "arg": null,
-      "command": "table.delete.table",
+      "command": {
+        "type": "deleteTable"
+      },
       "expect": {}
     },
     {

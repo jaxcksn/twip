@@ -65,6 +65,15 @@ pub enum Step {
     /// A comment's metadata and body replaced, or the comment added (`after` given, none with its id) or removed. Its
     /// range markers and reference are inlines, moved by `Text` steps; layout doesn't change.
     Comment { id: crate::docx::review::CommentId, after: Option<crate::docx::review::Comment> },
+    /// Fields' views in `para` replaced (a field update shows their results again). Fields not in it are left.
+    FieldViews { para: ParaId, views: Vec<(crate::docx::FieldId, crate::docx::FieldView)> },
+    /// An image added as image `index`, the next (`data` given), or the last one, `index`, taken out again.
+    AddImage { index: usize, data: Option<Vec<u8>> },
+    /// The numbering definitions lists resolve with replaced, and the lists added since reading (a new list). Layout
+    /// doesn't change until paragraphs use them.
+    Numbering { resolver: Option<Rc<crate::docx::resolve::Resolver>>, added: Vec<crate::docx::AddedList> },
+    /// The document's default tab spacing (`w:defaultTabStop`), points.
+    DefaultTab(f64),
 }
 
 /// What [`Step::TableProps`] replaces: the table's style and look, width, alignment and indent, and its borders as
@@ -114,6 +123,138 @@ impl Step {
             _ => 0,
         }
     }
+
+    /// Whether it can change layout: control properties, data parts, comments, images added and numbering
+    /// definitions don't (the steps that use them do).
+    pub fn lays_out(&self) -> bool {
+        !matches!(self, Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. } | Step::AddImage { .. } | Step::Numbering { .. })
+    }
+}
+
+/// What steps touched: what a transaction's change summary lists.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Targets {
+    pub paras: HashSet<ParaId>,
+    pub tables: HashSet<TableId>,
+    pub elements: HashSet<crate::docx::ElementId>,
+    pub revisions: HashSet<crate::docx::review::RevisionId>,
+    pub comments: HashSet<crate::docx::review::CommentId>,
+}
+
+impl Targets {
+    /// Adds what `s` names: what it changes in place, and the content it puts in.
+    pub fn add(&mut self, s: &Step) {
+        use crate::docx::ElementId;
+        match s {
+            Step::Text { para, with, .. } | Step::Restyle { para, inlines: with } => {
+                self.paras.insert(*para);
+                self.inlines(with);
+            }
+            Step::Split { para, second, .. } => {
+                self.paras.insert(*para);
+                self.para(second);
+            }
+            Step::Join { first, second } => self.paras.extend([*first, *second]),
+            Step::Blocks { container, with, .. } => {
+                if let Container::Cell { table, .. } = container {
+                    self.tables.insert(*table);
+                }
+                self.blocks(with);
+            }
+            Step::Rows { table, with, .. } => {
+                self.tables.insert(*table);
+                with.iter().flat_map(|r| r.cells.iter()).for_each(|c| self.blocks(&c.blocks));
+            }
+            Step::Para { para, style, mark, .. } => {
+                self.paras.insert(*para);
+                self.run(mark);
+                self.revisions.extend(style.change.as_ref().map(|c| c.mark.id));
+            }
+            Step::TableWidth { table, .. } | Step::TableProps { table, .. } => {
+                self.tables.insert(*table);
+            }
+            Step::HeaderPart { blocks: Some(b), .. } | Step::Note { blocks: Some(b), .. } => self.blocks(b),
+            Step::SectionPage { change: Some(c), .. } => {
+                self.revisions.insert(c.mark.id);
+            }
+            Step::Control { id, .. } => {
+                self.elements.insert(ElementId::Control(*id));
+            }
+            Step::Comment { id, .. } => {
+                self.comments.insert(*id);
+            }
+            Step::FieldViews { para, views } => {
+                self.paras.insert(*para);
+                self.elements.extend(views.iter().map(|(f, _)| ElementId::Field(*f)));
+            }
+            _ => {}
+        }
+    }
+
+    fn blocks(&mut self, v: &[Block]) {
+        for b in v {
+            match b {
+                Block::Para(p) => self.para(p),
+                Block::Table(t) => {
+                    self.tables.insert(TableId(t.id));
+                    self.elements.extend(t.controls.iter().map(|c| crate::docx::ElementId::Control(*c)));
+                    t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| self.blocks(&c.blocks));
+                }
+            }
+        }
+    }
+
+    fn para(&mut self, p: &Paragraph) {
+        self.paras.insert(ParaId(p.id));
+        self.run(&p.mark);
+        self.revisions.extend(p.style.change.as_ref().map(|c| c.mark.id));
+        self.elements.extend(p.controls.iter().map(|c| crate::docx::ElementId::Control(*c)));
+        self.inlines(&p.inlines);
+    }
+
+    fn inlines(&mut self, v: &[Inline]) {
+        use crate::docx::ElementId;
+        use crate::docx::review::{CommentId, RangeKind};
+        for i in v {
+            if let Some(r) = run_of(i) {
+                self.run(r);
+            }
+            match i {
+                Inline::FieldBegin { id, .. } => {
+                    self.elements.insert(ElementId::Field(*id));
+                }
+                Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. } => {
+                    self.elements.insert(ElementId::Control(*c));
+                }
+                Inline::CommentRef { id, .. } => {
+                    self.comments.insert(*id);
+                }
+                Inline::Range(r) if matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => {
+                    self.comments.insert(CommentId(r.id));
+                }
+                Inline::Float(f, _) => {
+                    if let Some(b) = &f.text_box {
+                        self.blocks(&b.blocks);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn run(&mut self, r: &Run) {
+        let rev = &r.rev;
+        self.revisions.extend(rev.ins.iter().chain(&rev.del).map(|m| m.id).chain(rev.fmt.as_ref().map(|f| f.mark.id)));
+    }
+
+    /// Adds what `other` touched.
+    pub fn extend(&mut self, other: Targets) {
+        self.paras.extend(other.paras);
+        self.tables.extend(other.tables);
+        self.elements.extend(other.elements);
+        self.revisions.extend(other.revisions);
+        self.comments.extend(other.comments);
+    }
 }
 
 impl TableProps {
@@ -128,6 +269,8 @@ pub enum StepError {
     Missing,
     /// The range or offset isn't inside its paragraph, container or table.
     OutOfRange,
+    /// The document is read only: edits are refused before they run, and no step reaches it.
+    ReadOnly,
 }
 
 /// What applying a step did: its exact inverse, how positions move, and layout's hint (`None`: layout compares).
@@ -628,6 +771,43 @@ impl Step {
                     None => doc.comments.by_id.remove(&id),
                 };
                 Ok(Applied { inverse: Step::Comment { id, after: before }, map: Map::Same, hint: None })
+            }
+            Step::FieldViews { para, views } => {
+                let p = idx.para_mut(doc, para).ok_or(StepError::Missing)?;
+                let mut old = Vec::with_capacity(views.len());
+                for (f, view) in views {
+                    for i in p.inlines.iter_mut() {
+                        if let Inline::FieldBegin { id, view: v, .. } = i
+                            && *id == f
+                        {
+                            old.push((f, std::mem::replace(v, view)));
+                        }
+                    }
+                }
+                Ok(Applied { inverse: Step::FieldViews { para, views: old }, map: Map::Same, hint: para_hint(idx, para, 0) })
+            }
+            Step::AddImage { index, data: Some(data) } => {
+                if index != doc.images.len() {
+                    return Err(StepError::OutOfRange);
+                }
+                doc.images.push(data);
+                Ok(Applied { inverse: Step::AddImage { index, data: None }, map: Map::Same, hint: None })
+            }
+            Step::AddImage { index, data: None } => {
+                if index + 1 != doc.images.len() {
+                    return Err(StepError::OutOfRange);
+                }
+                let data = doc.images.pop();
+                Ok(Applied { inverse: Step::AddImage { index, data }, map: Map::Same, hint: None })
+            }
+            Step::Numbering { resolver, added } => {
+                let resolver = std::mem::replace(&mut doc.resolver, resolver);
+                let added = std::mem::replace(&mut doc.added_lists, added);
+                Ok(Applied { inverse: Step::Numbering { resolver, added }, map: Map::Same, hint: None })
+            }
+            Step::DefaultTab(v) => {
+                let old = std::mem::replace(&mut doc.settings.default_tab, v);
+                Ok(Applied { inverse: Step::DefaultTab(old), map: Map::Same, hint: None })
             }
             Step::SectionPage { section, page, change } => {
                 let s = doc.sections.get_mut(section).ok_or(StepError::Missing)?;

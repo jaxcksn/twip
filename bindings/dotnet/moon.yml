@@ -3,15 +3,19 @@ id: dotnet
 language: csharp
 tags: [sdk]
 
-dependsOn: [twip-ffi, twip-native]
+dependsOn: [twip-capi]
 
 tasks:
   build:
-    command: dotnet build Twip -c Release
-    deps: [twip-ffi:generate-dotnet]
-    inputs: ['Twip/**/*', '/bindings/dotnet/generated/**/*']
-  # Native AOT publish of a console app that calls the engine: proves the bindings are trim and AOT safe.
+    command: dotnet build Twip.slnx -c Release -warnaserror
+    inputs: ['Twip.Core/**/*', 'Twip.WinForms/**/*', 'Twip.Tests/**/*', 'smoke/**/*', 'Twip.slnx']
+  # The wire round trips, the contract scripts (unattached and attached), then a Native AOT publish of a console app
+  # that drives the engine: it proves the SDK is trim and AOT safe.
   test:
-    script: dotnet publish smoke -c Release -o ../../target/smoke && ../../target/smoke/smoke
-    deps: [twip-ffi:generate-dotnet, twip-native:build]
-    inputs: ['Twip/**/*', 'smoke/**/*', '/bindings/dotnet/generated/**/*']
+    script: dotnet test Twip.Tests -c Release && dotnet publish smoke -c Release -o ../../target/smoke && ../../target/smoke/smoke
+    deps: [twip-capi:build]
+    inputs: ['Twip.Core/**/*', 'Twip.Tests/**/*', 'smoke/**/*', '/tests/contract/**/*', '/crates/twip/tests/wire/**/*']
+  contract:
+    command: dotnet test Twip.Tests -c Release --filter FullyQualifiedName~ContractTests
+    deps: [twip-capi:build]
+    inputs: ['Twip.Core/**/*', 'Twip.Tests/**/*', '/tests/contract/**/*']

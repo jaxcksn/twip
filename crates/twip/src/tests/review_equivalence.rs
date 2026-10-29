@@ -35,8 +35,8 @@ const DIFFERENT_EDITS: &[(&str, &str)] = &[
     ("E2E-EDIT-11", "Enter after deleted text at a cell's start"),
 ];
 
-fn command(r: &mut Run, id: &str, arg: &str) {
-    r.send(json!({ "type": "command", "id": id, "arg": arg }));
+fn command(r: &mut Run, op: Value) {
+    r.send(json!({ "type": "command", "command": op }));
 }
 
 /// The scenario's steps on its fixture, tracked or not; its own tracking switches are left out. `None` when a step
@@ -45,11 +45,11 @@ fn command(r: &mut Run, id: &str, arg: &str) {
 fn replay(s: &Value, tracked: bool) -> Option<Run> {
     let id = s["id"].as_str().unwrap_or("?");
     let mut r = Run::open(s["fixture"].as_str().unwrap_or(""), id);
-    command(&mut r, "review.track", if tracked { "on" } else { "off" });
-    command(&mut r, "review.author", "Setup Author");
+    command(&mut r, json!({ "type": "setTrackChanges", "value": tracked }));
+    r.send(json!({ "type": "author", "name": "Setup Author" }));
     let steps = s["steps"].as_array().cloned().unwrap_or_default();
     catch_unwind(AssertUnwindSafe(move || {
-        for step in steps.iter().filter(|st| st["command"] != "review.track") {
+        for step in steps.iter().filter(|st| st["command"]["type"] != "setTrackChanges") {
             r.step(step);
         }
         r
@@ -59,7 +59,7 @@ fn replay(s: &Value, tracked: bool) -> Option<Run> {
 
 /// The body after accepting or rejecting everything.
 fn resolved(r: &mut Run, accept: bool) -> Vec<Shape> {
-    command(r, if accept { "review.accept" } else { "review.reject" }, "all");
+    command(r, json!({ "type": if accept { "acceptAllRevisions" } else { "rejectAllRevisions" } }));
     body(r.e.document())
 }
 

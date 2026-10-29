@@ -1,0 +1,13 @@
+[
+  "mixed",
+  "Typing",
+  11.5,
+  "single",
+  "auto",
+  "center",
+  {
+    "rule": "atLeast",
+    "size": 12.5
+  },
+  null
+]

@@ -3,30 +3,271 @@
   "title": "Inserted, deleted and merged cells: a cell removed gives its columns to the cell before it; a merge rejected unmerges.",
   "fixture": "review/FX-REVIEW-CELLS.docx",
   "steps": [
-    {"expect": {"revisions": ["CellInsertion Author A", "CellDeletion Author B", "CellMerge Author A", "TableProperty Author C"], "tables": [{"cells": [3, 3, 3, 3]}]}},
-    {"command": "review.accept", "arg": 2},
-    {"expect": {"revisions": ["CellDeletion Author B", "CellMerge Author A", "TableProperty Author C"], "tables": [{"cells": [3, 3, 3, 3]}], "undo_depth": 1}},
-    {"command": "home.undo"},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellDeletion Author B", "CellMerge Author A", "TableProperty Author C"]}},
-    {"command": "review.reject", "arg": 2},
-    {"expect": {"revisions": ["CellDeletion Author B", "CellMerge Author A", "TableProperty Author C"], "tables": [{"cells": [2, 3, 3, 3]}], "undo_depth": 1}},
-    {"command": "home.undo"},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellDeletion Author B", "CellMerge Author A", "TableProperty Author C"]}},
-    {"command": "review.accept", "arg": 3},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellMerge Author A", "TableProperty Author C"], "tables": [{"cells": [3, 2, 3, 3]}], "undo_depth": 1}},
-    {"command": "home.undo"},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellDeletion Author B", "CellMerge Author A", "TableProperty Author C"]}},
-    {"command": "review.reject", "arg": 3},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellMerge Author A", "TableProperty Author C"], "tables": [{"cells": [3, 3, 3, 3]}], "undo_depth": 1}},
-    {"command": "home.undo"},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellDeletion Author B", "CellMerge Author A", "TableProperty Author C"]}},
-    {"command": "review.accept", "arg": 4},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellDeletion Author B", "TableProperty Author C"], "tables": [{"cells": [3, 3, 3, 3]}], "undo_depth": 1}},
-    {"command": "home.undo"},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellDeletion Author B", "CellMerge Author A", "TableProperty Author C"]}},
-    {"command": "review.reject", "arg": 4},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellDeletion Author B", "TableProperty Author C"], "tables": [{"cells": [3, 3, 3, 3]}], "undo_depth": 1}},
-    {"command": "home.undo"},
-    {"expect": {"revisions": ["CellInsertion Author A", "CellDeletion Author B", "CellMerge Author A", "TableProperty Author C"]}}
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellDeletion Author B",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "cells": [
+              3,
+              3,
+              3,
+              3
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "acceptRevision",
+        "value": "r2"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellDeletion Author B",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "cells": [
+              3,
+              3,
+              3,
+              3
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellDeletion Author B",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "rejectRevision",
+        "value": "r2"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellDeletion Author B",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "cells": [
+              2,
+              3,
+              3,
+              3
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellDeletion Author B",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "acceptRevision",
+        "value": "r3"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "cells": [
+              3,
+              2,
+              3,
+              3
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellDeletion Author B",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "rejectRevision",
+        "value": "r3"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "cells": [
+              3,
+              3,
+              3,
+              3
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellDeletion Author B",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "acceptRevision",
+        "value": "r4"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellDeletion Author B",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "cells": [
+              3,
+              3,
+              3,
+              3
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellDeletion Author B",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "rejectRevision",
+        "value": "r4"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellDeletion Author B",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "cells": [
+              3,
+              3,
+              3,
+              3
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "CellInsertion Author A",
+          "CellDeletion Author B",
+          "CellMerge Author A",
+          "TableProperty Author C"
+        ]
+      }
+    }
   ]
 }

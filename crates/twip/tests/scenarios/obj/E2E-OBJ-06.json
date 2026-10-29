@@ -1,0 +1,72 @@
+{
+  "id": "E2E-OBJ-06",
+  "title": "Dragging a float moves it by the drag, in one undo step",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "float": 1
+        },
+        "to": {
+          "float": 1,
+          "dx": 30,
+          "dy": 50
+        }
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 354.0,
+            "y": 57.2,
+            "w": 100.8,
+            "h": 72.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "selection": {
+          "kind": "object",
+          "float": 1
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 324.0,
+            "y": 7.2
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

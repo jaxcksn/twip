@@ -14,8 +14,8 @@
       }
     },
     {
-      "command": "field.insert",
-      "arg": {
+      "command": {
+        "type": "insertField",
         "code": "MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\""
       },
       "expect": {
@@ -33,7 +33,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "removed": 1
@@ -48,7 +50,9 @@
       }
     },
     {
-      "command": "home.redo",
+      "command": {
+        "type": "redo"
+      },
       "expect": {
         "elements": {
           "added": [

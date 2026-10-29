@@ -2,11 +2,64 @@
   "id": "MRG-US1-08",
   "title": "element.remove takes a control away with its content; control.remove with keep_content leaves its text; each is one undo step",
   "fixture": "FX-MERGE-CONTROLS.docx",
-  "methods": ["S"],
+  "methods": [
+    "S"
+  ],
   "steps": [
-    {"command": "control.remove", "arg": {"id": "$tag:Recipient/Name", "keep_content": true}, "expect": {"text": {"1": "Name: John Doe."}, "elements": {"removed": 1}, "undo_depth": 1}},
-    {"command": "element.remove", "arg": {"id": "$tag:Recipient/Address"}, "expect": {"text": {"2": "Address: ."}, "elements": {"removed": 1}, "undo_depth": 2}},
-    {"command": "home.undo", "expect": {"text": {"2": "Address: 1 Main St."}, "elements": {"added": 1}}},
-    {"command": "home.undo", "expect": {"elements": {"added": 1}, "undo_depth": 0}}
+    {
+      "command": {
+        "type": "removeControl",
+        "id": "$tag:Recipient/Name",
+        "keepContent": true
+      },
+      "expect": {
+        "text": {
+          "1": "Name: John Doe."
+        },
+        "elements": {
+          "removed": 1
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "removeElement",
+        "value": "$tag:Recipient/Address"
+      },
+      "expect": {
+        "text": {
+          "2": "Address: ."
+        },
+        "elements": {
+          "removed": 1
+        },
+        "undo_depth": 2
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      },
+      "expect": {
+        "text": {
+          "2": "Address: 1 Main St."
+        },
+        "elements": {
+          "added": 1
+        }
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      },
+      "expect": {
+        "elements": {
+          "added": 1
+        },
+        "undo_depth": 0
+      }
+    }
   ]
 }

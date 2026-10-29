@@ -3,19 +3,28 @@ id: web
 language: typescript
 tags: [sdk]
 
-dependsOn: [twip-ffi, twip-wasm]
+dependsOn: [twip-wasm]
 
 tasks:
+  # tsc to dist/ (ESM and .d.ts), plus the engine module copied beside it.
   build:
     command: node build.mjs
-    deps: [twip-ffi:generate-js, twip-wasm:build]
-    inputs: ['build.mjs', 'src/**/*', '/bindings/web/generated/**/*']
+    deps: [twip-wasm:build]
+    inputs: ['build.mjs', 'tsconfig.json', 'src/**/*']
     outputs: ['dist']
+  # The unit tests (the wire fixtures round trip, commands, events, services, fonts), the contract scripts, the Node
+  # smoke through the package's export, the tests' types (with every wire fixture checked against its public type,
+  # test/wire-types.ts) and the API report (api/twip-web.api.md; `pnpm exec api-extractor run --local` updates it
+  # after an intended change).
   test:
-    command: node smoke.mjs
+    script: node --test "test/*.test.ts" && node test/wire-types.ts && pnpm exec tsc --noEmit -p test && pnpm exec api-extractor run
     deps: [build]
-    inputs: ['smoke.mjs']
-  # Paints a document through WebGL 2 and WebGPU in a real browser (the installed Edge; PW_CHANNEL=chromium in CI).
+    inputs: ['test/**/*', 'api-extractor.json', 'api/**/*', '/crates/twip/tests/wire/**/*', '/tests/contract/**/*', '/crates/twip/tests/fixtures/**/*']
+  contract:
+    command: node --test test/contract.test.ts
+    deps: [build]
+    inputs: ['test/contract.test.ts', '/tests/contract/**/*', '/crates/twip/tests/fixtures/**/*']
+  # A mounted editor in a real browser (the installed Edge; PW_CHANNEL=chromium in CI).
   browser-test:
     command: pnpm exec playwright test
     deps: [build]

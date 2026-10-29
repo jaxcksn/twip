@@ -14,8 +14,8 @@
       }
     },
     {
-      "command": "field.insert",
-      "arg": {
+      "command": {
+        "type": "insertField",
         "code": "MERGEFIELD Cost_Amount"
       },
       "expect": {
@@ -31,8 +31,7 @@
       }
     },
     {
-      "command": "view.mode",
-      "arg": "design",
+      "mode": "design",
       "expect": {
         "mode": "design"
       }

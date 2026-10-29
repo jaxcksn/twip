@@ -56,10 +56,7 @@
       }
     },
     {
-      "key": "KeyY",
-      "mods": {
-        "ctrl": true
-      }
+      "key": "F4"
     },
     {
       "expect": {

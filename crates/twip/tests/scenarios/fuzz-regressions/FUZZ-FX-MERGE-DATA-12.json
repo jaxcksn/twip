@@ -24,11 +24,11 @@
       }
     },
     {
-      "arg": {
-        "display": "a b",
-        "id": "$code:MERGEFIELD Calc.Cost_Plus_Fee \\# \"$,0.00\""
+      "command": {
+        "type": "setField",
+        "id": "$code:MERGEFIELD Calc.Cost_Plus_Fee \\# \"$,0.00\"",
+        "display": "a b"
       },
-      "command": "field.set",
       "expect": {}
     },
     {
@@ -92,11 +92,11 @@
       "shift": false
     },
     {
-      "arg": {
-        "code": "MERGEFIELD Fuzz.S2",
-        "id": "$code:MERGEFIELD Calc.Cost_Plus_Fee \\# \"$,0.00\""
+      "command": {
+        "type": "setField",
+        "id": "$code:MERGEFIELD Calc.Cost_Plus_Fee \\# \"$,0.00\"",
+        "code": "MERGEFIELD Fuzz.S2"
       },
-      "command": "field.set",
       "expect": {}
     }
   ],

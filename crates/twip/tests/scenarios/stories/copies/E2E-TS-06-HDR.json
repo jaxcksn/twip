@@ -22,8 +22,11 @@
       }
     },
     {
-      "command": "insert.table",
-      "arg": "2,3"
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 3
+      }
     },
     {
       "expect": {
@@ -59,7 +62,9 @@
       }
     },
     {
-      "command": "table.delete.table"
+      "command": {
+        "type": "deleteTable"
+      }
     },
     {
       "expect": {

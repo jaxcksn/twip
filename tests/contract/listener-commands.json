@@ -1,0 +1,17 @@
+{
+  "name": "listener-commands",
+  "fixture": "editor/FX-mixed-format.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "listen", "type": "documentChanged", "command": { "type": "setBold", "value": true } },
+    { "op": "command", "command": { "type": "setItalic", "value": true } },
+    { "op": "expectEvents", "match": [
+      { "type": "documentChanged", "origin": "api", "revision": 2 },
+      { "type": "documentChanged", "origin": "api", "revision": 3 }
+    ] },
+    { "op": "expectState", "match": { "revision": 3, "formatting": { "italic": true, "bold": true } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "revision": 4, "formatting": { "italic": true, "bold": "mixed" } } }
+  ]
+}

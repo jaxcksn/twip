@@ -45,11 +45,11 @@
       "shift": false
     },
     {
-      "arg": {
-        "kind": "plain_text",
+      "command": {
+        "type": "insertControl",
+        "kind": "plainText",
         "tag": "Fuzz/C4"
       },
-      "command": "control.insert",
       "expect": {}
     },
     {

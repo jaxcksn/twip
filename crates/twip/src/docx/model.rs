@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::props::{Border, FramePr, Jc, Leader, LineRule, Look, Tab, TabKind, VertAlign, Width};
+use super::props::{Border, FramePr, Jc, Leader, LineRule, Look, Tab, TabKind, TablePos, VertAlign, Width};
 use super::review::{
     CellRevisions, CommentId, Comments, GridChange, IdCounter, ParaChange, People, Protection, RangeMark, ReviewView, RowRevisions, RunRevisions,
     SectionChange, TableChange,
@@ -165,6 +165,9 @@ pub enum FieldKind {
     StyleRef(String),
     Date,
     If,
+    /// A code whose first word can be neither a field name nor a bookmark (`"http://…"` left by a merge): Word shows
+    /// nothing.
+    Invalid,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -579,7 +582,8 @@ pub struct Table {
     pub look: Option<Look>,
     /// `w:tblStyleRowBandSize` and `w:tblStyleColBandSize` (table style banding, STYLE-4).
     pub bands: (i64, i64),
-    pub floating: bool,
+    /// `w:tblpPr`: placed at its anchor when it starts a column; text doesn't wrap beside it (TABLE-49).
+    pub floating: Option<TablePos>,
     pub grid: Vec<f64>,
     pub rows: Vec<Row>,
     /// The `w:tbl` element's byte range in [`Source::xml`] (editable reads only).

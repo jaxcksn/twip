@@ -24,10 +24,7 @@
       }
     },
     {
-      "command": "element.select",
-      "arg": {
-        "id": "$code:MERGEFIELD Recipient.Last_Name"
-      }
+      "select_element": "$code:MERGEFIELD Recipient.Last_Name"
     },
     {
       "clipboard": "copy"
@@ -49,7 +46,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "removed": 1
@@ -63,7 +62,9 @@
       }
     },
     {
-      "command": "table.delete.row",
+      "command": {
+        "type": "deleteRows"
+      },
       "expect": {
         "elements": {
           "removed": 1
@@ -71,7 +72,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "added": [

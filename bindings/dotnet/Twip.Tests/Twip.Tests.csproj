@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- On Windows the tests also drive the WinForms control. -->
+    <TargetFramework Condition="$([MSBuild]::IsOSPlatform('Windows'))">net10.0-windows</TargetFramework>
+    <UseWindowsForms Condition="$([MSBuild]::IsOSPlatform('Windows'))">true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <TwipNative Condition="$([MSBuild]::IsOSPlatform('Windows'))">twip.dll</TwipNative>
+    <TwipNative Condition="$([MSBuild]::IsOSPlatform('Linux'))">libtwip.so</TwipNative>
+    <TwipNative Condition="$([MSBuild]::IsOSPlatform('OSX'))">libtwip.dylib</TwipNative>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Twip.Core/Twip.Core.csproj" />
+    <ProjectReference Include="../Twip.WinForms/Twip.WinForms.csproj" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+    <Compile Remove="WinForms*.cs" Condition="!$([MSBuild]::IsOSPlatform('Windows'))" />
+    <!-- The engine, when it has been built (a release cargo build of twip-capi); the tests skip without it. -->
+    <None Include="../../../target/release/$(TwipNative)" Condition="Exists('../../../target/release/$(TwipNative)')" CopyToOutputDirectory="PreserveNewest" Link="$(TwipNative)" />
+  </ItemGroup>
+</Project>

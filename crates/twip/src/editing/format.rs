@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::docx::props::{Jc, RunProps};
+use crate::docx::props::RunProps;
 use crate::docx::resolve::Resolver;
 use crate::docx::styles::Region;
 use crate::docx::write::props::{Cx, Props};
@@ -32,14 +32,15 @@ pub enum Toggle {
 }
 
 impl Toggle {
-    pub(super) fn on(self, r: &RunStyle) -> bool {
+    /// The undo label of setting it.
+    fn label(self) -> &'static str {
         match self {
-            Toggle::Bold => r.bold,
-            Toggle::Italic => r.italic,
-            Toggle::Underline => r.underline.is_some(),
-            Toggle::Strike => r.strike,
-            Toggle::Subscript => r.vert_align == crate::docx::props::VertAlign::Subscript,
-            Toggle::Superscript => r.vert_align == crate::docx::props::VertAlign::Superscript,
+            Toggle::Bold => "Bold",
+            Toggle::Italic => "Italic",
+            Toggle::Underline => "Underline",
+            Toggle::Strike => "Strikethrough",
+            Toggle::Subscript => "Subscript",
+            Toggle::Superscript => "Superscript",
         }
     }
 
@@ -264,19 +265,6 @@ impl Editor {
         v
     }
 
-    /// Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+=, Ctrl+Shift+=, Strikethrough: on for the whole selection unless all of it
-    /// already has it; at a collapsed caret, by the caret's run.
-    pub(super) fn toggle(&mut self, t: Toggle, fonts: &Fonts) -> Outcome {
-        let on = if self.selection.is_collapsed() {
-            let Some(run) = self.caret().and_then(|c| self.run_at(&c)) else { return Outcome::Unchanged("no caret") };
-            !t.on(&run)
-        } else {
-            let ranges: Vec<_> = self.selected_ranges().into_iter().filter(|r| r.1 < r.2).collect();
-            !ranges.iter().all(|&r| self.runs_in(r).iter().all(|run| t.on(run)))
-        };
-        self.format_runs("Font", &|p, w, _| t.set(p, w, on), fonts)
-    }
-
     /// What is inserted next has the caret's formatting patched by `edit`.
     pub(super) fn pending_props(&mut self, edit: &dyn Fn(&mut Props, &str)) {
         let Some(res) = self.doc.resolver.clone() else { return };
@@ -403,22 +391,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Ctrl+L/E/R/J: the selected paragraphs' alignment; to left when they all already have it (Ctrl+E, Ctrl+J and
-    /// Ctrl+R toggle).
-    pub(super) fn align(&mut self, jc: Jc, fonts: &Fonts) -> Outcome {
-        let paras = self.selected_paras();
-        let all = paras.iter().all(|&p| self.index.para(&self.doc, p).is_some_and(|q| q.style.jc == jc));
-        let target = if all && jc != Jc::Left { Jc::Left } else { jc };
-        let val = match target {
-            Jc::Center => "center",
-            Jc::Right => "right",
-            Jc::Both => "both",
-            Jc::Distribute => "distribute",
-            Jc::Left => "left",
-        };
-        self.format_paras("Paragraph Formatting", &|pr, cx, _| pr.set("jc", format!("<{w}jc {w}val=\"{val}\"/>", w = cx.w)), fonts)
-    }
-
     /// A paragraph formatting command: `edit` patches each selected paragraph's direct properties (it sees the
     /// paragraph as it is); paragraphs it leaves resolving the same are untouched.
     pub(super) fn format_paras(&mut self, label: &'static str, edit: &dyn Fn(&mut Props, &Cx, &crate::docx::Paragraph), fonts: &Fonts) -> Outcome {
@@ -450,6 +422,7 @@ impl Editor {
     pub(super) fn format(&mut self, f: &Format, fonts: &Fonts) -> Outcome {
         let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
         match f {
+            &Format::Set(t, on) => self.format_runs(t.label(), &|p, w, _| t.set(p, w, on), fonts),
             Format::FontSize(pt) => {
                 let hp = ((pt * 2.0).round() as i64).max(2);
                 self.format_runs(
@@ -509,29 +482,6 @@ impl Editor {
                 // shortcut: only the runs are cleared; the paragraph isn't reset to Normal.
                 self.format_runs("Clear Formatting", &|p, _, _| *p = Props::parse(None, "rPr", &Cx::of_xml(NEW_ROOT)), fonts)
             }
-            Format::LineSpacing(m) => {
-                let line = ((m * 240.0).round() as i64).to_string();
-                self.format_paras(
-                    "Line Spacing",
-                    &|p, cx, _| p.attrs("spacing", &[("line", Some(line.clone())), ("lineRule", Some("auto".into()))], cx),
-                    fonts,
-                )
-            }
-            Format::SpaceBefore => {
-                // Add Space Before (12 pt), or Remove it when the first paragraph has some.
-                let has = self.selected_paras().first().and_then(|&p| self.index.para(&self.doc, p)).is_some_and(|p| p.style.space_before > 0.0);
-                let v = if has { "0" } else { "240" };
-                self.format_paras(
-                    "Paragraph Spacing",
-                    &|p, cx, _| p.attrs("spacing", &[("before", Some(v.into())), ("beforeAutospacing", None)], cx),
-                    fonts,
-                )
-            }
-            Format::RemoveSpaceAfter => self.format_paras(
-                "Paragraph Spacing",
-                &|p, cx, _| p.attrs("spacing", &[("after", Some("0".into())), ("afterAutospacing", None)], cx),
-                fonts,
-            ),
             Format::Indent(more) => {
                 // Increase / Decrease Indent: the left indent by half an inch, not below zero.
                 let more = *more;
@@ -540,110 +490,6 @@ impl Editor {
                     &|p, cx, q| {
                         let left = if more { q.style.ind_left + 36.0 } else { (q.style.ind_left - 36.0).max(0.0) };
                         p.attrs("ind", &[("left", Some(twips(left))), ("start", None)], cx)
-                    },
-                    fonts,
-                )
-            }
-            Format::KeepWithNext => {
-                let on = !self.selected_paras().first().and_then(|&p| self.index.para(&self.doc, p)).is_some_and(|p| p.style.keep_next);
-                self.format_paras(
-                    "Keep With Next",
-                    &|p, cx, _| {
-                        p.set("keepNext", if on { format!("<{w}keepNext/>", w = cx.w) } else { format!("<{w}keepNext {w}val=\"0\"/>", w = cx.w) })
-                    },
-                    fonts,
-                )
-            }
-            Format::Font(v) => {
-                let v = v.clone();
-                self.format_runs(
-                    "Font",
-                    &|p, w, _| {
-                        let flag = |p: &mut Props, name: &str, on: bool| {
-                            p.set(name, if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") })
-                        };
-                        if !v.font.is_empty() {
-                            let n = crate::docx::write::props::esc(&v.font);
-                            p.set("rFonts", format!("<{w}rFonts {w}ascii=\"{n}\" {w}hAnsi=\"{n}\" {w}eastAsia=\"{n}\" {w}cs=\"{n}\"/>"));
-                        }
-                        if let Some(sz) = v.size.filter(|s| (1.0..=1638.0).contains(s)) {
-                            let hp = (sz * 2.0).round() as i64;
-                            p.set("sz", format!("<{w}sz {w}val=\"{hp}\"/>"));
-                            p.set("szCs", format!("<{w}szCs {w}val=\"{hp}\"/>"));
-                        }
-                        flag(p, "b", v.bold);
-                        p.remove("bCs");
-                        flag(p, "i", v.italic);
-                        p.remove("iCs");
-                        p.set("u", format!("<{w}u {w}val=\"{}\"/>", crate::docx::write::props::esc(&v.underline)));
-                        flag(p, "strike", v.strike);
-                        flag(p, "dstrike", v.dstrike);
-                        let vert = match v.vert {
-                            crate::docx::props::VertAlign::Superscript => "superscript",
-                            crate::docx::props::VertAlign::Subscript => "subscript",
-                            crate::docx::props::VertAlign::Baseline => "baseline",
-                        };
-                        p.set("vertAlign", format!("<{w}vertAlign {w}val=\"{vert}\"/>"));
-                        flag(p, "smallCaps", v.small_caps);
-                        flag(p, "caps", v.caps);
-                        if v.hidden {
-                            p.set("vanish", format!("<{w}vanish/>"))
-                        } else {
-                            p.remove("vanish")
-                        }
-                        if v.spacing == 0.0 {
-                            p.remove("spacing")
-                        } else {
-                            p.set("spacing", format!("<{w}spacing {w}val=\"{}\"/>", (v.spacing * 20.0).round() as i64))
-                        }
-                        if v.position == 0.0 {
-                            p.remove("position")
-                        } else {
-                            p.set("position", format!("<{w}position {w}val=\"{}\"/>", (v.position * 2.0).round() as i64))
-                        }
-                    },
-                    fonts,
-                )
-            }
-            Format::Paragraph(v) => {
-                let v = v.clone();
-                let jc = match v.jc {
-                    Jc::Center => "center",
-                    Jc::Right => "right",
-                    Jc::Both => "both",
-                    Jc::Distribute => "distribute",
-                    Jc::Left => "left",
-                };
-                let (rule, line) = match v.line_rule {
-                    crate::docx::props::LineRule::Auto => ("auto", ((v.line * 240.0).round() as i64).to_string()),
-                    crate::docx::props::LineRule::AtLeast => ("atLeast", twips(v.line)),
-                    crate::docx::props::LineRule::Exact => ("exact", twips(v.line)),
-                };
-                self.format_paras(
-                    "Paragraph Formatting",
-                    &|p, cx, _| {
-                        let w = &cx.w;
-                        p.set("jc", format!("<{w}jc {w}val=\"{jc}\"/>"));
-                        let first = if v.first > 0.0 {
-                            format!(" {w}firstLine=\"{}\"", twips(v.first))
-                        } else if v.first < 0.0 {
-                            format!(" {w}hanging=\"{}\"", twips(-v.first))
-                        } else {
-                            String::new()
-                        };
-                        p.set("ind", format!("<{w}ind {w}left=\"{}\" {w}right=\"{}\"{first}/>", twips(v.left), twips(v.right)));
-                        p.set(
-                            "spacing",
-                            format!(
-                                "<{w}spacing {w}before=\"{}\" {w}after=\"{}\" {w}line=\"{line}\" {w}lineRule=\"{rule}\"/>",
-                                twips(v.before),
-                                twips(v.after)
-                            ),
-                        );
-                        for (name, on) in [("keepNext", v.keep_next), ("keepLines", v.keep_lines), ("pageBreakBefore", v.page_break_before)] {
-                            if on { p.set(name, format!("<{w}{name}/>")) } else { p.remove(name) }
-                        }
-                        p.set("widowControl", if v.widow { format!("<{w}widowControl/>") } else { format!("<{w}widowControl {w}val=\"0\"/>") });
                     },
                     fonts,
                 )
@@ -690,6 +536,8 @@ impl Editor {
 /// The formatting commands of [`Editor::format`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Format {
+    /// A toggle property set on or off over the selection (a setter: the value is given, not flipped).
+    Set(Toggle, bool),
     FontSize(f64),
     /// Grow Font (true) or Shrink Font (false): the next size in the font size list.
     GrowFont(bool),
@@ -699,60 +547,11 @@ pub enum Format {
     Highlight(Option<String>),
     FontFamily(String),
     ClearFormatting,
-    /// Line spacing as a multiple of single.
-    LineSpacing(f64),
-    SpaceBefore,
-    RemoveSpaceAfter,
     /// Increase (true) or Decrease Indent.
     Indent(bool),
-    KeepWithNext,
     ParaStyle(String),
-    /// The Font dialog: every value set.
-    Font(FontValues),
-    /// The Paragraph dialog: every value set.
-    Paragraph(ParaValues),
     /// Borders on the selected paragraphs: `box`, `bottom` or `none` (a ½ pt single line).
     ParaBorders(String),
     /// Paragraph shading (RGB), or none.
     ParaShading(Option<u32>),
-}
-
-/// The Font dialog's values.
-#[derive(Clone, Debug, PartialEq)]
-pub struct FontValues {
-    /// Empty: the fonts stay.
-    pub font: String,
-    pub size: Option<f64>,
-    pub bold: bool,
-    pub italic: bool,
-    /// `w:u` value (`none`, `single`, `double`, …).
-    pub underline: String,
-    pub strike: bool,
-    pub dstrike: bool,
-    pub vert: crate::docx::props::VertAlign,
-    pub small_caps: bool,
-    pub caps: bool,
-    pub hidden: bool,
-    /// Character spacing and raised position, points.
-    pub spacing: f64,
-    pub position: f64,
-}
-
-/// The Paragraph dialog's values (lengths in points).
-#[derive(Clone, Debug, PartialEq)]
-pub struct ParaValues {
-    pub jc: Jc,
-    pub left: f64,
-    pub right: f64,
-    /// + first line, − hanging.
-    pub first: f64,
-    pub before: f64,
-    pub after: f64,
-    pub line_rule: crate::docx::props::LineRule,
-    /// Auto: lines; exact and at least: points.
-    pub line: f64,
-    pub keep_next: bool,
-    pub keep_lines: bool,
-    pub page_break_before: bool,
-    pub widow: bool,
 }

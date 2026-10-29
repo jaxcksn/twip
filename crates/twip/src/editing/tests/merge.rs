@@ -53,7 +53,7 @@ fn change_lists_follow_edits_undo_and_redo() {
     let mut seq = 0;
     let r = send(&mut e, &mut seq, json!({ "type": "key", "code": "End", "mods": { "ctrl": true } }));
     assert!(r.get("elements").is_none(), "moving changes no element");
-    let r = send(&mut e, &mut seq, json!({ "type": "command", "id": "insert.page-number.page" }));
+    let r = send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "insertPageNumber", "format": "page"}}));
     let added = r["elements"]["added"].as_array().cloned().unwrap_or_default();
     assert_eq!(added.len(), 1, "{r}");
     let id = added[0]["id"].clone();
@@ -75,7 +75,7 @@ fn a_keystroke_costs_the_same_whatever_the_document() {
         let p = ids[para_with_fields.min(ids.len() - 1)];
         e.track_work = 0;
         let mut seq = 0;
-        send(&mut e, &mut seq, json!({ "type": "command", "id": "edit.select-range", "arg": format!("{},0,0", p.0) }));
+        send(&mut e, &mut seq, json!({ "type": "select", "para": p.0, "start": 0, "end": 0 }));
         send(&mut e, &mut seq, json!({ "type": "text", "text": "x" }));
         e.track_work
     }
@@ -317,7 +317,7 @@ fn a_selection_partly_over_a_field_takes_it_whole() {
     let mut e = open("FX-MERGE-FIELDS.docx");
     let id = super::texts_ids(&e)[2];
     let mut seq = 0;
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "edit.select-range", "arg": format!("{},4,30", id.0) }));
+    send(&mut e, &mut seq, json!({ "type": "select", "para": id.0, "start": 4, "end": 30 }));
     assert_eq!(e.selection().focus().and_then(|p| p.para_offset()).map(|(_, u)| u.0), Some(90), "the field's end");
     send(&mut e, &mut seq, json!({ "type": "text", "text": "X" }));
     assert_eq!(super::texts(&e)[2], "ShipX issued.");
@@ -330,16 +330,16 @@ fn design_mode_labels_empty_fields() {
     let mut e = open("FX-TEXT.docx");
     let mut seq = 0;
     let id = super::texts_ids(&e)[1];
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "edit.select-range", "arg": format!("{},6,6", id.0) }));
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "field.insert", "arg": { "code": "MERGEFIELD Cost_Amount" } }));
+    send(&mut e, &mut seq, json!({ "type": "select", "para": id.0, "start": 6, "end": 6 }));
+    send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "insertField", "code": "MERGEFIELD Cost_Amount"}}));
     let drawn = |e: &mut Editor| {
         e.complete(fonts());
         crate::layout::dump::page_text(&e.snapshot(), e.document())
     };
     assert!(!drawn(&mut e).contains("Cost_Amount"), "no label while editing");
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "view.mode", "arg": "design" }));
+    send(&mut e, &mut seq, json!({"type": "mode", "mode": "design"}));
     assert!(drawn(&mut e).contains("\u{ab}Cost_Amount\u{bb}"), "the first estimate in design mode");
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "field.labels", "arg": { "labels": { "MERGEFIELD Cost_Amount": "Cost amount" } } }));
+    send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "setFieldLabels", "labels": {"MERGEFIELD Cost_Amount": "Cost amount"}}}));
     assert!(drawn(&mut e).contains("Cost amount"), "the host's label");
     let saved = crate::docx::write::save(e.document()).unwrap();
     let mut xml = String::new();
@@ -350,9 +350,9 @@ fn design_mode_labels_empty_fields() {
     .unwrap();
     assert!(!xml.contains("Cost amount") && !xml.contains("\u{ab}Cost_Amount"), "labels aren't saved");
     // Undo in design mode, then leave it: no label comes back with the field.
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "home.undo" }));
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "view.mode", "arg": "editing" }));
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "home.redo" }));
+    send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "undo"}}));
+    send(&mut e, &mut seq, json!({"type": "mode", "mode": "editing"}));
+    send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "redo"}}));
     assert!(!drawn(&mut e).contains("Cost"), "no label after leaving design mode");
 }
 
@@ -364,13 +364,13 @@ fn regions_save_and_read_back() {
     let mut seq = 0;
     let ids = super::texts_ids(&e);
     // T2's three rows, and the two paragraphs between the tables after it.
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "edit.select-range", "arg": format!("{},0,0", ids[13].0) }));
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "table.select.table" }));
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "region.wrap", "arg": { "tag": "Rows" } }));
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "edit.select-range", "arg": format!("{},0,0", ids[40].0) }));
+    send(&mut e, &mut seq, json!({ "type": "select", "para": ids[13].0, "start": 0, "end": 0 }));
+    send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "select", "value": "table"}}));
+    send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "wrapInRepeatingSection", "tag": "Rows"}}));
+    send(&mut e, &mut seq, json!({ "type": "select", "para": ids[40].0, "start": 0, "end": 0 }));
     send(&mut e, &mut seq, json!({ "type": "key", "code": "ArrowDown", "mods": { "shift": true } }));
     send(&mut e, &mut seq, json!({ "type": "key", "code": "End", "mods": { "shift": true } }));
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "region.wrap", "arg": { "tag": "Paras" } }));
+    send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "wrapInRepeatingSection", "tag": "Paras"}}));
     let kinds = |e: &mut Editor, seq: &mut u64| -> Vec<(String, String)> {
         elements(e, seq, json!({})).iter().filter(|x| x["kind"] != "field").map(|x| (x["kind"].to_string(), x["tag"].to_string())).collect()
     };
@@ -391,7 +391,7 @@ fn checkbox_tags_and_floats_survive_control_edits() {
     let mut seq = 0;
     let mut e = open("FX-MERGE-CONTROLS.docx");
     let check = elements(&mut e, &mut seq, json!({ "kind": "checkbox" }))[0]["id"].clone();
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "control.set", "arg": { "id": check, "tag": "Check:Renamed" } }));
+    send(&mut e, &mut seq, json!({ "type": "command", "command": { "type": "setControl", "id": check, "tag": "Check:Renamed" } }));
     let saved = crate::docx::write::save(e.document()).unwrap();
     let mut again = Editor::open(&saved, fonts()).unwrap();
     let tags: Vec<Value> = elements(&mut again, &mut seq, json!({ "kind": "checkbox" })).iter().map(|c| c["tag"].clone()).collect();
@@ -411,7 +411,7 @@ fn checkbox_tags_and_floats_survive_control_edits() {
     let before = floats(&e);
     assert!(before > 0);
     send(&mut e, &mut seq, json!({ "type": "key", "code": "Home", "mods": { "ctrl": true } }));
-    send(&mut e, &mut seq, json!({ "type": "command", "id": "control.insert", "arg": { "kind": "plain_text", "tag": "New" } }));
+    send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "insertControl", "kind": "plainText", "tag": "New"}}));
     let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
     assert_eq!(floats(&again), before);
 }

@@ -46,35 +46,6 @@ impl RichText {
         RichText { paragraphs }
     }
 
-    /// Rich text from a host: `{"paragraphs": [{"runs": [{"text", "bold", "italic", "underline", "strike",
-    /// "link"}]}]}` (flags absent are off), or a string as plain text. `None` when it is neither.
-    pub fn from_json(v: &serde_json::Value) -> Option<RichText> {
-        if let Some(t) = v.as_str() {
-            return Some(RichText::plain(t));
-        }
-        let flag = |r: &serde_json::Value, k: &str| r.get(k).and_then(serde_json::Value::as_bool).unwrap_or(false);
-        let paragraphs = v
-            .get("paragraphs")?
-            .as_array()?
-            .iter()
-            .map(|p| {
-                let runs = p.get("runs").and_then(serde_json::Value::as_array).into_iter().flatten();
-                let runs = runs
-                    .map(|r| RichRun {
-                        text: r.get("text").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
-                        bold: flag(r, "bold"),
-                        italic: flag(r, "italic"),
-                        underline: flag(r, "underline"),
-                        strike: flag(r, "strike"),
-                        link: r.get("link").and_then(serde_json::Value::as_str).map(str::to_string),
-                    })
-                    .collect();
-                RichParagraph { runs }
-            })
-            .collect();
-        Some(RichText { paragraphs })
-    }
-
     /// The text, paragraphs separated by newlines.
     pub fn to_plain(&self) -> String {
         self.paragraphs.iter().map(|p| p.runs.iter().map(|r| r.text.as_str()).collect::<String>()).collect::<Vec<_>>().join("\n")

@@ -8,8 +8,7 @@
   ],
   "steps": [
     {
-      "command": "view.drop",
-      "arg": {
+      "drop": {
         "para": 3,
         "offset": 2
       },
@@ -20,15 +19,15 @@
       }
     },
     {
-      "command": "field.insert",
-      "arg": {
-        "code": "MERGEFIELD Case.Number",
-        "target": {
-          "at": {
-            "para": 3,
-            "offset": 2
-          }
-        }
+      "click": {
+        "para": 3,
+        "offset": 2
+      }
+    },
+    {
+      "command": {
+        "type": "insertField",
+        "code": "MERGEFIELD Case.Number"
       },
       "expect": {
         "elements": {
@@ -43,30 +42,25 @@
       }
     },
     {
-      "command": "view.drop",
-      "arg": null
+      "drop": null
     },
     {
-      "command": "home.undo"
+      "command": {
+        "type": "undo"
+      }
     },
     {
-      "command": "field.insert",
-      "arg": {
-        "code": "MERGEFIELD Case.Number",
-        "target": {
-          "at": {
-            "para": 3,
-            "offset": 2,
-            "page": 1
-          }
-        }
+      "drop": {
+        "para": 3,
+        "offset": 2,
+        "page": 1
       },
       "expect": {
-        "answer": {
-          "error": "locked"
-        },
         "undo_depth": 0
       }
+    },
+    {
+      "drop": null
     }
   ]
 }

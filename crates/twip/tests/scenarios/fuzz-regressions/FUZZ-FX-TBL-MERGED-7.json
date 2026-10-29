@@ -15,16 +15,17 @@
       }
     },
     {
-      "arg": null,
-      "command": "table.delete.table",
+      "command": {
+        "type": "deleteTable"
+      },
       "expect": {}
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertControl",
         "kind": "checkbox",
         "tag": "Fuzz/C4"
       },
-      "command": "control.insert",
       "expect": {}
     },
     {
@@ -36,10 +37,10 @@
       }
     },
     {
-      "arg": {
-        "id": "$tag:Fuzz/C4"
+      "command": {
+        "type": "removeElement",
+        "value": "$tag:Fuzz/C4"
       },
-      "command": "element.remove",
       "expect": {}
     }
   ],

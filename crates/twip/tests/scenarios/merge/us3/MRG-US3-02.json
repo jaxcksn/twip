@@ -21,8 +21,9 @@
       "shift": true
     },
     {
-      "command": "region.wrap",
-      "arg": {},
+      "command": {
+        "type": "wrapInRepeatingSection"
+      },
       "expect": {
         "answer": {
           "error": "partial paragraph"
@@ -44,8 +45,9 @@
       "shift": true
     },
     {
-      "command": "region.wrap",
-      "arg": {},
+      "command": {
+        "type": "wrapInRepeatingSection"
+      },
       "expect": {
         "answer": {
           "error": "two tables"
@@ -67,8 +69,8 @@
       "shift": true
     },
     {
-      "command": "region.wrap",
-      "arg": {
+      "command": {
+        "type": "wrapInRepeatingSection",
         "tag": "Rows"
       },
       "expect": {
@@ -89,8 +91,9 @@
       "shift": true
     },
     {
-      "command": "region.wrap",
-      "arg": {},
+      "command": {
+        "type": "wrapInRepeatingSection"
+      },
       "expect": {
         "answer": {
           "error": "region boundary"

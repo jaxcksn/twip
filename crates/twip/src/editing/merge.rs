@@ -1,9 +1,15 @@
-//! Merge commands: fields and content controls the host inserts, changes and
-//! removes, the external drop caret, and the `hit` query. Arguments are JSON; a refusal is the reply's
-//! `answer.error`, a short fixed reason, and changes nothing.
+//! Merge-designer operations: fields and content controls the application inserts, changes and removes, data parts,
+//! element marks and looks, the external drop caret, and the `hit` query. Arguments arrive typed; a refusal is an
+//! error naming why, and changes nothing.
 
-use serde_json::{Value, json};
-
+use crate::api::command::{
+    CommandResult, DataPartRef, ElementClass, ElementField, FieldLabels, FieldResults, FillControl, InsertControl, InsertField, MarkElements,
+    PlaceholderLook as LookArg, PlaceholderLooks, PlaceholderMatch, RepeatingSection, ReplaceInElements, SetCheckbox, SetControl, SetField,
+    Severity as SeverityArg, WriteDataPart,
+};
+use crate::api::error::Error;
+use crate::api::review::Body;
+use crate::api::value::{ControlKind as KindArg, ControlLock, ControlOptions, DataBinding};
 use crate::docx::{Block, Control, ControlId, ControlKind, ControlProps, ElementId, FieldId, FieldView, Inline, Lock};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -16,8 +22,8 @@ use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::Step;
 
-/// A refusal's reason.
-type Refused = String;
+/// A refusal: what the document doesn't allow here, or an argument naming nothing that exists.
+type Refused = Error;
 
 /// How the host has a control drawn: a box with a fill (ARGB), label and icon, or an image.
 #[derive(Clone, Debug, PartialEq)]
@@ -40,7 +46,6 @@ pub(super) struct Looks {
     by_tag: Vec<(TagMatch, Look)>,
     default: Option<Look>,
 }
-
 impl Looks {
     fn find(&self, id: ElementId, tag: Option<&str>) -> Option<&Look> {
         if let Some(l) = self.by_element.get(&id) {
@@ -98,16 +103,29 @@ fn units_before(inlines: &[Inline], k: usize) -> u32 {
     inlines[..k].iter().map(|i| i.units() as u32).sum()
 }
 
+/// An argument naming nothing usable.
 fn bad(name: &str) -> Refused {
-    format!("bad estimate: {name}")
+    Error::invalid(format!("bad {name}"))
 }
 
-fn text_arg<'a>(arg: &'a Value, name: &str) -> Result<Option<&'a str>, Refused> {
-    match arg.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(s)) => Ok(Some(s)),
-        Some(_) => Err(bad(name)),
-    }
+/// An element id that names no element.
+fn no_element() -> Refused {
+    Error::invalid("no such element")
+}
+
+/// What a lock, or the place, doesn't allow.
+fn locked() -> Refused {
+    Error::unavailable("locked")
+}
+
+/// What the selection's shape doesn't allow (part of a paragraph, two tables, a region's edge).
+fn shape(why: &str) -> Refused {
+    Error::unavailable(why)
+}
+
+/// The result of a refusable operation, as the command's outcome.
+pub(super) fn outcome(r: Result<Outcome, Refused>) -> Outcome {
+    r.unwrap_or_else(Outcome::Refused)
 }
 
 /// A field code as Word stores it: one space on each side.
@@ -115,64 +133,52 @@ fn padded(code: &str) -> String {
     format!(" {} ", code.trim())
 }
 
-fn lock_of(v: &Value) -> Result<Lock, Refused> {
-    match v.as_str() {
-        Some("none") => Ok(Lock::None),
-        Some("control") => Ok(Lock::ControlLocked),
-        Some("content") => Ok(Lock::ContentLocked),
-        Some("both") => Ok(Lock::Both),
-        _ => Err(bad("lock")),
+fn lock_of(l: ControlLock) -> Lock {
+    match l {
+        ControlLock::None => Lock::None,
+        ControlLock::Control => Lock::ControlLocked,
+        ControlLock::Content => Lock::ContentLocked,
+        ControlLock::Both => Lock::Both,
     }
 }
 
-impl Editor {
-    /// Runs merge command `id` with its JSON argument; a refusal is answered with its reason.
-    pub(super) fn merge_command(&mut self, id: &str, arg: &Value, fonts: &Fonts) -> Outcome {
-        let r = match id {
-            "field.insert" => self.field_insert(arg, fonts),
-            "field.set" => self.field_set(arg, fonts),
-            "element.remove" => self.element_remove(arg, false, fonts),
-            "control.insert" => self.control_insert(arg, fonts),
-            "control.set" => self.control_set(arg, fonts),
-            "control.remove" => self.element_remove(arg, arg.get("keep_content").and_then(Value::as_bool).unwrap_or(false), fonts),
-            "view.drop" => self.view_drop(arg, fonts),
-            "field.labels" => self.field_labels(arg),
-            "element.mark" => self.element_mark(arg),
-            "element.select" => self.element_select(arg, fonts),
-            "element.replace" => self.element_replace(arg, fonts),
-            "region.wrap" => self.region_wrap(arg, fonts),
-            "control.fill" => self.control_fill(arg, fonts),
-            "data.write" => self.data_write(arg, fonts),
-            "view.field-codes" => self.field_codes(arg),
-            "field.new" => self.field_new(fonts),
-            "field.update" => self.field_update(arg),
-            "field.results" => self.field_results(arg, fonts),
-            "field.lock" => self.field_lock(arg, true, fonts),
-            "field.unlock" => self.field_lock(arg, false, fonts),
-            "field.unlink" => self.field_unlink(arg, fonts),
-            "data.remove" => self.data_remove(arg, fonts),
-            "view.looks" => self.view_looks(arg),
-            _ => Err("unknown command".to_string()),
-        };
-        match r {
-            Ok((out, answer)) => {
-                if answer.is_some() {
-                    self.answer = answer;
-                }
-                out
-            }
-            Err(e) => {
-                self.answer = Some(json!({ "error": e }));
-                Outcome::Unchanged("refused")
-            }
-        }
+/// The plain text of a body (formatted results come with the keep-source fragment paste).
+fn plain(b: &Body) -> String {
+    match b {
+        Body::Text(t) => t.clone(),
+        Body::Rich(r) => r.paragraphs.iter().map(|p| p.runs.iter().map(|r| r.text.as_str()).collect::<String>()).collect::<Vec<_>>().join("\n"),
     }
+}
 
-    /// The element `arg.id` names, and where it is.
-    fn element_arg(&self, arg: &Value) -> Result<(ElementId, Where), Refused> {
-        let id = arg.get("id").and_then(Value::as_str).ok_or_else(|| bad("id"))?;
-        let e = elements::parse_id(id).ok_or_else(|| bad("id"))?;
-        let w = self.locate(e).ok_or("no such element")?;
+/// `w:dataBinding` for a binding, in the document's `w` prefix.
+fn binding_xml(b: &DataBinding, w: &str) -> String {
+    let esc = crate::docx::write::props::esc;
+    let mut x = format!("<{w}dataBinding");
+    if let Some(p) = &b.prefix_mappings {
+        x.push_str(&format!(" {w}prefixMappings=\"{}\"", esc(p)));
+    }
+    x.push_str(&format!(" {w}xpath=\"{}\"", esc(&b.xpath)));
+    if let Some(i) = &b.store_item_id {
+        x.push_str(&format!(" {w}storeItemID=\"{}\"", esc(i)));
+    }
+    x + "/>"
+}
+
+/// The element an id names, as the document knows it.
+fn element_id(id: &crate::api::value::ElementId) -> Result<ElementId, Refused> {
+    elements::parse_id(&id.0).ok_or_else(no_element)
+}
+
+/// The API's id of an element.
+pub(crate) fn api_id(e: ElementId) -> crate::api::value::ElementId {
+    crate::api::value::ElementId(elements::id_str(e))
+}
+
+impl Editor {
+    /// The element `id` names, and where it is.
+    pub(super) fn element(&self, id: &crate::api::value::ElementId) -> Result<(ElementId, Where), Refused> {
+        let e = element_id(id)?;
+        let w = self.locate(e).ok_or_else(no_element)?;
         Ok((e, w))
     }
 
@@ -228,49 +234,28 @@ impl Editor {
         }
     }
 
-    /// Puts the selection where `arg.target` says: `"caret"` (or none) keeps it; `{ id }`
-    /// is the caret right after that element; `{ at: { x, y, page? } }` is the caret at a hit-tested point. Refuses
-    /// a place whose content can't be edited.
-    fn target(&mut self, arg: &Value, fonts: &Fonts) -> Result<(), Refused> {
-        match arg.get("target") {
-            None | Some(Value::Null) => {}
-            Some(Value::String(s)) if s == "caret" => {}
-            Some(t) if t.get("id").is_some() => {
-                let (_, w) = self.element_arg(t)?;
-                let p = match w {
-                    Where::Inline { story, para, end, .. } => Position::text(story, para, end),
-                    Where::Sym { story, para, at } => Position::text(story, para, Unit(at.0 + 1)),
-                    Where::Blocks { .. } | Where::Rows { .. } => return Err(bad("target")),
-                };
-                self.selection = Selection::Caret(p);
-            }
-            Some(t) if t.get("at").is_some() => {
-                let (p, repeat) = self.hit_at(&t["at"], fonts).ok_or_else(|| bad("target"))?;
-                if repeat {
-                    return Err("locked".into());
-                }
-                self.selection = Selection::Caret(p);
-            }
-            Some(_) => return Err(bad("target")),
-        }
+    /// Refuses a selection whose content can't be edited (inside a control whose content is locked).
+    fn editable_target(&self) -> Result<(), Refused> {
         match self.selection.focus() {
-            Some(p) if !self.editable(&p) => Err("locked".into()),
+            Some(p) if !self.editable(&p) => Err(locked()),
             Some(_) => Ok(()),
             // A cell block (rows for a region): no text place to check.
             None if matches!(self.selection, Selection::Cells { .. }) => Ok(()),
-            None => Err(bad("target")),
+            None => Err(Error::unavailable("no place to insert")),
         }
     }
 
-    /// The text position at a document point (`{ x, y, page? }`: page coordinates when `page` is given), and whether
-    /// it is in a repeated header row's copy.
-    fn hit_at(&mut self, at: &Value, fonts: &Fonts) -> Option<(Position, bool)> {
-        let (x, y) = (at.get("x")?.as_f64()?, at.get("y")?.as_f64()?);
-        let (x, y) = match at.get("page").and_then(Value::as_u64) {
-            Some(page) => self.stack().to_doc(page as usize, x, y)?,
-            None => (x, y),
-        };
-        self.hit_full(x, y, fonts)
+    /// The text position at a document point, the innermost element there, and whether it can be edited (not a
+    /// repeated header row's copy, nor in a locked control). Lays out the page; the selection doesn't move.
+    pub fn hit_test(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(Position, Option<ElementId>, bool)> {
+        let (p, repeat) = self.hit_full(x, y, fonts)?;
+        let element = elements::context(&self.doc, &self.index, &Selection::Caret(p)).first().map(|(e, _)| *e);
+        Some((p, element, !repeat && self.editable(&p)))
+    }
+
+    /// The external drop caret at a document point, where text can go in; none away from one. View only.
+    pub fn set_drop(&mut self, at: Option<(f64, f64)>, fonts: &Fonts) {
+        self.drop = at.and_then(|(x, y)| self.hit_test(x, y, fonts)).filter(|h| h.2).map(|h| h.0);
     }
 
     /// Whether text can go in at `p`: not inside a control whose content is locked (at its end marker is outside it).
@@ -282,15 +267,6 @@ impl Editor {
             }
             matches!(self.locate(*e), Some(Where::Inline { para, end, .. }) if p.para_offset() == Some((para, end)))
         })
-    }
-
-    /// The `hit` query: the position at a point, the innermost element there, and whether it can be edited.
-    /// The selection doesn't move.
-    pub(super) fn hit_query(&mut self, args: &Value, fonts: &Fonts) -> Value {
-        let Some((p, repeat)) = self.hit_at(args, fonts) else { return json!({ "error": "bad estimate: x" }) };
-        let Some((para, offset)) = p.para_offset() else { return json!({ "error": "bad estimate: x" }) };
-        let element = elements::context(&self.doc, &self.index, &Selection::Caret(p)).first().map(|(e, _)| elements::id_str(*e));
-        json!({ "position": { "para": para.0, "offset": offset.0 }, "element": element, "editable": !repeat && self.editable(&p) })
     }
 
     /// Where an element's content runs, as a text range: a field begin to end, an inline control between its
@@ -316,24 +292,27 @@ impl Editor {
         }
     }
 
-    /// `element.mark`: marks on elements, drawn with their severity and message; `clear` takes the others
-    /// away first. View only.
-    fn element_mark(&mut self, arg: &Value) -> Result<(Outcome, Option<Value>), Refused> {
+    /// Marks on elements, drawn with their severity and message; `clear` takes the others away first. View only.
+    pub(super) fn mark_elements(&mut self, m: MarkElements) -> Outcome {
         let mut new = Vec::new();
-        for m in arg.get("marks").and_then(Value::as_array).into_iter().flatten() {
-            let id = m.get("id").and_then(Value::as_str).and_then(elements::parse_id).ok_or_else(|| bad("marks"))?;
+        for mark in m.marks {
+            let Ok(id) = element_id(&mark.id) else { return Outcome::Refused(no_element()) };
             if self.index.element(id).is_none() {
-                return Err("no such element".into());
+                return Outcome::Refused(no_element());
             }
-            let severity = m.get("severity").and_then(Value::as_str).and_then(super::view::Severity::parse).ok_or_else(|| bad("severity"))?;
-            new.push(Mark { id, severity, message: m.get("message").and_then(Value::as_str).unwrap_or("").to_string() });
+            let severity = match mark.severity {
+                SeverityArg::Error => super::view::Severity::Error,
+                SeverityArg::Warning => super::view::Severity::Warning,
+                SeverityArg::Info => super::view::Severity::Info,
+            };
+            new.push(Mark { id, severity, message: mark.message });
         }
-        if arg.get("clear").and_then(Value::as_bool).unwrap_or(false) {
+        if m.clear.unwrap_or(false) {
             self.marks.clear();
         }
         self.marks.retain(|m| !new.iter().any(|n| n.id == m.id));
         self.marks.extend(new);
-        Ok((Outcome::Moved, None))
+        Outcome::Moved
     }
 
     /// The marks on `pages`, and the tooltip of the one under the pointer. Marks whose element is gone are dropped.
@@ -365,11 +344,25 @@ impl Editor {
         (out, tip)
     }
 
-    /// `element.select`: the element selected (a header's or footer's entered for it), shown unless
-    /// `reveal` is false.
-    fn element_select(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let (_, w) = self.element_arg(arg)?;
-        let (a, b) = self.element_range(&w).ok_or("no such element")?;
+    /// The tooltip under the pointer, on its page only: a mark's message, else a link's address.
+    pub fn hover_tooltip(&mut self) -> Option<(crate::api::services::TooltipKind, super::view::Tooltip)> {
+        use crate::api::services::TooltipKind;
+        let (x, y) = self.hover?;
+        let (page, hx, hy) = self.stack().page_at(x, y)?;
+        if let (_, Some(t)) = self.mark_views(page..page + 1) {
+            return Some((TooltipKind::Mark, t));
+        }
+        let link = self.hit_laid_out(x, y).and_then(|p| self.link_at(p))?;
+        let (a, b) = self.locate(ElementId::Field(link.field)).and_then(|w| self.element_range(&w))?;
+        let rect =
+            self.range_rects(a, b, page..page + 1).into_iter().map(|(_, r)| r).find(|r| r[0] <= hx && hx <= r[2] && r[1] <= hy && hy <= r[3])?;
+        Some((TooltipKind::Link, super::view::Tooltip { text: link.address, page, rect }))
+    }
+
+    /// Element `id` selected (a header's or footer's entered for it), and shown unless `reveal` is false.
+    pub fn select_element(&mut self, id: &crate::api::value::ElementId, reveal: bool, fonts: &Fonts) -> Outcome {
+        let Ok((_, w)) = self.element(id) else { return Outcome::Refused(no_element()) };
+        let Some((a, b)) = self.element_range(&w) else { return Outcome::Refused(no_element()) };
         match &w {
             Where::Rows { table, range } => {
                 use super::selection::{CellRef, CellShape};
@@ -382,52 +375,42 @@ impl Editor {
             }
             _ => self.set_selection(Selection::range(a, b, super::selection::Granularity::Char)),
         }
-        if arg.get("reveal").and_then(Value::as_bool).unwrap_or(true) {
+        if reveal {
             self.ensure(&b, fonts);
             self.scroll_to_caret(fonts);
         }
-        Ok((Outcome::Moved, None))
+        Outcome::Moved
     }
 
     /// `element.replace`: every occurrence of plain text `find` (case-sensitive) in the codes, tags or
     /// aliases of the elements (`kind`, `ids` narrow them) becomes `replace`, the text around it kept; one step, and
     /// none when nothing matched. Answer: `{ changed }`, the elements changed.
-    fn element_replace(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let find = text_arg(arg, "find")?.filter(|f| !f.is_empty()).ok_or_else(|| bad("find"))?.to_string();
-        let replace = text_arg(arg, "replace")?.ok_or_else(|| bad("replace"))?.to_string();
-        let within = text_arg(arg, "in")?.unwrap_or("code");
-        if !matches!(within, "code" | "tag" | "alias") {
-            return Err(bad("in"));
-        }
-        let kind = text_arg(arg, "kind")?;
-        if kind.is_some_and(|k| !matches!(k, "field" | "control")) {
-            return Err(bad("kind"));
-        }
-        let ids: Option<Vec<ElementId>> = match arg.get("ids") {
-            None | Some(Value::Null) => None,
-            Some(v) => Some(
-                v.as_array()
-                    .ok_or_else(|| bad("ids"))?
-                    .iter()
-                    .map(|x| x.as_str().and_then(elements::parse_id).ok_or_else(|| bad("ids")))
-                    .collect::<Result<_, _>>()?,
-            ),
+    pub(super) fn replace_in_elements(&mut self, r: ReplaceInElements, fonts: &Fonts) -> Outcome {
+        let (find, replace) = (r.find, r.replace);
+        let ids: Option<Vec<ElementId>> = match r.ids {
+            None => None,
+            Some(v) => match v.iter().map(element_id).collect::<Result<_, _>>() {
+                Ok(ids) => Some(ids),
+                Err(e) => return Outcome::Refused(e),
+            },
         };
+        let kind = r.kind;
         let all = elements::enumerate(&self.doc, &self.index, &elements::Filter::default());
-        let wanted =
-            |e: &elements::Element| ids.as_ref().is_none_or(|v| v.contains(&e.id)) && kind.is_none_or(|k| (k == "field") == e.props.is_none());
+        let wanted = |e: &elements::Element| {
+            ids.as_ref().is_none_or(|v| v.contains(&e.id)) && kind.is_none_or(|k| (k == ElementClass::Field) == e.props.is_none())
+        };
         let mut tx = self.begin("Replace");
         let mut changed = 0usize;
         for e in all.iter().filter(|e| wanted(e)) {
-            match (e.id, within) {
-                (ElementId::Field(f), "code") => {
+            match (e.id, r.field) {
+                (ElementId::Field(f), ElementField::Code) => {
                     if e.code.as_deref().is_some_and(|c| c.contains(&find)) && self.replace_in_code(&mut tx, f, &find, &replace) {
                         changed += 1;
                     }
                 }
-                (ElementId::Control(c), "tag" | "alias") => {
+                (ElementId::Control(c), ElementField::Tag | ElementField::Title) => {
                     let Some(mut control) = self.doc.controls.get(&c).cloned() else { continue };
-                    let slot = if within == "tag" { &mut control.props.tag } else { &mut control.props.alias };
+                    let slot = if r.field == ElementField::Tag { &mut control.props.tag } else { &mut control.props.alias };
                     let Some(v) = slot.as_ref().filter(|v| v.contains(&find)) else { continue };
                     *slot = Some(v.replace(&find, &replace));
                     if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_ok() {
@@ -437,13 +420,13 @@ impl Editor {
                 _ => {}
             }
         }
-        let answer = Some(json!({ "changed": changed }));
+        self.made = Some(CommandResult::Changed { changed: changed as u32 });
         if changed == 0 {
             self.abort(tx);
-            return Ok((Outcome::Unchanged("nothing matched"), answer));
+            return Outcome::Unchanged("nothing matched");
         }
         self.follow(&tx);
-        Ok((self.commit(tx, None, fonts), answer))
+        self.commit(tx, None, fonts)
     }
 
     /// Replaces `find` in field `f`'s own code text (the fields nested in it untouched), text inline by text inline;
@@ -498,17 +481,16 @@ impl Editor {
     /// `region.wrap`: whole rows of one table, or whole paragraphs (with the tables between them), in a
     /// new repeating section with one item per row, or one item over the paragraphs. A selection with part of a
     /// paragraph, rows of two tables, or one side of another control's edge is refused with its reason.
-    fn region_wrap(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        self.target(arg, fonts)?;
-        let section = ControlProps {
-            kind: ControlKind::RepeatingSection,
-            tag: text_arg(arg, "tag")?.map(str::to_string),
-            alias: text_arg(arg, "alias")?.map(str::to_string),
-            ..Default::default()
-        };
+    pub(super) fn wrap_in_repeating_section(&mut self, r: RepeatingSection, fonts: &Fonts) -> Outcome {
+        outcome(self.region_wrap(r, fonts))
+    }
+
+    fn region_wrap(&mut self, r: RepeatingSection, fonts: &Fonts) -> Result<Outcome, Refused> {
+        self.editable_target()?;
+        let section = ControlProps { kind: ControlKind::RepeatingSection, tag: r.tag, alias: r.title, ..Default::default() };
         let item = || Control::new(ControlProps { kind: ControlKind::RepeatingItem, ..Default::default() });
         let s = ControlId::next();
-        let answer = Some(json!({ "id": elements::id_str(ElementId::Control(s)) }));
+        let made = CommandResult::Element { id: api_id(ElementId::Control(s)) };
         // Where the new controls go in a member's list: after those around the whole selection, before the rest. A
         // control holding part of the selection and more besides crosses its edge.
         fn place(lists: &[&Vec<ControlId>], outside: &[&Vec<ControlId>]) -> Result<Vec<usize>, Refused> {
@@ -516,14 +498,14 @@ impl Editor {
             let all = |x: &ControlId| lists.iter().all(|l| l.contains(x));
             // A control part of the selection holds, with members outside it too, crosses its edge.
             if lists.iter().flat_map(|l| l.iter()).any(|x| !all(x) && outside.iter().any(|l| l.contains(x))) {
-                return Err("region boundary".into());
+                return Err(shape("region boundary"));
             }
             for l in lists {
                 let mut k = 0;
                 for (i, x) in l.iter().enumerate() {
                     if all(x) {
                         if i != k {
-                            return Err("region boundary".into());
+                            return Err(shape("region boundary"));
                         }
                         k += 1;
                     }
@@ -543,7 +525,7 @@ impl Editor {
             let k = ca.iter().zip(&cb).take_while(|(x, y)| x.table == y.table && x.row == y.row && x.cell == y.cell).count();
             match (ca.get(k), cb.get(k)) {
                 (Some(x), Some(y)) if x.table == y.table => Ok(Some((x.table, x.row.min(y.row), x.row.max(y.row)))),
-                (Some(_), Some(_)) => Err("two tables".into()),
+                (Some(_), Some(_)) => Err(shape("two tables")),
                 (None, None) => Ok(None),
                 // One end in a table the other isn't in: whole blocks, if the ends are paragraph edges.
                 _ => Ok(None),
@@ -552,7 +534,7 @@ impl Editor {
         let mut tx = self.begin("Insert Repeating Section");
         let r = rows(self)?;
         if let Some((table, r0, r1)) = r {
-            let t = self.index.table(&self.doc, table).ok_or("no such element")?;
+            let t = self.index.table(&self.doc, table).ok_or_else(no_element)?;
             let lists: Vec<&Vec<ControlId>> = t.rows[r0..=r1].iter().map(|r| &r.controls).collect();
             let outside: Vec<&Vec<ControlId>> = t.rows.iter().enumerate().filter(|(k, _)| *k < r0 || *k > r1).map(|(_, r)| &r.controls).collect();
             let at = place(&lists, &outside)?;
@@ -568,7 +550,8 @@ impl Editor {
                 return Err(bad("target"));
             }
             tx.stale_tables.push(table);
-            return Ok((self.commit(tx, None, fonts), answer));
+            self.made = Some(made);
+            return Ok(self.commit(tx, None, fonts));
         }
         // Whole paragraphs (and the tables between them) of one container.
         let (a, b) = self.selection.ordered(&self.index).ok_or_else(|| bad("target"))?;
@@ -584,7 +567,7 @@ impl Editor {
         let (sa, sb) = (top(self, &a).ok_or_else(|| bad("target"))?, top(self, &b).ok_or_else(|| bad("target"))?);
         if sa.container != sb.container {
             self.abort(tx);
-            return Err("partial paragraph".into());
+            return Err(shape("partial paragraph"));
         }
         let edge = |e: &Editor, p: &Position, start: bool| match p.para_offset() {
             Some((para, u)) if e.index.para_slot(para).is_some_and(|s| s.container == sa.container) => {
@@ -598,7 +581,7 @@ impl Editor {
         };
         if !edge(self, &a, true) || !edge(self, &b, false) {
             self.abort(tx);
-            return Err("partial paragraph".into());
+            return Err(shape("partial paragraph"));
         }
         // A range ending at the start of a later paragraph leaves that paragraph out.
         let last = match b.para_offset() {
@@ -607,7 +590,7 @@ impl Editor {
             }
             _ => sb.block,
         };
-        let blocks = self.index.blocks(&self.doc, sa.container).ok_or("no such element")?;
+        let blocks = self.index.blocks(&self.doc, sa.container).ok_or_else(no_element)?;
         let lists: Vec<&Vec<ControlId>> = blocks[sa.block..=last]
             .iter()
             .map(|b| match b {
@@ -637,7 +620,8 @@ impl Editor {
             self.abort(tx);
             return Err(bad("target"));
         }
-        Ok((self.commit(tx, None, fonts), answer))
+        self.made = Some(made);
+        Ok(self.commit(tx, None, fonts))
     }
 
     /// The repeating regions design mode shows on `pages`: those around the selection and the one under the
@@ -738,63 +722,49 @@ impl Editor {
             p == page && r[0] <= px && px <= r[2] && r[1] <= py && py <= r[3]
         });
         let Some(g) = hit else { return false };
-        self.element_select(&json!({ "id": g.id, "reveal": false }), fonts).is_ok()
+        self.select_element(&crate::api::value::ElementId(g.id), false, fonts) == Outcome::Moved
     }
 
-    /// The `structure` query for one element: a region's rows as a table of just those rows, or a block
-    /// control's blocks.
-    pub(super) fn structure_query(&mut self, args: &Value) -> Value {
-        let depth = args.get("depth").and_then(Value::as_u64).unwrap_or(8) as usize;
-        let Ok((_, w)) = self.element_arg(args) else { return json!({ "error": "no such element" }) };
-        match w {
-            Where::Rows { table, range } => {
-                let Some(t) = self.index.table(&self.doc, table) else { return json!({ "error": "no such element" }) };
-                let mut t = t.clone();
-                t.rows = t.rows[range].to_vec();
-                elements::structure(&[Block::Table(t)], depth)
-            }
-            Where::Blocks { container, range } => match self.index.blocks(&self.doc, container) {
-                Some(b) => elements::structure(&b[range], depth),
-                None => json!({ "error": "no such element" }),
-            },
-            _ => json!({ "error": "bad estimate: id" }),
-        }
-    }
-
-    /// `view.looks`: looks by element, tag, tag prefix or default; `merge` adds to those set. View only.
-    fn view_looks(&mut self, arg: &Value) -> Result<(Outcome, Option<Value>), Refused> {
+    /// How unfilled placeholders look: content controls by element, tag, tag prefix or default, and unfilled
+    /// picture placeholders by key (their tag) or default. `merge` adds to those set. View only.
+    pub(super) fn set_placeholder_looks(&mut self, l: PlaceholderLooks) -> Outcome {
         let mut new = Looks::default();
-        for entry in arg.get("looks").and_then(Value::as_array).ok_or_else(|| bad("looks"))? {
-            let l = &entry["look"];
-            let look = if let Some(img) = l.get("image").and_then(Value::as_str) {
-                let bytes = super::commands::base64(img).filter(|b| crate::docx::image::image_type(b).is_some()).ok_or_else(|| bad("image"))?;
-                Look::Image(std::rc::Rc::new(bytes))
-            } else {
-                let fill = match l.get("fill").and_then(Value::as_str) {
-                    Some(c) => {
-                        let h = c.trim_start_matches('#');
-                        let n = u32::from_str_radix(h, 16).map_err(|_| bad("fill"))?;
-                        Some(if h.len() == 6 { 0x40_00_00_00 | n } else { n })
+        let mut pictures = std::collections::HashMap::new();
+        for rule in l.looks {
+            let look = match rule.look {
+                LookArg::Image { image, .. } => {
+                    if crate::docx::image::image_type(&image.0).is_none() {
+                        return Outcome::invalid("bad image");
                     }
-                    None => None,
-                };
-                let icon = l.get("icon_svg").and_then(Value::as_str).and_then(super::view::SvgIcon::parse).map(std::rc::Rc::new);
-                Look::Box(super::view::PlaceholderLook { color: fill, label: l.get("label").and_then(Value::as_str).map(str::to_string), icon })
+                    Look::Image(std::rc::Rc::new(image.0))
+                }
+                LookArg::Drawn { fill, label, icon_svg } => {
+                    let icon = icon_svg.as_deref().and_then(super::view::SvgIcon::parse).map(std::rc::Rc::new);
+                    let look = super::view::PlaceholderLook { color: fill.map(|c| 0x40_00_00_00 | c.0), label, icon };
+                    Look::Box(look)
+                }
             };
-            match &entry["match"] {
-                Value::String(s) if s == "default" => new.default = Some(look),
-                m if m.get("id").is_some() => {
-                    let id = m["id"].as_str().and_then(elements::parse_id).ok_or_else(|| bad("match"))?;
-                    new.by_element.insert(id, look);
-                }
-                m if m.get("tag").is_some() => new.by_tag.push((TagMatch::Exact(m["tag"].as_str().ok_or_else(|| bad("match"))?.to_string()), look)),
-                m if m.get("prefix").is_some() => {
-                    new.by_tag.push((TagMatch::Prefix(m["prefix"].as_str().ok_or_else(|| bad("match"))?.to_string()), look))
-                }
-                _ => return Err(bad("match")),
+            let key = match &rule.matches {
+                PlaceholderMatch::Default(_) => Some(String::new()),
+                PlaceholderMatch::Tag { tag } => Some(tag.clone()),
+                _ => None,
+            };
+            if let (Some(k), Look::Box(b)) = (key, &look) {
+                pictures.insert(k, b.clone());
+            }
+            match rule.matches {
+                PlaceholderMatch::Default(_) => new.default = Some(look),
+                PlaceholderMatch::Id { id } => match element_id(&id) {
+                    Ok(id) => {
+                        new.by_element.insert(id, look);
+                    }
+                    Err(e) => return Outcome::Refused(e),
+                },
+                PlaceholderMatch::Tag { tag } => new.by_tag.push((TagMatch::Exact(tag), look)),
+                PlaceholderMatch::Prefix { prefix } => new.by_tag.push((TagMatch::Prefix(prefix), look)),
             }
         }
-        if arg.get("merge").and_then(Value::as_bool).unwrap_or(false) {
+        if l.merge.unwrap_or(false) {
             self.looks.by_element.extend(new.by_element);
             for (m, l) in new.by_tag {
                 self.looks.by_tag.retain(|(x, _)| *x != m);
@@ -803,10 +773,12 @@ impl Editor {
             if new.default.is_some() {
                 self.looks.default = new.default;
             }
+            self.placeholder_looks.extend(pictures);
         } else {
             self.looks = new;
+            self.placeholder_looks = pictures;
         }
-        Ok((Outcome::Moved, None))
+        Outcome::Moved
     }
 
     /// The looks drawn on `pages` (design mode): picture controls' boxes, rich-text controls' lines.
@@ -884,44 +856,52 @@ impl Editor {
         let id = match ctx.iter().find(|(_, exact)| *exact || inside || object) {
             Some((id, _)) => *id,
             // A field showing its result is one unit: the caret is beside it, not in it.
-            None if inside => match self.fields_here(&json!({}), false).first() {
+            None if inside => match self.fields_here(None, false).first() {
                 Some((f, _)) => ElementId::Field(*f),
                 None => return false,
             },
             None => return false,
         };
-        self.events.push(json!({ "type": "activate", "id": elements::id_str(id) }));
+        self.events.push(super::input::Notice::Activate(id));
         true
     }
 
     /// `control.fill`: a picture control's image, or a text or rich-text control's content as text or a
     /// DOCX fragment (a single paragraph inline; blocks only into a block-level rich-text control). One step; the
     /// control stops showing its placeholder and keeps its properties.
-    fn control_fill(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let (e, w) = self.element_arg(arg)?;
+    pub(super) fn fill_control(&mut self, f: FillControl, fonts: &Fonts) -> Outcome {
+        // The content and the control no longer showing its placeholder are one transaction.
+        self.begin_batch(None);
+        let r = self.control_fill(f, fonts);
+        let out = self.end_batch(r.is_ok(), fonts);
+        outcome(r.map(|_| out))
+    }
+
+    fn control_fill(&mut self, f: FillControl, fonts: &Fonts) -> Result<Outcome, Refused> {
+        let (e, w) = self.element(&f.id)?;
         let ElementId::Control(c) = e else { return Err(bad("id")) };
-        let control = self.doc.controls.get(&c).cloned().ok_or("no such element")?;
+        let control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
         if !control.props.lock.editable() {
-            return Err("locked".into());
+            return Err(locked());
         }
-        let before = self.history.undo_depth();
         let label = "Fill Content Control";
-        let out = if let Some(img) = text_arg(arg, "image")? {
-            let data = super::commands::base64(img).ok_or_else(|| bad("image"))?;
+        let out = if let Some(data) = f.image {
+            let data = data.0;
             let (Some((pw, ph, dx, dy)), Some(_)) = (crate::docx::image::image_info(&data), crate::docx::image::image_type(&data)) else {
                 return Err(bad("image"));
             };
             let size = (pw * 72.0 / if dx > 1.0 { dx } else { 96.0 }, ph * 72.0 / if dy > 1.0 { dy } else { 96.0 });
             let Where::Inline { para, first, last, .. } = w else { return Err(bad("id")) };
-            let p = self.index.para(&self.doc, para).ok_or("no such element")?;
+            let p = self.index.para(&self.doc, para).ok_or_else(no_element)?;
             let image = p.inlines[first..last]
                 .iter()
                 .find_map(|i| if let Inline::Picture(pic, _) = i { pic.image } else { None })
                 .ok_or_else(|| bad("id"))?;
             self.fill_images(&[image], data, size, label, fonts)
         } else {
-            let frag = match (text_arg(arg, "docx")?, text_arg(arg, "text")?) {
-                (Some(d), _) => Some(self.fragment_of(d)?),
+            let given = f.text.clone().unwrap_or_default();
+            let frag = match (&f.docx, &f.text) {
+                (Some(d), _) => Some(self.fragment_of(&d.0)?),
                 (None, Some(_)) => None,
                 (None, None) => return Err(bad("text")),
             };
@@ -945,25 +925,25 @@ impl Editor {
                     // Text (a fragment's text for a plain-text control) in the content's formatting.
                     let text = match f {
                         Some(f) => f.text(),
-                        None => text_arg(arg, "text")?.unwrap_or("").to_string(),
+                        None => given.clone(),
                     };
                     if plain && text.contains('\n') && !matches!(control.props.kind, ControlKind::PlainText { multi_line: true }) {
                         return Err(bad("text"));
                     }
-                    let p = self.index.para(&self.doc, *para).ok_or("no such element")?;
-                    let run = p.inlines[*first..].iter().find_map(|i| i.run().cloned()).ok_or("no such element")?;
+                    let p = self.index.para(&self.doc, *para).ok_or_else(no_element)?;
+                    let run = p.inlines[*first..].iter().find_map(|i| i.run().cloned()).ok_or_else(no_element)?;
                     let mut tx = self.begin(label);
                     let with = if text.is_empty() { Vec::new() } else { vec![Inline::Text(text.replace('\n', "\u{b}"), run)] };
                     if self.step(&mut tx, Step::Text { para: *para, range: *start..*end, with, edges: Default::default() }).is_err() {
                         self.abort(tx);
-                        return Err("no such element".into());
+                        return Err(no_element());
                     }
                     self.follow(&tx);
                     self.commit(tx, None, fonts)
                 }
                 (Where::Blocks { container, range }, f) if !plain => {
                     // Blocks into a block-level rich-text control: they take its place, members of it.
-                    let blocks = self.index.blocks(&self.doc, *container).ok_or("no such element")?;
+                    let blocks = self.index.blocks(&self.doc, *container).ok_or_else(no_element)?;
                     let lead = match &blocks[range.start] {
                         Block::Para(p) => p.controls.clone(),
                         Block::Table(t) => t.controls.clone(),
@@ -977,12 +957,12 @@ impl Editor {
                             b
                         }
                         None => {
-                            let first = blocks[range.clone()].iter().find_map(super::first_para_of).ok_or("no such element")?;
-                            let mut p = self.split_template(first).ok_or("no such element")?;
+                            let first = blocks[range.clone()].iter().find_map(super::first_para_of).ok_or_else(no_element)?;
+                            let mut p = self.split_template(first).ok_or_else(no_element)?;
                             // Its membership is the control's own, put on below.
                             p.controls.clear();
                             let run = p.mark.clone();
-                            p.inlines = vec![Inline::Text(text_arg(arg, "text")?.unwrap_or("").to_string(), run)];
+                            p.inlines = vec![Inline::Text(given.clone(), run)];
                             vec![Block::Para(p)]
                         }
                     };
@@ -995,7 +975,7 @@ impl Editor {
                     let mut tx = self.begin(label);
                     if self.step(&mut tx, Step::Blocks { container: *container, range: range.clone(), with: new }).is_err() {
                         self.abort(tx);
-                        return Err("no such element".into());
+                        return Err(no_element());
                     }
                     self.follow(&tx);
                     self.commit(tx, None, fonts)
@@ -1004,7 +984,7 @@ impl Editor {
             }
         };
         if !matches!(out, Outcome::Changed(_)) {
-            return Err("locked".into());
+            return Err(locked());
         }
         // No longer showing its placeholder: part of the same step.
         if let Some(mut k) = self.doc.controls.get(&c).cloned().filter(|k| k.props.showing_placeholder) {
@@ -1013,18 +993,13 @@ impl Editor {
             let _ = self.step(&mut tx, Step::Control { id: c, control: Some(k) });
             self.commit(tx, None, fonts);
         }
-        let n = self.history.undo_depth().saturating_sub(before);
-        if n > 1 {
-            self.history.merge_last(n, label);
-        }
-        Ok((out, None))
+        Ok(out)
     }
 
-    /// A DOCX fragment (base64): its body as a clipboard fragment, its runs resolved by its
+    /// A DOCX fragment: its body as a clipboard fragment, its runs resolved by its
     /// own styles (a paste keeps their look).
-    fn fragment_of(&self, b64: &str) -> Result<super::clipboard::Fragment, Refused> {
-        let bytes = super::commands::base64(b64).ok_or_else(|| bad("docx"))?;
-        let doc = crate::docx::read_editable(&bytes).map_err(|_| bad("docx"))?;
+    fn fragment_of(&self, bytes: &[u8]) -> Result<super::clipboard::Fragment, Refused> {
+        let doc = crate::docx::read_editable(bytes).map_err(|_| bad("docx"))?;
         let mut blocks: Vec<Block> = doc.sections.iter().flat_map(|s| s.blocks.iter().cloned()).collect();
         // A package's body ends with a paragraph mark; an empty last paragraph after content isn't content.
         if blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
@@ -1080,21 +1055,19 @@ impl Editor {
         check(pa, ua.0, len(pa).max(ua.0 + 1)) || check(pb, 0, ub.0)
     }
 
-    /// A text edit at the selection refused by a lock: answered `"locked"`.
+    /// A text edit at the selection refused by a lock: refused `locked`.
     pub(super) fn refuse_locked(&mut self) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         if self.locked_edit(&a, &b) {
-            self.answer = Some(json!({ "error": "locked" }));
+            self.refused = Some("locked");
             return true;
         }
         false
     }
 
-    /// The data parts `arg` addresses: by root namespace, and `item_id` when given. Several for a
-    /// namespace alone is `"ambiguous namespace"`.
-    fn data_parts_at(&self, arg: &Value) -> Result<(String, Option<String>, Vec<usize>), Refused> {
-        let ns = text_arg(arg, "namespace")?.ok_or_else(|| bad("namespace"))?.to_string();
-        let item = text_arg(arg, "item_id")?.map(str::to_string);
+    /// The data parts a namespace and item id address. Several for a namespace alone is `"ambiguous namespace"`.
+    fn data_parts_at(&self, ns: &str, item: Option<&str>) -> Result<(String, Option<String>, Vec<usize>), Refused> {
+        let (ns, item) = (ns.to_string(), item.map(str::to_string));
         let at: Vec<usize> = self
             .doc
             .data_parts
@@ -1104,20 +1077,24 @@ impl Editor {
             .map(|(k, _)| k)
             .collect();
         if item.is_none() && at.len() > 1 {
-            return Err("ambiguous namespace".into());
+            return Err(shape("ambiguous namespace"));
         }
         Ok((ns, item, at))
     }
 
-    /// `data.write`: a part's XML (well-formed, its root in `namespace`), replacing the part it addresses or
-    /// added as a new one. One step, which can join a batch. Answer: `{ item_id }`.
-    fn data_write(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let xml = text_arg(arg, "xml")?.ok_or_else(|| bad("xml"))?.to_string();
+    pub(super) fn write_data_part(&mut self, w: WriteDataPart, fonts: &Fonts) -> Outcome {
+        outcome(self.data_write(w, fonts))
+    }
+
+    /// A part's XML (well-formed, its root in `namespace`), replacing the part it addresses or added as a new one.
+    /// One step, which can join a batch. Makes `{ itemId }`.
+    fn data_write(&mut self, w: WriteDataPart, fonts: &Fonts) -> Result<Outcome, Refused> {
+        let xml = w.xml;
         let root_ns = {
-            let doc = roxmltree::Document::parse(&xml).map_err(|_| "not well-formed".to_string())?;
+            let doc = roxmltree::Document::parse(&xml).map_err(|_| Error::invalid("not well-formed"))?;
             doc.root_element().tag_name().namespace().map(str::to_string)
         };
-        let (ns, item, at) = self.data_parts_at(arg)?;
+        let (ns, item, at) = self.data_parts_at(&w.namespace, w.item_id.as_deref())?;
         if root_ns.as_deref() != Some(ns.as_str()) {
             return Err(bad("namespace"));
         }
@@ -1125,7 +1102,8 @@ impl Editor {
             Some(&k) => {
                 let mut p = self.doc.data_parts[k].clone();
                 if p.xml == xml {
-                    return Ok((Outcome::Unchanged("the same XML"), Some(json!({ "item_id": p.item_id }))));
+                    self.made = Some(CommandResult::DataPart { item_id: p.item_id });
+                    return Ok(Outcome::Unchanged("the same XML"));
                 }
                 p.xml = xml;
                 p.changed = true;
@@ -1140,22 +1118,27 @@ impl Editor {
         let mut tx = self.begin("Change Data");
         if self.step(&mut tx, Step::DataPart { item_id: item_id.clone(), part: Some(part) }).is_err() {
             self.abort(tx);
-            return Err("no such element".into());
+            return Err(no_element());
         }
-        Ok((self.commit(tx, None, fonts), Some(json!({ "item_id": item_id }))))
+        self.made = Some(CommandResult::DataPart { item_id });
+        Ok(self.commit(tx, None, fonts))
     }
 
-    /// `data.remove`: the part `arg` addresses goes. One step.
-    fn data_remove(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let (_, _, at) = self.data_parts_at(arg)?;
-        let &k = at.first().ok_or("no such element")?;
+    pub(super) fn remove_data_part(&mut self, r: DataPartRef, fonts: &Fonts) -> Outcome {
+        outcome(self.data_remove(r, fonts))
+    }
+
+    /// The part a reference addresses goes. One step.
+    fn data_remove(&mut self, r: DataPartRef, fonts: &Fonts) -> Result<Outcome, Refused> {
+        let (_, _, at) = self.data_parts_at(&r.namespace, r.item_id.as_deref())?;
+        let &k = at.first().ok_or_else(no_element)?;
         let item_id = self.doc.data_parts[k].item_id.clone();
         let mut tx = self.begin("Remove Data");
         if self.step(&mut tx, Step::DataPart { item_id, part: None }).is_err() {
             self.abort(tx);
-            return Err("no such element".into());
+            return Err(no_element());
         }
-        Ok((self.commit(tx, None, fonts), None))
+        Ok(self.commit(tx, None, fonts))
     }
 
     /// Every field with where it is (story, paragraph, begin index, start and end units), in document order.
@@ -1172,10 +1155,10 @@ impl Editor {
 
     /// The fields an F-key acts on: with a selection, every field it touches; with a caret, the
     /// innermost field around it (or right before or after it). `nested` adds the fields inside those.
-    fn fields_here(&self, arg: &Value, nested: bool) -> Vec<(FieldId, ParaId)> {
+    pub(super) fn fields_here(&self, ids: Option<&[crate::api::value::ElementId]>, nested: bool) -> Vec<(FieldId, ParaId)> {
         let all = self.all_fields();
-        if let Some(ids) = arg.get("ids").and_then(Value::as_array) {
-            let want: Vec<ElementId> = ids.iter().filter_map(|x| x.as_str().and_then(elements::parse_id)).collect();
+        if let Some(ids) = ids {
+            let want: Vec<ElementId> = ids.iter().filter_map(|x| elements::parse_id(&x.0)).collect();
             return all.iter().filter(|f| want.contains(&ElementId::Field(f.0))).map(|f| (f.0, f.2)).collect();
         }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Vec::new() };
@@ -1208,7 +1191,8 @@ impl Editor {
         picked.into_iter().map(|f| (f.0, f.2)).collect()
     }
 
-    /// Sets fields' views without a step (a view setting): their paragraphs laid out again.
+    /// Sets fields' views as a view setting, not an edit (`view.field-codes`): their paragraphs laid out again, with
+    /// no step and no revision.
     fn set_views(&mut self, fields: &[(FieldId, ParaId)], view: FieldView) {
         let mut hints = Vec::new();
         for (f, para) in fields {
@@ -1224,37 +1208,57 @@ impl Editor {
             }
         }
         if !hints.is_empty() {
-            self.revision += 1;
-            for h in hints {
-                self.layout.edit(crate::layout::Revision(self.revision), h);
-            }
+            self.relayout(hints);
         }
     }
 
-    /// `view.field-codes` and Alt+F9 / Shift+F9: every field (`toggle: "all"`), the fields here
-    /// (`"here"`), or `ids` with `show`, in code or result view. The caret in a field goes to its code's end when it
-    /// shows its code, to its start when it shows its result. View only.
-    fn field_codes(&mut self, arg: &Value) -> Result<(Outcome, Option<Value>), Refused> {
-        let all = self.all_fields();
-        let here = self.fields_here(&json!({}), false);
-        let (targets, view): (Vec<(FieldId, ParaId)>, FieldView) = match arg.get("toggle").and_then(Value::as_str) {
-            Some("all") => {
-                let codes = all.iter().all(|f| self.field_view(f.0, f.2) == Some(FieldView::Code));
-                (all.iter().map(|f| (f.0, f.2)).collect(), if codes { FieldView::Result } else { FieldView::Code })
+    /// Fields showing their code show their result again, as an edit (a field update): a step per paragraph.
+    fn show_results(&mut self, fields: &[(FieldId, ParaId)], fonts: &Fonts) -> Outcome {
+        let mut paras: Vec<ParaId> = fields.iter().map(|f| f.1).collect();
+        paras.sort_unstable_by_key(|p| p.0);
+        paras.dedup();
+        let mut tx = self.begin("Update Fields");
+        for para in paras {
+            let views: Vec<(FieldId, FieldView)> = fields
+                .iter()
+                .filter(|f| f.1 == para && self.field_view(f.0, para) == Some(FieldView::Code))
+                .map(|f| (f.0, FieldView::Result))
+                .collect();
+            if !views.is_empty() {
+                let _ = self.step(&mut tx, Step::FieldViews { para, views });
             }
-            Some("here") => {
-                let Some(first) = here.first() else { return Ok((Outcome::Unchanged("no field here"), None)) };
-                let view = if self.field_view(first.0, first.1) == Some(FieldView::Code) { FieldView::Result } else { FieldView::Code };
-                (here.clone(), view)
-            }
-            _ => {
-                let show = arg.get("show").and_then(Value::as_bool).ok_or_else(|| bad("show"))?;
-                let t = if arg.get("ids").is_some() { self.fields_here(arg, false) } else { all.iter().map(|f| (f.0, f.2)).collect() };
-                (t, if show { FieldView::Code } else { FieldView::Result })
-            }
+        }
+        self.commit(tx, None, fonts)
+    }
+
+    /// Fields `ids` (all of them without ids) in code (`show`) or result view. The caret in a field goes to its code's
+    /// end when it shows its code, to its start when it shows its result. View only.
+    pub(super) fn show_field_codes(&mut self, show: bool, ids: Option<&[crate::api::value::ElementId]>) -> Outcome {
+        let targets: Vec<(FieldId, ParaId)> = match ids {
+            Some(_) => self.fields_here(ids, false),
+            None => self.all_fields().iter().map(|f| (f.0, f.2)).collect(),
         };
+        self.field_views(targets, if show { FieldView::Code } else { FieldView::Result })
+    }
+
+    /// Alt+F9 (`all`) and Shift+F9 as a command: every field, or the fields here, in the other view than they show now.
+    pub(super) fn field_codes_toggle(&self, all: bool) -> Option<crate::api::command::ShowFieldCodes> {
+        let targets: Vec<(FieldId, ParaId)> =
+            if all { self.all_fields().iter().map(|f| (f.0, f.2)).collect() } else { self.fields_here(None, false) };
+        let &(f, para) = targets.first()?;
+        let codes = if all {
+            targets.iter().all(|&(f, p)| self.field_view(f, p) == Some(FieldView::Code))
+        } else {
+            self.field_view(f, para) == Some(FieldView::Code)
+        };
+        let ids = (!all).then(|| targets.iter().map(|&(f, _)| api_id(ElementId::Field(f))).collect());
+        Some(crate::api::command::ShowFieldCodes { show: !codes, ids })
+    }
+
+    /// The fields' views set, and the caret in one of them moved to its code's end or its start.
+    fn field_views(&mut self, targets: Vec<(FieldId, ParaId)>, view: FieldView) -> Outcome {
+        let here = self.fields_here(None, false);
         self.set_views(&targets, view);
-        // The caret in one of them: to its code's end, or its start.
         if let Some(&(f, para)) = here.first().filter(|h| targets.contains(h))
             && self.selection.is_collapsed()
             && let Some(p) = self.index.para(&self.doc, para)
@@ -1265,7 +1269,7 @@ impl Editor {
             let u = if view == FieldView::Code { units_before(&p.inlines, s.code_end()) } else { units_before(&p.inlines, k) };
             self.selection = Selection::Caret(Position::text(story, para, Unit(u)));
         }
-        Ok((Outcome::Moved, None))
+        Outcome::Moved
     }
 
     fn field_view(&self, f: FieldId, para: ParaId) -> Option<FieldView> {
@@ -1277,14 +1281,14 @@ impl Editor {
 
     /// Ctrl+F9: a new field showing its code, two spaces with the caret between them; over a
     /// selection, the selected text is the code and the caret stays before the field; inside a code it nests.
-    fn field_new(&mut self, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
+    fn field_new(&mut self, fonts: &Fonts) -> Result<Outcome, Refused> {
         let selected = match self.selection.ordered(&self.index) {
             Some((a, b)) if !a.same_place(&b) => {
                 let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return Err(bad("target")) };
                 if pa != pb {
-                    return Err("partial paragraph".into());
+                    return Err(shape("partial paragraph"));
                 }
-                let p = self.index.para(&self.doc, pa).ok_or("no such element")?;
+                let p = self.index.para(&self.doc, pa).ok_or_else(no_element)?;
                 let t = super::text::UnitText::of(p);
                 Some(t.text.chars().skip(ua.0 as usize).take((ub.0 - ua.0) as usize).collect::<String>())
             }
@@ -1304,20 +1308,20 @@ impl Editor {
             fonts,
         );
         if !matches!(out, Outcome::Changed(_)) {
-            return Err("locked".into());
+            return Err(locked());
         }
         if let Some(Where::Inline { story, para, start, .. }) = self.locate(ElementId::Field(id)) {
             let at = if selected.is_some() { start.0 } else { start.0 + 2 };
             self.selection = Selection::Caret(Position::text(story, para, Unit(at)));
         }
-        Ok((out, Some(json!({ "id": elements::id_str(ElementId::Field(id)) }))))
+        self.made = Some(CommandResult::Element { id: api_id(ElementId::Field(id)) });
+        Ok(out)
     }
 
-    /// F9 and `field.update`: the fields here (every field with Ctrl+A), innermost first, locked ones
-    /// left, go to the host in one `field_update` event; those showing their code show their result again. Answer:
-    /// `{ token }`.
-    fn field_update(&mut self, arg: &Value) -> Result<(Outcome, Option<Value>), Refused> {
-        let mut fields = self.fields_here(arg, true);
+    /// F9: the fields `ids` (default: those here, every field with Ctrl+A), innermost first, locked ones left, go to
+    /// the application in one field update notice; those showing their code show their result again, as an edit.
+    pub(super) fn update_fields(&mut self, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
+        let mut fields = self.fields_here(ids, true);
         let all = self.all_fields();
         let depth = |f: &FieldId| {
             let me = all.iter().find(|g| g.0 == *f);
@@ -1334,43 +1338,44 @@ impl Editor {
                     .is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { id, lock: false, .. } if id == f)))
             })
             .collect();
-        self.set_views(&unlocked, FieldView::Result);
+        let out = match self.show_results(&unlocked, fonts) {
+            o @ Outcome::Changed(_) => o,
+            _ => Outcome::Moved,
+        };
         self.update_token += 1;
         let token = self.update_token;
-        let list: Vec<Value> = unlocked
+        let fields: Vec<(ElementId, String)> = unlocked
             .iter()
             .filter_map(|(f, para)| {
                 let p = self.index.para(&self.doc, *para)?;
                 let k = p.inlines.iter().position(|i| matches!(i, Inline::FieldBegin { id, .. } if id == f))?;
                 let s = crate::docx::fields::span_at(&p.inlines, k)?;
-                Some(json!({ "id": elements::id_str(ElementId::Field(*f)), "code": crate::docx::fields::code_text(&p.inlines, s) }))
+                Some((ElementId::Field(*f), crate::docx::fields::code_text(&p.inlines, s)))
             })
             .collect();
-        if !list.is_empty() {
-            self.events.push(json!({ "type": "field_update", "token": token, "fields": list }));
+        if !fields.is_empty() {
+            self.events.push(super::input::Notice::FieldUpdate { token, fields });
         }
-        Ok((Outcome::Moved, Some(json!({ "token": token }))))
+        out
     }
 
-    /// `field.results`: the host's results for an update, as one step; fields gone since are reported.
-    fn field_results(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let results = arg.get("results").and_then(Value::as_array).ok_or_else(|| bad("results"))?.clone();
+    /// The application's results for an update, as one step; fields gone since are left out.
+    // shortcut: a token doesn't join the results to an earlier step, and a formatted result is set as its text.
+    pub(super) fn set_field_results(&mut self, r: FieldResults, fonts: &Fonts) -> Outcome {
         let mut tx = self.begin("Update Fields");
-        let mut skipped = Vec::new();
-        for r in &results {
-            let Some(id) = r.get("id").and_then(Value::as_str) else { return Err(bad("results")) };
-            let display = r.get("display").and_then(Value::as_str).unwrap_or("");
-            let Some(ElementId::Field(f)) = elements::parse_id(id) else { return Err(bad("results")) };
-            if !self.set_result(&mut tx, f, display) {
-                skipped.push(json!(id));
-            }
+        for result in &r.results {
+            let Some(ElementId::Field(f)) = elements::parse_id(&result.id.0) else {
+                self.abort(tx);
+                return Outcome::Refused(no_element());
+            };
+            self.set_result(&mut tx, f, &plain(&result.display));
         }
         if tx.undo.is_empty() {
             self.abort(tx);
-            return Ok((Outcome::Unchanged("no results"), Some(json!({ "skipped": skipped }))));
+            return Outcome::Unchanged("no results");
         }
         self.follow(&tx);
-        Ok((self.commit(tx, None, fonts), Some(json!({ "skipped": skipped }))))
+        self.commit(tx, None, fonts)
     }
 
     /// Field `f`'s result becomes `display` (in its result's first run, else its code's); whether the field is there.
@@ -1401,8 +1406,8 @@ impl Editor {
 
     /// Ctrl+F11 / Ctrl+Shift+F11 and `field.lock` / `field.unlock`: the fields here and those inside
     /// them, locked or unlocked, one step.
-    fn field_lock(&mut self, arg: &Value, lock: bool, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let fields = self.fields_here(arg, true);
+    pub(super) fn lock_fields(&mut self, lock: bool, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
+        let fields = self.fields_here(ids, true);
         let mut paras: Vec<ParaId> = fields.iter().map(|(_, p)| *p).collect();
         paras.dedup();
         let mut tx = self.begin(if lock { "Lock Fields" } else { "Unlock Fields" });
@@ -1425,14 +1430,14 @@ impl Editor {
         }
         if tx.undo.is_empty() {
             self.abort(tx);
-            return Ok((Outcome::Unchanged("no field to change"), None));
+            return Outcome::Unchanged("no field to change");
         }
-        Ok((self.commit(tx, None, fonts), None))
+        self.commit(tx, None, fonts)
     }
 
     /// Ctrl+Shift+F9 and `field.unlink`: each field here replaced by its result's text, one step.
-    fn field_unlink(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let mut fields = self.fields_here(arg, false);
+    pub(super) fn unlink_fields(&mut self, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
+        let mut fields = self.fields_here(ids, false);
         // Outermost only: an outer field's result replaces those inside it too.
         let all = self.all_fields();
         let span = |f: &FieldId| all.iter().find(|g| g.0 == *f).map(|g| (g.2, g.4, g.5));
@@ -1463,10 +1468,10 @@ impl Editor {
         }
         if tx.undo.is_empty() {
             self.abort(tx);
-            return Ok((Outcome::Unchanged("no field here"), None));
+            return Outcome::Unchanged("no field here");
         }
         self.follow(&tx);
-        Ok((self.commit(tx, None, fonts), None))
+        self.commit(tx, None, fonts)
     }
 
     /// A text selection with one end inside a field showing its code and the other outside covers the whole field;
@@ -1502,17 +1507,16 @@ impl Editor {
         (a, b)
     }
 
-    /// `field.labels`: the host's labels for empty fields, by code; `merge` adds to those it has. View only.
-    fn field_labels(&mut self, arg: &Value) -> Result<(Outcome, Option<Value>), Refused> {
-        let labels = arg.get("labels").and_then(Value::as_object).ok_or_else(|| bad("labels"))?;
-        if !arg.get("merge").and_then(Value::as_bool).unwrap_or(false) {
+    /// The application's labels for empty fields, by code; `merge` adds to those it has. View only.
+    pub(super) fn set_field_labels(&mut self, l: FieldLabels) -> Outcome {
+        if !l.merge.unwrap_or(false) {
             self.field_labels.clear();
         }
-        for (code, label) in labels {
-            self.field_labels.insert(code.trim().to_string(), label.as_str().ok_or_else(|| bad("labels"))?.to_string());
+        for (code, label) in l.labels {
+            self.field_labels.insert(code.trim().to_string(), label);
         }
         self.refresh_labels(None);
-        Ok((Outcome::Moved, None))
+        Outcome::Moved
     }
 
     /// Design mode's labels: every empty field of the paragraphs `steps` touched (all
@@ -1572,33 +1576,21 @@ impl Editor {
             hints.push(super::step::para_hint(&self.index, para, 0));
         }
         if !hints.is_empty() {
-            self.revision += 1;
-            for h in hints {
-                self.layout.edit(crate::layout::Revision(self.revision), h);
-            }
+            self.relayout(hints);
         }
     }
 
-    /// `view.drop`: the external drop caret at a point, or none. View only.
-    fn view_drop(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        self.drop = match arg {
-            Value::Null => None,
-            at => self.hit_at(at, fonts).filter(|(p, repeat)| !repeat && self.editable(p)).map(|(p, _)| p),
-        };
-        Ok((Outcome::Moved, None))
+    /// A field from its code and display text at the selection; the caret after it, or at the start of its code when
+    /// it shows its code. An empty code makes a new field the way Ctrl+F9 does. Makes `{ id }`.
+    pub(super) fn insert_field(&mut self, f: InsertField, fonts: &Fonts) -> Outcome {
+        if f.code.trim().is_empty() {
+            return outcome(self.editable_target().and_then(|_| self.field_new(fonts)));
+        }
+        outcome(self.field_insert(&f.code, f.display.as_deref().unwrap_or(""), f.show_code.unwrap_or(false), fonts))
     }
 
-    /// `field.insert`: a field from its code and display text at the target; the caret after it, or at the
-    /// start of its code when it shows its code.
-    fn field_insert(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let code = text_arg(arg, "code")?.ok_or_else(|| bad("code"))?;
-        let display = text_arg(arg, "display")?.unwrap_or("");
-        let code_view = match text_arg(arg, "view")? {
-            None | Some("result") => false,
-            Some("code") => true,
-            Some(_) => return Err(bad("view")),
-        };
-        self.target(arg, fonts)?;
+    fn field_insert(&mut self, code: &str, display: &str, code_view: bool, fonts: &Fonts) -> Result<Outcome, Refused> {
+        self.editable_target()?;
         let id = FieldId::next();
         let code = padded(code);
         let out = self.insert_inlines(
@@ -1612,28 +1604,36 @@ impl Editor {
             "Insert Field",
             fonts,
         );
-        let Outcome::Changed(_) = out else { return Err("locked".into()) };
+        let Outcome::Changed(_) = out else { return Err(locked()) };
         if code_view && let Some(Where::Inline { story, para, start, .. }) = self.locate(ElementId::Field(id)) {
             self.selection = Selection::Caret(Position::text(story, para, Unit(start.0 + 1)));
         }
-        Ok((out, Some(json!({ "id": elements::id_str(ElementId::Field(id)) }))))
+        self.made = Some(CommandResult::Element { id: api_id(ElementId::Field(id)) });
+        Ok(out)
     }
 
-    /// `field.set`: a field's code and/or display text, as one step; what isn't given is kept.
-    fn field_set(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let (e, w) = self.element_arg(arg)?;
+    pub(super) fn set_field(&mut self, f: SetField, fonts: &Fonts) -> Outcome {
+        // shortcut: a formatted result is set as its text, until the keep-source fragment paste.
+        let display = f.display.as_ref().map(plain);
+        outcome(self.field_set(&f.id, f.code.as_deref(), display.as_deref(), fonts))
+    }
+
+    /// A field's code and/or display text, as one step; what isn't given is kept.
+    pub(super) fn field_set(
+        &mut self,
+        id: &crate::api::value::ElementId,
+        code: Option<&str>,
+        display: Option<&str>,
+        fonts: &Fonts,
+    ) -> Result<Outcome, Refused> {
+        let (e, w) = self.element(id)?;
         let (ElementId::Field(f), Where::Inline { para, first, last, .. }) = (e, w) else { return Err(bad("id")) };
-        if arg.get("display_docx").is_some_and(|v| !v.is_null()) {
-            // shortcut: rich results come with the keep-source fragment paste; plain text until then.
-            return Err(bad("display_docx"));
-        }
-        let (code, display) = (text_arg(arg, "code")?, text_arg(arg, "display")?);
         if code.is_none() && display.is_none() {
-            return Ok((Outcome::Unchanged("nothing to change"), None));
+            return Ok(Outcome::Unchanged("nothing to change"));
         }
-        let p = self.index.para(&self.doc, para).ok_or("no such element")?.clone();
-        let s = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last).ok_or("no such element")?;
-        let begin_run = p.inlines[first].run().cloned().ok_or("no such element")?;
+        let p = self.index.para(&self.doc, para).ok_or_else(no_element)?.clone();
+        let s = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last).ok_or_else(no_element)?;
+        let begin_run = p.inlines[first].run().cloned().ok_or_else(no_element)?;
         let run_in =
             |from: usize, to: usize| p.inlines[from..to].iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.clone()) } else { None });
         let at = |k: usize| Unit(units_before(&p.inlines, k));
@@ -1652,7 +1652,7 @@ impl Editor {
             };
             if self.step(&mut tx, step).is_err() {
                 self.abort(tx);
-                return Err("no such element".into());
+                return Err(no_element());
             }
         }
         if let Some(c) = code {
@@ -1660,12 +1660,12 @@ impl Editor {
             let range = Unit(at(first).0 + 1)..at(s.code_end());
             if self.step(&mut tx, Step::Text { para, range, with: vec![Inline::Text(padded(c), run)], edges: Default::default() }).is_err() {
                 self.abort(tx);
-                return Err("no such element".into());
+                return Err(no_element());
             }
             self.refresh_field_kinds(&mut tx, para);
         }
         self.follow(&tx);
-        Ok((self.commit(tx, None, fonts), None))
+        Ok(self.commit(tx, None, fonts))
     }
 
     /// The selection carried through the transaction's steps, for commands that don't place it themselves (an
@@ -1711,14 +1711,18 @@ impl Editor {
         }
     }
 
-    /// `element.remove` and `control.remove`: a field with what it holds, or a control with its content; with
+    /// A field with what it holds, or a control with its content; with
     /// `keep`, a control's markup only (its content stays where it is).
-    fn element_remove(&mut self, arg: &Value, keep: bool, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let (e, w) = self.element_arg(arg)?;
+    pub(super) fn remove_element(&mut self, id: &crate::api::value::ElementId, keep: bool, fonts: &Fonts) -> Outcome {
+        outcome(self.element_remove(id, keep, fonts))
+    }
+
+    fn element_remove(&mut self, id: &crate::api::value::ElementId, keep: bool, fonts: &Fonts) -> Result<Outcome, Refused> {
+        let (e, w) = self.element(id)?;
         if let ElementId::Control(c) = e
             && self.doc.controls.get(&c).is_some_and(|k| !k.props.lock.deletable())
         {
-            return Err("locked".into());
+            return Err(locked());
         }
         let mut tx = self.begin(if matches!(e, ElementId::Field(_)) { "Remove Field" } else { "Remove Content Control" });
         let ok = match (e, w) {
@@ -1727,7 +1731,7 @@ impl Editor {
             }
             (ElementId::Control(c), Where::Inline { para, start, end, .. }) => {
                 // The markers first (they take no units), then the content unless it is kept.
-                let p = self.index.para(&self.doc, para).ok_or("no such element")?;
+                let p = self.index.para(&self.doc, para).ok_or_else(no_element)?;
                 let inlines: Vec<Inline> =
                     p.inlines.iter().filter(|i| !matches!(i, Inline::ControlStart(x) | Inline::ControlEnd(x) if *x == c)).cloned().collect();
                 self.step(&mut tx, Step::Restyle { para, inlines }).is_ok()
@@ -1736,7 +1740,7 @@ impl Editor {
                         || self.step(&mut tx, Step::Text { para, range: start..end, with: Vec::new(), edges: Default::default() }).is_ok())
             }
             (ElementId::Control(c), Where::Sym { para, at, .. }) => {
-                let p = self.index.para(&self.doc, para).ok_or("no such element")?;
+                let p = self.index.para(&self.doc, para).ok_or_else(no_element)?;
                 if keep {
                     // The face stays as a symbol of its own.
                     let inlines: Vec<Inline> = p
@@ -1755,7 +1759,7 @@ impl Editor {
                 }
             }
             (ElementId::Control(c), Where::Rows { table, range }) => {
-                let t = self.index.table(&self.doc, table).ok_or("no such element")?;
+                let t = self.index.table(&self.doc, table).ok_or_else(no_element)?;
                 let gone = self.with_items(c, t.rows[range.clone()].iter().map(|r| &r.controls));
                 if keep {
                     let with: Vec<crate::docx::Row> = t.rows[range.clone()]
@@ -1769,14 +1773,14 @@ impl Editor {
                     self.step(&mut tx, Step::Rows { table, range, with, grid: None }).is_ok()
                 } else if range.len() == t.rows.len() {
                     // Every row: the table goes.
-                    let slot = self.index.table_slot(table).ok_or("no such element")?;
+                    let slot = self.index.table_slot(table).ok_or_else(no_element)?;
                     self.step(&mut tx, Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: Vec::new() }).is_ok()
                 } else {
                     self.step(&mut tx, Step::Rows { table, range, with: Vec::new(), grid: None }).is_ok()
                 }
             }
             (ElementId::Control(c), Where::Blocks { container, range, .. }) => {
-                let blocks = self.index.blocks(&self.doc, container).ok_or("no such element")?;
+                let blocks = self.index.blocks(&self.doc, container).ok_or_else(no_element)?;
                 let gone = self.with_items(
                     c,
                     blocks[range.clone()].iter().map(|b| match b {
@@ -1790,8 +1794,8 @@ impl Editor {
                     // A container keeps one paragraph, and ends with one: an empty one like the last, outside the
                     // control.
                     let last =
-                        blocks.iter().rev().find_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None }).ok_or("no such element")?;
-                    let mut p = self.split_template(last).ok_or("no such element")?;
+                        blocks.iter().rev().find_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None }).ok_or_else(no_element)?;
+                    let mut p = self.split_template(last).ok_or_else(no_element)?;
                     p.controls.retain(|x| !gone.contains(x));
                     vec![Block::Para(p)]
                 } else {
@@ -1803,68 +1807,88 @@ impl Editor {
         };
         if !ok {
             self.abort(tx);
-            return Err("no such element".into());
+            return Err(no_element());
         }
         self.follow(&tx);
-        Ok((self.commit(tx, None, fonts), None))
+        Ok(self.commit(tx, None, fonts))
     }
 
-    /// `control.insert`: a control of `kind` at the target, its content its placeholder text (the text
-    /// with `showing_placeholder`, no docPart); with `wrap` (rich text, group), around the selection instead.
-    fn control_insert(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let props_arg = arg.get("props").cloned().unwrap_or(Value::Null);
-        let ch = |name: &str, default: char| -> Result<char, Refused> {
-            match props_arg.get(name) {
-                None | Some(Value::Null) => Ok(default),
-                Some(v) => v.as_str().and_then(|s| s.chars().next()).ok_or_else(|| bad(name)),
+    pub(super) fn insert_control(&mut self, c: InsertControl, fonts: &Fonts) -> Outcome {
+        outcome(self.control_insert(c, fonts))
+    }
+
+    /// A control of `kind` at the selection, its content its placeholder text (the text with `showing_placeholder`, no
+    /// docPart); with `wrapSelection` (rich text, group), around the selection instead. Makes `{ id }`.
+    fn control_insert(&mut self, c: InsertControl, fonts: &Fonts) -> Result<Outcome, Refused> {
+        let w = self.cx().w;
+        let esc = crate::docx::write::props::esc;
+        let mut checked_now = false;
+        let mut kind_xml = None;
+        let kind = match (c.kind, &c.options) {
+            (KindArg::PlainText, Some(ControlOptions::PlainText(o))) => ControlKind::PlainText { multi_line: o.multiline.unwrap_or(false) },
+            (KindArg::PlainText, _) => ControlKind::PlainText { multi_line: false },
+            (KindArg::RichText, _) => ControlKind::RichText,
+            (KindArg::Picture, _) => ControlKind::Picture,
+            (KindArg::Checkbox, o) => {
+                checked_now = matches!(o, Some(ControlOptions::Checkbox(o)) if o.checked == Some(true));
+                ControlKind::Checkbox { checked: '\u{2612}', unchecked: '\u{2610}' }
             }
+            (KindArg::Date, Some(ControlOptions::Date(o))) => {
+                ControlKind::Date { format: o.format.clone().unwrap_or_else(|| "M/d/yyyy".into()), lid: o.locale.clone() }
+            }
+            (KindArg::Date, _) => ControlKind::Date { format: "M/d/yyyy".into(), lid: None },
+            (k @ (KindArg::DropDown | KindArg::ComboBox), o) => {
+                let name = if k == KindArg::DropDown { "dropDownList" } else { "comboBox" };
+                let items = match o {
+                    Some(ControlOptions::List(l)) => l.items.clone(),
+                    _ => Vec::new(),
+                };
+                let items: String =
+                    items.iter().map(|i| format!("<{w}listItem {w}displayText=\"{}\" {w}value=\"{}\"/>", esc(&i.text), esc(&i.value))).collect();
+                kind_xml = Some(format!("<{w}{name}>{items}</{w}{name}>"));
+                ControlKind::DropDown
+            }
+            (KindArg::Group, _) => ControlKind::Group,
+            (KindArg::RepeatingSection, _) => return Err(Error::invalid("repeating sections are made by wrapInRepeatingSection")),
         };
-        let kind = match text_arg(arg, "kind")?.ok_or_else(|| bad("kind"))? {
-            "plain_text" => ControlKind::PlainText { multi_line: props_arg.get("multi_line").and_then(Value::as_bool).unwrap_or(false) },
-            "rich_text" => ControlKind::RichText,
-            "picture" => ControlKind::Picture,
-            "checkbox" => ControlKind::Checkbox { checked: ch("checked", '\u{2612}')?, unchecked: ch("unchecked", '\u{2610}')? },
-            "date" => ControlKind::Date {
-                format: props_arg.get("format").and_then(Value::as_str).unwrap_or("M/d/yyyy").to_string(),
-                lid: props_arg.get("lid").and_then(Value::as_str).map(str::to_string),
-            },
-            "group" => ControlKind::Group,
-            // shortcut: repeating sections are made by `region.wrap`, which keeps their items' rules.
-            _ => return Err(bad("kind")),
-        };
-        let wrap = arg.get("wrap").and_then(Value::as_bool).unwrap_or(false);
+        let wrap = c.wrap_selection.unwrap_or(false);
         if wrap && !matches!(kind, ControlKind::RichText | ControlKind::Group) {
-            return Err(bad("wrap"));
+            return Err(Error::invalid("only rich text and group controls wrap the selection"));
         }
-        let placeholder = match text_arg(arg, "placeholder")? {
-            Some(t) => Some(t.to_string()),
+        let placeholder = match c.placeholder {
+            Some(t) => Some(t),
             None if wrap => None,
             None => match kind {
                 ControlKind::PlainText { .. } | ControlKind::RichText => Some("Click or tap here to enter text.".into()),
                 ControlKind::Date { .. } => Some("Click or tap to enter a date.".into()),
+                ControlKind::DropDown => Some("Choose an item.".into()),
                 _ => None,
             },
         };
         let mut props = ControlProps {
             kind: kind.clone(),
-            tag: text_arg(arg, "tag")?.map(str::to_string),
-            alias: text_arg(arg, "alias")?.map(str::to_string),
-            lock: arg.get("lock").filter(|v| !v.is_null()).map(lock_of).transpose()?.unwrap_or_default(),
-            binding: text_arg(arg, "binding")?.map(str::to_string),
+            tag: c.tag,
+            alias: c.title,
+            lock: c.lock.map(lock_of).unwrap_or_default(),
+            binding: c.binding.as_ref().map(|b| binding_xml(b, &w)),
+            kind_xml,
             ..Default::default()
         };
-        if matches!(kind, ControlKind::PlainText { .. } | ControlKind::RichText | ControlKind::Date { .. }) && placeholder.is_some() {
+        if matches!(kind, ControlKind::PlainText { .. } | ControlKind::RichText | ControlKind::Date { .. } | ControlKind::DropDown)
+            && placeholder.is_some()
+        {
             props.showing_placeholder = true;
         }
-        self.target(arg, fonts)?;
+        self.editable_target()?;
         let id = ControlId::next();
-        let answer = Some(json!({ "id": elements::id_str(ElementId::Control(id)) }));
         if wrap {
-            return self.control_wrap(id, props, fonts).map(|o| (o, answer));
+            let out = self.control_wrap(id, props, fonts)?;
+            self.made = Some(CommandResult::Element { id: api_id(ElementId::Control(id)) });
+            return Ok(out);
         }
         let out = match kind {
             ControlKind::Checkbox { checked, unchecked } => {
-                let face = if props_arg.get("value").and_then(Value::as_bool).unwrap_or(false) { checked } else { unchecked };
+                let face = if checked_now { checked } else { unchecked };
                 self.pending_controls.push((id, Control::new(props)));
                 self.pending_font("MS Gothic");
                 let out = self.insert_inlines(
@@ -1878,18 +1902,13 @@ impl Editor {
             ControlKind::Picture => {
                 props.showing_placeholder = true;
                 self.pending_controls.push((id, Control::new(props)));
-                self.doc.images.push(PICTURE_PLACEHOLDER.to_vec());
-                let image = Some(self.doc.images.len() - 1);
+                let image = Some(self.pending_image(PICTURE_PLACEHOLDER.to_vec()));
                 let picture = crate::docx::Picture { w: 144.0, h: 108.0, image, alt: "".into(), lock_aspect: true };
-                let out = self.insert_inlines(
+                self.insert_inlines(
                     |run| vec![Inline::ControlStart(id), Inline::Picture(picture.clone(), run), Inline::ControlEnd(id)],
                     "Insert Content Control",
                     fonts,
-                );
-                if !matches!(out, Outcome::Changed(_)) {
-                    self.doc.images.pop();
-                }
-                out
+                )
             }
             _ => {
                 self.pending_controls.push((id, Control::new(props)));
@@ -1909,8 +1928,11 @@ impl Editor {
             }
         };
         match out {
-            Outcome::Changed(_) => Ok((out, answer)),
-            _ => Err("locked".into()),
+            Outcome::Changed(_) => {
+                self.made = Some(CommandResult::Element { id: api_id(ElementId::Control(id)) });
+                Ok(out)
+            }
+            _ => Err(locked()),
         }
     }
 
@@ -1921,9 +1943,10 @@ impl Editor {
         if a.same_place(&b) {
             return Err(bad("target"));
         }
-        let ((pa, oa), (pb, ob)) = (a.para_offset().ok_or("partial paragraph")?, b.para_offset().ok_or("partial paragraph")?);
+        let ((pa, oa), (pb, ob)) =
+            (a.para_offset().ok_or_else(|| shape("partial paragraph"))?, b.para_offset().ok_or_else(|| shape("partial paragraph"))?);
         if pa == pb {
-            let p = self.index.para(&self.doc, pa).ok_or("no such element")?;
+            let p = self.index.para(&self.doc, pa).ok_or_else(no_element)?;
             let mut inlines = split_at(&p.inlines, &[oa.0, ob.0]);
             // After the markers at the range's start and before those at its end, as text typed there would go.
             let index_at = |inlines: &[Inline], u: u32, after: bool| {
@@ -1969,13 +1992,13 @@ impl Editor {
             return Ok(self.commit(tx, None, fonts));
         }
         // Whole paragraphs: from a paragraph's start to the start of a later one, or to the end of the last.
-        let (sa, sb) = (self.index.para_slot(pa).ok_or("no such element")?, self.index.para_slot(pb).ok_or("no such element")?);
+        let (sa, sb) = (self.index.para_slot(pa).ok_or_else(no_element)?, self.index.para_slot(pb).ok_or_else(no_element)?);
         let end_len = self.index.para(&self.doc, pb).map_or(Unit(0), super::step::para_len);
         if oa != Unit(0) || sa.container != sb.container || (ob != Unit(0) && ob != end_len) {
-            return Err("partial paragraph".into());
+            return Err(shape("partial paragraph"));
         }
         let last = if ob == Unit(0) { sb.block } else { sb.block + 1 };
-        let blocks = self.index.blocks(&self.doc, sa.container).ok_or("no such element")?;
+        let blocks = self.index.blocks(&self.doc, sa.container).ok_or_else(no_element)?;
         let with: Vec<Block> = blocks[sa.block..last]
             .iter()
             .map(|b| {
@@ -1996,58 +2019,59 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
-    /// `control.set`: a control's tag, title, lock, binding, kind settings and placeholder text, as one step.
-    /// A control showing its placeholder shows the new one.
-    fn control_set(&mut self, arg: &Value, fonts: &Fonts) -> Result<(Outcome, Option<Value>), Refused> {
-        let (e, w) = self.element_arg(arg)?;
-        let ElementId::Control(c) = e else { return Err(bad("id")) };
-        let mut control = self.doc.controls.get(&c).cloned().ok_or("no such element")?;
+    pub(super) fn set_control(&mut self, c: SetControl, fonts: &Fonts) -> Outcome {
+        outcome(self.control_set(c, fonts))
+    }
+
+    /// A control's tag, title, lock, binding, kind settings and placeholder text, as one step. A control showing its
+    /// placeholder shows the new one.
+    fn control_set(&mut self, set: SetControl, fonts: &Fonts) -> Result<Outcome, Refused> {
+        let (e, w) = self.element(&set.id)?;
+        let ElementId::Control(c) = e else { return Err(Error::invalid("not a content control")) };
+        let mut control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
+        let prefix = self.cx().w;
         let p = &mut control.props;
-        if arg.get("tag").is_some() {
-            p.tag = text_arg(arg, "tag")?.map(str::to_string);
+        if set.tag.is_some() {
+            p.tag = set.tag;
         }
-        if arg.get("alias").is_some() {
-            p.alias = text_arg(arg, "alias")?.map(str::to_string);
+        if set.title.is_some() {
+            p.alias = set.title;
         }
-        if let Some(l) = arg.get("lock") {
-            p.lock = if l.is_null() { Lock::None } else { lock_of(l)? };
+        if let Some(l) = set.lock {
+            p.lock = lock_of(l);
         }
-        if arg.get("binding").is_some() {
-            p.binding = text_arg(arg, "binding")?.map(str::to_string);
+        if let Some(b) = set.binding {
+            p.binding = b.as_ref().map(|b| binding_xml(b, &prefix));
         }
-        if let Some(props) = arg.get("props").filter(|v| v.is_object()) {
-            match &mut p.kind {
-                ControlKind::PlainText { multi_line } => {
-                    if let Some(m) = props.get("multi_line") {
-                        *multi_line = m.as_bool().ok_or_else(|| bad("props"))?;
+        if let Some(o) = &set.options {
+            match (&mut p.kind, o) {
+                (ControlKind::PlainText { multi_line }, ControlOptions::PlainText(o)) => {
+                    if let Some(m) = o.multiline {
+                        *multi_line = m;
                     }
                 }
-                ControlKind::Date { format, lid } => {
-                    if let Some(f) = props.get("format") {
-                        *format = f.as_str().ok_or_else(|| bad("props"))?.to_string();
+                (ControlKind::Date { format, lid }, ControlOptions::Date(o)) => {
+                    if let Some(f) = &o.format {
+                        *format = f.clone();
                     }
-                    if let Some(l) = props.get("lid") {
-                        *lid = l.as_str().map(str::to_string);
-                    }
-                }
-                ControlKind::Checkbox { checked, unchecked } => {
-                    for (name, slot) in [("checked", checked), ("unchecked", unchecked)] {
-                        if let Some(v) = props.get(name) {
-                            *slot = v.as_str().and_then(|s| s.chars().next()).ok_or_else(|| bad("props"))?;
-                        }
+                    if o.locale.is_some() {
+                        *lid = o.locale.clone();
                     }
                 }
-                _ => return Err(bad("props")),
+                (ControlKind::Checkbox { .. }, ControlOptions::Checkbox(_)) => {}
+                _ => return Err(Error::invalid("options for another kind of control")),
             }
             // The kind element as read no longer says what it is.
-            p.kind_xml = None;
+            if !matches!(p.kind, ControlKind::DropDown | ControlKind::Checkbox { .. }) {
+                p.kind_xml = None;
+            }
         }
-        let placeholder = text_arg(arg, "placeholder")?.map(str::to_string);
+        let placeholder = set.placeholder;
         let showing = p.showing_placeholder;
         let mut tx = self.begin("Change Content Control");
         if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
             self.abort(tx);
-            return Err("no such element".into());
+            return Err(no_element());
         }
         if let (Some(t), true, Where::Inline { para, start, end, first, .. }) = (placeholder, showing, w) {
             let run = self.index.para(&self.doc, para).and_then(|p| p.inlines[first..].iter().find_map(|i| i.run().cloned()));
@@ -2057,7 +2081,25 @@ impl Editor {
             }
         }
         self.follow(&tx);
-        Ok((self.commit(tx, None, fonts), None))
+        Ok(self.commit(tx, None, fonts))
+    }
+
+    /// Checks or clears a checkbox control.
+    pub(super) fn set_checkbox(&mut self, c: SetCheckbox, fonts: &Fonts) -> Outcome {
+        let Ok((ElementId::Control(id), Where::Sym { story, para, at })) = self.element(&c.id) else {
+            return Outcome::Refused(Error::invalid("not a checkbox"));
+        };
+        let Some(ControlKind::Checkbox { checked, .. }) = self.doc.controls.get(&id).map(|k| k.props.kind.clone()) else {
+            return Outcome::Refused(Error::invalid("not a checkbox"));
+        };
+        let face = self.index.para(&self.doc, para).and_then(|p| super::stories::inline_at(p, at)).and_then(|i| match i {
+            Inline::Sym { ch, .. } => Some(*ch),
+            _ => None,
+        });
+        if (face == Some(checked)) == c.checked {
+            return Outcome::Unchanged("already so");
+        }
+        self.toggle_checkbox(Position::text(story, para, at), fonts)
     }
 }
 

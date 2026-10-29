@@ -1,0 +1,30 @@
+{
+  "name": "fonts",
+  "fixture": "editor/FX-font-families.docx",
+  "fonts": "empty",
+  "steps": [
+    { "op": "font", "file": "editor/fonts/stand-in-serif.ttf" },
+    { "op": "call", "method": "fonts.substitute", "args": [{ "Times New Roman": "Stand-in Serif", "Roboto Slab": "Stand-in Serif" }] },
+    { "op": "open", "match": { "warnings": { "$has": [{ "code": "font-unresolved", "count": { "$type": "number" } }] } } },
+    { "op": "expectEvents", "match": [{ "type": "fontsChanged", "unresolved": { "$exact": ["Zzyzx Unknown"] } }] },
+    { "op": "expectState", "match": { "fonts": { "unresolved": { "$exact": ["Zzyzx Unknown"] }, "pending": { "$exact": [] } } } },
+
+    { "op": "call", "method": "find.next", "args": [{ "text": "Times New Roman text" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "font": "Times New Roman" } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Roboto Slab text" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "font": "Roboto Slab" } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Unknown family text" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "font": "Zzyzx Unknown" } } },
+
+    { "op": "font", "file": "editor/fonts/zzyzx-unknown.ttf" },
+    { "op": "expectEvents", "match": [{ "type": "fontsChanged", "unresolved": { "$exact": [] } }] },
+    { "op": "expectState", "match": { "revision": 1, "fonts": { "unresolved": { "$exact": [] } }, "formatting": { "font": "Zzyzx Unknown" } } },
+
+    { "op": "export", "format": "docx", "match": { "revision": 1 } },
+    { "op": "reopen" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Times New Roman text" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "font": "Times New Roman" } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Roboto Slab text" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "font": "Roboto Slab" } } }
+  ]
+}

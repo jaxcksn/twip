@@ -1,4 +1,5 @@
-// The emscripten module: links the bridge so its exports land in the .wasm. The host calls them, never main.
-use twip_ffi as _;
+// The emscripten module: links the C ABI (twip-capi, whose library is named twip) so its exports land in the .wasm.
+// The SDK calls them, never main.
+use twip as _;
 
 fn main() {}

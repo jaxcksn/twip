@@ -1,0 +1,4 @@
+# The generated API references (moon run docs:api, and DocFX in .github/workflows/docs.yml)
+static/api/
+dotnet-api/api/
+dotnet-api/obj/

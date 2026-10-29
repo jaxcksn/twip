@@ -685,8 +685,26 @@ pub struct TblProps {
     pub cell_spacing: Option<f64>,
     pub row_band: Option<i64>,
     pub col_band: Option<i64>,
-    pub floating: bool,
+    pub floating: Option<TablePos>,
     pub shading: Option<Option<u32>>,
+}
+
+/// What `w:tblpVertAnchor` measures a floating table's `tblpY` from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TableAnchor {
+    Text,
+    Margin,
+    Page,
+}
+
+/// `w:tblpPr`: a floating table's position (TABLE-49).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TablePos {
+    pub v_anchor: TableAnchor,
+    pub y: f64,
+    /// `tblpX`, or the `tblpXSpec` alignment (left/center/right) when given.
+    pub x: f64,
+    pub x_spec: Option<Jc>,
 }
 
 impl TblProps {
@@ -711,7 +729,23 @@ impl TblProps {
                 "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
                 "tblStyleRowBandSize" => p.row_band = int(val(c)),
                 "tblStyleColBandSize" => p.col_band = int(val(c)),
-                "tblpPr" => p.floating = true,
+                "tblpPr" => {
+                    p.floating = Some(TablePos {
+                        v_anchor: match attr(c, "vertAnchor") {
+                            Some("page") => TableAnchor::Page,
+                            Some("margin") => TableAnchor::Margin,
+                            _ => TableAnchor::Text,
+                        },
+                        y: attr_twips(c, "tblpY").unwrap_or(0.0),
+                        x: attr_twips(c, "tblpX").unwrap_or(0.0),
+                        x_spec: match attr(c, "tblpXSpec") {
+                            Some("center") => Some(Jc::Center),
+                            Some("right" | "outside") => Some(Jc::Right),
+                            Some(_) => Some(Jc::Left),
+                            None => None,
+                        },
+                    })
+                }
                 "shd" => p.shading = Some(shading_fill(c)),
                 "tblLook" => {
                     let bit = |name: &str, mask: i64| match attr(c, name) {
@@ -737,10 +771,9 @@ impl TblProps {
         macro_rules! take {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
-        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, shading);
+        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, floating, shading);
         self.borders.merge(&o.borders);
         self.margins.merge(&o.margins);
-        self.floating |= o.floating;
     }
 }
 

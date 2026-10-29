@@ -212,7 +212,16 @@ impl Resolver {
         if let Some(t) = region {
             base.merge_level(&t.rpr);
         }
-        base.merge_level(&self.styles.chain_rpr(style_id.as_deref()));
+        let style_rpr = self.styles.chain_rpr(style_id.as_deref());
+        base.merge_level(&style_rpr);
+        // STYLE-4: an 11 or 12pt default paragraph style gives way to the table style's size.
+        if let Some(size) = region.and_then(|t| t.size_over_normal)
+            && style_id.is_some()
+            && style_id == self.styles.default_paragraph
+            && matches!(style_rpr.size, Some(s) if s == 11.0 || s == 12.0)
+        {
+            base.size = Some(size);
+        }
         ParaResolved { style, base, level, num_id, ilvl, from_style, style_id }
     }
 
@@ -392,5 +401,28 @@ mod tests {
             }
         }
         assert!(checked > 10_000, "only {checked} runs checked");
+    }
+
+    #[test]
+    fn an_11_or_12pt_normal_gives_way_to_the_table_style_size() {
+        // (docDefaults, Normal, table style) sizes in half-points → the cell text's size in a T1 table and in a table
+        // with the default table style.
+        let size = |dd: u32, normal: u32, table: Option<u32>| {
+            let sz = |v: u32| format!(r#"<w:rPr><w:sz w:val="{v}"/></w:rPr>"#);
+            let xml = format!(
+                r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault>{}</w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0">{}</w:style><w:style w:type="table" w:default="1" w:styleId="T0"/><w:style w:type="table" w:styleId="T1"><w:basedOn w:val="T0"/>{}</w:style></w:styles>"#,
+                sz(dd),
+                sz(normal),
+                table.map(sz).unwrap_or_default()
+            );
+            let res = Resolver::new(Styles::parse(Some(&xml)), Numbering::default(), ThemeFonts::default());
+            let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
+            let in_table = |id| res.paragraph(&ParaProps::default(), Some(&res.cell_region(Some(id), look, (0, 0), (0, 0), (1, 1)))).base.size;
+            (in_table("T1"), in_table("T0"))
+        };
+        assert_eq!(size(22, 24, None), (Some(11.0), Some(12.0)));
+        assert_eq!(size(20, 24, Some(22)), (Some(11.0), Some(12.0)));
+        assert_eq!(size(20, 24, None), (Some(12.0), Some(12.0)));
+        assert_eq!(size(22, 20, None), (Some(10.0), Some(10.0)));
     }
 }

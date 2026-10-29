@@ -1,0 +1,768 @@
+[
+  {
+    "type": "insertText",
+    "value": "Hello"
+  },
+  {
+    "type": "insertParagraph"
+  },
+  {
+    "type": "insertLineBreak"
+  },
+  {
+    "type": "insertPageBreak"
+  },
+  {
+    "type": "insertColumnBreak"
+  },
+  {
+    "type": "insertSectionBreak",
+    "value": "nextPage"
+  },
+  {
+    "type": "insertTab"
+  },
+  {
+    "char": "§",
+    "font": "Symbol",
+    "type": "insertSymbol"
+  },
+  {
+    "direction": "backward",
+    "type": "delete",
+    "unit": "word"
+  },
+  {
+    "type": "cut"
+  },
+  {
+    "type": "copy"
+  },
+  {
+    "as": "text",
+    "type": "paste"
+  },
+  {
+    "type": "pasteText",
+    "value": "pasted"
+  },
+  {
+    "type": "undo"
+  },
+  {
+    "type": "redo"
+  },
+  {
+    "type": "repeat"
+  },
+  {
+    "type": "selectAll"
+  },
+  {
+    "type": "select",
+    "value": "sentence"
+  },
+  {
+    "by": "word",
+    "direction": "forward",
+    "extend": true,
+    "type": "moveSelection"
+  },
+  {
+    "type": "moveToCell",
+    "value": "next"
+  },
+  {
+    "type": "setSelectionMode",
+    "value": "extend"
+  },
+  {
+    "type": "goBack"
+  },
+  {
+    "type": "escape"
+  },
+  {
+    "type": "selectNextObject",
+    "value": "previous"
+  },
+  {
+    "type": "goToPage",
+    "value": 3
+  },
+  {
+    "type": "setBold",
+    "value": true
+  },
+  {
+    "type": "setItalic",
+    "value": false
+  },
+  {
+    "type": "setUnderline",
+    "value": "double"
+  },
+  {
+    "type": "setStrikethrough",
+    "value": true
+  },
+  {
+    "type": "setDoubleStrikethrough",
+    "value": false
+  },
+  {
+    "type": "setSubscript",
+    "value": true
+  },
+  {
+    "type": "setSuperscript",
+    "value": false
+  },
+  {
+    "type": "setSmallCaps",
+    "value": true
+  },
+  {
+    "type": "setAllCaps",
+    "value": false
+  },
+  {
+    "type": "setHidden",
+    "value": true
+  },
+  {
+    "type": "setFont",
+    "value": "Carlito"
+  },
+  {
+    "type": "setFontSize",
+    "value": 10.5
+  },
+  {
+    "type": "growFont"
+  },
+  {
+    "type": "shrinkFont"
+  },
+  {
+    "type": "setFontColor",
+    "value": "#C00000"
+  },
+  {
+    "type": "setHighlight",
+    "value": "brightGreen"
+  },
+  {
+    "type": "setCharacterSpacing",
+    "value": 0.5
+  },
+  {
+    "type": "setCharacterPosition",
+    "value": -2.5
+  },
+  {
+    "type": "clearFormatting"
+  },
+  {
+    "type": "changeCase",
+    "value": "title"
+  },
+  {
+    "type": "copyFormatting"
+  },
+  {
+    "type": "pasteFormatting"
+  },
+  {
+    "type": "setAlignment",
+    "value": "justify"
+  },
+  {
+    "lines": 1.5,
+    "rule": "multiple",
+    "type": "setLineSpacing"
+  },
+  {
+    "after": 8.5,
+    "before": "auto",
+    "type": "setParagraphSpacing"
+  },
+  {
+    "firstLine": 18.5,
+    "left": 36.5,
+    "right": 0.5,
+    "type": "setIndents"
+  },
+  {
+    "type": "increaseIndent"
+  },
+  {
+    "type": "decreaseIndent"
+  },
+  {
+    "type": "setParagraphStyle",
+    "value": "Heading1"
+  },
+  {
+    "type": "setList",
+    "value": "numbered"
+  },
+  {
+    "type": "setListLevel",
+    "value": "increase"
+  },
+  {
+    "keepLinesTogether": false,
+    "keepWithNext": true,
+    "pageBreakBefore": true,
+    "type": "setParagraphFlow",
+    "widowControl": true
+  },
+  {
+    "type": "setParagraphBorders",
+    "value": "box"
+  },
+  {
+    "type": "setParagraphShading",
+    "value": "#D9E2F3"
+  },
+  {
+    "alignment": "decimal",
+    "leader": "dots",
+    "position": 72.5,
+    "type": "addTabStop"
+  },
+  {
+    "from": 72.5,
+    "to": 90.5,
+    "type": "moveTabStop"
+  },
+  {
+    "type": "deleteTabStop",
+    "value": 90.5
+  },
+  {
+    "type": "clearTabStops"
+  },
+  {
+    "type": "setDefaultTabStop",
+    "value": 36.5
+  },
+  {
+    "bottom": 72.5,
+    "gutter": 0.5,
+    "left": 90.5,
+    "right": 90.5,
+    "top": 72.5,
+    "type": "setMargins"
+  },
+  {
+    "type": "setOrientation",
+    "value": "landscape"
+  },
+  {
+    "height": 841.5,
+    "type": "setPaperSize",
+    "width": 595.5
+  },
+  {
+    "count": 2,
+    "separator": true,
+    "spacing": 36.5,
+    "type": "setColumns"
+  },
+  {
+    "footer": 30.5,
+    "header": 36.5,
+    "type": "setHeaderFooterDistance"
+  },
+  {
+    "type": "setDifferentFirstPage",
+    "value": true
+  },
+  {
+    "type": "setDifferentOddEvenPages",
+    "value": false
+  },
+  {
+    "column": 0,
+    "to": 250.5,
+    "type": "moveColumnBoundary"
+  },
+  {
+    "type": "editHeader"
+  },
+  {
+    "type": "editFooter"
+  },
+  {
+    "type": "closeHeaderFooter"
+  },
+  {
+    "alignment": "center",
+    "format": "pageOfTotal",
+    "type": "insertPageNumber",
+    "where": "footer"
+  },
+  {
+    "columns": 2,
+    "rows": 3,
+    "type": "insertTable"
+  },
+  {
+    "altText": "Company logo",
+    "data": "iVBORw==",
+    "type": "insertPicture"
+  },
+  {
+    "type": "insertTextBox"
+  },
+  {
+    "type": "insertFootnote"
+  },
+  {
+    "type": "insertEndnote"
+  },
+  {
+    "address": "https://example.com",
+    "text": "Example",
+    "type": "insertHyperlink"
+  },
+  {
+    "address": "https://example.org",
+    "type": "editHyperlink"
+  },
+  {
+    "type": "removeHyperlink"
+  },
+  {
+    "code": "MERGEFIELD Name",
+    "display": "«Name»",
+    "showCode": false,
+    "type": "insertField"
+  },
+  {
+    "count": 2,
+    "type": "insertRows",
+    "where": "below"
+  },
+  {
+    "count": 1,
+    "type": "insertColumns",
+    "where": "left"
+  },
+  {
+    "type": "deleteRows"
+  },
+  {
+    "type": "deleteColumns"
+  },
+  {
+    "type": "deleteTable"
+  },
+  {
+    "type": "deleteCells",
+    "value": "up"
+  },
+  {
+    "type": "mergeCells"
+  },
+  {
+    "columns": 2,
+    "rows": 1,
+    "type": "splitCells"
+  },
+  {
+    "type": "splitTable"
+  },
+  {
+    "type": "distributeRows"
+  },
+  {
+    "type": "distributeColumns"
+  },
+  {
+    "type": "moveRows",
+    "value": "down"
+  },
+  {
+    "type": "autoFitColumns",
+    "value": "contents"
+  },
+  {
+    "type": "setCellAlignment",
+    "value": "center"
+  },
+  {
+    "type": "setCellShading",
+    "value": null
+  },
+  {
+    "border": {
+      "color": "auto",
+      "style": "double",
+      "width": 1.5
+    },
+    "edges": "outside",
+    "type": "setCellBorders"
+  },
+  {
+    "bottom": 2.5,
+    "left": 5.5,
+    "right": 5.5,
+    "top": 2.5,
+    "type": "setCellMargins"
+  },
+  {
+    "type": "setHeaderRow",
+    "value": true
+  },
+  {
+    "type": "setRowHeight",
+    "value": {
+      "height": 20.5,
+      "rule": "exact"
+    }
+  },
+  {
+    "type": "setRowCanBreak",
+    "value": false
+  },
+  {
+    "type": "setColumnWidth",
+    "value": 120.5
+  },
+  {
+    "index": 1,
+    "to": 200.5,
+    "type": "moveTableColumnBoundary"
+  },
+  {
+    "index": 0,
+    "to": 30.5,
+    "type": "moveTableRowBoundary"
+  },
+  {
+    "kind": "percent",
+    "type": "setTableWidth",
+    "value": 100.5
+  },
+  {
+    "type": "setTableAlignment",
+    "value": "right"
+  },
+  {
+    "type": "setTableIndent",
+    "value": 5.5
+  },
+  {
+    "type": "setTableStyle",
+    "value": "TableGrid"
+  },
+  {
+    "bandedColumns": false,
+    "bandedRows": true,
+    "firstColumn": true,
+    "headerRow": true,
+    "lastColumn": false,
+    "totalRow": false,
+    "type": "setTableStyleOptions"
+  },
+  {
+    "height": 72.5,
+    "lockAspect": true,
+    "type": "setObjectSize",
+    "width": 144.5
+  },
+  {
+    "type": "resetObjectSize"
+  },
+  {
+    "type": "setObjectWrap",
+    "value": "square"
+  },
+  {
+    "type": "setAnchorLocked",
+    "value": true
+  },
+  {
+    "decorative": false,
+    "text": "A chart",
+    "type": "setAltText"
+  },
+  {
+    "type": "deleteObject"
+  },
+  {
+    "code": "MERGEFIELD Total",
+    "display": "«Total»",
+    "id": "field-1",
+    "type": "setField"
+  },
+  {
+    "results": [
+      {
+        "display": {
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "text": "See "
+                },
+                {
+                  "bold": true,
+                  "italic": false,
+                  "link": "https://example.com/terms",
+                  "strikethrough": false,
+                  "text": "clause 4",
+                  "underline": true
+                }
+              ]
+            }
+          ]
+        },
+        "id": "field-1"
+      }
+    ],
+    "token": 4,
+    "type": "setFieldResults"
+  },
+  {
+    "ids": [
+      "field-1",
+      "field-2"
+    ],
+    "type": "updateFields"
+  },
+  {
+    "ids": [
+      "field-1",
+      "field-2"
+    ],
+    "locked": true,
+    "type": "setFieldsLocked"
+  },
+  {
+    "type": "unlinkFields"
+  },
+  {
+    "show": true,
+    "type": "showFieldCodes"
+  },
+  {
+    "labels": {
+      "MERGEFIELD Name": "Customer name"
+    },
+    "merge": true,
+    "type": "setFieldLabels"
+  },
+  {
+    "binding": {
+      "prefixMappings": "xmlns:i='urn:invoice'",
+      "storeItemId": "{6A9C}",
+      "xpath": "/invoice/total"
+    },
+    "kind": "dropDown",
+    "lock": "control",
+    "options": {
+      "items": [
+        {
+          "text": "Open",
+          "value": "open"
+        }
+      ]
+    },
+    "placeholder": "Choose",
+    "tag": "status",
+    "title": "Status",
+    "type": "insertControl",
+    "wrapSelection": false
+  },
+  {
+    "binding": null,
+    "id": "control-3",
+    "lock": "none",
+    "options": {
+      "checked": false
+    },
+    "tag": "status",
+    "type": "setControl"
+  },
+  {
+    "id": "control-3",
+    "keepContent": true,
+    "type": "removeControl"
+  },
+  {
+    "id": "control-4",
+    "image": "iVBORw==",
+    "type": "fillControl"
+  },
+  {
+    "checked": true,
+    "id": "control-5",
+    "type": "setCheckbox"
+  },
+  {
+    "tag": "lines",
+    "title": "Invoice lines",
+    "type": "wrapInRepeatingSection"
+  },
+  {
+    "type": "removeElement",
+    "value": "field-2"
+  },
+  {
+    "find": "Name",
+    "ids": [
+      "field-1",
+      "field-2"
+    ],
+    "in": "code",
+    "kind": "field",
+    "replace": "FullName",
+    "type": "replaceInElements"
+  },
+  {
+    "clear": true,
+    "marks": [
+      {
+        "id": "field-1",
+        "message": "Unknown field",
+        "severity": "warning"
+      }
+    ],
+    "type": "markElements"
+  },
+  {
+    "looks": [
+      {
+        "look": {
+          "fill": "#EEEEEE",
+          "label": "Logo"
+        },
+        "match": {
+          "tag": "logo"
+        }
+      }
+    ],
+    "merge": false,
+    "type": "setPlaceholderLooks"
+  },
+  {
+    "image": "iVBORw==",
+    "key": "logo",
+    "type": "fillPlaceholder"
+  },
+  {
+    "itemId": "{6A9C}",
+    "namespace": "urn:invoice",
+    "type": "writeDataPart",
+    "xml": "<invoice/>"
+  },
+  {
+    "namespace": "urn:invoice",
+    "type": "removeDataPart"
+  },
+  {
+    "type": "setTrackChanges",
+    "value": true
+  },
+  {
+    "type": "setMarkupView",
+    "value": "simple"
+  },
+  {
+    "type": "acceptRevision",
+    "value": "r7"
+  },
+  {
+    "type": "rejectRevision",
+    "value": "r8"
+  },
+  {
+    "type": "acceptRevisionsInSelection"
+  },
+  {
+    "type": "rejectRevisionsInSelection"
+  },
+  {
+    "author": "Ada Lovelace",
+    "type": "acceptAllRevisions"
+  },
+  {
+    "type": "rejectAllRevisions"
+  },
+  {
+    "type": "selectRevision",
+    "value": "next"
+  },
+  {
+    "type": "addComment",
+    "value": "Check this"
+  },
+  {
+    "body": {
+      "paragraphs": [
+        {
+          "runs": [
+            {
+              "text": "See "
+            },
+            {
+              "bold": true,
+              "italic": false,
+              "link": "https://example.com/terms",
+              "strikethrough": false,
+              "text": "clause 4",
+              "underline": true
+            }
+          ]
+        }
+      ]
+    },
+    "to": "c4",
+    "type": "replyToComment"
+  },
+  {
+    "body": "Fixed",
+    "id": "c5",
+    "type": "editComment"
+  },
+  {
+    "type": "deleteComment",
+    "value": "c5"
+  },
+  {
+    "done": true,
+    "id": "c4",
+    "type": "resolveComment"
+  },
+  {
+    "type": "setActiveComment",
+    "value": "c4"
+  },
+  {
+    "type": "selectComment",
+    "value": "c4"
+  },
+  {
+    "author": "Ada Lovelace",
+    "color": "#7030A0",
+    "type": "setAuthorColor"
+  },
+  {
+    "type": "setZoom",
+    "value": "wholePage"
+  },
+  {
+    "formattingMarks": true,
+    "gridlines": false,
+    "textBoundaries": true,
+    "type": "setViewOptions"
+  },
+  {
+    "type": "setMode",
+    "value": "design"
+  }
+]

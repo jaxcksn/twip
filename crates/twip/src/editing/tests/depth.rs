@@ -75,18 +75,8 @@ fn run() {
     match target {
         Some((page, x, y)) => {
             let (x, y) = e.stack().to_doc(page, x, y).expect("on the stack");
-            let msg = |seq: u64, kind: &str| super::super::input::Message {
-                seq,
-                input: super::super::input::Input::Pointer {
-                    kind: if kind == "down" { PointerKind::Down } else { PointerKind::Up },
-                    x,
-                    y,
-                    clicks: 1,
-                    mods: Mods::default(),
-                },
-            };
-            e.apply(msg(1, "down"), fonts()).expect("down");
-            e.apply(msg(2, "up"), fonts()).expect("up");
+            e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+            e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
         }
         None => {
             let id = crate::layout::ParaId(find_para(e.document(), "deep"));
@@ -104,7 +94,7 @@ fn run() {
     assert!(typed["paragraphs"][deep]["text"].as_str().is_some_and(|t| t.contains("xyz")));
 
     // Tab in the innermost (only) cell adds a row to the innermost table only.
-    e.execute(Command::NextCell { back: false }, fonts());
+    e.execute(Command::MoveToCell(crate::api::value::Order::Next), fonts());
     let tabbed = state(&mut e)["dump"].clone();
     let rows = |d: &Value| d["tables"].as_array().map(|t| t.iter().map(|t| t["rows"].as_u64().unwrap_or(0)).collect::<Vec<_>>()).unwrap_or_default();
     let r = rows(&tabbed);

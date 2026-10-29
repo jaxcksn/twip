@@ -1,10 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // The installed Edge, locally and on CI's Ubuntu runners (no browser download). PW_CHANNEL picks another.
-const port = 8790;
+const port = Number(process.env.TWIP_TEST_PORT ?? 8790);
 export default defineConfig({
   testDir: 'browser',
-  testMatch: '*.spec.mjs',
+  testMatch: '*.spec.{mjs,ts}',
   outputDir: '../../target/playwright',
   timeout: 60_000,
   workers: 1,

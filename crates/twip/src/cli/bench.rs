@@ -3,9 +3,9 @@
 //! reused per edit. `NOHINT=1` edits without hints (the change is found by comparison);
 //! `NOHINT=alt` alternates.
 
-use twip::docx::{Block, Inline};
-use twip::layout::ids::Revision;
-use twip::layout::{Change, DocumentLayout, Snapshot, dump, layout, layout_with};
+use twip::internal::docx::{Block, Inline};
+use twip::internal::layout::ids::Revision;
+use twip::internal::layout::{Change, DocumentLayout, Snapshot, dump, layout, layout_with};
 
 /// The first text in a block (a paragraph or, depth-first, a table cell's).
 fn first_text(b: &mut Block) -> Option<&mut String> {
@@ -20,7 +20,7 @@ fn first_text(b: &mut Block) -> Option<&mut String> {
 
 fn report(label: &str, t: std::time::Instant, s: &Snapshot) {
     println!("{label}: {:.1} ms, {} pages", t.elapsed().as_secs_f64() * 1e3, s.pages().len());
-    for (name, ms, n) in twip::prof::take() {
+    for (name, ms, n) in twip::internal::prof::take() {
         println!("    {name:<10} {ms:8.1} ms {n:8} calls");
     }
 }
@@ -28,17 +28,17 @@ fn report(label: &str, t: std::time::Instant, s: &Snapshot) {
 pub fn run(path: &str, runs: usize) -> Result<(), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     let t = std::time::Instant::now();
-    let fonts = twip::font::Fonts::system();
+    let fonts = twip::internal::font::Fonts::system();
     println!("fonts {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
     let t = std::time::Instant::now();
-    let doc = twip::docx::read(&bytes).map_err(|e| format!("{path}: {e:?}"))?;
+    let doc = twip::internal::docx::read(&bytes).map_err(|e| format!("{path}: {e:?}"))?;
     println!("read {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
     for k in 0..runs {
         let t = std::time::Instant::now();
         let s = layout(&doc, &fonts);
         report(&format!("layout #{k}"), t, &s);
     }
-    let mut cache = twip::layout::cache::LayoutCache::new();
+    let mut cache = twip::internal::layout::cache::LayoutCache::new();
     let t = std::time::Instant::now();
     let s = layout_with(&doc, &fonts, &mut cache);
     report("cached cold", t, &s);
@@ -50,7 +50,7 @@ pub fn run(path: &str, runs: usize) -> Result<(), String> {
     let mut rev = 1;
     dl.edit(Revision(rev), None);
     dl.complete(&doc, &fonts);
-    twip::prof::take();
+    twip::internal::prof::take();
     let mut edited = doc.clone();
     let si = edited.sections.len() / 2;
     let mid = edited.sections[si].blocks.len() / 2;
@@ -72,7 +72,7 @@ pub fn run(path: &str, runs: usize) -> Result<(), String> {
     let mut dl = DocumentLayout::new();
     dl.edit(Revision(rev), None);
     dl.complete(&doc2, &fonts);
-    twip::prof::take();
+    twip::internal::prof::take();
     let nohint = std::env::var("NOHINT").ok();
     let nsec = doc2.sections.len();
     let (mut worst, mut total, mut bad, mut reused_total) = (0.0f64, 0.0, 0, 0);
@@ -107,7 +107,7 @@ pub fn run(path: &str, runs: usize) -> Result<(), String> {
         dl.edit(Revision(rev), hint);
         dl.complete(&doc2, &fonts);
         let ms = t.elapsed().as_secs_f64() * 1e3;
-        let phases = twip::prof::take();
+        let phases = twip::internal::prof::take();
         if ms > 5.0 {
             let list: Vec<String> = phases.iter().map(|(n, t, c)| format!("{n} {t:.1}/{c}")).collect();
             println!("  step {k}: {ms:.1} ms: {}", list.join(", "));
@@ -116,7 +116,7 @@ pub fn run(path: &str, runs: usize) -> Result<(), String> {
         total += ms;
         reused_total += dl.reused_pages().0;
         let full = layout(&doc2, &fonts);
-        twip::prof::take();
+        twip::internal::prof::take();
         let (a, b) = (dump::page_text(&dl.snapshot(), &doc2), dump::page_text(&full, &doc2));
         if a != b {
             bad += 1;

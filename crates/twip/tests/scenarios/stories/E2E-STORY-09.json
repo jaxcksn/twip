@@ -44,10 +44,14 @@
       "type": "new"
     },
     {
-      "command": "home.undo"
+      "command": {
+        "type": "undo"
+      }
     },
     {
-      "command": "home.undo"
+      "command": {
+        "type": "undo"
+      }
     },
     {
       "expect": {

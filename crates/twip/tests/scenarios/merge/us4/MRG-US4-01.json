@@ -7,12 +7,11 @@
   ],
   "steps": [
     {
-      "command": "view.mode",
-      "arg": "design"
+      "mode": "design"
     },
     {
-      "command": "view.looks",
-      "arg": {
+      "command": {
+        "type": "setPlaceholderLooks",
         "looks": [
           {
             "match": {
@@ -54,8 +53,7 @@
       }
     },
     {
-      "command": "view.mode",
-      "arg": "editing",
+      "mode": "editing",
       "expect": {
         "undo_depth": 0
       }

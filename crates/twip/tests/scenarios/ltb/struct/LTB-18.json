@@ -14,8 +14,15 @@
       }
     },
     {
-      "command": "table.borders.outside",
-      "arg": "double,1.5,C00000"
+      "command": {
+        "type": "setCellBorders",
+        "edges": "outside",
+        "border": {
+          "style": "double",
+          "width": 1.5,
+          "color": "#C00000"
+        }
+      }
     },
     {
       "click": {
@@ -24,16 +31,41 @@
       }
     },
     {
-      "command": "table.borders.outside",
-      "arg": "double,1.5,C00000"
+      "command": {
+        "type": "setCellBorders",
+        "edges": "outside",
+        "border": {
+          "style": "double",
+          "width": 1.5,
+          "color": "#C00000"
+        }
+      }
     },
     {
       "expect": {
         "tables": [
           {
             "rows": 10,
-            "cells": [6, 4, 4, 5, 4, 4, 3, 3, 2, 1],
-            "grid": [78, 78, 78, 78, 78, 78]
+            "cells": [
+              6,
+              4,
+              4,
+              5,
+              4,
+              4,
+              3,
+              3,
+              2,
+              1
+            ],
+            "grid": [
+              78,
+              78,
+              78,
+              78,
+              78,
+              78
+            ]
           }
         ],
         "undo_depth": 2

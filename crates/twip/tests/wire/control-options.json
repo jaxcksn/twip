@@ -1,0 +1,20 @@
+[
+  {
+    "checked": true
+  },
+  {
+    "format": "yyyy-MM-dd",
+    "locale": "en-GB"
+  },
+  {
+    "items": [
+      {
+        "text": "Yes",
+        "value": "y"
+      }
+    ]
+  },
+  {
+    "multiline": true
+  }
+]

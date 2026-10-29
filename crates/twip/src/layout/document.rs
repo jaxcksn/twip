@@ -414,9 +414,10 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
     let (si, num) = (pg.section, pg.number);
     let sec = &cx.doc.sections[si];
     let ctx = cx.ctx;
-    let (left, right, _) = margins(sec, &ctx, num);
+    let (left, right, top) = margins(sec, &ctx, num);
     let s = sec.section_in(ctx.env.text.review.view);
     let width = s.page_w - left - right;
+    let frames = super::float::Frames { page_w: s.page_w, page_h: s.page_h, margin: [left, right, top, s.bottom], column: (left, width) };
     let fields = hf_fields(run, cx, i);
     let parts = hf_parts(run, cx, i);
     let env = StoryEnv { ctx, fields: &fields, notes: &cx.notes.numbers };
@@ -435,7 +436,8 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
         if footer {
             let (_, height) = stack_limited(&l, left, 0.0, cap);
             full[1] = Some(stack_limited(&l, left, 0.0, limit).1);
-            let (children, _) = stack_limited(&l, left, s.page_h - s.footer - height, cap);
+            let (mut children, _) = stack_limited(&l, left, s.page_h - s.footer - height, cap);
+            children.extend(super::story::hf_floats(&blocks, &l, &frames, s.page_h - s.footer - height, &env, memos)?);
             records[1] = Some(HfRecord { part: part.clone(), fields: story_fields, height });
             boxes[1] = Some(BoxFragment {
                 kind: BoxKind::Footer { story: part.clone() },
@@ -446,7 +448,7 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
             });
         } else {
             full[0] = Some(stack_limited(&l, left, s.header, limit).1 + hook_height(k));
-            let (children, height) = if limit.is_infinite() && !clip && s.header + l.height > 0.85 * s.page_h {
+            let (mut children, height) = if limit.is_infinite() && !clip && s.header + l.height > 0.85 * s.page_h {
                 // HDR-8: a very tall compat-15 header is drawn only down to 0.435 × page height.
                 let cut = 0.435 * s.page_h;
                 let mut c = Vec::new();
@@ -457,6 +459,7 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
             } else {
                 stack_limited(&l, left, s.header, cap)
             };
+            children.extend(super::story::hf_floats(&blocks, &l, &frames, s.header, &env, memos)?);
             records[0] = Some(HfRecord { part: part.clone(), fields: story_fields, height: if clip { height } else { full[0].unwrap_or(height) } });
             boxes[0] = Some(BoxFragment {
                 kind: BoxKind::Header { story: part.clone() },

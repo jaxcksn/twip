@@ -1,137 +1,138 @@
 {
- "id": "RECORD-MOVE-PARAGRAPH",
- "title": "Cutting a whole paragraph and pasting it elsewhere records a move",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "First para."
-  },
-  {
-   "key": "Enter"
-  },
-  {
-   "type": "Second para."
-  },
-  {
-   "key": "Enter"
-  },
-  {
-   "type": "Third para."
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 0
-   }
-  },
-  {
-   "click": {
-    "para": 1,
-    "offset": 0
-   },
-   "shift": true
-  },
-  {
-   "clipboard": "cut"
-  },
-  {
-   "click": {
-    "para": 2,
-    "offset": 0
-   }
-  },
-  {
-   "clipboard": "paste"
-  },
-  {
-   "expect": {
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "First para.",
-        "runs": [
-         {
-          "text": "First para.",
-          "ins": null,
-          "del": null,
-          "move": "from",
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": "from"
-        },
-        "pchange": null
-       },
-       {
-        "text": "Second para.",
-        "runs": [
-         {
-          "text": "Second para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       },
-       {
-        "text": "First para.",
-        "runs": [
-         {
-          "text": "First para.",
-          "ins": null,
-          "del": null,
-          "move": "to",
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": "to"
-        },
-        "pchange": null
-       },
-       {
-        "text": "Third para.",
-        "runs": [
-         {
-          "text": "Third para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
+  "id": "RECORD-MOVE-PARAGRAPH",
+  "title": "Cutting a whole paragraph and pasting it elsewhere records a move",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "First para."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "Second para."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "Third para."
+    },
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      },
+      "shift": true
+    },
+    {
+      "clipboard": "cut"
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "clipboard": "paste"
+    },
+    {
+      "expect": {
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "First para.",
+                "runs": [
+                  {
+                    "text": "First para.",
+                    "ins": null,
+                    "del": null,
+                    "move": "from",
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": "from"
+                },
+                "pchange": null
+              },
+              {
+                "text": "Second para.",
+                "runs": [
+                  {
+                    "text": "Second para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              },
+              {
+                "text": "First para.",
+                "runs": [
+                  {
+                    "text": "First para.",
+                    "ins": null,
+                    "del": null,
+                    "move": "to",
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": "to"
+                },
+                "pchange": null
+              },
+              {
+                "text": "Third para.",
+                "runs": [
+                  {
+                    "text": "Third para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
     }
-   }
-  }
- ]
+  ]
 }

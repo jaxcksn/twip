@@ -305,23 +305,24 @@ fn view_commands_relayout_without_editing() {
     let fonts = Fonts::system();
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-RUNS.docx");
     let mut e = Editor::open(&std::fs::read(p).expect("the fixture"), &fonts).expect("opens");
-    let run = |e: &mut Editor, id: &str, arg: &str| {
-        let cmd = Command::from_host(id, Some(&serde_json::json!(arg))).expect("a host command");
-        assert!(!cmd.mutates(), "{id} isn't an edit");
+    let run = |e: &mut Editor, cmd: Command| {
+        assert!(!cmd.mutates(), "{cmd:?} isn't an edit");
         e.execute(cmd, &fonts)
     };
-    assert_eq!(run(&mut e, "view.markup", "none"), Outcome::Moved);
-    assert_eq!(run(&mut e, "view.markup", "none"), Outcome::Unchanged("already in that view"));
+    use crate::docx::review::MarkupView;
+    let color =
+        |author: &str| Command::SetAuthorColor(crate::api::command::AuthorColor { author: author.into(), color: crate::api::value::Color(0x112233) });
+    assert_eq!(run(&mut e, Command::SetMarkupView(MarkupView::NoMarkup)), Outcome::Moved);
+    assert_eq!(run(&mut e, Command::SetMarkupView(MarkupView::NoMarkup)), Outcome::Unchanged("already in that view"));
     e.complete(&fonts);
     let accepted = lines(&fixture("FX-REVIEW-RUNS-ACCEPTED"), &fonts);
     assert_eq!(snapshot_lines(&e.snapshot()), accepted, "No markup lays out as accepted");
     assert!(!e.is_dirty() && e.history().undo_depth() == 0, "a view change is no edit");
-    run(&mut e, "view.markup", "all");
+    run(&mut e, Command::SetMarkupView(MarkupView::All));
     let name = e.document().people.persons[0].name.to_string();
-    assert_eq!(run(&mut e, "view.author-color", &format!("{name}\n#112233")), Outcome::Moved);
+    assert_eq!(run(&mut e, color(&name)), Outcome::Moved);
     assert_eq!(e.document().review.palette.color(crate::docx::review::AuthorId(0)), 0x112233);
     e.complete(&fonts);
     assert!(snapshot_colours(&e.snapshot()).contains(&Some(0x112233)), "the author's revisions in the chosen colour");
-    assert_eq!(run(&mut e, "view.author-color", "Nobody\n112233"), Outcome::Unchanged("no such author"));
-    assert!(Command::from_host("view.markup", Some(&serde_json::json!("sideways"))).is_err());
+    assert!(matches!(run(&mut e, color("Nobody")), Outcome::Refused(_)));
 }

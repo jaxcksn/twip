@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- A public member missing from PublicAPI.*.txt (RS0016), or a recorded one that is gone (RS0017), fails the
+         build in every configuration, whatever a project does with other warnings. So does a public member with no
+         XML documentation (CS1591) in a project that generates its documentation file (the packages). -->
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017;CS1591</WarningsAsErrors>
+  </PropertyGroup>
+</Project>

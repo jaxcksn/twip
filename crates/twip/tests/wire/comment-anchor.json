@@ -1,0 +1,19 @@
+[
+  {
+    "active": true,
+    "done": false,
+    "end": {
+      "x": 240.5,
+      "y": 300.5
+    },
+    "lineBottom": 304.5,
+    "lineTop": 288.5,
+    "page": 3,
+    "pageEdge": 856.5,
+    "start": {
+      "x": 120.5,
+      "y": 300.5
+    },
+    "thread": "c4"
+  }
+]

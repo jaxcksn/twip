@@ -1,133 +1,134 @@
 {
- "id": "RECORD-DRAG-SENTENCE",
- "title": "Dragging a whole sentence records a move",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "First paragraph has some words here."
-  },
-  {
-   "key": "Enter"
-  },
-  {
-   "type": "Second one. It has two sentences."
-  },
-  {
-   "key": "Enter"
-  },
-  {
-   "type": "Third paragraph ends here."
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 1,
-    "offset": 12
-   }
-  },
-  {
-   "click": {
-    "para": 1,
-    "offset": 33
-   },
-   "shift": true
-  },
-  {
-   "drag": {
-    "from": {
-     "para": 1,
-     "offset": 20
+  "id": "RECORD-DRAG-SENTENCE",
+  "title": "Dragging a whole sentence records a move",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "First paragraph has some words here."
     },
-    "to": {
-     "para": 2,
-     "offset": 0
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "Second one. It has two sentences."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "Third paragraph ends here."
+    },
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 12
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 33
+      },
+      "shift": true
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 20
+        },
+        "to": {
+          "para": 2,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "First paragraph has some words here.",
+                "runs": [
+                  {
+                    "text": "First paragraph has some words here.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              },
+              {
+                "text": "Second one. It has two sentences.",
+                "runs": [
+                  {
+                    "text": "Second one. ",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "It has two sentences.",
+                    "ins": null,
+                    "del": null,
+                    "move": "from",
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              },
+              {
+                "text": "It has two sentences.Third paragraph ends here.",
+                "runs": [
+                  {
+                    "text": "It has two sentences.",
+                    "ins": null,
+                    "del": null,
+                    "move": "to",
+                    "fmt": null
+                  },
+                  {
+                    "text": "Third paragraph ends here.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
     }
-   }
-  },
-  {
-   "expect": {
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "First paragraph has some words here.",
-        "runs": [
-         {
-          "text": "First paragraph has some words here.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       },
-       {
-        "text": "Second one. It has two sentences.",
-        "runs": [
-         {
-          "text": "Second one. ",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "It has two sentences.",
-          "ins": null,
-          "del": null,
-          "move": "from",
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       },
-       {
-        "text": "It has two sentences.Third paragraph ends here.",
-        "runs": [
-         {
-          "text": "It has two sentences.",
-          "ins": null,
-          "del": null,
-          "move": "to",
-          "fmt": null
-         },
-         {
-          "text": "Third paragraph ends here.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
-    }
-   }
-  }
- ]
+  ]
 }

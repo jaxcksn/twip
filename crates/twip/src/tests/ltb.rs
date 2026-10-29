@@ -1,8 +1,10 @@
 //! Table regression tests whose expectations the scenario files can't state (borders, spans, dialogs, saving); the
 //! related scenarios are tests/scenarios/ltb/struct/LTB-<id>.json.
 
-use serde_json::{Map, Value, json};
+use serde_json::json;
 
+use crate::api::services::{DialogKind, DialogValues};
+use crate::api::session::Session;
 use crate::docx::props::Border;
 use crate::docx::{Block, Table};
 use crate::editing::Editor;
@@ -12,7 +14,6 @@ use crate::editing::position::{Position, StoryId};
 use crate::editing::selection::Selection;
 use crate::editing::tests::scenarios::{Run, paragraph};
 use crate::editing::tests::{fonts, open, para_id, texts};
-use crate::host::Engine;
 use crate::layout::Unit;
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -75,31 +76,25 @@ fn overruns(t: &Table) -> Vec<String> {
         .collect()
 }
 
-fn engine(name: &str) -> Engine {
-    let mut en = Engine::with_fonts(crate::font::Fonts::system());
-    en.open(&fixture(name));
-    en.viewport(0.0, 0.0, 960.0, 675.0, 1.0);
-    while en.idle() {}
-    en
+/// An engine with a session on fixture `name`, laid out in a 960 x 675 viewport.
+fn engine(name: &str) -> (crate::api::engine::Engine, crate::api::engine::SessionId) {
+    let (mut en, id) = super::session(&fixture(name));
+    let s = en.session(id).expect("a session");
+    s.host().set_size(960.0, 675.0, 1.0);
+    s.with_editor(|e| e.complete(fonts()));
+    (en, id)
 }
 
-/// A dialog's field values and hidden state, as `dialog_apply` takes them back.
-fn dialog_values(open: &str) -> Map<String, Value> {
-    let v: Value = serde_json::from_str(open).unwrap_or_else(|e| panic!("dialog JSON {open}: {e}"));
-    let mut m = Map::new();
-    for f in v["dialog"]["rows"].as_array().into_iter().flatten().flat_map(|r| r.as_array().cloned().unwrap_or_default()) {
-        if let (Some(id), Some(x)) = (f["id"].as_str(), f["value"].as_str()) {
-            m.insert(id.into(), x.into());
-        }
-    }
-    for (k, x) in v["dialog"]["state"].as_object().into_iter().flatten() {
-        m.insert(k.clone(), x.clone());
-    }
-    m
+/// The caret at unit `u` of the body's paragraph `n`, the state following it.
+fn caret_in(s: &mut Session, n: usize, u: u32) {
+    s.with_editor(|e| caret(e, n, u));
 }
 
-fn num(m: &Map<String, Value>, k: &str) -> f64 {
-    m.get(k).and_then(Value::as_str).and_then(|s| s.trim().parse().ok()).unwrap_or_else(|| panic!("dialog field {k}: {m:?}"))
+/// The Table Properties dialog's values for the selection.
+fn table_properties(s: &mut Session) -> (crate::api::services::DialogModel, crate::api::services::TablePropertiesDialog) {
+    let m = s.dialog_open(DialogKind::TableProperties).expect("the dialog opens in a cell");
+    let DialogValues::TableProperties(v) = m.values.clone() else { panic!("{m:?}") };
+    (m, v)
 }
 
 #[test]
@@ -128,7 +123,7 @@ fn ltb_11_borders_on_a_mixed_depth_selection_change_the_outer_table_only() {
     let before = inner(&r.e);
     r.step(&json!({ "drag": { "from": { "para": 2, "offset": 2 }, "to": { "para": 12, "offset": 3 } } }));
     r.check(&json!({ "selection": { "kind": "cells", "table": 0, "anchor": [0, 0], "focus": [1, 0] } }), "LTB-11 drag");
-    r.step(&json!({ "command": "table.borders.all", "arg": "double,1.5,C00000" }));
+    r.step(&json!({"command": {"type": "setCellBorders", "edges": "all", "border": {"style": "double", "width": 1.5, "color": "#C00000"}}}));
     assert_eq!(inner(&r.e), before, "no inner table's borders change");
     let t = top_tables(&r.e)[0];
     for (row, col) in [(0, 0), (1, 0)] {
@@ -141,15 +136,7 @@ fn ltb_11_borders_on_a_mixed_depth_selection_change_the_outer_table_only() {
 fn ltb_16_after_a_column_insert_every_row_spans_the_grid() {
     // The grid gains one column, every row's offsets and spans add up to it,
     // every row without offsets gains one cell, and spanning cells keep their spans.
-    let cases = [
-        (1, "table.insert-right"),
-        (1, "table.insert-left"),
-        (7, "table.insert-left"),
-        (7, "table.insert-right"),
-        (6, "table.insert-right"),
-        (24, "table.insert-left"),
-        (31, "table.insert-right"),
-    ];
+    let cases = [(1, "right"), (1, "left"), (7, "left"), (7, "right"), (6, "right"), (24, "left"), (31, "right")];
     let mut failures = Vec::new();
     for (para, cmd) in cases {
         let mut r = Run::open("FX-TBL-MERGED.docx", "LTB-16");
@@ -166,7 +153,7 @@ fn ltb_16_after_a_column_insert_every_row_spans_the_grid() {
         let before = shape(top_tables(&r.e)[0]);
         assert!(overruns(top_tables(&r.e)[0]).is_empty(), "the fixture's rows span its grid");
         r.step(&json!({ "click": { "para": para, "offset": 1 } }));
-        r.step(&json!({ "command": cmd }));
+        r.step(&json!({ "command": { "type": "insertColumns", "where": cmd } }));
         let t = top_tables(&r.e)[0];
         let mut why = overruns(t);
         if t.grid.len() != 7 {
@@ -192,11 +179,12 @@ fn ltb_16_after_a_column_insert_every_row_spans_the_grid() {
 fn ltb_18_outside_borders_reach_every_neighbour_across_spans_and_grid_offsets() {
     // A block side also sets the facing side of every cell beyond it, found by grid column
     // (spans, gridBefore and gridAfter), not by cell index.
-    let arg = "double,1.5,C00000";
+    let outside =
+        json!({ "command": { "type": "setCellBorders", "edges": "outside", "border": { "style": "double", "width": 1.5, "color": "#C00000" } } });
     // The 2-column span in row 4 (grid columns 4-5).
     let mut r = Run::open("FX-TBL-MERGED.docx", "LTB-18");
     r.step(&json!({ "click": { "para": 23, "offset": 2 } }));
-    r.step(&json!({ "command": "table.borders.outside", "arg": arg }));
+    r.step(&outside);
     let t = top_tables(&r.e)[0];
     let c = &t.rows[4].cells[3];
     assert!(double(&c.top) && double(&c.left) && double(&c.bottom) && double(&c.right), "the span itself: {c:?}");
@@ -208,7 +196,7 @@ fn ltb_18_outside_borders_reach_every_neighbour_across_spans_and_grid_offsets() 
     // Row 5's last cell (grid column 4, gridAfter 1 beyond it).
     let mut r = Run::open("FX-TBL-MERGED.docx", "LTB-18");
     r.step(&json!({ "click": { "para": 27, "offset": 0 } }));
-    r.step(&json!({ "command": "table.borders.outside", "arg": arg }));
+    r.step(&outside);
     let t = top_tables(&r.e)[0];
     let c = &t.rows[5].cells[3];
     assert!(double(&c.top) && double(&c.left) && double(&c.bottom) && double(&c.right), "the cell itself: {c:?}");
@@ -224,38 +212,68 @@ fn ltb_18_outside_borders_reach_every_neighbour_across_spans_and_grid_offsets() 
 /// maps to a model paragraph and position, the integrity check holds, and nothing outside the edited table was
 /// re-read (its paragraphs and tables keep their ids). `dialog-cancel` opens Table Properties and cancels it;
 /// `dialog-apply` applies it as opened.
-fn id_steps(steps: &[(&str, Option<&str>)]) -> Vec<String> {
-    let mut en = engine("FX-TBL-BASIC.docx");
-    let outside = ids_outside(en.editor().unwrap(), Some(1));
+/// The command a step of [`id_steps`] runs.
+fn step_command(name: &str) -> Command {
+    use crate::api::command::{CellBorders, CellShift, HorizontalSide, InsertColumns, InsertRows, SelectUnit, SplitCells, VerticalSide};
+    use crate::api::value::{AutoOr, CellAlignment, Color, HeightRule, Points, RowHeight};
+    match name {
+        "table.insert-below" => Command::InsertRows(InsertRows { side: VerticalSide::Below, count: None }),
+        "table.insert-above" => Command::InsertRows(InsertRows { side: VerticalSide::Above, count: None }),
+        "table.insert-left" => Command::InsertColumns(InsertColumns { side: HorizontalSide::Left, count: None }),
+        "table.insert-right" => Command::InsertColumns(InsertColumns { side: HorizontalSide::Right, count: None }),
+        "table.delete.row" => Command::DeleteRows,
+        "table.delete.column" => Command::DeleteColumns,
+        "table.delete.cells-left" => Command::DeleteCells(CellShift::Left),
+        "table.select.row" => Command::Select(SelectUnit::Row),
+        "table.merge" => Command::MergeCells,
+        "home.undo" => Command::Undo,
+        "home.redo" => Command::Redo,
+        "table.split" => Command::SplitCells(SplitCells { columns: 2, rows: None }),
+        "table.split-rows" => Command::SplitCells(SplitCells { columns: 1, rows: Some(2) }),
+        "table.distribute" => Command::DistributeColumns,
+        "table.borders.all" => Command::SetCellBorders(CellBorders { edges: crate::api::command::BorderEdges::All, border: None }),
+        "table.shading" => Command::SetCellShading(Some(Color(0xDDEBF7))),
+        "table.row-height" => Command::SetRowHeight(AutoOr::Value(RowHeight { height: Points(30.0), rule: HeightRule::Exact })),
+        "table.cell-align.center" => Command::SetCellAlignment(CellAlignment::Center),
+        "table.header-row" => Command::SetHeaderRow(true),
+        other => panic!("no step {other}"),
+    }
+}
+
+fn id_steps(steps: &[&str]) -> Vec<String> {
+    let (mut en, id) = engine("FX-TBL-BASIC.docx");
+    let en = en.session(id).expect("a session");
+    let outside = en.with_editor(|e| ids_outside(e, Some(1)));
     // The caret in the second table's cell (1,1), or the nearest cell left.
-    let place = |en: &mut Engine| {
-        let e = en.editor().unwrap();
-        let t = top_tables(e)[1];
-        let row = &t.rows[1.min(t.rows.len() - 1)];
-        let cell = &row.cells[1.min(row.cells.len() - 1)];
-        let Some(Block::Para(p)) = cell.blocks.first() else { panic!("a cell starts with a paragraph") };
-        let p = crate::layout::ParaId(p.id);
-        e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, Unit(0))));
+    let place = |en: &mut Session| {
+        en.with_editor(|e| {
+            let t = top_tables(e)[1];
+            let row = &t.rows[1.min(t.rows.len() - 1)];
+            let cell = &row.cells[1.min(row.cells.len() - 1)];
+            let Some(Block::Para(p)) = cell.blocks.first() else { panic!("a cell starts with a paragraph") };
+            let p = crate::layout::ParaId(p.id);
+            e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, Unit(0))));
+        })
     };
     let mut failures = Vec::new();
-    for (k, &(id, arg)) in steps.iter().enumerate() {
+    for (k, &id) in steps.iter().enumerate() {
         // Commands that act on a selection keep the one before them.
         if !matches!(id, "table.merge" | "home.undo" | "home.redo") {
-            place(&mut en);
+            place(en);
         }
         match id {
-            "dialog-cancel" => assert_ne!(en.dialog_open("TableProperties"), "null"),
+            "dialog-cancel" => drop(table_properties(en)),
             "dialog-apply" => {
-                let v = dialog_values(&en.dialog_open("TableProperties"));
-                en.dialog_apply("TableProperties", &Value::Object(v).to_string());
+                let (m, _) = table_properties(en);
+                en.dialog_apply(m).expect("applies");
             }
-            _ => {
-                en.command(id, arg);
-            }
+            // Some steps aren't available where the one before left the selection.
+            _ => drop(en.run(step_command(id))),
         }
-        while en.idle() {}
-        let e = en.editor().unwrap();
-        let st = inspect(e, "geometry,dump,integrity", true);
+        let st = en.with_editor(|e| {
+            e.complete(fonts());
+            inspect(e, "geometry,dump,integrity", true)
+        });
         let what = format!("step {k} {id}");
         if st["integrity"] != json!([]) {
             failures.push(format!("{what}: integrity {}", st["integrity"]));
@@ -270,7 +288,7 @@ fn id_steps(steps: &[(&str, Option<&str>)]) -> Vec<String> {
                 failures.push(format!("{what}: paragraph {n} ({len} units) has a stop past its end: {}", l["stops"]));
             }
         }
-        if ids_outside(e, Some(1)) != outside {
+        if en.with_editor(|e| ids_outside(e, Some(1))) != outside {
             failures.push(format!("{what}: paragraphs or tables outside the edited table have new ids"));
         }
     }
@@ -281,30 +299,30 @@ fn id_steps(steps: &[(&str, Option<&str>)]) -> Vec<String> {
 fn ltb_22_every_command_leaves_caret_stops_in_the_model_and_untouched_ids() {
     // Every table command, a cancelled and an applied Table Properties dialog, undo
     // and redo.
-    let steps: &[(&str, Option<&str>)] = &[
-        ("table.insert-below", None),
-        ("table.insert-above", None),
-        ("table.insert-left", None),
-        ("table.insert-right", None),
-        ("table.delete.row", None),
-        ("table.delete.column", None),
-        ("table.select.row", None),
-        ("table.merge", None),
-        ("home.undo", None),
-        ("home.undo", None),
-        ("home.redo", None),
-        ("table.split", Some("2")),
-        ("table.split-rows", Some("2")),
-        ("table.distribute", None),
-        ("table.borders.all", None),
-        ("table.shading", Some("#DDEBF7")),
-        ("table.row-height", Some("30,exact")),
-        ("table.cell-align.center", None),
-        ("table.header-row", None),
-        ("dialog-cancel", None),
-        ("dialog-apply", None),
-        ("home.undo", None),
-        ("home.redo", None),
+    let steps: &[&str] = &[
+        "table.insert-below",
+        "table.insert-above",
+        "table.insert-left",
+        "table.insert-right",
+        "table.delete.row",
+        "table.delete.column",
+        "table.select.row",
+        "table.merge",
+        "home.undo",
+        "home.undo",
+        "home.redo",
+        "table.split",
+        "table.split-rows",
+        "table.distribute",
+        "table.borders.all",
+        "table.shading",
+        "table.row-height",
+        "table.cell-align.center",
+        "table.header-row",
+        "dialog-cancel",
+        "dialog-apply",
+        "home.undo",
+        "home.redo",
     ];
     let failures = id_steps(steps);
     assert!(
@@ -320,7 +338,7 @@ fn ltb_22_every_command_leaves_caret_stops_in_the_model_and_untouched_ids() {
 #[test]
 fn ltb_22_delete_cells_after_split_rows_keeps_the_grid_valid() {
     // The command list, Delete Cells included (every vertical merge keeps a start).
-    let failures = id_steps(&[("table.split-rows", Some("2")), ("table.delete.cells-left", None)]);
+    let failures = id_steps(&["table.split-rows", "table.delete.cells-left"]);
     assert!(
         failures.is_empty(),
         "{}",
@@ -336,16 +354,16 @@ fn ltb_23_undo_after_a_cancelled_table_properties_dialog_saves() {
     // Type in a cell, open Table Properties and cancel it, undo, save: the file
     // reopens as the fixture was.
     let original = open("FX-TBL-BASIC.docx");
-    let mut en = engine("FX-TBL-BASIC.docx");
-    caret(en.editor().unwrap(), 13, 8);
+    let (mut en, id) = engine("FX-TBL-BASIC.docx");
+    let en = en.session(id).expect("a session");
+    caret_in(en, 13, 8);
     en.text(" typed");
-    assert_eq!(texts(en.editor().unwrap())[13], "T2 R1 C1 typed");
-    assert_ne!(en.dialog_open("TableProperties"), "null", "the dialog opens in a cell");
+    assert_eq!(en.with_editor(|e| texts(e))[13], "T2 R1 C1 typed");
+    table_properties(en);
     // Cancel: the host sends nothing.
-    en.command("home.undo", None);
-    while en.idle() {}
-    assert_eq!(texts(en.editor().unwrap()), texts(&original), "undo gives the cell back");
-    let bytes = en.save().expect("saves after the undo");
+    en.run(Command::Undo).expect("undoes");
+    assert_eq!(en.with_editor(|e| texts(e)), texts(&original), "undo gives the cell back");
+    let bytes = en.export(&Default::default()).expect("saves after the undo").bytes.0;
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(texts(&again), texts(&original));
     let mut original = original;
@@ -357,38 +375,40 @@ fn ltb_23_undo_after_a_cancelled_table_properties_dialog_saves() {
 fn ltb_24_table_properties_read_and_change_the_caret_row_in_a_repeating_section() {
     // Rows wrapped in content controls (FX-REPEAT-REGION rows 1-3) count as rows;
     // the state for the caret's row reports that row and its height; each property change is one undo step.
-    let mut en = engine("FX-REPEAT-REGION.docx");
+    use crate::api::state::Tri;
+    use crate::api::value::{AutoOr, HeightRule, Points, RowHeight};
+    let (mut en, id) = engine("FX-REPEAT-REGION.docx");
+    let en = en.session(id).expect("a session");
+    let undo = |en: &mut Session| en.with_editor(|e| e.history().undo_depth());
+    let heights =
+        |en: &mut Session| -> Vec<Option<(f64, String)>> { en.with_editor(|e| top_tables(e)[0].rows.iter().map(|r| r.height.clone()).collect()) };
     // "Item 3" is row 3 (the header row, then Items 1-3, then the picture row).
-    caret(en.editor().unwrap(), 11, 2);
-    let f = en.editor().unwrap().format_state().expect("a state");
+    caret_in(en, 11, 2);
+    let f = en.with_editor(|e| e.format_state()).expect("a state");
     assert_eq!(f.cell, Some((3, 0)), "the caret's row and cell");
-    let undo = en.editor().unwrap().history().undo_depth();
-    en.command("table.row-height", Some("30,exact"));
-    while en.idle() {}
-    assert_eq!(en.editor().unwrap().history().undo_depth(), undo + 1, "a row height is one step");
-    let heights: Vec<Option<(f64, String)>> = top_tables(en.editor().unwrap())[0].rows.iter().map(|r| r.height.clone()).collect();
-    assert_eq!(heights, vec![None, None, None, Some((30.0, "exact".to_string())), None], "only the caret's row");
-    let v = dialog_values(&en.dialog_open("TableProperties"));
-    assert_eq!((num(&v, "rowHeight"), v.get("rule").and_then(Value::as_str)), (30.0, Some("Exactly")), "the dialog reads the caret's row");
+    let before = undo(en);
+    en.run(step_command("table.row-height")).expect("sets the height");
+    assert_eq!(undo(en), before + 1, "a row height is one step");
+    assert_eq!(heights(en), vec![None, None, None, Some((30.0, "exact".to_string())), None], "only the caret's row");
+    let exact = Tri::Uniform(AutoOr::Value(RowHeight { height: Points(30.0), rule: HeightRule::Exact }));
+    assert_eq!(table_properties(en).1.row_height, exact, "the dialog reads the caret's row");
     // "Item 2" is row 2, with no height.
-    caret(en.editor().unwrap(), 8, 2);
-    assert_eq!(en.editor().unwrap().format_state().expect("a state").cell, Some((2, 0)));
-    let mut v = dialog_values(&en.dialog_open("TableProperties"));
-    assert_eq!(num(&v, "rowHeight"), 0.0, "row 2 has no height");
+    caret_in(en, 8, 2);
+    assert_eq!(en.with_editor(|e| e.format_state()).expect("a state").cell, Some((2, 0)));
+    let (mut m, mut v) = table_properties(en);
+    assert!(!matches!(v.row_height, Tri::Uniform(AutoOr::Value(_))), "row 2 has no height: {:?}", v.row_height);
     // A width change through the dialog: one step.
-    v.insert("widthKind".into(), "Weight".into());
-    v.insert("width".into(), "400".into());
-    let undo = en.editor().unwrap().history().undo_depth();
-    en.dialog_apply("TableProperties", &Value::Object(v).to_string());
-    while en.idle() {}
-    assert_eq!(en.editor().unwrap().history().undo_depth(), undo + 1, "the dialog's width change is one step");
-    assert_eq!(top_tables(en.editor().unwrap())[0].width, crate::docx::props::Width::Dxa(400.0));
+    v.width = crate::api::value::TableWidth::Points { value: Points(400.0) };
+    m.values = DialogValues::TableProperties(v);
+    let before = undo(en);
+    en.dialog_apply(m).expect("applies");
+    assert_eq!(undo(en), before + 1, "the dialog's width change is one step");
+    assert_eq!(en.with_editor(|e| top_tables(e)[0].width), crate::docx::props::Width::Dxa(400.0));
     // And a column width from the command bar: one step.
-    let undo = en.editor().unwrap().history().undo_depth();
-    en.command("table.column-width", Some("100"));
-    while en.idle() {}
-    assert_eq!(en.editor().unwrap().history().undo_depth(), undo + 1, "a column width is one step");
-    let heights: Vec<Option<(f64, String)>> = top_tables(en.editor().unwrap())[0].rows.iter().map(|r| r.height.clone()).collect();
+    let before = undo(en);
+    en.run(Command::SetColumnWidth(Points(100.0))).expect("sets the width");
+    assert_eq!(undo(en), before + 1, "a column width is one step");
+    let heights = heights(en);
     assert_eq!(heights[3], Some((30.0, "exact".to_string())), "row 3 keeps its height");
     assert_eq!(heights[2], None, "row 2 still has none");
 }
@@ -418,15 +438,15 @@ fn ltb_35_structural_table_edits_save_and_reopen_to_the_same_dump() {
     // Back to front, so the earlier paragraphs keep their numbers.
     let steps = [
         json!({ "click": { "para": 46, "offset": 2 } }),
-        json!({ "command": "insert.table", "arg": "2,2" }),
+        json!({"command": {"type": "insertTable", "rows": 2, "columns": 2}}),
         json!({ "drag": { "from": { "para": 34, "offset": 2 }, "to": { "para": 38, "offset": 2 } } }),
-        json!({ "command": "table.merge" }),
+        json!({"command": {"type": "mergeCells"}}),
         json!({ "click": { "para": 28, "offset": 2 } }),
-        json!({ "command": "table.insert-right" }),
+        json!({"command": {"type": "insertColumns", "where": "right"}}),
         json!({ "click": { "para": 16, "offset": 2 } }),
-        json!({ "command": "table.insert-below" }),
+        json!({"command": {"type": "insertRows", "where": "below"}}),
         json!({ "click": { "para": 13, "offset": 2 } }),
-        json!({ "command": "table.insert-left" }),
+        json!({"command": {"type": "insertColumns", "where": "left"}}),
     ];
     for s in &steps {
         r.step(s);
@@ -481,7 +501,13 @@ fn ltb_36_a_table_steps_undo_memory_follows_the_table_and_ids_survive() {
     let insert = |e: &mut Editor| -> usize {
         caret(e, 16, 2);
         let b = e.history().bytes();
-        e.execute(Command::InsertRows { below: true, n: 1 }, fonts());
+        e.execute(
+            Command::InsertRows(crate::api::command::InsertRows {
+                side: if true { crate::api::command::VerticalSide::Below } else { crate::api::command::VerticalSide::Above },
+                count: Some(1),
+            }),
+            fonts(),
+        );
         e.history().bytes() - b
     };
     let mut small = open("FX-TBL-BASIC.docx");

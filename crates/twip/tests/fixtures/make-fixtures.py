@@ -2,7 +2,8 @@
 
 One FX-<ID>.docx per fixture family (see that folder's README.md for what each exercises). Standard library only and
 no randomness: the same bytes on every run. Every package is plain OOXML that Word opens without a repair prompt.
-Fonts are limited to Calibri, Times New Roman, Arial and Segoe UI Emoji.
+Fonts are limited to Calibri, Times New Roman, Arial and Segoe UI Emoji, except FX-font-families, which also names a
+web-only family and an unknown one. fonts/ gets two generated stand-in fonts.
 Run: python -I crates/twip/tests/fixtures/make-fixtures.py [out dir]
 """
 
@@ -34,6 +35,7 @@ NAMESPACES = " ".join(f'xmlns:{k}="{v}"' for k, v in NS.items()) + ' mc:Ignorabl
 XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
 CT = "application/vnd.openxmlformats-officedocument.wordprocessingml."
+EXTERNAL = ' TargetMode="External"'
 
 WORDS = (
     "the board finds that presenter colleague budget meeting order record products advisor partner inventory forecast "
@@ -181,6 +183,14 @@ class Doc:
         self.custom_xml = []  # (xml, ds:itemID) per custom XML part (data parts)
         self.glossary = False  # a glossary part with the default content-control placeholder
         self.settings_extra = ""  # settings elements before w:compat (tracking, protection)
+        self.styles = STYLES  # a fixture may change the defaults or add styles
+        self.media = {}  # colour index -> image bytes, replacing the generated PNG
+
+    def link(self, text, address):
+        """A hyperlink run to an external address, drawn as Word draws one."""
+        rid = self.rel("hyperlink", address)
+        run = r(text, '<w:color w:val="0563C1"/>' + U)
+        return f'<w:hyperlink r:id="{rid}" w:history="1">{run}</w:hyperlink>'
 
     def uid(self):
         self.ids += 1
@@ -261,7 +271,7 @@ class Doc:
         if body.endswith("</w:tbl>"):
             body += "<w:p/>"  # the body's last block must be a paragraph
         document = f"{XML_DECL}<w:document {NAMESPACES}><w:body>{body}{sect_pr or sect()}</w:body></w:document>"
-        styles = STYLES.replace("</w:styles>", PLACEHOLDER_STYLE + "</w:styles>") if self.glossary else STYLES
+        styles = self.styles.replace("</w:styles>", PLACEHOLDER_STYLE + "</w:styles>") if self.glossary else self.styles
         files = [("word/document.xml", document, f"{CT}document.main+xml"), ("word/styles.xml", styles, f"{CT}styles+xml")]
         rels = [("rIdStyles", REL + "styles", "styles.xml"), ("rIdSettings", REL + "settings", "settings.xml")]
         notes_pr = ""
@@ -311,13 +321,14 @@ class Doc:
         )
         document_rels = (
             f'{XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            + "".join(f'<Relationship Id="{i}" Type="{t}" Target="{target}"/>' for i, t, target in rels)
+            + "".join(f'<Relationship Id="{i}" Type="{t}" Target="{target}"{EXTERNAL if t == REL + "hyperlink" else ""}/>'
+                      for i, t, target in rels)
             + "</Relationships>"
         )
         entries = [("[Content_Types].xml", content_types), ("_rels/.rels", package_rels), ("word/_rels/document.xml.rels", document_rels)]
         entries += [(name, xml) for name, xml, _ in files] + raw
         entries = [(name, text.encode("utf-8")) for name, text in entries]
-        entries += [(f"word/media/image{c + 1}.png", png(COLOURS[c])) for c in sorted(self.images)]
+        entries += [(f"word/media/image{c + 1}.png", self.media.get(c) or png(COLOURS[c])) for c in sorted(self.images)]
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             for name, data in entries:
                 info = zipfile.ZipInfo(name, STAMP)
@@ -1173,6 +1184,159 @@ def fx_grid_wide(d):
     return table + P(""), margins
 
 
+# ---- public API: the documents the shared contract scripts open --------------------------------------------------
+
+
+def fx_mixed_format(d):
+    """One paragraph: plain, bold and Arial runs, so a whole selection reads mixed and each run reads uniform."""
+    return p(r("Plain words, ") + r("bold words", B) + r(", and ") + r("Arial words", font("Arial")) + r("."))
+
+
+def fx_bad_image(d):
+    """A picture whose image part isn't an image, and a hyperlink to activate."""
+    d.media[0] = b"this is not an image"
+    return (
+        P("Images and links", HEADING)
+        + p(r("A broken picture: ") + d.picture(1.0, 0.75, 0))
+        + p(r("Visit ") + d.link("the example site", "https://example.com/") + r(" for more."))
+        + P("Type here.")
+    )
+
+
+def fx_font_families(d):
+    """Times New Roman (the document default), a family only a web source has, and a family nothing provides."""
+    d.styles = STYLES.replace("Calibri", "Times New Roman")
+    return (
+        P("Times New Roman text in the default font.")
+        + p(r("Roboto Slab text.", font("Roboto Slab")))
+        + p(r("Unknown family text.", font("Zzyzx Unknown")))
+    )
+
+
+def heading_style(level, size):
+    return (
+        f'<w:style w:type="paragraph" w:styleId="Heading{level}"><w:name w:val="heading {level}"/><w:basedOn w:val="Normal"/>'
+        f'<w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="200" w:after="0"/>'
+        f'<w:outlineLvl w:val="{level - 1}"/></w:pPr><w:rPr><w:b/><w:sz w:val="{size}"/><w:szCs w:val="{size}"/></w:rPr></w:style>'
+    )
+
+
+def fx_outline(d):
+    """Three heading levels on each of two pages, and a word ("survey") once on each page."""
+    d.styles = STYLES.replace("</w:styles>", heading_style(2, 26) + heading_style(3, 24) + "</w:styles>")
+    h = lambda level: f'<w:pStyle w:val="Heading{level}"/>'  # noqa: E731
+    return (
+        P("Overview", h(1)) + P(filler(30, 1))
+        + P("Background", h(2)) + P(filler(30, 2))
+        + P("Earlier work", h(3)) + P("An earlier survey found two trends.")
+        + P("Method", h(1) + "<w:pageBreakBefore/>") + P(filler(30, 3))
+        + P("Data", h(2)) + P(filler(30, 4))
+        + P("Sources", h(3)) + P("The survey data came from two sources.")
+    )
+
+
+def fx_tabs(d):
+    """A style with two tab stops (1" left, 4" right), a paragraph with its own stop (3" centre) and indents (0.5" left,
+    0.25" right, 0.25" first line), a three-column table, then a continuous section with two text columns."""
+    tabbed = (
+        '<w:style w:type="paragraph" w:customStyle="1" w:styleId="Tabbed"><w:name w:val="Tabbed"/><w:basedOn w:val="Normal"/>'
+        '<w:qFormat/><w:pPr><w:tabs><w:tab w:val="left" w:pos="1440"/><w:tab w:val="right" w:pos="5760"/></w:tabs></w:pPr></w:style>'
+    )
+    d.styles = STYLES.replace("</w:styles>", tabbed + "</w:styles>")
+    own = '<w:tabs><w:tab w:val="center" w:pos="4320"/></w:tabs><w:ind w:left="720" w:right="360" w:firstLine="360"/>'
+    two_columns = sect(kind="continuous").replace('<w:cols w:space="720"/>', '<w:cols w:num="2" w:space="720"/>')
+    return (
+        p(r("Name") + TAB + r("Role") + TAB + r("Year"), '<w:pStyle w:val="Tabbed"/>')
+        + p(r("Own stop") + TAB + r("centred"), own)
+        + P("After the indented paragraph.")
+        + grid([["First cell", "Second cell", "Third cell"]], split(TEXT_WIDTH, 3))
+        + P("Last paragraph of the one-column section.", sect())
+        + "".join(P(("Two columns. " if k == 0 else "") + filler(60, k)) for k in range(6))
+    ), two_columns
+
+
+def fx_services(d):
+    """Everything the host services act on: misspellings (Teh, brwon, quikc, zorbly), one word in three cases with
+    three formats (Apple bold, apple plain, APPLE italic), a hyperlink, a word deleted with tracking, a floating
+    picture with no alt text, and a 2x2 table."""
+    deleted = (
+        f'<w:del w:id="{d.uid()}" w:author="Grace" w:date="2026-01-02T10:00:00Z"><w:r>'
+        '<w:delText xml:space="preserve">obsolete </w:delText></w:r></w:del>'
+    )
+    float_pic = d.picture(1.0, 0.75, 0, anchor_at(SQUARE, ("column", 4.5), ("paragraph", 0.0)))
+    return (
+        P("Services", HEADING)
+        + P("Teh quick brown fox saw a brwon hat, a quikc answer and a zorbly cloud.")
+        + p(r("Apple", B) + r(", apple and ") + r("APPLE", I) + r("."))
+        + p(r("Visit ") + d.link("the example site", "https://example.com/") + r(" for more."))
+        + p(r("Keep this ") + deleted + r("sentence."))
+        + p(float_pic + r("A picture sits beside this text."))
+        + grid([["Cell one", "Cell two"], ["Cell three", "Cell four"]], split(TEXT_WIDTH, 2))
+        + P("End.")
+    )
+
+
+API = {
+    "FX-mixed-format": fx_mixed_format,
+    "FX-bad-image": fx_bad_image,
+    "FX-font-families": fx_font_families,
+    "FX-outline": fx_outline,
+    "FX-tabs": fx_tabs,
+    "FX-services": fx_services,
+}
+
+
+def stand_in_font(family):
+    """A minimal TrueType font named `family`: a box glyph for every printable ASCII character, for scripts that
+    add a font to an empty library. No real font's outlines or names."""
+
+    def checksum(data):
+        data += b"\0" * (-len(data) % 4)
+        return sum(struct.unpack(f">{len(data) // 4}I", data)) & 0xFFFFFFFF
+
+    box = struct.pack(">hhhhhHH4B4h4h", 1, 50, 0, 450, 700, 3, 0, 1, 1, 1, 1, 50, 0, 400, 0, 0, 700, 0, -700)
+    glyf = box + box  # .notdef, then the box; the space glyph (1) is empty
+    loca = struct.pack(">4I", 0, len(box), len(box), len(glyf))
+    cmap4 = struct.pack(">7H", 4, 40 + 2 * 94, 0, 6, 4, 1, 2) + struct.pack(">3H", 0x20, 0x7E, 0xFFFF) + b"\0\0"
+    cmap4 += struct.pack(">3H", 0x20, 0x21, 0xFFFF) + struct.pack(">3H", (1 - 0x20) & 0xFFFF, 0, 1) + struct.pack(">3H", 0, 4, 0)
+    cmap4 += struct.pack(">94H", *[2] * 94)
+    names = [(1, family), (2, "Regular"), (4, f"{family} Regular"), (6, family.replace(" ", "") + "-Regular")]
+    strings = [text.encode("utf-16-be") for _, text in names]
+    name = struct.pack(">3H", 0, len(names), 6 + 12 * len(names))
+    offset = 0
+    for (name_id, _), data in zip(names, strings):
+        name += struct.pack(">6H", 3, 1, 0x409, name_id, len(data), offset)
+        offset += len(data)
+    tables = {
+        b"OS/2": struct.pack(">HhHHH10hh10s4I4s3H3h2H2I2h3H", 4, 500, 400, 5, 0, 650, 600, 0, 75, 650, 600, 0, 350, 50, 250, 0,
+                             b"\0" * 10, 1, 0, 0, 0, b"NONE", 0x40, 0x20, 0x7E, 800, -200, 0, 800, 200, 1, 0, 500, 700, 0, 0x20, 1),
+        b"cmap": struct.pack(">2H2HI", 0, 1, 3, 1, 12) + cmap4,
+        b"glyf": glyf,
+        b"head": struct.pack(">4I2H2q4h2H3h", 0x00010000, 0x00010000, 0, 0x5F0F3CF5, 0x000B, 1000, 0, 0, 50, 0, 450, 700, 0, 8, 2, 1, 0),
+        b"hhea": struct.pack(">I3hH11hH", 0x00010000, 800, -200, 0, 500, 0, 0, 450, 1, 0, 0, 0, 0, 0, 0, 0, 3),
+        b"hmtx": struct.pack(">HhHhHh", 500, 50, 250, 0, 500, 50),
+        b"loca": loca,
+        b"maxp": struct.pack(">I14H", 0x00010000, 3, 4, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0),
+        b"name": name + b"".join(strings),
+        b"post": struct.pack(">IihhIIIII", 0x00030000, 0, -100, 50, 0, 0, 0, 0, 0),
+    }
+    count = len(tables)
+    out = struct.pack(">I4H", 0x00010000, count, 128, 3, count * 16 - 128)
+    offset = 12 + 16 * count
+    body = b""
+    for tag in sorted(tables):
+        data = tables[tag]
+        out += tag + struct.pack(">3I", checksum(data), offset + len(body), len(data))
+        body += data + b"\0" * (-len(data) % 4)
+    font_bytes = bytearray(out + body)
+    head = offset + sum(len(tables[t]) + (-len(tables[t]) % 4) for t in sorted(tables) if t < b"head")
+    struct.pack_into(">I", font_bytes, head + 8, (0xB1B0AFBA - checksum(bytes(font_bytes))) & 0xFFFFFFFF)
+    return bytes(font_bytes)
+
+
+FONTS = {"stand-in-serif.ttf": "Stand-in Serif", "zzyzx-unknown.ttf": "Zzyzx Unknown"}
+
+
 # ---- review: tracked revisions and comments ---------------------------------------------------------------------
 #
 # Each tracked fixture can also be written "accepted" (every revision accepted) and "rejected" (every revision
@@ -1577,7 +1741,7 @@ FIXTURES = {
 def main():
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent / "editor"
     out.mkdir(parents=True, exist_ok=True)
-    sets = [(out, FIXTURES), (out / "merge-set", MERGE_SET), (out / "review", REVIEW)]
+    sets = [(out, FIXTURES), (out, API), (out / "merge-set", MERGE_SET), (out / "review", REVIEW)]
     for folder, builds in sets:
         folder.mkdir(parents=True, exist_ok=True)
         for name, build in builds.items():
@@ -1585,7 +1749,11 @@ def main():
             result = build(d)
             body, sect_pr = result if isinstance(result, tuple) else (result, None)
             d.write(folder / f"{name}.docx", body, sect_pr)
-    print(f"wrote {len(FIXTURES)} fixtures to {out}, {len(MERGE_SET)} to {out / 'merge-set'} and {len(REVIEW)} to {out / 'review'}")
+    (out / "fonts").mkdir(exist_ok=True)
+    for file, family in FONTS.items():
+        (out / "fonts" / file).write_bytes(stand_in_font(family))
+    print(f"wrote {len(FIXTURES) + len(API)} fixtures to {out}, {len(MERGE_SET)} to {out / 'merge-set'}, {len(REVIEW)} to {out / 'review'}"
+          f" and {len(FONTS)} fonts to {out / 'fonts'}")
 
 
 if __name__ == "__main__":

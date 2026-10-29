@@ -1,0 +1,15 @@
+[
+  "save",
+  "saveAs",
+  "print",
+  "open",
+  "new",
+  "find",
+  "replace",
+  "goTo",
+  "insertHyperlink",
+  "nextMisspelling",
+  "focusFont",
+  "focusFontSize",
+  "help"
+]

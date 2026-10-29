@@ -279,8 +279,20 @@ pub fn cached<K: CacheKey, V: PartialEq + Debug>(
     Ok(value)
 }
 
-/// The evictable bytes a cache keeps by default (32 MB).
+/// The evictable bytes a cache keeps by default (32 MB), and the least a document's budget is.
 pub const DEFAULT_BUDGET: usize = 32 << 20;
+
+/// The budget per laid-out page: about what a dense page's lines, shaped paragraphs and tables take, with room for
+/// the versions an edit or an undo reuses.
+const PAGE_BUDGET: usize = 512 << 10;
+
+/// The most any document's budget is (128 MB), however many pages it has.
+const MAX_BUDGET: usize = 128 << 20;
+
+/// The budget for a document of `pages` laid-out pages.
+fn page_budget(pages: usize) -> usize {
+    pages.saturating_mul(PAGE_BUDGET).clamp(DEFAULT_BUDGET, MAX_BUDGET)
+}
 
 /// Bytes inserted between eviction checks.
 const EVICT_CHECK: usize = 1 << 20;
@@ -331,6 +343,12 @@ impl LayoutCache {
     /// A cache with another evictable-bytes budget.
     pub fn with_budget(budget: usize) -> LayoutCache {
         LayoutCache { budget, ..LayoutCache::new() }
+    }
+
+    /// Sizes the budget for a document of `pages` laid-out pages: a large document keeps its pages' entries instead
+    /// of evicting what the next edit reuses, and no document takes more than `MAX_BUDGET`.
+    pub fn fit(&mut self, pages: usize) {
+        self.budget = page_budget(pages);
     }
 
     /// Starts a layout (a new generation for least recently used eviction), first evicting least recently used
@@ -463,6 +481,15 @@ mod tests {
         assert_eq!(b.lookup(&1).as_deref().map(String::as_str), Some("one"));
         assert!(b.lookup(&3).is_none(), "same bucket, different key");
         assert_eq!(b.counts(), (1, 1));
+    }
+
+    #[test]
+    fn the_budget_follows_the_page_count_within_bounds() {
+        assert_eq!(page_budget(0), DEFAULT_BUDGET);
+        assert_eq!(page_budget(20), DEFAULT_BUDGET, "a short document keeps the default");
+        assert_eq!(page_budget(107), 107 * PAGE_BUDGET);
+        assert_eq!(page_budget(10_000), MAX_BUDGET, "a long one stops at the cap");
+        assert_eq!(page_budget(usize::MAX), MAX_BUDGET, "no overflow");
     }
 
     #[test]

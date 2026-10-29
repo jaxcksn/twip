@@ -1,17 +1,10 @@
-//! Data parts through the host API: a data part written and the text edited survive a save and reopen; a part the
-//! host didn't touch keeps its bytes; a bound control keeps its binding; and data parts don't change the layout.
-//! With `WORD_CHECK_DIR` set, the saved file goes there too, to check its custom XML parts in another application.
+//! Data parts through the API: a data part written and the text edited survive a save and reopen; a part the host
+//! didn't touch keeps its bytes; a bound control keeps its binding; and data parts don't change the layout. With
+//! `WORD_CHECK_DIR` set, the saved file goes there too, to check its custom XML parts in another application.
 
-use serde_json::{Value, json};
-
+use crate::api::command::{Command, DataPartRef, WriteDataPart};
+use crate::api::session::Session;
 use crate::font::Fonts;
-use crate::host::Engine;
-
-fn send(e: &mut Engine, msg: Value) -> Value {
-    let r: Value = serde_json::from_str(&e.send_json(&msg.to_string())).expect("a reply");
-    assert!(r.get("error").is_none() && r["answer"].get("error").is_none(), "{msg} -> {r}");
-    r
-}
 
 fn part(bytes: &[u8], name: &str) -> Vec<u8> {
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
@@ -20,29 +13,33 @@ fn part(bytes: &[u8], name: &str) -> Vec<u8> {
     out
 }
 
-fn layout_text(e: &mut Engine) -> String {
-    let fonts = Fonts::system();
-    let ed = e.editor().unwrap();
-    ed.complete(&fonts);
-    crate::layout::dump::page_text(&ed.snapshot(), ed.document())
+fn layout_text(s: &mut Session) -> String {
+    s.with_editor(|ed| {
+        ed.complete(&Fonts::system());
+        crate::layout::dump::page_text(&ed.snapshot(), ed.document())
+    })
+}
+
+fn fixture() -> Vec<u8> {
+    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-MERGE-DATA.docx")).unwrap()
 }
 
 #[test]
 fn data_parts_survive_edits_and_saves() {
-    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-MERGE-DATA.docx")).unwrap();
-    let mut e = Engine::with_fonts(Fonts::system());
-    e.open(&bytes);
+    let bytes = fixture();
+    let (mut engine, id) = super::session(&bytes);
+    let e = engine.session(id).expect("a session");
     let xml = r#"<calc xmlns="urn:store:calc"><field name="Total">Cost + Fee</field></calc>"#;
-    send(&mut e, json!({ "type": "command", "id": "data.write", "arg": { "namespace": "urn:store:calc", "xml": xml } }));
-    send(&mut e, json!({ "type": "text", "text": "Edited. " }));
-    let saved = e.save().unwrap();
+    e.run(Command::WriteDataPart(WriteDataPart { namespace: "urn:store:calc".into(), item_id: None, xml: xml.into() })).expect("writes");
+    e.text("Edited. ");
+    let saved = e.export(&Default::default()).expect("saves").bytes.0;
     if let Some(d) = std::env::var_os("WORD_CHECK_DIR") {
         std::fs::write(std::path::Path::new(&d).join("US5-DATA.docx"), &saved).unwrap();
     }
-    let mut again = Engine::with_fonts(Fonts::system());
-    again.open(&saved);
-    let parts = send(&mut again, json!({ "type": "query", "q": "data" }))["answer"].clone();
-    assert!(parts.as_array().unwrap().iter().any(|p| p["namespace"] == "urn:store:calc" && p["xml"] == xml), "{parts}");
+    let (mut again, id) = super::session(&saved);
+    let again = again.session(id).expect("a session");
+    let parts = again.data_parts(None, None);
+    assert!(parts.iter().any(|p| p.namespace.as_deref() == Some("urn:store:calc") && p.xml == xml), "{parts:?}");
     // The parts the host didn't touch: their item parts byte for byte.
     let src = crate::docx::read_editable(&bytes).unwrap();
     for p in &src.data_parts {
@@ -50,22 +47,21 @@ fn data_parts_survive_edits_and_saves() {
         assert_eq!(part(&saved, &name), part(&bytes, &name), "{name} unchanged");
     }
     // The bound control keeps its binding.
-    let els = send(&mut again, json!({ "type": "query", "q": "elements" }))["answer"].clone();
-    assert!(els.as_array().unwrap().iter().any(|x| x["binding"] == true), "{els}");
+    let els = again.elements(&Default::default());
+    assert!(els.iter().any(|x| again.element(x.id.clone()).is_ok_and(|d| d.binding.is_some())), "{els:?}");
 }
 
 #[test]
 fn data_parts_dont_change_the_layout() {
-    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-MERGE-DATA.docx")).unwrap();
-    let mut e = Engine::with_fonts(Fonts::system());
-    e.open(&bytes);
-    let with = layout_text(&mut e);
+    let (mut engine, id) = super::session(&fixture());
+    let e = engine.session(id).expect("a session");
+    let with = layout_text(e);
     for ns in ["urn:store:form-definition", "urn:store:form-data"] {
-        send(&mut e, json!({ "type": "command", "id": "data.remove", "arg": { "namespace": ns } }));
+        e.run(Command::RemoveDataPart(DataPartRef { namespace: ns.into(), item_id: None })).expect("removes");
     }
-    let saved = e.save().unwrap();
-    let mut without = Engine::with_fonts(Fonts::system());
-    without.open(&saved);
-    assert!(send(&mut without, json!({ "type": "query", "q": "data" }))["answer"].as_array().unwrap().is_empty());
-    assert_eq!(layout_text(&mut without), with, "data parts don't change the layout");
+    let saved = e.export(&Default::default()).expect("saves").bytes.0;
+    let (mut without, id) = super::session(&saved);
+    let without = without.session(id).expect("a session");
+    assert!(without.data_parts(None, None).is_empty());
+    assert_eq!(layout_text(without), with, "data parts don't change the layout");
 }

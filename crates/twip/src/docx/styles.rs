@@ -23,6 +23,9 @@ pub struct Region {
     pub tbl: TblProps,
     pub tc: TcProps,
     pub tr: TrProps,
+    /// The size a cell's text takes when the default paragraph style sets 11 or 12pt (STYLE-4): the table style's
+    /// `w:sz`, else docDefaults' unless that is 10pt. None in the default table style.
+    pub size_over_normal: Option<f64>,
 }
 
 impl Region {
@@ -33,6 +36,7 @@ impl Region {
             tbl: TblProps::parse(child(n, "tblPr")),
             tc: TcProps::parse(child(n, "tcPr")),
             tr: TrProps::parse(child(n, "trPr")),
+            size_over_normal: None,
         }
     }
 }
@@ -48,6 +52,10 @@ pub struct Style {
     /// `w:next`: the style of the paragraph Enter starts at the end of one in this style.
     pub next: Option<String>,
     pub default: bool,
+    /// `w:uiPriority` (lists sort by it), `w:semiHidden` or `w:hidden`, and `w:customStyle` (not built in).
+    pub priority: Option<u32>,
+    pub hidden: bool,
+    pub custom: bool,
     pub base: Region,
     /// Conditional regions by `w:type` (`firstRow`, `band1Horz`, ...).
     pub regions: HashMap<String, Region>,
@@ -164,6 +172,9 @@ impl Styles {
                 based_on: child(n, "basedOn").and_then(val).map(str::to_string),
                 next: child(n, "next").and_then(val).map(str::to_string),
                 default,
+                priority: child(n, "uiPriority").and_then(val).and_then(|v| v.parse().ok()),
+                hidden: child(n, "semiHidden").is_some_and(on_off) || child(n, "hidden").is_some_and(on_off),
+                custom: attr(n, "customStyle").is_some_and(|v| on_off_str(Some(v))),
                 base: Region::parse(n),
                 regions,
             };
@@ -273,6 +284,9 @@ impl Styles {
             }
         }
         out.rpr = RunProps::fold_chain(rprs.into_iter());
+        if id.is_some() && id != self.default_table.as_deref() {
+            out.size_over_normal = out.rpr.size.or(self.doc_rpr.size.filter(|s| *s != 10.0));
+        }
         out
     }
 

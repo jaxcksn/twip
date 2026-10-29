@@ -1,32 +1,140 @@
 {
- "id": "VIEW-JOINED-EMPTY",
- "title": "A joined paragraph that shows nothing (empty, or all inserted in Original) still has its caret place, before the next paragraph's text or at the end of the line",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  { "type": "One" },
-  { "key": "Enter" },
-  { "key": "Enter" },
-  { "type": "Three" },
-  { "command": "review.track", "arg": "on" },
-  { "command": "review.author", "arg": "Author A" },
-  { "click": { "para": 1, "offset": 0 } },
-  { "key": "Delete" },
-  { "command": "view.markup", "arg": "none" },
-  { "key": "ArrowUp" },
-  { "key": "End" },
-  { "expect": { "caret": { "para": 0, "offset": 3, "page": 0 } } },
-  { "key": "ArrowDown" },
-  { "expect": { "caret": { "para": 2, "page": 0 } } },
-  { "key": "Home" },
-  { "expect": { "caret": { "para": 1, "offset": 0, "page": 0 } } },
-  { "click": { "para": 2, "offset": 2 } },
-  { "expect": { "caret": { "para": 2, "offset": 2, "page": 0 } } },
-  { "command": "view.markup", "arg": "original" },
-  { "click": { "para": 2, "offset": "end" } },
-  { "key": "Enter" },
-  { "type": "Four" },
-  { "expect": { "caret": { "para": 3, "offset": 4, "page": 0 }, "paragraphs": 4, "text": { "2": "Three", "3": "Four" } } },
-  { "key": "Home" },
-  { "expect": { "caret": { "para": 2, "offset": 0, "page": 0 } } }
- ]
+  "id": "VIEW-JOINED-EMPTY",
+  "title": "A joined paragraph that shows nothing (empty, or all inserted in Original) still has its caret place, before the next paragraph's text or at the end of the line",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "One"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "Three"
+    },
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "command": {
+        "type": "setMarkupView",
+        "value": "noMarkup"
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 3,
+          "page": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "page": 0
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "page": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 2,
+          "page": 0
+        }
+      }
+    },
+    {
+      "command": {
+        "type": "setMarkupView",
+        "value": "original"
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "Four"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 4,
+          "page": 0
+        },
+        "paragraphs": 4,
+        "text": {
+          "2": "Three",
+          "3": "Four"
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 0,
+          "page": 0
+        }
+      }
+    }
+  ]
 }

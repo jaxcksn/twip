@@ -3,39 +3,203 @@
   "title": "Replies join the thread in order; resolving the thread resolves every comment in it and reopening clears them; each is one undo step",
   "fixture": "FX-EMPTY.docx",
   "steps": [
-    { "type": "Alpha beta gamma." },
-    { "click": { "para": 0, "offset": 6 } },
-    { "click": { "para": 0, "offset": 10 }, "shift": true },
-    { "command": "review.comment.add", "arg": "Root" },
-    { "command": "review.comment.reply", "arg": { "id": "$last", "body": "Reply one" } },
-    { "command": "review.comment.reply", "arg": { "id": "$last", "body": "Reply two" } },
+    {
+      "type": "Alpha beta gamma."
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 6
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 10
+      },
+      "shift": true
+    },
+    {
+      "command": {
+        "type": "addComment",
+        "value": "Root"
+      }
+    },
+    {
+      "command": {
+        "type": "replyToComment",
+        "to": "$last",
+        "body": "Reply one"
+      }
+    },
+    {
+      "command": {
+        "type": "replyToComment",
+        "to": "$last",
+        "body": "Reply two"
+      }
+    },
     {
       "expect": {
         "comments": [
-          { "author": "Author", "initials": "A", "text": "Root", "scope": "beta", "parent": null, "done": false },
-          { "text": "Reply one", "scope": "beta", "parent": 1, "done": false },
-          { "text": "Reply two", "scope": "beta", "parent": 1, "done": false }
+          {
+            "author": "Author",
+            "initials": "A",
+            "text": "Root",
+            "scope": "beta",
+            "parent": null,
+            "done": false
+          },
+          {
+            "text": "Reply one",
+            "scope": "beta",
+            "parent": 1,
+            "done": false
+          },
+          {
+            "text": "Reply two",
+            "scope": "beta",
+            "parent": 1,
+            "done": false
+          }
         ]
       }
     },
-    { "command": "review.comment.resolve", "arg": { "id": "$last" } },
+    {
+      "command": {
+        "type": "resolveComment",
+        "id": "$last",
+        "done": true
+      }
+    },
     {
       "expect": {
-        "comments": [{ "text": "Root", "done": true }, { "text": "Reply one", "done": true }, { "text": "Reply two", "done": true }],
+        "comments": [
+          {
+            "text": "Root",
+            "done": true
+          },
+          {
+            "text": "Reply one",
+            "done": true
+          },
+          {
+            "text": "Reply two",
+            "done": true
+          }
+        ],
         "undo_depth": 5
       }
     },
-    { "command": "review.comment.reopen", "arg": { "id": "$last" } },
-    { "expect": { "comments": [{ "done": false }, { "done": false }, { "done": false }] } },
-    { "command": "home.undo" },
-    { "expect": { "comments": [{ "done": true }, { "done": true }, { "done": true }] } },
-    { "command": "home.undo" },
-    { "expect": { "comments": [{ "done": false }, { "done": false }, { "done": false }] } },
-    { "command": "home.undo" },
-    { "expect": { "comments": [{ "text": "Root" }, { "text": "Reply one", "parent": 1 }] } },
-    { "command": "home.redo" },
-    { "command": "home.redo" },
-    { "command": "home.redo" },
-    { "expect": { "comments": [{ "done": false }, { "done": false }, { "done": false }] } }
+    {
+      "command": {
+        "type": "resolveComment",
+        "id": "$last",
+        "done": false
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "done": false
+          },
+          {
+            "done": false
+          },
+          {
+            "done": false
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "done": true
+          },
+          {
+            "done": true
+          },
+          {
+            "done": true
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "done": false
+          },
+          {
+            "done": false
+          },
+          {
+            "done": false
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "Root"
+          },
+          {
+            "text": "Reply one",
+            "parent": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "redo"
+      }
+    },
+    {
+      "command": {
+        "type": "redo"
+      }
+    },
+    {
+      "command": {
+        "type": "redo"
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "done": false
+          },
+          {
+            "done": false
+          },
+          {
+            "done": false
+          }
+        ]
+      }
+    }
   ]
 }

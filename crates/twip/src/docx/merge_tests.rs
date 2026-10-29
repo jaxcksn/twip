@@ -223,3 +223,17 @@ fn malformed_merge_markup_reads() {
     .expect("reads");
     assert_eq!(all_paras(&d).iter().map(fields::text).collect::<Vec<_>>(), ["c"]);
 }
+
+#[test]
+fn locked_fields_keep_their_result() {
+    let blank = blank::blank_docx();
+    let date = |lock: &str| -> Vec<u8> {
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"{lock}/></w:r><w:r><w:instrText>DATE \@ "yyyy"</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1999</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr/></w:body></w:document>"#
+        );
+        write::repackage(&blank, &[("word/document.xml".into(), xml.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages")
+    };
+    let text = |b: &[u8]| all_paras(&read(b).expect("reads")).iter().map(fields::text).collect::<Vec<_>>();
+    assert_eq!(text(&date(r#" w:fldLock="1""#)), ["1999"]);
+    assert_ne!(text(&date("")), ["1999"]);
+}

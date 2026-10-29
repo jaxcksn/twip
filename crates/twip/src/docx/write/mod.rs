@@ -84,6 +84,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     added_lists(doc, &mut parts)?;
     filled_placeholders(doc, &mut parts)?;
     review_parts(doc, &mut parts)?;
+    default_tab_part(doc, &mut parts)?;
     add_images(&src.package, &doc.images, &mut parts)?;
     data_parts(doc, &mut parts)?;
     Ok(parts)
@@ -123,6 +124,83 @@ fn review_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<()
     comments::save(doc, &read, &src.package, &src.main, parts)
 }
 
+/// CT_Settings' children before `w:trackRevisions`.
+const BEFORE: &[&str] = &[
+    "writeProtection",
+    "view",
+    "zoom",
+    "removePersonalInformation",
+    "removeDateAndTime",
+    "doNotDisplayPageBoundaries",
+    "displayBackgroundShape",
+    "printPostScriptOverText",
+    "printFractionalCharacterWidth",
+    "printFormsData",
+    "embedTrueTypeFonts",
+    "embedSystemFonts",
+    "saveSubsetFonts",
+    "saveFormsData",
+    "mirrorMargins",
+    "alignBordersAndEdges",
+    "bordersDoNotSurroundHeader",
+    "bordersDoNotSurroundFooter",
+    "gutterAtTop",
+    "hideSpellingErrors",
+    "hideGrammaticalErrors",
+    "activeWritingStyle",
+    "proofState",
+    "formsDesign",
+    "attachedTemplate",
+    "linkStyles",
+    "stylePaneFormatFilter",
+    "stylePaneSortMethod",
+    "documentType",
+    "mailMerge",
+    "revisionView",
+];
+
+/// CT_Settings' children from `w:trackRevisions` to before `w:defaultTabStop`.
+const BEFORE_DEFAULT_TAB: &[&str] =
+    &["trackRevisions", "doNotTrackMoves", "doNotTrackFormatting", "documentProtection", "autoFormatOverride", "styleLockTheme", "styleLockQFSet"];
+
+/// The settings part with `w:defaultTabStop` at the document's default tab spacing, when it changed since reading.
+// shortcut: a document with no settings part keeps the default spacing it was read with.
+fn default_tab_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let Some(name) = package::related(&src.package, parts, &src.main, SETTINGS)? else { return Ok(()) };
+    let Some(xml) = package::read(&src.package, parts, &name)? else { return Ok(()) };
+    let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
+    let root = dom.root_element();
+    let old = root.children().find(|c| is_w(*c, "defaultTabStop"));
+    let read = old.and_then(|c| c.attribute((W, "val"))?.parse::<f64>().ok()).map(|t| t / 20.0).filter(|t| *t > 0.0).unwrap_or(36.0);
+    if (read - doc.settings.default_tab).abs() < 0.025 {
+        return Ok(());
+    }
+    let w = match root.lookup_prefix(W) {
+        Some(p) if !p.is_empty() => format!("{p}:"),
+        _ => String::new(),
+    };
+    let el = format!("<{w}defaultTabStop {w}val=\"{}\"/>", (doc.settings.default_tab * 20.0).round() as i64);
+    let mut out = xml.clone();
+    match old {
+        Some(c) => out.replace_range(c.range(), &el),
+        None => {
+            let after =
+                root.children().rfind(|c| c.is_element() && BEFORE.iter().chain(BEFORE_DEFAULT_TAB).any(|b| is_w(*c, b))).map(|c| c.range().end);
+            let r = root.range();
+            let tag = &xml[r.clone()];
+            if after.is_none() && tag.ends_with("/>") {
+                let name = tag[1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("");
+                out.replace_range(r.end - 2..r.end, &format!(">{el}</{name}>"));
+            } else {
+                out.insert_str(after.unwrap_or_else(|| r.start + tag.find('>').map_or(0, |e| e + 1)), &el);
+            }
+        }
+    }
+    package::set(parts, &name, out.into_bytes());
+    Ok(())
+}
+
 /// Whether the settings part turns tracking on (`w:trackRevisions`).
 fn tracks_revisions(xml: &str) -> bool {
     let Ok(dom) = roxmltree::Document::parse(xml) else { return false };
@@ -131,40 +209,6 @@ fn tracks_revisions(xml: &str) -> bool {
 
 /// The settings part with `w:trackRevisions` set or removed, everything else as it was.
 fn with_track_revisions(xml: &str, on: bool) -> Result<String, String> {
-    // CT_Settings' children before `w:trackRevisions`.
-    const BEFORE: &[&str] = &[
-        "writeProtection",
-        "view",
-        "zoom",
-        "removePersonalInformation",
-        "removeDateAndTime",
-        "doNotDisplayPageBoundaries",
-        "displayBackgroundShape",
-        "printPostScriptOverText",
-        "printFractionalCharacterWidth",
-        "printFormsData",
-        "embedTrueTypeFonts",
-        "embedSystemFonts",
-        "saveSubsetFonts",
-        "saveFormsData",
-        "mirrorMargins",
-        "alignBordersAndEdges",
-        "bordersDoNotSurroundHeader",
-        "bordersDoNotSurroundFooter",
-        "gutterAtTop",
-        "hideSpellingErrors",
-        "hideGrammaticalErrors",
-        "activeWritingStyle",
-        "proofState",
-        "formsDesign",
-        "attachedTemplate",
-        "linkStyles",
-        "stylePaneFormatFilter",
-        "stylePaneSortMethod",
-        "documentType",
-        "mailMerge",
-        "revisionView",
-    ];
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
     let mut out = xml.to_string();

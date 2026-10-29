@@ -1,0 +1,31 @@
+{
+  "name": "undo-grouping",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "text", "text": "Hello" },
+    { "op": "text", "text": " wor" },
+    { "op": "text", "text": "ld" },
+    { "op": "key", "key": "Enter" },
+    { "op": "text", "text": "Next" },
+    { "op": "text", "text": " line" },
+    { "op": "expectEvents", "match": [
+      { "type": "documentChanged", "origin": "user", "revision": 2 },
+      { "type": "documentChanged", "origin": "user", "revision": 3 },
+      { "type": "documentChanged", "origin": "user", "revision": 4 },
+      { "type": "documentChanged", "origin": "user", "revision": 5 },
+      { "type": "documentChanged", "origin": "user", "revision": 6 },
+      { "type": "documentChanged", "origin": "user", "revision": 7 }
+    ] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Next" }], "result": { "found": false } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Hello world" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "revision": 8, "history": { "canUndo": true } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Hello world" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "revision": 9, "history": { "canUndo": true } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Hello" }], "result": { "found": false } },
+    { "op": "expectState", "match": { "revision": 10, "history": { "canUndo": false, "canRedo": true } } }
+  ]
+}

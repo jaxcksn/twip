@@ -1,0 +1,17 @@
+[
+  {
+    "background": "#E6E6E6",
+    "fieldCodes": false,
+    "formattingMarks": false,
+    "gridlines": false,
+    "markupPaneWidth": 0.0,
+    "rulerUnit": "inches",
+    "rulers": {
+      "horizontal": false,
+      "vertical": false
+    },
+    "tabSelector": "left",
+    "textBoundaries": false,
+    "zoom": 100.0
+  }
+]

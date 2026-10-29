@@ -46,6 +46,8 @@ A list level's `w:pPr` slots into the paragraph cascade as [STYLE-6](style#style
 
 The table style is lower in the cascade than the paragraph style, including Normal (which a paragraph without `w:pStyle` uses, [STYLE-2](style#style-2)). Whatever Normal sets (size, spacing, …) beats the table style and its regions, even when Normal sets it to the docDefaults value. Table-style properties Normal doesn't set (colour, `w:jc`, …) apply. With an empty Normal the table style's values show.
 
+One exception, font size: when the paragraph uses the default paragraph style and that style sets 11 or 12pt, a table with a style other than the default table style gives its own size instead. That size is the table style's `w:sz` (through `w:basedOn` and its regions), else the docDefaults size unless docDefaults is 10pt; with neither, Normal's size stays. So docDefaults 11pt, Normal 12pt and a table style without a size give 11pt text in the table.
+
 ### STYLE-5. Paragraph-mark run properties {#style-5}
 
 The paragraph mark's run properties (`w:pPr/w:rPr`, through its `w:rStyle` and the paragraph's cascade) don't change a line that holds text. They are used for:

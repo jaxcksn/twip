@@ -32,11 +32,11 @@
       }
     },
     {
-      "arg": {
-        "display": "X",
-        "id": "$code:MERGEFIELD Owner.Role"
+      "command": {
+        "type": "setField",
+        "id": "$code:MERGEFIELD Owner.Role",
+        "display": "X"
       },
-      "command": "field.set",
       "expect": {}
     }
   ],

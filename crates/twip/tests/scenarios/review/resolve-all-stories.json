@@ -3,10 +3,32 @@
   "title": "Accept all and reject all cover every story: headers, footers, notes and text boxes.",
   "fixture": "review/FX-REVIEW-STORIES.docx",
   "steps": [
-    {"command": "review.accept", "arg": "all"},
-    {"expect": {"revisions": [], "undo_depth": 1}},
-    {"command": "home.undo"},
-    {"command": "review.reject", "arg": "all"},
-    {"expect": {"revisions": [], "undo_depth": 1}}
+    {
+      "command": {
+        "type": "acceptAllRevisions"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [],
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "command": {
+        "type": "rejectAllRevisions"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [],
+        "undo_depth": 1
+      }
+    }
   ]
 }

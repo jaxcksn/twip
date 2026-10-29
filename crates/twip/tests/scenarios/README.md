@@ -14,7 +14,7 @@ One JSON file per scenario, run by the native runner (`crates/twip/src/editing/t
     { "click": { "para": 2, "offset": 5 }, "clicks": 1, "shift": false },
     { "click": { "para": 2, "offset": "end" }, "dx": 40 },
     { "drag": { "from": { "para": 2, "offset": 0 }, "to": { "para": 4, "offset": 3 } } },
-    { "command": "home.undo" },
+    { "command": { "type": "undo" } },
     { "expect": { "caret": { "para": 2, "offset": 5, "affinity": "upstream", "depth": 0 } } },
     { "expect": { "text": { "2": "exact text", "3": { "starts": "prefix" } }, "paragraphs": 25 } },
     { "expect": { "selection": { "kind": "text", "anchor": { "para": 2, "offset": 0 }, "focus": { "para": 4, "offset": 3 } } } },
@@ -41,10 +41,11 @@ One JSON file per scenario, run by the native runner (`crates/twip/src/editing/t
 
 ## Merge template steps and expectations
 
-- **`query`** steps send a host query: `{ "query": { "q": "elements", "kind": "field" } }`. **`batch`** steps send one batch: `{ "batch": { "label": "Rename", "commands": [{ "command": "element.replace", "arg": { … } }] } }`. A **`command`** with a JSON (non-string) `arg` is sent as a host input with that argument.
+- **`command`** steps run one command of the command set, as the API types it: `{ "command": { "type": "insertTable", "rows": 2, "columns": 2 } }`. **`batch`** steps send one batch: `{ "batch": { "label": "Rename", "commands": [{ "type": "replaceInElements", … }] } }`. **`query`** steps send a host query: `{ "query": { "q": "elements", "kind": "field" } }`.
+- Editor inputs that aren't commands: **`author`** (`{ "author": "Author A" }`, who revisions are recorded under), **`mode`** (`"editing"`, `"design"` or `"readonly"`), **`drop`** (the external drop caret at a target, or `null`), **`select`** (`{ "para", "start", "end" }`, units of one paragraph, as find selects), **`select_element`** (an element id) and **`replace_all`** (`{ "find", "with", "case" }`).
 - **`answer`** and **`mode`** match the last reply of the step; **`context`** matches its context list, innermost first, element by element (`[{ "kind": "field", "code": " MERGEFIELD A " }, { "kind": "repeating_section" }]`).
 - **`elements`** matches the step's change lists, merged over its replies: per `added`, `removed` and `changed`, a count or a list of partial elements.
 - **`events`** lists events that must appear in that order among the step's events (others may come between).
 - **`view`** matches the canonical view of every page (inspect section `view`), for example `{ "drop": { … } }` or `{ "marks": [ … ] }`.
 - Matching is **partial**: objects need only the keys given, arrays the same length, numbers within half a point. Element ids are never written in expectations; elements are matched by `kind`, `code` or `tag`.
-- **References in arguments** (command, query and batch arguments only): `"$last"` is the id the last answer gave (`{ "id": … }` from `field.insert`, `control.insert`); `"$code:<code>"` and `"$tag:<tag>"` are the first element with that code (trimmed) or tag; and a pointer target object (`{ "para", "offset", "page"?, "dx"? }`) is the document point it names (`target.at`, `view.drop`).
+- **References in arguments** (commands, queries, batches, `drop` and `select_element`): `"$last"` is the id the last answer gave (`{ "id": … }` from `insertField`, `insertControl`, `addComment`); `"$code:<code>"` and `"$tag:<tag>"` are the first element with that code (trimmed) or tag; and a pointer target object (`{ "para", "offset", "page"?, "dx"? }`) is the document point it names (`drop`).

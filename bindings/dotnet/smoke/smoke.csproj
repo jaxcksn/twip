@@ -10,8 +10,10 @@
     <TwipNative Condition="$([MSBuild]::IsOSPlatform('Linux'))">libtwip.so</TwipNative>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../Twip/Twip.csproj" />
+    <ProjectReference Include="../Twip.Core/Twip.Core.csproj" />
+    <!-- Analyze all of Twip.Core for AOT and trimming, not only what this app calls. -->
+    <TrimmerRootAssembly Include="Twip.Core" />
     <None Include="../../hello.docx" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="hello.docx" />
-    <None Include="../../../target/release/$(TwipNative)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="$(TwipNative)" />
+    <None Include="../../../target/release/$(TwipNative)" Condition="Exists('../../../target/release/$(TwipNative)')" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="$(TwipNative)" />
   </ItemGroup>
 </Project>

@@ -250,6 +250,7 @@ impl FieldCode {
             "STYLEREF" => FieldKind::StyleRef(arg()),
             "DATE" | "TIME" => FieldKind::Date,
             "IF" => FieldKind::If,
+            n if !n.is_empty() && !n.starts_with(['=', '\\']) && !n.chars().all(|c| c.is_alphanumeric() || c == '_') => FieldKind::Invalid,
             _ => return None,
         })
     }
@@ -268,7 +269,17 @@ pub fn kind_at(inlines: &[Inline], s: FieldSpan) -> Option<FieldKind> {
 fn paras(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
     for b in blocks {
         match b {
-            Block::Para(p) => f(p),
+            Block::Para(p) => {
+                f(p);
+                // Text boxes anchored in the paragraph hold fields too.
+                for i in &mut p.inlines {
+                    if let Inline::Float(fl, _) = i
+                        && let Some(tb) = &mut fl.text_box
+                    {
+                        paras(&mut tb.blocks, f);
+                    }
+                }
+            }
             Block::Table(t) => {
                 for r in &mut t.rows {
                     for c in &mut r.cells {
@@ -352,8 +363,10 @@ pub fn evaluate(doc: &mut Document) {
                         }
                         if has("\\h") { Some(String::new()) } else { Some(format_field(&n.to_string(), code, None)) }
                     }
-                    FieldKind::Ref(name) => marks.get(name).cloned(),
+                    // Word's result for a bookmark the document doesn't have.
+                    FieldKind::Ref(name) => Some(marks.get(name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into())),
                     FieldKind::If => if_field(&w),
+                    FieldKind::Invalid => Some(String::new()),
                     FieldKind::Date => Some(date(code)),
                     // In the body: the nearest paragraph with the style before the field, else the next one.
                     FieldKind::StyleRef(st) => {
@@ -440,6 +453,18 @@ fn date(code: &str) -> String {
     let mut k = 0;
     while k < chars.len() {
         let c = chars[k];
+        // 'text' is literal; AM/PM (any case) is the half of the day, as Word writes it.
+        if c == '\'' {
+            let lit: String = chars[k + 1..].iter().take_while(|&&x| x != '\'').collect();
+            k += lit.chars().count() + 2;
+            out.push_str(&lit);
+            continue;
+        }
+        if chars[k..].iter().take(5).collect::<String>().eq_ignore_ascii_case("am/pm") {
+            out.push_str(if hh < 12 { "AM" } else { "PM" });
+            k += 5;
+            continue;
+        }
         let n = chars[k..].iter().take_while(|&&x| x == c).count();
         let s = match (c, n) {
             ('y', 4..) => format!("{y:04}"),
@@ -538,6 +563,8 @@ mod tests {
         assert_eq!(if_field(&words(r#"IF 1 = 1 "yes" "no""#)).as_deref(), Some("yes"));
         assert_eq!(if_field(&words(r#"IF 2 < 1 "yes" "no""#)).as_deref(), Some("no"));
         assert_eq!(date(r#"DATE \@ "yyyy""#).len(), 4);
+        let d = date(r#"DATE \@ "'x 'yyyy am/pm""#);
+        assert!(d.starts_with("x ") && (d.ends_with(" AM") || d.ends_with(" PM")) && d.len() == 9, "{d}");
     }
 
     #[test]
@@ -564,6 +591,8 @@ mod tests {
             ("SEQ Figure", Some(FieldKind::Seq("Figure".into()))),
             ("STYLEREF \"Heading 1\"", Some(FieldKind::StyleRef("Heading 1".into()))),
             ("TIME", Some(FieldKind::Date)),
+            (r#""http://example.com/a""#, Some(FieldKind::Invalid)),
+            ("=1+2", None),
             ("QUOTE x", None),
         ] {
             assert_eq!(parse(code).kind(), kind, "{code}");

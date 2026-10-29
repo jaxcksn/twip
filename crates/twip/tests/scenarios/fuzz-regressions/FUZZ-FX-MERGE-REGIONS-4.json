@@ -7,11 +7,11 @@
   ],
   "steps": [
     {
-      "arg": {
+      "command": {
+        "type": "removeControl",
         "id": "$tag:Statement.Holders",
-        "keep_content": true
+        "keepContent": true
       },
-      "command": "control.remove",
       "expect": {}
     }
   ],

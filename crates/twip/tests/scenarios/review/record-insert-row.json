@@ -1,411 +1,418 @@
 {
- "id": "RECORD-INSERT-ROW",
- "title": "An inserted row is recorded inserted",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "Before"
-  },
-  {
-   "key": "Enter"
-  },
-  {
-   "type": "After"
-  },
-  {
-   "click": {
-    "para": 1,
-    "offset": 0
-   }
-  },
-  {
-   "command": "insert.table",
-   "arg": "3,3"
-  },
-  {
-   "type": "r1c1"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "r1c2"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "r1c3"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "r2c1"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "r2c2"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "r2c3"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "r3c1"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "r3c2"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "r3c3"
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 4,
-    "offset": 0
-   }
-  },
-  {
-   "command": "table.insert-above"
-  },
-  {
-   "expect": {
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Before",
-        "runs": [
-         {
-          "text": "Before",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       },
-       {
-        "table": {
-         "change": "Author A",
-         "rows": [
-          {
-           "ins": null,
-           "del": null,
-           "cells": [
-            {
-             "blocks": [
+  "id": "RECORD-INSERT-ROW",
+  "title": "An inserted row is recorded inserted",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "Before"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "After"
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": {
+        "type": "insertTable",
+        "rows": 3,
+        "columns": 3
+      }
+    },
+    {
+      "type": "r1c1"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "r1c2"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "r1c3"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "r2c1"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "r2c2"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "r2c3"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "r3c1"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "r3c2"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "r3c3"
+    },
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 4,
+        "offset": 0
+      }
+    },
+    {
+      "command": {
+        "type": "insertRows",
+        "where": "above"
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "stories": {
+            "body": [
               {
-               "text": "r1c1",
-               "runs": [
-                {
-                 "text": "r1c1",
-                 "ins": null,
-                 "del": null,
-                 "move": null,
-                 "fmt": null
+                "text": "Before",
+                "runs": [
+                  {
+                    "text": "Before",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              },
+              {
+                "table": {
+                  "change": "Author A",
+                  "rows": [
+                    {
+                      "ins": null,
+                      "del": null,
+                      "cells": [
+                        {
+                          "blocks": [
+                            {
+                              "text": "r1c1",
+                              "runs": [
+                                {
+                                  "text": "r1c1",
+                                  "ins": null,
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": null,
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "r1c2",
+                              "runs": [
+                                {
+                                  "text": "r1c2",
+                                  "ins": null,
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": null,
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "r1c3",
+                              "runs": [
+                                {
+                                  "text": "r1c3",
+                                  "ins": null,
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": null,
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "ins": "Author A",
+                      "del": null,
+                      "cells": [
+                        {
+                          "blocks": [
+                            {
+                              "text": "",
+                              "runs": [],
+                              "mark": {
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "",
+                              "runs": [],
+                              "mark": {
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "",
+                              "runs": [],
+                              "mark": {
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "ins": null,
+                      "del": null,
+                      "cells": [
+                        {
+                          "blocks": [
+                            {
+                              "text": "r2c1",
+                              "runs": [
+                                {
+                                  "text": "r2c1",
+                                  "ins": null,
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": null,
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "r2c2",
+                              "runs": [
+                                {
+                                  "text": "r2c2",
+                                  "ins": null,
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": null,
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "r2c3",
+                              "runs": [
+                                {
+                                  "text": "r2c3",
+                                  "ins": null,
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": null,
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "ins": null,
+                      "del": null,
+                      "cells": [
+                        {
+                          "blocks": [
+                            {
+                              "text": "r3c1",
+                              "runs": [
+                                {
+                                  "text": "r3c1",
+                                  "ins": null,
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": null,
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "r3c2",
+                              "runs": [
+                                {
+                                  "text": "r3c2",
+                                  "ins": null,
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": null,
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "r3c3",
+                              "runs": [
+                                {
+                                  "text": "r3c3",
+                                  "ins": null,
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": null,
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
                 }
-               ],
-               "mark": {
-                "ins": null,
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            },
-            {
-             "blocks": [
+              },
               {
-               "text": "r1c2",
-               "runs": [
-                {
-                 "text": "r1c2",
-                 "ins": null,
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": null,
-                "del": null,
-                "move": null
-               },
-               "pchange": null
+                "text": "After",
+                "runs": [
+                  {
+                    "text": "After",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
               }
-             ]
-            },
-            {
-             "blocks": [
-              {
-               "text": "r1c3",
-               "runs": [
-                {
-                 "text": "r1c3",
-                 "ins": null,
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": null,
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            }
-           ]
-          },
-          {
-           "ins": "Author A",
-           "del": null,
-           "cells": [
-            {
-             "blocks": [
-              {
-               "text": "",
-               "runs": [],
-               "mark": {
-                "ins": "Author A",
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            },
-            {
-             "blocks": [
-              {
-               "text": "",
-               "runs": [],
-               "mark": {
-                "ins": "Author A",
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            },
-            {
-             "blocks": [
-              {
-               "text": "",
-               "runs": [],
-               "mark": {
-                "ins": "Author A",
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            }
-           ]
-          },
-          {
-           "ins": null,
-           "del": null,
-           "cells": [
-            {
-             "blocks": [
-              {
-               "text": "r2c1",
-               "runs": [
-                {
-                 "text": "r2c1",
-                 "ins": null,
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": null,
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            },
-            {
-             "blocks": [
-              {
-               "text": "r2c2",
-               "runs": [
-                {
-                 "text": "r2c2",
-                 "ins": null,
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": null,
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            },
-            {
-             "blocks": [
-              {
-               "text": "r2c3",
-               "runs": [
-                {
-                 "text": "r2c3",
-                 "ins": null,
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": null,
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            }
-           ]
-          },
-          {
-           "ins": null,
-           "del": null,
-           "cells": [
-            {
-             "blocks": [
-              {
-               "text": "r3c1",
-               "runs": [
-                {
-                 "text": "r3c1",
-                 "ins": null,
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": null,
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            },
-            {
-             "blocks": [
-              {
-               "text": "r3c2",
-               "runs": [
-                {
-                 "text": "r3c2",
-                 "ins": null,
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": null,
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            },
-            {
-             "blocks": [
-              {
-               "text": "r3c3",
-               "runs": [
-                {
-                 "text": "r3c3",
-                 "ins": null,
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": null,
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            }
-           ]
+            ]
           }
-         ]
         }
-       },
-       {
-        "text": "After",
-        "runs": [
-         {
-          "text": "After",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
+      }
     }
-   }
-  }
- ]
+  ]
 }

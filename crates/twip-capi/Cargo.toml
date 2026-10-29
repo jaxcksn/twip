@@ -1,0 +1,26 @@
+[package]
+name = "twip-capi"
+description = "The C ABI over twip::api: the native library the .NET SDK loads and the WebAssembly module links."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+# tests/abi.rs runs as the library's unit tests (lib.rs includes it), to reach the test-only fault entry point.
+autotests = false
+
+# The library is named twip (twip.dll, libtwip.so, libtwip.dylib), the name the .NET SDK loads. The engine
+# dependency is renamed so the two crate names don't clash. Only the rlib is declared: twip-wasm links it, and an
+# emscripten cdylib would need position-independent Skia and Dawn objects. The native library is built with
+# `cargo rustc -p twip-capi --release --crate-type cdylib` (moon run twip-capi:build).
+[lib]
+name = "twip"
+crate-type = ["rlib"]
+# The engine's documentation is the twip crate's; two libraries named twip would collide in target/doc.
+doc = false
+
+[dependencies]
+engine = { package = "twip", path = "../twip" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.154"

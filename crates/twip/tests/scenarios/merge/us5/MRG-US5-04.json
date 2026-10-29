@@ -7,18 +7,18 @@
   ],
   "steps": [
     {
-      "command": "data.write",
-      "arg": {
+      "command": {
+        "type": "writeDataPart",
         "namespace": "urn:store:calc",
-        "item_id": "{AAAAAAAA-0000-4000-8000-000000000001}",
+        "itemId": "{AAAAAAAA-0000-4000-8000-000000000001}",
         "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"Cost_Plus_Fee\">Cost + Fee</field></calc>"
       }
     },
     {
-      "command": "data.write",
-      "arg": {
+      "command": {
+        "type": "writeDataPart",
         "namespace": "urn:store:calc",
-        "item_id": "{AAAAAAAA-0000-4000-8000-000000000002}",
+        "itemId": "{AAAAAAAA-0000-4000-8000-000000000002}",
         "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"Cost_Plus_Fee\">Cost + Fee</field></calc>"
       },
       "expect": {
@@ -26,8 +26,8 @@
       }
     },
     {
-      "command": "data.write",
-      "arg": {
+      "command": {
+        "type": "writeDataPart",
         "namespace": "urn:store:calc",
         "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"New_Name\">Cost + Fee</field></calc>"
       },
@@ -39,15 +39,15 @@
       }
     },
     {
-      "command": "data.write",
-      "arg": {
+      "command": {
+        "type": "writeDataPart",
         "namespace": "urn:store:calc",
-        "item_id": "{AAAAAAAA-0000-4000-8000-000000000002}",
+        "itemId": "{AAAAAAAA-0000-4000-8000-000000000002}",
         "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"New_Name\">Cost + Fee</field></calc>"
       },
       "expect": {
         "answer": {
-          "item_id": "{AAAAAAAA-0000-4000-8000-000000000002}"
+          "itemId": "{AAAAAAAA-0000-4000-8000-000000000002}"
         },
         "undo_depth": 3
       }

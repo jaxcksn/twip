@@ -1,6 +1,7 @@
 import type { Config } from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 import type { PrismTheme } from 'prism-react-renderer';
+import include from './src/remark/include';
 
 // Black and white code: emphasis by weight and tone, not hue.
 const mono = (fg: string, bg: string, muted: string): PrismTheme => ({
@@ -41,6 +42,7 @@ const config: Config = {
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/jaxcksn/twip/edit/main/docs/',
+          remarkPlugins: [include],
         },
         blog: false,
         theme: { customCss: './src/css/custom.css' },
@@ -52,7 +54,12 @@ const config: Config = {
     colorMode: { respectPrefersColorScheme: true },
     navbar: {
       logo: { alt: 'Twip', src: 'img/logo.svg', srcDark: 'img/logo-dark.svg' },
-      items: [{ href: 'https://github.com/jaxcksn/twip', label: 'GitHub', position: 'right' }],
+      items: [
+        // The generated references, built beside the site (.github/workflows/docs.yml).
+        { to: 'pathname:///api/web/', label: 'TypeScript API', position: 'left' },
+        { to: 'pathname:///api/dotnet/', label: '.NET API', position: 'left' },
+        { href: 'https://github.com/jaxcksn/twip', label: 'GitHub', position: 'right' },
+      ],
     },
     footer: {
       copyright: `Copyright ${new Date().getFullYear()} Jackson Casey. Apache License 2.0.`,

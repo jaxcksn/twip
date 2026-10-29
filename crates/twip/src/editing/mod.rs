@@ -1,8 +1,9 @@
 //! The editor subsystem: the single owner of editing state and behaviour.
 //! It reads geometry only from layout snapshots and exposes rendering-independent state through [`view`].
 //!
-//! Every input arrives as an [`input::Message`]; every change is a transaction of [`step::Step`]s, recorded for undo
-//! and given to layout as edit hints. Geometry-dependent input first lays out through the page it concerns.
+//! Every input arrives as a typed call (the `api` session's); every change is a transaction of [`step::Step`]s, recorded for undo
+//! and given to layout as edit hints. One commit path records them all, undo and redo included: it alone raises the
+//! revision. Geometry-dependent input first lays out through the page it concerns.
 
 mod cell_clipboard;
 pub mod clipboard;
@@ -14,6 +15,7 @@ pub mod extend;
 pub mod find;
 pub mod format;
 pub mod geometry;
+pub(crate) mod gestures;
 mod goback;
 pub mod history;
 pub mod index;
@@ -25,6 +27,7 @@ pub mod interaction;
 pub mod keymap;
 pub mod lists;
 mod merge;
+pub(crate) use merge::api_id;
 pub mod navigate;
 mod notes;
 pub mod objects;
@@ -49,10 +52,12 @@ pub mod view;
 #[cfg(test)]
 pub(crate) mod tests;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use crate::api::record::Origin;
 use crate::docx::{Block, BreakKind, Document, Inline, Paragraph, Run};
 use crate::font::Fonts;
 use crate::layout::{Budget, Change, DocumentLayout, ParaId, Revision, Snapshot, Step as LayoutStep, TableId, Target, Unit};
@@ -61,8 +66,7 @@ use commands::{Command, Dir, MoveBy, Outcome};
 use geometry::Pages;
 use history::{History, SelectionRecord, Transaction, Typing, TypingRun};
 use index::{Container, DocIndex};
-use input::{Input, Message, PointerKind, Request, Viewport};
-use keymap::KeyContext;
+use input::{PointerKind, Request, Viewport};
 use navigate::Nav;
 use position::{Affinity, Place, Position, StoryId};
 use selection::{Granularity, Selection};
@@ -100,7 +104,11 @@ pub struct Editor {
     pages: Pages,
     /// The page the caret was last shown on.
     near: usize,
+    /// Counts committed transactions: the document's revision.
     revision: u64,
+    /// Counts every change to the document or to how it shows: what layout and the caches built from the document
+    /// key on.
+    generation: u64,
     seq: u64,
     viewport: Viewport,
     /// Where Esc leaves a header or footer for: the body selection the entering double-click set.
@@ -115,7 +123,15 @@ pub struct Editor {
     zone_drag: Option<(TableId, selection::CellRef, selection::CellShape)>,
     /// The pointer's shape where it last moved without a drag.
     cursor: &'static str,
-    dirty: bool,
+    /// The history's position and the tracking setting when the document was last saved: away from them, the
+    /// document is modified.
+    saved: (u64, bool),
+    /// Who the input being run comes from: what its transactions record.
+    origin: Origin,
+    /// A batch being run: what its commands commit folds into one transaction.
+    batch: Option<Batch>,
+    /// The transactions committed since the session last took them, in order.
+    commits: Vec<Committed>,
     requests: Vec<Request>,
     /// What F4 repeats: the last insertion or break; consecutive typing accumulates.
     repeat: Option<Command>,
@@ -142,13 +158,17 @@ pub struct Editor {
     elems: std::collections::HashMap<crate::docx::ElementId, elements::Element>,
     /// The elements added, removed and changed since the last reply.
     changes: elements::Changes,
-    /// The last command's or query's answer for the reply.
-    answer: Option<serde_json::Value>,
-    /// Events for the host since the last reply (activation, field updates).
-    events: Vec<serde_json::Value>,
+    /// Why a building block refused the running command (`locked`, `read-only`): the command is refused with it.
+    refused: Option<&'static str>,
+    /// Notices for the host since the last reply (activation, field updates, links).
+    events: Vec<input::Notice>,
+    /// What the last command made (a field's id, a comment's).
+    made: Option<crate::api::command::CommandResult>,
     /// Controls a command made for content it is about to put in (new repeating items): added by the commit, in
     /// the same transaction.
     pending_controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
+    /// Images a command added for pictures it is about to put in: added by the commit, in the same transaction.
+    pending_images: Vec<Vec<u8>>,
     /// The host's external drop caret (`view.drop`).
     drop: Option<Position>,
     /// The host's labels for empty fields in design mode, by trimmed code (`field.labels`).
@@ -231,6 +251,32 @@ struct Tx {
     /// Tracking was on when it began: its steps are recorded as revisions, by `rec` once the first one is.
     tracked: bool,
     rec: Option<revisions::Recording>,
+    origin: Origin,
+    /// Undo and redo: the transaction replayed. It goes back in the history with the steps that reverse this one.
+    replayed: Option<Transaction>,
+    /// What the steps touched, for the record.
+    targets: step::Targets,
+    /// A step changed a control or moved pictures: the picture controls' image sets are derived again.
+    pictures: bool,
+}
+
+/// A batch being run: the transaction its commands' commits fold into, its label (else its first commit's), and
+/// where each nested batch began in it, with the selection then.
+struct Batch {
+    tx: Tx,
+    label: Option<Cow<'static, str>>,
+    marks: Vec<(usize, Selection)>,
+}
+
+/// A committed transaction, as the session records it.
+#[derive(Clone, Debug)]
+pub struct Committed {
+    /// The revision it made.
+    pub revision: u64,
+    pub origin: Origin,
+    /// Its undo label.
+    pub label: Cow<'static, str>,
+    pub targets: step::Targets,
 }
 
 impl Editor {
@@ -253,6 +299,7 @@ impl Editor {
             pages: Pages::default(),
             near: 0,
             revision: 1,
+            generation: 1,
             seq: 0,
             viewport: Viewport::default(),
             body_return: None,
@@ -261,7 +308,10 @@ impl Editor {
             border_drag: None,
             zone_drag: None,
             cursor: "text",
-            dirty: false,
+            saved: (0, false),
+            origin: Origin::User,
+            batch: None,
+            commits: Vec::new(),
             requests: Vec::new(),
             repeat: None,
             modes: extend::Modes::default(),
@@ -275,9 +325,11 @@ impl Editor {
             mode: Mode::Editing,
             elems: std::collections::HashMap::new(),
             changes: elements::Changes::default(),
-            answer: None,
+            refused: None,
             events: Vec::new(),
+            made: None,
             pending_controls: Vec::new(),
+            pending_images: Vec::new(),
             drop: None,
             field_labels: HashMap::new(),
             marks: Vec::new(),
@@ -296,10 +348,11 @@ impl Editor {
             track_work: 0,
             clipboard: None,
         };
+        e.saved.1 = e.doc.settings.track_revisions;
         e.elems = elements::by_id(&e.doc, &e.index);
         let start = e.nav().story_edge(StoryId::Body, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)));
         e.selection = Selection::Caret(start);
-        e.layout.edit(Revision(e.revision), None);
+        e.layout.edit(Revision(e.generation), None);
         e.ensure(&start, fonts);
         e
     }
@@ -324,12 +377,17 @@ impl Editor {
         self.seq
     }
 
+    /// Whether the document differs from its last save: the history is away from the saved position, or tracking
+    /// was turned on or off since. Undoing back to it clears this.
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        (self.history.position(), self.doc.settings.track_revisions) != self.saved
     }
 
+    /// A save wrote the document as it is now: its revision, at this history position. Typing after it starts a new
+    /// undo step, so undo comes back to what was saved.
     pub fn mark_saved(&mut self) {
-        self.dirty = false;
+        self.history.break_typing();
+        self.saved = (self.history.position(), self.doc.settings.track_revisions);
     }
 
     pub fn history(&self) -> &History {
@@ -357,8 +415,48 @@ impl Editor {
     }
 
     fn relayout_review(&mut self) {
-        self.revision += 1;
-        self.layout.edit(Revision(self.revision), None);
+        self.relayout([None]);
+    }
+
+    /// Lays out again what `hints` say changed (`None`: layout compares), as a new generation: a view change, or a
+    /// transaction's steps.
+    fn relayout(&mut self, hints: impl IntoIterator<Item = Option<Change>>) {
+        self.generation += 1;
+        for h in hints {
+            self.layout.edit(Revision(self.generation), h);
+        }
+    }
+
+    /// Runs `f` as input from `origin`: what the transactions it commits record (the editor's own input is the
+    /// user's).
+    pub fn with_origin<T>(&mut self, origin: Origin, f: impl FnOnce(&mut Editor) -> T) -> T {
+        let was = std::mem::replace(&mut self.origin, origin);
+        let out = f(self);
+        self.origin = was;
+        out
+    }
+
+    /// The transactions committed since the last call, in order: one record each.
+    pub fn take_commits(&mut self) -> Vec<Committed> {
+        std::mem::take(&mut self.commits)
+    }
+
+    /// The fonts changed: the whole document lays out again. Not an edit: the revision stays.
+    pub fn fonts_changed(&mut self) {
+        self.relayout([None]);
+    }
+
+    /// The index a picture the command is about to put in takes for `data`: the image is added by the commit, in the
+    /// same transaction.
+    fn pending_image(&mut self, data: Vec<u8>) -> usize {
+        self.pending_images.push(data);
+        self.doc.images.len() + self.pending_images.len() - 1
+    }
+
+    /// Refuses an edit a read-only document asked for, before it runs.
+    fn refuse_read_only(&mut self) -> Outcome {
+        self.refused = Some("read-only");
+        Outcome::Refused(crate::api::error::Error::new(crate::api::error::ErrorCode::ReadOnly, "the document is read only"))
     }
 
     pub fn snapshot(&self) -> Rc<Snapshot> {
@@ -400,7 +498,9 @@ impl Editor {
     /// Lays out through page `page` (the host calls it for the visible pages before painting).
     pub fn ensure_page(&mut self, page: usize, fonts: &Fonts) {
         let snapshot = self.layout.snapshot();
-        let pending = snapshot.info().iter().position(|i| i.provisional);
+        // A layout from before the last change is provisional throughout.
+        let stale = snapshot.revision() != self.layout.revision();
+        let pending = if stale { Some(0) } else { snapshot.info().iter().position(|i| i.provisional) };
         if pending.is_some_and(|p| page >= p) {
             self.layout.through(&self.doc, fonts, Target::Page(page));
         }
@@ -417,6 +517,25 @@ impl Editor {
         step == LayoutStep::Yielded || snapshot.info().iter().any(|i| i.provisional)
     }
 
+    /// Lays out through the selection's focus when the published layout predates the document's last change: a
+    /// relayout no edit laid out (fonts arriving, the markup view), whose old layout would otherwise answer the
+    /// caret, hit tests and frames.
+    pub fn ensure_current(&mut self, fonts: &Fonts) {
+        if self.layout.snapshot().revision() == self.layout.revision() {
+            return;
+        }
+        match self.selection.focus().filter(|p| p.para_offset().is_some()) {
+            Some(p) => self.ensure(&p, fonts),
+            None => self.ensure_page(0, fonts),
+        }
+    }
+
+    /// Whether the published layout is the document's as it is now, to its end.
+    pub fn layout_complete(&self) -> bool {
+        let snapshot = self.layout.snapshot();
+        snapshot.revision() == self.layout.revision() && !matches!(snapshot.status(), crate::layout::LayoutStatus::Pending { .. })
+    }
+
     /// Lays out the whole document (tests, PDF export).
     pub fn complete(&mut self, fonts: &Fonts) {
         self.layout.complete(&self.doc, fonts);
@@ -426,174 +545,34 @@ impl Editor {
 
     // ---------------- inputs ----------------
 
-    /// Applies one host message. A non-increasing `seq` is rejected unapplied.
-    pub fn apply(&mut self, msg: Message, fonts: &Fonts) -> Result<(), input::BadInput> {
-        if msg.seq <= self.seq && self.seq > 0 {
-            return Err(input::BadInput(format!("seq {} after {}", msg.seq, self.seq)));
+    /// Units `a..b` of a paragraph selected and revealed (find, spelling).
+    pub fn select_range(&mut self, para: ParaId, a: Unit, b: Unit, fonts: &Fonts) -> Outcome {
+        let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
+        let story = self.index.story(slot.container);
+        let len = self.index.para(&self.doc, para).map_or(Unit(0), step::para_len);
+        let (a, b) = (Unit(a.0.min(len.0)), Unit(b.0.min(len.0)));
+        self.history.break_typing();
+        self.set_selection(Selection::range(Position::text(story, para, a), Position::text(story, para, b), selection::Granularity::Char));
+        if let Some(p) = self.caret() {
+            self.ensure(&p, fonts);
+            self.scroll_to_caret(fonts);
         }
-        self.seq = msg.seq;
-        match msg.input {
-            Input::Key { code, mods } => {
-                if let Some(cmd) = self.key_command(&code, mods) {
-                    self.execute(cmd, fonts);
-                }
-            }
-            Input::Text(t) => {
-                self.execute(Command::InsertText(t), fonts);
-            }
-            Input::Pointer { kind, x, y, clicks, mods } => {
-                // Design mode: a double-click on a field or control also reports it to the host, the one
-                // under the pointer; the selection is the usual double-click's.
-                let activate = (kind == PointerKind::Down && clicks == 2 && self.mode == Mode::Design).then(|| self.hit_laid_out(x, y));
-                self.pointer(kind, x, y, clicks, mods, fonts);
-                if let Some(at) = activate {
-                    let object = matches!(self.selection, Selection::Object(_));
-                    match at.filter(|_| !object) {
-                        Some(p) => {
-                            let kept = std::mem::replace(&mut self.selection, Selection::Caret(p));
-                            self.activate(true);
-                            self.selection = kept;
-                        }
-                        None => {
-                            self.activate(true);
-                        }
-                    }
-                }
-            }
-            Input::Hover { x, y } => self.set_hover(x, y),
-            Input::Wheel { .. } | Input::Focus(_) => {}
-            Input::Viewport(v) => self.viewport = v,
-            Input::Platform { mac } => self.mac = mac,
-            // An unknown command is refused with an answer; the rest of the batch still applies.
-            Input::Command { id, arg } => match Command::from_host(&id, arg.as_ref()) {
-                Ok(cmd) => {
-                    self.execute(cmd, fonts);
-                }
-                Err(_) => self.answer = Some(serde_json::json!({ "error": "unknown command", "id": id })),
-            },
-            Input::Copy => {
-                self.execute(Command::Copy, fonts);
-            }
-            Input::Cut => {
-                self.execute(Command::Cut, fonts);
-            }
-            Input::Paste { text, token, .. } => {
-                // The token names our fragment; the text must match too (another editor's copy can carry the same id).
-                let ours = self.clipboard.clone().filter(|f| {
-                    token.as_deref().and_then(|t| t.parse::<u64>().ok()) == Some(f.id)
-                        && text.as_ref().is_none_or(|t| t.replace("\r\n", "\n") == f.text().replace("\r\n", "\n"))
-                });
-                match (ours, text) {
-                    (Some(f), _) => {
-                        self.history.break_typing();
-                        let out = self.paste_fragment(&f, fonts);
-                        self.paste_moved(&f, &out, fonts);
-                    }
-                    (None, Some(t)) => {
-                        self.execute(Command::PasteText(t), fonts);
-                    }
-                    (None, None) => {}
-                }
-            }
-            Input::Undo => {
-                self.execute(Command::Undo, fonts);
-            }
-            Input::Redo => {
-                self.execute(Command::Redo, fonts);
-            }
-            Input::Query { q, args } => self.answer = Some(self.query(&q, &args, fonts)),
-            Input::Batch { label, inputs } => self.batch(label, &inputs, fonts),
-        }
-        Ok(())
+        Outcome::Moved
     }
 
-    /// Commands as one undo step: each commits; then they merge. A refused command (its
-    /// answer an error) undoes the ones before it, and the answer says which.
-    fn batch(&mut self, label: String, inputs: &[serde_json::Value], fonts: &Fonts) {
-        let before = self.history.undo_depth();
-        for (k, v) in inputs.iter().enumerate() {
-            let parsed = match v.get("type").and_then(serde_json::Value::as_str) {
-                Some("command") => v.get("id").and_then(serde_json::Value::as_str).map(|id| (id.to_string(), v.get("arg").cloned())),
-                _ => None,
-            };
-            let Some((id, arg)) = parsed else {
-                self.undo_to(before, fonts);
-                self.answer = Some(serde_json::json!({ "error": "bad estimate: inputs", "index": k }));
-                return;
-            };
-            self.answer = None;
-            match Command::from_host(&id, arg.as_ref()) {
-                Ok(cmd) => {
-                    self.execute(cmd, fonts);
-                }
-                Err(_) => self.answer = Some(serde_json::json!({ "error": "unknown command" })),
-            }
-            if let Some(e) = self.answer.as_ref().and_then(|a| a.get("error")).cloned() {
-                self.undo_to(before, fonts);
-                self.answer = Some(serde_json::json!({ "error": e, "index": k }));
-                return;
-            }
+    /// Editing, template design or read-only: design mode shows field labels.
+    pub fn set_mode(&mut self, m: Mode) -> Outcome {
+        let design = (self.mode == Mode::Design) != (m == Mode::Design);
+        self.mode = m;
+        if design {
+            self.refresh_labels(None);
         }
-        let n = self.history.undo_depth().saturating_sub(before);
-        if n > 0 {
-            self.history.merge_last(n, label);
-        }
+        Outcome::Moved
     }
 
-    /// Undoes transactions until the history is `depth` deep again, dropping them from redo (a rolled-back batch).
-    fn undo_to(&mut self, depth: usize, fonts: &Fonts) {
-        while self.history.undo_depth() > depth {
-            if !matches!(self.undo(true, fonts), Outcome::Changed(_)) {
-                break;
-            }
-        }
-        self.history.clear_redo();
-    }
-
-    /// Answers a host query; nothing changes.
-    fn query(&mut self, q: &str, args: &serde_json::Value, fonts: &Fonts) -> serde_json::Value {
-        use serde_json::json;
-        let s = |k: &str| args.get(k).and_then(serde_json::Value::as_str).map(str::to_string);
-        match q {
-            "elements" => {
-                let matching = args.get("match").and_then(|m| Some((m.get("in")?.as_str()?.to_string(), m.get("text")?.as_str()?.to_string())));
-                let f = elements::Filter { kind: s("kind"), matching, story: s("story") };
-                json!(elements::enumerate(&self.doc, &self.index, &f).iter().map(|e| e.to_json(&self.index)).collect::<Vec<_>>())
-            }
-            "element" => {
-                let Some(id) = s("id").as_deref().and_then(elements::parse_id) else { return json!({ "error": "bad estimate: id" }) };
-                match self.elems.get(&id) {
-                    Some(e) => {
-                        let mut v = e.to_json(&self.index);
-                        let children: Vec<String> = self.elems.values().filter(|c| c.parent == Some(id)).map(|c| elements::id_str(c.id)).collect();
-                        v["children"] = json!(children);
-                        v
-                    }
-                    None => json!({ "error": "no such element" }),
-                }
-            }
-            "context" => elements::context_json(&self.doc, &self.index, &self.selection, &self.elems),
-            "structure" if args.get("id").is_some() => self.structure_query(args),
-            "structure" => {
-                let depth = args.get("depth").and_then(serde_json::Value::as_u64).unwrap_or(8) as usize;
-                elements::structure(&self.doc.sections.iter().flat_map(|s| s.blocks.iter().cloned()).collect::<Vec<_>>(), depth)
-            }
-            "hit" => self.hit_query(args, fonts),
-            "data" => {
-                let ns = s("namespace");
-                let item = s("item_id");
-                json!(
-                    self.doc
-                        .data_parts
-                        .iter()
-                        .filter(|p| ns.is_none() || p.namespace == ns)
-                        .filter(|p| item.as_ref().is_none_or(|i| *i == p.item_id))
-                        .map(|p| json!({ "namespace": p.namespace, "item_id": p.item_id, "xml": p.xml }))
-                        .collect::<Vec<_>>()
-                )
-            }
-            _ => json!({ "error": "unknown query" }),
-        }
+    /// The notices since they were last taken.
+    pub fn take_notices(&mut self) -> Vec<input::Notice> {
+        std::mem::take(&mut self.events)
     }
 
     /// The editing mode.
@@ -611,16 +590,13 @@ impl Editor {
         self.doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking())
     }
 
-    /// Turns tracking on or off, as the document's setting (saved with it). Refused, `false`, while protection keeps
-    /// it on.
+    /// Turns tracking on or off: the document's setting (saved with it), outside the history as in Word, so undo and
+    /// redo stay exact whatever tracking is set to. Refused, `false`, while protection keeps it on.
     pub fn set_tracking(&mut self, on: bool) -> bool {
         if !on && self.tracking_locked() {
             return false;
         }
-        if self.doc.settings.track_revisions != on {
-            self.doc.settings.track_revisions = on;
-            self.dirty = true;
-        }
+        self.doc.settings.track_revisions = on;
         true
     }
 
@@ -686,366 +662,8 @@ impl Editor {
         self.changes.then(c);
     }
 
-    /// Parses and applies a JSON message (or an array of them), returning the reply JSON.
-    pub fn apply_json(&mut self, json: &str, fonts: &Fonts) -> String {
-        let v: serde_json::Value = match serde_json::from_str(json) {
-            Ok(v) => v,
-            Err(e) => return serde_json::json!({ "error": e.to_string() }).to_string(),
-        };
-        let msgs: Vec<&serde_json::Value> = match &v {
-            serde_json::Value::Array(a) => a.iter().collect(),
-            one => vec![one],
-        };
-        for m in msgs {
-            let r = Message::parse(m).and_then(|msg| self.apply(msg, fonts));
-            if let Err(input::BadInput(e)) = r {
-                return serde_json::json!({ "error": e, "seq": m.get("seq") }).to_string();
-            }
-        }
-        self.reply().to_string()
-    }
-
-    /// The reply after a batch.
-    pub fn reply(&mut self) -> serde_json::Value {
-        let snapshot = self.layout.snapshot();
-        let status = match snapshot.status() {
-            crate::layout::LayoutStatus::Pending { .. } => "pending",
-            crate::layout::LayoutStatus::Converged => "converged",
-            crate::layout::LayoutStatus::Stabilized { .. } => "stabilized",
-            crate::layout::LayoutStatus::Inconsistent { .. } => "inconsistent",
-        };
-        let requests: Vec<serde_json::Value> = self.take_requests().iter().map(Request::to_json).collect();
-        let mut r = serde_json::json!({
-            "seq_applied": self.seq,
-            "revision": self.revision,
-            "layout": { "status": status, "pages": snapshot.pages().len(),
-                        "provisional_from": snapshot.info().iter().position(|i| i.provisional) },
-            "dirty": self.dirty,
-            "requests": requests,
-            "context": elements::context_json(&self.doc, &self.index, &self.selection, &self.elems),
-            "mode": self.mode.name(),
-        });
-        if !self.changes.is_empty() {
-            r["elements"] = std::mem::take(&mut self.changes).to_json(&self.index);
-        }
-        if let Some(a) = self.answer.take() {
-            r["answer"] = a;
-        }
-        if !self.events.is_empty() {
-            r["events"] = serde_json::Value::Array(std::mem::take(&mut self.events));
-        }
-        r
-    }
-
-    /// The command a key press runs now (the keymap in the caret's context), if any: what the host claims the key for.
-    pub fn key_command(&self, code: &str, mods: keymap::Mods) -> Option<Command> {
-        let cx = KeyContext {
-            in_table: self.focus_chain_depth() > 0 || matches!(self.selection, Selection::Cells { .. }),
-            list_start: self.list_item_start().is_some(),
-            float: matches!(self.selection, Selection::Object(selection::ObjectRef::Floating(_))),
-            mac: self.mac,
-        };
-        keymap::command(code, mods, cx)
-    }
-
     fn focus_chain_depth(&self) -> usize {
         self.selection.focus().map_or(0, |p| self.index.chain_of(&p).len())
-    }
-
-    // ---------------- commands ----------------
-
-    pub fn execute(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
-        // Typing that continues a run extends what F4 repeats.
-        let continues = matches!(cmd, Command::InsertText(_))
-            && self.selection.is_collapsed()
-            && self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, u)| self.history.continues(p, u, Typing::Insert));
-        let repeatable = match &cmd {
-            Command::InsertText(t) => match (&self.repeat, continues) {
-                (Some(Command::InsertText(prev)), true) => Some(Command::InsertText(format!("{prev}{t}"))),
-                _ => Some(cmd.clone()),
-            },
-            Command::Enter | Command::LineBreak | Command::PageBreak | Command::ColumnBreak | Command::InsertTab => Some(cmd.clone()),
-            _ => None,
-        };
-        // In extend mode a typed character extends the selection to its next occurrence.
-        if self.modes.extend > 0
-            && let Command::InsertText(t) = &cmd
-            && t.chars().count() == 1
-        {
-            return self.extend_to_char(t.chars().next().unwrap_or(' '));
-        }
-        // In extend or block mode movement extends the selection.
-        let cmd = match cmd {
-            Command::Move { by, dir, extend: false }
-                if self.modes != extend::Modes::default() && !matches!(self.selection, Selection::Object(_) | Selection::Cells { .. }) =>
-            {
-                Command::Move { by, dir, extend: true }
-            }
-            c => c,
-        };
-        let moving = matches!(cmd, Command::Move { .. });
-        if !matches!(cmd, Command::GoBack) {
-            self.back_step = None;
-        }
-        let out = self.run(cmd, fonts);
-        if repeatable.is_some() && matches!(out, Outcome::Changed(_)) {
-            self.repeat = repeatable;
-        }
-        if moving && self.modes.block {
-            self.selection = self.as_block(self.selection);
-        }
-        // An edit that leaves a caret (typing over, deleting) ends the modes; formatting keeps them.
-        if matches!(out, Outcome::Changed(_)) && self.selection.is_collapsed() {
-            self.modes = extend::Modes::default();
-        }
-        out
-    }
-
-    fn run(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
-        let vertical = matches!(cmd, Command::Move { by: MoveBy::Line | MoveBy::Screen, .. });
-        if !vertical {
-            self.goal_x = None;
-        }
-        if !matches!(cmd, Command::InsertText(_) | Command::Delete { word: false, .. }) {
-            self.history.break_typing();
-        }
-        match cmd {
-            Command::Move { by, dir, extend: false } if let Selection::Object(o @ selection::ObjectRef::Floating(f)) = self.selection => {
-                if self.object_fixed(o) {
-                    return Outcome::Unchanged("fixed position");
-                }
-                let d = if dir == Dir::Forward { 0.75 } else { -0.75 };
-                match by {
-                    MoveBy::Char | MoveBy::Word => self.nudge(f, d, 0.0, fonts),
-                    MoveBy::Line | MoveBy::Para => self.nudge(f, 0.0, d, fonts),
-                    _ => Outcome::Unchanged("not a nudge"),
-                }
-            }
-            Command::Move { by, dir, extend } => self.move_caret(by, dir, extend, fonts),
-            Command::SelectAll => {
-                let story = self.selection.focus().map_or(self.editing(), |p| p.story);
-                let (Some(a), Some(b)) = (self.nav().story_edge(story, false), self.nav().story_edge(story, true)) else {
-                    return Outcome::Unchanged("empty story");
-                };
-                self.set_selection(Selection::range(a, b, Granularity::Char));
-                Outcome::Moved
-            }
-            Command::Escape => self.escape(),
-            Command::Format(f) => self.format(&f, fonts),
-            Command::InsertNote(kind) => self.insert_note(kind, fonts),
-            Command::DeleteCellsShift { up } => self.delete_cells_cmd(up, fonts),
-            Command::DistributeColumns => self.distribute_columns(fonts),
-            Command::DistributeRows => self.distribute_rows(fonts),
-            Command::SplitRows(n) => self.split_cell_rows(n, fonts),
-            Command::TableFormat(f) => self.table_format(&f, fonts),
-            Command::Object(c) => self.object_cmd(c, fonts),
-            Command::InsertPicture(data) => self.insert_picture(data, fonts),
-            Command::InsertTextBox => self.insert_text_box(fonts),
-            Command::ToggleList { bullet } => self.toggle_list(bullet, fonts),
-            Command::FillPlaceholder { key, data } => self.fill_placeholders(key.as_deref(), data, fonts),
-            Command::PlaceholderLook { key, look } => {
-                match look {
-                    Some(l) => self.placeholder_looks.insert(key, l),
-                    None => self.placeholder_looks.remove(&key),
-                };
-                Outcome::Moved
-            }
-            Command::CloseHeaderFooter => self.close_header_footer(),
-            Command::EditHeaderFooter { footer } => self.edit_header_footer(None, footer, fonts),
-            Command::InsertText(t) => self.insert_text(&t, fonts),
-            Command::Section(c) => self.section_cmd(c, fonts),
-            Command::ExtendMode => self.extend_mode(),
-            Command::GoBack => self.go_back(fonts),
-            Command::MoveRows { up } => self.move_rows(up, fonts),
-            Command::AutoFitColumn { table, col } => self.auto_fit_column(table, col, fonts),
-            Command::ObjectFocus => self.object_focus(None),
-            Command::NextObject { back } => self.object_focus(Some(back)),
-            Command::BlockSelect => self.block_mode(),
-            Command::ReplaceAll { find, with, case } => self.replace_all(&find, &with, case, fonts).1,
-            Command::InsertCheckbox { checked } => {
-                // Word's checkbox control: MS Gothic ☒ / ☐.
-                let id = crate::docx::ControlId::next();
-                let kind = crate::docx::ControlKind::Checkbox { checked: '\u{2612}', unchecked: '\u{2610}' };
-                // Added by the commit, in the same step (undo takes it out again).
-                self.pending_controls.push((id, crate::docx::Control::new(crate::docx::ControlProps { kind, ..Default::default() })));
-                let ch = if checked { '\u{2612}' } else { '\u{2610}' };
-                self.pending_font("MS Gothic");
-                let out = self.insert_inline(|run| Inline::Sym { ch, font: "MS Gothic".into(), run, control: Some(id) }, "Insert Checkbox", fonts);
-                self.pending = None;
-                out
-            }
-            Command::InsertHyperlink { text, address } => {
-                if text.is_empty() || address.is_empty() {
-                    return Outcome::Unchanged("no link");
-                }
-                // Word's Hyperlink character style as direct formatting: blue, underlined.
-                self.pending_props(&|p, w| {
-                    p.set("color", format!("<{w}color {w}val=\"0563C1\"/>"));
-                    p.set("u", format!("<{w}u {w}val=\"single\"/>"));
-                });
-                let code = format!(" HYPERLINK \"{}\" ", address.replace('"', ""));
-                let out = self.insert_inlines(|run| crate::docx::fields::field_inlines(&code, &text, &run), "Insert Hyperlink", fonts);
-                self.pending = None;
-                out
-            }
-            Command::Merge { id, arg } => self.merge_command(&id, &arg, fonts),
-            Command::Comment(c) => self.comment_cmd(c, fonts),
-            Command::SetMarkupView(v) => self.set_markup_view(v),
-            Command::SetAuthorColor { author, color } => match self.doc.people.persons.iter().position(|p| *p.name == *author) {
-                Some(i) => self.set_author_color(crate::docx::review::AuthorId(i as u32), color),
-                None => Outcome::Unchanged("no such author"),
-            },
-            Command::ResolveRevisions { accept, scope } => self.resolve_revisions(accept, &scope, fonts),
-            Command::NextRevision { back } => self.go_to_revision(back, fonts),
-            Command::Track(on) => {
-                let on = on.unwrap_or(!self.tracking());
-                if self.set_tracking(on) {
-                    Outcome::Moved
-                } else {
-                    self.answer = Some(serde_json::json!({ "error": "tracking locked" }));
-                    Outcome::Unchanged("tracking locked")
-                }
-            }
-            Command::Author(name) => {
-                self.set_author(&name, None);
-                Outcome::Moved
-            }
-            Command::SetMode(m) => {
-                let design = (self.mode == Mode::Design) != (m == Mode::Design);
-                self.mode = m;
-                if design {
-                    self.refresh_labels(None);
-                }
-                Outcome::Moved
-            }
-            Command::SelectRange { para, a, b } => {
-                let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
-                let story = self.index.story(slot.container);
-                let len = self.index.para(&self.doc, para).map_or(Unit(0), step::para_len);
-                let (a, b) = (Unit(a.0.min(len.0)), Unit(b.0.min(len.0)));
-                self.set_selection(Selection::range(Position::text(story, para, a), Position::text(story, para, b), selection::Granularity::Char));
-                if let Some(p) = self.caret() {
-                    self.ensure(&p, fonts);
-                    self.scroll_to_caret(fonts);
-                }
-                Outcome::Moved
-            }
-            Command::Batch { label, commands } => {
-                let mut changed = 0;
-                let mut out = Outcome::Unchanged("nothing to do");
-                for c in commands {
-                    match self.run(c, fonts) {
-                        o @ Outcome::Changed(_) => {
-                            changed += 1;
-                            out = o;
-                        }
-                        o if changed == 0 && matches!(out, Outcome::Unchanged(_)) => out = o,
-                        _ => {}
-                    }
-                }
-                self.history.merge_last(changed, label);
-                out
-            }
-            Command::InsertSymbol { ch, font } => {
-                if !font.is_empty() {
-                    self.pending_font(&font);
-                }
-                self.insert_text(&ch.to_string(), fonts)
-            }
-            Command::InsertField(kind) => {
-                let code = match &kind {
-                    crate::docx::FieldKind::NumPages => " NUMPAGES ",
-                    crate::docx::FieldKind::SectionPages => " SECTIONPAGES ",
-                    crate::docx::FieldKind::Section => " SECTION ",
-                    crate::docx::FieldKind::Date => " DATE ",
-                    _ => " PAGE ",
-                };
-                self.insert_inlines(|run| crate::docx::fields::field_inlines(code, "1", &run), "Insert Field", fonts)
-            }
-            Command::PasteText(t) => {
-                self.history.break_typing();
-                // Smart paste: the spaces a pasted word needs beside its neighbours.
-                let (sb, sa) = self.smart_spaces(&t);
-                let t = format!("{}{t}{}", if sb { " " } else { "" }, if sa { " " } else { "" });
-                let r = self.insert_text(&t, fonts);
-                self.history.break_typing();
-                r
-            }
-            Command::Delete { dir, word } => self.delete(dir, word, fonts),
-            Command::Enter => self.enter(fonts),
-            Command::LineBreak => self.insert_inline(|run| Inline::Break(BreakKind::Line, run), "Line Break", fonts),
-            Command::PageBreak => self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts),
-            Command::ColumnBreak => self.column_break(fonts),
-            Command::InsertTab => self.insert_inline(Inline::Tab, "Typing", fonts),
-            Command::NextCell { back } => self.next_cell(back, fonts),
-            Command::Undo => self.undo(true, fonts),
-            Command::Redo => self.undo(false, fonts),
-            Command::Repeat => {
-                if self.history.redo_depth() > 0 {
-                    return self.undo(false, fonts);
-                }
-                match self.repeat.clone() {
-                    Some(c) => self.run(c, fonts),
-                    None => Outcome::Unchanged("nothing to repeat"),
-                }
-            }
-            Command::Select(unit) => {
-                let Some(p) = self.caret() else { return Outcome::Unchanged("no caret") };
-                let (a, b) = self.span(p, unit);
-                self.set_selection(Selection::range(a, b, unit));
-                Outcome::Moved
-            }
-            Command::Toggle(t) => self.toggle(t, fonts),
-            Command::ListLevel { back } => self.list_level(back, fonts),
-            Command::InsertRows { below, n } => self.insert_rows(below, n, fonts),
-            Command::InsertColumns { right } => self.insert_columns(right, fonts),
-            Command::DeleteRows => self.delete_rows(fonts),
-            Command::DeleteColumns => self.delete_columns(fonts),
-            Command::DeleteTable => self.delete_table(fonts),
-            Command::MergeCells => self.merge_cells(fonts),
-            Command::SplitCell { cols } => self.split_cell(cols, fonts),
-            Command::InsertTable { rows, cols } => self.insert_table(rows, cols, fonts),
-            Command::SelectTable => self.select_table(),
-            Command::SelectCells(shape) => self.select_cells(shape),
-            Command::SplitTable => self.split_table(fonts),
-            Command::SelectToEdge { row, end } => self.select_to_edge(row, end),
-            Command::Align(jc) => self.align(jc, fonts),
-            Command::Copy => match self.copy() {
-                Some(_) => Outcome::Moved,
-                None => Outcome::Unchanged("nothing selected"),
-            },
-            Command::Cut => match self.copy() {
-                // A cell block: whole rows, columns or the table go; other blocks are emptied.
-                Some(_) if let Selection::Cells { table, anchor, focus, .. } = self.selection => {
-                    let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
-                    let cols = table::Grid::of(t).cols;
-                    let rows = t.rows.len();
-                    let all_rows = anchor.row.min(focus.row) == 0 && anchor.row.max(focus.row) + 1 >= rows;
-                    let all_cols = anchor.col.min(focus.col) == 0 && anchor.col.max(focus.col) + 1 >= cols;
-                    match (all_rows, all_cols) {
-                        (true, true) => self.run(Command::DeleteTable, fonts),
-                        (false, true) => self.run(Command::DeleteRows, fonts),
-                        (true, false) => self.run(Command::DeleteColumns, fonts),
-                        (false, false) => self.delete(Dir::Forward, false, fonts),
-                    }
-                }
-                Some(_) => {
-                    // With tracking, whole paragraphs or a sentence cut are a move once pasted: what was selected goes.
-                    let moving = self.tracking() && self.moves_whole();
-                    // Smart cut: the space the cut would leave doubled goes too.
-                    if !moving {
-                        self.smart_cut();
-                    }
-                    let out = self.delete(Dir::Back, false, fonts);
-                    self.cut_move = match (&out, &self.clipboard, &self.recorded.1) {
-                        (Outcome::Changed(_), Some(f), Some(m)) if moving => Some((f.id, m.clone())),
-                        _ => None,
-                    };
-                    out
-                }
-                None => Outcome::Unchanged("nothing selected"),
-            },
-        }
     }
 
     /// The normalizer: both ends of a selection on grapheme boundaries. Geometry has a stop per
@@ -1165,10 +783,18 @@ impl Editor {
             maps: Vec::new(),
             tracked: self.tracking(),
             rec: None,
+            origin: self.origin,
+            replayed: None,
+            targets: step::Targets::default(),
+            pictures: false,
         }
     }
 
     fn step(&mut self, tx: &mut Tx, s: Step) -> Result<Map, StepError> {
+        // Read only refuses edits before they run: no step reaches a read-only document.
+        if self.mode == Mode::ReadOnly {
+            return Err(StepError::ReadOnly);
+        }
         // An inline content control stays in one paragraph: a split inside one is refused, so Enter and
         // pastes of several paragraphs do nothing there.
         if let Step::Split { para, at, .. } = &s
@@ -1199,11 +825,18 @@ impl Editor {
 
     /// Applies one step to the document as it is, recording its inverse in the transaction.
     fn apply_step(&mut self, tx: &mut Tx, s: Step) -> Result<Map, StepError> {
+        if self.mode == Mode::ReadOnly {
+            return Err(StepError::ReadOnly);
+        }
         let added = if self.doc.undeletable.is_empty() { 0 } else { s.pictures_of(&self.doc.undeletable) };
+        tx.targets.add(&s);
+        tx.pictures |= moves_picture_controls(&s);
         let a = s.apply(&mut self.doc, &mut self.index)?;
         if !self.doc.undeletable.is_empty() {
             tx.kept += added - a.inverse.pictures_of(&self.doc.undeletable);
         }
+        tx.targets.add(&a.inverse);
+        tx.pictures |= moves_picture_controls(&a.inverse);
         tx.undo.push(a.inverse);
         tx.hints.push(a.hint);
         tx.maps.push(a.map.clone());
@@ -1213,73 +846,114 @@ impl Editor {
     /// Undoes a transaction's steps (a command that failed half way).
     fn abort(&mut self, tx: Tx) {
         self.pending_controls.clear();
+        self.pending_images.clear();
         for s in tx.undo.into_iter().rev() {
             let _ = s.apply(&mut self.doc, &mut self.index);
         }
     }
 
-    /// Records the transaction and lays out (nothing changed records nothing).
+    /// The one commit path, for every edit, undo and redo: records the transaction as one undo step (undo and redo
+    /// put theirs back in the history), raises the revision, lays out and keeps the record. Nothing changed records
+    /// nothing. In a batch, an edit joins the batch's transaction instead, committed when the batch ends.
     fn commit(&mut self, mut tx: Tx, typing: Option<TypingRun>, fonts: &Fonts) -> Outcome {
-        // A read-only document changes for nothing: every editing path commits here.
-        if self.mode == Mode::ReadOnly && !tx.undo.is_empty() {
+        if tx.replayed.is_none()
+            && let Err(why) = self.settle(&mut tx)
+        {
             self.selection = tx.before.selection;
             self.abort(tx);
-            self.answer = Some(serde_json::json!({ "error": "read-only" }));
-            return Outcome::Unchanged("read-only");
+            return Outcome::Unchanged(why);
         }
+        if tx.undo.is_empty() {
+            return Outcome::Unchanged("no change");
+        }
+        self.effects(&mut tx);
+        if tx.replayed.is_none()
+            && let Some(b) = &mut self.batch
+        {
+            b.label.get_or_insert(Cow::Borrowed(tx.label));
+            b.tx.undo.append(&mut tx.undo);
+            b.tx.targets.extend(tx.targets);
+            self.after_edit(fonts);
+            return Outcome::Changed(self.revision + 1);
+        }
+        let label = tx.replayed.as_ref().map_or(Cow::Borrowed(tx.label), |done| done.label.clone());
+        self.finish(tx, label, typing, fonts)
+    }
+
+    /// What a forward edit leaves to do, as steps of its transaction: the controls and images it made, field kinds,
+    /// orphans, stale paragraphs and list labels. Refused when it would delete a picture control that can't be.
+    fn settle(&mut self, tx: &mut Tx) -> Result<(), &'static str> {
         // Field kinds and orphans follow what the edit did: never recorded as revisions. Resolving paragraphs again
         // and numbering are, so a recorded property change keeps what it had.
         let tracked = std::mem::replace(&mut tx.tracked, false);
         self.recorded = tx.rec.as_ref().map(revisions::Recording::marks).unwrap_or_default();
         for (id, c) in std::mem::take(&mut self.pending_controls) {
-            let _ = self.step(&mut tx, Step::Control { id, control: Some(c) });
+            let _ = self.step(tx, Step::Control { id, control: Some(c) });
+        }
+        for data in std::mem::take(&mut self.pending_images) {
+            let index = self.doc.images.len();
+            let _ = self.apply_step(tx, Step::AddImage { index, data: Some(data) });
         }
         // A field code edited in place: its kind is its code's again.
         let edited: Vec<ParaId> = tx.undo.iter().filter_map(|s| if let Step::Text { para, .. } = s { Some(*para) } else { None }).collect();
         for para in edited {
             if self.index.para(&self.doc, para).is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { .. }))) {
-                self.refresh_field_kinds(&mut tx, para);
+                self.refresh_field_kinds(tx, para);
             }
         }
-        self.drop_orphan_notes(&mut tx);
-        self.drop_orphan_controls(&mut tx);
-        self.drop_orphan_comments(&mut tx);
+        self.drop_orphan_notes(tx);
+        self.drop_orphan_controls(tx);
+        self.drop_orphan_comments(tx);
         tx.tracked = tracked;
-        self.reresolve_stale(&mut tx);
+        self.reresolve_stale(tx);
         // An edit that would delete an undeletable picture control ("Content control cannot be deleted") does
         // nothing.
         if tx.kept < 0 {
-            self.selection = tx.before.selection;
-            self.abort(tx);
-            return Outcome::Unchanged("a content control that can't be deleted");
+            return Err("a content control that can't be deleted");
         }
         // Paragraphs came, went or changed their properties: list labels follow (invariant 9).
-        if tx.undo.iter().any(|s| !matches!(s, Step::Text { .. } | Step::Restyle { .. })) {
-            self.renumber(&mut tx);
+        if tx.undo.iter().any(|s| !matches!(s, Step::Text { .. } | Step::Restyle { .. } | Step::AddImage { .. })) {
+            self.renumber(tx);
         }
-        if tx.undo.is_empty() {
-            return Outcome::Unchanged("no change");
-        }
-        self.revision += 1;
-        // Control properties, data parts and comments don't change layout: their steps give no edit.
-        for (h, s) in tx.hints.iter().zip(&tx.undo) {
-            if !matches!(s, Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. }) {
-                self.layout.edit(Revision(self.revision), *h);
-            }
-        }
-        let bytes = tx.undo.iter().map(history::step_bytes).sum();
+        Ok(())
+    }
+
+    /// What follows a transaction's steps: layout, the edit locations, the elements the host knows, the design labels
+    /// and the picture controls' image sets.
+    fn effects(&mut self, tx: &mut Tx) {
+        let hints: Vec<Option<Change>> = tx.hints.iter().zip(&tx.undo).filter(|(_, s)| s.lays_out()).map(|(h, _)| *h).collect();
+        self.relayout(hints);
         let maps = std::mem::take(&mut tx.maps);
         self.map_marks(&maps);
-        self.mark_edit();
-        self.last_maps = maps;
-        let after = self.record();
+        // Undo and redo go back to edits already marked.
+        if !matches!(tx.origin, Origin::Undo | Origin::Redo) {
+            self.mark_edit();
+            self.last_maps = maps;
+        }
         self.track_elements(&tx.undo);
         self.refresh_labels(Some(&tx.undo));
-        if tx.undo.iter().any(moves_picture_controls) {
+        if tx.pictures {
             self.doc.derive_image_sets();
         }
-        self.history.record(Transaction { undo: tx.undo, before: tx.before, after, label: tx.label.into(), bytes }, typing);
-        self.dirty = true;
+    }
+
+    /// Records a transaction whose steps applied and laid out: the next revision, its place in the history, and its
+    /// record for the session.
+    fn finish(&mut self, mut tx: Tx, label: Cow<'static, str>, typing: Option<TypingRun>, fonts: &Fonts) -> Outcome {
+        self.revision += 1;
+        let undo = std::mem::take(&mut tx.undo);
+        let bytes = undo.iter().map(history::step_bytes).sum();
+        match tx.replayed.take() {
+            // The steps that reverse this one take the replayed transaction's place: undone, it can be redone; redone,
+            // undone again.
+            Some(done) if tx.origin == Origin::Undo => self.history.push_redo(Transaction { undo, bytes, ..done }),
+            Some(done) => self.history.push_undo_keep_redo(Transaction { undo, bytes, ..done }),
+            None => {
+                let after = self.record();
+                self.history.record(Transaction { undo, before: tx.before, after, label: label.clone(), bytes, id: 0 }, typing);
+            }
+        }
+        self.commits.push(Committed { revision: self.revision, origin: tx.origin, label, targets: tx.targets });
         self.after_edit(fonts);
         Outcome::Changed(self.revision)
     }
@@ -1303,50 +977,80 @@ impl Editor {
         }
     }
 
+    /// Undo (or redo): the last transaction's steps reversed, committed as a transaction of their own from
+    /// [`Origin::Undo`] (or [`Origin::Redo`]).
     fn undo(&mut self, undo: bool, fonts: &Fonts) -> Outcome {
-        if self.mode == Mode::ReadOnly {
-            self.answer = Some(serde_json::json!({ "error": "read-only" }));
-            return Outcome::Unchanged("read-only");
+        // A batch is one transaction: undo can't take a part of it.
+        if self.batch.is_some() {
+            return Outcome::Unchanged("in a batch");
         }
-        let tx = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
-        let Some(tx) = tx else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
-        let mut redo = Vec::new();
-        self.revision += 1;
-        let mut pictures = false;
-        for s in tx.undo.into_iter().rev() {
-            let layout = !matches!(s, Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. });
-            pictures |= moves_picture_controls(&s);
-            match s.apply(&mut self.doc, &mut self.index) {
-                Ok(a) => {
-                    if layout {
-                        self.layout.edit(Revision(self.revision), a.hint);
-                    }
-                    self.map_marks(std::slice::from_ref(&a.map));
-                    redo.push(a.inverse);
-                }
-                Err(_) => {
-                    // A history that doesn't fit the document is a bug; lay out fully so the screen stays right.
-                    self.layout.edit(Revision(self.revision), None);
-                    break;
-                }
+        let done = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
+        let Some(mut done) = done else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
+        let mut tx = self.begin("");
+        tx.origin = if undo { Origin::Undo } else { Origin::Redo };
+        self.replay(&mut tx, std::mem::take(&mut done.undo));
+        self.selection = if undo { done.before.selection } else { done.after.selection };
+        self.pending = None;
+        tx.replayed = Some(done);
+        self.commit(tx, None, fonts)
+    }
+
+    /// Applies recorded steps last to first (undoing what they record) into `tx`, which then holds their inverses.
+    fn replay(&mut self, tx: &mut Tx, steps: Vec<Step>) {
+        for s in steps.into_iter().rev() {
+            if self.apply_step(tx, s).is_err() {
+                // A history that doesn't fit the document is a bug; lay out fully so the screen stays right.
+                self.relayout([None]);
+                break;
             }
         }
-        self.track_elements(&redo);
-        self.refresh_labels(Some(&redo));
-        if pictures || redo.iter().any(moves_picture_controls) {
-            self.doc.derive_image_sets();
+    }
+
+    // ---------------- batches ----------------
+
+    /// Starts a batch: until it ends, what commands commit folds into one transaction, labelled `label` (else its
+    /// first commit's label). A batch begun inside another joins it.
+    pub fn begin_batch(&mut self, label: Option<Cow<'static, str>>) {
+        let selection = self.selection;
+        if let Some(b) = &mut self.batch {
+            b.marks.push((b.tx.undo.len(), selection));
+            return;
         }
-        let back = Transaction { undo: redo, before: tx.after.clone(), after: tx.before.clone(), label: tx.label, bytes: tx.bytes };
-        self.selection = if undo { tx.before.selection } else { tx.after.selection };
-        if undo {
-            self.history.push_redo(Transaction { before: tx.before, after: tx.after, ..back });
-        } else {
-            self.history.push_undo_keep_redo(Transaction { before: tx.before, after: tx.after, ..back });
+        self.history.break_typing();
+        let tx = self.begin("");
+        self.batch = Some(Batch { tx, label, marks: vec![(0, selection)] });
+    }
+
+    /// Ends the batch begun last. With `keep`, the outermost commits as one transaction (when it changed anything);
+    /// without, what the batch did is undone and the selection is as it was.
+    pub fn end_batch(&mut self, keep: bool, fonts: &Fonts) -> Outcome {
+        let Some((mark, selection)) = self.batch.as_mut().and_then(|b| b.marks.pop()) else { return Outcome::Unchanged("no batch") };
+        if !keep {
+            self.revert_batch(mark, selection, fonts);
         }
-        self.dirty = true;
-        self.pending = None;
+        let outer = self.batch.as_ref().is_some_and(|b| b.marks.is_empty());
+        let changed = self.batch.as_ref().is_some_and(|b| b.tx.undo.len() > mark);
+        let batch = if outer { self.batch.take() } else { None };
+        match batch {
+            Some(b) if changed => self.finish(b.tx, b.label.unwrap_or_default(), None, fonts),
+            _ if changed => Outcome::Changed(self.revision + 1),
+            _ if self.selection != selection => Outcome::Moved,
+            _ => Outcome::Unchanged(if keep { "nothing to do" } else { "refused" }),
+        }
+    }
+
+    /// Undoes what the batch's commits since `mark` did (they leave its transaction), back to `selection`.
+    fn revert_batch(&mut self, mark: usize, selection: Selection, fonts: &Fonts) {
+        let steps = self.batch.as_mut().map(|b| b.tx.undo.split_off(mark)).unwrap_or_default();
+        let mut tx = self.begin("");
+        tx.origin = Origin::Undo;
+        self.replay(&mut tx, steps);
+        self.selection = selection;
+        if tx.undo.is_empty() {
+            return;
+        }
+        self.effects(&mut tx);
         self.after_edit(fonts);
-        Outcome::Changed(self.revision)
     }
 
     // ---------------- typing ----------------
@@ -1974,7 +1678,7 @@ impl Editor {
             {
                 let (a, b) = if dir == Dir::Back { (Unit(u.0.saturating_sub(1)), u) } else { (u, Unit(u.0 + 1)) };
                 if a != b && self.locked_edit(&Position::text(p.story, para, a), &Position::text(p.story, para, b)) {
-                    self.answer = Some(serde_json::json!({ "error": "locked" }));
+                    self.refused = Some("locked");
                     return Outcome::Unchanged("locked");
                 }
             }
@@ -2481,13 +2185,23 @@ impl Editor {
                 if !mods.shift && clicks == 1 && self.checkbox_press(x, y, fonts) {
                     return;
                 }
+                // A link: Ctrl+click (a click when read only) activates it, for the application to open.
+                if clicks == 1
+                    && !mods.shift
+                    && (mods.ctrl || mods.meta || self.mode == Mode::ReadOnly)
+                    && let Some(address) = self.link_under(x, y, fonts)
+                {
+                    self.events.push(input::Notice::Link { address, ctrl: mods.ctrl || mods.meta });
+                    return;
+                }
                 // A double-click on a column border auto-fits the column to its left.
                 if clicks == 2
                     && let Some((_, table, resize::Border::Column(k), ..)) = self.border_at(x, y, fonts)
                     && k > 0
                 {
                     self.border_drag = None;
-                    self.execute(Command::AutoFitColumn { table, col: k - 1 }, fonts);
+                    self.history.break_typing();
+                    self.auto_fit_column(table, k - 1, fonts);
                     return;
                 }
                 if clicks < 2 && self.border_press(x, y, mods.shift, mods.ctrl, fonts) {
@@ -2538,7 +2252,7 @@ impl Editor {
                     // The selection bar: a line, a paragraph, the document.
                     let (unit, (a, b)) = match clicks {
                         _ if mods.ctrl || clicks >= 3 => {
-                            self.execute(Command::SelectAll, fonts);
+                            self.select_all();
                             return;
                         }
                         2 => (Granularity::Paragraph, self.span(a, Granularity::Paragraph)),
@@ -2554,7 +2268,7 @@ impl Editor {
                     return;
                 }
                 // A press inside the selection: drag-and-drop, or a click if it doesn't move.
-                if clicks == 1 && !mods.shift && self.modes == extend::Modes::default() && self.inside_selection(&p) {
+                if clicks == 1 && !mods.shift && self.modes == extend::Modes::default() && self.mode != Mode::ReadOnly && self.inside_selection(&p) {
                     self.text_drag = Some(interaction::TextDrag { start: (x, y), press: p, moved: false, copy: mods.ctrl, drop: None });
                     self.requests.push(Request::CapturePointer);
                     return;
@@ -3126,11 +2840,19 @@ impl Editor {
 
     /// The selected text, paragraphs separated by newlines (plain-text copy).
     pub fn selected_text(&mut self) -> String {
+        self.selected_text_within(usize::MAX).unwrap_or_default()
+    }
+
+    /// The selected text, as [`Editor::selected_text`], or `None` once it is longer than `limit` characters: the
+    /// walk stops there.
+    pub fn selected_text_within(&mut self, limit: usize) -> Option<String> {
         if let Selection::Block { .. } = self.selection {
-            return self.block_text();
+            return Some(self.block_text()).filter(|t| t.chars().count() <= limit);
         }
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return String::new() };
+        let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(String::new()) };
         let mut out = String::new();
+        // Characters so far, each paragraph's newline counted.
+        let mut chars = 0usize;
         let mut p = a;
         let mut guard = 0;
         while self.index.cmp(&p, &b) == std::cmp::Ordering::Less && guard < 1_000_000 {
@@ -3142,7 +2864,12 @@ impl Editor {
                         Some((pb, ob)) if pb == para => ob,
                         _ => t.len(),
                     };
-                    out.extend(t.text.chars().skip(off.0 as usize).take(end.0.saturating_sub(off.0) as usize).map(|c| match c {
+                    let take = end.0.saturating_sub(off.0) as usize;
+                    chars += take + 1;
+                    if chars > limit.saturating_add(1) {
+                        return None;
+                    }
+                    out.extend(t.text.chars().skip(off.0 as usize).take(take).map(|c| match c {
                         '\u{2028}' => '\n',
                         '\u{c}' | '\u{FFFC}' => ' ',
                         c => c,
@@ -3166,7 +2893,7 @@ impl Editor {
                 }
             }
         }
-        out
+        Some(out).filter(|t| t.chars().count() <= limit)
     }
 }
 

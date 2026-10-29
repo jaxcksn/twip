@@ -48,6 +48,17 @@ pub struct Ch {
     pub seg: usize,
 }
 
+/// A symbol font's private-use character (U+F0xx) as its code, the way both sides can agree on it: Word's PDF reports
+/// symbol-font glyphs as U+F0xx where ours carries the Unicode character it shows ([`symbol_unicode`]) or the code.
+///
+/// [`symbol_unicode`]: crate::layout::line::symbol_unicode
+fn fold_symbol(c: char) -> char {
+    match c as u32 {
+        cp @ 0xF020..=0xF0FF => char::from_u32(cp - 0xF000).unwrap_or(c),
+        _ => c,
+    }
+}
+
 fn keep(c: char) -> bool {
     !c.is_whitespace() && c != '\u{AD}' && c != '\u{200B}'
 }
@@ -109,13 +120,38 @@ pub fn golden(v: &Value) -> Vec<Vec<Ch>> {
     let mut pages = Vec::new();
     for p in v["pages"].as_array().into_iter().flatten() {
         let mut out = Vec::new();
-        for (seg, l) in p["lines"].as_array().into_iter().flatten().enumerate() {
+        let mut seg = 0;
+        for l in p["lines"].as_array().into_iter().flatten() {
+            seg += 1;
             if l["dir"].as_array().map(|d| d[0].as_i64() != Some(1)).unwrap_or(false) {
                 continue; // shortcut: rotated text (TABLE-33) isn't compared yet
             }
-            let y = l["y"].as_f64().unwrap_or(0.0);
-            for s in l["spans"].as_array().into_iter().flatten() {
-                let text: Vec<char> = s["text"].as_str().unwrap_or("").chars().collect();
+            let line_y = l["y"].as_f64().unwrap_or(0.0);
+            let line_seg = seg;
+            let spans = l["spans"].as_array().into_iter().flatten();
+            let largest = spans.clone().filter_map(|s| s["size"].as_f64()).fold(0.0, f64::max);
+            // The baseline and segment the previous span went to.
+            let mut cur = (line_y, line_seg);
+            for s in spans {
+                // A span's own baseline when the file has it: an extractor line can join glyphs on different
+                // baselines (a taller check box beside text in the next cell), which are rows of their own. A
+                // superscript or subscript (FONT-8: about 2/3 of the size) stays with the span before it, as ours
+                // does, and a span within 1.5pt with the line (rows join within 1pt; nearer would flip on noise).
+                // shortcut: told apart by size and distance alone.
+                let small = s["size"].as_f64().unwrap_or(0.0) <= 0.8 * largest;
+                let (y, seg) = match s["y"].as_f64() {
+                    _ if small => cur,
+                    Some(y) if (y - line_y).abs() > 1.5 => {
+                        seg += 1;
+                        (y, seg)
+                    }
+                    _ => (line_y, line_seg),
+                };
+                cur = (y, seg);
+                // The PDF's font name ("SymbolMT", "Wingdings-Regular") as the family our text layer maps.
+                let font = s["font"].as_str().unwrap_or("");
+                let family = if font.starts_with("Symbol") { "Symbol" } else { font.split('-').next().unwrap_or(font) };
+                let text: Vec<char> = s["text"].as_str().unwrap_or("").chars().map(|c| crate::layout::line::symbol_unicode(family, c)).collect();
                 let xs = s["x"].as_array().cloned().unwrap_or_default();
                 for (i, c) in text.iter().enumerate() {
                     let x = xs.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -131,9 +167,16 @@ pub fn golden(v: &Value) -> Vec<Vec<Ch>> {
 /// Characters grouped into rows by baseline (within 1pt); whitespace dropped. Within a row, segments are ordered by
 /// their first x and keep their own (logical) character order: a PDF extractor reports odd x for the later letters of
 /// a ligature, so sorting characters by x would scramble the reference's text.
-fn rows(chars: &[Ch]) -> Vec<(f64, Vec<Ch>)> {
+/// How far a segment of ours may sit from a segment of Word's (its first character) and still be read as part of
+/// that segment's row: Word's rows come one per extracted line, ours one per laid-out line, so grouping each side
+/// alone splits rows on baselines a tenth of a point apart. Position errors within it are geometry, not text.
+const ROW_SNAP: (f64, f64) = (3.0, 1.5);
+
+/// A page's rows. `like`: Word's segments as (x, row y, row), which our segments starting near one join.
+fn rows(chars: &[Ch], like: &[(f64, f64, usize)]) -> Vec<(f64, Vec<Ch>)> {
     let mut segs: BTreeMap<usize, Vec<Ch>> = BTreeMap::new();
     for ch in chars {
+        let ch = &Ch { c: fold_symbol(ch.c), ..*ch };
         let e = expand(ch.c);
         let list = segs.entry(ch.seg).or_default();
         if !e.is_empty() {
@@ -149,13 +192,38 @@ fn rows(chars: &[Ch]) -> Vec<(f64, Vec<Ch>)> {
     let mut segs: Vec<Vec<Ch>> = segs.into_values().filter(|s| !s.is_empty()).collect();
     segs.sort_by(|a, b| first(a).y.total_cmp(&first(b).y).then(first(a).x.total_cmp(&first(b).x)));
     let mut out: Vec<(f64, Vec<Vec<Ch>>)> = Vec::new();
+    // Ours that start where one of Word's segments does join its row; the others the nearest row within a point.
+    let mut snapped: BTreeMap<usize, usize> = BTreeMap::new(); // Word's row -> ours
+    let mut rest = Vec::new();
     for s in segs {
-        let y = first(&s).y;
-        match out.last_mut() {
-            Some((ry, row)) if (y - *ry).abs() < 1.0 => row.push(s),
-            _ => out.push((y, vec![s])),
+        let (x, y) = (first(&s).x, first(&s).y);
+        let near = like
+            .iter()
+            .filter(|(gx, gy, _)| (gx - x).abs() < ROW_SNAP.0 && (gy - y).abs() < ROW_SNAP.1)
+            .min_by(|a, b| (a.1 - y).abs().total_cmp(&(b.1 - y).abs()));
+        match near {
+            Some(&(_, _, k)) => {
+                let r = *snapped.entry(k).or_insert_with(|| {
+                    out.push((y, Vec::new()));
+                    out.len() - 1
+                });
+                out[r].1.push(s);
+            }
+            None => rest.push(s),
         }
     }
+    for s in rest {
+        let y = first(&s).y;
+        let near = out.iter().enumerate().map(|(r, row)| (r, (row.0 - y).abs())).filter(|&(_, d)| d < 1.0).min_by(|a, b| a.1.total_cmp(&b.1));
+        match near {
+            Some((r, _)) => {
+                out[r].0 = out[r].0.min(y);
+                out[r].1.push(s);
+            }
+            None => out.push((y, vec![s])),
+        }
+    }
+    out.sort_by(|a, b| a.0.total_cmp(&b.0));
     out.into_iter()
         .map(|(y, mut r)| {
             r.sort_by(|a, b| first(a).x.total_cmp(&first(b).x));
@@ -163,6 +231,22 @@ fn rows(chars: &[Ch]) -> Vec<(f64, Vec<Ch>)> {
             (y, r.into_iter().flatten().map(|c| Ch { y, ..c }).collect())
         })
         .collect()
+}
+
+/// Word's segments for [`rows`]' `like`: each one's first x, with its row's y and index.
+fn marks(rows: &[(f64, Vec<Ch>)]) -> Vec<(f64, f64, usize)> {
+    let mut out: Vec<(f64, f64, usize)> = Vec::new();
+    let mut seen: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    for (k, (y, r)) in rows.iter().enumerate() {
+        for c in r {
+            let i = *seen.entry((k, c.seg)).or_insert_with(|| {
+                out.push((c.x, *y, k));
+                out.len() - 1
+            });
+            out[i].0 = out[i].0.min(c.x);
+        }
+    }
+    out
 }
 
 fn text(row: &[Ch]) -> String {
@@ -194,8 +278,8 @@ pub fn compare(ours: &[Vec<Ch>], gold: &[Vec<Ch>]) -> Verdict {
         v.note = format!("pages: ours {} vs Word {}", ours.len(), gold.len());
     }
     for pi in 0..gold.len().max(ours.len()) {
-        let g = rows(gold.get(pi).map(|p| &p[..]).unwrap_or(&[]));
-        let o = rows(ours.get(pi).map(|p| &p[..]).unwrap_or(&[]));
+        let g = rows(gold.get(pi).map(|p| &p[..]).unwrap_or(&[]), &[]);
+        let o = rows(ours.get(pi).map(|p| &p[..]).unwrap_or(&[]), &marks(&g));
         v.rows_total += g.len();
         for (ri, gr) in g.iter().enumerate() {
             let or = o.get(ri);
@@ -259,8 +343,8 @@ fn load(docx: &Path, fonts: &crate::font::Fonts) -> (Vec<Vec<Ch>>, Vec<Vec<Ch>>)
 pub fn diff(docx: &Path, fonts: &crate::font::Fonts, want: Option<(usize, usize)>) {
     let (o, g) = load(docx, fonts);
     for pi in 0..g.len() {
-        let gr = rows(&g[pi]);
-        let or = rows(o.get(pi).map(|p| &p[..]).unwrap_or(&[]));
+        let gr = rows(&g[pi], &[]);
+        let or = rows(o.get(pi).map(|p| &p[..]).unwrap_or(&[]), &marks(&gr));
         for ri in 0..gr.len() {
             let hit = match want {
                 Some((wp, wr)) => wp == pi + 1 && wr == ri + 1,
@@ -301,8 +385,8 @@ pub fn diff(docx: &Path, fonts: &crate::font::Fonts, want: Option<(usize, usize)
 /// Lists page `page`'s rows side by side (baseline, text) — `from` = first row to show.
 pub fn rows_of(docx: &Path, fonts: &crate::font::Fonts, page: usize, from: usize) {
     let (o, g) = load(docx, fonts);
-    let gr = rows(g.get(page - 1).map(|p| &p[..]).unwrap_or(&[]));
-    let or = rows(o.get(page - 1).map(|p| &p[..]).unwrap_or(&[]));
+    let gr = rows(g.get(page - 1).map(|p| &p[..]).unwrap_or(&[]), &[]);
+    let or = rows(o.get(page - 1).map(|p| &p[..]).unwrap_or(&[]), &marks(&gr));
     for k in from.saturating_sub(1)..gr.len().max(or.len()) {
         let a = gr.get(k).map(|r| format!("{:8.2} {}", r.0, trunc(&text(&r.1)))).unwrap_or_default();
         let b = or.get(k).map(|r| format!("{:8.2} {}", r.0, trunc(&text(&r.1)))).unwrap_or_default();
@@ -316,8 +400,8 @@ pub fn pairs(docx: &Path, fonts: &crate::font::Fonts, out: &Path) {
     let (o, g) = load(docx, fonts);
     let mut s = String::new();
     for pi in 0..g.len() {
-        let gr = rows(&g[pi]);
-        let or = rows(o.get(pi).map(|p| &p[..]).unwrap_or(&[]));
+        let gr = rows(&g[pi], &[]);
+        let or = rows(o.get(pi).map(|p| &p[..]).unwrap_or(&[]), &marks(&gr));
         for (ri, r) in gr.iter().enumerate() {
             let Some(q) = or.get(ri).filter(|q| text(&q.1) == text(&r.1)) else { continue };
             let n = r.1.len();
@@ -408,5 +492,44 @@ fn collect(p: &Path, out: &mut Vec<PathBuf>) {
         }
     } else if p.extension().is_some_and(|e| e == "docx") {
         out.push(p.to_path_buf());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seg(s: &str, x: f64, y: f64, seg: usize) -> Vec<Ch> {
+        s.chars().enumerate().map(|(i, c)| Ch { c, x: x + i as f64 * 5.0, y, lig: false, seg }).collect()
+    }
+
+    #[test]
+    fn our_rows_follow_words() {
+        // Word: label and value on baselines 1.08 apart (two rows); ours 0.93 apart, which alone would be one row.
+        let gold = [seg("Eyes", 36.0, 217.94, 0), seg("BLU", 96.7, 219.02, 1)].concat();
+        let ours = [seg("Eyes", 36.0, 218.02, 7), seg("BLU", 96.8, 218.95, 8)].concat();
+        let v = compare(&[ours], &[gold]);
+        assert!(v.text_ok && v.rows_matched == 2, "{v:?}");
+        // A box Word extracts with its text as one line: ours, two segments, join it.
+        let gold = seg("☐Appear", 36.0, 310.25, 0);
+        let ours = [seg("Appear", 59.0, 310.1, 3), seg("☐", 36.0, 310.3, 2)].concat();
+        assert!(compare(&[ours], &[gold]).text_ok);
+    }
+
+    #[test]
+    fn symbols_and_span_baselines() {
+        // Word's PDF: a Wingdings box as U+F06F and a Webdings box as U+F063, then a check box on its own baseline
+        // in the line of the next cell's text, and a superscript that stays in its row.
+        let g: Value = serde_json::from_str(
+            r#"{"pages":[{"lines":[
+              {"y":100,"dir":[1,0],"spans":[{"font":"Wingdings-Regular","size":10,"text":"","x":[10]},
+                                            {"font":"Webdings","size":10,"text":"","x":[20,30]}]},
+              {"y":203,"dir":[1,0],"spans":[{"font":"MS Mincho","size":11,"y":203,"text":"☐","x":[10]},
+                                            {"font":"CourierNewPSMT","size":10,"y":200,"text":"Mail","x":[30,36,42,48]},
+                                            {"font":"ArialMT","size":6.5,"y":197,"text":"th","x":[54,58]}]}]}]}"#,
+        )
+        .unwrap();
+        let rows: Vec<String> = rows(&golden(&g)[0], &[]).iter().map(|(_, r)| text(r)).collect();
+        assert_eq!(rows, ["□c", "Mailth", "☐"]);
     }
 }

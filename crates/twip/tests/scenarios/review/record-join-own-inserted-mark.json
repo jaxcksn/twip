@@ -1,112 +1,113 @@
 {
- "id": "RECORD-JOIN-OWN-INSERTED-MARK",
- "title": "Deleting a mark the author inserted joins the paragraphs",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "Alpha beta gamma."
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 5
-   }
-  },
-  {
-   "key": "Enter"
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 1,
-     "offset": 0
+  "id": "RECORD-JOIN-OWN-INSERTED-MARK",
+  "title": "Deleting a mark the author inserted joins the paragraphs",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "Alpha beta gamma."
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha",
-        "runs": [
-         {
-          "text": "Alpha",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": "Author A",
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       },
-       {
-        "text": " beta gamma.",
-        "runs": [
-         {
-          "text": " beta gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
-    }
-   }
-  },
-  {
-   "key": "Backspace"
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 0,
-     "offset": 5
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha beta gamma.",
-        "runs": [
-         {
-          "text": "Alpha beta gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 5
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0
         },
-        "pchange": null
-       }
-      ]
-     }
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha",
+                "runs": [
+                  {
+                    "text": "Alpha",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              },
+              {
+                "text": " beta gamma.",
+                "runs": [
+                  {
+                    "text": " beta gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 5
+        },
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha beta gamma.",
+                "runs": [
+                  {
+                    "text": "Alpha beta gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
     }
-   }
-  }
- ]
+  ]
 }

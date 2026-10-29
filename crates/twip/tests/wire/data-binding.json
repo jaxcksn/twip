@@ -1,0 +1,7 @@
+[
+  {
+    "prefixMappings": "xmlns:i='urn:invoice'",
+    "storeItemId": "{6A9C}",
+    "xpath": "/invoice/total"
+  }
+]

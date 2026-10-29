@@ -14,7 +14,7 @@ These rules lay out a `w:tbl`: first the table's properties and its shared colum
 - `textW` = the width between the page margins, or the column width, or (for a nested table) the width of the cell's content box.
 - Column widths run from border centre to border centre.
 - A table's grid has `n` columns: the larger of the number of `w:gridCol` entries and, over all rows, `w:gridBefore + Σ w:gridSpan + w:gridAfter`. A row's first cell starts at grid column `w:gridBefore`; each cell covers `w:gridSpan` columns (default 1), cut off at the grid's end.
-- A floating table (`w:tblpPr`) is laid out where it stands in the flow, like any other table.
+- A floating table (`w:tblpPr`) is laid out where it stands in the flow, like any other table, except for its position ([TABLE-49](#table-49)).
 
 ## Table properties
 
@@ -606,3 +606,9 @@ If a table starts below other content in a column and the first row after its he
 - The space-after of the paragraph before a table applies, in full, above the table's top border edge (not if the table starts at the top of an empty column).
 - The paragraph after a table takes its full space-before, from the table's bottom border edge; nothing collapses against the table.
 - A `w:keepNext` paragraph before a table keeps with its first row: if the table can't place its first row (or a first part of it) in this column, the keepNext chain moves on with it ([PAGE-6](page#page-6)).
+
+### TABLE-49. Floating table position {#table-49}
+
+- Horizontally, `w:tblpX` takes `w:tblInd`'s place ([TABLE-23](#table-23)), from the column. With `w:tblpXSpec`, `left` puts the table where `tblpX` 0 would, `right` as `w:jc` right does, and `center` puts the left border centre at `(textW − total + lm) / 2`, `lm` the first cell's left margin: a centred floating table sits half that margin right of a centred inline one.
+- Vertically, a floating table that starts a column moves up to its anchored top: `w:tblpY` below the page's top edge (`w:vertAnchor="page"`, never above the page), the top margin (`margin`) or where the table stands in the flow (`text`). What follows flows below its bottom border edge.
+- Not done: a floating table anchored below where it stands, one that doesn't start a column, `w:horzAnchor` (always the column), and text beside a floating table narrower than the column.

@@ -1,232 +1,233 @@
 {
- "id": "RECORD-DELETE-OWN-INSERTION",
- "title": "Deleting the author's own insertion removes it",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "Alpha beta gamma."
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 6
-   }
-  },
-  {
-   "type": "new "
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 0,
-     "offset": 10
+  "id": "RECORD-DELETE-OWN-INSERTION",
+  "title": "Deleting the author's own insertion removes it",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "Alpha beta gamma."
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha new beta gamma.",
-        "runs": [
-         {
-          "text": "Alpha ",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "new ",
-          "ins": "Author A",
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "beta gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
-    }
-   }
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 6
-   }
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 10
-   },
-   "shift": true
-  },
-  {
-   "key": "Delete"
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 0,
-     "offset": 6
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha beta gamma.",
-        "runs": [
-         {
-          "text": "Alpha beta gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
-    }
-   }
-  },
-  {
-   "type": "other "
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 0,
-     "offset": 12
+    {
+      "author": "Author A"
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha other beta gamma.",
-        "runs": [
-         {
-          "text": "Alpha ",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "other ",
-          "ins": "Author A",
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "beta gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
-    }
-   }
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 7
-   }
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 9
-   },
-   "shift": true
-  },
-  {
-   "key": "Delete"
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 0,
-     "offset": 7
+    {
+      "click": {
+        "para": 0,
+        "offset": 6
+      }
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha oer beta gamma.",
-        "runs": [
-         {
-          "text": "Alpha ",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "oer ",
-          "ins": "Author A",
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "beta gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
+    {
+      "type": "new "
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 10
         },
-        "pchange": null
-       }
-      ]
-     }
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha new beta gamma.",
+                "runs": [
+                  {
+                    "text": "Alpha ",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "new ",
+                    "ins": "Author A",
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "beta gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 6
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 10
+      },
+      "shift": true
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 6
+        },
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha beta gamma.",
+                "runs": [
+                  {
+                    "text": "Alpha beta gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "other "
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 12
+        },
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha other beta gamma.",
+                "runs": [
+                  {
+                    "text": "Alpha ",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "other ",
+                    "ins": "Author A",
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "beta gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 7
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 9
+      },
+      "shift": true
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 7
+        },
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha oer beta gamma.",
+                "runs": [
+                  {
+                    "text": "Alpha ",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "oer ",
+                    "ins": "Author A",
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "beta gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
     }
-   }
-  }
- ]
+  ]
 }

@@ -1,0 +1,12 @@
+[
+  "destroyed",
+  "invalid-argument",
+  "unavailable",
+  "read-only",
+  "import-failed",
+  "export-failed",
+  "aborted",
+  "not-allowed",
+  "unsupported",
+  "internal"
+]

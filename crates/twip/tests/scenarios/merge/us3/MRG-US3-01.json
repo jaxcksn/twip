@@ -21,8 +21,8 @@
       "shift": true
     },
     {
-      "command": "region.wrap",
-      "arg": {
+      "command": {
+        "type": "wrapInRepeatingSection",
         "tag": "Rows"
       },
       "expect": {
@@ -45,7 +45,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "removed": 3

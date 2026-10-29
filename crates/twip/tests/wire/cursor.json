@@ -1,0 +1,13 @@
+[
+  "default",
+  "text",
+  "pointer",
+  "move",
+  "resizeHorizontal",
+  "resizeVertical",
+  "resizeNorthWestSouthEast",
+  "resizeNorthEastSouthWest",
+  "crosshair",
+  "notAllowed",
+  "copy"
+]

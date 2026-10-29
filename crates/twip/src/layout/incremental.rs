@@ -688,6 +688,11 @@ impl DocumentLayout {
         self.published.clone()
     }
 
+    /// The revision of the last edit: a snapshot of an older one predates it.
+    pub fn revision(&self) -> Revision {
+        self.revision
+    }
+
     /// The document changed to `revision` (already applied): merges the change into the accumulated span and abandons
     /// any running job (its committed pages stay in the published snapshot, provisional).
     pub fn edit(&mut self, revision: Revision, hint: Option<Change>) {
@@ -1008,6 +1013,7 @@ impl DocumentLayout {
         let pages = self.fragments(&records);
         let finished = Finished { pages, ..finished };
         self.reused = (finished.records.iter().filter(|p| p.reused.is_some()).count(), finished.records.len());
+        self.cache.fit(finished.records.len());
         let lrev = self.next_layout_revision();
         self.published = Rc::new(finished.snapshot(self.revision, lrev));
         self.current = true;

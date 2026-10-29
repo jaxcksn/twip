@@ -1,10 +1,10 @@
 //! `twip dump <out dir> <docx or folders...>`: writes one dump file per document and an index, for comparing
-//! builds of the layout engine item by item. The item text itself is [`twip::layout::dump::page_text`].
+//! builds of the layout engine item by item. The item text itself is [`twip::internal::layout::dump::page_text`].
 
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
-use twip::docx::Document;
+use twip::internal::docx::Document;
 
 fn collect(path: &Path, out: &mut Vec<PathBuf>) {
     if path.is_dir() {
@@ -30,7 +30,7 @@ pub fn run(out: &Path, paths: &[String], text: impl Fn(&Document) -> String) -> 
     for (n, file) in files.iter().enumerate() {
         let name = format!("{n:04}-{}.txt", file.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default());
         let Ok(bytes) = std::fs::read(file) else { continue };
-        let dump = match twip::docx::read(&bytes) {
+        let dump = match twip::internal::docx::read(&bytes) {
             Ok(doc) => text(&doc),
             Err(e) => format!("read error {e:?}\n"),
         };

@@ -241,14 +241,20 @@ impl Run {
             m["type"] = json!("query");
             r.send(m);
         } else if let Some(b) = step.get("batch") {
-            // `{"batch": {"label", "commands": [{"command": id, "arg": …}]}}`: one input holding the commands.
-            let inputs: Vec<Value> = b["commands"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|c| json!({ "type": "command", "id": c["command"], "arg": c.get("arg") }))
-                .collect();
-            r.send(json!({ "type": "batch", "label": b["label"], "inputs": inputs }));
+            // `{"batch": {"label", "commands": [{"type": "setBold", "value": true}, …]}}`: one input holding the commands.
+            r.send(json!({ "type": "batch", "label": b["label"], "commands": b["commands"] }));
+        } else if let Some(name) = step.get("author") {
+            r.send(json!({ "type": "author", "name": name }));
+        } else if let Some(mode) = step.get("mode") {
+            r.send(json!({ "type": "mode", "mode": mode }));
+        } else if let Some(at) = step.get("drop") {
+            r.send(json!({ "type": "drop", "at": at }));
+        } else if let Some(a) = step.get("replace_all") {
+            r.send(json!({ "type": "replace_all", "find": a["find"], "with": a["with"], "case": a["case"] }));
+        } else if let Some(id) = step.get("select_element") {
+            r.send(json!({ "type": "select_element", "id": id }));
+        } else if let Some(s) = step.get("select") {
+            r.send(json!({ "type": "select", "para": s["para"], "start": s["start"], "end": s["end"] }));
         } else if let Some(code) = step.get("key").and_then(Value::as_str) {
             r.send(json!({ "type": "key", "code": code, "mods": mods }));
         } else if let Some(t) = step.get("ime").and_then(Value::as_str) {
@@ -318,16 +324,18 @@ impl Run {
             }
         } else if let Some(t) = step.get("paste_text").and_then(Value::as_str) {
             r.send(json!({ "type": "paste", "text": t }));
-        } else if let Some(id) = step.get("command").and_then(Value::as_str) {
-            r.send(json!({ "type": "command", "id": id, "arg": step.get("arg") }));
+        } else if let Some(c) = step.get("command") {
+            r.send(json!({ "type": "command", "command": c }));
         }
     }
 
     /// The step with references in its command, query and batch arguments resolved ([`Run::resolve`]).
     fn resolve_step(&mut self, step: &Value) -> Value {
         let mut s = step.clone();
-        if let Some(a) = step.get("arg").filter(|a| !a.is_string()) {
-            s["arg"] = self.resolve(a);
+        for k in ["command", "drop", "select_element"] {
+            if let Some(a) = step.get(k) {
+                s[k] = self.resolve(a);
+            }
         }
         if let Some(q) = step.get("query") {
             s["query"] = self.resolve(q);

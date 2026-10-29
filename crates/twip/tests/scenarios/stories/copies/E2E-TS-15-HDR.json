@@ -23,7 +23,10 @@
       }
     },
     {
-      "command": "table.delete.cells-left"
+      "command": {
+        "type": "deleteCells",
+        "value": "left"
+      }
     },
     {
       "expect": {
@@ -56,7 +59,10 @@
       }
     },
     {
-      "command": "table.delete.cells-up"
+      "command": {
+        "type": "deleteCells",
+        "value": "up"
+      }
     },
     {
       "expect": {
@@ -120,7 +126,9 @@
       }
     },
     {
-      "command": "table.distribute"
+      "command": {
+        "type": "distributeColumns"
+      }
     },
     {
       "expect": {
@@ -137,7 +145,9 @@
       }
     },
     {
-      "command": "table.distribute.rows"
+      "command": {
+        "type": "distributeRows"
+      }
     },
     {
       "expect": {
@@ -169,8 +179,11 @@
       }
     },
     {
-      "command": "table.split-rows",
-      "arg": "2"
+      "command": {
+        "type": "splitCells",
+        "columns": 1,
+        "rows": 2
+      }
     },
     {
       "expect": {

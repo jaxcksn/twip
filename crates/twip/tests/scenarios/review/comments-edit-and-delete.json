@@ -3,34 +3,218 @@
   "title": "A comment's body edited, plain and rich; a reply deleted alone; the first comment deleted with its replies and range; undo brings each back",
   "fixture": "FX-EMPTY.docx",
   "steps": [
-    { "type": "Alpha beta gamma." },
-    { "click": { "para": 0, "offset": 0 } },
-    { "click": { "para": 0, "offset": 5 }, "shift": true },
-    { "command": "review.comment.add", "arg": "Root" },
-    { "command": "review.comment.edit", "arg": { "id": "$last", "body": "Root, edited" } },
-    { "expect": { "comments": [{ "text": "Root, edited", "scope": "Alpha" }] } },
     {
-      "command": "review.comment.edit",
-      "arg": {
-        "id": "$last",
-        "body": { "paragraphs": [{ "runs": [{ "text": "Bold", "bold": true }, { "text": " and a link", "link": "https://example.com/" }] }, { "runs": [{ "text": "Second" }] }] }
+      "type": "Alpha beta gamma."
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
       }
     },
-    { "expect": { "comments": [{ "text": "Bold and a link\nSecond" }] } },
-    { "command": "home.undo" },
-    { "expect": { "comments": [{ "text": "Root, edited" }] } },
-    { "command": "review.comment.reply", "arg": { "id": "$last", "body": "First reply" } },
-    { "command": "review.comment.reply", "arg": { "id": "$last", "body": "Second reply" } },
-    { "command": "review.comment.delete", "arg": { "id": "$last" } },
-    { "expect": { "comments": [{ "text": "Root, edited" }, { "text": "First reply", "parent": 1 }] } },
-    { "command": "home.undo" },
-    { "expect": { "comments": [{ "text": "Root, edited" }, { "text": "First reply" }, { "text": "Second reply" }] } },
-    { "click": { "para": 0, "offset": 2 } },
-    { "expect": { "comments": [{ "text": "Root, edited", "active": true }, { "text": "First reply" }, { "text": "Second reply" }] } },
-    { "command": "review.comment.delete", "arg": 1 },
-    { "expect": { "comments": [], "text": { "0": "Alpha beta gamma." } } },
-    { "command": "review.comment.delete", "arg": 1, "expect": { "answer": { "error": "no such comment" }, "comments": [] } },
-    { "command": "home.undo" },
-    { "expect": { "comments": [{ "text": "Root, edited", "scope": "Alpha" }, { "text": "First reply" }, { "text": "Second reply" }] } }
+    {
+      "click": {
+        "para": 0,
+        "offset": 5
+      },
+      "shift": true
+    },
+    {
+      "command": {
+        "type": "addComment",
+        "value": "Root"
+      }
+    },
+    {
+      "command": {
+        "type": "editComment",
+        "id": "$last",
+        "body": "Root, edited"
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "Root, edited",
+            "scope": "Alpha"
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "editComment",
+        "id": "$last",
+        "body": {
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "text": "Bold",
+                  "bold": true
+                },
+                {
+                  "text": " and a link",
+                  "link": "https://example.com/"
+                }
+              ]
+            },
+            {
+              "runs": [
+                {
+                  "text": "Second"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "Bold and a link\nSecond"
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "Root, edited"
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "replyToComment",
+        "to": "$last",
+        "body": "First reply"
+      }
+    },
+    {
+      "command": {
+        "type": "replyToComment",
+        "to": "$last",
+        "body": "Second reply"
+      }
+    },
+    {
+      "command": {
+        "type": "deleteComment",
+        "value": "$last"
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "Root, edited"
+          },
+          {
+            "text": "First reply",
+            "parent": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "Root, edited"
+          },
+          {
+            "text": "First reply"
+          },
+          {
+            "text": "Second reply"
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "Root, edited",
+            "active": true
+          },
+          {
+            "text": "First reply"
+          },
+          {
+            "text": "Second reply"
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "deleteComment",
+        "value": "c1"
+      }
+    },
+    {
+      "expect": {
+        "comments": [],
+        "text": {
+          "0": "Alpha beta gamma."
+        }
+      }
+    },
+    {
+      "command": {
+        "type": "deleteComment",
+        "value": "c1"
+      },
+      "expect": {
+        "answer": {
+          "error": "no such comment"
+        },
+        "comments": []
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "comments": [
+          {
+            "text": "Root, edited",
+            "scope": "Alpha"
+          },
+          {
+            "text": "First reply"
+          },
+          {
+            "text": "Second reply"
+          }
+        ]
+      }
+    }
   ]
 }

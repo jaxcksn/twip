@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::*;
+use crate::docx::props::TableAnchor;
 
 use super::LayoutCtx;
 use super::float::{self, Frames, Placed, Wrap};
@@ -18,7 +19,7 @@ use super::paragraph::{gap, lines_to_take, space_after, space_before};
 use super::record::PageEffects;
 use super::space::{BorderKey, ColumnSpace, ParaSpace};
 use super::story::{StoryEnv, StoryLayout, StoryUnit};
-use super::table::{CellPart, TableLayout, draw_row, draw_whole_row, whole};
+use super::table::{CellPart, DrawnRow, TableLayout, draw_row, draw_whole_row, whole};
 use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape};
 use super::token::{At, FlowState, FlowToken, NotePart};
 
@@ -77,6 +78,25 @@ pub struct PassMemo {
     /// Paragraphs joined in this pass (REV-6), by their first paragraph's identity in the document and their count:
     /// pages and balancing attempts lay them out repeatedly.
     joined: HashMap<(usize, usize), Rc<Joined>>,
+    /// The lines, tables and rows laid out since the last committed body, for its record to hold.
+    pub(crate) held: Held,
+}
+
+/// The cached results a page body was laid out from. Its record holds them, so eviction (which drops only what the
+/// cache alone holds) keeps them while the page is a baseline's: an incremental layout doesn't look up the pages it
+/// copies, and its later pages, moved by an edit, find their paragraphs, tables and rows still laid out.
+#[derive(Clone, Debug, Default)]
+pub struct Held {
+    lines: Vec<Rc<ParaLines>>,
+    tables: Vec<Rc<TableLayout>>,
+    rows: Vec<Rc<DrawnRow>>,
+}
+
+/// Adds `x` to `v` unless `v` holds it already.
+fn hold<T>(v: &mut Vec<Rc<T>>, x: &Rc<T>) {
+    if !v.iter().any(|y| Rc::ptr_eq(y, x)) {
+        v.push(x.clone());
+    }
 }
 
 impl PassMemo {
@@ -361,7 +381,9 @@ impl<'d> PageFill<'d, '_> {
         let space = laid.shape_space(self.fields, self.note_numbers, &self.ctx.env.text);
         let shaped = shape(p, &space, self.ctx.fonts, memos)?;
         let ps = para_space(p.para_style_in(self.ctx.env.text.review.view), prev, next, width, from, x0, &self.ctx);
-        break_lines(&shaped, p, &ps, self.ctx.fonts, memos)
+        let lines = break_lines(&shaped, p, &ps, self.ctx.fonts, memos)?;
+        hold(&mut self.pass.held.lines, &lines);
+        Ok(lines)
     }
 
     /// A table laid out for `width`.
@@ -370,10 +392,12 @@ impl<'d> PageFill<'d, '_> {
         let id = std::ptr::from_ref(t) as usize;
         let varies = *self.pass.varies.entry(id).or_insert_with(|| t.rows.iter().any(|r| r.cells.iter().any(|c| varies_by_page(&c.blocks))));
         if !varies && let Some(tb) = self.pass.tables.get(&(id, width.to_bits())) {
+            hold(&mut self.pass.held.tables, tb);
             return Ok(tb.clone());
         }
         let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
         let tb = crate::prof::time("table", || super::table::layout(t, width, &env, false, memos))?;
+        hold(&mut self.pass.held.tables, &tb);
         if !varies {
             self.pass.tables.insert((id, width.to_bits()), tb.clone());
         }
@@ -690,7 +714,17 @@ impl<'d> PageFill<'d, '_> {
                         chain = None;
                     }
                 }
-                Some(Block::Table(_)) => {
+                Some(Block::Table(t)) => {
+                    // PAGE-6: a page break before the first paragraph of a cell in the table's first row starts the
+                    // table on a new page. shortcut: one in a later row doesn't break the table there.
+                    let breaks = t.rows.first().is_some_and(|r| {
+                        r.cells.iter().any(
+                            |c| matches!(c.blocks.first(), Some(Block::Para(p)) if p.para_style_in(self.ctx.env.text.review.view).page_break_before),
+                        )
+                    });
+                    if pos.at.at_start() && breaks && !(empty && page_empty) {
+                        return Ok((Stop::Page, y));
+                    }
                     let tb = self.table_layout(bi, col.width, memos)?;
                     match self.place_table(&tb, pos, carry, &col, &mut y, &mut empty, area, out, memos)? {
                         Stop::Done => chain = None,
@@ -1327,6 +1361,22 @@ impl<'d> PageFill<'d, '_> {
         if pos.at.at_start() && !*empty {
             *y += carry.prev_after;
         }
+        // TABLE-49: a floating table that starts a column moves up to its anchored top (a page-anchored one no
+        // higher than the page's top edge); what follows flows below it.
+        // shortcut: only that move up is done: a floating table anchored lower, or narrow enough for text beside
+        // it, is laid out in the flow.
+        if pos.at.at_start()
+            && *empty
+            && let Some(Block::Table(t)) = self.sec.blocks.get(pos.block)
+            && let Some(fp) = t.floating
+        {
+            let top = match fp.v_anchor {
+                TableAnchor::Page => fp.y.max(0.0),
+                TableAnchor::Margin => self.margins.2 + fp.y,
+                TableAnchor::Text => *y + fp.y,
+            };
+            *y = y.min(top);
+        }
         carry.prev = None;
         carry.prev_after = 0.0;
         let headers: Vec<usize> = (0..tb.rows.len()).take_while(|&r| tb.rows[r].header).collect();
@@ -1383,7 +1433,13 @@ impl<'d> PageFill<'d, '_> {
                 carry.note_rest.extend(note_rest);
                 rows.push(match &rest {
                     // A whole row: through the cache.
-                    None => draw_whole_row(tb, ri, col.x, *y, height, last, memos),
+                    None => {
+                        let (drawn, cached) = draw_whole_row(tb, ri, col.x, *y, height, last, memos);
+                        if let Some(d) = &cached {
+                            hold(&mut self.pass.held.rows, d);
+                        }
+                        drawn
+                    }
                     Some(_) => draw_row(tb, ri, col.x, *y, height, Some(&parts), last),
                 });
                 move_floats(rows.last_mut(), &page_floats, &frames, row.top_border);
@@ -1395,7 +1451,8 @@ impl<'d> PageFill<'d, '_> {
             }
             // Split the row (TABLE-41) unless it can't be (TABLE-45); a row taller than a page splits anyway.
             let avail = col.bottom - area.total() - *y - row.top_border - tb.bottom_border;
-            let can_split = !row.exact && (!row.cant_split || at_top);
+            // An atLeast row starts splitting only where its minimum height fits.
+            let can_split = !row.exact && (!row.cant_split || at_top) && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
             let mut fitted: Vec<CellPart> = Vec::new();
             let mut left: Vec<Vec<StoryUnit>> = Vec::new();
             if can_split {

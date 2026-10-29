@@ -1,0 +1,15 @@
+[
+  "insertion",
+  "deletion",
+  "moveFrom",
+  "moveTo",
+  "formatting",
+  "paragraphProperties",
+  "sectionProperties",
+  "tableProperties",
+  "rowInsertion",
+  "rowDeletion",
+  "cellInsertion",
+  "cellDeletion",
+  "cellMerge"
+]

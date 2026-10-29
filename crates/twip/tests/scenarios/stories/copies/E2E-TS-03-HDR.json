@@ -22,7 +22,9 @@
       }
     },
     {
-      "command": "table.delete.row"
+      "command": {
+        "type": "deleteRows"
+      }
     },
     {
       "expect": {
@@ -53,7 +55,9 @@
       }
     },
     {
-      "command": "table.delete.table"
+      "command": {
+        "type": "deleteTable"
+      }
     },
     {
       "expect": {

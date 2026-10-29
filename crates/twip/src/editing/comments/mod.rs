@@ -11,8 +11,6 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use serde_json::json;
-
 use crate::docx::resolve::Resolver;
 use crate::docx::review::{Comment, CommentId, RangeKind, RangeMark, Timestamp};
 use crate::docx::write::props::{Cx, Props};
@@ -263,7 +261,7 @@ impl Editor {
     }
 
     fn comment_refused(&mut self, why: &'static str) -> Outcome {
-        self.answer = Some(json!({ "error": why }));
+        self.refused = Some(why);
         Outcome::Unchanged(why)
     }
 
@@ -349,7 +347,7 @@ impl Editor {
     /// Each thread with a range, by its first comment's markers, in document order (found again after each change).
     fn thread_ranges(&mut self) -> Rc<Vec<ThreadRange>> {
         if let Some((rev, r)) = &self.comments.ranges
-            && *rev == self.revision
+            && *rev == self.generation
         {
             return r.clone();
         }
@@ -366,8 +364,14 @@ impl Editor {
             .collect();
         v.sort_by(|a, b| self.story_order(&a.start, &b.start));
         let v = Rc::new(v);
-        self.comments.ranges = Some((self.revision, v.clone()));
+        self.comments.ranges = Some((self.generation, v.clone()));
         v
+    }
+
+    /// The range of the thread holding comment `id`.
+    pub(in crate::editing) fn comment_range(&mut self, id: CommentId) -> Option<(Position, Position)> {
+        let root = self.doc.comments.root(id);
+        self.thread_ranges().iter().find(|r| r.root == root).map(|r| (r.start, r.end))
     }
 
     /// The active thread: the one the host chose while the selection stays where it was then, else the innermost
@@ -519,7 +523,7 @@ impl Editor {
         let out = self.commit(tx, None, fonts);
         if matches!(out, Outcome::Changed(_)) {
             self.comments.chosen = Some((id, self.selection));
-            self.answer = Some(json!({ "id": id.0 }));
+            self.made = Some(crate::api::command::CommandResult::Comment { id: crate::api::record::comment_id(id) });
         }
         out
     }
@@ -546,7 +550,7 @@ impl Editor {
         }
         let out = self.commit(tx, None, fonts);
         if matches!(out, Outcome::Changed(_)) {
-            self.answer = Some(json!({ "id": id.0 }));
+            self.made = Some(crate::api::command::CommandResult::Comment { id: crate::api::record::comment_id(id) });
         }
         out
     }

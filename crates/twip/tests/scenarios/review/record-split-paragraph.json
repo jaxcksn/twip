@@ -1,77 +1,78 @@
 {
- "id": "RECORD-SPLIT-PARAGRAPH",
- "title": "Enter records the first paragraph's mark as inserted",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "Alpha beta gamma."
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 10
-   }
-  },
-  {
-   "key": "Enter"
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 1,
-     "offset": 0
+  "id": "RECORD-SPLIT-PARAGRAPH",
+  "title": "Enter records the first paragraph's mark as inserted",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "Alpha beta gamma."
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha beta",
-        "runs": [
-         {
-          "text": "Alpha beta",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": "Author A",
-         "del": null,
-         "move": null
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 10
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0
         },
-        "pchange": null
-       },
-       {
-        "text": " gamma.",
-        "runs": [
-         {
-          "text": " gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha beta",
+                "runs": [
+                  {
+                    "text": "Alpha beta",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              },
+              {
+                "text": " gamma.",
+                "runs": [
+                  {
+                    "text": " gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
     }
-   }
-  }
- ]
+  ]
 }

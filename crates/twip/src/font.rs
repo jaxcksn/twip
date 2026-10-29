@@ -8,6 +8,9 @@ use std::sync::Arc;
 
 use harfrust::{Buffer, Direction, Feature, ShapeOptions, ShaperFont, Tag};
 
+use crate::api::error::Error;
+use crate::api::fonts::{FaceInfo, SubstitutionRule};
+
 #[derive(Clone, Debug)]
 struct Entry {
     family: String,
@@ -21,6 +24,9 @@ struct Entry {
 
 /// One face, with metrics in font units.
 pub struct Face {
+    /// The family layout asked for (the document's, before substitution).
+    pub requested: String,
+    /// The family drawn.
     pub family: String,
     pub weight: u16,
     pub italic: bool,
@@ -87,7 +93,7 @@ fn tables(d: &[u8], index: u32) -> HashMap<[u8; 4], (usize, usize)> {
 }
 
 impl Face {
-    fn load(e: &Entry, data: Arc<Vec<u8>>, sim_bold: bool, sim_italic: bool) -> Option<Face> {
+    fn load(e: &Entry, requested: &str, data: Arc<Vec<u8>>, sim_bold: bool, sim_italic: bool) -> Option<Face> {
         let d = &data[..];
         let t = tables(d, e.index);
         let head = t.get(b"head")?.0;
@@ -98,6 +104,7 @@ impl Face {
             None => (0.0, 0.0, 0.0),
         };
         let mut f = Face {
+            requested: requested.to_string(),
             family: e.family.clone(),
             weight: e.weight,
             italic: e.italic,
@@ -259,17 +266,19 @@ impl std::fmt::Debug for Face {
     }
 }
 
-/// The fonts layout may use, and how document font names map to faces. Cloned when a font is added to a catalog
-/// several engines share (`Rc::make_mut`, host::Engine::add_font).
+/// The fonts layout may use, and how document font names map to faces: the substitution rules first, then the
+/// installed families, then the built-in substitutes, then the default family.
 #[derive(Default, Clone)]
 pub struct Fonts {
     entries: Vec<Entry>,
     by_name: HashMap<String, Vec<usize>>,
+    rules: Vec<SubstitutionRule>,
+    default: Option<String>,
     files: RefCell<HashMap<String, Arc<Vec<u8>>>>,
     faces: RefCell<HashMap<(String, bool, bool), Option<Rc<Face>>>>,
-    resolved: RefCell<HashMap<String, String>>,
+    resolved: RefCell<HashMap<(String, bool, bool), String>>,
     fallbacks: RefCell<HashMap<(char, bool, bool), Option<Rc<Face>>>>,
-    /// Bumped whenever faces are added: part of every layout cache key that used fonts.
+    /// Bumped whenever faces, rules or the default change: part of every layout cache key that used fonts.
     revision: u64,
 }
 
@@ -283,6 +292,10 @@ const SUBSTITUTES: &[(&str, &str)] = &[
     ("Helvetica Neue", "Arial"),
     ("Times", "Times New Roman"),
     ("Courier", "Courier New"),
+    // As Word draws them without a font table entry.
+    ("CourierPS", "Courier New"),
+    ("Courier New CE", "Courier New"),
+    ("Myriad Pro", "Segoe UI"),
     ("Liberation Serif", "Times New Roman"),
     ("Liberation Sans", "Arial"),
     ("Liberation Mono", "Courier New"),
@@ -363,20 +376,57 @@ impl Fonts {
         }
     }
 
-    pub fn add_bytes(&mut self, data: Vec<u8>) {
+    /// Adds a font file's faces: TrueType, OpenType, a collection, or WOFF and WOFF2 (decoded to TrueType or
+    /// OpenType first). Fails, adding nothing, for data that isn't one or has no usable face.
+    pub fn add_bytes(&mut self, data: Vec<u8>) -> Result<Vec<FaceInfo>, Error> {
+        let data = match data.get(..4) {
+            Some([0, 1, 0, 0] | b"OTTO" | b"true" | b"ttcf") => data,
+            Some(b"wOFF") => wuff::decompress_woff1(&data).map_err(|e| Error::invalid(format!("not a valid WOFF font: {e:?}")))?,
+            Some(b"wOF2") => wuff::decompress_woff2(&data).map_err(|e| Error::invalid(format!("not a valid WOFF2 font: {e:?}")))?,
+            _ => return Err(Error::invalid("not a TrueType, OpenType or WOFF font")),
+        };
+        let from = self.entries.len();
         let data = Arc::new(data);
         self.scan(&data.clone(), None, Some(data));
+        let faces: Vec<FaceInfo> =
+            self.entries[from..].iter().map(|e| FaceInfo { family: e.family.clone(), bold: e.weight >= 600, italic: e.italic }).collect();
+        if faces.is_empty() {
+            return Err(Error::invalid("the font file has no usable faces"));
+        }
+        Ok(faces)
     }
 
-    /// The catalog's revision: it changes whenever faces are added, so cached layouts made with the old catalog are
-    /// recomputed. Unique in the process, so two catalogs (which may hold different face objects) never share one.
+    /// The catalog's revision: it changes whenever faces, rules or the default do, so cached layouts made with the old
+    /// catalog are recomputed. Unique in the process, so two catalogs (which may hold different face objects) never
+    /// share one.
     pub fn revision(&self) -> u64 {
         self.revision
     }
 
-    fn scan(&mut self, d: &[u8], path: Option<String>, data: Option<Arc<Vec<u8>>>) {
+    /// A new revision, and the memos made with the old one dropped.
+    fn changed(&mut self) {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         self.revision = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.faces.borrow_mut().clear();
+        self.resolved.borrow_mut().clear();
+        self.fallbacks.borrow_mut().clear();
+    }
+
+    /// The substitution rules, replacing earlier ones.
+    pub fn set_rules(&mut self, rules: Vec<SubstitutionRule>) {
+        self.rules = rules;
+        self.changed();
+    }
+
+    /// The family drawn when nothing else resolves a name. Until one is set: Calibri or a metric-compatible family
+    /// when installed, else the first font added.
+    pub fn set_default(&mut self, family: &str) {
+        self.default = Some(family.to_string());
+        self.changed();
+    }
+
+    fn scan(&mut self, d: &[u8], path: Option<String>, data: Option<Arc<Vec<u8>>>) {
+        let before = self.entries.len();
         let count = if d.starts_with(b"ttcf") { u32_at(d, 8) } else { 1 };
         for index in 0..count.min(64) {
             let t = tables(d, index);
@@ -409,11 +459,7 @@ impl Fonts {
                     }
                 }
             }
-            let i = self.entries.len();
-            for n in &all {
-                self.by_name.entry(n.to_lowercase()).or_default().push(i);
-            }
-            self.entries.push(Entry {
+            let entry = Entry {
                 family: fam,
                 weight: if weight == 0 { 400 } else { weight },
                 width: if (1..=9).contains(&width) { width } else { 5 },
@@ -421,11 +467,28 @@ impl Fonts {
                 path: path.clone(),
                 data: data.clone(),
                 index,
-            });
+            };
+            // Added bytes are loaded here as layout would load them, so a face that can't be drawn isn't added. Files
+            // load on first use.
+            if let Some(data) = &data
+                && Face::load(&entry, &entry.family, data.clone(), false, false).is_none()
+            {
+                continue;
+            }
+            let i = self.entries.len();
+            for n in &all {
+                self.by_name.entry(n.to_lowercase()).or_default().push(i);
+            }
+            self.entries.push(entry);
         }
-        self.faces.borrow_mut().clear();
-        self.resolved.borrow_mut().clear();
-        self.fallbacks.borrow_mut().clear();
+        if self.entries.len() > before {
+            self.changed();
+        }
+    }
+
+    /// How many faces the catalog has.
+    pub fn face_count(&self) -> usize {
+        self.entries.len()
     }
 
     /// The installed family names, sorted (for a font chooser).
@@ -440,27 +503,50 @@ impl Fonts {
         self.by_name.contains_key(&family.to_lowercase())
     }
 
-    /// The installed family that renders `name`.
-    pub fn resolve(&self, name: &str) -> String {
-        if let Some(r) = self.resolved.borrow().get(name) {
+    /// The family a substitution rule draws `name` in, else `name`. Matching is case-insensitive, and a rule with
+    /// `bold` or `italic` set applies only to that style.
+    pub fn render_family<'a>(&'a self, name: &'a str, bold: bool, italic: bool) -> &'a str {
+        self.rules
+            .iter()
+            .find(|r| r.from.eq_ignore_ascii_case(name) && r.bold.is_none_or(|b| b == bold) && r.italic.is_none_or(|i| i == italic))
+            .map_or(name, |r| r.to.as_str())
+    }
+
+    /// The installed family that draws `name`: itself, or a built-in substitute.
+    fn installed_for(&self, name: &str) -> Option<String> {
+        let sub = |n: &str| SUBSTITUTES.iter().find(|(a, _)| a.eq_ignore_ascii_case(n)).map(|(_, b)| *b);
+        if self.is_installed(name) {
+            Some(name.to_string())
+        } else if let Some(s) = sub(name).filter(|s| self.is_installed(s)) {
+            Some(s.to_string())
+        } else {
+            sub(name).and_then(sub).filter(|s| self.is_installed(s)).map(str::to_string)
+        }
+    }
+
+    /// Whether `name` in this style draws without falling back to the default: its rule's family, or else `name`, is
+    /// installed or has an installed built-in substitute.
+    pub fn resolves(&self, name: &str, bold: bool, italic: bool) -> bool {
+        self.installed_for(self.render_family(name, bold, italic)).is_some()
+    }
+
+    /// The installed family that renders `name` in this style: its rule's family, `name` or a built-in substitute,
+    /// then the default.
+    fn resolve(&self, name: &str, bold: bool, italic: bool) -> String {
+        let key = (name.to_string(), bold, italic);
+        if let Some(r) = self.resolved.borrow().get(&key) {
             return r.clone();
         }
-        let sub = |n: &str| SUBSTITUTES.iter().find(|(a, _)| a.eq_ignore_ascii_case(n)).map(|(_, b)| *b);
-        let r = if self.is_installed(name) {
-            name.to_string()
-        } else if let Some(s) = sub(name).filter(|s| self.is_installed(s)) {
-            s.to_string()
-        } else if let Some(s2) = sub(name).and_then(sub).filter(|s| self.is_installed(s)) {
-            s2.to_string()
-        } else {
-            ["Calibri", "Carlito", "Arial", "Liberation Sans"]
-                .iter()
-                .find(|f| self.is_installed(f))
-                .map(|s| s.to_string())
-                .or_else(|| self.entries.first().map(|e| e.family.clone()))
-                .unwrap_or_else(|| name.to_string())
-        };
-        self.resolved.borrow_mut().insert(name.to_string(), r.clone());
+        let target = self.render_family(name, bold, italic);
+        let r = self
+            .installed_for(target)
+            // A rule's family not added yet: the document's family draws meanwhile.
+            .or_else(|| if target != name { self.installed_for(name) } else { None })
+            .or_else(|| self.default.clone().filter(|d| self.is_installed(d)))
+            .or_else(|| ["Calibri", "Carlito", "Arial", "Liberation Sans"].iter().find(|f| self.is_installed(f)).map(|s| s.to_string()))
+            .or_else(|| self.entries.first().map(|e| e.family.clone()))
+            .unwrap_or_else(|| name.to_string());
+        self.resolved.borrow_mut().insert(key, r.clone());
         r
     }
 
@@ -497,10 +583,10 @@ impl Fonts {
         Some(d)
     }
 
-    fn load(&self, i: usize, bold: bool, italic: bool) -> Option<Rc<Face>> {
+    fn load(&self, i: usize, requested: &str, bold: bool, italic: bool) -> Option<Rc<Face>> {
         let e = &self.entries[i];
         let data = self.data(e)?;
-        Face::load(e, data, bold && e.weight < 600, italic && !e.italic).map(Rc::new)
+        Face::load(e, requested, data, bold && e.weight < 600, italic && !e.italic).map(Rc::new)
     }
 
     /// The face for a family and style (bold/italic synthesized when the family has no such face).
@@ -509,10 +595,9 @@ impl Fonts {
         if let Some(f) = self.faces.borrow().get(&key) {
             return f.clone();
         }
-        let i = self.matches(family, bold, italic).or_else(|| self.matches(&self.resolve(family), bold, italic));
-        let f = match i {
-            Some(i) => self.load(i, bold, italic),
-            None => (!self.entries.is_empty()).then(|| self.load(0, bold, italic)).flatten(),
+        let f = match self.matches(&self.resolve(family, bold, italic), bold, italic) {
+            Some(i) => self.load(i, family, bold, italic),
+            None => (!self.entries.is_empty()).then(|| self.load(0, family, bold, italic)).flatten(),
         };
         self.faces.borrow_mut().insert(key, f.clone());
         f
@@ -525,8 +610,8 @@ impl Fonts {
         }
         let f = FALLBACK_FAMILIES
             .iter()
-            .filter_map(|fam| self.matches(fam, bold, italic))
-            .filter_map(|i| self.load(i, bold, italic))
+            .filter_map(|fam| Some((fam, self.matches(fam, bold, italic)?)))
+            .filter_map(|(fam, i)| self.load(i, fam, bold, italic))
             .find(|f| f.has_glyph(c));
         self.fallbacks.borrow_mut().insert((c, bold, italic), f.clone());
         f
@@ -612,4 +697,170 @@ fn read_names(t: &[u8]) -> HashMap<u16, Vec<String>> {
             (k, out)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use super::*;
+    use crate::api::engine::{Engine, SessionOptions};
+    use crate::api::error::ErrorCode;
+    use crate::api::fonts::{FontLibrary, FontRequest};
+
+    const SERIF: &[u8] = include_bytes!("../tests/fixtures/editor/fonts/stand-in-serif.ttf");
+    const ZZYZX: &[u8] = include_bytes!("../tests/fixtures/editor/fonts/zzyzx-unknown.ttf");
+
+    /// The font's tables in tag order.
+    fn sfnt_tables(d: &[u8]) -> Vec<([u8; 4], &[u8])> {
+        let mut t: Vec<_> = tables(d, 0).into_iter().map(|(tag, (o, n))| (tag, &d[o..o + n])).collect();
+        t.sort_by_key(|x| x.0);
+        t
+    }
+
+    fn sfnt_size(t: &[([u8; 4], &[u8])]) -> u32 {
+        (12 + 16 * t.len() + t.iter().map(|x| x.1.len().next_multiple_of(4)).sum::<usize>()) as u32
+    }
+
+    /// A WOFF file holding `sfnt`'s tables uncompressed.
+    fn woff1(sfnt: &[u8]) -> Vec<u8> {
+        let t = sfnt_tables(sfnt);
+        let mut out = b"wOFF".to_vec();
+        out.extend_from_slice(&sfnt[..4]);
+        out.extend_from_slice(&[0; 4]); // length, below
+        out.extend_from_slice(&(t.len() as u16).to_be_bytes());
+        out.extend_from_slice(&[0; 2]);
+        out.extend_from_slice(&sfnt_size(&t).to_be_bytes());
+        out.extend_from_slice(&[0, 1, 0, 0]);
+        out.extend_from_slice(&[0; 20]);
+        let mut offset = 44 + 20 * t.len();
+        for (tag, data) in &t {
+            out.extend_from_slice(tag);
+            for v in [offset, data.len(), data.len(), 0] {
+                out.extend_from_slice(&(v as u32).to_be_bytes());
+            }
+            offset += data.len().next_multiple_of(4);
+        }
+        for (_, data) in &t {
+            out.extend_from_slice(data);
+            out.resize(out.len().next_multiple_of(4), 0);
+        }
+        let len = (out.len() as u32).to_be_bytes();
+        out[8..12].copy_from_slice(&len);
+        out
+    }
+
+    /// A WOFF2 file holding `sfnt`'s tables untransformed, in a Brotli stream of one uncompressed meta-block.
+    fn woff2(sfnt: &[u8]) -> Vec<u8> {
+        let t = sfnt_tables(sfnt);
+        let raw: Vec<u8> = t.iter().flat_map(|x| x.1.iter().copied()).collect();
+        assert!(!raw.is_empty() && raw.len() <= 1 << 16);
+        // WBITS 16 (one 0 bit), then ISLAST 0, four nibbles of MLEN - 1, ISUNCOMPRESSED 1; the empty last meta-block.
+        let head = ((raw.len() as u32 - 1) << 4) | 1 << 20;
+        let mut brotli = head.to_le_bytes()[..3].to_vec();
+        brotli.extend_from_slice(&raw);
+        brotli.push(0b11);
+        let mut out = b"wOF2".to_vec();
+        out.extend_from_slice(&sfnt[..4]);
+        out.extend_from_slice(&[0; 4]); // length, below
+        out.extend_from_slice(&(t.len() as u16).to_be_bytes());
+        out.extend_from_slice(&[0; 2]);
+        out.extend_from_slice(&sfnt_size(&t).to_be_bytes());
+        out.extend_from_slice(&(brotli.len() as u32).to_be_bytes());
+        out.extend_from_slice(&[0, 1, 0, 0]);
+        out.extend_from_slice(&[0; 20]);
+        for (tag, data) in &t {
+            // Tag 63 (spelled out); glyf and loca untransformed is version 3, every other table's is version 0.
+            out.push(if matches!(tag, b"glyf" | b"loca") { 0xFF } else { 0x3F });
+            out.extend_from_slice(tag);
+            let n = data.len() as u32;
+            let mut digits: Vec<u8> = (0..5).rev().map(|i| (n >> (7 * i)) as u8 & 0x7F).skip_while(|&d| d == 0).collect();
+            if digits.is_empty() {
+                digits.push(0);
+            }
+            let last = digits.len() - 1;
+            out.extend(digits.iter().enumerate().map(|(i, d)| if i < last { d | 0x80 } else { *d }));
+        }
+        out.extend_from_slice(&brotli);
+        out.resize(out.len().next_multiple_of(4), 0);
+        let len = (out.len() as u32).to_be_bytes();
+        out[8..12].copy_from_slice(&len);
+        out
+    }
+
+    #[test]
+    fn a_session_sees_fonts_added_after_it_was_created() {
+        let mut engine = Engine::new(FontLibrary::empty());
+        let id = engine.create_session(SessionOptions::default());
+        let before = engine.session(id).unwrap().fonts().generation();
+        engine.fonts().add(SERIF).unwrap();
+        let s = engine.session(id).unwrap();
+        assert!(s.fonts().generation() > before);
+        assert_eq!(s.fonts().families(), ["Stand-in Serif"]);
+        assert_eq!(s.fonts().fonts().face("Stand-in Serif", false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in Serif"));
+    }
+
+    #[test]
+    fn woff_and_woff2_decode_to_faces() {
+        for file in [woff1(SERIF), woff2(SERIF)] {
+            let lib = FontLibrary::empty();
+            let faces = lib.add(&file).unwrap_or_else(|e| panic!("{}: {e:?}", String::from_utf8_lossy(&file[..4])));
+            assert_eq!(faces.iter().map(|f| f.family.as_str()).collect::<Vec<_>>(), ["Stand-in Serif"]);
+            assert!(lib.fonts().face("Stand-in Serif", false, false).is_some_and(|f| f.has_glyph('A')));
+        }
+    }
+
+    #[test]
+    fn invalid_bytes_add_no_face() {
+        let lib = FontLibrary::empty();
+        let mut broken = woff2(SERIF);
+        broken.truncate(60);
+        let no_tables = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        for bytes in [&b"not a font at all"[..], b"wOFF", &broken, &no_tables, &SERIF[..200]] {
+            assert_eq!(lib.add(bytes).map_err(|e| e.code), Err(ErrorCode::InvalidArgument), "{bytes:?}");
+        }
+        assert_eq!((lib.families().len(), lib.generation()), (0, 0));
+    }
+
+    #[test]
+    fn a_bold_rule_applies_only_to_bold() {
+        let mut f = Fonts::default();
+        f.add_bytes(SERIF.to_vec()).unwrap();
+        f.add_bytes(ZZYZX.to_vec()).unwrap();
+        f.set_rules(vec![SubstitutionRule { from: "Doc Family".into(), bold: Some(true), italic: None, to: "Zzyzx Unknown".into() }]);
+        let bold = f.face("doc family", true, false).unwrap();
+        assert_eq!((bold.requested.as_str(), bold.family.as_str()), ("doc family", "Zzyzx Unknown"));
+        assert!(f.resolves("DOC FAMILY", true, true));
+        assert!(!f.resolves("Doc Family", false, false));
+        // Unresolved, it falls back to the first font, until a default is set.
+        assert_eq!(f.face("Doc Family", false, false).unwrap().family, "Stand-in Serif");
+        f.set_default("Zzyzx Unknown");
+        assert_eq!(f.face("Doc Family", false, false).unwrap().family, "Zzyzx Unknown");
+    }
+
+    #[test]
+    fn each_face_is_requested_once() {
+        let lib = FontLibrary::empty();
+        lib.add(SERIF).unwrap();
+        let asked = Rc::new(RefCell::new(Vec::new()));
+        let sink = asked.clone();
+        lib.on_request(move |r: &FontRequest| sink.borrow_mut().push((r.family.clone(), r.bold, r.italic)));
+        let faces =
+            [("Zzyzx Unknown", false, false), ("zzyzx unknown", false, false), ("Zzyzx Unknown", true, false), ("Stand-in Serif", false, false)];
+        for _ in 0..2 {
+            let state = lib.check(faces);
+            assert_eq!((state.pending, state.unresolved), (vec!["Zzyzx Unknown".to_string()], vec![]));
+        }
+        assert_eq!(asked.borrow().len(), 2, "{:?}", asked.borrow());
+        // Answered with nothing: unresolved, and not asked again. A face added later resolves it.
+        for bold in [false, true] {
+            lib.mark_unresolved(&FontRequest { family: "Zzyzx Unknown".into(), bold, italic: false });
+        }
+        let state = lib.check(faces);
+        assert_eq!((state.pending, state.unresolved), (vec![], vec!["Zzyzx Unknown".to_string()]));
+        lib.add(ZZYZX).unwrap();
+        assert_eq!(lib.check(faces), Default::default());
+        assert_eq!(asked.borrow().len(), 2);
+    }
 }

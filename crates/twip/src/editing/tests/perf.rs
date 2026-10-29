@@ -71,7 +71,13 @@ fn table_structure_and_resize_commits_are_within_budget() {
             crate::layout::Unit(0),
         )));
         let t = Instant::now();
-        e.execute(crate::editing::commands::Command::InsertRows { below: true, n: 1 }, fonts());
+        e.execute(
+            crate::editing::commands::Command::InsertRows(crate::api::command::InsertRows {
+                side: if true { crate::api::command::VerticalSide::Below } else { crate::api::command::VerticalSide::Above },
+                count: Some(1),
+            }),
+            fonts(),
+        );
         inserts.push(t.elapsed().as_secs_f64() * 1e3);
     }
     assert!(p95(inserts.clone()) <= 50.0, "insert row p95 {:.3} ms", p95(inserts));

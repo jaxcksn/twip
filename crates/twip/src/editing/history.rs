@@ -1,4 +1,5 @@
-//! Undo and redo: transactions of steps, typing runs, the memory budget and the repeatable command.
+//! Undo and redo: transactions of steps, typing runs, the memory budget, and where the history is (what the saved
+//! position compares with).
 
 use std::collections::VecDeque;
 
@@ -25,6 +26,8 @@ pub struct Transaction {
     /// What the undo menu shows: a command's name, or the label a host's batch gave.
     pub label: std::borrow::Cow<'static, str>,
     pub bytes: usize,
+    /// Unique in the history ([`History::position`]); the history gives it when recording.
+    pub id: u64,
 }
 
 /// Consecutive typing in one paragraph, which joins one undo step; deleting keys don't join.
@@ -51,6 +54,8 @@ pub struct History {
     /// Estimated bytes the history may hold; at least [`MIN_STEPS`] steps are kept regardless.
     budget: usize,
     bytes: usize,
+    /// The last transaction id given.
+    ids: u64,
 }
 
 /// Word's default undo depth.
@@ -58,7 +63,7 @@ pub const MIN_STEPS: usize = 100;
 
 impl Default for History {
     fn default() -> History {
-        History { undo: VecDeque::new(), redo: Vec::new(), typing: None, budget: 32 << 20, bytes: 0 }
+        History { undo: VecDeque::new(), redo: Vec::new(), typing: None, budget: 32 << 20, bytes: 0, ids: 0 }
     }
 }
 
@@ -66,6 +71,8 @@ impl History {
     /// Records a transaction. With `typing` continuing the last step's run, it joins that step (one undo).
     pub fn record(&mut self, mut tx: Transaction, typing: Option<TypingRun>) {
         self.redo.clear();
+        // A step a keystroke joins is another state of the document: it takes a new id too.
+        self.ids += 1;
         let joins = match (typing, self.typing) {
             // Typing joins; each Backspace or Delete is its own step.
             (Some(t), Some(last)) => t.kind == Typing::Insert && t.para == last.para && t.kind == last.kind && self.undo.back().is_some(),
@@ -75,10 +82,12 @@ impl History {
             // The new keystroke's inverse runs first when undoing, then the run's earlier ones.
             last.undo.append(&mut tx.undo);
             last.after = tx.after;
+            last.id = self.ids;
             last.bytes += tx.bytes;
             self.bytes += tx.bytes;
         } else {
             self.bytes += tx.bytes;
+            tx.id = self.ids;
             self.undo.push_back(tx);
         }
         self.typing = typing.map(|t| TypingRun { at: t.at, ..t });
@@ -122,31 +131,6 @@ impl History {
         self.undo.push_back(tx);
     }
 
-    /// The last `n` transactions as one, labelled `label` (a dialog's commands are one undo step).
-    pub fn merge_last(&mut self, n: usize, label: impl Into<std::borrow::Cow<'static, str>>) {
-        if n < 2 || self.undo.len() < n {
-            return;
-        }
-        let mut txs: Vec<Transaction> = self.undo.drain(self.undo.len() - n..).collect();
-        let last = txs.pop().unwrap();
-        let mut first = txs.remove(0);
-        for t in txs {
-            first.undo.extend(t.undo);
-            first.bytes += t.bytes;
-        }
-        first.undo.extend(last.undo);
-        first.bytes += last.bytes;
-        first.after = last.after;
-        first.label = label.into();
-        self.undo.push_back(first);
-        self.typing = None;
-    }
-
-    /// Nothing to redo (a rolled-back batch's undone steps aren't redone).
-    pub fn clear_redo(&mut self) {
-        self.redo.clear();
-    }
-
     pub fn undo_depth(&self) -> usize {
         self.undo.len()
     }
@@ -166,6 +150,12 @@ impl History {
     pub fn bytes(&self) -> usize {
         self.bytes
     }
+
+    /// Where the history is: the id of the transaction undo would undo next, 0 with none. Undoing back to a position
+    /// returns to it; any other edit leaves it for good.
+    pub fn position(&self) -> u64 {
+        self.undo.back().map_or(0, |t| t.id)
+    }
 }
 
 /// A rough size of what a step holds, for the history budget.
@@ -184,8 +174,16 @@ pub fn step_bytes(s: &Step) -> usize {
     match s {
         Step::Text { with, .. } => 32 + inlines(with),
         Step::Split { second, .. } => 96 + inlines(&second.inlines),
-        Step::Join { .. } | Step::Para { .. } | Step::TableWidth { .. } | Step::TableProps { .. } | Step::SectionPage { .. } => 32,
+        Step::Join { .. }
+        | Step::Para { .. }
+        | Step::TableWidth { .. }
+        | Step::TableProps { .. }
+        | Step::SectionPage { .. }
+        | Step::Numbering { .. }
+        | Step::DefaultTab(_) => 32,
         Step::ImageData { data, .. } => 32 + data.len(),
+        Step::AddImage { data, .. } => 32 + data.as_ref().map_or(0, Vec::len),
+        Step::FieldViews { views, .. } => 32 + 16 * views.len(),
         Step::Restyle { inlines: v, .. } => 32 + inlines(v),
         Step::Blocks { with, .. } => 32 + blocks(with),
         Step::Note { blocks: b, .. } | Step::HeaderPart { blocks: b, .. } => 32 + b.as_deref().map_or(0, blocks),

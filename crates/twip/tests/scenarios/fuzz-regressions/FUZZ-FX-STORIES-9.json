@@ -15,8 +15,11 @@
       }
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -45,8 +48,11 @@
       "shift": true
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -172,13 +178,16 @@
       }
     },
     {
-      "arg": "2",
-      "command": "table.split",
+      "command": {
+        "type": "splitCells",
+        "columns": 2
+      },
       "expect": {}
     },
     {
-      "arg": null,
-      "command": "table.merge",
+      "command": {
+        "type": "mergeCells"
+      },
       "expect": {}
     },
     {
@@ -206,8 +215,10 @@
       "expect": {}
     },
     {
-      "arg": null,
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {}
     },
     {
@@ -270,8 +281,10 @@
       "type": "hello "
     },
     {
-      "arg": null,
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {}
     },
     {
@@ -358,8 +371,10 @@
       }
     },
     {
-      "arg": "2",
-      "command": "table.split",
+      "command": {
+        "type": "splitCells",
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -408,8 +423,10 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {}
     },
     {

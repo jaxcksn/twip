@@ -41,25 +41,6 @@ pub enum Scope {
     Revision(RevisionId),
 }
 
-impl Scope {
-    /// A host argument: `"selection"` (or none), `"all"`, `"author:<name>"`, or a revision id (number or text).
-    pub fn from_host(arg: Option<&serde_json::Value>) -> Option<Scope> {
-        let Some(a) = arg.filter(|a| !a.is_null()) else { return Some(Scope::Selection) };
-        if let Some(n) = a.as_i64() {
-            return Some(Scope::Revision(RevisionId(n)));
-        }
-        let s = a.as_str()?.trim();
-        Some(match s {
-            "selection" => Scope::Selection,
-            "all" => Scope::All,
-            _ => match s.strip_prefix("author:") {
-                Some(name) => Scope::Author(name.to_string()),
-                None => Scope::Revision(RevisionId(s.parse().ok()?)),
-            },
-        })
-    }
-}
-
 enum Who {
     All,
     Author(AuthorId),
@@ -337,7 +318,7 @@ impl Editor {
     /// Accepts or rejects the revisions `scope` covers, as one transaction.
     pub(in crate::editing) fn resolve_revisions(&mut self, accept: bool, scope: &Scope, fonts: &Fonts) -> Outcome {
         if self.doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking()) {
-            self.answer = Some(serde_json::json!({ "error": "unavailable" }));
+            self.refused = Some("unavailable");
             return Outcome::Unchanged("unavailable");
         }
         let Some(pick) = self.pick(scope) else { return Outcome::Unchanged("no revision") };
@@ -674,7 +655,7 @@ impl Editor {
         let here = self.selection.ordered(&self.index).map(|(a, _)| a).or_else(|| self.selection.focus());
         // A caret at a revision's start goes to that revision; a selection moves past it.
         let caret = self.selection.is_collapsed();
-        let (list, stories) = self.review_list.get(self.revision, &self.doc, &self.index);
+        let (list, stories) = self.review_list.get(self.generation, &self.doc, &self.index);
         let rank = |s: StoryId| stories.iter().position(|x| *x == s).unwrap_or(0);
         let idx = &self.index;
         let found = match here {

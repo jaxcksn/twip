@@ -48,8 +48,11 @@
       }
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -79,8 +82,10 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {}
     },
     {
@@ -93,8 +98,10 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.insert-left",
+      "command": {
+        "type": "insertColumns",
+        "where": "left"
+      },
       "expect": {}
     },
     {
@@ -215,8 +222,10 @@
       }
     },
     {
-      "arg": null,
-      "command": "table.insert-right",
+      "command": {
+        "type": "insertColumns",
+        "where": "right"
+      },
       "expect": {}
     },
     {
@@ -229,8 +238,11 @@
       "shift": false
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {

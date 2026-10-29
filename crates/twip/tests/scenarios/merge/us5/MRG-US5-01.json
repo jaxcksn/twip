@@ -7,8 +7,8 @@
   ],
   "steps": [
     {
-      "command": "data.write",
-      "arg": {
+      "command": {
+        "type": "writeDataPart",
         "namespace": "urn:store:calc",
         "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"Cost_Plus_Fee\">Cost + Fee</field></calc>"
       },
@@ -50,8 +50,8 @@
       }
     },
     {
-      "command": "data.remove",
-      "arg": {
+      "command": {
+        "type": "removeDataPart",
         "namespace": "urn:store:calc"
       },
       "expect": {
@@ -68,7 +68,9 @@
       }
     },
     {
-      "command": "home.undo"
+      "command": {
+        "type": "undo"
+      }
     },
     {
       "query": {

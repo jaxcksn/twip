@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 # The developer tools (golden, dump, roundtrip, bench, ...). Named apart from the library so its outputs don't
-# collide with twip-native's twip.dll / twip.pdb.
+# collide with twip-capi's twip.dll / twip.pdb.
 [[bin]]
 name = "twip-tools"
 path = "src/main.rs"
@@ -35,6 +35,10 @@ spellbook = "0.4.2"
 # Grapheme, word and sentence boundaries (UAX #29) for caret movement, deletion and selection (editing::text).
 unicode-segmentation = "1.12"
 serde_json = "1.0.154"
+# The public API's types cross the SDK wire as JSON (api::wire).
+serde = { version = "1", features = ["derive", "rc"] }
+# WOFF and WOFF2 fonts (what web font services serve) decoded to TrueType/OpenType: Brotli and glyf reconstruction.
+wuff = "0.2.9"
 
 [features]
 # Test inspection surface: the editor's semantic state as JSON. Never in production builds.

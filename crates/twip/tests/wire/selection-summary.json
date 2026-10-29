@@ -1,0 +1,73 @@
+[
+  {
+    "comment": "c4",
+    "context": [
+      {
+        "code": "MERGEFIELD Name",
+        "exact": true,
+        "id": "field-1",
+        "kind": "field",
+        "tag": "name",
+        "title": "Name"
+      }
+    ],
+    "empty": false,
+    "headerFooter": {
+      "kind": "header",
+      "label": "First Page Header -Section 2-",
+      "page": 2,
+      "section": 2,
+      "type": "first"
+    },
+    "kind": "cells",
+    "link": {
+      "address": "https://example.com",
+      "text": "Example"
+    },
+    "mode": "block",
+    "object": {
+      "altText": "A note",
+      "anchorLocked": true,
+      "decorative": false,
+      "height": 72.5,
+      "kind": "textBox",
+      "width": 144.5,
+      "wrap": "inFrontOfText"
+    },
+    "page": 2,
+    "revision": "r7",
+    "story": "header",
+    "table": {
+      "alignment": "center",
+      "canMerge": true,
+      "cellAlignment": "bottom",
+      "cellShading": "none",
+      "column": 2,
+      "columnWidth": "mixed",
+      "columns": 3,
+      "headerRow": true,
+      "indent": 0.5,
+      "row": 1,
+      "rowCanBreak": "mixed",
+      "rowHeight": {
+        "height": 20.5,
+        "rule": "exact"
+      },
+      "rows": 4,
+      "style": "TableGrid",
+      "styleOptions": {
+        "bandedColumns": false,
+        "bandedRows": true,
+        "firstColumn": true,
+        "headerRow": true,
+        "lastColumn": false,
+        "totalRow": false
+      },
+      "width": {
+        "kind": "points",
+        "value": 432.5
+      }
+    },
+    "text": "Total due"
+  }
+]

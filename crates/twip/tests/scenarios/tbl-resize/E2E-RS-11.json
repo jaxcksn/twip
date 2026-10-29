@@ -15,8 +15,11 @@
       }
     },
     {
-      "command": "insert.table",
-      "arg": "2,2"
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      }
     },
     {
       "expect": {

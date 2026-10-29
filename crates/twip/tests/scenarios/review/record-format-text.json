@@ -1,138 +1,144 @@
 {
- "id": "RECORD-FORMAT-TEXT",
- "title": "Character formatting records the oldest formatting, by the latest author",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "Alpha beta gamma."
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 6
-   }
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 10
-   },
-   "shift": true
-  },
-  {
-   "command": "home.bold"
-  },
-  {
-   "expect": {
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha beta gamma.",
-        "runs": [
-         {
-          "text": "Alpha ",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "beta",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": "Author A"
-         },
-         {
-          "text": " gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
+  "id": "RECORD-FORMAT-TEXT",
+  "title": "Character formatting records the oldest formatting, by the latest author",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "Alpha beta gamma."
+    },
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 6
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 10
+      },
+      "shift": true
+    },
+    {
+      "key": "KeyB",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha beta gamma.",
+                "runs": [
+                  {
+                    "text": "Alpha ",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "beta",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": "Author A"
+                  },
+                  {
+                    "text": " gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "author": "Author B"
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 6
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 10
+      },
+      "shift": true
+    },
+    {
+      "key": "KeyI",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha beta gamma.",
+                "runs": [
+                  {
+                    "text": "Alpha ",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "beta",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": "Author B"
+                  },
+                  {
+                    "text": " gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
     }
-   }
-  },
-  {
-   "command": "review.author",
-   "arg": "Author B"
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 6
-   }
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 10
-   },
-   "shift": true
-  },
-  {
-   "command": "home.italic"
-  },
-  {
-   "expect": {
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha beta gamma.",
-        "runs": [
-         {
-          "text": "Alpha ",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "beta",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": "Author B"
-         },
-         {
-          "text": " gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
-    }
-   }
-  }
- ]
+  ]
 }

@@ -56,6 +56,8 @@ pub struct BodyRecord {
     pub excluded: Vec<(ParaId, std::ops::Range<super::ids::Unit>)>,
     /// The table the body starts in, when it starts at a row of one: page reuse compares it too.
     pub start_table: Option<Rc<super::table::TableLayout>>,
+    /// The cached results the body was laid out from, held for the cache.
+    pub held: super::flow::Held,
 }
 
 /// A header or footer a page shows: the story part, the field values it was composed with, and its

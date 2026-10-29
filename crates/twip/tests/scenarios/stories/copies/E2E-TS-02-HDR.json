@@ -22,7 +22,10 @@
       }
     },
     {
-      "command": "table.insert-right"
+      "command": {
+        "type": "insertColumns",
+        "where": "right"
+      }
     },
     {
       "expect": {
@@ -45,7 +48,9 @@
       }
     },
     {
-      "command": "table.delete.column"
+      "command": {
+        "type": "deleteColumns"
+      }
     },
     {
       "expect": {

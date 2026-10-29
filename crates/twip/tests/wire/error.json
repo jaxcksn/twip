@@ -1,0 +1,13 @@
+[
+  {
+    "code": "unsupported",
+    "message": "PDF export is not supported yet"
+  },
+  {
+    "code": "invalid-argument",
+    "details": {
+      "index": 2
+    },
+    "message": "rows"
+  }
+]

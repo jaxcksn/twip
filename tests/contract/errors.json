@@ -1,0 +1,38 @@
+{
+  "name": "errors",
+  "fixture": "editor/FX-mixed-format.docx",
+  "fonts": "empty",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "selectAll" } },
+
+    { "op": "command", "command": { "type": "setFontSize", "value": -3 } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "insertTable", "rows": 0, "columns": 2 } },
+    { "op": "expectError", "code": "invalid-argument" },
+
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectError", "code": "unavailable" },
+
+    { "op": "openBytes", "base64": "UEsDBG5vdCBhIHppcA==" },
+    { "op": "expectError", "code": "import-failed" },
+    { "op": "openBytes", "base64": "0M8R4KGxGuEAAAAAAAAAAA==" },
+    { "op": "expectError", "code": "unsupported" },
+
+    { "op": "export", "format": "pdf" },
+    { "op": "expectError", "code": "export-failed" },
+
+    { "op": "abort" },
+    { "op": "export", "format": "docx" },
+    { "op": "expectError", "code": "aborted" },
+
+    { "op": "call", "method": "setReadOnly", "args": [true] },
+    { "op": "command", "command": { "type": "insertText", "value": "blocked" } },
+    { "op": "expectError", "code": "read-only" },
+    { "op": "expectState", "match": { "revision": 1 } },
+
+    { "op": "destroy" },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "expectError", "code": "destroyed" }
+  ]
+}

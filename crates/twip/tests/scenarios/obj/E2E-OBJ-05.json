@@ -1,0 +1,75 @@
+{
+  "id": "E2E-OBJ-05",
+  "title": "Arrow keys move a selected float 0.75 pt per press, plain or with Ctrl; each press is one undo step",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "float": 1
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 325.5,
+            "y": 7.95
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "selection": {
+          "kind": "object",
+          "float": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 325.5,
+            "y": 7.2
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

@@ -11,29 +11,32 @@
   "steps": [
     {
       "click": {
-        "para": 24,
+        "para": 22,
         "offset": 0
       }
     },
     {
-      "command": "table.select.table"
+      "command": {
+        "type": "select",
+        "value": "table"
+      }
     },
     {
-      "command": "region.wrap",
-      "arg": {
+      "command": {
+        "type": "wrapInRepeatingSection",
         "tag": "Matrix"
       }
     },
     {
       "click": {
-        "para": 24,
+        "para": 22,
         "offset": 0
       }
     },
     {
-      "command": "control.insert",
-      "arg": {
-        "kind": "plain_text",
+      "command": {
+        "type": "insertControl",
+        "kind": "plainText",
         "tag": "Matrix/Cell",
         "placeholder": ""
       }
@@ -46,7 +49,7 @@
     },
     {
       "click": {
-        "para": 24,
+        "para": 22,
         "offset": 0
       }
     },
@@ -56,7 +59,7 @@
     {
       "expect": {
         "caret": {
-          "para": 26,
+          "para": 24,
           "page": 1,
           "depth": 2
         }
@@ -68,7 +71,7 @@
     {
       "expect": {
         "caret": {
-          "para": 24,
+          "para": 22,
           "page": 0,
           "depth": 2
         }

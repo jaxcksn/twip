@@ -3,12 +3,84 @@
   "title": "A paragraph property change: accepting keeps the new alignment and indent, rejecting restores those before it.",
   "fixture": "review/FX-REVIEW-MARKS.docx",
   "steps": [
-    {"expect": {"revisions": ["Delete Author B", "Insert Author A", "ParagraphProperty Author C", "ParagraphProperty Author A"]}},
-    {"command": "review.accept", "arg": 3},
-    {"expect": {"text": {"6": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate requirement standard fact that products distribution filed logistics. Chapter plan regional maintenance accessibility tax."}, "revisions": ["Delete Author B", "Insert Author A", "ParagraphProperty Author A"], "jc": {"6": "right"}, "para": {"6": {"ind_left": 72}}, "undo_depth": 1}},
-    {"command": "home.undo"},
-    {"expect": {"revisions": ["Delete Author B", "Insert Author A", "ParagraphProperty Author C", "ParagraphProperty Author A"]}},
-    {"command": "review.reject", "arg": 3},
-    {"expect": {"text": {"6": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate requirement standard fact that products distribution filed logistics. Chapter plan regional maintenance accessibility tax."}, "revisions": ["Delete Author B", "Insert Author A", "ParagraphProperty Author A"], "jc": {"6": "left"}, "para": {"6": {"ind_left": 0}}, "undo_depth": 1}}
+    {
+      "expect": {
+        "revisions": [
+          "Delete Author B",
+          "Insert Author A",
+          "ParagraphProperty Author C",
+          "ParagraphProperty Author A"
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "acceptRevision",
+        "value": "r3"
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "6": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate requirement standard fact that products distribution filed logistics. Chapter plan regional maintenance accessibility tax."
+        },
+        "revisions": [
+          "Delete Author B",
+          "Insert Author A",
+          "ParagraphProperty Author A"
+        ],
+        "jc": {
+          "6": "right"
+        },
+        "para": {
+          "6": {
+            "ind_left": 72
+          }
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "Delete Author B",
+          "Insert Author A",
+          "ParagraphProperty Author C",
+          "ParagraphProperty Author A"
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "rejectRevision",
+        "value": "r3"
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "6": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate requirement standard fact that products distribution filed logistics. Chapter plan regional maintenance accessibility tax."
+        },
+        "revisions": [
+          "Delete Author B",
+          "Insert Author A",
+          "ParagraphProperty Author A"
+        ],
+        "jc": {
+          "6": "left"
+        },
+        "para": {
+          "6": {
+            "ind_left": 0
+          }
+        },
+        "undo_depth": 1
+      }
+    }
   ]
 }

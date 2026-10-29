@@ -25,14 +25,27 @@
         "selection": {
           "kind": "cells",
           "table": 0,
-          "anchor": [0, 0],
-          "focus": [1, 0]
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            1,
+            0
+          ]
         }
       }
     },
     {
-      "command": "table.borders.all",
-      "arg": "double,1.5,C00000"
+      "command": {
+        "type": "setCellBorders",
+        "edges": "all",
+        "border": {
+          "style": "double",
+          "width": 1.5,
+          "color": "#C00000"
+        }
+      }
     },
     {
       "expect": {
@@ -41,10 +54,35 @@
           "table": 0
         },
         "tables": [
-          { "rows": 2, "cells": [2, 2] },
-          { "rows": 2, "cells": [2, 2] },
-          { "rows": 2, "cells": [2, 2] },
-          { "rows": 3, "cells": [2, 2, 2] }
+          {
+            "rows": 2,
+            "cells": [
+              2,
+              2
+            ]
+          },
+          {
+            "rows": 2,
+            "cells": [
+              2,
+              2
+            ]
+          },
+          {
+            "rows": 2,
+            "cells": [
+              2,
+              2
+            ]
+          },
+          {
+            "rows": 3,
+            "cells": [
+              2,
+              2,
+              2
+            ]
+          }
         ],
         "undo_depth": 1
       }

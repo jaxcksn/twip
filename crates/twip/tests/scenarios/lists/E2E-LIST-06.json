@@ -20,7 +20,10 @@
       }
     },
     {
-      "command": "home.numbering"
+      "command": {
+        "type": "setList",
+        "value": "numbered"
+      }
     },
     {
       "expect": {
@@ -39,7 +42,10 @@
       }
     },
     {
-      "command": "home.numbering"
+      "command": {
+        "type": "setList",
+        "value": "numbered"
+      }
     },
     {
       "expect": {
@@ -57,7 +63,10 @@
       }
     },
     {
-      "command": "home.numbering"
+      "command": {
+        "type": "setList",
+        "value": null
+      }
     },
     {
       "expect": {
@@ -74,7 +83,10 @@
       }
     },
     {
-      "command": "home.bullets"
+      "command": {
+        "type": "setList",
+        "value": "bullet"
+      }
     },
     {
       "expect": {

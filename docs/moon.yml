@@ -6,8 +6,21 @@ tags: [docs]
 tasks:
   build:
     command: docusaurus build
-    inputs: ['docs/**/*', 'src/**/*', 'static/**/*', '*.ts']
+    # The guides include their code from examples/ and the Rust crate's examples (src/remark/include.ts).
+    inputs: ['docs/**/*', 'src/**/*', 'static/**/*', 'examples/**/*', '/crates/twip/examples/**/*', '*.ts']
     outputs: ['build']
   dev:
     command: docusaurus start
     preset: server
+  # Type-checks the guides' TypeScript examples against the built package, and builds their C# examples against
+  # Twip.Core and Twip.WinForms.
+  examples:
+    script: pnpm exec tsc -p examples && dotnet build examples/dotnet -warnaserror
+    deps: [web:build]
+    inputs: ['examples/**/*', '/bindings/web/src/**/*', '/bindings/dotnet/Twip.Core/**/*', '/bindings/dotnet/Twip.WinForms/**/*']
+  # The TypeScript API reference (TypeDoc), into static/api/web so the site publishes it. The .NET one is DocFX
+  # (dotnet-api/docfx.json, a .NET tool), run by the docs workflow.
+  api:
+    command: typedoc
+    inputs: ['typedoc.json', '/bindings/web/src/**/*', '/bindings/web/tsconfig.json']
+    outputs: ['static/api/web']

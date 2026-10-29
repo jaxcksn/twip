@@ -1,0 +1,47 @@
+{
+  "name": "context-menu",
+  "fixture": "editor/FX-services.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "spelling.addDictionary", "args": [{ "language": "en-US", "aff": { "$file": "dictionaries/en_US.aff" }, "dic": { "$file": "dictionaries/en_US.dic" } }] },
+    { "op": "call", "method": "spelling.setEnabled", "args": [true] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "quikc" }], "result": { "found": true } },
+    { "op": "call", "method": "menus.contextMenu", "save": "spelling", "result": {
+      "target": { "kind": "misspelling", "word": "quikc", "language": "en-US" },
+      "items": { "$has": [
+        { "kind": "suggestion", "label": "quick" },
+        { "kind": "suggestion", "label": "Ignore" },
+        { "kind": "suggestion", "label": "Add to Dictionary" }
+      ] }
+    } },
+    { "op": "call", "method": "menus.invoke", "args": [{ "$saved": "spelling", "path": ["items", { "label": "Add to Dictionary" }, "action"] }] },
+    { "op": "expectEvents", "match": [{ "type": "wordAdded", "word": "quikc", "language": "en-US" }] },
+    { "op": "expectState", "match": { "revision": 1 } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Cell one" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "selection": { "table": { "rows": 2, "columns": 2, "row": 0, "column": 0 } } } },
+    { "op": "call", "method": "menus.contextMenu", "save": "table", "result": {
+      "target": { "kind": "table" },
+      "items": { "$has": [
+        { "kind": "command", "command": "insertRows", "enabled": true },
+        { "kind": "command", "command": "deleteRows", "enabled": true },
+        { "kind": "command", "command": "insertColumns", "enabled": true },
+        { "kind": "command", "command": "deleteColumns", "enabled": true },
+        { "kind": "command", "command": "copy", "enabled": true },
+        { "kind": "command", "command": "paste", "enabled": true }
+      ] }
+    } },
+    { "op": "call", "method": "menus.invoke", "args": [{ "$saved": "table", "path": ["items", { "command": "insertRows" }, "action"] }] },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 2 }] },
+    { "op": "expectState", "match": { "revision": 2, "selection": { "table": { "rows": 3, "columns": 2 } } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "revision": 3, "selection": { "table": { "rows": 2 } }, "history": { "canUndo": false } } },
+    { "op": "command", "command": { "type": "moveSelection", "by": "character", "direction": "forward" } },
+    { "op": "expectState", "match": { "selection": { "empty": true, "text": "" }, "commands": { "copy": { "enabled": false }, "paste": { "enabled": true } } } },
+    { "op": "call", "method": "menus.contextMenu", "result": {
+      "items": { "$has": [
+        { "kind": "command", "command": "copy", "enabled": false },
+        { "kind": "command", "command": "paste", "enabled": true }
+      ] }
+    } }
+  ]
+}

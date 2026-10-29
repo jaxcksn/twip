@@ -7,8 +7,8 @@ echo "$new" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-pre\.[0-9]+$' || { echo "::error
 old=$(sed -nE 's/^version = "(.+)"$/\1/p' Cargo.toml)
 sed -i "s/^version = \"$old\"$/version = \"$new\"/" Cargo.toml
 sed -i "s/\"version\": \"$old\"/\"version\": \"$new\"/" bindings/web/package.json
-sed -i "s|<Version>$old</Version>|<Version>$new</Version>|" bindings/dotnet/Twip/Twip.csproj
-for f in Cargo.toml bindings/web/package.json bindings/dotnet/Twip/Twip.csproj; do
+sed -i "s|<Version>$old</Version>|<Version>$new</Version>|" bindings/dotnet/Twip.Core/Twip.Core.csproj bindings/dotnet/Twip.WinForms/Twip.WinForms.csproj
+for f in Cargo.toml bindings/web/package.json bindings/dotnet/Twip.Core/Twip.Core.csproj bindings/dotnet/Twip.WinForms/Twip.WinForms.csproj; do
   grep -qF "$new" "$f" || { echo "::error::$f still has $old"; exit 1; }
 done
 echo "Stamped $new (was $old)"

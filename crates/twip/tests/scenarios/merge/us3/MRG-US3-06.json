@@ -20,8 +20,8 @@
       "shift": true
     },
     {
-      "command": "region.wrap",
-      "arg": {
+      "command": {
+        "type": "wrapInRepeatingSection",
         "tag": "Deep"
       },
       "expect": {
@@ -48,7 +48,10 @@
       }
     },
     {
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {
         "elements": {
           "added": [
@@ -60,7 +63,9 @@
       }
     },
     {
-      "command": "table.delete.row",
+      "command": {
+        "type": "deleteRows"
+      },
       "expect": {
         "elements": {
           "removed": 1
@@ -68,7 +73,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "added": [

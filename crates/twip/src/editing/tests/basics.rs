@@ -32,13 +32,13 @@ fn enter_splits_and_backspace_joins_back() {
     let mut e = open("FX-TEXT.docx");
     let before = texts(&e);
     for _ in 0..3 {
-        e.execute(Command::Move { by: MoveBy::Char, dir: Dir::Forward, extend: false }, fonts());
+        e.execute(crate::editing::tests::mv(MoveBy::Char, Dir::Forward, false), fonts());
     }
-    e.execute(Command::Enter, fonts());
+    e.execute(Command::InsertParagraph, fonts());
     let split = texts(&e);
     assert_eq!(split.len(), before.len() + 1);
     assert_eq!(format!("{}{}", split[0], split[1]), before[0]);
-    e.execute(Command::Delete { dir: Dir::Back, word: false }, fonts());
+    e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
     assert_eq!(texts(&e), before);
     // Undo the join, then the split.
     e.execute(Command::Undo, fonts());
@@ -52,7 +52,7 @@ fn a_selection_is_replaced_by_typing() {
     let mut e = open("FX-TEXT.docx");
     let before = texts(&e);
     for _ in 0..5 {
-        e.execute(Command::Move { by: MoveBy::Char, dir: Dir::Forward, extend: true }, fonts());
+        e.execute(crate::editing::tests::mv(MoveBy::Char, Dir::Forward, true), fonts());
     }
     type_text(&mut e, "X");
     let after = texts(&e);
@@ -66,16 +66,16 @@ fn end_on_a_wrapped_line_shows_at_its_end_and_typing_goes_to_the_next_line_start
     let mut e = open("FX-TEXT.docx");
     // The third paragraph is long (the first is the heading).
     for _ in 0..2 {
-        e.execute(Command::Move { by: MoveBy::Para, dir: Dir::Forward, extend: false }, fonts());
+        e.execute(crate::editing::tests::mv(MoveBy::Para, Dir::Forward, false), fonts());
     }
-    e.execute(Command::Move { by: MoveBy::LineEdge, dir: Dir::Forward, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(MoveBy::LineEdge, Dir::Forward, false), fonts());
     let Selection::Caret(p) = e.selection() else { panic!("a caret") };
     let Place::Text { offset, affinity, .. } = p.place else { panic!("text") };
     let first_len = texts(&e)[2].chars().count() as u32;
     assert!(offset.0 < first_len, "the first paragraph wraps");
     assert_eq!(affinity, super::super::position::Affinity::Upstream);
     let c = e.caret_view().expect("a caret rectangle");
-    e.execute(Command::Move { by: MoveBy::Char, dir: Dir::Forward, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(MoveBy::Char, Dir::Forward, false), fonts());
     let Selection::Caret(q) = e.selection() else { panic!("a caret") };
     let Place::Text { offset: o2, .. } = q.place else { panic!("text") };
     assert_eq!(o2, Unit(offset.0 + 1));
@@ -87,13 +87,13 @@ fn end_on_a_wrapped_line_shows_at_its_end_and_typing_goes_to_the_next_line_start
 fn down_then_up_returns_to_the_goal_x() {
     let mut e = open("FX-TEXT.docx");
     for _ in 0..12 {
-        e.execute(Command::Move { by: MoveBy::Char, dir: Dir::Forward, extend: false }, fonts());
+        e.execute(crate::editing::tests::mv(MoveBy::Char, Dir::Forward, false), fonts());
     }
     let x0 = e.caret_view().expect("caret").x;
-    e.execute(Command::Move { by: MoveBy::Line, dir: Dir::Forward, extend: false }, fonts());
-    e.execute(Command::Move { by: MoveBy::Line, dir: Dir::Forward, extend: false }, fonts());
-    e.execute(Command::Move { by: MoveBy::Line, dir: Dir::Back, extend: false }, fonts());
-    e.execute(Command::Move { by: MoveBy::Line, dir: Dir::Back, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(MoveBy::Line, Dir::Forward, false), fonts());
+    e.execute(crate::editing::tests::mv(MoveBy::Line, Dir::Forward, false), fonts());
+    e.execute(crate::editing::tests::mv(MoveBy::Line, Dir::Back, false), fonts());
+    e.execute(crate::editing::tests::mv(MoveBy::Line, Dir::Back, false), fonts());
     let x1 = e.caret_view().expect("caret").x;
     assert!((x1 - x0).abs() < 6.0, "goal x kept: {x0} → {x1}");
 }
@@ -101,10 +101,10 @@ fn down_then_up_returns_to_the_goal_x() {
 #[test]
 fn ctrl_end_and_ctrl_home_reach_the_story_ends() {
     let mut e = open("FX-TBL-BASIC.docx");
-    e.execute(Command::Move { by: MoveBy::Story, dir: Dir::Forward, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(MoveBy::Story, Dir::Forward, false), fonts());
     let end = e.selection().focus().expect("caret");
     assert_eq!(end.story, StoryId::Body);
-    e.execute(Command::Move { by: MoveBy::Story, dir: Dir::Back, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(MoveBy::Story, Dir::Back, false), fonts());
     let start = e.selection().focus().expect("caret");
     assert!(e.index().cmp(&start, &end) == std::cmp::Ordering::Less);
 }
@@ -140,7 +140,7 @@ fn tab_in_the_last_cell_of_a_nested_table_adds_a_row_to_that_table_only() {
         })
         .collect();
     e.selection = Selection::Caret(super::super::position::Position::text(StoryId::Body, crate::layout::ParaId(para), Unit(0)));
-    e.execute(Command::NextCell { back: false }, fonts);
+    e.execute(Command::MoveToCell(crate::api::value::Order::Next), fonts);
     let t = e.index().table(e.document(), crate::layout::TableId(inner)).expect("inner table");
     assert_eq!(t.rows.len(), rows + 1, "the inner table gained a row");
     let outer_after: Vec<usize> = e.document().sections[0]
@@ -202,7 +202,7 @@ fn added_rows_and_typing_in_them_save_and_reopen() {
     let p = last(&e);
     let para = super::super::tests::para_id(&e, p);
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(8))));
-    e.execute(Command::NextCell { back: false }, fonts());
+    e.execute(Command::MoveToCell(crate::api::value::Order::Next), fonts());
     type_text(&mut e, "new row");
     let edited = texts(&e);
     assert!(edited.contains(&"new row".to_string()));
@@ -214,13 +214,12 @@ fn added_rows_and_typing_in_them_save_and_reopen() {
 #[test]
 fn a_click_on_any_drawn_line_lands_in_that_lines_paragraph() {
     // Containment-first hit testing; every line of every (nested, merged) table is reachable.
-    use super::super::input::{Input, Message, PointerKind};
+    use super::super::input::PointerKind;
     use super::super::keymap::Mods;
     for f in ["FX-NEST-3.docx", "FX-TBL-MERGED.docx", "FX-TBL-BASIC.docx", "FX-NEST-DEEP.docx", "FX-NEST-MIXED.docx", "FX-OBJ-CELL.docx"] {
         let mut e = open(f);
         e.complete(fonts());
         let stack = e.stack();
-        let mut seq = 0;
         let mut checked = 0;
         for (page, g) in e.page_geometries() {
             for l in g.lines.iter().filter(|l| !l.repeat && !l.chain.is_empty() && g.stories[l.story].story == StoryId::Body) {
@@ -237,9 +236,7 @@ fn a_click_on_any_drawn_line_lands_in_that_lines_paragraph() {
                 }
                 let (dx, dy) = stack.to_doc(page, x, y).expect("on the stack");
                 for kind in [PointerKind::Down, PointerKind::Up] {
-                    seq += 1;
-                    e.apply(Message { seq, input: Input::Pointer { kind, x: dx, y: dy, clicks: 1, mods: Mods::default() } }, fonts())
-                        .expect("pointer");
+                    e.pointer_input(kind, dx, dy, 1, Mods::default(), fonts());
                 }
                 // A click on an inline picture selects it.
                 let got = match e.selection() {
@@ -270,12 +267,11 @@ fn a_click_on_any_drawn_line_lands_in_that_lines_paragraph() {
 #[test]
 fn a_click_on_any_story_line_lands_in_that_line() {
     // Body, notes and text boxes take a click; headers and footers a double-click.
-    use super::super::input::{Input, Message, PointerKind};
+    use super::super::input::PointerKind;
     use super::super::keymap::Mods;
     let mut e = open("FX-STORIES.docx");
     e.complete(fonts());
     let stack = e.stack();
-    let mut seq = 0;
     let mut seen = std::collections::HashSet::new();
     for (page, g) in e.page_geometries() {
         for l in g.lines.iter().filter(|l| l.stops.len() > 1) {
@@ -288,9 +284,7 @@ fn a_click_on_any_story_line_lands_in_that_line() {
             let clicks = if matches!(story, StoryId::HeaderFooter(_)) { 2 } else { 1 };
             for c in 1..=clicks {
                 for kind in [PointerKind::Down, PointerKind::Up] {
-                    seq += 1;
-                    e.apply(Message { seq, input: Input::Pointer { kind, x: dx, y: dy, clicks: c, mods: Mods::default() } }, fonts())
-                        .expect("pointer");
+                    e.pointer_input(kind, dx, dy, c, Mods::default(), fonts());
                 }
             }
             let got = e.selection().focus().map(|p| (p.story, p.para_offset().map(|(p, _)| p)));
@@ -302,8 +296,9 @@ fn a_click_on_any_story_line_lands_in_that_line() {
                 l.stops[0].para,
                 g.stories.iter().map(|s| (s.story, s.rect.map(|v| v.round()))).collect::<Vec<_>>()
             );
-            seq += 1;
-            e.apply(Message { seq, input: Input::Key { code: "Escape".into(), mods: Mods::default() } }, fonts()).expect("key");
+            if let Some(cmd) = e.key_command("Escape", Mods::default()) {
+                e.execute(cmd, fonts());
+            }
         }
     }
     assert!(seen.len() > 20, "only {} story lines", seen.len());
@@ -339,7 +334,7 @@ fn a_deleted_float_stays_deleted_after_saving() {
         })
         .expect("a float");
     e.set_caret_for_benchmark(Selection::Object(crate::editing::selection::ObjectRef::Floating(f)));
-    e.execute(Command::Delete { dir: super::super::commands::Dir::Forward, word: false }, fonts());
+    e.execute(crate::editing::tests::del(super::super::commands::Dir::Forward, false), fonts());
     assert_eq!(count(&e), before - 1);
     let edited = texts(&e);
     let bytes = crate::docx::write::save(e.document()).expect("saves");
@@ -421,8 +416,8 @@ fn a_nudged_float_saves_its_new_offsets() {
         .nth(1)
         .expect("two floats");
     e.set_caret_for_benchmark(Selection::Object(crate::editing::selection::ObjectRef::Floating(id)));
-    e.execute(Command::Move { by: super::super::commands::MoveBy::Char, dir: super::super::commands::Dir::Forward, extend: false }, fonts());
-    e.execute(Command::Move { by: super::super::commands::MoveBy::Line, dir: super::super::commands::Dir::Forward, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(super::super::commands::MoveBy::Char, super::super::commands::Dir::Forward, false), fonts());
+    e.execute(crate::editing::tests::mv(super::super::commands::MoveBy::Line, super::super::commands::Dir::Forward, false), fonts());
     let moved = floats(&e);
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
@@ -540,7 +535,7 @@ fn a_border_moved_in_selected_rows_saves() {
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-TBL-BASIC.docx", "obs48-save");
     r.step(&json!({ "click": { "para": 13, "offset": 2 } }));
-    r.step(&json!({ "command": "table.select.row" }));
+    r.step(&json!({"command": {"type": "select", "value": "row"}}));
     r.step(&json!({ "drag": { "from": { "table": 1, "row": 0, "border": 1 }, "to": { "table": 1, "row": 0, "border": 1, "dx": 30 } } }));
     let tables = |e: &mut super::super::Editor| crate::editing::inspect::inspect(e, "dump", true)["dump"]["tables"].clone();
     let edited = tables(&mut r.e);
@@ -560,10 +555,10 @@ fn table_formats_save_and_reopen() {
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-TBL-BASIC.docx", "table-format-save");
     r.step(&json!({ "drag": { "from": { "para": 13, "offset": 2 }, "to": { "para": 17, "offset": 2 } } }));
-    r.step(&json!({ "command": "table.cell-align.bottom" }));
-    r.step(&json!({ "command": "table.shading", "arg": "#DDEBF7" }));
+    r.step(&json!({"command": {"type": "setCellAlignment", "value": "bottom"}}));
+    r.step(&json!({"command": {"type": "setCellShading", "value": "#DDEBF7"}}));
     r.step(&json!({ "click": { "para": 13, "offset": 2 } }));
-    r.step(&json!({ "command": "table.header-row" }));
+    r.step(&json!({"command": {"type": "setHeaderRow", "value": true}}));
     let tables = |e: &mut super::super::Editor| crate::editing::inspect::inspect(e, "dump", true)["dump"]["tables"].clone();
     let edited = tables(&mut r.e);
     assert_eq!(edited[1]["header_rows"], json!(1));
@@ -601,7 +596,7 @@ fn an_inserted_footnote_saves_and_deleting_its_reference_deletes_it() {
     let before = note_texts(&e);
     let para = super::super::tests::para_id(&e, 1);
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(4))));
-    e.execute(Command::InsertNote(crate::docx::NoteKind::Foot), fonts());
+    e.execute(Command::InsertFootnote, fonts());
     assert!(matches!(e.selection().focus().map(|p| p.story), Some(StoryId::Footnote(_))), "{:?}", e.selection());
     type_text(&mut e, "New note.");
     let edited = note_texts(&e);
@@ -616,7 +611,7 @@ fn an_inserted_footnote_saves_and_deleting_its_reference_deletes_it() {
     assert_eq!(texts(&again), texts(&e));
     // Back in the body, Delete over the reference mark deletes the note with it; undo brings both back.
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(4))));
-    e.execute(Command::Delete { dir: super::super::commands::Dir::Forward, word: false }, fonts());
+    e.execute(crate::editing::tests::del(super::super::commands::Dir::Forward, false), fonts());
     assert_eq!(note_texts(&e), before);
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
@@ -633,7 +628,7 @@ fn notes_inserted_in_a_document_without_notes_save() {
     let para = super::super::tests::para_id(&e, 1);
     for kind in [crate::docx::NoteKind::Foot, crate::docx::NoteKind::End] {
         e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(3))));
-        e.execute(Command::InsertNote(kind), fonts());
+        e.execute(if kind == crate::docx::NoteKind::Foot { Command::InsertFootnote } else { Command::InsertEndnote }, fonts());
         type_text(&mut e, "A note.");
     }
     let bytes = crate::docx::write::save(e.document()).expect("saves");
@@ -656,10 +651,10 @@ fn notes_inserted_in_a_document_without_notes_save() {
 fn deleted_and_split_cells_save_and_reopen() {
     // Delete Cells shifting left (the row ends early) and Split Cells into rows (vertical merges) are written.
     use serde_json::json;
-    for (cmd, arg) in [("table.delete.cells-left", None), ("table.split-rows", Some("2"))] {
+    for cmd in [json!({ "type": "deleteCells", "value": "left" }), json!({ "type": "splitCells", "columns": 1, "rows": 2 })] {
         let mut r = super::scenarios::Run::open("FX-TBL-BASIC.docx", "cells-save");
         r.step(&json!({ "click": { "para": 14, "offset": 2 } }));
-        r.step(&json!({ "command": cmd, "arg": arg }));
+        r.step(&json!({ "command": cmd }));
         let tables = |e: &mut super::super::Editor| crate::editing::inspect::inspect(e, "dump", true)["dump"]["tables"].clone();
         let merges = |e: &super::super::Editor| -> Vec<Vec<crate::docx::VMerge>> {
             e.document().sections[0]
@@ -730,11 +725,11 @@ fn down_right_after_enter_lands_where_the_finished_layout_puts_it() {
         }
         let para = super::super::tests::para_id(&e, 2);
         e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(10))));
-        e.execute(Command::Enter, fonts());
+        e.execute(Command::InsertParagraph, fonts());
         if settle {
             e.complete(fonts());
         }
-        e.execute(Command::Move { by: super::super::commands::MoveBy::Line, dir: super::super::commands::Dir::Forward, extend: false }, fonts());
+        e.execute(crate::editing::tests::mv(super::super::commands::MoveBy::Line, super::super::commands::Dir::Forward, false), fonts());
         // As a paragraph number and offset: ids differ between opens.
         let (p, u) = e.selection().focus().and_then(|f| f.para_offset()).expect("a caret");
         ((0..texts(&e).len()).position(|k| super::super::tests::para_id(&e, k) == p), u)
@@ -756,7 +751,7 @@ fn a_late_selection_keeps_its_characters_through_an_early_reflow() {
     let first = super::super::tests::para_id(&e, 0);
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, first, Unit(0))));
     for _ in 0..5 {
-        e.execute(Command::Enter, fonts());
+        e.execute(Command::InsertParagraph, fonts());
     }
     let caret = e.selection();
     e.set_caret_for_benchmark(Selection::range(at(3), at(15), crate::editing::selection::Granularity::Char));
@@ -769,7 +764,7 @@ fn a_late_selection_keeps_its_characters_through_an_early_reflow() {
 fn a_click_on_a_provisional_page_resolves_against_the_finished_layout() {
     // After an edit near the start, the later pages are provisional; a click on one lays out through it first
     // and resolves where it does once layout has finished.
-    use super::super::input::{Input, Message, PointerKind};
+    use super::super::input::PointerKind;
     use super::super::keymap::Mods;
     let edited = |settle: bool| {
         let mut e = open_large();
@@ -777,7 +772,7 @@ fn a_click_on_a_provisional_page_resolves_against_the_finished_layout() {
         let para = super::super::tests::para_id(&e, 1);
         e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(0))));
         for _ in 0..3 {
-            e.execute(Command::Enter, fonts());
+            e.execute(Command::InsertParagraph, fonts());
         }
         if settle {
             e.complete(fonts());
@@ -790,8 +785,8 @@ fn a_click_on_a_provisional_page_resolves_against_the_finished_layout() {
     let l = g.lines.iter().find(|l| l.stops.len() > 3 && g.stories[l.story].story == StoryId::Body).expect("a body line");
     let (x, y) = stack.to_doc(page, (l.stops[1].x + l.stops[2].x) / 2.0, (l.top + l.bottom) / 2.0).expect("on the stack");
     let click = |e: &mut super::super::Editor| {
-        for (seq, kind) in [(1, PointerKind::Down), (2, PointerKind::Up)] {
-            e.apply(Message { seq, input: Input::Pointer { kind, x, y, clicks: 1, mods: Mods::default() } }, fonts()).expect("pointer");
+        for kind in [PointerKind::Down, PointerKind::Up] {
+            e.pointer_input(kind, x, y, 1, Mods::default(), fonts());
         }
         let (p, u) = e.selection().focus().and_then(|f| f.para_offset()).expect("a caret");
         ((0..texts(e).len()).position(|k| super::super::tests::para_id(e, k) == p), u)
@@ -828,7 +823,13 @@ fn a_row_inserted_in_a_repeating_section_saves_as_its_own_item() {
     assert_eq!(distinct_items(&e), 3);
     let para = super::super::tests::para_id(&e, 8);
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(2))));
-    e.execute(Command::InsertRows { below: true, n: 1 }, fonts());
+    e.execute(
+        Command::InsertRows(crate::api::command::InsertRows {
+            side: if true { crate::api::command::VerticalSide::Below } else { crate::api::command::VerticalSide::Above },
+            count: Some(1),
+        }),
+        fonts(),
+    );
     type_text(&mut e, "Item 2b");
     let edited = shape(&e);
     assert_eq!(edited.len(), 6);
@@ -889,18 +890,17 @@ fn body_pictures(e: &super::super::Editor) -> Vec<(f64, f64)> {
 #[test]
 fn wrapping_and_the_anchor_lock_save() {
     // Wrap Text and Lock Anchor patch the drawing (its wrap element, `behindDoc`, `locked`) in place.
-    use crate::editing::objects::ObjectCmd;
     use crate::editing::selection::ObjectRef;
     let mut e = open("FX-OBJ.docx");
     let ids: Vec<crate::layout::FloatId> = body_floats(&e).iter().map(|f| crate::layout::FloatId(f.id)).collect();
     let was = body_floats(&e);
     e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(ids[0])));
-    assert!(matches!(e.execute(Command::Object(ObjectCmd::Wrap("tight".into())), fonts()), super::super::Outcome::Changed(_)));
-    e.execute(Command::Object(ObjectCmd::LockAnchor), fonts());
+    assert!(matches!(e.execute(Command::SetObjectWrap(crate::api::value::ObjectWrap::Tight), fonts()), super::super::Outcome::Changed(_)));
+    e.execute(Command::SetAnchorLocked(true), fonts());
     e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(ids[1])));
-    e.execute(Command::Object(ObjectCmd::Wrap("behind".into())), fonts());
+    e.execute(Command::SetObjectWrap(crate::api::value::ObjectWrap::BehindText), fonts());
     e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(ids[2])));
-    e.execute(Command::Object(ObjectCmd::Wrap("square".into())), fonts());
+    e.execute(Command::SetObjectWrap(crate::api::value::ObjectWrap::Square), fonts());
     let now = body_floats(&e);
     assert_eq!((now[0].wrap.as_str(), now[0].locked), ("tight", !was[0].locked));
     assert_eq!((now[1].wrap.as_str(), now[1].behind), ("none", true));
@@ -948,7 +948,6 @@ fn an_inline_picture_resizes_by_its_handle_and_saves() {
 #[test]
 fn reset_size_gives_a_picture_its_own_size() {
     // Reset Picture size: the image's pixels at its resolution (96 dpi without one).
-    use crate::editing::objects::ObjectCmd;
     use crate::editing::selection::ObjectRef;
     let mut e = open("FX-OBJ.docx");
     let (para, offset) = e
@@ -969,15 +968,22 @@ fn reset_size_gives_a_picture_its_own_size() {
         _ => panic!("no picture"),
     };
     e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para, offset }));
-    e.execute(Command::Object(ObjectCmd::Size(20.0, 10.0)), fonts());
+    e.execute(
+        Command::SetObjectSize(crate::api::command::ObjectSize {
+            width: Some(crate::api::value::Points(20.0)),
+            height: Some(crate::api::value::Points(10.0)),
+            lock_aspect: None,
+        }),
+        fonts(),
+    );
     assert_eq!((pic(&e).0, pic(&e).1), (20.0, 10.0));
-    e.execute(Command::Object(ObjectCmd::ResetSize), fonts());
+    e.execute(Command::ResetObjectSize, fonts());
     let image = pic(&e).2;
     let (w, h, dx, dy) = crate::docx::image::image_info(&e.document().images[image.expect("an image")]).expect("decodes");
     let want = ((w * 72.0 / dx * 20.0).round() / 20.0, (h * 72.0 / dy * 20.0).round() / 20.0);
     assert_eq!((pic(&e).0, pic(&e).1), want);
     // Wrapping an inline picture isn't done: it says so and changes nothing.
-    assert!(matches!(e.execute(Command::Object(ObjectCmd::Wrap("square".into())), fonts()), super::super::Outcome::Unchanged(_)));
+    assert!(matches!(e.execute(Command::SetObjectWrap(crate::api::value::ObjectWrap::Square), fonts()), super::super::Outcome::Refused(_)));
 }
 
 #[test]
@@ -987,7 +993,8 @@ fn an_inserted_picture_saves_with_its_image() {
     use crate::editing::selection::ObjectRef;
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let mut e = open("FX-STORIES.docx");
-    let out = e.execute(Command::InsertPicture(data.clone()), fonts());
+    let out =
+        e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     assert!(matches!(e.selection(), Selection::Object(ObjectRef::Inline { .. })), "{:?}", e.selection());
     // And one in the first header: its first paragraph's start.
@@ -996,9 +1003,15 @@ fn an_inserted_picture_saves_with_its_image() {
     let para =
         e.index().para_ids().find(|id| e.index().para_slot(*id).is_some_and(|s| e.index().story(s.container) == story)).expect("a header paragraph");
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(story, para, Unit(0))));
-    e.execute(Command::InsertPicture(data.clone()), fonts());
+    e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
     // Not an image: nothing happens.
-    assert!(matches!(e.execute(Command::InsertPicture(b"not an image".to_vec()), fonts()), super::super::Outcome::Unchanged(_)));
+    assert!(matches!(
+        e.execute(
+            Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(b"not an image".to_vec()), alt_text: None }),
+            fonts()
+        ),
+        super::super::Outcome::Unchanged(_)
+    ));
     let pictures = |e: &super::super::Editor| -> Vec<(f64, f64, Vec<u8>)> {
         let d = e.document();
         let mut out = Vec::new();
@@ -1120,20 +1133,19 @@ fn table_properties_save_and_reopen() {
     let before = table_formatting(&r.e);
     r.step(&json!({ "drag": { "from": { "para": 13, "offset": 2 }, "to": { "para": 17, "offset": 2 } } }));
     let steps = [
-        ("table.borders.outside", Some("double,1.5,C00000")),
-        ("table.borders.inside-h", Some("dashed,0.75,0070C0")),
-        ("table.cell-margins", Some("2,9,2,9")),
-        ("table.row-height", Some("30,exact")),
-        ("table.row-cant-split", None),
-        ("table.column-width", Some("100")),
-        ("table.align.center", None),
-        ("table.indent", Some("18")),
+        json!({ "type": "setCellBorders", "edges": "outside", "border": { "style": "double", "width": 1.5, "color": "#C00000" } }),
+        json!({ "type": "setCellBorders", "edges": "insideHorizontal", "border": { "style": "dashed", "width": 0.75, "color": "#0070C0" } }),
+        json!({ "type": "setCellMargins", "top": 2, "left": 9, "bottom": 2, "right": 9 }),
+        json!({ "type": "setRowHeight", "value": { "height": 30, "rule": "exact" } }),
+        json!({ "type": "setRowCanBreak", "value": false }),
+        json!({ "type": "setColumnWidth", "value": 100 }),
+        json!({ "type": "setTableAlignment", "value": "center" }),
+        json!({ "type": "setTableIndent", "value": 18 }),
     ];
-    for (k, (id, arg)) in steps.iter().enumerate() {
+    for op in steps.clone() {
         let undo = r.e.history().undo_depth();
-        r.step(&json!({ "command": id, "arg": arg }));
-        assert_eq!(r.e.history().undo_depth(), undo + 1, "{id}: one step");
-        let _ = k;
+        r.step(&json!({ "command": op }));
+        assert_eq!(r.e.history().undo_depth(), undo + 1, "{op}: one step");
     }
     let edited = table_formatting(&r.e);
     assert_ne!(edited, before);
@@ -1178,12 +1190,12 @@ fn a_table_style_and_its_options_restyle_the_cells() {
     // A click in the first table's first cell: its paragraph's number is the count of body paragraphs before it.
     let para = r.e.document().sections[0].blocks.iter().take_while(|b| matches!(b, crate::docx::Block::Para(_))).count();
     r.step(&json!({ "click": { "para": para, "offset": 0 } }));
-    r.step(&json!({ "command": "table.style", "arg": "GridTable4-Accent1" }));
+    r.step(&json!({"command": {"type": "setTableStyle", "value": "GridTable4-Accent1"}}));
     let styled = first_table(&r.e);
     assert_eq!(styled.style_id.as_deref(), Some("GridTable4-Accent1"));
     let fill = |t: &crate::docx::Table, row: usize| t.rows[row].cells[0].shading;
     assert_ne!(fill(&styled, 0), fill(&t0, 0), "the header row takes the style's fill");
-    r.step(&json!({ "command": "table.look", "arg": "banded-rows" }));
+    r.step(&json!({"command": {"type": "setTableStyleOptions", "headerRow": false, "totalRow": false, "firstColumn": false, "lastColumn": false, "bandedRows": true, "bandedColumns": false}}));
     let plain = first_table(&r.e);
     assert_ne!(fill(&plain, 0), fill(&styled, 0), "no header row: the first row is a band");
     let edited = table_formatting(&r.e);
@@ -1219,15 +1231,15 @@ fn a_new_header_and_footer_save() {
     // in it; saving writes the parts, their relationships, content types and the section's references.
     let mut e = open("FX-TEXT.docx");
     assert!(e.document().stories.is_empty());
-    assert!(matches!(e.execute(Command::EditHeaderFooter { footer: false }, fonts()), super::super::Outcome::Changed(_)));
+    assert!(matches!(e.execute(Command::EditHeader, fonts()), super::super::Outcome::Changed(_)));
     assert!(matches!(e.selection().focus().map(|p| p.story), Some(StoryId::HeaderFooter(_))), "{:?}", e.selection());
     type_text(&mut e, "New header");
     e.execute(Command::CloseHeaderFooter, fonts());
     assert!(matches!(e.selection().focus().map(|p| p.story), Some(StoryId::Body)));
-    e.execute(Command::EditHeaderFooter { footer: true }, fonts());
+    e.execute(Command::EditFooter, fonts());
     type_text(&mut e, "New footer");
     // Edit Header again goes into the header made, not a new one.
-    e.execute(Command::EditHeaderFooter { footer: false }, fonts());
+    e.execute(Command::EditHeader, fonts());
     let edited = story_texts(&e);
     assert_eq!(edited.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(), vec!["New footer", "New header"], "{edited:?}");
     let bytes = crate::docx::write::save(e.document()).expect("saves");
@@ -1273,10 +1285,13 @@ fn new_lists_save_with_their_definitions() {
         let mut e = open(fixture);
         let first = super::super::tests::para_id(&e, 1);
         e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, first, Unit(0))));
-        assert!(matches!(e.execute(Command::ToggleList { bullet: false }, fonts()), super::super::Outcome::Changed(_)), "{fixture}");
+        assert!(
+            matches!(e.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts()), super::super::Outcome::Changed(_)),
+            "{fixture}"
+        );
         let last = super::super::tests::para_id(&e, e.document().sections[0].blocks.len() - 1);
         e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, last, Unit(0))));
-        e.execute(Command::ToggleList { bullet: true }, fonts());
+        e.execute(Command::SetList(Some(crate::api::command::ListKind::Bullet)), fonts());
         let edited = labels(&e);
         assert_eq!(edited[1].as_deref(), Some("1."), "{fixture}: {edited:?}");
         let bytes = crate::docx::write::save(e.document()).expect("saves");
@@ -1314,7 +1329,10 @@ fn a_placeholder_activates_and_fills() {
     r.e.apply_json(&json!({ "type": "pointer", "kind": "up", "x": x, "y": y, "seq": 1001 }).to_string(), fonts());
     // Fill every placeholder with that key: a 108 x 72 pt picture fits the 214.15 x 39.65 box by its height.
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
-    let out = r.e.execute(Command::FillPlaceholder { key: Some(info.key.clone()), data: data.clone() }, fonts());
+    let out = r.e.execute(
+        Command::FillPlaceholder(crate::api::command::FillPlaceholder { key: Some(info.key.clone()), image: crate::api::value::Bytes(data.clone()) }),
+        fonts(),
+    );
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     assert!(r.e.selected_placeholder().is_none(), "filled: no longer a placeholder");
     let filled: Vec<(f64, f64)> =
@@ -1378,8 +1396,8 @@ fn the_host_sets_how_placeholders_look() {
     };
     assert!(views(&mut r).is_empty(), "no look set: drawn as stored");
     let icon = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75z"/><circle cx="20" cy="4" r="2" fill="#333333"/><rect x="0" y="0" width="24" height="24" fill="none"/></svg>"##;
-    let arg = json!({ "key": "Signature.Recipient Sig", "color": "#C00000", "label": "Sign here", "icon": icon }).to_string();
-    r.step(&json!({ "command": "view.placeholder-look", "arg": arg }));
+    let look = json!({ "fill": "#C00000", "label": "Sign here", "iconSvg": icon });
+    r.step(&json!({ "command": { "type": "setPlaceholderLooks", "looks": [{ "match": { "tag": "Signature.Recipient Sig" }, "look": look }] } }));
     let v = views(&mut r);
     assert_eq!(v.len(), 1, "{v:?}");
     assert_eq!((v[0].label.as_str(), v[0].color), ("Sign here", 0x40_C0_00_00));
@@ -1388,13 +1406,18 @@ fn the_host_sets_how_placeholders_look() {
     assert_eq!((shapes.view_box, shapes.paths.len(), shapes.paths[1].1), ([0.0, 0.0, 24.0, 24.0], 2, Some(0xFF33_3333)));
     assert!(v[0].rect[2] - v[0].rect[0] > 200.0, "the placeholder's box: {:?}", v[0].rect);
     // The default look, with the alias as its label, for every other placeholder.
-    r.step(&json!({ "command": "view.placeholder-look", "arg": json!({ "key": "Signature.Recipient Sig" }).to_string() }));
-    r.step(&json!({ "command": "view.placeholder-look", "arg": json!({ "key": "", "color": "#2000AA00" }).to_string() }));
+    r.step(&json!({ "command": { "type": "setPlaceholderLooks", "looks": [{ "match": "default", "look": { "fill": "#00AA00" } }] } }));
     let v = views(&mut r);
-    assert_eq!((v.len(), v[0].label.as_str(), v[0].color), (1, "Recipient Sig", 0x20_00_AA_00));
+    assert_eq!((v.len(), v[0].label.as_str(), v[0].color), (1, "Recipient Sig", 0x40_00_AA_00));
     // Filled: not a placeholder any more.
     let data = open("FX-OBJ.docx").document().images.last().cloned().unwrap();
-    r.e.execute(Command::FillPlaceholder { key: Some("Signature.Recipient Sig".into()), data }, fonts());
+    r.e.execute(
+        Command::FillPlaceholder(crate::api::command::FillPlaceholder {
+            key: Some("Signature.Recipient Sig".into()),
+            image: crate::api::value::Bytes(data),
+        }),
+        fonts(),
+    );
     assert!(views(&mut r).is_empty());
 }
 
@@ -1451,7 +1474,7 @@ fn content_controls_survive_edits() {
         ("type in the text control", vec![at(4, json!(8)), json!({ "type": "X" })]),
         ("Enter after the text control", vec![at(4, json!("end")), json!({ "key": "Enter" }), json!({ "type": "Next" })]),
         ("type in the cell control", vec![at(5, json!("end")), json!({ "key": "Tab" }), json!({ "key": "End" }), json!({ "type": "X" })]),
-        ("insert a row below the cell control's row", vec![at(5, json!(0)), json!({ "command": "table.insert-below" })]),
+        ("insert a row below the cell control's row", vec![at(5, json!(0)), json!({"command": {"type": "insertRows", "where": "below"}})]),
         ("Enter inside the block control", vec![at(2, json!(3)), json!({ "key": "Enter" }), json!({ "type": "Mid" })]),
         (
             "delete across the block control's start",
@@ -1463,14 +1486,14 @@ fn content_controls_survive_edits() {
             "merge the cell control's row",
             vec![
                 json!({ "drag": { "from": { "para": 5, "offset": 0 }, "to": { "para": 6, "offset": "end" } } }),
-                json!({ "command": "table.merge" }),
+                json!({"command": {"type": "mergeCells"}}),
             ],
         ),
-        ("insert a column right of the cell control", vec![at(6, json!(0)), json!({ "command": "table.insert-right" })]),
-        ("insert a column left of the cell control", vec![at(6, json!(0)), json!({ "command": "table.insert-left" })]),
-        ("insert a row above the cell control's row", vec![at(6, json!(0)), json!({ "command": "table.insert-above" })]),
-        ("split the cell control", vec![at(6, json!(0)), json!({ "command": "table.split" })]),
-        ("split the cell control into rows", vec![at(6, json!(0)), json!({ "command": "table.split-rows" })]),
+        ("insert a column right of the cell control", vec![at(6, json!(0)), json!({"command": {"type": "insertColumns", "where": "right"}})]),
+        ("insert a column left of the cell control", vec![at(6, json!(0)), json!({"command": {"type": "insertColumns", "where": "left"}})]),
+        ("insert a row above the cell control's row", vec![at(6, json!(0)), json!({"command": {"type": "insertRows", "where": "above"}})]),
+        ("split the cell control", vec![at(6, json!(0)), json!({"command": {"type": "splitCells", "columns": 2}})]),
+        ("split the cell control into rows", vec![at(6, json!(0)), json!({"command": {"type": "splitCells", "columns": 1, "rows": 2}})]),
         (
             "copy the name line to the end",
             vec![
@@ -1489,7 +1512,7 @@ fn content_controls_survive_edits() {
                 json!({ "key": "ArrowDown", "mods": { "shift": true } }),
                 json!({ "key": "End", "mods": { "shift": true } }),
                 json!({ "clipboard": "cut" }),
-                json!({ "command": "edit.undo" }),
+                json!({"command": {"type": "undo"}}),
             ],
         ),
     ];
@@ -1559,14 +1582,27 @@ fn placeholders_cant_be_resized_or_moved() {
         r.step(&json!({ "drag": { "from": corner, "to": to } }));
         assert_eq!(size(&r.e), before, "a drag from the corner doesn't resize it");
         r.step(&json!({ "click": { "picture": k } }));
-        let out = r.e.execute(Command::Object(crate::editing::objects::ObjectCmd::Size(20.0, 20.0)), fonts());
+        let out = r.e.execute(
+            Command::SetObjectSize(crate::api::command::ObjectSize {
+                width: Some(crate::api::value::Points(20.0)),
+                height: Some(crate::api::value::Points(20.0)),
+                lock_aspect: None,
+            }),
+            fonts(),
+        );
         assert!(matches!(out, super::super::Outcome::Unchanged(_)), "{out:?}");
         assert_eq!(size(&r.e), before);
         r
     };
     let mut r = check(super::scenarios::Run::open("FX-PLACEHOLDER.docx", "fixed"));
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
-    r.e.execute(Command::FillPlaceholder { key: Some("Signature.Recipient Sig".into()), data }, fonts());
+    r.e.execute(
+        Command::FillPlaceholder(crate::api::command::FillPlaceholder {
+            key: Some("Signature.Recipient Sig".into()),
+            image: crate::api::value::Bytes(data),
+        }),
+        fonts(),
+    );
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert!(!again.document().fixed.is_empty(), "filled controls stay fixed");
@@ -1620,9 +1656,9 @@ fn sdt_locked_picture_controls_cant_be_deleted() {
     let cases: Vec<(&str, Vec<serde_json::Value>)> = vec![
         ("Delete on it", vec![json!({ "key": "Delete" })]),
         ("Backspace on it", vec![json!({ "key": "Backspace" })]),
-        ("Select All, Delete", vec![json!({ "command": "edit.select_all" }), json!({ "key": "Delete" })]),
-        ("Select All, type", vec![json!({ "command": "edit.select_all" }), json!({ "type": "x" })]),
-        ("Select All, Cut", vec![json!({ "command": "edit.select_all" }), json!({ "command": "edit.cut" })]),
+        ("Select All, Delete", vec![json!({"command": {"type": "selectAll"}}), json!({ "key": "Delete" })]),
+        ("Select All, type", vec![json!({"command": {"type": "selectAll"}}), json!({ "type": "x" })]),
+        ("Select All, Cut", vec![json!({"command": {"type": "selectAll"}}), json!({"command": {"type": "cut"}})]),
     ];
     for (name, steps) in cases {
         select_picture(&mut r);
@@ -1650,7 +1686,7 @@ fn alt_text_saves() {
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ.docx", "alt-text");
     r.step(&json!({ "click": { "picture": 0 } }));
-    let out = r.e.execute(Command::Object(crate::editing::objects::ObjectCmd::AltText("The board seal".into())), fonts());
+    let out = r.e.execute(Command::SetAltText(crate::api::command::AltText { text: "The board seal".into(), decorative: None }), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     let alts = |d: &crate::docx::Document| -> Vec<String> {
         d.sections
@@ -1677,37 +1713,37 @@ fn extend_mode_grows_and_extends() {
     use serde_json::json;
     let mut e = super::super::Editor::open(&blank_with("The quick brown fox jumps. Over the lazy dog.\nSecond paragraph here."), fonts()).unwrap();
     let sel = |e: &mut super::super::Editor| e.selected_text();
-    e.execute(Command::Move { by: crate::editing::commands::MoveBy::Story, dir: crate::editing::commands::Dir::Back, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(crate::editing::commands::MoveBy::Story, crate::editing::commands::Dir::Back, false), fonts());
     for _ in 0..6 {
-        e.execute(Command::Move { by: crate::editing::commands::MoveBy::Char, dir: crate::editing::commands::Dir::Forward, extend: false }, fonts());
+        e.execute(crate::editing::tests::mv(crate::editing::commands::MoveBy::Char, crate::editing::commands::Dir::Forward, false), fonts());
     }
-    assert_eq!(e.execute(Command::ExtendMode, fonts()), super::super::Outcome::Moved);
+    assert_eq!(e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Extend), fonts()), super::super::Outcome::Moved);
     assert_eq!(sel(&mut e), "", "the first F8 only turns the mode on");
-    e.execute(Command::ExtendMode, fonts());
+    e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Extend), fonts());
     assert_eq!(sel(&mut e).trim_end(), "quick");
-    e.execute(Command::ExtendMode, fonts());
+    e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Extend), fonts());
     assert_eq!(sel(&mut e).trim_end(), "The quick brown fox jumps.");
-    e.execute(Command::ExtendMode, fonts());
+    e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Extend), fonts());
     assert!(sel(&mut e).starts_with("The quick brown fox jumps. Over the lazy dog."));
-    e.execute(Command::ExtendMode, fonts());
+    e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Extend), fonts());
     assert!(sel(&mut e).contains("Second paragraph here."), "the document");
     // Esc: the selection stays, the mode ends: an arrow collapses it again.
     e.execute(Command::Escape, fonts());
     assert!(!e.selection().is_collapsed());
-    e.execute(Command::Move { by: crate::editing::commands::MoveBy::Char, dir: crate::editing::commands::Dir::Back, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(crate::editing::commands::MoveBy::Char, crate::editing::commands::Dir::Back, false), fonts());
     assert!(e.selection().is_collapsed());
     // F8 then arrows extend from the caret; a typed character extends to its next occurrence (case-sensitive) and
     // the mode stays on.
-    e.execute(Command::ExtendMode, fonts());
+    e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Extend), fonts());
     for _ in 0..3 {
-        e.execute(Command::Move { by: crate::editing::commands::MoveBy::Char, dir: crate::editing::commands::Dir::Forward, extend: false }, fonts());
+        e.execute(crate::editing::tests::mv(crate::editing::commands::MoveBy::Char, crate::editing::commands::Dir::Forward, false), fonts());
     }
     assert_eq!(sel(&mut e), "The");
     e.execute(Command::InsertText("b".into()), fonts());
     assert_eq!(sel(&mut e), "The quick b");
     e.execute(Command::InsertText("Q".into()), fonts());
     assert_eq!(sel(&mut e), "The quick b", "no capital Q after it");
-    e.execute(Command::Move { by: crate::editing::commands::MoveBy::Char, dir: crate::editing::commands::Dir::Forward, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(crate::editing::commands::MoveBy::Char, crate::editing::commands::Dir::Forward, false), fonts());
     assert_eq!(sel(&mut e), "The quick br", "still extending");
     let _ = json!(null);
 }
@@ -1719,12 +1755,12 @@ fn block_selection_selects_copies_formats_and_deletes() {
     let text = "abcdefgh\nijklmnop\nqrstuvwx\nyz";
     let mut e = super::super::Editor::open(&super::blank_in(text, "Courier New"), fonts()).unwrap();
     let mv = |e: &mut super::super::Editor, by, dir| {
-        e.execute(Command::Move { by, dir, extend: false }, fonts());
+        e.execute(crate::editing::tests::mv(by, dir, false), fonts());
     };
     mv(&mut e, MoveBy::Story, Dir::Back);
     mv(&mut e, MoveBy::Char, Dir::Forward);
     mv(&mut e, MoveBy::Char, Dir::Forward);
-    e.execute(Command::BlockSelect, fonts());
+    e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Block), fonts());
     mv(&mut e, MoveBy::Line, Dir::Forward);
     mv(&mut e, MoveBy::Line, Dir::Forward);
     mv(&mut e, MoveBy::Char, Dir::Forward);
@@ -1732,7 +1768,7 @@ fn block_selection_selects_copies_formats_and_deletes() {
     mv(&mut e, MoveBy::Char, Dir::Forward);
     assert!(matches!(e.selection(), crate::editing::selection::Selection::Block { .. }), "{:?}", e.selection());
     assert_eq!(e.selected_text(), "cde\nklm\nstu");
-    e.execute(Command::Toggle(crate::editing::format::Toggle::Bold), fonts());
+    e.execute(Command::SetBold(true), fonts());
     let bold: Vec<String> = texts(&e)
         .iter()
         .enumerate()
@@ -1749,12 +1785,12 @@ fn block_selection_selects_copies_formats_and_deletes() {
         .collect();
     assert_eq!(bold, ["cde", "klm", "stu", ""], "only the block is bold");
     let before = texts(&e);
-    e.execute(Command::Delete { dir: Dir::Forward, word: false }, fonts());
+    e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());
     assert_eq!(texts(&e), ["abfgh", "ijnop", "qrvwx", "yz"]);
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e), before);
     // Esc in block mode: the caret at the block's start.
-    e.execute(Command::BlockSelect, fonts());
+    e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Block), fonts());
     mv(&mut e, MoveBy::Line, Dir::Forward);
     mv(&mut e, MoveBy::Char, Dir::Forward);
     assert!(matches!(e.selection(), crate::editing::selection::Selection::Block { .. }));
@@ -1769,7 +1805,7 @@ fn go_back_returns_to_earlier_edits() {
     use crate::editing::commands::{Dir, MoveBy};
     let mut e = super::super::Editor::open(&blank_with("First paragraph.\nSecond paragraph.\nThird paragraph."), fonts()).unwrap();
     let mv = |e: &mut super::super::Editor, by, dir| {
-        e.execute(Command::Move { by, dir, extend: false }, fonts());
+        e.execute(crate::editing::tests::mv(by, dir, false), fonts());
     };
     let para_no = |e: &super::super::Editor| {
         let (p, u) = e.selection().focus().and_then(|p| p.para_offset()).unwrap();
@@ -1853,12 +1889,12 @@ fn drag_and_drop_moves_and_copies_text() {
 /// A table built by typing: Insert Table rows x cols, then each cell's text (row by row, Tab between).
 fn typed_table(cells: &[&[&str]]) -> super::super::Editor {
     let mut e = super::super::Editor::open(&blank_with(""), fonts()).unwrap();
-    e.execute(Command::InsertTable { rows: cells.len(), cols: cells[0].len() }, fonts());
+    e.execute(Command::InsertTable(crate::api::command::TableSize { rows: cells.len() as u32, columns: cells[0].len() as u32 }), fonts());
     for (r, row) in cells.iter().enumerate() {
         for (c, t) in row.iter().enumerate() {
             e.execute(Command::InsertText((*t).into()), fonts());
             if r + 1 < cells.len() || c + 1 < row.len() {
-                e.execute(Command::NextCell { back: false }, fonts());
+                e.execute(Command::MoveToCell(crate::api::value::Order::Next), fonts());
             }
         }
     }
@@ -1892,9 +1928,12 @@ fn rows_move_up_and_down() {
     let up = e.key_command("ArrowUp", Mods { alt: true, shift: true, ..Mods::default() }).unwrap();
     e.execute(up, fonts());
     assert_eq!(table_texts(&e), [["a1", "a2"], ["c1", "c2"], ["b1", "b2"]]);
-    e.execute(Command::MoveRows { up: true }, fonts());
+    e.execute(Command::MoveRows(crate::api::command::VerticalDirection::Up), fonts());
     assert_eq!(table_texts(&e), [["c1", "c2"], ["a1", "a2"], ["b1", "b2"]]);
-    assert!(matches!(e.execute(Command::MoveRows { up: true }, fonts()), super::super::Outcome::Unchanged(_)), "at the top");
+    assert!(
+        matches!(e.execute(Command::MoveRows(crate::api::command::VerticalDirection::Up), fonts()), super::super::Outcome::Unchanged(_)),
+        "at the top"
+    );
     assert!(matches!(e.selection(), Selection::Cells { anchor: crate::editing::selection::CellRef { row: 0, .. }, .. }), "the moved row is selected");
     e.execute(Command::Undo, fonts());
     assert_eq!(table_texts(&e), [["a1", "a2"], ["c1", "c2"], ["b1", "b2"]]);
@@ -1923,11 +1962,11 @@ fn double_click_auto_fits_a_column() {
         })
         .unwrap();
     let before = grid(&e);
-    e.execute(Command::AutoFitColumn { table, col: 1 }, fonts());
+    e.auto_fit_column(table, 1, fonts());
     let g = grid(&e);
     assert!(g[1] < before[1] / 2.0 && g[1] > 20.0, "'short' fits: {g:?}");
     assert_eq!((g[0], g[2]), (before[0], before[2]), "the others keep their widths");
-    e.execute(Command::AutoFitColumn { table, col: 0 }, fonts());
+    e.auto_fit_column(table, 0, fonts());
     let g2 = grid(&e);
     assert!(g2[0] > g[0], "the long text widens its column: {g2:?}");
     assert!(g2.iter().sum::<f64>() <= 468.0 + 12.0, "at most the text width and the padding: {g2:?}");
@@ -1958,7 +1997,7 @@ fn the_caret_shows_after_the_document_gets_shorter_than_its_last_page() {
     // The caret was drawn on the last page; select all and type leaves one page. Its page search starts from the
     // page it was last on, which no longer exists (FUZZ-FX-TEXT-11-b: Page Up did nothing after drawn frames).
     let mut e = open("FX-TEXT.docx");
-    e.execute(Command::Move { by: MoveBy::Story, dir: Dir::Forward, extend: false }, fonts());
+    e.execute(crate::editing::tests::mv(MoveBy::Story, Dir::Forward, false), fonts());
     e.complete(fonts());
     assert!(e.caret_view().expect("caret").page > 0, "FX-TEXT is longer than a page");
     e.execute(Command::SelectAll, fonts());

@@ -4,12 +4,11 @@
 
 use std::time::Instant;
 
-use twip::docx::review::MarkupView;
-use twip::editing::Editor;
-use twip::editing::commands::Command;
-use twip::editing::revisions::index::revisions;
-use twip::editing::revisions::resolve::Scope;
-use twip::font::Fonts;
+use twip::internal::docx::review::MarkupView;
+use twip::internal::editing::Editor;
+use twip::internal::editing::commands::Command;
+use twip::internal::editing::revisions::index::revisions;
+use twip::internal::font::Fonts;
 
 const BUDGET_MS: f64 = 2000.0;
 
@@ -43,7 +42,8 @@ pub fn run(path: &str) -> Result<(), String> {
         let mut fresh = open()?;
         while fresh.idle(&fonts) {}
         let done = timed(label, &fonts, &mut over, || {
-            fresh.execute(Command::ResolveRevisions { accept, scope: Scope::All }, &fonts);
+            let all = twip::api::command::AuthorFilter::default();
+            fresh.execute(if accept { Command::AcceptAllRevisions(all) } else { Command::RejectAllRevisions(all) }, &fonts);
             Ok(fresh)
         })?;
         println!("  {} revisions left", revisions(done.document(), done.index()).len());

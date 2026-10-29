@@ -25,41 +25,76 @@
         "selection": {
           "kind": "cells",
           "table": 0,
-          "anchor": [0, 0],
-          "focus": [0, 1]
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            0,
+            1
+          ]
         }
       }
     },
     {
-      "command": "table.shading",
-      "arg": "#FFFF00"
+      "command": {
+        "type": "setCellShading",
+        "value": "#FFFF00"
+      }
     },
     {
       "expect": {
         "tables": [
           {
             "cell_fmt": [
-              ["top:FFFF00", "top:FFFF00"],
-              ["top:-", "top:-"]
+              [
+                "top:FFFF00",
+                "top:FFFF00"
+              ],
+              [
+                "top:-",
+                "top:-"
+              ]
             ]
           },
           {
             "cell_fmt": [
-              ["top:-", "top:-"],
-              ["top:-", "top:-"]
+              [
+                "top:-",
+                "top:-"
+              ],
+              [
+                "top:-",
+                "top:-"
+              ]
             ]
           },
           {
             "cell_fmt": [
-              ["top:-", "top:-"],
-              ["top:-", "top:-"]
+              [
+                "top:-",
+                "top:-"
+              ],
+              [
+                "top:-",
+                "top:-"
+              ]
             ]
           },
           {
             "cell_fmt": [
-              ["top:-", "top:-"],
-              ["top:-", "top:-"],
-              ["top:-", "top:-"]
+              [
+                "top:-",
+                "top:-"
+              ],
+              [
+                "top:-",
+                "top:-"
+              ],
+              [
+                "top:-",
+                "top:-"
+              ]
             ]
           }
         ],

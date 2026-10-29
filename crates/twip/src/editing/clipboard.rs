@@ -294,6 +294,14 @@ impl Fragment {
 }
 
 impl Editor {
+    /// Takes back the clipboard requests a copy made, the copy being answered rather than asked of the host: whether
+    /// there was one.
+    pub fn take_clipboard_request(&mut self) -> bool {
+        let n = self.requests.len();
+        self.requests.retain(|r| !matches!(r, super::input::Request::Clipboard { .. }));
+        self.requests.len() < n
+    }
+
     /// The selection as a fragment: within one container, its blocks (the ends cut, tables whole); across cells,
     /// each touched paragraph's selected part.
     pub fn copy_fragment(&mut self) -> Option<Fragment> {

@@ -22,7 +22,9 @@
       "shift": true
     },
     {
-      "command": "table.merge"
+      "command": {
+        "type": "mergeCells"
+      }
     },
     {
       "expect": {

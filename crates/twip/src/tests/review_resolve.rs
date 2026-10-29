@@ -25,7 +25,19 @@ fn open(name: &str) -> Editor {
 }
 
 fn resolve(e: &mut Editor, accept: bool, scope: Scope) -> Outcome {
-    let out = e.execute(Command::ResolveRevisions { accept, scope }, fonts());
+    use crate::api::command::AuthorFilter;
+    let by = |author: Option<String>| AuthorFilter { author };
+    let cmd = match (scope, accept) {
+        (Scope::Selection, true) => Command::AcceptRevisionsInSelection,
+        (Scope::Selection, false) => Command::RejectRevisionsInSelection,
+        (Scope::All, true) => Command::AcceptAllRevisions(by(None)),
+        (Scope::All, false) => Command::RejectAllRevisions(by(None)),
+        (Scope::Author(a), true) => Command::AcceptAllRevisions(by(Some(a))),
+        (Scope::Author(a), false) => Command::RejectAllRevisions(by(Some(a))),
+        (Scope::Revision(id), true) => Command::AcceptRevision(crate::api::record::revision_id(id)),
+        (Scope::Revision(id), false) => Command::RejectRevision(crate::api::record::revision_id(id)),
+    };
+    let out = e.execute(cmd, fonts());
     let v = integrity::check(e.document(), e.index(), &e.selection());
     assert!(v.is_empty(), "integrity after resolving: {v:?}");
     out
@@ -122,7 +134,7 @@ fn next_and_previous_go_through_every_story() {
     let list = revisions(e.document(), e.index());
     assert!(list.iter().any(|r| r.story != StoryId::Body), "the fixture has revisions outside the body");
     let mut seen = Vec::new();
-    while e.execute(Command::NextRevision { back: false }, fonts()) == Outcome::Moved {
+    while e.execute(Command::SelectRevision(crate::api::value::Order::Next), fonts()) == Outcome::Moved {
         let (a, b) = e.selection().ordered(e.index()).expect("a text selection");
         seen.push((a, b));
         assert!(seen.len() <= list.len(), "next goes past the last revision");
@@ -133,7 +145,7 @@ fn next_and_previous_go_through_every_story() {
     };
     assert!(same(&seen, &want), "next visits every revision in order: {seen:?}");
     let mut back = Vec::new();
-    while e.execute(Command::NextRevision { back: true }, fonts()) == Outcome::Moved {
+    while e.execute(Command::SelectRevision(crate::api::value::Order::Previous), fonts()) == Outcome::Moved {
         back.push(e.selection().ordered(e.index()).expect("a text selection"));
         assert!(back.len() <= list.len(), "previous goes past the first revision");
     }
@@ -352,10 +364,10 @@ fn resolving_gives_the_recorded_results() {
                 // The caret at the start, then the selection extended a character (or mark) at a time.
                 let (start, end) = (case["range"]["start"].as_u64().unwrap_or(0), case["range"]["end"].as_u64().unwrap_or(0));
                 let (para, u) = at_offset(e.document(), start).and_then(|p| p.para_offset()).unwrap_or_else(|| panic!("{name}: range start"));
-                e.execute(Command::SelectRange { para, a: u, b: u }, fonts());
+                e.select_range(para, u, u, fonts());
                 for _ in start..end {
                     let by = crate::editing::commands::MoveBy::Char;
-                    e.execute(Command::Move { by, dir: crate::editing::commands::Dir::Forward, extend: true }, fonts());
+                    e.execute(crate::editing::tests::mv(by, crate::editing::commands::Dir::Forward, true), fonts());
                 }
                 let want = at_offset(e.document(), end).unwrap_or_else(|| panic!("{name}: range end"));
                 assert!(e.selection().focus().is_some_and(|f| f.same_place(&want)), "{name}: selection {:?}", e.selection());
@@ -365,7 +377,7 @@ fn resolving_gives_the_recorded_results() {
         };
         let out = resolve(&mut e, accept, scope);
         if !case["error"].is_null() {
-            assert_eq!(out, Outcome::Unchanged("unavailable"), "{name}: refused");
+            assert!(matches!(&out, Outcome::Refused(e) if e.message == "unavailable"), "{name}: refused, {out:?}");
         }
         let doc = e.document();
         let got = ours_blocks(doc, &doc.sections.iter().flat_map(|s| s.blocks.iter().cloned()).collect::<Vec<_>>());

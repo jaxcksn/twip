@@ -1018,7 +1018,15 @@ impl Reader {
             if e.tag_name().namespace() == Some(W) {
                 match e.tag_name().name() {
                     "r" => self.read_run(e, base, pkg, out),
-                    "fldSimple" if !self.in_code() => self.read_simple_field(e, base, pkg, out),
+                    "fldSimple" if !self.in_code() => {
+                        let code = attr(e, "instr").unwrap_or("").to_string();
+                        self.read_simple_field(e, code, base, pkg, out);
+                    }
+                    // A hyperlink reads as the HYPERLINK field it stands for.
+                    "hyperlink" if !self.in_code() && self.hyperlink_code(e).is_some() => {
+                        let code = self.hyperlink_code(e).unwrap_or_default();
+                        self.read_simple_field(e, code, base, pkg, out);
+                    }
                     // An inline custom XML wrapper: a control of kind Other around its content.
                     "customXml" if !self.in_code() => {
                         let id = self.control(e);
@@ -1376,7 +1384,9 @@ impl Reader {
         let kind = parsed.kind();
         let mergeformat = parsed.switches.iter().any(|s| s.flag == '*' && s.arg.as_deref().is_some_and(|a| a.eq_ignore_ascii_case("MERGEFORMAT")));
         let fmt = if mergeformat { f.first_result_run.or(f.first_code_run.clone()) } else { f.first_code_run.clone() };
-        if let Inline::FieldBegin { kind: k, run, .. } = &mut out[f.begin] {
+        if let Inline::FieldBegin { kind: k, run, lock, .. } = &mut out[f.begin] {
+            // A locked field (`w:fldLock`) isn't updated: Word shows its result.
+            let kind = kind.filter(|_| !*lock);
             if kind.is_some() {
                 *run = fmt.unwrap_or_else(|| end_run.clone());
             }
@@ -1386,8 +1396,21 @@ impl Reader {
 
     /// `w:fldSimple`: the same markers as a complex field, its `w:instr` the code. Editable reads map the element as
     /// one seg (its units all from it), so an unchanged field is copied as it was.
-    fn read_simple_field(&mut self, e: Node, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
-        let code = attr(e, "instr").unwrap_or("").to_string();
+    /// A `w:hyperlink`'s field code: its external address and its bookmark (`w:anchor`). `None` for neither.
+    fn hyperlink_code(&self, e: Node) -> Option<String> {
+        let address = e.attribute((R, "id")).and_then(|id| self.rels.get(id)).filter(|(kind, _)| kind == "hyperlink").map(|(_, t)| t.as_str());
+        let anchor = attr(e, "anchor");
+        let mut code = String::from("HYPERLINK");
+        if let Some(a) = address {
+            code += &format!(" \"{a}\"");
+        }
+        if let Some(a) = anchor {
+            code += &format!(" \\l \"{a}\"");
+        }
+        (address.is_some() || anchor.is_some()).then_some(code)
+    }
+
+    fn read_simple_field(&mut self, e: Node, code: String, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
         let first = e.children().find(|c| is_w(*c, "r"));
         let rpr = first.and_then(|r| child(r, "rPr"));
         let run = self.with_direct(self.run_style(&self.run_props(base, rpr)), rpr);
@@ -1467,6 +1490,9 @@ impl Reader {
             return Some(i);
         }
         let data = pkg.read(&target)?;
+        if super::image::image_type(&data).is_none() {
+            self.warn(WarningCode::ImageUndecodable, || format!("{target} isn't an image format the engine draws"));
+        }
         self.images.push(data);
         self.image_index.insert(target, self.images.len() - 1);
         Some(self.images.len() - 1)
@@ -1638,9 +1664,12 @@ impl Reader {
         let row_band = tbl.row_band.unwrap_or(0);
         let col_band = tbl.col_band.unwrap_or(0);
         let mut rows = Vec::new();
+        let mut row_jc: Option<Option<Jc>> = None;
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
+            // Every row's alignment, or none when they differ.
+            row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
             let cell_nodes: Vec<(Node, Vec<ControlId>)> = self.cells_of(*rn, &[]);
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
@@ -1710,7 +1739,9 @@ impl Reader {
         Table {
             style_id,
             width: tbl.width.unwrap_or(Width::Auto),
-            jc: tbl.jc.unwrap_or(Jc::Left),
+            // TABLE-3: a row's `w:jc` aligns the table when its `w:tblPr` has none.
+            // shortcut: only when every row has the same one; rows aligned differently aren't placed apart.
+            jc: tbl.jc.or(row_jc.flatten()).unwrap_or(Jc::Left),
             ind: tbl.ind.unwrap_or(0.0),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),

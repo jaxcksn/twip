@@ -14,9 +14,9 @@
       }
     },
     {
-      "command": "control.insert",
-      "arg": {
-        "kind": "plain_text",
+      "command": {
+        "type": "insertControl",
+        "kind": "plainText",
         "tag": "Statement/Cost_Amount"
       },
       "expect": {
@@ -37,8 +37,8 @@
       }
     },
     {
-      "command": "control.set",
-      "arg": {
+      "command": {
+        "type": "setControl",
         "id": "$last",
         "tag": "Statement/Cost"
       },
@@ -55,7 +55,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "changed": [
@@ -67,7 +69,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "removed": 1
@@ -78,17 +82,17 @@
       }
     },
     {
-      "command": "control.insert",
-      "arg": {
-        "kind": "plain_text",
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": {
+        "type": "insertControl",
+        "kind": "plainText",
         "tag": "Store/Name",
-        "placeholder": "Store",
-        "target": {
-          "at": {
-            "para": 1,
-            "offset": 0
-          }
-        }
+        "placeholder": "Store"
       },
       "expect": {
         "elements": {

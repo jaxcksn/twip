@@ -1,198 +1,205 @@
 {
- "id": "RECORD-FORMAT-PARAGRAPH",
- "title": "Paragraph formatting records the oldest properties, by the latest author",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "First para."
-  },
-  {
-   "key": "Enter"
-  },
-  {
-   "type": "Second para."
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 0
-   }
-  },
-  {
-   "command": "home.align-center"
-  },
-  {
-   "expect": {
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "First para.",
-        "runs": [
-         {
-          "text": "First para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": "Author A"
-       },
-       {
-        "text": "Second para.",
-        "runs": [
-         {
-          "text": "Second para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
+  "id": "RECORD-FORMAT-PARAGRAPH",
+  "title": "Paragraph formatting records the oldest properties, by the latest author",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "First para."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "Second para."
+    },
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "command": {
+        "type": "setAlignment",
+        "value": "center"
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "First para.",
+                "runs": [
+                  {
+                    "text": "First para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": "Author A"
+              },
+              {
+                "text": "Second para.",
+                "runs": [
+                  {
+                    "text": "Second para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "author": "Author B"
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "command": {
+        "type": "setAlignment",
+        "value": "right"
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "First para.",
+                "runs": [
+                  {
+                    "text": "First para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": "Author B"
+              },
+              {
+                "text": "Second para.",
+                "runs": [
+                  {
+                    "text": "Second para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": {
+        "type": "setParagraphStyle",
+        "value": "Heading1"
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "First para.",
+                "runs": [
+                  {
+                    "text": "First para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": "Author B"
+              },
+              {
+                "text": "Second para.",
+                "runs": [
+                  {
+                    "text": "Second para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": "Author A"
+              }
+            ]
+          }
+        }
+      }
     }
-   }
-  },
-  {
-   "command": "review.author",
-   "arg": "Author B"
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 0
-   }
-  },
-  {
-   "command": "home.align-right"
-  },
-  {
-   "expect": {
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "First para.",
-        "runs": [
-         {
-          "text": "First para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": "Author B"
-       },
-       {
-        "text": "Second para.",
-        "runs": [
-         {
-          "text": "Second para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
-    }
-   }
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 1,
-    "offset": 0
-   }
-  },
-  {
-   "command": "home.style",
-   "arg": "Heading1"
-  },
-  {
-   "expect": {
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "First para.",
-        "runs": [
-         {
-          "text": "First para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": "Author B"
-       },
-       {
-        "text": "Second para.",
-        "runs": [
-         {
-          "text": "Second para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": "Author A"
-       }
-      ]
-     }
-    }
-   }
-  }
- ]
+  ]
 }

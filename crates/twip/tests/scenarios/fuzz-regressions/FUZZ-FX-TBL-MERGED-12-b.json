@@ -15,8 +15,9 @@
       }
     },
     {
-      "arg": null,
-      "command": "table.delete.table",
+      "command": {
+        "type": "deleteTable"
+      },
       "expect": {}
     },
     {
@@ -54,11 +55,11 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertControl",
         "kind": "picture",
         "tag": "Fuzz/C3"
       },
-      "command": "control.insert",
       "expect": {}
     },
     {
@@ -121,11 +122,11 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "removeControl",
         "id": "$tag:Fuzz/C3",
-        "keep_content": false
+        "keepContent": false
       },
-      "command": "control.remove",
       "expect": {}
     }
   ],

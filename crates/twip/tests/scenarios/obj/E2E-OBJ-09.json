@@ -1,0 +1,90 @@
+{
+  "id": "E2E-OBJ-09",
+  "title": "Floats anchored in cells move with their cells when the outer table gains a row; a deleted row takes its floats, the other row's nested float stays",
+  "fixture": "FX-OBJ-CELL.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 3
+      }
+    },
+    {
+      "command": {
+        "type": "insertRows",
+        "where": "above"
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {
+            "anchor": 4
+          },
+          {
+            "anchor": 7
+          }
+        ],
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 2
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {
+            "anchor": 2
+          },
+          {
+            "anchor": 5
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 3
+      }
+    },
+    {
+      "command": {
+        "type": "deleteRows"
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {
+            "anchor": 3
+          }
+        ],
+        "tables": [
+          {
+            "rows": 1
+          },
+          {
+            "rows": 2
+          }
+        ]
+      }
+    }
+  ]
+}

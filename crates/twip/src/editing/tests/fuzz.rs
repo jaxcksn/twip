@@ -105,24 +105,27 @@ fn check(r: &mut Run, n: usize, full: bool) {
     }
 }
 
-/// A random step, its pointer target taken from the current geometry.
-const COMMANDS: &[(&str, Option<&str>)] = &[
-    ("table.insert-below", None),
-    ("table.insert-above", None),
-    ("table.insert-left", None),
-    ("table.insert-right", None),
-    ("table.delete.row", None),
-    ("table.delete.column", None),
-    ("table.merge", None),
-    ("table.split", Some("2")),
-    ("insert.table", Some("2,2")),
-    ("table.delete.table", None),
-];
+/// The table commands a random step runs.
+fn table_command(k: usize) -> Value {
+    [
+        json!({ "type": "insertRows", "where": "below" }),
+        json!({ "type": "insertRows", "where": "above" }),
+        json!({ "type": "insertColumns", "where": "left" }),
+        json!({ "type": "insertColumns", "where": "right" }),
+        json!({ "type": "deleteRows" }),
+        json!({ "type": "deleteColumns" }),
+        json!({ "type": "mergeCells" }),
+        json!({ "type": "splitCells", "columns": 2 }),
+        json!({ "type": "insertTable", "rows": 2, "columns": 2 }),
+        json!({ "type": "deleteTable" }),
+    ][k]
+        .clone()
+}
 
+/// A random step, its pointer target taken from the current geometry.
 fn generate(r: &mut Run, rng: &mut Rng) -> Value {
     if rng.below(25) == 0 {
-        let (id, arg) = COMMANDS[rng.below(COMMANDS.len())];
-        return json!({ "command": id, "arg": arg });
+        return json!({ "command": table_command(rng.below(10)) });
     }
     if rng.below(20) == 0 {
         let c = ["copy", "cut", "paste", "paste"][rng.below(4)];
@@ -341,61 +344,66 @@ fn merge_step(r: &mut Run, rng: &mut Rng) -> Value {
             .collect();
         (!v.is_empty()).then(|| v[rng.below(v.len())].clone())
     };
-    let cmd = |id: &str, arg: Value| json!({ "command": id, "arg": arg });
+    let cmd = |op: Value| json!({ "command": op });
+    let mode = |m: &str| json!({ "mode": m });
     match rng.below(15) {
         14 => match pick(rng, false) {
-            Some(id) => cmd("control.fill", json!({ "id": id, "text": (["Filled", "", "a b"][rng.below(3)]) })),
+            Some(id) => cmd(json!({ "type": "fillControl", "id": id, "text": (["Filled", "", "a b"][rng.below(3)]) })),
             None => json!({ "key": "ArrowUp" }),
         },
-        13 => cmd("region.wrap", json!({ "tag": format!("Fuzz/R{}", rng.below(3)) })),
-        10 => cmd(
-            "element.replace",
-            json!({ "find": (["Fuzz", "MERGEFIELD", "Name", "e"][rng.below(4)]), "replace": (["Zz", "", "MERGEFIELD"][rng.below(3)]), "in": (["code", "tag", "alias"][rng.below(3)]) }),
-        ),
+        13 => cmd(json!({ "type": "wrapInRepeatingSection", "tag": format!("Fuzz/R{}", rng.below(3)) })),
+        10 => cmd(json!({
+            "type": "replaceInElements",
+            "find": (["Fuzz", "MERGEFIELD", "Name", "e"][rng.below(4)]),
+            "replace": (["Zz", "", "MERGEFIELD"][rng.below(3)]),
+            "in": (["code", "tag", "title"][rng.below(3)])
+        })),
         11 => {
             let field = rng.below(2) == 0;
             match pick(rng, field) {
-                Some(id) => cmd("element.select", json!({ "id": id })),
+                Some(id) => json!({ "select_element": id }),
                 None => json!({ "key": "End" }),
             }
         }
         12 => match pick(rng, true) {
-            Some(id) => cmd("element.mark", json!({ "marks": [{ "id": id, "severity": "error", "message": "m" }] })),
+            Some(id) => cmd(json!({ "type": "markElements", "marks": [{ "id": id, "severity": "error", "message": "m" }] })),
             None => json!({ "key": "Home" }),
         },
-        0 => cmd("field.insert", json!({ "code": format!("MERGEFIELD Fuzz.F{}", rng.below(5)), "display": (["", "«F»"][rng.below(2)]) })),
+        0 => cmd(json!({ "type": "insertField", "code": format!("MERGEFIELD Fuzz.F{}", rng.below(5)), "display": (["", "«F»"][rng.below(2)]) })),
         1 => {
-            let kind = ["plain_text", "rich_text", "checkbox", "date", "picture"][rng.below(5)];
-            cmd("control.insert", json!({ "kind": kind, "tag": format!("Fuzz/C{}", rng.below(5)) }))
+            let kind = ["plainText", "richText", "checkbox", "date", "picture"][rng.below(5)];
+            cmd(json!({ "type": "insertControl", "kind": kind, "tag": format!("Fuzz/C{}", rng.below(5)) }))
         }
-        2 => cmd("control.insert", json!({ "kind": (["rich_text", "group"][rng.below(2)]), "tag": "Fuzz/Wrap", "wrap": true })),
+        2 => cmd(json!({ "type": "insertControl", "kind": (["richText", "group"][rng.below(2)]), "tag": "Fuzz/Wrap", "wrapSelection": true })),
         3 => match pick(rng, true) {
-            Some(id) => cmd("field.set", json!({ "id": id, "code": format!("MERGEFIELD Fuzz.S{}", rng.below(3)) })),
-            None => cmd("view.mode", json!("design")),
+            Some(id) => cmd(json!({ "type": "setField", "id": id, "code": format!("MERGEFIELD Fuzz.S{}", rng.below(3)) })),
+            None => mode("design"),
         },
         4 => match pick(rng, true) {
-            Some(id) => cmd("field.set", json!({ "id": id, "display": (["", "X", "a b"][rng.below(3)]) })),
-            None => cmd("view.mode", json!("editing")),
+            Some(id) => cmd(json!({ "type": "setField", "id": id, "display": (["", "X", "a b"][rng.below(3)]) })),
+            None => mode("editing"),
         },
         5 => {
             let field = rng.below(2) == 0;
             match pick(rng, field) {
-                Some(id) => cmd("element.remove", json!({ "id": id })),
+                Some(id) => cmd(json!({ "type": "removeElement", "value": id })),
                 None => json!({ "key": "ArrowLeft" }),
             }
         }
         6 => match pick(rng, false) {
-            Some(id) => cmd("control.remove", json!({ "id": id, "keep_content": rng.below(2) == 0 })),
+            Some(id) => cmd(json!({ "type": "removeControl", "id": id, "keepContent": rng.below(2) == 0 })),
             None => json!({ "key": "ArrowRight" }),
         },
         7 => match pick(rng, false) {
-            Some(id) => cmd(
-                "control.set",
-                json!({ "id": id, "tag": format!("Fuzz/T{}", rng.below(3)), "lock": (["none", "content", "control"][rng.below(3)]) }),
-            ),
+            Some(id) => cmd(json!({
+                "type": "setControl",
+                "id": id,
+                "tag": format!("Fuzz/T{}", rng.below(3)),
+                "lock": (["none", "content", "control"][rng.below(3)])
+            })),
             None => json!({ "key": "Home" }),
         },
-        _ => cmd("view.mode", json!(["design", "editing"][rng.below(2)])),
+        _ => mode(["design", "editing"][rng.below(2)]),
     }
 }
 
@@ -441,11 +449,11 @@ fn fuzz_editing_long_tables() {
             let at = below(len as usize + 1) as u32;
             e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, Unit(at))));
             let mut cmds = vec![Command::InsertText("x".into()); 5];
-            cmds.push(Command::Delete { dir: Dir::Back, word: false });
-            cmds.push(Command::Move { by: MoveBy::Line, dir: Dir::Forward, extend: false });
-            cmds.push(Command::Move { by: MoveBy::Char, dir: Dir::Forward, extend: false });
+            cmds.push(crate::editing::tests::del(Dir::Back, false));
+            cmds.push(crate::editing::tests::mv(MoveBy::Line, Dir::Forward, false));
+            cmds.push(crate::editing::tests::mv(MoveBy::Char, Dir::Forward, false));
             if k % 10 == 0 {
-                cmds.push(Command::Enter);
+                cmds.push(Command::InsertParagraph);
             }
             if k % 5 == 0 {
                 cmds.push(Command::Undo);

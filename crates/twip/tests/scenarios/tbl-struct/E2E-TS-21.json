@@ -20,7 +20,9 @@
       }
     },
     {
-      "command": "table.merge"
+      "command": {
+        "type": "mergeCells"
+      }
     },
     {
       "expect": {
@@ -42,8 +44,10 @@
       }
     },
     {
-      "command": "table.split",
-      "arg": "2"
+      "command": {
+        "type": "splitCells",
+        "columns": 2
+      }
     },
     {
       "expect": {

@@ -16,8 +16,9 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.delete.table",
+      "command": {
+        "type": "deleteTable"
+      },
       "expect": {}
     },
     {
@@ -52,13 +53,17 @@
       "shift": false
     },
     {
-      "arg": "2",
-      "command": "table.split",
+      "command": {
+        "type": "splitCells",
+        "columns": 2
+      },
       "expect": {}
     },
     {
-      "arg": null,
-      "command": "table.insert-left",
+      "command": {
+        "type": "insertColumns",
+        "where": "left"
+      },
       "expect": {}
     },
     {

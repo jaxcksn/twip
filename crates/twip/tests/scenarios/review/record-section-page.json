@@ -3,18 +3,143 @@
   "title": "Page settings record one section property change against the oldest page, by the latest author; back to that page, it goes",
   "fixture": "FX-EMPTY.docx",
   "steps": [
-    {"type": "Alpha beta."},
-    {"command": "review.track", "arg": "on"},
-    {"command": "review.author", "arg": "Author A"},
-    {"command": "layout.margins.narrow"},
-    {"expect": {"review": {"sections": [{"change": "Author A", "page": [612, 792], "margins": [36, 36, 36, 36]}]}, "revisions": ["SectionProperty Author A"]}},
-    {"command": "review.author", "arg": "Author B"},
-    {"command": "layout.orientation.landscape"},
-    {"expect": {"review": {"sections": [{"change": "Author B", "page": [792, 612]}]}, "revisions": ["SectionProperty Author B"]}},
-    {"command": "layout.orientation.portrait"},
-    {"command": "layout.margins.normal"},
-    {"expect": {"review": {"sections": [{"change": null, "page": [612, 792], "margins": [72, 72, 72, 72]}]}, "revisions": []}},
-    {"command": "home.undo"},
-    {"expect": {"review": {"sections": [{"change": "Author B", "page": [612, 792], "margins": [36, 36, 36, 36]}]}, "revisions": ["SectionProperty Author B"]}}
+    {
+      "type": "Alpha beta."
+    },
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "command": {
+        "type": "setMargins",
+        "top": 36,
+        "bottom": 36,
+        "left": 36,
+        "right": 36
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "sections": [
+            {
+              "change": "Author A",
+              "page": [
+                612,
+                792
+              ],
+              "margins": [
+                36,
+                36,
+                36,
+                36
+              ]
+            }
+          ]
+        },
+        "revisions": [
+          "SectionProperty Author A"
+        ]
+      }
+    },
+    {
+      "author": "Author B"
+    },
+    {
+      "command": {
+        "type": "setOrientation",
+        "value": "landscape"
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "sections": [
+            {
+              "change": "Author B",
+              "page": [
+                792,
+                612
+              ]
+            }
+          ]
+        },
+        "revisions": [
+          "SectionProperty Author B"
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "setOrientation",
+        "value": "portrait"
+      }
+    },
+    {
+      "command": {
+        "type": "setMargins",
+        "top": 72,
+        "bottom": 72,
+        "left": 72,
+        "right": 72
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "sections": [
+            {
+              "change": null,
+              "page": [
+                612,
+                792
+              ],
+              "margins": [
+                72,
+                72,
+                72,
+                72
+              ]
+            }
+          ]
+        },
+        "revisions": []
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "review": {
+          "sections": [
+            {
+              "change": "Author B",
+              "page": [
+                612,
+                792
+              ],
+              "margins": [
+                36,
+                36,
+                36,
+                36
+              ]
+            }
+          ]
+        },
+        "revisions": [
+          "SectionProperty Author B"
+        ]
+      }
+    }
   ]
 }

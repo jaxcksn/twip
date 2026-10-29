@@ -17,8 +17,10 @@
       "clicks": 2
     },
     {
-      "command": "home.font-size",
-      "arg": "20"
+      "command": {
+        "type": "setFontSize",
+        "value": 20
+      }
     },
     {
       "expect": {
@@ -60,10 +62,14 @@
       }
     },
     {
-      "command": "home.shrink-font"
+      "command": {
+        "type": "shrinkFont"
+      }
     },
     {
-      "command": "home.shrink-font"
+      "command": {
+        "type": "shrinkFont"
+      }
     },
     {
       "expect": {
@@ -82,8 +88,10 @@
       }
     },
     {
-      "command": "home.font-color",
-      "arg": "#C00000"
+      "command": {
+        "type": "setFontColor",
+        "value": "#C00000"
+      }
     },
     {
       "expect": {
@@ -120,7 +128,11 @@
       }
     },
     {
-      "command": "home.line-spacing.2"
+      "command": {
+        "type": "setLineSpacing",
+        "rule": "multiple",
+        "lines": 2
+      }
     },
     {
       "expect": {
@@ -147,10 +159,14 @@
       }
     },
     {
-      "command": "home.indent-increase"
+      "command": {
+        "type": "increaseIndent"
+      }
     },
     {
-      "command": "home.indent-increase"
+      "command": {
+        "type": "increaseIndent"
+      }
     },
     {
       "expect": {
@@ -178,7 +194,10 @@
       }
     },
     {
-      "command": "layout.keep-with-next"
+      "command": {
+        "type": "setParagraphFlow",
+        "keepWithNext": true
+      }
     },
     {
       "expect": {

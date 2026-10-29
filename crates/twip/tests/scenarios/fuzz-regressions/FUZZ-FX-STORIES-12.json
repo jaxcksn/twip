@@ -50,8 +50,10 @@
       }
     },
     {
-      "arg": null,
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {}
     },
     {
@@ -95,8 +97,9 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.delete.column",
+      "command": {
+        "type": "deleteColumns"
+      },
       "expect": {}
     },
     {

@@ -14,7 +14,9 @@
       }
     },
     {
-      "command": "table.merge"
+      "command": {
+        "type": "mergeCells"
+      }
     },
     {
       "expect": {
@@ -28,7 +30,9 @@
       }
     },
     {
-      "command": "table.delete.row"
+      "command": {
+        "type": "deleteRows"
+      }
     },
     {
       "expect": {

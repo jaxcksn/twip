@@ -99,7 +99,7 @@ impl Editor {
     }
 
     /// Replace All: every match in the body replaced by `with` in the matched text's first run, one undo step.
-    pub(super) fn replace_all(&mut self, find: &str, with: &str, case: bool, fonts: &Fonts) -> (usize, Outcome) {
+    pub(crate) fn replace_all(&mut self, find: &str, with: &str, case: bool, fonts: &Fonts) -> (usize, Outcome) {
         let needle: Vec<char> = find.chars().collect();
         let mut tx = self.begin("Replace All");
         let mut count = 0;

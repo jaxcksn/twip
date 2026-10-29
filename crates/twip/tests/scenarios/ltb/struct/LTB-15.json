@@ -14,14 +14,26 @@
       }
     },
     {
-      "command": "table.delete.row"
+      "command": {
+        "type": "deleteRows"
+      }
     },
     {
       "expect": {
         "tables": [
           {
             "rows": 9,
-            "cells": [6, 4, 5, 4, 4, 3, 3, 2, 1]
+            "cells": [
+              6,
+              4,
+              5,
+              4,
+              4,
+              3,
+              3,
+              2,
+              1
+            ]
           }
         ],
         "text": {
@@ -52,7 +64,18 @@
         "tables": [
           {
             "rows": 10,
-            "cells": [6, 4, 4, 5, 4, 4, 3, 3, 2, 1]
+            "cells": [
+              6,
+              4,
+              4,
+              5,
+              4,
+              4,
+              3,
+              3,
+              2,
+              1
+            ]
           }
         ],
         "text": {

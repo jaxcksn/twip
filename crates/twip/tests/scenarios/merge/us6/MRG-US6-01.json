@@ -8,8 +8,7 @@
   ],
   "steps": [
     {
-      "command": "view.mode",
-      "arg": "readonly"
+      "mode": "readonly"
     },
     {
       "click": {
@@ -134,8 +133,11 @@
       }
     },
     {
-      "command": "edit.replace-all",
-      "arg": "{\"find\": \"Cost\", \"with\": \"Fee\"}",
+      "replace_all": {
+        "find": "Cost",
+        "with": "Fee",
+        "case": false
+      },
       "expect": {
         "answer": {
           "error": "read-only"
@@ -162,8 +164,7 @@
       }
     },
     {
-      "command": "view.mode",
-      "arg": "editing"
+      "mode": "editing"
     },
     {
       "click": {

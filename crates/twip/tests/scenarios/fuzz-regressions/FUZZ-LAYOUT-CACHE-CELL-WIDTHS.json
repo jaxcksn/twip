@@ -43,8 +43,11 @@
       }
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -57,24 +60,32 @@
       "shift": false
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {
-      "command": "hf.go-header",
-      "arg": null
+      "command": {
+        "type": "editHeader"
+      }
     },
     {
       "type": "Z"
     },
     {
-      "command": "hf.close",
-      "arg": null
+      "command": {
+        "type": "closeHeaderFooter"
+      }
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {

@@ -911,7 +911,7 @@ mod tests {
         select(&mut e, 6, 6);
         e.execute(Command::InsertText("new ".into()), fonts());
         select(&mut e, 10, 14);
-        e.execute(Command::Delete { dir: Dir::Back, word: false }, fonts());
+        e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
         let after = body(&e);
         assert_eq!(texts(&e), ["Alpha new beta gamma."], "the deletion stays");
         assert!(e.set_tracking(false));
@@ -932,7 +932,7 @@ mod tests {
         let mut e = tracked(&saved);
         assert_eq!(revised(&e), 1, "the insertion is read back");
         select(&mut e, 6, 10);
-        e.execute(Command::Delete { dir: Dir::Forward, word: false }, fonts());
+        e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());
         assert_eq!((texts(&e), revised(&e)), (vec!["Alpha beta.".to_string()], 0));
     }
 
@@ -940,7 +940,7 @@ mod tests {
     fn a_recorded_page_change_saves_with_the_section_before_it() {
         let mut e = tracked(&blank_with("Alpha beta."));
         let before = e.document().sections[0].page();
-        e.execute(Command::from_host("layout.orientation.landscape", None).expect("a command"), fonts());
+        e.execute(Command::SetOrientation(crate::api::value::Orientation::Landscape), fonts());
         let saved = crate::docx::write::save(e.document()).expect("saves");
         let read = crate::docx::read(&saved).expect("reads back");
         let c = read.sections[0].change.as_ref().expect("the change is saved");
@@ -949,7 +949,7 @@ mod tests {
         assert!(earlier.contains("cols") && !earlier.contains("headerReference"), "the section as read, its page earlier: {earlier}");
         // Rejected after reopening: the page before it, and no change saved.
         let mut e = tracked(&saved);
-        e.execute(Command::from_host("review.reject", Some(&serde_json::json!("all"))).expect("a command"), fonts());
+        e.execute(Command::RejectAllRevisions(Default::default()), fonts());
         assert!(e.document().sections[0].change.is_none() && e.document().sections[0].page() == before);
         let saved = crate::docx::write::save(e.document()).expect("saves");
         let read = crate::docx::read(&saved).expect("reads back");
@@ -961,7 +961,7 @@ mod tests {
         let mut e = open("review/FX-REVIEW-PROTECTED.docx");
         assert!(e.tracking());
         assert!(!e.set_tracking(false));
-        assert_eq!(e.execute(Command::Track(Some(false)), fonts()), Outcome::Unchanged("tracking locked"));
+        assert!(matches!(e.execute(Command::SetTrackChanges(false), fonts()), Outcome::Refused(err) if err.message == "tracking locked"));
         assert!(e.tracking());
     }
 }

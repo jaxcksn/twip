@@ -15,7 +15,10 @@
       }
     },
     {
-      "command": "table.select.column"
+      "command": {
+        "type": "select",
+        "value": "column"
+      }
     },
     {
       "key": "Delete"

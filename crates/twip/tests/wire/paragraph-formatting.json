@@ -1,0 +1,28 @@
+[
+  {
+    "alignment": "left",
+    "borders": "other",
+    "flow": {
+      "keepLinesTogether": false,
+      "keepWithNext": true,
+      "pageBreakBefore": "mixed",
+      "widowControl": true
+    },
+    "indents": {
+      "firstLine": "mixed",
+      "hanging": null,
+      "left": 0.5,
+      "right": 0.5
+    },
+    "lineSpacing": {
+      "lines": 1.5,
+      "rule": "multiple"
+    },
+    "list": "bullet",
+    "listLevel": 1,
+    "shading": "#D9E2F3",
+    "spaceAfter": 8.5,
+    "spaceBefore": "auto",
+    "style": "Normal"
+  }
+]

@@ -1,184 +1,185 @@
 {
- "id": "RECORD-TYPE-AT-CARET",
- "title": "Typing records an insertion; typing where it ends extends it",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "Alpha beta gamma."
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 6
-   }
-  },
-  {
-   "type": "new "
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 0,
-     "offset": 10
+  "id": "RECORD-TYPE-AT-CARET",
+  "title": "Typing records an insertion; typing where it ends extends it",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "Alpha beta gamma."
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha new beta gamma.",
-        "runs": [
-         {
-          "text": "Alpha ",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "new ",
-          "ins": "Author A",
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "beta gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
-    }
-   }
-  },
-  {
-   "type": "more "
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 0,
-     "offset": 15
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "Alpha new more beta gamma.",
-        "runs": [
-         {
-          "text": "Alpha ",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "new more ",
-          "ins": "Author A",
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "beta gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
-    }
-   }
-  },
-  {
-   "click": {
-    "para": 0,
-    "offset": 0
-   }
-  },
-  {
-   "type": "X"
-  },
-  {
-   "expect": {
-    "caret": {
-     "para": 0,
-     "offset": 1
+    {
+      "author": "Author A"
     },
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "XAlpha new more beta gamma.",
-        "runs": [
-         {
-          "text": "X",
-          "ins": "Author A",
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "Alpha ",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "new more ",
-          "ins": "Author A",
-          "del": null,
-          "move": null,
-          "fmt": null
-         },
-         {
-          "text": "beta gamma.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
+    {
+      "click": {
+        "para": 0,
+        "offset": 6
+      }
+    },
+    {
+      "type": "new "
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 10
         },
-        "pchange": null
-       }
-      ]
-     }
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha new beta gamma.",
+                "runs": [
+                  {
+                    "text": "Alpha ",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "new ",
+                    "ins": "Author A",
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "beta gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "more "
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 15
+        },
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "Alpha new more beta gamma.",
+                "runs": [
+                  {
+                    "text": "Alpha ",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "new more ",
+                    "ins": "Author A",
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "beta gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "type": "X"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 1
+        },
+        "review": {
+          "stories": {
+            "body": [
+              {
+                "text": "XAlpha new more beta gamma.",
+                "runs": [
+                  {
+                    "text": "X",
+                    "ins": "Author A",
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "Alpha ",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "new more ",
+                    "ins": "Author A",
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  },
+                  {
+                    "text": "beta gamma.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              }
+            ]
+          }
+        }
+      }
     }
-   }
-  }
- ]
+  ]
 }

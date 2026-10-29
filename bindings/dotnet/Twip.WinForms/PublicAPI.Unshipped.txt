@@ -1,0 +1,110 @@
+#nullable enable
+Twip.WinForms.BalloonPlacement
+Twip.WinForms.BalloonPlacement.<Clone>$() -> Twip.WinForms.BalloonPlacement!
+Twip.WinForms.BalloonPlacement.BalloonPlacement(Twip.CommentId Thread, int Top, int Left, System.Collections.Generic.IReadOnlyList<System.Drawing.Point>! Leader) -> void
+Twip.WinForms.BalloonPlacement.Deconstruct(out Twip.CommentId Thread, out int Top, out int Left, out System.Collections.Generic.IReadOnlyList<System.Drawing.Point>! Leader) -> void
+Twip.WinForms.BalloonPlacement.Equals(Twip.WinForms.BalloonPlacement? other) -> bool
+Twip.WinForms.BalloonPlacement.Leader.get -> System.Collections.Generic.IReadOnlyList<System.Drawing.Point>!
+Twip.WinForms.BalloonPlacement.Leader.init -> void
+Twip.WinForms.BalloonPlacement.Left.get -> int
+Twip.WinForms.BalloonPlacement.Left.init -> void
+Twip.WinForms.BalloonPlacement.Thread.get -> Twip.CommentId
+Twip.WinForms.BalloonPlacement.Thread.init -> void
+Twip.WinForms.BalloonPlacement.Top.get -> int
+Twip.WinForms.BalloonPlacement.Top.init -> void
+Twip.WinForms.BalloonsLaidOutEventArgs
+Twip.WinForms.BalloonsLaidOutEventArgs.Placements.get -> System.Collections.Generic.IReadOnlyList<Twip.WinForms.BalloonPlacement!>!
+Twip.WinForms.DocumentEditor
+Twip.WinForms.DocumentEditor.AttachBalloon(Twip.CommentId thread, System.Windows.Forms.Control! card) -> System.IDisposable!
+Twip.WinForms.DocumentEditor.BalloonsLaidOut -> System.EventHandler<Twip.WinForms.BalloonsLaidOutEventArgs!>?
+Twip.WinForms.DocumentEditor.Commands.get -> Twip.EditorCommands!
+Twip.WinForms.DocumentEditor.DocumentEditor() -> void
+Twip.WinForms.DocumentEditor.DocumentEditor(Twip.EditorSession! session) -> void
+Twip.WinForms.DocumentEditor.DragLeaveElementTarget() -> void
+Twip.WinForms.DocumentEditor.DragOverElementTarget(System.Drawing.Point client) -> void
+Twip.WinForms.DocumentEditor.DropAsync(System.Drawing.Point client, Twip.EditorOperation! operation) -> System.Threading.Tasks.Task!
+Twip.WinForms.DocumentEditor.HitTestAsync(System.Drawing.Point client) -> System.Threading.Tasks.Task<Twip.HitResult!>!
+Twip.WinForms.DocumentEditor.MarkupPaneWidth.get -> int
+Twip.WinForms.DocumentEditor.MarkupPaneWidth.set -> void
+Twip.WinForms.DocumentEditor.OpenAsync(System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.ImportResult!>!
+Twip.WinForms.DocumentEditor.OpenAsync(string! path, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.ImportResult!>!
+Twip.WinForms.DocumentEditor.PaintMarkupPane -> System.Windows.Forms.PaintEventHandler?
+Twip.WinForms.DocumentEditor.ReadOnly.get -> bool
+Twip.WinForms.DocumentEditor.ReadOnly.set -> void
+Twip.WinForms.DocumentEditor.RevealSelectionAsync() -> System.Threading.Tasks.Task!
+Twip.WinForms.DocumentEditor.RulerUnit.get -> Twip.RulerUnit
+Twip.WinForms.DocumentEditor.RulerUnit.set -> void
+Twip.WinForms.DocumentEditor.SaveAsync(System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.SaveResult!>!
+Twip.WinForms.DocumentEditor.SaveAsync(string! path, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.SaveResult!>!
+Twip.WinForms.DocumentEditor.Session.get -> Twip.EditorSession!
+Twip.WinForms.DocumentEditor.ShowHorizontalRuler.get -> bool
+Twip.WinForms.DocumentEditor.ShowHorizontalRuler.set -> void
+Twip.WinForms.DocumentEditor.ShowVerticalRuler.get -> bool
+Twip.WinForms.DocumentEditor.ShowVerticalRuler.set -> void
+Twip.WinForms.DocumentEditor.State.get -> Twip.WinForms.DocumentEditorState!
+Twip.WinForms.DocumentEditor.TabSelector.get -> Twip.TabSelector
+Twip.WinForms.DocumentEditor.TabSelector.set -> void
+Twip.WinForms.DocumentEditorState
+Twip.WinForms.DocumentEditorState.Alignment.get -> Twip.FormatValue<Twip.ParagraphAlignment>
+Twip.WinForms.DocumentEditorState.Bold.get -> Twip.FormatValue<bool>
+Twip.WinForms.DocumentEditorState.BoldCheckState.get -> System.Windows.Forms.CheckState
+Twip.WinForms.DocumentEditorState.CanAddComment.get -> bool
+Twip.WinForms.DocumentEditorState.CanCopy.get -> bool
+Twip.WinForms.DocumentEditorState.CanCut.get -> bool
+Twip.WinForms.DocumentEditorState.CanPaste.get -> bool
+Twip.WinForms.DocumentEditorState.CanRedo.get -> bool
+Twip.WinForms.DocumentEditorState.CanSetAlignment.get -> bool
+Twip.WinForms.DocumentEditorState.CanSetBold.get -> bool
+Twip.WinForms.DocumentEditorState.CanSetFont.get -> bool
+Twip.WinForms.DocumentEditorState.CanSetFontSize.get -> bool
+Twip.WinForms.DocumentEditorState.CanSetItalic.get -> bool
+Twip.WinForms.DocumentEditorState.CanSetTrackChanges.get -> bool
+Twip.WinForms.DocumentEditorState.CanSetUnderline.get -> bool
+Twip.WinForms.DocumentEditorState.CanUndo.get -> bool
+Twip.WinForms.DocumentEditorState.CurrentPage.get -> int
+Twip.WinForms.DocumentEditorState.FontName.get -> Twip.FormatValue<string!>
+Twip.WinForms.DocumentEditorState.FontSize.get -> Twip.FormatValue<Twip.Length>
+Twip.WinForms.DocumentEditorState.IsEnabled(Twip.CommandId command) -> bool
+Twip.WinForms.DocumentEditorState.Italic.get -> Twip.FormatValue<bool>
+Twip.WinForms.DocumentEditorState.ItalicCheckState.get -> System.Windows.Forms.CheckState
+Twip.WinForms.DocumentEditorState.MarkupView.get -> Twip.MarkupView
+Twip.WinForms.DocumentEditorState.Modified.get -> bool
+Twip.WinForms.DocumentEditorState.PageCount.get -> int
+Twip.WinForms.DocumentEditorState.PropertyChanged -> System.ComponentModel.PropertyChangedEventHandler?
+Twip.WinForms.DocumentEditorState.ReadOnly.get -> bool
+Twip.WinForms.DocumentEditorState.RedoLabel.get -> string?
+Twip.WinForms.DocumentEditorState.Snapshot.get -> Twip.EditorState!
+Twip.WinForms.DocumentEditorState.Style.get -> Twip.FormatValue<Twip.StyleId>
+Twip.WinForms.DocumentEditorState.TrackChanges.get -> bool
+Twip.WinForms.DocumentEditorState.Underline.get -> Twip.FormatValue<Twip.UnderlineStyle>
+Twip.WinForms.DocumentEditorState.UnderlineCheckState.get -> System.Windows.Forms.CheckState
+Twip.WinForms.DocumentEditorState.UndoLabel.get -> string?
+Twip.WinForms.DocumentEditorState.Zoom.get -> double
+override Twip.WinForms.BalloonPlacement.Equals(object? obj) -> bool
+override Twip.WinForms.BalloonPlacement.GetHashCode() -> int
+override Twip.WinForms.BalloonPlacement.ToString() -> string!
+override Twip.WinForms.DocumentEditor.CreateAccessibilityInstance() -> System.Windows.Forms.AccessibleObject!
+override Twip.WinForms.DocumentEditor.Dispose(bool disposing) -> void
+override Twip.WinForms.DocumentEditor.IsInputKey(System.Windows.Forms.Keys keyData) -> bool
+override Twip.WinForms.DocumentEditor.OnBackColorChanged(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnDpiChangedAfterParent(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnGotFocus(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnHandleCreated(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnHandleDestroyed(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnKeyDown(System.Windows.Forms.KeyEventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnKeyUp(System.Windows.Forms.KeyEventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnLostFocus(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnMouseCaptureChanged(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnMouseDown(System.Windows.Forms.MouseEventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnMouseLeave(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnMouseMove(System.Windows.Forms.MouseEventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnMouseUp(System.Windows.Forms.MouseEventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnMouseWheel(System.Windows.Forms.MouseEventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnPaint(System.Windows.Forms.PaintEventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnPaintBackground(System.Windows.Forms.PaintEventArgs! pevent) -> void
+override Twip.WinForms.DocumentEditor.OnSizeChanged(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.OnVisibleChanged(System.EventArgs! e) -> void
+override Twip.WinForms.DocumentEditor.ProcessCmdKey(ref System.Windows.Forms.Message msg, System.Windows.Forms.Keys keyData) -> bool
+override Twip.WinForms.DocumentEditor.WndProc(ref System.Windows.Forms.Message m) -> void
+static Twip.WinForms.BalloonPlacement.operator !=(Twip.WinForms.BalloonPlacement? left, Twip.WinForms.BalloonPlacement? right) -> bool
+static Twip.WinForms.BalloonPlacement.operator ==(Twip.WinForms.BalloonPlacement? left, Twip.WinForms.BalloonPlacement? right) -> bool

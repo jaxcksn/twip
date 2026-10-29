@@ -14,7 +14,10 @@
       }
     },
     {
-      "command": "table.select.cell"
+      "command": {
+        "type": "select",
+        "value": "cell"
+      }
     },
     {
       "expect": {

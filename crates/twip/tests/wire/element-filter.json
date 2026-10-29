@@ -1,0 +1,11 @@
+[
+  {
+    "kind": "plainText",
+    "match": {
+      "in": "tag",
+      "text": "name"
+    },
+    "story": "body"
+  },
+  {}
+]

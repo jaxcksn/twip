@@ -1,0 +1,18 @@
+[
+  {
+    "children": [
+      {
+        "children": [],
+        "level": 1,
+        "marks": [
+          "insertion",
+          "misspelling"
+        ],
+        "role": "heading",
+        "text": "Terms"
+      }
+    ],
+    "name": "Contract",
+    "role": "document"
+  }
+]

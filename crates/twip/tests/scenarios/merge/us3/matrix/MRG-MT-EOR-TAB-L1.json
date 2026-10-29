@@ -16,11 +16,14 @@
       }
     },
     {
-      "command": "table.select.table"
+      "command": {
+        "type": "select",
+        "value": "table"
+      }
     },
     {
-      "command": "region.wrap",
-      "arg": {
+      "command": {
+        "type": "wrapInRepeatingSection",
         "tag": "Matrix"
       }
     },
@@ -31,9 +34,9 @@
       }
     },
     {
-      "command": "control.insert",
-      "arg": {
-        "kind": "plain_text",
+      "command": {
+        "type": "insertControl",
+        "kind": "plainText",
         "tag": "Matrix/Cell",
         "placeholder": ""
       }

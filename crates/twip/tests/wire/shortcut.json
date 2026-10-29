@@ -1,0 +1,9 @@
+[
+  {
+    "id": "insertSignature",
+    "keys": {
+      "mac": "⌥⌘S",
+      "windows": "Ctrl+Alt+S"
+    }
+  }
+]

@@ -7,8 +7,8 @@
   ],
   "steps": [
     {
-      "command": "data.write",
-      "arg": {
+      "command": {
+        "type": "writeDataPart",
         "namespace": "urn:store:calc",
         "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"Cost_Plus_Fee\">Cost + Fee</field></calc>"
       }
@@ -18,19 +18,15 @@
         "label": "Rename calculated field",
         "commands": [
           {
-            "command": "data.write",
-            "arg": {
-              "namespace": "urn:store:calc",
-              "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"New_Name\">Cost + Fee</field></calc>"
-            }
+            "type": "writeDataPart",
+            "namespace": "urn:store:calc",
+            "xml": "<calc xmlns=\"urn:store:calc\"><field name=\"New_Name\">Cost + Fee</field></calc>"
           },
           {
-            "command": "element.replace",
-            "arg": {
-              "find": "Calc.Old_Name",
-              "replace": "Calc.New_Name",
-              "in": "code"
-            }
+            "type": "replaceInElements",
+            "find": "Calc.Old_Name",
+            "replace": "Calc.New_Name",
+            "in": "code"
           }
         ]
       },
@@ -55,7 +51,9 @@
       }
     },
     {
-      "command": "home.undo",
+      "command": {
+        "type": "undo"
+      },
       "expect": {
         "elements": {
           "changed": 40

@@ -1,0 +1,23 @@
+{
+  "name": "concurrent-order",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "concurrent", "steps": [
+      { "op": "command", "command": { "type": "insertText", "value": "abc" } },
+      { "op": "command", "command": { "type": "moveSelection", "by": "word", "direction": "backward", "extend": true } },
+      { "op": "command", "command": { "type": "setBold", "value": true } },
+      { "op": "command", "command": { "type": "moveSelection", "by": "lineEdge", "direction": "forward" } },
+      { "op": "command", "command": { "type": "insertText", "value": "d" } }
+    ] },
+    { "op": "expectEvents", "match": [
+      { "type": "documentChanged", "origin": "api", "revision": 2 },
+      { "type": "documentChanged", "origin": "api", "revision": 3 },
+      { "type": "documentChanged", "origin": "api", "revision": 4 }
+    ] },
+    { "op": "expectState", "match": { "revision": 4, "selection": { "empty": true } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "abcd" }], "result": { "found": true } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "abc" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "bold": true } } }
+  ]
+}

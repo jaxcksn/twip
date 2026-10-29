@@ -114,7 +114,10 @@
       }
     },
     {
-      "command": "table.select.row"
+      "command": {
+        "type": "select",
+        "value": "row"
+      }
     },
     {
       "clipboard": "copy"

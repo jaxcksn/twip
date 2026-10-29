@@ -8,9 +8,9 @@ use super::alloc::{COUNT, LIVE, PEAK, mb};
 
 /// Profiles `path`.
 pub fn run(path: &str, soak: Option<usize>) -> Result<(), String> {
-    use twip::docx::{Block, Inline};
-    use twip::layout::ids::Revision;
-    use twip::layout::{Change, DocumentLayout};
+    use twip::internal::docx::{Block, Inline};
+    use twip::internal::layout::ids::Revision;
+    use twip::internal::layout::{Change, DocumentLayout};
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     let base = LIVE.load(Relaxed);
     let live = || LIVE.load(Relaxed).saturating_sub(base);
@@ -29,15 +29,15 @@ pub fn run(path: &str, soak: Option<usize>) -> Result<(), String> {
         last_count.set(COUNT.load(Relaxed));
         *last = now;
     };
-    let fonts = twip::font::Fonts::system();
+    let fonts = twip::internal::font::Fonts::system();
     step("font catalog (name tables only)", &mut last);
-    let mut doc = twip::docx::read(&bytes).map_err(|e| format!("{path}: {e:?}"))?;
+    let mut doc = twip::internal::docx::read(&bytes).map_err(|e| format!("{path}: {e:?}"))?;
     step("document (layout read: no sources)", &mut last);
-    let s = twip::layout::layout(&doc, &fonts);
+    let s = twip::internal::layout::layout(&doc, &fonts);
     step("+ full layout (and font files and faces it loaded)", &mut last);
     drop(s);
     step("- layout dropped (what remains: font files and faces)", &mut last);
-    let s = twip::layout::layout(&doc, &fonts);
+    let s = twip::internal::layout::layout(&doc, &fonts);
     step(&format!("+ layout again: {} pages (the snapshot)", s.pages().len()), &mut last);
     drop(s);
     let owned_from = live();
@@ -66,7 +66,7 @@ pub fn run(path: &str, soak: Option<usize>) -> Result<(), String> {
         })
         .collect();
     let mut rev = 1;
-    let mut edit = |doc: &mut twip::docx::Document, dl: &mut DocumentLayout, k: usize| {
+    let mut edit = |doc: &mut twip::internal::docx::Document, dl: &mut DocumentLayout, k: usize| {
         // Documents of tables only have no top-level paragraph to edit.
         let Some(&(si, bi)) = paras.get((k * 7919) % paras.len().max(1)) else { return };
         let blocks = &mut doc.sections[si].blocks;
@@ -78,7 +78,7 @@ pub fn run(path: &str, soak: Option<usize>) -> Result<(), String> {
             let Block::Para(p) = &blocks[bi] else { unreachable!() };
             let mut empty = p.clone();
             empty.inlines.clear();
-            empty.id = twip::docx::model::next_para_id();
+            empty.id = twip::internal::docx::model::next_para_id();
             empty.src = None;
             blocks.insert(bi, Block::Para(empty));
             Change { section: si, first: bi, old_end: bi + 1, new_end: bi + 2, row: None }

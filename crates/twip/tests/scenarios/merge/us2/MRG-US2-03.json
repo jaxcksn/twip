@@ -7,10 +7,7 @@
   ],
   "steps": [
     {
-      "command": "element.select",
-      "arg": {
-        "id": "$code:NUMPAGES"
-      },
+      "select_element": "$code:NUMPAGES",
       "expect": {
         "context": [
           {

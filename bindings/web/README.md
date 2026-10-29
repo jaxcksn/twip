@@ -1,7 +1,7 @@
 # @twip/web
 
-The Twip DOCX engine for the browser and Node: open Word documents, edit them, paint pages (WebGPU, WebGL 2 or a
-CPU raster) and save DOCX or PDF.
+The Twip DOCX editor for the browser and Node: a managed, framework-independent editor. Mount it in a sized
+container, open a document, connect your controls, and export DOCX or PDF.
 
 > **Alpha.** The API may change between minor versions before 1.0.
 
@@ -9,20 +9,27 @@ CPU raster) and save DOCX or PDF.
 npm install @twip/web
 ```
 
-```js
-import { Editor, Fonts } from '@twip/web';
+```ts
+import { Editor, FontLibrary } from '@twip/web';
 
-// The browser gives the engine no fonts: add every font your documents use.
-const fonts = new Fonts();
-fonts.addFont(new Uint8Array(await (await fetch('/fonts/calibri.ttf')).arrayBuffer()));
+// The browser gives the engine no fonts: add every font your documents use, once per page.
+await FontLibrary.default().add('/fonts/calibri.ttf');
 
-const editor = new Editor(fonts);
-editor.open(new Uint8Array(await (await fetch('/report.docx')).arrayBuffer()));
-console.log(`${editor.pageCount} page(s)`);
+const editor = await Editor.mount(document.getElementById('editor')!, {
+  document: new Uint8Array(await (await fetch('/report.docx')).arrayBuffer()),
+});
+const stop = editor.subscribe((state) => {
+  boldButton.ariaPressed = String(state.formatting.bold === true);
+  undoButton.disabled = !state.history.canUndo;
+});
 
-editor.selectAll();
-editor.bold();
-const docx = Uint8Array.from(editor.save().asSlice());
+await editor.commands.setBold(true);
+const { bytes, warnings } = await editor.export({ format: 'docx' });
+
+stop();
+await editor.destroy();
 ```
+
+In Node, workers and tests, `HeadlessEditor.create()` gives the same API with no DOM.
 
 Guides: https://jaxcksn.github.io/twip/docs/guides/web. Licensed under Apache-2.0.

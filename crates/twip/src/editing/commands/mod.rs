@@ -1,8 +1,47 @@
-//! Commands: the typed operations every UI surface invokes, with their state and outcome.
-//! Keys, the command bar, menus, dialogs and tests all reach behaviour only through [`Command`], so a command gives
-//! the same result whichever surface invokes it.
+//! The command layer: one handler per [`Command`], one file per group of the command set. A handler applies its
+//! command at the selection through the editor's transactions and steps, using the document operations (text,
+//! formatting, tables, objects, fields, controls, review) as building blocks. The merge designer's fields, content
+//! controls and data parts are handled by their operations in `editing/merge.rs`, and the view commands by the session.
+//! Keys, menus, dialogs, sessions and tests all reach behaviour through [`Editor::execute`], so a command does the
+//! same whichever surface runs it.
 
-use super::selection::Granularity;
+mod character;
+mod history;
+mod insert;
+mod navigation;
+mod objects;
+mod page;
+mod paragraph;
+mod review;
+mod tables;
+mod tabs;
+mod text;
+
+pub(crate) use character::highlight_value;
+
+use crate::api::command::CommandId;
+
+/// The commands the engine doesn't do yet: never available, and refused as unsupported.
+// shortcut: section breaks (saving can't add sections), the format painter, odd and even pages, and boundary moves by
+// command are refused until they're built.
+pub(crate) const UNSUPPORTED: &[CommandId] = &[
+    CommandId::InsertSectionBreak,
+    CommandId::CopyFormatting,
+    CommandId::PasteFormatting,
+    CommandId::SetDifferentOddEvenPages,
+    CommandId::MoveColumnBoundary,
+    CommandId::MoveTableColumnBoundary,
+    CommandId::MoveTableRowBoundary,
+];
+
+pub use crate::api::command::Command;
+use crate::api::command::CommandResult;
+use crate::api::error::Error;
+use crate::font::Fonts;
+
+use super::history::Typing;
+use super::selection::Selection;
+use super::{Editor, extend};
 
 /// What a movement steps by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,292 +72,32 @@ pub enum Dir {
     Forward,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Command {
-    Move {
-        by: MoveBy,
-        dir: Dir,
-        extend: bool,
-    },
-    SelectAll,
-    /// Character and paragraph formatting besides the toggles and alignment.
-    Format(super::format::Format),
-    /// Delete Cells, shifting the cells below up or the cells to the right left.
-    DeleteCellsShift {
-        up: bool,
-    },
-    DistributeColumns,
-    DistributeRows,
-    /// Split the target cell into this many rows.
-    SplitRows(usize),
-    /// Insert Footnote or Insert Endnote at the caret.
-    InsertNote(crate::docx::NoteKind),
-    /// Cell alignment and shading, header rows.
-    TableFormat(super::table_format::TableFormat),
-    Object(super::objects::ObjectCmd),
-    /// Insert Picture: the image file's bytes (PNG, JPEG, GIF, BMP or TIFF).
-    InsertPicture(Vec<u8>),
-    InsertTextBox,
-    /// Fill Placeholder: the selected one (`key` None) or every unfilled one with the key, with an image file.
-    FillPlaceholder {
-        key: Option<String>,
-        data: Vec<u8>,
-    },
-    /// How unfilled placeholders with `key` (`""`: all others) are drawn; `None` takes the look away.
-    PlaceholderLook {
-        key: String,
-        look: Option<super::view::PlaceholderLook>,
-    },
-    /// Numbering (`false`) or Bullets (`true`) on the selected paragraphs.
-    ToggleList {
-        bullet: bool,
-    },
-    /// Edit Header or Edit Footer of the caret's page: into it, made first when the page has none.
-    EditHeaderFooter {
-        footer: bool,
-    },
-    /// Esc: leave a header or footer, select the text box being edited, or leave object selection.
-    Escape,
-    /// Close Header and Footer (`hf.close`).
-    CloseHeaderFooter,
-    InsertText(String),
-    /// Backspace (back) or Delete (forward), by grapheme or word.
-    Delete {
-        dir: Dir,
-        word: bool,
-    },
-    Enter,
-    LineBreak,
-    PageBreak,
-    ColumnBreak,
-    InsertTab,
-    /// Tab / Shift+Tab in a table.
-    NextCell {
-        back: bool,
-    },
-    Undo,
-    Redo,
-    /// Ctrl+Y / F4: redo, or with nothing to redo, the last repeatable action again.
-    Repeat,
-    /// The word, sentence or paragraph at the caret.
-    Select(Granularity),
-    /// Insert Rows Above / Below (`n` rows), Insert Columns Left / Right.
-    InsertRows {
-        below: bool,
-        n: usize,
-    },
-    InsertColumns {
-        right: bool,
-    },
-    DeleteRows,
-    DeleteColumns,
-    DeleteTable,
-    MergeCells,
-    SplitCell {
-        cols: usize,
-    },
-    InsertTable {
-        rows: usize,
-        cols: usize,
-    },
-    SelectTable,
-    SelectCells(super::selection::CellShape),
-    /// Ctrl+Shift+Enter in a table.
-    SplitTable,
-    /// Shift+Alt+Home/End/Page Up/Page Down in a table.
-    SelectToEdge {
-        row: bool,
-        end: bool,
-    },
-    /// Tab / Shift+Tab at a list item's start: one level down or up.
-    ListLevel {
-        back: bool,
-    },
-    /// Ctrl+B, Ctrl+I, Ctrl+U.
-    Toggle(super::format::Toggle),
-    /// Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J.
-    Align(crate::docx::props::Jc),
-    Copy,
-    Cut,
-    /// Paste `text` (external paste is plain text).
-    PasteText(String),
-    /// Section and page settings of the focus's section.
-    Section(super::section::SectionCmd),
-    /// Several commands as one undo step (a dialog's OK).
-    Batch {
-        label: &'static str,
-        commands: Vec<Command>,
-    },
-    /// Insert Symbol: the character in a font (empty: the caret's).
-    InsertSymbol {
-        ch: char,
-        font: String,
-    },
-    /// A field the layout computes (PAGE, NUMPAGES, ...) at the caret.
-    InsertField(crate::docx::FieldKind),
-    /// Insert Checkbox: a checkbox content control at the caret.
-    InsertCheckbox {
-        checked: bool,
-    },
-    /// Insert Hyperlink: `text` linking to `address` (a HYPERLINK field), over the selection.
-    InsertHyperlink {
-        text: String,
-        address: String,
-    },
-    /// Alt+Shift+Up / Down: the target rows move up or down one row.
-    MoveRows {
-        up: bool,
-    },
-    /// Auto-fit one grid column to its content (a double-click on its right border).
-    AutoFitColumn {
-        table: crate::layout::TableId,
-        col: usize,
-    },
-    /// Ctrl+Alt+5: the first floating object selected; Tab / Shift+Tab then go through them.
-    ObjectFocus,
-    NextObject {
-        back: bool,
-    },
-    /// Shift+F5: the previous edit location.
-    GoBack,
-    /// F8: extend mode, then the word, sentence, paragraph and document.
-    ExtendMode,
-    /// Ctrl+Shift+F8: block selection mode.
-    BlockSelect,
-    /// Replace All (one undo step).
-    ReplaceAll {
-        find: String,
-        with: String,
-        case: bool,
-    },
-    /// Units `a..b` of a paragraph selected (find, spelling).
-    SelectRange {
-        para: crate::layout::ParaId,
-        a: crate::layout::Unit,
-        b: crate::layout::Unit,
-    },
-    /// Editing, template design or read-only (`view.mode`).
-    SetMode(super::Mode),
-    /// A merge command with its JSON argument, parsed when it runs so a bad
-    /// argument is answered with its name.
-    Merge {
-        id: String,
-        arg: serde_json::Value,
-    },
-    /// Adding, replying to, editing, deleting, resolving and reopening comments, and the active thread.
-    Comment(super::comments::CommentCmd),
-    /// How revisions show (`view.markup`): not an edit.
-    SetMarkupView(crate::docx::review::MarkupView),
-    /// An author's revision colour, 0xRRGGBB, by the author's name (`view.author-color`): not an edit.
-    SetAuthorColor {
-        author: String,
-        color: u32,
-    },
-    // ---------------- review: accept, reject and go to revisions ----------------
-    /// Accept (`true`) or reject the revisions `scope` covers, as one undo step.
-    ResolveRevisions {
-        accept: bool,
-        scope: super::revisions::resolve::Scope,
-    },
-    /// Select and reveal the next or (`back`) previous revision, across stories.
-    NextRevision {
-        back: bool,
-    },
-    /// Track Changes on (`Some(true)`), off, or toggled (`None`): refused while protection keeps it on.
-    Track(Option<bool>),
-    /// The session's author: who the revisions recorded from now on are by.
-    Author(String),
+/// The command that moves the caret (or with `extend`, extends the selection) by `by`, in the editor's units.
+pub fn moving(by: MoveBy, dir: Dir, extend: bool) -> Command {
+    use crate::api::command::{MoveSelection, MoveUnit as U};
+    let by = match by {
+        MoveBy::Char => U::Character,
+        MoveBy::Word => U::Word,
+        MoveBy::Line => U::Line,
+        MoveBy::Para => U::Paragraph,
+        MoveBy::LineEdge => U::LineEdge,
+        MoveBy::Story => U::Document,
+        MoveBy::Screen | MoveBy::ScreenEdge => U::Screen,
+        MoveBy::Page => U::Page,
+        MoveBy::RowEdge => U::RowEdge,
+        MoveBy::ColumnEdge => U::ColumnEdge,
+    };
+    Command::MoveSelection(MoveSelection { by, direction: direction(dir), extend: extend.then_some(true) })
 }
 
-impl Command {
-    /// Whether it changes the document: what a read-only document disables. (Every edit is refused in
-    /// `commit` too, so a command listed wrongly here can't change a read-only document.)
-    pub fn mutates(&self) -> bool {
-        match self {
-            Command::Move { .. }
-            | Command::SelectAll
-            | Command::Escape
-            | Command::CloseHeaderFooter
-            | Command::EditHeaderFooter { .. }
-            | Command::NextCell { .. }
-            | Command::Select(_)
-            | Command::SelectTable
-            | Command::SelectCells(_)
-            | Command::SelectToEdge { .. }
-            | Command::Copy
-            | Command::ObjectFocus
-            | Command::NextObject { .. }
-            | Command::GoBack
-            | Command::ExtendMode
-            | Command::BlockSelect
-            | Command::SelectRange { .. }
-            | Command::PlaceholderLook { .. }
-            | Command::SetMode(_)
-            | Command::Author(_) => false,
-            Command::Merge { id, .. } => !matches!(
-                id.as_str(),
-                "view.drop" | "field.labels" | "element.mark" | "element.select" | "view.looks" | "view.field-codes" | "field.update"
-            ),
-            Command::Format(_)
-            | Command::DeleteCellsShift { .. }
-            | Command::DistributeColumns
-            | Command::DistributeRows
-            | Command::SplitRows(_)
-            | Command::InsertNote(_)
-            | Command::TableFormat(_)
-            | Command::Object(_)
-            | Command::InsertPicture(_)
-            | Command::InsertTextBox
-            | Command::FillPlaceholder { .. }
-            | Command::ToggleList { .. }
-            | Command::InsertText(_)
-            | Command::Delete { .. }
-            | Command::Enter
-            | Command::LineBreak
-            | Command::PageBreak
-            | Command::ColumnBreak
-            | Command::InsertTab
-            | Command::Undo
-            | Command::Redo
-            | Command::Repeat
-            | Command::InsertRows { .. }
-            | Command::InsertColumns { .. }
-            | Command::DeleteRows
-            | Command::DeleteColumns
-            | Command::DeleteTable
-            | Command::MergeCells
-            | Command::SplitCell { .. }
-            | Command::InsertTable { .. }
-            | Command::SplitTable
-            | Command::ListLevel { .. }
-            | Command::Toggle(_)
-            | Command::Align(_)
-            | Command::Cut
-            | Command::PasteText(_)
-            | Command::Section(_)
-            | Command::InsertSymbol { .. }
-            | Command::InsertField(_)
-            | Command::InsertCheckbox { .. }
-            | Command::InsertHyperlink { .. }
-            | Command::MoveRows { .. }
-            | Command::AutoFitColumn { .. }
-            | Command::ReplaceAll { .. }
-            | Command::Track(_) => true,
-            Command::Batch { commands, .. } => commands.iter().any(Command::mutates),
-            Command::Comment(c) => !matches!(c, super::comments::CommentCmd::Activate(_)),
-            Command::SetMarkupView(_) | Command::SetAuthorColor { .. } => false,
-            Command::ResolveRevisions { .. } => true,
-            Command::NextRevision { .. } => false,
-        }
-    }
+/// Backspace (`Dir::Back`) or Delete, by a character or a word.
+pub fn deleting(dir: Dir, word: bool) -> Command {
+    use crate::api::command::{DeleteOptions, DeleteUnit};
+    Command::Delete(DeleteOptions { direction: direction(dir), unit: word.then_some(DeleteUnit::Word) })
 }
 
-/// Whether a command can run now, and its toggle state or value.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct CommandState {
-    pub enabled: bool,
-    pub checked: Option<bool>,
-    pub reason: Option<&'static str>,
+fn direction(dir: Dir) -> crate::api::value::Direction {
+    if dir == Dir::Forward { crate::api::value::Direction::Forward } else { crate::api::value::Direction::Backward }
 }
 
 /// What executing a command did.
@@ -330,410 +109,306 @@ pub enum Outcome {
     Moved,
     /// Nothing happened, and why.
     Unchanged(&'static str),
+    /// The command can't run here: the error says why, and nothing changed.
+    Refused(Error),
 }
 
-/// Why a host command id isn't a command.
-#[derive(Debug, PartialEq)]
-pub struct Unknown;
+impl Outcome {
+    /// A command the engine doesn't do yet.
+    pub(crate) fn unsupported(what: &str) -> Outcome {
+        Outcome::Refused(Error::unsupported(what))
+    }
 
-impl Command {
-    /// A host command id (command bar, menus, tests) with its argument, parsed at the boundary.
-    pub fn from_host(id: &str, arg: Option<&serde_json::Value>) -> Result<Command, Unknown> {
-        use super::format::Format as F;
-        let text = || arg.and_then(|a| a.as_str()).map(str::to_string).ok_or(Unknown);
-        Ok(match id {
-            "home.undo" | "edit.undo" => Command::Undo,
-            "home.redo" | "edit.redo" => Command::Redo,
-            "edit.select_all" => Command::SelectAll,
-            "hf.close" => Command::CloseHeaderFooter,
-            "insert.header" | "hf.go-header" => Command::EditHeaderFooter { footer: false },
-            "insert.footer" | "hf.go-footer" => Command::EditHeaderFooter { footer: true },
-            "edit.copy" => Command::Copy,
-            "edit.cut" => Command::Cut,
-            "edit.paste_text" => Command::PasteText(text()?),
-            "edit.insert_text" => Command::InsertText(text()?),
-            "edit.enter" => Command::Enter,
-            "layout.break.line" => Command::LineBreak,
-            "layout.break.page" | "insert.page_break" => Command::PageBreak,
-            "layout.break.column" => Command::ColumnBreak,
-            "edit.tab" => Command::InsertTab,
-            "edit.repeat" => Command::Repeat,
-            "table.insert-above" => Command::InsertRows { below: false, n: 1 },
-            "table.insert-below" => Command::InsertRows { below: true, n: 1 },
-            "table.insert-left" => Command::InsertColumns { right: false },
-            "table.insert-right" => Command::InsertColumns { right: true },
-            "table.delete.row" => Command::DeleteRows,
-            "table.delete.column" => Command::DeleteColumns,
-            "table.delete.table" => Command::DeleteTable,
-            "table.merge" => Command::MergeCells,
-            "table.split" => Command::SplitCell { cols: arg.and_then(|a| a.as_u64().or_else(|| a.as_str()?.parse().ok())).unwrap_or(2) as usize },
-            "table.select.table" => Command::SelectTable,
-            "table.select.cell" => Command::SelectCells(super::selection::CellShape::Rect),
-            "table.select.row" => Command::SelectCells(super::selection::CellShape::Rows),
-            "table.select.column" => Command::SelectCells(super::selection::CellShape::Columns),
-            "insert.table" => {
-                // "rows,cols" from the command bar's grid picker.
-                let t = text()?;
-                let mut it = t.split(',').map(|x| x.trim().parse::<usize>().ok());
-                match (it.next().flatten(), it.next().flatten()) {
-                    (Some(rows), Some(cols)) => Command::InsertTable { rows, cols },
-                    _ => return Err(Unknown),
-                }
-            }
-            "home.bold" => Command::Toggle(super::format::Toggle::Bold),
-            "home.italic" => Command::Toggle(super::format::Toggle::Italic),
-            "home.underline" => Command::Toggle(super::format::Toggle::Underline),
-            "home.strike" => Command::Toggle(super::format::Toggle::Strike),
-            "table.delete.cells-left" => Command::DeleteCellsShift { up: false },
-            "table.delete.cells-up" => Command::DeleteCellsShift { up: true },
-            "table.distribute" | "table.distribute.columns" => Command::DistributeColumns,
-            "table.distribute.rows" => Command::DistributeRows,
-            "table.split-rows" => Command::SplitRows(arg.and_then(|a| a.as_u64().or_else(|| a.as_str()?.parse().ok())).unwrap_or(2) as usize),
-            "insert.footnote" => Command::InsertNote(crate::docx::NoteKind::Foot),
-            "insert.endnote" => Command::InsertNote(crate::docx::NoteKind::End),
-            "table.cell-align.top" => Command::TableFormat(super::table_format::TableFormat::CellAlign("top".into())),
-            "table.cell-align.center" => Command::TableFormat(super::table_format::TableFormat::CellAlign("center".into())),
-            "table.cell-align.bottom" => Command::TableFormat(super::table_format::TableFormat::CellAlign("bottom".into())),
-            "table.header-row" => Command::TableFormat(super::table_format::TableFormat::HeaderRow),
-            s if s.starts_with("table.borders.") => {
-                use super::table_format::Edges;
-                let edges = match &s["table.borders.".len()..] {
-                    "all" => Edges::All,
-                    "outside" => Edges::Outside,
-                    "inside" => Edges::Inside,
-                    "inside-h" => Edges::InsideH,
-                    "inside-v" => Edges::InsideV,
-                    "top" => Edges::Top,
-                    "bottom" => Edges::Bottom,
-                    "left" => Edges::Left,
-                    "right" => Edges::Right,
-                    "none" => Edges::None,
-                    _ => return Err(Unknown),
-                };
-                // "style,width pt,RRGGBB|auto"; a single ½ pt line by default.
-                let t = text().unwrap_or_default();
-                let mut it = t.split(',').map(str::trim);
-                let style = it.next().filter(|s| !s.is_empty()).unwrap_or("single").to_string();
-                let width = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.5);
-                let color = it.next().and_then(|c| u32::from_str_radix(c.trim_start_matches('#'), 16).ok());
-                Command::TableFormat(super::table_format::TableFormat::CellBorders(
-                    edges,
-                    crate::docx::props::Border { style, width, space: 0.0, color },
-                ))
-            }
-            "table.cell-margins" => {
-                let v: Vec<f64> = text()?.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-                let [t, l, b, r] = v[..] else { return Err(Unknown) };
-                Command::TableFormat(super::table_format::TableFormat::CellMargins([t, l, b, r]))
-            }
-            "table.row-height" => {
-                // "auto", or "points[,atLeast|exact]".
-                let t = text()?;
-                let mut it = t.split(',').map(str::trim);
-                let h = match it.next() {
-                    Some("auto") => None,
-                    Some(v) => Some((v.parse().map_err(|_| Unknown)?, it.next().unwrap_or("atLeast").to_string())),
-                    None => return Err(Unknown),
-                };
-                Command::TableFormat(super::table_format::TableFormat::RowHeight(h))
-            }
-            "table.row-cant-split" => Command::TableFormat(super::table_format::TableFormat::RowCantSplit),
-            "table.column-width" => Command::TableFormat(super::table_format::TableFormat::ColumnWidth(text()?.trim().parse().map_err(|_| Unknown)?)),
-            "table.width" => {
-                // "auto", "50%" (a fraction, as the reader stores it) or points.
-                let t = text()?;
-                let t = t.trim();
-                let w = if t == "auto" {
-                    crate::docx::props::Width::Auto
-                } else if let Some(p) = t.strip_suffix('%') {
-                    crate::docx::props::Width::Pct(p.trim().parse::<f64>().map_err(|_| Unknown)? / 100.0)
-                } else {
-                    crate::docx::props::Width::Dxa(t.parse().map_err(|_| Unknown)?)
-                };
-                Command::TableFormat(super::table_format::TableFormat::TableWidth(w))
-            }
-            "table.align.left" => Command::TableFormat(super::table_format::TableFormat::TableAlign(crate::docx::props::Jc::Left)),
-            "table.align.center" => Command::TableFormat(super::table_format::TableFormat::TableAlign(crate::docx::props::Jc::Center)),
-            "table.align.right" => Command::TableFormat(super::table_format::TableFormat::TableAlign(crate::docx::props::Jc::Right)),
-            "table.indent" => Command::TableFormat(super::table_format::TableFormat::TableIndent(text()?.trim().parse().map_err(|_| Unknown)?)),
-            "table.style" => Command::TableFormat(super::table_format::TableFormat::TableStyle(text()?.trim().to_string())),
-            "table.look" => {
-                // The options on, by name: header-row, total-row, first-column, last-column, banded-rows, banded-columns.
-                let t = text().unwrap_or_default();
-                let on: Vec<&str> = t.split(',').map(str::trim).collect();
-                let has = |n: &str| on.contains(&n);
-                Command::TableFormat(super::table_format::TableFormat::TableLook(crate::docx::props::Look {
-                    first_row: has("header-row"),
-                    last_row: has("total-row"),
-                    first_col: has("first-column"),
-                    last_col: has("last-column"),
-                    no_h_band: !has("banded-rows"),
-                    no_v_band: !has("banded-columns"),
-                }))
-            }
-            "table.shading" => {
-                let t = text().unwrap_or_default();
-                let t = t.trim().trim_start_matches('#');
-                Command::TableFormat(super::table_format::TableFormat::CellShading(if t.is_empty() {
-                    None
-                } else {
-                    Some(u32::from_str_radix(t, 16).map_err(|_| Unknown)?)
-                }))
-            }
-            "home.font-size" => Command::Format(F::FontSize(text()?.trim().parse().map_err(|_| Unknown)?)),
-            "home.grow-font" => Command::Format(F::GrowFont(true)),
-            "home.shrink-font" => Command::Format(F::GrowFont(false)),
-            "home.font-color" => {
-                let t = text()?;
-                let t = t.trim().trim_start_matches('#');
-                Command::Format(F::FontColor(if t.eq_ignore_ascii_case("auto") {
-                    None
-                } else {
-                    Some(u32::from_str_radix(t, 16).map_err(|_| Unknown)?)
-                }))
-            }
-            "home.highlight" => {
-                let t = text()?;
-                Command::Format(F::Highlight((!t.eq_ignore_ascii_case("none")).then(|| t.trim().to_string())))
-            }
-            "home.font" => Command::Format(F::FontFamily(text()?.trim().to_string())),
-            "home.style" => Command::Format(F::ParaStyle(text()?.trim().to_string())),
-            "home.clear-formatting" => Command::Format(F::ClearFormatting),
-            "home.space-before" => Command::Format(F::SpaceBefore),
-            "home.space-after-remove" => Command::Format(F::RemoveSpaceAfter),
-            "home.indent-increase" => Command::Format(F::Indent(true)),
-            "home.indent-decrease" => Command::Format(F::Indent(false)),
-            "layout.keep-with-next" => Command::Format(F::KeepWithNext),
-            s if s.starts_with("home.line-spacing.") => {
-                Command::Format(F::LineSpacing(s["home.line-spacing.".len()..].parse().map_err(|_| Unknown)?))
-            }
-            "home.subscript" => Command::Toggle(super::format::Toggle::Subscript),
-            "home.superscript" => Command::Toggle(super::format::Toggle::Superscript),
-            "home.copy" => Command::Copy,
-            "home.cut" => Command::Cut,
-            "picture.delete" => Command::Delete { dir: Dir::Forward, word: false },
-            "picture.wrap" => Command::Object(super::objects::ObjectCmd::Wrap(match text()?.trim() {
-                w @ ("square" | "tight" | "through" | "behind" | "front") => w.to_string(),
-                "topAndBottom" | "top-bottom" => "topAndBottom".to_string(),
-                _ => return Err(Unknown),
-            })),
-            // The image file as base64 (inputs are JSON, so the input log replays it).
-            "insert.picture" => Command::InsertPicture(base64(&text()?).ok_or(Unknown)?),
-            "insert.text-box" => Command::InsertTextBox,
-            // The image file as base64; `placeholder.fill-key`: "key\nbase64".
-            "placeholder.fill" => Command::FillPlaceholder { key: None, data: base64(&text()?).ok_or(Unknown)? },
-            "placeholder.fill-key" => {
-                let t = text()?;
-                let (key, data) = t.split_once('\n').ok_or(Unknown)?;
-                Command::FillPlaceholder { key: Some(key.to_string()), data: base64(data).ok_or(Unknown)? }
-            }
-            // "editing", "design" or "readonly".
-            "view.mode" => Command::SetMode(super::Mode::parse(&text()?).ok_or(Unknown)?),
-            "field.insert" | "field.set" | "element.remove" | "control.insert" | "control.set" | "control.remove" | "view.drop" | "field.labels"
-            | "element.mark" | "element.select" | "element.replace" | "region.wrap" | "control.fill" | "view.looks" | "data.write"
-            | "data.remove" | "view.field-codes" | "field.new" | "field.update" | "field.results" | "field.lock" | "field.unlock"
-            | "field.unlink" => Command::Merge { id: id.to_string(), arg: arg.cloned().unwrap_or(serde_json::Value::Null) },
-            // JSON: {"key": "...", "color": "#RRGGBB" or "#AARRGGBB", "label": "...", "icon": "<svg ...>"}; without color,
-            // label and icon, the key's look is taken away.
-            "view.placeholder-look" => {
-                let v: serde_json::Value = serde_json::from_str(&text()?).map_err(|_| Unknown)?;
-                let key = v["key"].as_str().unwrap_or("").to_string();
-                let color = v["color"].as_str().and_then(|c| {
-                    let h = c.trim_start_matches('#');
-                    let n = u32::from_str_radix(h, 16).ok()?;
-                    Some(if h.len() == 6 { 0x40_00_00_00 | n } else { n })
-                });
-                let label = v["label"].as_str().map(str::to_string);
-                let icon = v["icon"].as_str().and_then(super::view::SvgIcon::parse).map(std::rc::Rc::new);
-                let look = (color.is_some() || label.is_some() || icon.is_some()).then_some(super::view::PlaceholderLook { color, label, icon });
-                Command::PlaceholderLook { key, look }
-            }
-            "home.numbering" => Command::ToggleList { bullet: false },
-            "home.bullets" => Command::ToggleList { bullet: true },
-            "picture.lock-anchor" => Command::Object(super::objects::ObjectCmd::LockAnchor),
-            "picture.reset-size" => Command::Object(super::objects::ObjectCmd::ResetSize),
-            "insert.checkbox" => Command::InsertCheckbox { checked: false },
-            "picture.alt-text.set" => Command::Object(super::objects::ObjectCmd::AltText(text().unwrap_or_default())),
-            "picture.size" => {
-                // "w,h" in points.
-                let t = text()?;
-                let mut it = t.split(',').map(|x| x.trim().parse::<f64>().ok());
-                match (it.next().flatten(), it.next().flatten()) {
-                    (Some(w), Some(h)) if w > 0.0 && h > 0.0 => Command::Object(super::objects::ObjectCmd::Size(w, h)),
-                    _ => return Err(Unknown),
-                }
-            }
-            "home.align-left" => Command::Align(crate::docx::props::Jc::Left),
-            "home.align-center" => Command::Align(crate::docx::props::Jc::Center),
-            "home.align-right" => Command::Align(crate::docx::props::Jc::Right),
-            "home.align-justify" => Command::Align(crate::docx::props::Jc::Both),
-            "layout.margins.normal" => Command::Section(super::section::SectionCmd::Margins([72.0, 72.0, 72.0, 72.0])),
-            "layout.margins.narrow" => Command::Section(super::section::SectionCmd::Margins([36.0, 36.0, 36.0, 36.0])),
-            "layout.margins.moderate" => Command::Section(super::section::SectionCmd::Margins([72.0, 72.0, 54.0, 54.0])),
-            "layout.margins.wide" => Command::Section(super::section::SectionCmd::Margins([72.0, 72.0, 144.0, 144.0])),
-            "layout.orientation.portrait" => Command::Section(super::section::SectionCmd::Orientation(false)),
-            "layout.orientation.landscape" => Command::Section(super::section::SectionCmd::Orientation(true)),
-            s if s.starts_with("layout.size.") => {
-                // Letter, Legal, Executive, Tabloid, A3, A4, A5 (portrait, points).
-                const PAPER: [(f64, f64); 7] =
-                    [(612.0, 792.0), (612.0, 1008.0), (522.0, 756.0), (792.0, 1224.0), (842.0, 1191.0), (595.0, 842.0), (420.0, 595.0)];
-                let &(w, h) = s["layout.size.".len()..].parse::<usize>().ok().and_then(|k| PAPER.get(k)).ok_or(Unknown)?;
-                Command::Section(super::section::SectionCmd::Size(w, h))
-            }
-            s if s.starts_with("layout.columns.") => {
-                Command::Section(super::section::SectionCmd::Columns(s["layout.columns.".len()..].parse().map_err(|_| Unknown)?))
-            }
-            "hf.different-first" => Command::Section(super::section::SectionCmd::DifferentFirst),
-            "layout.borders.box" => Command::Format(F::ParaBorders("box".into())),
-            "layout.borders.bottom" => Command::Format(F::ParaBorders("bottom".into())),
-            "layout.borders.none" => Command::Format(F::ParaBorders("none".into())),
-            "layout.shading" => {
-                let t = text().unwrap_or_default();
-                let t = t.trim().trim_start_matches('#');
-                Command::Format(F::ParaShading(if t.is_empty() || t.eq_ignore_ascii_case("none") {
-                    None
-                } else {
-                    Some(u32::from_str_radix(t, 16).map_err(|_| Unknown)?)
-                }))
-            }
-            "insert.page-break" => Command::PageBreak,
-            "insert.page-number.page" | "hf.page-number.page" => Command::InsertField(crate::docx::FieldKind::Page),
-            "insert.page-number.total" | "hf.page-number.total" => Command::InsertField(crate::docx::FieldKind::NumPages),
-            "insert.page-number.page-of" | "hf.page-number.page-of" => Command::Batch {
-                label: "Page Number",
-                commands: vec![
-                    Command::InsertText("Page ".into()),
-                    Command::InsertField(crate::docx::FieldKind::Page),
-                    Command::InsertText(" of ".into()),
-                    Command::InsertField(crate::docx::FieldKind::NumPages),
-                ],
-            },
-            "insert.symbol" => {
-                // The character, or "character\nfont".
-                let t = text()?;
-                let (c, font) = t.split_once('\n').unwrap_or((&t, ""));
-                let mut it = c.chars();
-                match (it.next(), it.next()) {
-                    (Some(ch), None) => Command::InsertSymbol { ch, font: font.trim().to_string() },
-                    _ => return Err(Unknown),
-                }
-            }
-            "edit.replace-all" => {
-                // JSON {"find", "with", "case"}.
-                let v: serde_json::Value = serde_json::from_str(&text()?).map_err(|_| Unknown)?;
-                Command::ReplaceAll {
-                    find: v["find"].as_str().ok_or(Unknown)?.to_string(),
-                    with: v["with"].as_str().unwrap_or("").to_string(),
-                    case: v["case"].as_bool().unwrap_or(false),
-                }
-            }
-            "edit.select-range" => {
-                // "paragraph id,start,end" (units).
-                let t = text()?;
-                let v: Vec<u64> = t.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-                let [p, a, b] = v[..] else { return Err(Unknown) };
-                Command::SelectRange { para: crate::layout::ParaId(p), a: crate::layout::Unit(a as u32), b: crate::layout::Unit(b as u32) }
-            }
-            "edit.select_word" => Command::Select(Granularity::Word),
-            "edit.select_sentence" => Command::Select(Granularity::Sentence),
-            "edit.select_paragraph" => Command::Select(Granularity::Paragraph),
-            // Comments. `add` takes the body; `reply` and `edit` "id\nbody" (or JSON `{"id", "body"}`); `delete`,
-            // `resolve` and `reopen` the id; `activate` the id, or none for the thread at the selection. A body is
-            // plain text, or rich text as JSON (`{"paragraphs": [{"runs": [{"text", "bold", ...}]}]}`).
-            "review.comment.add" => Command::Comment(super::comments::CommentCmd::Add(match arg {
-                Some(v @ serde_json::Value::Object(_)) => super::comments::RichText::from_json(v).ok_or(Unknown)?,
-                _ => super::comments::RichText::plain(&text()?),
-            })),
-            "review.comment.reply" | "review.comment.edit" => {
-                use super::comments::{CommentCmd, RichText};
-                let (to, body) = match arg {
-                    Some(v @ serde_json::Value::Object(_)) => {
-                        (comment_id(v.get("id")).ok_or(Unknown)?, RichText::from_json(&v["body"]).ok_or(Unknown)?)
-                    }
-                    _ => {
-                        let t = text()?;
-                        let (to, body) = t.split_once('\n').ok_or(Unknown)?;
-                        (comment_id(Some(&serde_json::Value::from(to))).ok_or(Unknown)?, RichText::plain(body))
-                    }
-                };
-                Command::Comment(if id == "review.comment.reply" { CommentCmd::Reply { to, body } } else { CommentCmd::Edit { id: to, body } })
-            }
-            "review.comment.delete" => Command::Comment(super::comments::CommentCmd::Delete(comment_id(arg).ok_or(Unknown)?)),
-            "review.comment.resolve" | "review.comment.reopen" => {
-                Command::Comment(super::comments::CommentCmd::Resolve { id: comment_id(arg).ok_or(Unknown)?, done: id == "review.comment.resolve" })
-            }
-            "review.comment.activate" => Command::Comment(super::comments::CommentCmd::Activate(comment_id(arg))),
-            "view.markup" => {
-                use crate::docx::review::MarkupView as V;
-                Command::SetMarkupView(match text()?.as_str() {
-                    "all" => V::All,
-                    "simple" => V::Simple,
-                    "none" => V::NoMarkup,
-                    "original" => V::Original,
-                    _ => return Err(Unknown),
-                })
-            }
-            "view.author-color" => {
-                // "author name\nRRGGBB".
-                let t = text()?;
-                let (author, hex) = t.rsplit_once('\n').ok_or(Unknown)?;
-                let color = u32::from_str_radix(hex.trim().trim_start_matches('#'), 16).ok().filter(|c| *c <= 0xFF_FFFF).ok_or(Unknown)?;
-                Command::SetAuthorColor { author: author.to_string(), color }
-            }
-            // Review: the argument is "selection" (the default), "all", "author:<name>" or a revision id.
-            "review.accept" | "review.reject" => {
-                Command::ResolveRevisions { accept: id == "review.accept", scope: super::revisions::resolve::Scope::from_host(arg).ok_or(Unknown)? }
-            }
-            "review.next" => Command::NextRevision { back: false },
-            "review.previous" => Command::NextRevision { back: true },
-            // "on", "off", or no argument: toggled.
-            "review.track" => Command::Track(match arg.and_then(|a| a.as_str()) {
-                None => None,
-                Some("on") => Some(true),
-                Some("off") => Some(false),
-                Some(_) => return Err(Unknown),
-            }),
-            "review.author" => Command::Author(text()?),
-            _ => return Err(Unknown),
-        })
+    pub(crate) fn unavailable(why: &str) -> Outcome {
+        Outcome::Refused(Error::unavailable(why))
+    }
+
+    pub(crate) fn invalid(why: &str) -> Outcome {
+        Outcome::Refused(Error::invalid(why))
     }
 }
 
-/// A comment id argument: a number, a string holding one, or either as `{"id": …}`.
-fn comment_id(arg: Option<&serde_json::Value>) -> Option<crate::docx::review::CommentId> {
-    let v = arg?;
-    let v = v.get("id").unwrap_or(v);
-    v.as_i64().or_else(|| v.as_str()?.trim().parse().ok()).map(crate::docx::review::CommentId)
-}
+impl Editor {
+    /// Runs `cmd` at the selection. What it made (a field's id, a comment's) is [`Editor::take_made`]'s.
+    pub fn execute(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
+        self.made = None;
+        self.refused = None;
+        // Read only refuses an edit before it runs, by the catalog's `mutates`.
+        if self.mode == super::Mode::ReadOnly && cmd.mutates() {
+            return self.refuse_read_only();
+        }
+        let out = self.execute_editable(cmd, fonts);
+        // Images for pictures that never went in.
+        self.pending_images.clear();
+        out
+    }
 
-/// Standard base64 (padding and whitespace allowed); `None` on any other character.
-pub(crate) fn base64(s: &str) -> Option<Vec<u8>> {
-    let mut out = Vec::with_capacity(s.len() * 3 / 4);
-    let (mut acc, mut bits) = (0u32, 0);
-    for c in s.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=') {
-        let v = match c {
-            b'A'..=b'Z' => c - b'A',
-            b'a'..=b'z' => c - b'a' + 26,
-            b'0'..=b'9' => c - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => return None,
+    fn execute_editable(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
+        // Typing that continues a run extends what F4 repeats.
+        let continues = matches!(cmd, Command::InsertText(_))
+            && self.selection.is_collapsed()
+            && self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, u)| self.history.continues(p, u, Typing::Insert));
+        let repeatable = match &cmd {
+            Command::InsertText(t) => match (&self.repeat, continues) {
+                (Some(Command::InsertText(prev)), true) => Some(Command::InsertText(format!("{prev}{t}"))),
+                _ => Some(cmd.clone()),
+            },
+            Command::InsertParagraph | Command::InsertLineBreak | Command::InsertPageBreak | Command::InsertColumnBreak | Command::InsertTab => {
+                Some(cmd.clone())
+            }
+            _ => None,
         };
-        acc = acc << 6 | v as u32;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push((acc >> bits) as u8);
+        // In extend mode a typed character extends the selection to its next occurrence.
+        if self.modes.extend > 0
+            && let Command::InsertText(t) = &cmd
+            && t.chars().count() == 1
+        {
+            return self.extend_to_char(t.chars().next().unwrap_or(' '));
+        }
+        // In extend or block mode movement extends the selection.
+        let cmd = match cmd {
+            Command::MoveSelection(mut m)
+                if m.extend != Some(true)
+                    && self.modes != extend::Modes::default()
+                    && !matches!(self.selection, Selection::Object(_) | Selection::Cells { .. }) =>
+            {
+                m.extend = Some(true);
+                Command::MoveSelection(m)
+            }
+            c => c,
+        };
+        let moving = matches!(cmd, Command::MoveSelection(_));
+        if !matches!(cmd, Command::GoBack) {
+            self.back_step = None;
+        }
+        let out = self.run(cmd, fonts);
+        // A building block that refuses answers why: the command is refused.
+        let out = match (out, self.refused) {
+            (Outcome::Unchanged(_), Some("read-only")) => {
+                Outcome::Refused(Error::new(crate::api::error::ErrorCode::ReadOnly, "the document is read only"))
+            }
+            (Outcome::Unchanged(_), Some(why)) => Outcome::Refused(Error::unavailable(why)),
+            (out, _) => out,
+        };
+        if repeatable.is_some() && matches!(out, Outcome::Changed(_)) {
+            self.repeat = repeatable;
+        }
+        if moving && self.modes.block {
+            self.selection = self.as_block(self.selection);
+        }
+        // An edit that leaves a caret (typing over, deleting) ends the modes; formatting keeps them.
+        if matches!(out, Outcome::Changed(_)) && self.selection.is_collapsed() {
+            self.modes = extend::Modes::default();
+        }
+        out
+    }
+
+    /// What the last command made, for the commands that create something.
+    pub fn take_made(&mut self) -> Option<CommandResult> {
+        self.made.take()
+    }
+
+    /// One command's handler, without the repeat and mode bookkeeping of [`Editor::execute`].
+    pub(in crate::editing) fn run(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
+        use crate::api::command::{DeleteUnit, MoveUnit};
+        let vertical = matches!(&cmd, Command::MoveSelection(m) if matches!(m.by, MoveUnit::Line | MoveUnit::Screen));
+        if !vertical {
+            self.goal_x = None;
+        }
+        let typing = match &cmd {
+            Command::InsertText(_) => true,
+            Command::Delete(d) => d.unit != Some(DeleteUnit::Word),
+            _ => false,
+        };
+        if !typing {
+            self.history.break_typing();
+        }
+        match cmd {
+            // Text
+            Command::InsertText(t) => self.insert_text(&t, fonts),
+            Command::InsertParagraph => self.enter(fonts),
+            Command::InsertLineBreak => self.line_break(fonts),
+            Command::InsertPageBreak => self.page_break(fonts),
+            Command::InsertColumnBreak => self.column_break(fonts),
+            Command::InsertSectionBreak(kind) => self.section_break(kind),
+            Command::InsertTab => self.tab(fonts),
+            Command::InsertSymbol(s) => self.symbol(s, fonts),
+            Command::Delete(d) => self.delete_by(d, fonts),
+            // Clipboard and history
+            Command::Cut => self.cut(fonts),
+            Command::Copy => self.copy_selection(),
+            Command::Paste(p) => self.paste_held(p, fonts),
+            Command::PasteText(t) => self.paste_text(&t, fonts),
+            Command::Undo => self.undo(true, fonts),
+            Command::Redo => self.undo(false, fonts),
+            Command::Repeat => self.repeat_last(fonts),
+            // Selection and navigation
+            Command::SelectAll => self.select_all(),
+            Command::Select(unit) => self.select_unit(unit),
+            Command::MoveSelection(m) => self.move_selection(m, fonts),
+            Command::MoveToCell(o) => self.next_cell(o == crate::api::value::Order::Previous, fonts),
+            Command::SetSelectionMode(m) => self.selection_mode(m),
+            Command::GoBack => self.go_back(fonts),
+            Command::Escape => self.escape(),
+            Command::SelectNextObject(o) => self.next_object(o),
+            Command::GoToPage(page) => self.go_to_page(page, fonts),
+            // Character formatting
+            Command::SetBold(on) => self.set_toggle(super::format::Toggle::Bold, on, fonts),
+            Command::SetItalic(on) => self.set_toggle(super::format::Toggle::Italic, on, fonts),
+            Command::SetUnderline(style) => self.set_underline(style, fonts),
+            Command::SetStrikethrough(on) => self.set_toggle(super::format::Toggle::Strike, on, fonts),
+            Command::SetDoubleStrikethrough(on) => self.set_flag("Double Strikethrough", "dstrike", on, fonts),
+            Command::SetSubscript(on) => self.set_toggle(super::format::Toggle::Subscript, on, fonts),
+            Command::SetSuperscript(on) => self.set_toggle(super::format::Toggle::Superscript, on, fonts),
+            Command::SetSmallCaps(on) => self.set_flag("Small Caps", "smallCaps", on, fonts),
+            Command::SetAllCaps(on) => self.set_flag("All Caps", "caps", on, fonts),
+            Command::SetHidden(on) => self.set_flag("Hidden", "vanish", on, fonts),
+            Command::SetFont(family) => self.format(&super::format::Format::FontFamily(family), fonts),
+            Command::SetFontSize(size) => self.format(&super::format::Format::FontSize(size.0), fonts),
+            Command::GrowFont => self.format(&super::format::Format::GrowFont(true), fonts),
+            Command::ShrinkFont => self.format(&super::format::Format::GrowFont(false), fonts),
+            Command::SetFontColor(c) => self.set_font_color(c, fonts),
+            Command::SetHighlight(h) => self.set_highlight(h, fonts),
+            Command::SetCharacterSpacing(s) => self.set_character_spacing(s, fonts),
+            Command::SetCharacterPosition(p) => self.set_character_position(p, fonts),
+            Command::ClearFormatting => self.format(&super::format::Format::ClearFormatting, fonts),
+            Command::ChangeCase(to) => self.change_case(to, fonts),
+            Command::CopyFormatting => self.copy_formatting(),
+            Command::PasteFormatting => self.paste_formatting(fonts),
+            // Paragraph formatting
+            Command::SetAlignment(a) => self.set_alignment(a, fonts),
+            Command::SetLineSpacing(s) => self.set_line_spacing(s, fonts),
+            Command::SetParagraphSpacing(s) => self.set_paragraph_spacing(s, fonts),
+            Command::SetIndents(i) => self.set_indents(i, fonts),
+            Command::IncreaseIndent => self.format(&super::format::Format::Indent(true), fonts),
+            Command::DecreaseIndent => self.format(&super::format::Format::Indent(false), fonts),
+            Command::SetParagraphStyle(id) => self.set_paragraph_style(id, fonts),
+            Command::SetList(kind) => self.set_list(kind, fonts),
+            Command::SetListLevel(c) => self.list_level(c == crate::api::command::LevelChange::Decrease, fonts),
+            Command::SetParagraphFlow(f) => self.set_paragraph_flow(f, fonts),
+            Command::SetParagraphBorders(b) => self.set_paragraph_borders(b, fonts),
+            Command::SetParagraphShading(c) => self.format(&super::format::Format::ParaShading(c.map(|c| c.0)), fonts),
+            // Tab stops
+            Command::AddTabStop(a) => self.add_tab_stop(a, fonts),
+            Command::MoveTabStop(m) => self.move_tab_stop(m, fonts),
+            Command::DeleteTabStop(at) => self.delete_tab_stop(at, fonts),
+            Command::ClearTabStops => self.clear_tab_stops(fonts),
+            Command::SetDefaultTabStop(v) => self.set_default_tab_stop(v, fonts),
+            // Page layout, headers and footers
+            Command::SetMargins(m) => self.set_margins(m, fonts),
+            Command::SetOrientation(o) => {
+                self.section_cmd(super::section::SectionCmd::Orientation(o == crate::api::value::Orientation::Landscape), fonts)
+            }
+            Command::SetPaperSize(s) => self.section_cmd(super::section::SectionCmd::Size(s.width.0, s.height.0), fonts),
+            Command::SetColumns(c) => self.set_columns(c, fonts),
+            Command::SetHeaderFooterDistance(d) => self.set_header_footer_distance(d, fonts),
+            Command::SetDifferentFirstPage(on) => self.set_page("Different First Page", |p| p.title_pg = on, fonts),
+            Command::SetDifferentOddEvenPages(_) => Outcome::unsupported("different odd and even pages"),
+            Command::MoveColumnBoundary(_) => Outcome::unsupported("moving a text column boundary"),
+            Command::EditHeader => self.edit_header_footer(None, false, fonts),
+            Command::EditFooter => self.edit_header_footer(None, true, fonts),
+            Command::CloseHeaderFooter => self.close_header_footer(),
+            Command::InsertPageNumber(p) => self.insert_page_number(p, fonts),
+            // Insert
+            Command::InsertTable(t) => self.insert_table(t.rows as usize, t.columns as usize, fonts),
+            Command::InsertPicture(p) => self.insert_picture_with(p, fonts),
+            Command::InsertTextBox => self.insert_text_box(fonts),
+            Command::InsertFootnote => self.insert_note(crate::docx::NoteKind::Foot, fonts),
+            Command::InsertEndnote => self.insert_note(crate::docx::NoteKind::End, fonts),
+            Command::InsertHyperlink(h) => self.insert_hyperlink(h, fonts),
+            Command::EditHyperlink(h) => self.edit_hyperlink(h, fonts),
+            Command::RemoveHyperlink => self.remove_hyperlink(fonts),
+            Command::InsertField(f) => self.insert_field(f, fonts),
+            // Tables
+            Command::InsertRows(r) => self.insert_rows(r.side == crate::api::command::VerticalSide::Below, r.count.unwrap_or(1) as usize, fonts),
+            Command::InsertColumns(c) => self.insert_columns_by(c, fonts),
+            Command::DeleteRows => self.delete_rows(fonts),
+            Command::DeleteColumns => self.delete_columns(fonts),
+            Command::DeleteTable => self.delete_table(fonts),
+            Command::DeleteCells(shift) => self.delete_cells_cmd(shift == crate::api::command::CellShift::Up, fonts),
+            Command::MergeCells => self.merge_cells(fonts),
+            Command::SplitCells(s) => self.split_cells(s, fonts),
+            Command::SplitTable => self.split_table(fonts),
+            Command::DistributeRows => self.distribute_rows(fonts),
+            Command::DistributeColumns => self.distribute_columns(fonts),
+            Command::MoveRows(d) => self.move_rows(d == crate::api::command::VerticalDirection::Up, fonts),
+            Command::AutoFitColumns(to) => self.auto_fit_columns(to, fonts),
+            Command::SetCellAlignment(a) => self.set_cell_alignment(a, fonts),
+            Command::SetCellShading(c) => self.table_format(&super::table_format::TableFormat::CellShading(c.map(|c| c.0)), fonts),
+            Command::SetCellBorders(b) => self.set_cell_borders(b, fonts),
+            Command::SetCellMargins(m) => self.set_cell_margins(m, fonts),
+            Command::SetHeaderRow(on) => self.set_header_row(on, fonts),
+            Command::SetRowHeight(h) => self.set_row_height(h, fonts),
+            Command::SetRowCanBreak(on) => self.set_row_can_break(on, fonts),
+            Command::SetColumnWidth(w) => self.table_format(&super::table_format::TableFormat::ColumnWidth(w.0), fonts),
+            Command::MoveTableColumnBoundary(_) | Command::MoveTableRowBoundary(_) => Outcome::unsupported("moving a table boundary by command"),
+            Command::SetTableWidth(w) => self.set_table_width(w, fonts),
+            Command::SetTableAlignment(a) => self.set_table_alignment(a, fonts),
+            Command::SetTableIndent(i) => self.table_format(&super::table_format::TableFormat::TableIndent(i.0), fonts),
+            Command::SetTableStyle(id) => self.set_table_style(id, fonts),
+            Command::SetTableStyleOptions(o) => self.set_table_style_options(o, fonts),
+            // Pictures and text boxes
+            Command::SetObjectSize(s) => self.set_object_size(s, fonts),
+            Command::ResetObjectSize => self.object_cmd(super::objects::ObjectCmd::ResetSize, fonts),
+            Command::SetObjectWrap(w) => self.set_object_wrap(w, fonts),
+            Command::SetAnchorLocked(on) => self.set_anchor_locked(on, fonts),
+            Command::SetAltText(a) => self.alt_text(a, fonts),
+            Command::DeleteObject => self.delete_selected_object(fonts),
+            // Fields
+            Command::SetField(f) => self.set_field(f, fonts),
+            Command::SetFieldResults(r) => self.set_field_results(r, fonts),
+            Command::UpdateFields(ids) => self.update_fields(ids.ids.as_deref(), fonts),
+            Command::SetFieldsLocked(l) => self.lock_fields(l.locked, l.ids.as_deref(), fonts),
+            Command::UnlinkFields(ids) => self.unlink_fields(ids.ids.as_deref(), fonts),
+            Command::ShowFieldCodes(s) => self.show_field_codes(s.show, s.ids.as_deref()),
+            Command::SetFieldLabels(l) => self.set_field_labels(l),
+            // Content controls and regions
+            Command::InsertControl(c) => self.insert_control(c, fonts),
+            Command::SetControl(c) => self.set_control(c, fonts),
+            Command::RemoveControl(r) => self.remove_element(&r.id, r.keep_content.unwrap_or(false), fonts),
+            Command::FillControl(f) => self.fill_control(f, fonts),
+            Command::SetCheckbox(c) => self.set_checkbox(c, fonts),
+            Command::WrapInRepeatingSection(r) => self.wrap_in_repeating_section(r, fonts),
+            Command::RemoveElement(id) => self.remove_element(&id, false, fonts),
+            Command::ReplaceInElements(r) => self.replace_in_elements(r, fonts),
+            Command::MarkElements(m) => self.mark_elements(m),
+            Command::SetPlaceholderLooks(l) => self.set_placeholder_looks(l),
+            Command::FillPlaceholder(f) => self.fill_placeholders(f.key.as_deref(), f.image.0, fonts),
+            // Data parts
+            Command::WriteDataPart(w) => self.write_data_part(w, fonts),
+            Command::RemoveDataPart(r) => self.remove_data_part(r, fonts),
+            // Review
+            Command::SetTrackChanges(on) => self.set_track_changes(on),
+            Command::SetMarkupView(v) => self.set_markup_view(v),
+            Command::AcceptRevision(id) => self.resolve_one(true, &id, fonts),
+            Command::RejectRevision(id) => self.resolve_one(false, &id, fonts),
+            Command::AcceptRevisionsInSelection => self.resolve_revisions(true, &super::revisions::resolve::Scope::Selection, fonts),
+            Command::RejectRevisionsInSelection => self.resolve_revisions(false, &super::revisions::resolve::Scope::Selection, fonts),
+            Command::AcceptAllRevisions(a) => self.resolve_all(true, a, fonts),
+            Command::RejectAllRevisions(a) => self.resolve_all(false, a, fonts),
+            Command::SelectRevision(o) => self.go_to_revision(o == crate::api::value::Order::Previous, fonts),
+            Command::AddComment(body) => self.add_comment_cmd(&body, fonts),
+            Command::ReplyToComment(r) => self.reply_to_comment(r, fonts),
+            Command::EditComment(e) => self.edit_comment_cmd(e, fonts),
+            Command::DeleteComment(id) => self.delete_comment_cmd(&id, fonts),
+            Command::ResolveComment(r) => self.resolve_comment_cmd(r, fonts),
+            Command::SetActiveComment(id) => self.set_active_comment(id.as_ref(), fonts),
+            Command::SelectComment(id) => self.select_comment(&id, fonts),
+            Command::SetAuthorColor(a) => self.set_author_color_by_name(&a.author, a.color.0),
+            // View
+            Command::SetZoom(_) | Command::SetViewOptions(_) => Outcome::Moved,
+            Command::SetMode(m) => self.set_mode(match m {
+                crate::api::state::Mode::Editing => super::Mode::Editing,
+                crate::api::state::Mode::Design => super::Mode::Design,
+            }),
         }
     }
-    Some(out)
-}
 
-#[test]
-fn base64_decodes() {
-    assert_eq!(base64("TWFu").as_deref(), Some(&b"Man"[..]));
-    assert_eq!(base64("TWE=").as_deref(), Some(&b"Ma"[..]));
-    assert_eq!(base64("TQ==").as_deref(), Some(&b"M"[..]));
-    assert_eq!(base64("iVBO\nRw0K").as_deref(), Some(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A][..]));
-    assert!(base64("*").is_none());
+    /// Runs `f`, several building blocks, as one transaction labelled `label`: undone when `f` refuses.
+    pub fn joined(&mut self, label: &'static str, fonts: &Fonts, f: impl FnOnce(&mut Editor) -> Outcome) -> Outcome {
+        self.begin_batch(Some(label.into()));
+        let out = f(self);
+        let end = self.end_batch(!matches!(out, Outcome::Refused(_)), fonts);
+        if matches!(end, Outcome::Changed(_)) { end } else { out }
+    }
 }

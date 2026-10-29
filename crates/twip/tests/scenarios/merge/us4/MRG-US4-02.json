@@ -15,15 +15,14 @@
       }
     },
     {
-      "command": "field.insert",
-      "arg": {
+      "command": {
+        "type": "insertField",
         "code": "MERGEFIELD Store.Name",
         "display": "Store"
       }
     },
     {
-      "command": "view.mode",
-      "arg": "design"
+      "mode": "design"
     },
     {
       "click": {

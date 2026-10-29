@@ -21,7 +21,10 @@
       }
     },
     {
-      "command": "table.insert-below"
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      }
     },
     {
       "expect": {
@@ -71,7 +74,10 @@
       }
     },
     {
-      "command": "table.insert-above"
+      "command": {
+        "type": "insertRows",
+        "where": "above"
+      }
     },
     {
       "expect": {

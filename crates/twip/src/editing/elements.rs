@@ -1,19 +1,16 @@
 //! Fields and content controls as the host sees them: every element in document order,
-//! the selection's element context, the signatures change lists compare, and the block structure query.
+//! the selection's element context, and the signatures change lists compare.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use serde_json::{Value, json};
-
 use crate::docx::fields::{code_text, result_text, spans};
-use crate::docx::{Block, ControlKind, ControlProps, Document, ElementId, Inline, Lock, Paragraph};
+use crate::docx::{Block, ControlKind, ControlProps, Document, ElementId, Inline, Paragraph};
 use crate::layout::{FloatId, ParaId};
 
 use super::index::DocIndex;
 use super::position::{Position, StoryId};
 use super::selection::Selection;
-use super::text::UnitText;
 
 /// The longest display text an element carries.
 const DISPLAY: usize = 200;
@@ -76,37 +73,6 @@ impl Element {
         self.props.as_ref().map_or("field", |p| kind_name(&p.kind))
     }
 
-    pub fn to_json(&self, idx: &DocIndex) -> Value {
-        let mut v = json!({
-            "id": id_str(self.id), "kind": self.kind(), "display": self.display, "story": story_name(self.story, idx),
-            "parent": self.parent.map(id_str), "locked": self.locked,
-        });
-        if let Some(c) = &self.code {
-            v["code"] = json!(c);
-        }
-        if let Some(p) = &self.props {
-            v["tag"] = json!(p.tag);
-            v["alias"] = json!(p.alias);
-            v["lock"] = json!(match p.lock {
-                Lock::None => "none",
-                Lock::ControlLocked => "control",
-                Lock::ContentLocked => "content",
-                Lock::Both => "both",
-            });
-            v["showing_placeholder"] = json!(p.showing_placeholder);
-            v["binding"] = json!(p.binding.is_some());
-            match &p.kind {
-                ControlKind::PlainText { multi_line } => v["props"] = json!({ "multi_line": multi_line }),
-                ControlKind::Checkbox { checked, unchecked } => {
-                    v["props"] = json!({ "checked": checked.to_string(), "unchecked": unchecked.to_string() })
-                }
-                ControlKind::Date { format, lid } => v["props"] = json!({ "format": format, "lid": lid }),
-                _ => {}
-            }
-        }
-        v
-    }
-
     /// What a change list compares: a field's result counts, a control's
     /// content text doesn't (typing in a control doesn't change the control).
     pub fn signature(&self) -> u64 {
@@ -124,7 +90,7 @@ impl Element {
     }
 }
 
-fn story_name(s: StoryId, idx: &DocIndex) -> String {
+pub(super) fn story_name(s: StoryId, idx: &DocIndex) -> String {
     match s {
         StoryId::Body => "body".into(),
         StoryId::HeaderFooter(k) => idx.part_name(k).unwrap_or("header").to_string(),
@@ -404,63 +370,6 @@ fn inline_context(p: &Paragraph, lo: u32, hi: u32) -> Vec<(ElementId, bool)> {
     found.into_iter().map(|(_, e, x)| (e, x)).collect()
 }
 
-/// The element context as the reply carries it.
-pub fn context_json(doc: &Document, idx: &DocIndex, sel: &Selection, sigs: &HashMap<ElementId, Element>) -> Value {
-    Value::Array(
-        context(doc, idx, sel)
-            .into_iter()
-            .map(|(id, exact)| {
-                let mut v = json!({ "id": id_str(id), "exact": exact });
-                match sigs.get(&id) {
-                    Some(e) => {
-                        v["kind"] = json!(e.kind());
-                        if let Some(c) = &e.code {
-                            v["code"] = json!(c);
-                        }
-                        if let Some(t) = e.props.as_ref().and_then(|p| p.tag.as_deref()) {
-                            v["tag"] = json!(t);
-                        }
-                    }
-                    None => v["kind"] = json!("field"),
-                }
-                v
-            })
-            .collect(),
-    )
-}
-
-/// The block structure of `blocks`, to `depth` table levels.
-pub fn structure(blocks: &[Block], depth: usize) -> Value {
-    Value::Array(
-        blocks
-            .iter()
-            .map(|b| match b {
-                Block::Para(p) => {
-                    let ids: Vec<String> = all_ids(p).into_iter().map(id_str).collect();
-                    json!({ "para": { "text_len": UnitText::of(p).len().0, "elements": ids } })
-                }
-                Block::Table(t) => json!({ "table": { "rows": t.rows.iter().map(|r| json!({ "cells": r.cells.iter().map(|c| {
-                    let has = c.blocks.iter().any(|b| match b { Block::Para(p) => !crate::docx::fields::text(p).trim().is_empty() || p.inlines.iter().any(|i| i.units() > 0 && !matches!(i, Inline::Text(..))), Block::Table(_) => true });
-                    let mut v = json!({ "span": c.span.max(1), "vmerge": format!("{:?}", c.v_merge).to_lowercase(), "has_content": has });
-                    if depth > 0 { v["blocks"] = structure(&c.blocks, depth - 1); }
-                    v
-                }).collect::<Vec<_>>() })).collect::<Vec<_>>() } }),
-            })
-            .collect(),
-    )
-}
-
-fn all_ids(p: &Paragraph) -> Vec<ElementId> {
-    p.inlines
-        .iter()
-        .filter_map(|i| match i {
-            Inline::FieldBegin { id, .. } => Some(ElementId::Field(*id)),
-            Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. } => Some(ElementId::Control(*c)),
-            _ => None,
-        })
-        .collect()
-}
-
 /// The elements now, by id: what change lists compare.
 pub fn by_id(doc: &Document, idx: &DocIndex) -> HashMap<ElementId, Element> {
     enumerate(doc, idx, &Filter::default()).into_iter().map(|e| (e.id, e)).collect()
@@ -477,14 +386,6 @@ pub struct Changes {
 impl Changes {
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty() && self.changed.is_empty()
-    }
-
-    pub fn to_json(&self, idx: &DocIndex) -> Value {
-        json!({
-            "added": self.added.iter().map(|e| e.to_json(idx)).collect::<Vec<_>>(),
-            "removed": self.removed.iter().map(|e| id_str(*e)).collect::<Vec<_>>(),
-            "changed": self.changed.iter().map(|e| e.to_json(idx)).collect::<Vec<_>>(),
-        })
     }
 
     /// Folds a later change list in: an element added then changed stays added; added then removed is no change.
@@ -560,7 +461,9 @@ pub fn touched(inverses: &[super::step::Step]) -> Touched {
                     _ => None,
                 }));
             }
-            Step::Para { para, .. } => paras.push(*para),
+            Step::Para { para, .. } | Step::FieldViews { para, .. } => paras.push(*para),
+            // Images, numbering definitions and settings hold no elements.
+            Step::AddImage { .. } | Step::Numbering { .. } | Step::DefaultTab(_) => {}
             // A split (its inverse a join): both paragraphs. A join (its inverse a split): the joined paragraph, and
             // whatever the second paragraph's block controls were (they may have gone with it).
             Step::Join { first, second } => paras.extend([*first, *second]),

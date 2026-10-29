@@ -1,0 +1,33 @@
+{
+  "name": "batch",
+  "fixture": "editor/FX-mixed-format.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "forward" } },
+    { "op": "command", "command": { "type": "insertParagraph" } },
+    { "op": "expectState", "match": { "revision": 2 } },
+    { "op": "batch", "label": "Insert block", "commands": [
+      { "type": "insertText", "value": "Block heading" },
+      { "type": "setParagraphStyle", "value": "Heading1" },
+      { "type": "insertTable", "rows": 2, "columns": 2 }
+    ] },
+    { "op": "expectEvents", "match": [
+      { "type": "documentChanged", "origin": "api", "revision": 2 },
+      { "type": "documentChanged", "origin": "api", "revision": 3, "label": "Insert block", "summary": { "tables": 1 } }
+    ] },
+    { "op": "expectState", "match": { "revision": 3, "history": { "canUndo": true, "undoLabel": "Insert block" } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Block heading" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "paragraph": { "style": "Heading1" } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "revision": 4, "history": { "canRedo": true, "redoLabel": "Insert block" } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Block heading" }], "result": { "found": false } },
+    { "op": "batch", "label": "Bad block", "commands": [
+      { "type": "insertText", "value": "Never inserted" },
+      { "type": "setParagraphStyle", "value": "Heading1" },
+      { "type": "insertTable", "rows": 0, "columns": 2 }
+    ] },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "expectState", "match": { "revision": 4, "history": { "canRedo": true, "redoLabel": "Insert block" } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Never inserted" }], "result": { "found": false } }
+  ]
+}

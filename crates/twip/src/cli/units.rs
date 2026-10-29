@@ -23,10 +23,10 @@ pub fn run(args: &[String]) -> Result<(), String> {
             let ms: f64 = args.get(i + 1).and_then(|s| s.parse().ok()).ok_or("--over needs milliseconds")?;
             (ms, args.iter().enumerate().filter(|(k, _)| *k != i && *k != i + 1).map(|(_, a)| a.clone()).collect::<Vec<_>>())
         }
-        None => (twip::layout::job::UNIT_LIMIT_MS, args.to_vec()),
+        None => (twip::internal::layout::job::UNIT_LIMIT_MS, args.to_vec()),
     };
-    twip::layout::job::time_units(limit);
-    let fonts = twip::font::Fonts::system();
+    twip::internal::layout::job::time_units(limit);
+    let fonts = twip::internal::font::Fonts::system();
     let mut docs = Vec::new();
     for p in &paths {
         collect(Path::new(p), &mut docs);
@@ -35,11 +35,11 @@ pub fn run(args: &[String]) -> Result<(), String> {
     let mut worst: Vec<(f64, &'static str, String)> = Vec::new();
     for path in &docs {
         let Ok(bytes) = std::fs::read(path) else { continue };
-        let Ok(doc) = twip::docx::read(&bytes) else { continue };
-        twip::layout::job::take_over_limit();
-        twip::layout::layout(&doc, &fonts);
+        let Ok(doc) = twip::internal::docx::read(&bytes) else { continue };
+        twip::internal::layout::job::take_over_limit();
+        twip::internal::layout::layout(&doc, &fonts);
         laid += 1;
-        for (class, ms) in twip::layout::job::take_over_limit() {
+        for (class, ms) in twip::internal::layout::job::take_over_limit() {
             over += 1;
             println!("{:8.2} ms  {class:<14} {}", ms, path.display());
             worst.push((ms, class, path.display().to_string()));

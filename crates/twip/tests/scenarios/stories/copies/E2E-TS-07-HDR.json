@@ -23,8 +23,11 @@
       }
     },
     {
-      "command": "insert.table",
-      "arg": "1,2"
+      "command": {
+        "type": "insertTable",
+        "rows": 1,
+        "columns": 2
+      }
     },
     {
       "expect": {

@@ -7,8 +7,8 @@
   ],
   "steps": [
     {
-      "command": "data.write",
-      "arg": {
+      "command": {
+        "type": "writeDataPart",
         "namespace": "urn:store:calc",
         "xml": "<calc xmlns=\"urn:store:calc\"><unclosed></calc>"
       },

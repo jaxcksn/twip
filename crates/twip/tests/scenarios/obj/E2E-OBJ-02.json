@@ -1,0 +1,99 @@
+{
+  "id": "E2E-OBJ-02",
+  "title": "With a float selected, typing goes in at its anchor paragraph's start and the float stays; Delete removes it, undo restores it",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "float": 0
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object",
+          "float": 0
+        }
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "5": {
+            "starts": "ZSquare wrap."
+          }
+        },
+        "floats": [
+          {
+            "anchor": 5
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    },
+    {
+      "click": {
+        "float": 0
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "caret": {
+          "para": 5,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {
+            "anchor": 5
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "read-only",
+  "fixture": "editor/FX-services.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "setReadOnly", "args": [true] },
+    { "op": "expectState", "match": { "readOnly": true, "revision": 1, "commands": { "insertText": { "enabled": false }, "copy": { "enabled": false }, "paste": { "enabled": false }, "selectAll": { "enabled": true } } } },
+    { "op": "command", "command": { "type": "insertText", "value": "blocked" } },
+    { "op": "expectError", "code": "read-only" },
+    { "op": "batch", "commands": [{ "type": "insertParagraph" }] },
+    { "op": "expectError", "code": "read-only" },
+    { "op": "expectState", "match": { "revision": 1, "modified": false } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "expectState", "match": { "selection": { "empty": false }, "commands": { "copy": { "enabled": true } } } },
+    { "op": "command", "command": { "type": "copy" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Apple" }], "result": { "found": true } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "apple" }], "result": [{ "text": "Apple" }, { "text": "apple" }, { "text": "APPLE" }] },
+    { "op": "call", "method": "navigation.headings", "result": [{ "level": 1, "text": "Services", "page": 1 }], "save": "headings" },
+    { "op": "call", "method": "navigation.select", "args": [{ "$saved": "headings", "path": [0, "id"] }] },
+    { "op": "expectState", "match": { "paragraph": { "style": "Heading1" } } },
+    { "op": "export", "format": "docx", "match": { "revision": 1 } },
+    { "op": "expectState", "match": { "revision": 1 } },
+    { "op": "call", "method": "setReadOnly", "args": [false] },
+    { "op": "expectState", "match": { "readOnly": false, "commands": { "insertText": { "enabled": true }, "paste": { "enabled": true } } } },
+    { "op": "command", "command": { "type": "insertText", "value": "Allowed " } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "origin": "api", "revision": 2 }] },
+    { "op": "expectState", "match": { "revision": 2, "modified": true } }
+  ]
+}

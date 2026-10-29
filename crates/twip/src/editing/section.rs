@@ -1,7 +1,6 @@
-//! Section and page commands: margins, orientation, paper size, columns,
-//! a different first page, and Page Setup. One [`Step::SectionPage`] on the focus's section; layout runs in full.
+//! Section and page commands: orientation and paper size. One [`Step::SectionPage`] on the focus's section; layout
+//! runs in full.
 
-use crate::docx::SectionPage;
 use crate::font::Fonts;
 
 use super::Editor;
@@ -11,18 +10,10 @@ use super::step::Step;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SectionCmd {
-    /// Top, bottom, left, right, points.
-    Margins([f64; 4]),
     /// Landscape (`true`) or portrait: width and height swap when they disagree with it.
     Orientation(bool),
     /// Paper width and height in portrait, points (kept in the section's orientation).
     Size(f64, f64),
-    /// Equal columns.
-    Columns(usize),
-    /// Different First Page, toggled.
-    DifferentFirst,
-    /// Page Setup: every value.
-    Page(SectionPage),
 }
 
 impl Editor {
@@ -51,10 +42,6 @@ impl Editor {
         let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
         let mut page = s.page();
         let label = match c {
-            SectionCmd::Margins([t, b, l, r]) => {
-                (page.top, page.bottom, page.left, page.right) = (t, b, l, r);
-                "Margins"
-            }
             SectionCmd::Orientation(landscape) => {
                 if (page.page_w > page.page_h) != landscape {
                     (page.page_w, page.page_h) = (page.page_h, page.page_w);
@@ -67,24 +54,6 @@ impl Editor {
                 let landscape = page.page_w > page.page_h;
                 (page.page_w, page.page_h) = if landscape { (w.max(h), w.min(h)) } else { (w.min(h), w.max(h)) };
                 "Size"
-            }
-            SectionCmd::Columns(n) => {
-                page.columns = crate::docx::Columns {
-                    num: n.clamp(1, 45),
-                    equal: true,
-                    cols: Vec::new(),
-                    space: if page.columns.space > 0.0 { page.columns.space } else { 36.0 },
-                    separator: page.columns.separator,
-                };
-                "Columns"
-            }
-            SectionCmd::DifferentFirst => {
-                page.title_pg = !page.title_pg;
-                "Different First Page"
-            }
-            SectionCmd::Page(p) => {
-                page = p;
-                "Page Setup"
             }
         };
         if page == s.page() {

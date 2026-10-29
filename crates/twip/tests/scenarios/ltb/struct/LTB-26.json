@@ -21,7 +21,9 @@
       }
     },
     {
-      "command": "table.delete.column"
+      "command": {
+        "type": "deleteColumns"
+      }
     },
     {
       "expect": {
@@ -43,8 +45,13 @@
       }
     },
     {
-      "command": "table.row-height",
-      "arg": "30,exact"
+      "command": {
+        "type": "setRowHeight",
+        "value": {
+          "height": 30,
+          "rule": "exact"
+        }
+      }
     },
     {
       "expect": {
@@ -54,7 +61,13 @@
           {},
           {
             "rows": 2,
-            "heights": [null, [30, "exact"]]
+            "heights": [
+              null,
+              [
+                30,
+                "exact"
+              ]
+            ]
           }
         ]
       }

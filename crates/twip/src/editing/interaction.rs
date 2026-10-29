@@ -13,7 +13,7 @@ use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
 use super::Editor;
-use super::commands::{Command, Outcome};
+use super::commands::Outcome;
 use super::input::Request;
 use super::position::Position;
 use super::selection::Selection;
@@ -104,7 +104,7 @@ impl Editor {
             if !moving {
                 e.smart_cut();
             }
-            let ok = matches!(e.run(Command::Delete { dir: super::commands::Dir::Forward, word: false }, fonts), Outcome::Changed(_));
+            let ok = matches!(e.delete(super::commands::Dir::Forward, false, fonts), Outcome::Changed(_));
             if ok && let Some((s, t)) = placed.as_mut() {
                 for m in &e.last_maps {
                     (*s, *t) = (m.apply(*s), m.apply(*t));
@@ -129,8 +129,10 @@ impl Editor {
             }
             ok
         };
+        // The paste, the deletion and the move recorded are one transaction.
+        self.begin_batch(Some(if d.copy { "Copy" } else { "Move" }.into()));
         #[allow(clippy::if_same_then_else, reason = "the order differs: each call moves what the other one sees")]
-        let mut steps = if d.copy {
+        let steps = if d.copy {
             paste(self, &mut placed) as usize
         } else if after {
             paste(self, &mut placed) as usize + delete(self, &mut placed) as usize
@@ -138,21 +140,21 @@ impl Editor {
             delete(self, &mut placed) as usize + paste(self, &mut placed) as usize
         };
         if steps == 0 {
+            self.end_batch(false, fonts);
             return Some(Outcome::Unchanged("nothing dropped"));
         }
         if moving && let (Some(to), Some(from)) = &marks {
-            steps += self.record_move(to, from, fonts) as usize;
+            self.record_move(to, from, fonts);
         }
         // The dropped text is selected.
         if let Some((s, t)) = placed {
             self.selection = Selection::range(s, t, super::selection::Granularity::Char);
         }
-        self.history.merge_last(steps, if d.copy { "Copy" } else { "Move" });
-        Some(Outcome::Changed(self.revision))
+        Some(self.end_batch(true, fonts))
     }
 
     /// After a paste: the fragment cut as a move (whole paragraphs or a sentence, with tracking) pasted again is
-    /// recorded as that move, in the paste's undo step.
+    /// recorded as that move, in the paste's transaction (the batch the paste runs in).
     pub(super) fn paste_moved(&mut self, f: &super::clipboard::Fragment, out: &Outcome, fonts: &Fonts) {
         let Some((id, from)) = self.cut_move.take() else { return };
         if id != f.id || !matches!(out, Outcome::Changed(_)) {
@@ -160,9 +162,7 @@ impl Editor {
         }
         let Some(to) = self.recorded.0.clone() else { return };
         let sel = self.selection;
-        if self.record_move(&to, &from, fonts) {
-            self.history.merge_last(2, "Paste");
-        }
+        self.record_move(&to, &from, fonts);
         self.selection = sel;
     }
 

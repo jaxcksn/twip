@@ -27,26 +27,26 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "wrapInRepeatingSection",
         "tag": "Fuzz/R0"
       },
-      "command": "region.wrap",
       "expect": {}
     },
     {
-      "arg": {
+      "command": {
+        "type": "setControl",
         "id": "$tag:Fuzz/R0",
-        "lock": "content",
-        "tag": "Fuzz/T0"
+        "tag": "Fuzz/T0",
+        "lock": "content"
       },
-      "command": "control.set",
       "expect": {}
     },
     {
-      "arg": {
-        "id": "$tag:Fuzz/T0"
+      "command": {
+        "type": "removeElement",
+        "value": "$tag:Fuzz/T0"
       },
-      "command": "element.remove",
       "expect": {}
     }
   ],

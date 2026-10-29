@@ -153,7 +153,7 @@ fn item_down(it: &Item, dy: f64) -> Item {
     super::traverse::translated(it, 0.0, dy)
 }
 
-fn row_down(r: &RowFragment, dy: f64) -> RowFragment {
+pub(crate) fn row_down(r: &RowFragment, dy: f64) -> RowFragment {
     RowFragment {
         row: r.row,
         rect: [r.rect[0], r.rect[1] + dy, r.rect[2], r.rect[3] + dy],
@@ -424,6 +424,7 @@ impl<'d> Paginator<'d, '_> {
             effects: b.effects,
             excluded: super::traverse::excluded_in(&b.fragment, page_h),
             start_table,
+            held: std::mem::take(&mut self.run.memo.held),
             body: b.fragment,
         });
         Ok(match b.section_end {

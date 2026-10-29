@@ -1,0 +1,12 @@
+[
+  {
+    "display": "Ada",
+    "id": "control-3",
+    "kind": "plainText",
+    "locked": false,
+    "parent": "control-1",
+    "story": "body",
+    "tag": "name",
+    "title": "Name"
+  }
+]

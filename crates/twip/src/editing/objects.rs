@@ -127,8 +127,8 @@ pub(super) struct ObjectDrag {
 pub enum ObjectCmd {
     /// `square`, `tight`, `through`, `topAndBottom`, `behind` or `front` (a float only).
     Wrap(String),
-    /// The anchor lock toggled (a float only).
-    LockAnchor,
+    /// The anchor locked or unlocked (a float only).
+    LockAnchor(bool),
     /// Width and height, in points.
     Size(f64, f64),
     /// The picture's own size (its pixels at its resolution).
@@ -377,21 +377,16 @@ impl Editor {
             (w, h) = (tw, h * tw / w);
         }
         let (w, h) = (((w * 20.0).round() / 20.0).max(1.0), ((h * 20.0).round() / 20.0).max(1.0));
-        self.doc.images.push(data);
-        let image = Some(self.doc.images.len() - 1);
+        let image = Some(self.pending_image(data));
         let out = self.insert_inline(
             |run| Inline::Picture(crate::docx::Picture { w, h, image, alt: "".into(), lock_aspect: true }, run),
             "Insert Picture",
             fonts,
         );
-        match (&out, self.caret().and_then(|p| p.para_offset())) {
-            (Outcome::Changed(_), Some((para, at))) if at.0 > 0 => {
-                self.set_selection(Selection::Object(ObjectRef::Inline { para, offset: Unit(at.0 - 1) }));
-            }
-            (Outcome::Changed(_), _) => {}
-            _ => {
-                self.doc.images.pop();
-            }
+        if let (Outcome::Changed(_), Some((para, at))) = (&out, self.caret().and_then(|p| p.para_offset()))
+            && at.0 > 0
+        {
+            self.set_selection(Selection::Object(ObjectRef::Inline { para, offset: Unit(at.0 - 1) }));
         }
         out
     }
@@ -524,7 +519,7 @@ impl Editor {
                         None => return Outcome::Unchanged("no image size"),
                     },
                     // shortcut: wrapping an inline picture would make it a float; not done.
-                    ObjectCmd::Wrap(_) | ObjectCmd::LockAnchor => return Outcome::Unchanged("inline picture"),
+                    ObjectCmd::Wrap(_) | ObjectCmd::LockAnchor(_) => return Outcome::Unchanged("inline picture"),
                     ObjectCmd::AltText(_) => return Outcome::Unchanged("handled above"),
                 };
                 self.set_picture_size(para, offset, w, h, fonts)
@@ -549,8 +544,8 @@ impl Editor {
                         };
                         "Wrap Text"
                     }
-                    ObjectCmd::LockAnchor => {
-                        n.locked = !n.locked;
+                    &ObjectCmd::LockAnchor(on) => {
+                        n.locked = on;
                         "Lock Anchor"
                     }
                     ObjectCmd::Size(w, h) => {

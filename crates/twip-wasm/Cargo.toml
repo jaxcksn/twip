@@ -9,4 +9,4 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-twip-ffi = { path = "../twip-ffi" }
+twip-capi = { path = "../twip-capi" }

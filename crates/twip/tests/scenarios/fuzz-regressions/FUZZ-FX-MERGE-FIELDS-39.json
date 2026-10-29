@@ -23,8 +23,10 @@
       }
     },
     {
-      "arg": null,
-      "command": "table.insert-above",
+      "command": {
+        "type": "insertRows",
+        "where": "above"
+      },
       "expect": {}
     },
     {
@@ -52,11 +54,11 @@
       }
     },
     {
-      "arg": {
-        "display": "",
-        "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT"
+      "command": {
+        "type": "setField",
+        "id": "$code:MERGEFIELD Shipment.Shipment_Number \\* Upper \\* MERGEFORMAT",
+        "display": ""
       },
-      "command": "field.set",
       "expect": {}
     },
     {
@@ -137,11 +139,11 @@
       "type": "é"
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertField",
         "code": "MERGEFIELD Fuzz.F0",
         "display": ""
       },
-      "command": "field.insert",
       "expect": {}
     },
     {
@@ -358,13 +360,17 @@
       }
     },
     {
-      "arg": "2",
-      "command": "table.split",
+      "command": {
+        "type": "splitCells",
+        "columns": 2
+      },
       "expect": {}
     },
     {
-      "arg": null,
-      "command": "table.insert-above",
+      "command": {
+        "type": "insertRows",
+        "where": "above"
+      },
       "expect": {}
     },
     {
@@ -381,17 +387,16 @@
       "key": "ArrowLeft"
     },
     {
-      "arg": "editing",
-      "command": "view.mode",
+      "mode": "editing",
       "expect": {}
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertControl",
         "kind": "group",
         "tag": "Fuzz/Wrap",
-        "wrap": true
+        "wrapSelection": true
       },
-      "command": "control.insert",
       "expect": {}
     },
     {
@@ -495,8 +500,7 @@
       }
     },
     {
-      "arg": "design",
-      "command": "view.mode",
+      "mode": "design",
       "expect": {}
     },
     {
@@ -598,10 +602,10 @@
       }
     },
     {
-      "arg": {
-        "id": "$code:NUMPAGES"
+      "command": {
+        "type": "removeElement",
+        "value": "$code:NUMPAGES"
       },
-      "command": "element.remove",
       "expect": {}
     },
     {
@@ -712,8 +716,7 @@
       }
     },
     {
-      "arg": "editing",
-      "command": "view.mode",
+      "mode": "editing",
       "expect": {}
     },
     {
@@ -777,12 +780,12 @@
       "expect": {}
     },
     {
-      "arg": {
-        "kind": "rich_text",
+      "command": {
+        "type": "insertControl",
+        "kind": "richText",
         "tag": "Fuzz/Wrap",
-        "wrap": true
+        "wrapSelection": true
       },
-      "command": "control.insert",
       "expect": {}
     },
     {
@@ -815,8 +818,9 @@
       "type": "x"
     },
     {
-      "arg": null,
-      "command": "table.delete.row",
+      "command": {
+        "type": "deleteRows"
+      },
       "expect": {}
     },
     {
@@ -856,8 +860,10 @@
       "type": "Ünï"
     },
     {
-      "arg": null,
-      "command": "table.insert-right",
+      "command": {
+        "type": "insertColumns",
+        "where": "right"
+      },
       "expect": {}
     },
     {
@@ -893,13 +899,14 @@
       "type": "word."
     },
     {
-      "arg": "editing",
-      "command": "view.mode",
+      "mode": "editing",
       "expect": {}
     },
     {
-      "arg": null,
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {}
     },
     {
@@ -937,10 +944,10 @@
       "shift": false
     },
     {
-      "arg": {
-        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT"
+      "command": {
+        "type": "removeElement",
+        "value": "$code:MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT"
       },
-      "command": "element.remove",
       "expect": {}
     },
     {
@@ -966,11 +973,11 @@
       "shift": true
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertField",
         "code": "MERGEFIELD Fuzz.F3",
         "display": ""
       },
-      "command": "field.insert",
       "expect": {}
     },
     {
@@ -998,8 +1005,7 @@
       }
     },
     {
-      "arg": "design",
-      "command": "view.mode",
+      "mode": "design",
       "expect": {}
     },
     {
@@ -1037,8 +1043,10 @@
       "type": "é"
     },
     {
-      "arg": "2",
-      "command": "table.split",
+      "command": {
+        "type": "splitCells",
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -1150,12 +1158,12 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertControl",
         "kind": "group",
         "tag": "Fuzz/Wrap",
-        "wrap": true
+        "wrapSelection": true
       },
-      "command": "control.insert",
       "expect": {}
     },
     {
@@ -1286,11 +1294,11 @@
       "shift": false
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertField",
         "code": "MERGEFIELD Fuzz.F0",
         "display": "«F»"
       },
-      "command": "field.insert",
       "expect": {}
     },
     {
@@ -1372,20 +1380,20 @@
       "type": "a"
     },
     {
-      "arg": {
-        "display": "a b",
-        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT"
+      "command": {
+        "type": "setField",
+        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"0.00\" \\* MERGEFORMAT",
+        "display": "a b"
       },
-      "command": "field.set",
       "expect": {}
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertControl",
         "kind": "group",
         "tag": "Fuzz/Wrap",
-        "wrap": true
+        "wrapSelection": true
       },
-      "command": "control.insert",
       "expect": {}
     },
     {
@@ -1450,8 +1458,10 @@
       }
     },
     {
-      "arg": null,
-      "command": "table.insert-left",
+      "command": {
+        "type": "insertColumns",
+        "where": "left"
+      },
       "expect": {}
     },
     {
@@ -1475,8 +1485,7 @@
       }
     },
     {
-      "arg": "editing",
-      "command": "view.mode",
+      "mode": "editing",
       "expect": {}
     },
     {
@@ -1507,8 +1516,10 @@
       "type": "hello "
     },
     {
-      "arg": null,
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {}
     },
     {
@@ -1623,11 +1634,11 @@
       }
     },
     {
-      "arg": {
-        "display": "X",
-        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"$,0.00\""
+      "command": {
+        "type": "setField",
+        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"$,0.00\"",
+        "display": "X"
       },
-      "command": "field.set",
       "expect": {}
     },
     {
@@ -1639,11 +1650,11 @@
       "expect": {}
     },
     {
-      "arg": {
-        "display": "",
-        "id": "$code:MERGEFIELD Calc.Old_Name \\* MERGEFORMAT"
+      "command": {
+        "type": "setField",
+        "id": "$code:MERGEFIELD Calc.Old_Name \\* MERGEFORMAT",
+        "display": ""
       },
-      "command": "field.set",
       "expect": {}
     },
     {
@@ -1837,11 +1848,11 @@
       "shift": true
     },
     {
-      "arg": {
-        "display": "",
-        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"$,0.00\""
+      "command": {
+        "type": "setField",
+        "id": "$code:MERGEFIELD Calc.Old_Name \\# \"$,0.00\"",
+        "display": ""
       },
-      "command": "field.set",
       "expect": {}
     },
     {
@@ -1879,8 +1890,10 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.insert-left",
+      "command": {
+        "type": "insertColumns",
+        "where": "left"
+      },
       "expect": {}
     },
     {
@@ -1892,8 +1905,7 @@
       "expect": {}
     },
     {
-      "arg": "design",
-      "command": "view.mode",
+      "mode": "design",
       "expect": {}
     },
     {

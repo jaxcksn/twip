@@ -56,19 +56,19 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "wrapInRepeatingSection",
         "tag": "Fuzz/R1"
       },
-      "command": "region.wrap",
       "expect": {}
     },
     {
-      "arg": {
+      "command": {
+        "type": "setControl",
         "id": "$tag:Fuzz/R1",
-        "lock": "content",
-        "tag": "Fuzz/T2"
+        "tag": "Fuzz/T2",
+        "lock": "content"
       },
-      "command": "control.set",
       "expect": {}
     },
     {
@@ -80,8 +80,11 @@
       }
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -94,8 +97,10 @@
       "shift": false
     },
     {
-      "arg": "2",
-      "command": "table.split",
+      "command": {
+        "type": "splitCells",
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -132,11 +137,11 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "removeControl",
         "id": "$tag:Fuzz/T2",
-        "keep_content": false
+        "keepContent": false
       },
-      "command": "control.remove",
       "expect": {}
     }
   ],

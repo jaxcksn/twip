@@ -22,7 +22,10 @@
       }
     },
     {
-      "command": "table.select.table"
+      "command": {
+        "type": "select",
+        "value": "table"
+      }
     },
     {
       "key": "Delete"
@@ -62,7 +65,10 @@
       }
     },
     {
-      "command": "table.select.table"
+      "command": {
+        "type": "select",
+        "value": "table"
+      }
     },
     {
       "key": "Backspace"
@@ -88,7 +94,10 @@
       }
     },
     {
-      "command": "table.select.row"
+      "command": {
+        "type": "select",
+        "value": "row"
+      }
     },
     {
       "key": "Backspace"

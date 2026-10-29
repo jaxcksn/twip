@@ -1,0 +1,25 @@
+[
+  {
+    "columns": {
+      "count": 1,
+      "separator": false,
+      "spacing": 36.5
+    },
+    "differentFirstPage": true,
+    "differentOddEven": false,
+    "footerDistance": 36.5,
+    "headerDistance": 36.5,
+    "margins": {
+      "bottom": 72.5,
+      "gutter": 0.5,
+      "left": 72.5,
+      "right": 72.5,
+      "top": 72.5
+    },
+    "orientation": "portrait",
+    "size": {
+      "height": 792.5,
+      "width": 612.5
+    }
+  }
+]

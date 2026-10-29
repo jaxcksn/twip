@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::docx::{Block, Float, NoteKind, ParaStyle};
+use crate::docx::{Block, Float, Inline, NoteKind, ParaStyle};
 
 use super::LayoutCtx;
 use super::cache::{CacheKey, cached};
@@ -196,7 +196,14 @@ pub fn layout_with(
                 let style = p.para_style_in(view);
                 let ps = ParaSpace { width, start: 0, borders: neighbour_borders(style, prev, next), x0: 0.0, env: text.clone() };
                 let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
-                let (before, after) = (space_before(style), space_after(style));
+                let (mut before, mut after) = (space_before(style), space_after(style));
+                // PARA-5: a cell's first paragraph takes no automatic space-before, its last no automatic space-after.
+                if in_cell && style.before_auto && bi == 0 {
+                    before = 0.0;
+                }
+                if in_cell && style.after_auto && bi + 1 == blocks.len() {
+                    after = 0.0;
+                }
                 let g = match prev {
                     None => before,
                     Some(_) if !contextual => gap_plain(text, prev_after, before),
@@ -327,6 +334,34 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         size: (x1 - x0, y1 - y0),
         children: children.into(),
     }))
+}
+
+/// A header or footer story's anchored floats, drawn in page coordinates (FLOAT-6): `top` is where the story's first
+/// unit starts on the page. They don't change the story's height. Floats in its table cells are drawn by the cells.
+/// shortcut: a line-relative float is placed against its paragraph's first line; header floats don't wrap the body.
+pub fn hf_floats(
+    blocks: &[&Block],
+    story: &StoryLayout,
+    fr: &super::float::Frames,
+    top: f64,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<Vec<Child>, Yield> {
+    let mut out = Vec::new();
+    for (bi, b) in blocks.iter().enumerate() {
+        let Block::Para(p) = b else { continue };
+        let Some(u) = story.units.iter().find(|u| u.block == bi) else { continue };
+        // The story's first paragraph is measured from above its space-before (as Word places footer stamps).
+        // shortcut: later paragraphs from their first line; not checked against Word.
+        let para_top = top + u.top - if bi == 0 { space_before(p.para_style_in(env.ctx.env.text.review.view)) } else { 0.0 };
+        for i in &p.inlines {
+            let Inline::Float(f, _) = i else { continue };
+            let h = float_height(f, env, memos)?;
+            let (fx, fy) = (super::float::h_pos(f, fr), super::float::v_pos(f, h, fr, para_top, para_top));
+            out.push(float_box(f, [fx, fy, fx + f.w, fy + h], para_id(p), env, memos)?);
+        }
+    }
+    Ok(out)
 }
 
 /// The header and footer height cap (HDR-8).

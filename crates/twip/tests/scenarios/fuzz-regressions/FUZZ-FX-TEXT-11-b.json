@@ -71,8 +71,11 @@
       }
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -130,11 +133,11 @@
       "expect": {}
     },
     {
-      "arg": {
-        "kind": "rich_text",
+      "command": {
+        "type": "insertControl",
+        "kind": "richText",
         "tag": "Fuzz/C1"
       },
-      "command": "control.insert",
       "expect": {}
     },
     {
@@ -159,12 +162,12 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertControl",
         "kind": "group",
         "tag": "Fuzz/Wrap",
-        "wrap": true
+        "wrapSelection": true
       },
-      "command": "control.insert",
       "expect": {}
     }
   ],

@@ -1,0 +1,16 @@
+[
+  {
+    "bytes": "UEs=",
+    "revision": 7,
+    "warnings": [
+      {
+        "code": "unsupported-element",
+        "count": 3,
+        "location": {
+          "part": "word/document.xml"
+        },
+        "message": "w:customXml is not kept"
+      }
+    ]
+  }
+]

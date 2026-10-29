@@ -1,0 +1,95 @@
+{
+  "id": "E2E-OBJ-08",
+  "title": "A float dragged up past other paragraphs re-anchors to the paragraph at its new top, its paragraph-relative offset measured from there; a locked one keeps its anchor",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "float": 1
+        },
+        "to": {
+          "float": 1,
+          "dy": -150
+        }
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {
+            "anchor": 5,
+            "x": 324,
+            "y": 24.6
+          },
+          {
+            "anchor": 5,
+            "x": 0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "anchor": 6
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "float": 5
+        },
+        "to": {
+          "float": 5,
+          "dy": 120
+        }
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {
+            "anchor": 10
+          },
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

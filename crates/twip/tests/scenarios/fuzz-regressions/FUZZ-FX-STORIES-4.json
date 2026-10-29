@@ -15,17 +15,17 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "wrapInRepeatingSection",
         "tag": "Fuzz/R0"
       },
-      "command": "region.wrap",
       "expect": {}
     },
     {
-      "arg": {
-        "id": "$tag:Fuzz/R0"
+      "command": {
+        "type": "removeElement",
+        "value": "$tag:Fuzz/R0"
       },
-      "command": "element.remove",
       "expect": {}
     }
   ],

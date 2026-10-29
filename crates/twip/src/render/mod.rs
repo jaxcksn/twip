@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+pub mod ruler;
 #[cfg(target_os = "emscripten")]
 pub mod web;
 

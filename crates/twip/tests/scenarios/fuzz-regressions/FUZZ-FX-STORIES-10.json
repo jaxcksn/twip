@@ -89,8 +89,9 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.delete.table",
+      "command": {
+        "type": "deleteTable"
+      },
       "expect": {}
     },
     {
@@ -106,8 +107,9 @@
       "type": "👍🏽"
     },
     {
-      "arg": null,
-      "command": "table.merge",
+      "command": {
+        "type": "mergeCells"
+      },
       "expect": {}
     },
     {
@@ -142,8 +144,11 @@
       "type": "👍🏽"
     },
     {
-      "arg": "2,2",
-      "command": "insert.table",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
       "expect": {}
     },
     {
@@ -212,8 +217,10 @@
       "type": "é"
     },
     {
-      "arg": null,
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {}
     },
     {
@@ -234,8 +241,10 @@
       "shift": true
     },
     {
-      "arg": null,
-      "command": "table.insert-above",
+      "command": {
+        "type": "insertRows",
+        "where": "above"
+      },
       "expect": {}
     },
     {

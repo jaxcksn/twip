@@ -1,0 +1,126 @@
+{
+  "id": "E2E-OBJ-07",
+  "title": "A locked picture's corner handle keeps its ratio, following the larger change; a side handle stretches one dimension even so",
+  "fixture": "FX-OBJ-LOCK.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "float": 1
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "float": 1,
+          "at": "bottom-right"
+        },
+        "to": {
+          "float": 1,
+          "at": "bottom-right",
+          "dx": 50.4,
+          "dy": 10
+        }
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 324.0,
+            "y": 7.2,
+            "w": 151.2,
+            "h": 108.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "float": 1,
+          "at": "right"
+        },
+        "to": {
+          "float": 1,
+          "at": "right",
+          "dx": 20
+        }
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 324.0,
+            "w": 120.8,
+            "h": 72.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "float": 1,
+          "at": "left"
+        },
+        "to": {
+          "float": 1,
+          "at": "left",
+          "dx": -10
+        }
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 314.0,
+            "w": 110.8,
+            "h": 72.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

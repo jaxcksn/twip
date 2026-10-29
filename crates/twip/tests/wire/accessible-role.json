@@ -1,0 +1,17 @@
+[
+  "document",
+  "page",
+  "paragraph",
+  "heading",
+  "list",
+  "listItem",
+  "table",
+  "row",
+  "cell",
+  "image",
+  "link",
+  "textBox",
+  "note",
+  "header",
+  "footer"
+]

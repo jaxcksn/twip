@@ -16,8 +16,9 @@
       "shift": false
     },
     {
-      "arg": null,
-      "command": "table.delete.column",
+      "command": {
+        "type": "deleteColumns"
+      },
       "expect": {}
     },
     {

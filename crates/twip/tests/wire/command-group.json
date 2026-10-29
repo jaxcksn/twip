@@ -1,0 +1,19 @@
+[
+  "text",
+  "clipboard",
+  "history",
+  "selection",
+  "character",
+  "paragraph",
+  "tabs",
+  "page",
+  "headerFooter",
+  "insert",
+  "table",
+  "object",
+  "field",
+  "control",
+  "data",
+  "review",
+  "view"
+]

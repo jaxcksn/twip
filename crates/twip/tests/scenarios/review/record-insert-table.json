@@ -1,208 +1,212 @@
 {
- "id": "RECORD-INSERT-TABLE",
- "title": "An inserted table: every row, run and mark inserted",
- "fixture": "FX-EMPTY.docx",
- "steps": [
-  {
-   "type": "First para."
-  },
-  {
-   "key": "Enter"
-  },
-  {
-   "type": "Second para."
-  },
-  {
-   "command": "review.track",
-   "arg": "on"
-  },
-  {
-   "command": "review.author",
-   "arg": "Author A"
-  },
-  {
-   "click": {
-    "para": 1,
-    "offset": 0
-   }
-  },
-  {
-   "command": "insert.table",
-   "arg": "2,2"
-  },
-  {
-   "type": "a"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "b"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "c"
-  },
-  {
-   "key": "Tab"
-  },
-  {
-   "type": "d"
-  },
-  {
-   "expect": {
-    "review": {
-     "stories": {
-      "body": [
-       {
-        "text": "First para.",
-        "runs": [
-         {
-          "text": "First para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       },
-       {
-        "table": {
-         "change": "Author A",
-         "rows": [
-          {
-           "ins": "Author A",
-           "del": null,
-           "cells": [
-            {
-             "blocks": [
+  "id": "RECORD-INSERT-TABLE",
+  "title": "An inserted table: every row, run and mark inserted",
+  "fixture": "FX-EMPTY.docx",
+  "steps": [
+    {
+      "type": "First para."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "Second para."
+    },
+    {
+      "command": {
+        "type": "setTrackChanges",
+        "value": true
+      }
+    },
+    {
+      "author": "Author A"
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      }
+    },
+    {
+      "type": "a"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "b"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "c"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "type": "d"
+    },
+    {
+      "expect": {
+        "review": {
+          "stories": {
+            "body": [
               {
-               "text": "a",
-               "runs": [
-                {
-                 "text": "a",
-                 "ins": "Author A",
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": "Author A",
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            },
-            {
-             "blocks": [
+                "text": "First para.",
+                "runs": [
+                  {
+                    "text": "First para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
+              },
               {
-               "text": "b",
-               "runs": [
-                {
-                 "text": "b",
-                 "ins": "Author A",
-                 "del": null,
-                 "move": null,
-                 "fmt": null
+                "table": {
+                  "change": "Author A",
+                  "rows": [
+                    {
+                      "ins": "Author A",
+                      "del": null,
+                      "cells": [
+                        {
+                          "blocks": [
+                            {
+                              "text": "a",
+                              "runs": [
+                                {
+                                  "text": "a",
+                                  "ins": "Author A",
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "b",
+                              "runs": [
+                                {
+                                  "text": "b",
+                                  "ins": "Author A",
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "ins": "Author A",
+                      "del": null,
+                      "cells": [
+                        {
+                          "blocks": [
+                            {
+                              "text": "c",
+                              "runs": [
+                                {
+                                  "text": "c",
+                                  "ins": "Author A",
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        },
+                        {
+                          "blocks": [
+                            {
+                              "text": "d",
+                              "runs": [
+                                {
+                                  "text": "d",
+                                  "ins": "Author A",
+                                  "del": null,
+                                  "move": null,
+                                  "fmt": null
+                                }
+                              ],
+                              "mark": {
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null
+                              },
+                              "pchange": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
                 }
-               ],
-               "mark": {
-                "ins": "Author A",
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            }
-           ]
-          },
-          {
-           "ins": "Author A",
-           "del": null,
-           "cells": [
-            {
-             "blocks": [
+              },
               {
-               "text": "c",
-               "runs": [
-                {
-                 "text": "c",
-                 "ins": "Author A",
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": "Author A",
-                "del": null,
-                "move": null
-               },
-               "pchange": null
+                "text": "Second para.",
+                "runs": [
+                  {
+                    "text": "Second para.",
+                    "ins": null,
+                    "del": null,
+                    "move": null,
+                    "fmt": null
+                  }
+                ],
+                "mark": {
+                  "ins": null,
+                  "del": null,
+                  "move": null
+                },
+                "pchange": null
               }
-             ]
-            },
-            {
-             "blocks": [
-              {
-               "text": "d",
-               "runs": [
-                {
-                 "text": "d",
-                 "ins": "Author A",
-                 "del": null,
-                 "move": null,
-                 "fmt": null
-                }
-               ],
-               "mark": {
-                "ins": "Author A",
-                "del": null,
-                "move": null
-               },
-               "pchange": null
-              }
-             ]
-            }
-           ]
+            ]
           }
-         ]
         }
-       },
-       {
-        "text": "Second para.",
-        "runs": [
-         {
-          "text": "Second para.",
-          "ins": null,
-          "del": null,
-          "move": null,
-          "fmt": null
-         }
-        ],
-        "mark": {
-         "ins": null,
-         "del": null,
-         "move": null
-        },
-        "pchange": null
-       }
-      ]
-     }
+      }
     }
-   }
-  }
- ]
+  ]
 }

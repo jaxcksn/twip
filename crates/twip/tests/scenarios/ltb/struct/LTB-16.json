@@ -14,14 +14,25 @@
       }
     },
     {
-      "command": "table.insert-right"
+      "command": {
+        "type": "insertColumns",
+        "where": "right"
+      }
     },
     {
       "expect": {
         "tables": [
           {
             "rows": 10,
-            "grid": [78, 78, 78, 78, 78, 78, 78]
+            "grid": [
+              78,
+              78,
+              78,
+              78,
+              78,
+              78,
+              78
+            ]
           }
         ],
         "undo_depth": 1
@@ -40,14 +51,25 @@
       }
     },
     {
-      "command": "table.insert-left"
+      "command": {
+        "type": "insertColumns",
+        "where": "left"
+      }
     },
     {
       "expect": {
         "tables": [
           {
             "rows": 10,
-            "grid": [156, 78, 78, 78, 78, 78, 78]
+            "grid": [
+              156,
+              78,
+              78,
+              78,
+              78,
+              78,
+              78
+            ]
           }
         ]
       }

@@ -20,8 +20,8 @@
       "shift": true
     },
     {
-      "command": "region.wrap",
-      "arg": {
+      "command": {
+        "type": "wrapInRepeatingSection",
         "tag": "Rows"
       }
     },
@@ -39,7 +39,9 @@
       "shift": true
     },
     {
-      "command": "table.delete.row",
+      "command": {
+        "type": "deleteRows"
+      },
       "expect": {
         "answer": {
           "error": "region boundary"
@@ -61,7 +63,9 @@
       "shift": true
     },
     {
-      "command": "table.merge",
+      "command": {
+        "type": "mergeCells"
+      },
       "expect": {
         "answer": {
           "error": "region boundary"
@@ -76,7 +80,10 @@
       }
     },
     {
-      "command": "table.insert-below",
+      "command": {
+        "type": "insertRows",
+        "where": "below"
+      },
       "expect": {
         "elements": {
           "added": [
@@ -114,7 +121,9 @@
       }
     },
     {
-      "command": "table.delete.row",
+      "command": {
+        "type": "deleteRows"
+      },
       "expect": {
         "elements": {
           "removed": 1
@@ -154,7 +163,9 @@
       "shift": true
     },
     {
-      "command": "table.merge",
+      "command": {
+        "type": "mergeCells"
+      },
       "expect": {
         "undo_depth": 4
       }

@@ -167,12 +167,12 @@ impl Editor {
                 Block::Table(_) => None,
             }
         });
+        let mut tx = self.begin(label);
         let (num, ilvl) = match before.and_then(|q| kind(self, q)).filter(|(b, _)| *b == bullet) {
             Some((_, n)) => n,
-            None => (self.new_list(bullet), 0),
+            None => (self.new_list(&mut tx, bullet), 0),
         };
         let list_style = res.styles.by_id.contains_key("ListParagraph");
-        let mut tx = self.begin(label);
         for &para in &paras {
             let ok = self.repara(&mut tx, para, &|p, w| {
                 p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
@@ -190,8 +190,8 @@ impl Editor {
     }
 
     /// A new list of Word's default numbered (1., a., i.) or bulleted kind, nine levels: its `numId`. The
-    /// definition joins the resolver now and is written into the numbering part when saving.
-    fn new_list(&mut self, bullet: bool) -> i64 {
+    /// definition joins the resolver now, as a step of `tx`, and is written into the numbering part when saving.
+    fn new_list(&mut self, tx: &mut Tx, bullet: bool) -> i64 {
         let Some(res) = self.doc.resolver.clone() else { return 0 };
         let abstract_id = res.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
         let num_id = res.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
@@ -226,8 +226,11 @@ impl Editor {
         let mut r = (*res).clone();
         r.numbering.abstracts.extend(parsed.abstracts);
         r.numbering.nums.extend(parsed.nums);
-        self.doc.resolver = Some(Rc::new(r));
-        self.doc.added_lists.push(crate::docx::AddedList { abstract_id, num_id, abstract_xml });
+        let mut added = self.doc.added_lists.clone();
+        added.push(crate::docx::AddedList { abstract_id, num_id, abstract_xml });
+        if self.step(tx, Step::Numbering { resolver: Some(Rc::new(r)), added }).is_err() {
+            return 0;
+        }
         num_id
     }
 

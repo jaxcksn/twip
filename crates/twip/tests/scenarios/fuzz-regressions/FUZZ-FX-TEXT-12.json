@@ -23,20 +23,20 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "insertControl",
         "kind": "picture",
         "tag": "Fuzz/C3"
       },
-      "command": "control.insert",
       "expect": {}
     },
     {
-      "arg": {
+      "command": {
+        "type": "setControl",
         "id": "$tag:Fuzz/C3",
-        "lock": "none",
-        "tag": "Fuzz/T1"
+        "tag": "Fuzz/T1",
+        "lock": "none"
       },
-      "command": "control.set",
       "expect": {}
     },
     {
@@ -48,11 +48,11 @@
       }
     },
     {
-      "arg": {
+      "command": {
+        "type": "removeControl",
         "id": "$tag:Fuzz/T1",
-        "keep_content": false
+        "keepContent": false
       },
-      "command": "control.remove",
       "expect": {}
     }
   ],

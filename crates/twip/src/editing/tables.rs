@@ -594,7 +594,7 @@ impl Editor {
             cell_spacing: 0.0,
             look: None,
             bands: (0, 0),
-            floating: false,
+            floating: None,
             grid: vec![w; ncols],
             rows: (0..nrows)
                 .map(|_| Row {
@@ -830,9 +830,9 @@ pub(super) fn cuts_region(t: &Table, r0: usize, r1: usize, within: bool) -> bool
 }
 
 impl Editor {
-    /// A table edit refused because it cuts a region: answered `"region boundary"`.
+    /// A table edit refused because it cuts a region: refused `region boundary`.
     pub(super) fn region_boundary(&mut self) -> Outcome {
-        self.answer = Some(serde_json::json!({ "error": "region boundary" }));
+        self.refused = Some("region boundary");
         Outcome::Unchanged("region boundary")
     }
 }

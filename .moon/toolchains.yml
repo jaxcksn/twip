@@ -1,8 +1,7 @@
 $schema: './cache/schemas/toolchains.json'
 
 # Rust's version, components and targets are pinned in rust-toolchain.toml.
-rust:
-  bins: ['diplomat-tool@0.17.0']
+rust: {}
 
 javascript:
   packageManager: pnpm

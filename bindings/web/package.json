@@ -1,20 +1,25 @@
 {
   "name": "@twip/web",
   "version": "0.1.0-alpha.1",
-  "description": "TypeScript SDK for the twip DOCX engine (WebAssembly). Generated from crates/twip-ffi.",
+  "description": "The Twip DOCX editor for the browser and Node: a managed, framework-independent editor over the WebAssembly engine.",
   "type": "module",
   "license": "Apache-2.0",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.mjs"
-    }
+      "node": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./worker.js": "./dist/worker.js"
   },
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
-  "scripts": {},
   "devDependencies": {
-    "@playwright/test": "1.64.1"
+    "@microsoft/api-extractor": "7.60.0",
+    "@playwright/test": "1.64.1",
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2"
   }
 }
