@@ -1,0 +1,9 @@
+<Project>
+  <!-- .NET Framework apps: copy the native library next to the app. Projects that use packages.config, or that don't
+       set a RuntimeIdentifier, don't get runtimes/ assets on their own. The library is x64, so the app must run as a
+       64-bit process. -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-x64\native\twip.dll" Link="twip.dll"
+          CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

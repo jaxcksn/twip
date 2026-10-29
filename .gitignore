@@ -1,6 +1,7 @@
 # Build output
 target/
 .web-deps/
+.native-deps/
 node_modules/
 bin/
 obj/

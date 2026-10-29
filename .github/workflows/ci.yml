@@ -66,9 +66,10 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # Through build-native.mjs, so Windows checks the GPU path too (Graphite on Dawn); plain cargo elsewhere.
+      - run: node crates/twip-capi/build-native.mjs clippy --workspace --all-targets -- -D warnings
       # Includes the rust contract runner (crates/twip/tests/contract.rs).
-      - run: cargo test --workspace
+      - run: node crates/twip-capi/build-native.mjs test --workspace
       - run: cargo run -p twip --example session
       - name: Wire fixtures
         # The committed wire fixtures are what the api types serialize to; the SDKs' wire tests round-trip them.

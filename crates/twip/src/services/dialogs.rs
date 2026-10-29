@@ -506,17 +506,19 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             out.extend(set(&v.alignment, &n.alignment).map(Command::SetAlignment));
             let (left, right) = (set(&v.left, &n.left), set(&v.right, &n.right));
             let special = v.special != n.special || v.by != n.by;
+            // Setting one of first line and hanging clears the other.
             let (first_line, hanging) = match (&v.special, &v.by) {
                 (Tri::Uniform(s), Tri::Uniform(by)) if special => match s {
-                    SpecialIndent::None => (Some(Points(0.0)), Some(Points(0.0))),
-                    SpecialIndent::FirstLine => (Some(*by), Some(Points(0.0))),
-                    SpecialIndent::Hanging => (Some(Points(0.0)), Some(*by)),
+                    SpecialIndent::None => (Some(Points(0.0)), None),
+                    SpecialIndent::FirstLine => (Some(*by), None),
+                    SpecialIndent::Hanging => (None, Some(*by)),
                 },
                 _ => (None, None),
             };
             check(!matches!(v.by, Tri::Uniform(Points(b)) if b < 0.0), "by is 0 or more")?;
-            if left.is_some() || right.is_some() || first_line.is_some() {
-                out.push(Command::SetIndents(Indents { left, right, first_line, hanging }));
+            let indents = Indents { left, right, first_line, hanging };
+            if indents != Indents::default() {
+                out.push(Command::SetIndents(indents));
             }
             let (before, after) = (set(&v.before, &n.before), set(&v.after, &n.after));
             if before.is_some() || after.is_some() {

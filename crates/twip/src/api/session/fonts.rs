@@ -7,7 +7,8 @@ use crate::api::event::Event;
 use crate::api::fonts::FontLibrary;
 use crate::api::state::FontsState;
 use crate::api::warning::{Warning, WarningCode};
-use crate::docx::{Block, Document, Inline};
+use crate::docx::{Block, Document, Inline, Paragraph};
+use crate::layout::ParaId;
 
 /// What the session last saw of its library, and what it reported.
 #[derive(Default)]
@@ -17,6 +18,8 @@ pub(super) struct Watch {
     pub(super) state: FontsState,
     /// The families already reported unresolved for this document.
     warned: BTreeSet<String>,
+    /// The faces the last check saw: an edit that adds none needs no check.
+    faces: HashSet<(String, bool, bool)>,
 }
 
 impl Session {
@@ -29,7 +32,7 @@ impl Session {
     /// warning naming the unresolved families, which the open reports.
     pub(super) fn fonts_opened(&mut self) -> (Vec<Event>, Option<Warning>) {
         let (generation, revision) = (self.fonts.generation(), self.fonts.fonts().revision());
-        self.watch = Watch { generation, revision, state: std::mem::take(&mut self.watch.state), warned: BTreeSet::new() };
+        self.watch = Watch { generation, revision, state: std::mem::take(&mut self.watch.state), ..Watch::default() };
         let (event, warning) = self.check_fonts();
         (event.into_iter().collect(), warning)
     }
@@ -56,10 +59,24 @@ impl Session {
         }
     }
 
+    /// After an edit that touched `paras` (and tables, when `tables`): checks the document again when they name a face
+    /// the last check didn't see (a font applied, a paste). Typing in a face the document has costs one paragraph.
+    // shortcut: a face the edit removed from the document stays in the lists until the next full check (an open, a
+    // library change, an edit that adds a face).
+    pub(super) fn edited_fonts(&mut self, paras: impl IntoIterator<Item = ParaId>, tables: bool) -> (Option<Event>, Option<Warning>) {
+        let (doc, index) = (self.editor.document(), self.editor.index());
+        let mut touched = HashSet::new();
+        paras.into_iter().filter_map(|id| index.para(doc, id)).for_each(|p| para_faces(p, &mut touched));
+        let fresh = tables || touched.iter().any(|&(f, b, i)| !self.watch.faces.contains(&(f.to_string(), b, i)));
+        if fresh { self.check_fonts() } else { (None, None) }
+    }
+
     /// The document's families against the library: the new lists, `FontsChanged` when they moved, and a warning for
     /// the families unresolved for the first time.
-    fn check_fonts(&mut self) -> (Option<Event>, Option<Warning>) {
-        let state = self.fonts.check(faces(self.editor.document()));
+    pub(super) fn check_fonts(&mut self) -> (Option<Event>, Option<Warning>) {
+        let faces = faces(self.editor.document());
+        self.watch.faces = faces.iter().map(|&(f, b, i)| (f.to_string(), b, i)).collect();
+        let state = self.fonts.check(faces);
         let fresh: Vec<String> = state.unresolved.iter().filter(|f| !self.watch.warned.contains(*f)).cloned().collect();
         let warning = (!fresh.is_empty()).then(|| Warning {
             code: WarningCode::FontUnresolved,
@@ -78,34 +95,42 @@ impl Session {
 // shortcut: the Latin slots only (ascii, hAnsi); East Asian and complex-script families, symbol fonts and list labels
 // aren't requested. Add them when a document in those scripts shows unresolved text.
 fn faces(doc: &Document) -> HashSet<(&str, bool, bool)> {
-    fn walk<'a>(blocks: &'a [Block], out: &mut HashSet<(&'a str, bool, bool)>) {
-        for b in blocks {
-            match b {
-                Block::Para(p) => {
-                    for i in &p.inlines {
-                        match i {
-                            Inline::Text(_, run) => {
-                                for family in [&run.ascii, &run.h_ansi] {
-                                    if !family.is_empty() {
-                                        out.insert((family, run.bold, run.italic));
-                                    }
-                                }
-                            }
-                            Inline::Float(f, _) => {
-                                if let Some(tb) = &f.text_box {
-                                    walk(&tb.blocks, out);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
-            }
-        }
-    }
     let mut out = HashSet::new();
     let stories = doc.sections.iter().map(|s| &s.blocks).chain(doc.stories.values()).chain(doc.footnotes.values()).chain(doc.endnotes.values());
     stories.for_each(|blocks| walk(blocks, &mut out));
     out
+}
+
+fn walk<'a>(blocks: &'a [Block], out: &mut HashSet<(&'a str, bool, bool)>) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => para_faces(p, out),
+            Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
+        }
+    }
+}
+
+/// A paragraph's faces, its text boxes' included, and its mark's: an empty line's height and what typing in it
+/// draws with.
+fn para_faces<'a>(p: &'a Paragraph, out: &mut HashSet<(&'a str, bool, bool)>) {
+    run_faces(&p.mark, out);
+    for i in &p.inlines {
+        match i {
+            Inline::Text(_, run) => run_faces(run, out),
+            Inline::Float(f, _) => {
+                if let Some(tb) = &f.text_box {
+                    walk(&tb.blocks, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn run_faces<'a>(run: &'a crate::docx::Run, out: &mut HashSet<(&'a str, bool, bool)>) {
+    for family in [&run.ascii, &run.h_ansi] {
+        if !family.is_empty() {
+            out.insert((family, run.bold, run.italic));
+        }
+    }
 }

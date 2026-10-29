@@ -148,7 +148,7 @@ public readonly record struct ColorValue
     {
         "auto" => Auto,
         "none" => None,
-        _ when text.Length == 7 && text[0] == '#' && int.TryParse(text.AsSpan(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var rgb)
+        _ when text.Length == 7 && text[0] == '#' && int.TryParse(text.Substring(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var rgb)
             => FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb),
         _ => throw new FormatException($"not a colour: {text}"),
     };
@@ -156,66 +156,54 @@ public readonly record struct ColorValue
 
 /// <summary>The id of a merge-designer element (a field or a content control).</summary>
 /// <param name="Value">The opaque id.</param>
-[JsonConverter(typeof(IdConverter<ElementId>))]
-public readonly record struct ElementId(string Value) : IWireId<ElementId>
+[JsonConverter(typeof(ElementIdConverter))]
+public readonly record struct ElementId(string Value)
 {
-    static ElementId IWireId<ElementId>.Create(string value) => new(value);
-
     /// <inheritdoc/>
     public override string ToString() => Value;
 }
 
 /// <summary>The id of a comment. A thread's id is its first comment's id.</summary>
 /// <param name="Value">The opaque id.</param>
-[JsonConverter(typeof(IdConverter<CommentId>))]
-public readonly record struct CommentId(string Value) : IWireId<CommentId>
+[JsonConverter(typeof(CommentIdConverter))]
+public readonly record struct CommentId(string Value)
 {
-    static CommentId IWireId<CommentId>.Create(string value) => new(value);
-
     /// <inheritdoc/>
     public override string ToString() => Value;
 }
 
 /// <summary>The id of a tracked revision.</summary>
 /// <param name="Value">The opaque id.</param>
-[JsonConverter(typeof(IdConverter<RevisionId>))]
-public readonly record struct RevisionId(string Value) : IWireId<RevisionId>
+[JsonConverter(typeof(RevisionIdConverter))]
+public readonly record struct RevisionId(string Value)
 {
-    static RevisionId IWireId<RevisionId>.Create(string value) => new(value);
-
     /// <inheritdoc/>
     public override string ToString() => Value;
 }
 
 /// <summary>The id of a heading, for a navigation pane.</summary>
 /// <param name="Value">The opaque id.</param>
-[JsonConverter(typeof(IdConverter<HeadingId>))]
-public readonly record struct HeadingId(string Value) : IWireId<HeadingId>
+[JsonConverter(typeof(HeadingIdConverter))]
+public readonly record struct HeadingId(string Value)
 {
-    static HeadingId IWireId<HeadingId>.Create(string value) => new(value);
-
     /// <inheritdoc/>
     public override string ToString() => Value;
 }
 
 /// <summary>The id of a find match.</summary>
 /// <param name="Value">The opaque id.</param>
-[JsonConverter(typeof(IdConverter<MatchId>))]
-public readonly record struct MatchId(string Value) : IWireId<MatchId>
+[JsonConverter(typeof(MatchIdConverter))]
+public readonly record struct MatchId(string Value)
 {
-    static MatchId IWireId<MatchId>.Create(string value) => new(value);
-
     /// <inheritdoc/>
     public override string ToString() => Value;
 }
 
 /// <summary>The id of a style (<c>w:styleId</c>).</summary>
 /// <param name="Value">The style id.</param>
-[JsonConverter(typeof(IdConverter<StyleId>))]
-public readonly record struct StyleId(string Value) : IWireId<StyleId>
+[JsonConverter(typeof(StyleIdConverter))]
+public readonly record struct StyleId(string Value)
 {
-    static StyleId IWireId<StyleId>.Create(string value) => new(value);
-
     /// <inheritdoc/>
     public override string ToString() => Value;
 }

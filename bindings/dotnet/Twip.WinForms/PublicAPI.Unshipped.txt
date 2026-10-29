@@ -108,3 +108,6 @@ override Twip.WinForms.DocumentEditor.ProcessCmdKey(ref System.Windows.Forms.Mes
 override Twip.WinForms.DocumentEditor.WndProc(ref System.Windows.Forms.Message m) -> void
 static Twip.WinForms.BalloonPlacement.operator !=(Twip.WinForms.BalloonPlacement? left, Twip.WinForms.BalloonPlacement? right) -> bool
 static Twip.WinForms.BalloonPlacement.operator ==(Twip.WinForms.BalloonPlacement? left, Twip.WinForms.BalloonPlacement? right) -> bool
+Twip.WinForms.DocumentEditor.GpuBackend.get -> string?
+Twip.WinForms.DocumentEditor.UseGpu.get -> bool
+Twip.WinForms.DocumentEditor.UseGpu.set -> void

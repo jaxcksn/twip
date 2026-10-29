@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- net48: .NET Framework 4.8 apps, x64 (the native library is win-x64). -->
+    <TargetFrameworks>net10.0;net48</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
     <RootNamespace>Twip</RootNamespace>
     <PackageId>Twip.Core</PackageId>
     <Version>0.1.0-alpha.1</Version> <!-- x-release-please-version -->
@@ -12,19 +14,30 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <IsAotCompatible>true</IsAotCompatible>
+    <IsAotCompatible Condition="'$(TargetFramework)' == 'net10.0'">true</IsAotCompatible>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- RS0026/RS0027: the approved surface pairs path and stream overloads that both take an optional token. -->
     <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
   </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="System.Text.Json" Version="10.0.1" />
+    <Reference Include="System.Net.Http" />
+    <Using Include="System.Net.Http" />
+    <!-- Compile-time polyfills for the newer C# features (records, init, nullable attributes); nothing at run time. -->
+    <PackageReference Include="PolySharp" Version="1.15.0" PrivateAssets="all" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="4.14.0" PrivateAssets="all" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+    <!-- Records override Clone covariantly only where the runtime supports covariant returns. -->
+    <AdditionalFiles Include="PublicAPI/$(TargetFramework)/PublicAPI.Unshipped.txt" />
     <InternalsVisibleTo Include="Twip.WinForms" />
     <InternalsVisibleTo Include="Twip.Tests" />
     <None Include="README.md" Pack="true" PackagePath="" />
+    <None Include="build/Twip.Core.targets" Pack="true" PackagePath="build/net48/" />
+    <None Include="build/Twip.Core.targets" Pack="true" PackagePath="buildTransitive/net48/" />
     <!-- Filled by the release workflow: runtimes/<rid>/native/<lib>. -->
     <None Include="../runtimes/**/*" Pack="true" PackagePath="runtimes/" />
     <!-- A local build, when runtimes/ has no Windows library: the release cdylib twip-capi builds. -->

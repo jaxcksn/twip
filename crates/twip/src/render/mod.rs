@@ -7,6 +7,8 @@ use std::collections::HashMap;
 pub mod ruler;
 #[cfg(target_os = "emscripten")]
 pub mod web;
+#[cfg(twip_dawn)]
+pub mod window;
 
 use skia_safe::{Canvas, Color, Data, Font, FontMgr, Image, Paint, Point, RRect, Rect, Typeface, font::Edging};
 

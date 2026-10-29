@@ -208,6 +208,11 @@ int32_t twip_attach_webgpu(uintptr_t instance, uintptr_t device, uintptr_t queue
 int32_t twip_frame_webgpu(TwipEngine* engine, uint32_t session, uintptr_t texture, uint32_t bgra, uint32_t height, TwipFrameInfo* info);
 int32_t twip_attach_webgl(TwipEngine* engine, uint32_t session);
 int32_t twip_frame_webgl(TwipEngine* engine, uint32_t session, uint32_t width, uint32_t height, TwipFrameInfo* info);
+/* Windows GPU frames: Graphite on Dawn into the host's window (D3D12, then D3D11, then Vulkan). twip_attach_window
+ * returns the backend (1 D3D12, 2 D3D11, 3 Vulkan) or fails TWIP_E_UNAVAILABLE; twip_frame_rgba is the fallback. */
+int32_t twip_attach_window(TwipEngine* engine, uint32_t session, void* hwnd);
+void twip_detach_window(TwipEngine* engine, uint32_t session);
+int32_t twip_frame_window(TwipEngine* engine, uint32_t session, uint32_t width, uint32_t height, TwipFrameInfo* info);
 void twip_timer_fired(TwipEngine* engine, uint32_t session, uint32_t timer);
 
 #ifdef __cplusplus

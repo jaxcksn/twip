@@ -68,7 +68,7 @@ internal static class ClipboardFormats
     {
         var data = new DataObject();
         if (!string.IsNullOrEmpty(content.Text)) data.SetText(content.Text, TextDataFormat.UnicodeText);
-        if (!string.IsNullOrEmpty(content.Html)) data.SetText(ToCfHtml(content.Html), TextDataFormat.Html);
+        if (content.Html is { Length: > 0 } html) data.SetText(ToCfHtml(html), TextDataFormat.Html);
         if (content.Native is { } token) data.SetData(Native, token);
         try { Clipboard.SetDataObject(data, copy: true, retryTimes: 5, retryDelay: 50); }
         catch (System.Runtime.InteropServices.ExternalException) { } // another program holds the clipboard

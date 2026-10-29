@@ -123,70 +123,92 @@ internal static unsafe partial class TwipNative
 {
     public const string Library = "twip";
 
-    [LibraryImport(Library, EntryPoint = "twip_engine_new")]
-    public static partial nint EngineNew(byte* optionsJson, nuint len, delegate* unmanaged[Cdecl]<nint, uint, uint, byte*, nuint, void> callback, nint ctx);
+    [DllImport(Library, EntryPoint = "twip_engine_new")]
+    public static extern nint EngineNew(byte* optionsJson, nuint len, nint callback, nint ctx);
 
-    [LibraryImport(Library, EntryPoint = "twip_engine_free")]
-    public static partial void EngineFree(nint engine);
+    [DllImport(Library, EntryPoint = "twip_engine_free")]
+    public static extern void EngineFree(nint engine);
 
-    [LibraryImport(Library, EntryPoint = "twip_session_new")]
-    public static partial uint SessionNew(nint engine, byte* optionsJson, nuint len);
+    [DllImport(Library, EntryPoint = "twip_session_new")]
+    public static extern uint SessionNew(nint engine, byte* optionsJson, nuint len);
 
-    [LibraryImport(Library, EntryPoint = "twip_session_free")]
-    public static partial void SessionFree(nint engine, uint session);
+    [DllImport(Library, EntryPoint = "twip_session_free")]
+    public static extern void SessionFree(nint engine, uint session);
 
-    [LibraryImport(Library, EntryPoint = "twip_call")]
-    public static partial int Call(nint engine, uint session, uint method, byte* req, nuint len, TwipBuf* output);
+    [DllImport(Library, EntryPoint = "twip_call")]
+    public static extern int Call(nint engine, uint session, uint method, byte* req, nuint len, TwipBuf* output);
 
-    [LibraryImport(Library, EntryPoint = "twip_buf_free")]
-    public static partial void BufFree(TwipBuf* buf);
+    [DllImport(Library, EntryPoint = "twip_buf_free")]
+    public static extern void BufFree(TwipBuf* buf);
 
-    [LibraryImport(Library, EntryPoint = "twip_open")]
-    public static partial int Open(nint engine, uint session, byte* bytes, nuint len, byte* opts, nuint olen, TwipBuf* output);
+    [DllImport(Library, EntryPoint = "twip_open")]
+    public static extern int Open(nint engine, uint session, byte* bytes, nuint len, byte* opts, nuint olen, TwipBuf* output);
 
-    [LibraryImport(Library, EntryPoint = "twip_open_prepare")]
-    public static partial int OpenPrepare(nint engine, uint session, byte* bytes, nuint len, byte* opts, nuint olen, TwipBuf* output);
+    [DllImport(Library, EntryPoint = "twip_open_prepare")]
+    public static extern int OpenPrepare(nint engine, uint session, byte* bytes, nuint len, byte* opts, nuint olen, TwipBuf* output);
 
-    [LibraryImport(Library, EntryPoint = "twip_export")]
-    public static partial int Export(nint engine, uint session, byte* opts, nuint olen, TwipBuf* bytes, TwipBuf* meta);
+    [DllImport(Library, EntryPoint = "twip_export")]
+    public static extern int Export(nint engine, uint session, byte* opts, nuint olen, TwipBuf* bytes, TwipBuf* meta);
 
-    [LibraryImport(Library, EntryPoint = "twip_font_add")]
-    public static partial int FontAdd(nint engine, byte* bytes, nuint len, TwipBuf* output);
+    [DllImport(Library, EntryPoint = "twip_font_add")]
+    public static extern int FontAdd(nint engine, byte* bytes, nuint len, TwipBuf* output);
 
-    [LibraryImport(Library, EntryPoint = "twip_key")]
-    public static partial uint Key(nint engine, uint session, uint key, uint mods);
+    [DllImport(Library, EntryPoint = "twip_key")]
+    public static extern uint Key(nint engine, uint session, uint key, uint mods);
 
-    [LibraryImport(Library, EntryPoint = "twip_text")]
-    public static partial void Text(nint engine, uint session, byte* utf8, nuint len);
+    [DllImport(Library, EntryPoint = "twip_text")]
+    public static extern void Text(nint engine, uint session, byte* utf8, nuint len);
 
-    [LibraryImport(Library, EntryPoint = "twip_composition")]
-    public static partial void Composition(nint engine, uint session, uint phase, byte* utf8, nuint len);
+    [DllImport(Library, EntryPoint = "twip_composition")]
+    public static extern void Composition(nint engine, uint session, uint phase, byte* utf8, nuint len);
 
-    [LibraryImport(Library, EntryPoint = "twip_pointer")]
-    public static partial void Pointer(nint engine, uint session, uint kind, double x, double y, uint button, uint clicks, uint mods);
+    [DllImport(Library, EntryPoint = "twip_pointer")]
+    public static extern void Pointer(nint engine, uint session, uint kind, double x, double y, uint button, uint clicks, uint mods);
 
-    [LibraryImport(Library, EntryPoint = "twip_wheel")]
-    public static partial void Wheel(nint engine, uint session, double dx, double dy, uint mods);
+    [DllImport(Library, EntryPoint = "twip_wheel")]
+    public static extern void Wheel(nint engine, uint session, double dx, double dy, uint mods);
 
-    [LibraryImport(Library, EntryPoint = "twip_focus")]
-    public static partial void Focus(nint engine, uint session, uint focused);
+    [DllImport(Library, EntryPoint = "twip_focus")]
+    public static extern void Focus(nint engine, uint session, uint focused);
 
-    [LibraryImport(Library, EntryPoint = "twip_surface")]
-    public static partial void Surface(nint engine, uint session, double width, double height, double dpr);
+    [DllImport(Library, EntryPoint = "twip_surface")]
+    public static extern void Surface(nint engine, uint session, double width, double height, double dpr);
 
-    [LibraryImport(Library, EntryPoint = "twip_scroll")]
-    public static partial void Scroll(nint engine, uint session, double x, double y);
+    [DllImport(Library, EntryPoint = "twip_scroll")]
+    public static extern void Scroll(nint engine, uint session, double x, double y);
 
-    [LibraryImport(Library, EntryPoint = "twip_frame_rgba")]
-    public static partial int FrameRgba(nint engine, uint session, byte* pixels, uint width, uint height, TwipFrameInfo* info);
+    [DllImport(Library, EntryPoint = "twip_frame_rgba")]
+    public static extern int FrameRgba(nint engine, uint session, byte* pixels, uint width, uint height, TwipFrameInfo* info);
 
-    [LibraryImport(Library, EntryPoint = "twip_timer_fired")]
-    public static partial void TimerFired(nint engine, uint session, uint timer);
+    [DllImport(Library, EntryPoint = "twip_attach_window")]
+    public static extern int AttachWindow(nint engine, uint session, nint hwnd);
+
+    [DllImport(Library, EntryPoint = "twip_detach_window")]
+    public static extern void DetachWindow(nint engine, uint session);
+
+    [DllImport(Library, EntryPoint = "twip_frame_window")]
+    public static extern int FrameWindow(nint engine, uint session, uint width, uint height, TwipFrameInfo* info);
+
+    [DllImport(Library, EntryPoint = "twip_timer_fired")]
+    public static extern void TimerFired(nint engine, uint session, uint timer);
 
     /// <summary>Whether the native library loads and has this C ABI.</summary>
     public static bool IsAvailable()
     {
+#if NETFRAMEWORK
+        var handle = LoadLibrary(Library + ".dll");
+        return handle != 0 && GetProcAddress(handle, "twip_engine_new") != 0 && GetProcAddress(handle, "twip_call") != 0;
+#else
         if (!NativeLibrary.TryLoad(Library, typeof(TwipNative).Assembly, null, out var handle)) return false;
         return NativeLibrary.TryGetExport(handle, "twip_engine_new", out _) && NativeLibrary.TryGetExport(handle, "twip_call", out _);
+#endif
     }
+#if NETFRAMEWORK
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern nint LoadLibrary(string name);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi, BestFitMapping = false)]
+    private static extern nint GetProcAddress(nint module, string name);
+#endif
 }

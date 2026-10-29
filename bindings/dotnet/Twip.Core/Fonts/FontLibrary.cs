@@ -168,8 +168,14 @@ public sealed partial class FontLibrary
         return url.Success ? FontSource.FromUri(new Uri(url.Groups[1].Value)) : null;
     }
 
+#if NETFRAMEWORK
+    private static readonly Regex s_googleSource = new(@"src:\s*url\(([^)]+)\)");
+
+    private static Regex GoogleSource() => s_googleSource;
+#else
     [GeneratedRegex(@"src:\s*url\(([^)]+)\)")]
     private static partial Regex GoogleSource();
+#endif
 }
 
 /// <summary>A font the engine needs.</summary>

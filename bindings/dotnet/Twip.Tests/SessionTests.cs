@@ -44,7 +44,7 @@ public sealed class SessionTests : IDisposable
     {
         Native.Require();
         await using var session = new EditorSession();
-        await using (var input = File.OpenRead(Native.Fixture("FX-TEXT.docx")))
+        using (var input = File.OpenRead(Native.Fixture("FX-TEXT.docx")))
         {
             await session.OpenAsync(input, Ct);
             Assert.True(input.CanRead);

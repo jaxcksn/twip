@@ -140,21 +140,21 @@ internal sealed partial class Ime(Control control)
         public int Left, Top, Right, Bottom;
     }
 
-    [LibraryImport("imm32.dll")]
-    private static partial nint ImmGetContext(nint hwnd);
+    [DllImport("imm32.dll")]
+    private static extern nint ImmGetContext(nint hwnd);
 
-    [LibraryImport("imm32.dll")]
+    [DllImport("imm32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool ImmReleaseContext(nint hwnd, nint context);
+    private static extern bool ImmReleaseContext(nint hwnd, nint context);
 
-    [LibraryImport("imm32.dll")]
-    private static unsafe partial int ImmGetCompositionStringW(nint context, int index, char* buffer, int bytes);
+    [DllImport("imm32.dll")]
+    private static unsafe extern int ImmGetCompositionStringW(nint context, int index, char* buffer, int bytes);
 
-    [LibraryImport("imm32.dll")]
+    [DllImport("imm32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool ImmSetCompositionWindow(nint context, ref CompositionForm form);
+    private static extern bool ImmSetCompositionWindow(nint context, ref CompositionForm form);
 
-    [LibraryImport("imm32.dll")]
+    [DllImport("imm32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool ImmSetCandidateWindow(nint context, ref CandidateForm form);
+    private static extern bool ImmSetCandidateWindow(nint context, ref CandidateForm form);
 }

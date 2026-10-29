@@ -829,6 +829,52 @@ pub unsafe extern "C" fn twip_frame_webgl(engine: *mut TwipEngine, session: u32,
     }
 }
 
+/// Windows: draws the session's frames into the window `hwnd` with the GPU (Graphite on Dawn). Returns the backend,
+/// 1 D3D12, 2 D3D11 or 3 Vulkan; fails `unavailable` with no usable GPU, or in a build without one: draw with
+/// twip_frame_rgba then.
+///
+/// # Safety
+/// `engine` is from twip_engine_new; `hwnd` is a live window that outlives the attach (twip_detach_window, or the
+/// session's end).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twip_attach_window(engine: *mut TwipEngine, session: u32, hwnd: *mut std::ffi::c_void) -> i32 {
+    // SAFETY: the caller's promise.
+    match guard(engine, session, |e| Ok(unsafe { e.session(session)?.host().attach_window(hwnd) })) {
+        Ok(Some(backend)) => backend as i32,
+        Ok(None) => status(ErrorCode::Unavailable),
+        Err(e) => status(e.code),
+    }
+}
+
+/// Windows: stops drawing into the window twip_attach_window gave.
+///
+/// # Safety
+/// `engine` is from twip_engine_new.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twip_detach_window(engine: *mut TwipEngine, session: u32) {
+    let _ = guard(engine, session, |e| {
+        e.session(session)?.host().detach_window();
+        Ok(())
+    });
+}
+
+/// Windows: draws the viewport into the attached window, `width` x `height` device pixels, and presents it. Fails
+/// `unavailable` when the GPU can't draw now (the device was lost): draw with twip_frame_rgba then.
+///
+/// # Safety
+/// `engine` is from twip_engine_new; `info` is null or valid for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twip_frame_window(engine: *mut TwipEngine, session: u32, width: u32, height: u32, info: *mut TwipFrameInfo) -> i32 {
+    match guard(engine, session, |e| e.session(session)?.host().frame_window(width, height)) {
+        Ok(frame) => {
+            // SAFETY: the caller's promise.
+            unsafe { put_info(info, frame) };
+            0
+        }
+        Err(e) => status(e.code),
+    }
+}
+
 /// A timer the engine armed (callback kind 4) went off.
 ///
 /// # Safety

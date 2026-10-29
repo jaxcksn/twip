@@ -177,7 +177,7 @@ internal static class JsonCompare
         {
             if (used[i] || !Matches(wants[0], got[i], "", out _)) continue;
             used[i] = true;
-            if (Assign(wants[1..], got, used)) return true;
+            if (Assign(wants.Skip(1).ToArray(), got, used)) return true;
             used[i] = false;
         }
         return false;

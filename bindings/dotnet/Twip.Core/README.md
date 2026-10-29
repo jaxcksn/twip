@@ -1,7 +1,8 @@
 # Twip.Core
 
 The Twip DOCX engine for .NET: open Word documents, edit them through typed commands, observe state, and save DOCX or
-PDF. Native AOT compatible; ships native libraries for Windows x64 and Linux x64 and arm64.
+PDF. Native AOT compatible; ships native libraries for Windows x64 and Linux x64 and arm64. Also targets .NET
+Framework 4.8 on Windows, in 64-bit processes (build the app for x64).
 
 > **Alpha.** The API may change between minor versions before 1.0.
 

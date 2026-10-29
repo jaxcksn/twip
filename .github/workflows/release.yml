@@ -96,7 +96,8 @@ jobs:
       # Skia links FreeType and Fontconfig.
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
-      - run: cargo rustc -p twip-capi --release --crate-type cdylib
+      # On Windows with the prebuilt Skia that draws on the GPU (Graphite on Dawn).
+      - run: node crates/twip-capi/build-native.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}

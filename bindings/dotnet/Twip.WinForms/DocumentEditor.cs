@@ -27,6 +27,10 @@ public class DocumentEditor : Control
     private IReadOnlyList<CommentAnchor> _anchors = [];
     private EditorHost? _host;
     private Bitmap? _frame;
+    private GpuCanvas? _canvas; // while the engine draws with the GPU
+    private bool _gpu = true;
+    private PaintEventHandler? _paintMarkupPane;
+    private bool _printing; // a WM_PRINTCLIENT paint (DrawToBitmap), which can't see the GPU's swap chain
     private char _highSurrogate;
     private Keys _routed; // the key ProcessCmdKey already gave the engine
     private bool _readOnly;
@@ -178,8 +182,38 @@ public class DocumentEditor : Control
     /// <summary>The attached balloons were placed: their positions and leader lines.</summary>
     public event EventHandler<BalloonsLaidOutEventArgs>? BalloonsLaidOut;
 
-    /// <summary>Paint the markup pane's background and leader lines.</summary>
-    public event PaintEventHandler? PaintMarkupPane;
+    /// <summary>Paint the markup pane's background and leader lines. The editor draws with the CPU while it has a handler.</summary>
+    public event PaintEventHandler? PaintMarkupPane
+    {
+        add
+        {
+            _paintMarkupPane += value;
+            DetachGpu(); // GDI can't draw over the GPU's swap chain
+        }
+        remove
+        {
+            _paintMarkupPane -= value;
+            AttachGpu();
+        }
+    }
+
+    /// <summary>Whether the engine draws with the GPU when it can (Graphite on Dawn: D3D12, D3D11, then Vulkan). Off, or
+    /// with no usable GPU, it draws with the CPU.</summary>
+    [DefaultValue(true)]
+    public bool UseGpu
+    {
+        get => _gpu;
+        set
+        {
+            _gpu = value;
+            if (value) AttachGpu();
+            else DetachGpu();
+        }
+    }
+
+    /// <summary>The GPU backend the editor draws with ("D3D12", "D3D11" or "Vulkan"), or null when it draws with the CPU.</summary>
+    [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string? GpuBackend => _canvas is null ? null : _host?.GpuBackend;
 
     /// <summary>An external drag (a field list beside the editor) is over the point: shows the drop caret.</summary>
     /// <param name="client">The point, in client pixels.</param>
@@ -227,12 +261,43 @@ public class DocumentEditor : Control
         _host.OnVisible(Visible);
         if (Focused) _host.OnFocus(true);
         State.Update(Session.State);
+        _host.GpuLost += () => BeginInvoke(DetachGpu);
+        AttachGpu();
+    }
+
+    /// <summary>Has the engine draw into a child window with the GPU, when it can and nothing paints over the frame.</summary>
+    private void AttachGpu()
+    {
+        if (!_gpu || _canvas is not null || _paintMarkupPane is not null || _host is null) return;
+        var canvas = new GpuCanvas { Bounds = new Rectangle(Point.Empty, Viewport) };
+        Controls.Add(canvas);
+        canvas.SendToBack(); // the scrollbars and balloon cards stay above it
+        if (_host.AttachWindow(canvas.Handle) is null)
+        {
+            Controls.Remove(canvas);
+            canvas.Dispose();
+            return;
+        }
+        canvas.Exposed += () => _host?.RequestFrame();
+        _canvas = canvas;
+    }
+
+    /// <summary>Back to CPU frames; the engine lets go of the window before it goes.</summary>
+    private void DetachGpu()
+    {
+        if (_canvas is not { } canvas) return;
+        _host?.DetachWindow();
+        _canvas = null;
+        Controls.Remove(canvas);
+        canvas.Dispose();
+        Invalidate();
     }
 
     /// <inheritdoc/>
     protected override void OnHandleDestroyed(EventArgs e)
     {
         // Handle recreation detaches and reattaches; the session keeps the document and history.
+        DetachGpu();
         _caret.Destroy();
         _host?.Dispose();
         _host = null;
@@ -255,6 +320,14 @@ public class DocumentEditor : Control
             base.OnPaint(e);
             return;
         }
+        if (_canvas is not null && _printing) _host.RenderPixels();
+        else if (_canvas is not null)
+        {
+            // The GPU draws the frame in the canvas; only the corner between the scrollbars shows here.
+            e.Graphics.Clear(BackColor);
+            base.OnPaint(e);
+            return;
+        }
         _host.Render();
         if (_frame is null) e.Graphics.Clear(BackColor);
         else
@@ -264,7 +337,7 @@ public class DocumentEditor : Control
             if (_frame.Width < ClientSize.Width) e.Graphics.FillRectangle(brush, _frame.Width, 0, ClientSize.Width - _frame.Width, ClientSize.Height);
             if (_frame.Height < ClientSize.Height) e.Graphics.FillRectangle(brush, 0, _frame.Height, ClientSize.Width, ClientSize.Height - _frame.Height);
         }
-        if (_markupPaneWidth > 0) PaintMarkupPane?.Invoke(this, e);
+        if (_markupPaneWidth > 0) _paintMarkupPane?.Invoke(this, e);
         base.OnPaint(e);
     }
 
@@ -313,7 +386,11 @@ public class DocumentEditor : Control
         SendSize();
     }
 
-    private void SendSize() => _host?.OnResize(Viewport.Width, Viewport.Height, DeviceDpi);
+    private void SendSize()
+    {
+        if (_canvas is { } canvas) canvas.Bounds = new Rectangle(Point.Empty, Viewport);
+        _host?.OnResize(Viewport.Width, Viewport.Height, DeviceDpi);
+    }
 
     /// <inheritdoc/>
     protected override void OnBackColorChanged(EventArgs e)
@@ -521,6 +598,14 @@ public class DocumentEditor : Control
     /// <inheritdoc/>
     protected override void WndProc(ref Message m)
     {
+        const int WmPrintClient = 0x0318;
+        if (m.Msg == WmPrintClient)
+        {
+            _printing = true;
+            try { base.WndProc(ref m); }
+            finally { _printing = false; }
+            return;
+        }
         if (_host is not null)
         {
             if (m.Msg == WmChar && OnChar((char)(nint)m.WParam)) return;

@@ -22,8 +22,8 @@ internal static partial class Ui
     public const int WmLButtonUp = 0x0202;
     public const int WmMouseMove = 0x0200;
 
-    [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
-    public static partial nint SendMessage(nint hwnd, int msg, nint wParam, nint lParam);
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    public static extern nint SendMessage(nint hwnd, int msg, nint wParam, nint lParam);
 
     public static nint LParam(int x, int y) => (y << 16) | (x & 0xFFFF);
 
@@ -117,6 +117,22 @@ public sealed class WinFormsTests
     });
 
     [Fact]
+    public void TurningTheGpuOffAndOnKeepsTheFrame() => Ui.Run(async () =>
+    {
+        using var editor = new DocumentEditor { Width = 800, Height = 600 };
+        _ = editor.Handle;
+        // A copy of the control (DrawToBitmap) shows the frame whether the GPU draws it or the CPU does.
+        await Ui.FirstFrame(editor);
+        var backend = editor.GpuBackend; // null with no usable GPU, as on CI
+        editor.UseGpu = false;
+        Assert.Null(editor.GpuBackend);
+        await Ui.FirstFrame(editor);
+        editor.UseGpu = true;
+        Assert.Equal(backend, editor.GpuBackend);
+        await Ui.FirstFrame(editor);
+    });
+
+    [Fact]
     public void TypingChangesTheDocument() => Ui.Run(async () =>
     {
         using var editor = new DocumentEditor { Width = 800, Height = 600 };
@@ -200,8 +216,13 @@ public sealed class WinFormsTests
         form.Controls.Add(editor);
         form.Controls.Add(toolbar);
         _ = editor.Handle;
+#if NETFRAMEWORK
+        // .NET Framework's ToolStripItem has no DataBindings: follow the state's PropertyChanged instead.
+        editor.State.PropertyChanged += (_, _) => (bold.CheckState, bold.Enabled) = (editor.State.BoldCheckState, editor.State.CanSetBold);
+#else
         bold.DataBindings.Add(nameof(bold.CheckState), editor.State, nameof(DocumentEditorState.BoldCheckState));
         bold.DataBindings.Add(nameof(bold.Enabled), editor.State, nameof(DocumentEditorState.CanSetBold));
+#endif
 
         await editor.Commands.InsertTextAsync("a");
         await editor.Commands.SelectAllAsync();

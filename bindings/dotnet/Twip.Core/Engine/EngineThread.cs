@@ -105,7 +105,21 @@ internal sealed unsafe class EngineThread
         foreach (var (engine, session, kind, payload) in batch) engine.Deliver(session, kind, payload);
     }
 
+#if NETFRAMEWORK
+    // .NET Framework has no UnmanagedCallersOnly: a delegate, kept alive for the process.
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void Callback(nint ctx, uint session, uint kind, byte* ptr, nuint len);
+
+    private static readonly Callback s_callback = OnCallback;
+
+    /// <summary>The engine's callback, as a C function pointer.</summary>
+    internal static nint CallbackPointer => Marshal.GetFunctionPointerForDelegate(s_callback);
+#else
+    /// <summary>The engine's callback, as a C function pointer.</summary>
+    internal static nint CallbackPointer => (nint)(delegate* unmanaged[Cdecl]<nint, uint, uint, byte*, nuint, void>)&OnCallback;
+
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+#endif
     internal static void OnCallback(nint ctx, uint session, uint kind, byte* ptr, nuint len)
     {
         try
@@ -137,11 +151,13 @@ internal sealed unsafe class NativeEngine(FontLibrary library, string fonts)
         get
         {
             if (_handle != 0) return _handle;
+            // The native library is 64-bit only; a 32-bit process (AnyCPU with Prefer 32-bit, or x86) can't load it.
+            if (!Environment.Is64BitProcess) throw new EditorException(EditorErrorCode.Unsupported, "Twip needs a 64-bit process: build the app for x64");
             _self = GCHandle.Alloc(this);
             var options = WireJson.ToUtf8(new EngineOptionsWire(fonts));
             fixed (byte* p = options)
             {
-                _handle = TwipNative.EngineNew(p, (nuint)options.Length, &EngineThread.OnCallback, GCHandle.ToIntPtr(_self));
+                _handle = TwipNative.EngineNew(p, (nuint)options.Length, EngineThread.CallbackPointer, GCHandle.ToIntPtr(_self));
             }
             if (_handle == 0) throw new EditorException(EditorErrorCode.Internal, "the engine failed to start");
             return _handle;

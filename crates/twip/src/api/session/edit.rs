@@ -74,9 +74,10 @@ impl Session {
             self.editor.with_origin(origin, |e| op(e, &fonts))
         };
         let value = self.editor.take_made();
-        let records: Vec<TransactionRecord> = self
-            .editor
-            .take_commits()
+        let commits = self.editor.take_commits();
+        let paras: Vec<_> = commits.iter().flat_map(|c| c.targets.paras.iter().copied()).collect();
+        let tables = commits.iter().any(|c| !c.targets.tables.is_empty());
+        let records: Vec<TransactionRecord> = commits
             .into_iter()
             .map(|c| {
                 self.records += 1;
@@ -84,7 +85,13 @@ impl Session {
             })
             .collect();
         let record = records.last().cloned();
+        let edited = !records.is_empty();
         let mut events: Vec<Event> = records.into_iter().map(Event::DocumentChanged).collect();
+        if edited {
+            // An edit can name a family or face the document didn't have (a font applied, a paste).
+            let (fonts, warning) = self.edited_fonts(paras, tables);
+            events.extend(warning.map(Event::Warning).into_iter().chain(fonts));
+        }
         events.extend(self.notices());
         // A move or a view change (track changes, the markup view) moves the state sequence, not the revision.
         let observable = matches!(out, Outcome::Changed(_) | Outcome::Moved);

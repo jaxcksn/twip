@@ -25,6 +25,7 @@ public sealed class EditorHost : IDisposable
     private double _contentWidth, _contentHeight;
     private bool _renderQueued; // engine thread only
     private bool _hidden, _missedFrame; // engine thread only
+    private bool _window; // engine thread only: frames go to the attached window, with the GPU
     private bool _horizontalRuler, _verticalRuler;
     private RulerUnit _rulerUnit;
     private TabSelector _tabSelector;
@@ -44,6 +45,48 @@ public sealed class EditorHost : IDisposable
 
     /// <summary>The document's size after the last frame, in client pixels: for scrollbars.</summary>
     internal SizeF ContentSize => new((float)(_contentWidth * Scale), (float)(_contentHeight * Scale));
+
+    /// <summary>The GPU backend frames are drawn with ("D3D12", "D3D11", "Vulkan"), or null when they're CPU pixels.</summary>
+    internal string? GpuBackend { get; private set; }
+
+    /// <summary>Raised on the engine thread when the GPU stops drawing (the device was lost): frames are CPU pixels again.</summary>
+    internal event Action? GpuLost;
+
+    /// <summary>
+    /// Draws frames into <paramref name="hwnd"/> with the GPU from now on, when there is one: the backend, or null (frames
+    /// stay CPU pixels for <see cref="IEditorHostAdapter.Present"/>). Blocks until the engine has it.
+    /// </summary>
+    internal string? AttachWindow(nint hwnd)
+    {
+        if (_disposed) return null;
+        var attached = _session.Enqueue(id =>
+        {
+            string? backend;
+            try { backend = TwipNative.AttachWindow(_session.Engine, id, hwnd) switch { 1 => "D3D12", 2 => "D3D11", 3 => "Vulkan", _ => null }; }
+            catch (EntryPointNotFoundException) { backend = null; } // a native library from before the GPU path
+            _window = backend is not null;
+            GpuBackend = backend;
+            ScheduleRender();
+            return backend;
+        }, default);
+        return attached.Wait(TimeSpan.FromSeconds(5)) ? attached.Result : null;
+    }
+
+    /// <summary>Asks for a new frame, as a change does.</summary>
+    internal void RequestFrame() => Fire(_ => ScheduleRender());
+
+    /// <summary>Frames are CPU pixels again; blocks until the engine no longer draws into the window, which may then go.</summary>
+    internal void DetachWindow()
+    {
+        if (_disposed) return;
+        _session.Enqueue(id =>
+        {
+            if (_window) TwipNative.DetachWindow(_session.Engine, id);
+            (_window, GpuBackend) = (false, null);
+            ScheduleRender();
+            return true;
+        }, default).Wait(TimeSpan.FromSeconds(5));
+    }
 
     // Input
 
@@ -452,15 +495,42 @@ public sealed class EditorHost : IDisposable
         Fire(RenderFrame);
     }
 
-    /// <summary>Draws a frame into the back buffer, swaps it to the front, and asks the adapter to paint.</summary>
-    private unsafe void RenderFrame(uint id)
+    /// <summary>
+    /// Draws a frame as CPU pixels now, for <see cref="Render"/> to present, while frames otherwise go to the GPU window:
+    /// for a copy of the control's content (WinForms' DrawToBitmap), which can't read the swap chain.
+    /// </summary>
+    internal void RenderPixels()
+    {
+        if (_disposed) return;
+        _session.Enqueue(id => { RenderFrame(id, pixels: true); return true; }, default).Wait(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>Draws a frame into the back buffer, swaps it to the front, and asks the adapter to paint; or draws it
+    /// into the GPU window.</summary>
+    private unsafe void RenderFrame(uint id) => RenderFrame(id, pixels: false);
+
+    private unsafe void RenderFrame(uint id, bool pixels)
     {
         _renderQueued = false;
         var (w, h) = ((int)Math.Ceiling(_width), (int)Math.Ceiling(_height));
         if (_disposed || w == 0 || h == 0) return;
-        if (_back.Length != w * h * 4) _back = new byte[w * h * 4];
         TwipFrameInfo info = default;
         int status;
+        if (_window && !pixels)
+        {
+            status = TwipNative.FrameWindow(_session.Engine, id, (uint)w, (uint)h, &info);
+            if (status == Status.Ok)
+            {
+                (_contentWidth, _contentHeight) = (info.ContentWidth, info.ContentHeight);
+                Post(Adapter.RequestRender);
+                return;
+            }
+            // The GPU can't draw now (the device was lost): CPU pixels from here on.
+            TwipNative.DetachWindow(_session.Engine, id);
+            (_window, GpuBackend) = (false, null);
+            GpuLost?.Invoke();
+        }
+        if (_back.Length != w * h * 4) _back = new byte[w * h * 4];
         fixed (byte* p = _back) status = TwipNative.FrameRgba(_session.Engine, id, p, (uint)w, (uint)h, &info);
         if (status != Status.Ok) return;
         (_contentWidth, _contentHeight) = (info.ContentWidth, info.ContentHeight);
@@ -493,9 +563,9 @@ public sealed class EditorHost : IDisposable
 
     private static byte[] Json(Action<Utf8JsonWriter> write)
     {
-        var buffer = new ArrayBufferWriter<byte>();
+        using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer)) write(writer);
-        return buffer.WrittenSpan.ToArray();
+        return buffer.ToArray();
     }
 
     /// <summary>Calls a host method in queue order, then draws a frame that shows its effect.</summary>

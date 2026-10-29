@@ -296,3 +296,43 @@ fn a_relayout_no_edit_laid_out_is_laid_out_before_the_caret_and_clicks_read_it()
     while s.host().idle() {}
     assert!(s.state().pages.complete);
 }
+
+#[test]
+fn the_paragraph_dialog_sets_a_first_line_or_hanging_indent() {
+    use crate::api::services::{DialogKind, DialogPatch, ParagraphPatch, SpecialIndent};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Hello".into())).expect("types");
+    for (special, first_line, hanging) in [
+        (SpecialIndent::FirstLine, Points(36.0), Points(0.0)),
+        (SpecialIndent::Hanging, Points(0.0), Points(18.0)),
+        (SpecialIndent::None, Points(0.0), Points(0.0)),
+    ] {
+        let by = if special == SpecialIndent::Hanging { hanging } else { first_line };
+        let m = s.dialog_open(DialogKind::Paragraph).expect("opens");
+        let patch = ParagraphPatch { special: Some(Tri::Uniform(special)), by: Some(Tri::Uniform(by)), ..ParagraphPatch::default() };
+        let m = s.dialog_update(m, DialogPatch::Paragraph(patch)).expect("updates");
+        s.dialog_apply(m).expect("applies");
+        let i = &s.state().paragraph.indents;
+        assert_eq!((&i.first_line, &i.hanging), (&Tri::Uniform(first_line), &Tri::Uniform(hanging)), "{special:?}");
+    }
+}
+
+#[test]
+fn applying_a_font_checks_it_against_the_library() {
+    let (mut engine, events) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Hello".into())).expect("types");
+    s.run(Command::SelectAll).expect("selects");
+    events.borrow_mut().clear();
+    s.run(Command::SetFont("Zorble Sans".into())).expect("sets the font");
+    let events = events.borrow();
+    assert!(
+        events.iter().any(|e| matches!(e, Event::FontsChanged { unresolved, .. } if unresolved.iter().any(|f| f == "Zorble Sans"))),
+        "{events:?}"
+    );
+    assert!(events.iter().any(|e| matches!(e, Event::Warning(w) if w.message.contains("Zorble Sans"))), "{events:?}");
+    assert!(s.state().fonts.unresolved.iter().any(|f| f == "Zorble Sans"), "the state has it too");
+}

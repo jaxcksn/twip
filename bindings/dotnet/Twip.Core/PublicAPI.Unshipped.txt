@@ -3003,11 +3003,9 @@ override Twip.Author.GetHashCode() -> int
 override Twip.Author.ToString() -> string!
 override Twip.Block.Equals(object? obj) -> bool
 override Twip.Block.GetHashCode() -> int
-override Twip.Block.Paragraph.<Clone>$() -> Twip.Block.Paragraph!
 override Twip.Block.Paragraph.Equals(object? obj) -> bool
 override Twip.Block.Paragraph.GetHashCode() -> int
 override Twip.Block.Paragraph.ToString() -> string!
-override Twip.Block.Table.<Clone>$() -> Twip.Block.Table!
 override Twip.Block.Table.Equals(object? obj) -> bool
 override Twip.Block.Table.GetHashCode() -> int
 override Twip.Block.Table.ToString() -> string!
@@ -3038,7 +3036,6 @@ override Twip.ColorValue.ToString() -> string!
 override Twip.CommandInfo.Equals(object? obj) -> bool
 override Twip.CommandInfo.GetHashCode() -> int
 override Twip.CommandInfo.ToString() -> string!
-override Twip.CommandItem.<Clone>$() -> Twip.CommandItem!
 override Twip.CommandItem.Equals(object? obj) -> bool
 override Twip.CommandItem.GetHashCode() -> int
 override Twip.CommandItem.ToString() -> string!
@@ -3095,7 +3092,6 @@ override Twip.EditorState.ToString() -> string!
 override Twip.ElementContext.Equals(object? obj) -> bool
 override Twip.ElementContext.GetHashCode() -> int
 override Twip.ElementContext.ToString() -> string!
-override Twip.ElementDetail.<Clone>$() -> Twip.ElementDetail!
 override Twip.ElementDetail.Equals(object? obj) -> bool
 override Twip.ElementDetail.GetHashCode() -> int
 override Twip.ElementDetail.ToString() -> string!
@@ -3218,45 +3214,35 @@ override Twip.MatchId.ToString() -> string!
 override Twip.MenuItem.Equals(object? obj) -> bool
 override Twip.MenuItem.GetHashCode() -> int
 override Twip.MenuItem.ToString() -> string!
-override Twip.MenuTarget.Comment.<Clone>$() -> Twip.MenuTarget.Comment!
 override Twip.MenuTarget.Comment.Equals(object? obj) -> bool
 override Twip.MenuTarget.Comment.GetHashCode() -> int
 override Twip.MenuTarget.Comment.ToString() -> string!
-override Twip.MenuTarget.Element.<Clone>$() -> Twip.MenuTarget.Element!
 override Twip.MenuTarget.Element.Equals(object? obj) -> bool
 override Twip.MenuTarget.Element.GetHashCode() -> int
 override Twip.MenuTarget.Element.ToString() -> string!
 override Twip.MenuTarget.Equals(object? obj) -> bool
 override Twip.MenuTarget.GetHashCode() -> int
-override Twip.MenuTarget.HeaderFooter.<Clone>$() -> Twip.MenuTarget.HeaderFooter!
 override Twip.MenuTarget.HeaderFooter.Equals(object? obj) -> bool
 override Twip.MenuTarget.HeaderFooter.GetHashCode() -> int
 override Twip.MenuTarget.HeaderFooter.ToString() -> string!
-override Twip.MenuTarget.Link.<Clone>$() -> Twip.MenuTarget.Link!
 override Twip.MenuTarget.Link.Equals(object? obj) -> bool
 override Twip.MenuTarget.Link.GetHashCode() -> int
 override Twip.MenuTarget.Link.ToString() -> string!
-override Twip.MenuTarget.Misspelling.<Clone>$() -> Twip.MenuTarget.Misspelling!
 override Twip.MenuTarget.Misspelling.Equals(object? obj) -> bool
 override Twip.MenuTarget.Misspelling.GetHashCode() -> int
 override Twip.MenuTarget.Misspelling.ToString() -> string!
-override Twip.MenuTarget.Picture.<Clone>$() -> Twip.MenuTarget.Picture!
 override Twip.MenuTarget.Picture.Equals(object? obj) -> bool
 override Twip.MenuTarget.Picture.GetHashCode() -> int
 override Twip.MenuTarget.Picture.ToString() -> string!
-override Twip.MenuTarget.Revision.<Clone>$() -> Twip.MenuTarget.Revision!
 override Twip.MenuTarget.Revision.Equals(object? obj) -> bool
 override Twip.MenuTarget.Revision.GetHashCode() -> int
 override Twip.MenuTarget.Revision.ToString() -> string!
-override Twip.MenuTarget.Table.<Clone>$() -> Twip.MenuTarget.Table!
 override Twip.MenuTarget.Table.Equals(object? obj) -> bool
 override Twip.MenuTarget.Table.GetHashCode() -> int
 override Twip.MenuTarget.Table.ToString() -> string!
-override Twip.MenuTarget.Text.<Clone>$() -> Twip.MenuTarget.Text!
 override Twip.MenuTarget.Text.Equals(object? obj) -> bool
 override Twip.MenuTarget.Text.GetHashCode() -> int
 override Twip.MenuTarget.Text.ToString() -> string!
-override Twip.MenuTarget.TextBox.<Clone>$() -> Twip.MenuTarget.TextBox!
 override Twip.MenuTarget.TextBox.Equals(object? obj) -> bool
 override Twip.MenuTarget.TextBox.GetHashCode() -> int
 override Twip.MenuTarget.TextBox.ToString() -> string!
@@ -3363,7 +3349,6 @@ override Twip.SaveResult.ToString() -> string!
 override Twip.SelectionSummary.Equals(object? obj) -> bool
 override Twip.SelectionSummary.GetHashCode() -> int
 override Twip.SelectionSummary.ToString() -> string!
-override Twip.SeparatorItem.<Clone>$() -> Twip.SeparatorItem!
 override Twip.SeparatorItem.Equals(object? obj) -> bool
 override Twip.SeparatorItem.GetHashCode() -> int
 override Twip.SeparatorItem.ToString() -> string!
@@ -3385,14 +3370,12 @@ override Twip.StyleInfo.ToString() -> string!
 override Twip.StylePreview.Equals(object? obj) -> bool
 override Twip.StylePreview.GetHashCode() -> int
 override Twip.StylePreview.ToString() -> string!
-override Twip.SubmenuItem.<Clone>$() -> Twip.SubmenuItem!
 override Twip.SubmenuItem.Equals(object? obj) -> bool
 override Twip.SubmenuItem.GetHashCode() -> int
 override Twip.SubmenuItem.ToString() -> string!
 override Twip.SubstitutionRule.Equals(object? obj) -> bool
 override Twip.SubstitutionRule.GetHashCode() -> int
 override Twip.SubstitutionRule.ToString() -> string!
-override Twip.SuggestionItem.<Clone>$() -> Twip.SuggestionItem!
 override Twip.SuggestionItem.Equals(object? obj) -> bool
 override Twip.SuggestionItem.GetHashCode() -> int
 override Twip.SuggestionItem.ToString() -> string!

@@ -15,11 +15,12 @@ internal static partial class Docx
         using var zip = new ZipArchive(docx);
         using var reader = new StreamReader(zip.GetEntry("word/document.xml")!.Open());
         var xml = await reader.ReadToEndAsync();
-        return string.Concat(TextRun().Matches(xml).Select(m => System.Net.WebUtility.HtmlDecode(m.Groups[1].Value)));
+        return string.Concat(TextRun().Matches(xml).Cast<Match>().Select(m => System.Net.WebUtility.HtmlDecode(m.Groups[1].Value)));
     }
 
-    [GeneratedRegex("<w:t(?: [^>]*)?>([^<]*)</w:t>")]
-    private static partial Regex TextRun();
+    private static readonly Regex s_textRun = new("<w:t(?: [^>]*)?>([^<]*)</w:t>");
+
+    private static Regex TextRun() => s_textRun;
 }
 
 /// <summary>Attaching a presentation to a session, through a headless adapter.</summary>

@@ -197,8 +197,8 @@ pub(super) struct Presentation {
     pub(super) tab_selector: TabSelector,
     pub(super) ruler_drag: Option<RulerDrag>,
     ruler_seen: Option<RulerView>,
-    /// Unique on the thread: names this session's WebGL canvas.
-    #[cfg_attr(not(target_os = "emscripten"), allow(dead_code, reason = "WebGL canvases exist only in the browser"))]
+    /// Unique on the thread: names this session's WebGL canvas or GPU window.
+    #[cfg_attr(not(any(target_os = "emscripten", twip_dawn)), allow(dead_code, reason = "no GPU target in this build"))]
     serial: u64,
 }
 
@@ -387,6 +387,14 @@ impl Drop for Presentation {
     }
 }
 
+/// So does the swap chain on its window.
+#[cfg(twip_dawn)]
+impl Drop for Presentation {
+    fn drop(&mut self) {
+        crate::render::window::detach(self.serial);
+    }
+}
+
 impl Session {
     /// The presentation surface: what a host that shows the document calls.
     pub fn host(&mut self) -> HostSurface<'_> {
@@ -464,6 +472,42 @@ impl HostSurface<'_> {
             return Err(Error::unavailable("no WebGL context is attached"));
         }
         Ok(self.frame_info())
+    }
+
+    /// Draws this session's frames into the window `hwnd` with the GPU from now on: the backend (1 D3D12, 2 D3D11,
+    /// 3 Vulkan), or `None` when there is no usable GPU or this build has none (draw with [`HostSurface::frame_rgba`]).
+    /// # Safety
+    /// `hwnd` is a live window that outlives the attach ([`HostSurface::detach_window`], or the session's end).
+    pub unsafe fn attach_window(&mut self, hwnd: *mut std::ffi::c_void) -> Option<u32> {
+        // SAFETY: the caller's promise.
+        #[cfg(twip_dawn)]
+        return unsafe { crate::render::window::attach(self.session.presentation.serial, hwnd) }.map(|b| b as u32);
+        #[cfg(not(twip_dawn))]
+        {
+            let _ = hwnd;
+            None
+        }
+    }
+
+    /// Stops drawing into the window [`HostSurface::attach_window`] gave.
+    pub fn detach_window(&mut self) {
+        #[cfg(twip_dawn)]
+        crate::render::window::detach(self.session.presentation.serial);
+    }
+
+    /// Draws the viewport into the attached window, `width` x `height` device pixels, and presents it. Fails
+    /// `unavailable` when no window is attached or the GPU can't draw now (the device was lost): draw with
+    /// [`HostSurface::frame_rgba`] then.
+    pub fn frame_window(&mut self, width: u32, height: u32) -> Result<FrameInfo, Error> {
+        #[cfg(twip_dawn)]
+        {
+            let key = self.session.presentation.serial;
+            if crate::render::window::frame(key, width, height, |c| self.draw(c, f64::from(width), f64::from(height))) {
+                return Ok(self.frame_info());
+            }
+        }
+        let _ = (width, height);
+        Err(Error::unavailable("no GPU window is attached"))
     }
 
     /// Draws the viewport on `canvas`, `width` x `height` device pixels: the GPU paths hand their canvas here.

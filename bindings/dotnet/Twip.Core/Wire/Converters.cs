@@ -8,23 +8,62 @@ using System.Text.Json.Serialization.Metadata;
 namespace Twip.Wire;
 
 /// <summary>An id that travels as a bare string.</summary>
-internal interface IWireId<TSelf> where TSelf : struct
+internal abstract class IdConverter<T> : JsonConverter<T> where T : struct
 {
-    static abstract TSelf Create(string value);
+    protected abstract T Create(string value);
 
-    string Value { get; }
-}
+    protected abstract string Value(T id);
 
-internal sealed class IdConverter<T> : JsonConverter<T> where T : struct, IWireId<T>
-{
     public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-        T.Create(reader.GetString() ?? throw new JsonException("an id can't be null"));
+        Create(reader.GetString() ?? throw new JsonException("an id can't be null"));
 
-    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options) => writer.WriteStringValue(value.Value);
+    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options) => writer.WriteStringValue(Value(value));
 
     public override T ReadAsPropertyName(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => Read(ref reader, typeToConvert, options);
 
-    public override void WriteAsPropertyName(Utf8JsonWriter writer, T value, JsonSerializerOptions options) => writer.WritePropertyName(value.Value);
+    public override void WriteAsPropertyName(Utf8JsonWriter writer, T value, JsonSerializerOptions options) => writer.WritePropertyName(Value(value));
+}
+
+internal sealed class ElementIdConverter : IdConverter<ElementId>
+{
+    protected override ElementId Create(string value) => new(value);
+
+    protected override string Value(ElementId id) => id.Value;
+}
+
+internal sealed class CommentIdConverter : IdConverter<CommentId>
+{
+    protected override CommentId Create(string value) => new(value);
+
+    protected override string Value(CommentId id) => id.Value;
+}
+
+internal sealed class RevisionIdConverter : IdConverter<RevisionId>
+{
+    protected override RevisionId Create(string value) => new(value);
+
+    protected override string Value(RevisionId id) => id.Value;
+}
+
+internal sealed class HeadingIdConverter : IdConverter<HeadingId>
+{
+    protected override HeadingId Create(string value) => new(value);
+
+    protected override string Value(HeadingId id) => id.Value;
+}
+
+internal sealed class MatchIdConverter : IdConverter<MatchId>
+{
+    protected override MatchId Create(string value) => new(value);
+
+    protected override string Value(MatchId id) => id.Value;
+}
+
+internal sealed class StyleIdConverter : IdConverter<StyleId>
+{
+    protected override StyleId Create(string value) => new(value);
+
+    protected override string Value(StyleId id) => id.Value;
 }
 
 /// <summary>Enums travel camelCase (<c>setBold</c>, <c>noMarkup</c>).</summary>

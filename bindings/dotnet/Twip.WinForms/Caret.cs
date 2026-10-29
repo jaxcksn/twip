@@ -47,15 +47,15 @@ internal sealed partial class SystemCaret(Control control)
         if (_created) SetCaretPos((int)Math.Round(_bounds.X), (int)Math.Round(_bounds.Y));
     }
 
-    [LibraryImport("user32.dll")]
+    [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool CreateCaret(nint hwnd, nint bitmap, int width, int height);
+    private static extern bool CreateCaret(nint hwnd, nint bitmap, int width, int height);
 
-    [LibraryImport("user32.dll")]
+    [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool SetCaretPos(int x, int y);
+    private static extern bool SetCaretPos(int x, int y);
 
-    [LibraryImport("user32.dll")]
+    [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool DestroyCaret();
+    private static extern bool DestroyCaret();
 }
