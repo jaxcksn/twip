@@ -60,6 +60,7 @@ Check it with `emcc --version`.
 | `crates/twip` | The engine: layout, editing, rendering. `twip::api` is the contract every SDK follows. |
 | `crates/twip-capi` | The C ABI over `twip::api` (internal, `include/twip.h`): the native library `twip` the .NET SDK loads. |
 | `crates/twip-wasm` | Builds the C ABI as an emscripten module for the web, with `twip-host.js` for its callbacks. |
+| `crates/twip-tools` | Developer tools: golden comparisons, dumps, round trips, renders (`cargo run -p twip-tools`). |
 | `bindings/web` | `@twip/web`, the TypeScript SDK, written by hand over the wasm module. |
 | `bindings/dotnet` | `Twip.Core` and `Twip.WinForms`, the .NET SDK, written by hand over the C ABI. |
 | `tests/contract` | The contract scripts every SDK runs (see its README). |
@@ -73,8 +74,9 @@ Check it with `emcc --version`.
 not generated: each is written by hand in its language, and each follows the contract. Three things hold them to it:
 
 - **Wire fixtures.** The api types serialize to the JSON the SDKs exchange with the engine. `crates/twip/tests/wire`
-  holds one fixture per type; both SDKs round-trip every one through their own types. After changing an api type,
-  run `cargo run -p twip --bin twip-tools -- wire-fixtures` and commit the fixtures.
+  holds one fixture per type; both SDKs round-trip every one through their own types, and `twip:test` fails when
+  they differ from the api types. After changing an api type, run
+  `TWIP_WRITE_WIRE=1 cargo test -p twip --lib fixtures_are_current` and commit the fixtures.
 - **Contract scripts.** `tests/contract/*.json` are scripted scenarios (ordering, state, transactions, errors,
   services, review, cleanup) that run against the Rust API, `@twip/web` headless and in a worker, and `Twip.Core`
   unattached and attached; every runner must give the same results. A script in `tests/contract/pending.txt` waits
@@ -99,14 +101,19 @@ Every check CI runs is a moon task, and CI runs them with `moon ci`. Run the sam
 ```sh
 pnpm moon ci                      # the tasks your branch's changes affect (against main), and those depending on them
 pnpm moon ci --force              # every task
-pnpm moon run twip:test           # one task: the engine's unit tests and the rust contract runner
+pnpm moon run twip:test           # one task: the engine's unit tests, the wire fixtures and the rust contract runner
 pnpm moon run web:browser-test    # a mounted editor in a real browser
 pnpm moon run docs:dev            # the docs site, locally
 ```
 
+Builds dominate the time a change takes, so run the checks in order. While iterating, build and test only what the
+change touches (`cargo check`, `cargo test -p twip <filter>`). Run `moon ci` once the change is done. Run the
+benchmarks last, after everything else passes: `cargo bench -p twip [-- <filter>]` (Divan, `crates/twip/benches`;
+not in CI). Compare their numbers with `main`'s on the same machine.
+
 The tasks: `root:hygiene` (planning ids, rulebook wording), `root:format`, `root:lint` (clippy), `root:contract-scripts`;
-`twip:test`, `twip:example` (the Rust API end to end), `twip:wire` (the wire fixtures match the api types),
-`twip-capi:test`; `web:test` (builds the wasm module with emsdk, then the unit, wire, contract and API report checks),
+`twip:test` (the unit tests, including the wire fixture check, and the rust contract runner), `twip:example` (the
+Rust API end to end), `twip-capi:test`; `web:test` (builds the wasm module with emsdk, then the unit, wire, contract and API report checks),
 `web:browser-test`, `web:latency` (the latency budgets, on a quiet machine with a GPU; not in CI); `dotnet:build`, `dotnet:test` (builds twip-capi, then the wire, contract and Native AOT smoke
 tests); `docs:build` and `docs:examples` (the guides' TypeScript and C# examples). `cargo fmt --all` fixes what
 `root:format` reports.

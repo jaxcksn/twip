@@ -21,6 +21,32 @@ use super::text::UnitText;
 
 pub(crate) use super::commands::{deleting as del, moving as mv};
 
+/// `f` over every item on every core, results in item order. The corpus tests' scenarios are independent, and
+/// one thread through all of them made the slowest test the whole suite's time. A worker that panics fails the test
+/// (its message printed above).
+pub(crate) fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    let next = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(items.len()).max(1);
+    let mut done: Vec<(usize, R)> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Relaxed);
+                        let Some(item) = items.get(i) else { break done };
+                        done.push((i, f(item)));
+                    }
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().expect("a worker panicked")).collect()
+    });
+    done.sort_by_key(|d| d.0);
+    done.into_iter().map(|d| d.1).collect()
+}
+
 /// The system fonts, loaded once per test thread (loading them takes most of a test's time; `Fonts` isn't `Sync`).
 pub fn fonts() -> &'static Fonts {
     thread_local! {

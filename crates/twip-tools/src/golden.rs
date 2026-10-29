@@ -6,21 +6,21 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 /// A document's characters and image boxes per page.
-pub fn lay_out(doc: &crate::docx::Document, fonts: &crate::font::Fonts) -> (Vec<Vec<Ch>>, Vec<Vec<[f64; 4]>>) {
-    let snapshot = crate::layout::layout(doc, fonts);
+pub fn lay_out(doc: &twip::internal::docx::Document, fonts: &twip::internal::font::Fonts) -> (Vec<Vec<Ch>>, Vec<Vec<[f64; 4]>>) {
+    let snapshot = twip::internal::layout::layout(doc, fonts);
     let mut chars = Vec::new();
     let mut images = Vec::new();
     for page in snapshot.pages() {
         let (mut cs, mut im) = (Vec::new(), Vec::new());
-        crate::layout::traverse::paint(page, &mut |p| match p.absolute() {
-            crate::layout::fragment::Item::Glyphs(r) => {
+        twip::internal::layout::traverse::paint(page, &mut |p| match p.absolute() {
+            twip::internal::layout::fragment::Item::Glyphs(r) => {
                 let mut prev_x = f64::NAN;
                 for &(c, x, _) in r.chars.iter() {
                     cs.push(Ch { c, x, y: r.baseline, lig: x == prev_x, seg: p.line as usize });
                     prev_x = x;
                 }
             }
-            crate::layout::fragment::Item::Image { rect, .. } => im.push(rect),
+            twip::internal::layout::fragment::Item::Image { rect, .. } => im.push(rect),
             _ => {}
         });
         chars.push(cs);
@@ -51,7 +51,7 @@ pub struct Ch {
 /// A symbol font's private-use character (U+F0xx) as its code, the way both sides can agree on it: Word's PDF reports
 /// symbol-font glyphs as U+F0xx where ours carries the Unicode character it shows ([`symbol_unicode`]) or the code.
 ///
-/// [`symbol_unicode`]: crate::layout::line::symbol_unicode
+/// [`symbol_unicode`]: twip::internal::layout::line::symbol_unicode
 fn fold_symbol(c: char) -> char {
     match c as u32 {
         cp @ 0xF020..=0xF0FF => char::from_u32(cp - 0xF000).unwrap_or(c),
@@ -151,7 +151,8 @@ pub fn golden(v: &Value) -> Vec<Vec<Ch>> {
                 // The PDF's font name ("SymbolMT", "Wingdings-Regular") as the family our text layer maps.
                 let font = s["font"].as_str().unwrap_or("");
                 let family = if font.starts_with("Symbol") { "Symbol" } else { font.split('-').next().unwrap_or(font) };
-                let text: Vec<char> = s["text"].as_str().unwrap_or("").chars().map(|c| crate::layout::line::symbol_unicode(family, c)).collect();
+                let text: Vec<char> =
+                    s["text"].as_str().unwrap_or("").chars().map(|c| twip::internal::layout::line::symbol_unicode(family, c)).collect();
                 let xs = s["x"].as_array().cloned().unwrap_or_default();
                 for (i, c) in text.iter().enumerate() {
                     let x = xs.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -333,14 +334,14 @@ pub fn compare(ours: &[Vec<Ch>], gold: &[Vec<Ch>]) -> Verdict {
     v
 }
 
-fn load(docx: &Path, fonts: &crate::font::Fonts) -> (Vec<Vec<Ch>>, Vec<Vec<Ch>>) {
-    let doc = crate::docx::read(&std::fs::read(docx).expect("read docx")).expect("parse docx");
+fn load(docx: &Path, fonts: &twip::internal::font::Fonts) -> (Vec<Vec<Ch>>, Vec<Vec<Ch>>) {
+    let doc = twip::internal::docx::read(&std::fs::read(docx).expect("read docx")).expect("parse docx");
     let g: Value = serde_json::from_str(&std::fs::read_to_string(docx.with_extension("golden.json")).expect("golden")).unwrap();
     (lay_out(&doc, fonts).0, golden(&g))
 }
 
 /// Prints the first row of `docx` that differs from the reference, glyph by glyph (or row `want` when given).
-pub fn diff(docx: &Path, fonts: &crate::font::Fonts, want: Option<(usize, usize)>) {
+pub fn diff(docx: &Path, fonts: &twip::internal::font::Fonts, want: Option<(usize, usize)>) {
     let (o, g) = load(docx, fonts);
     for pi in 0..g.len() {
         let gr = rows(&g[pi], &[]);
@@ -383,7 +384,7 @@ pub fn diff(docx: &Path, fonts: &crate::font::Fonts, want: Option<(usize, usize)
 }
 
 /// Lists page `page`'s rows side by side (baseline, text) — `from` = first row to show.
-pub fn rows_of(docx: &Path, fonts: &crate::font::Fonts, page: usize, from: usize) {
+pub fn rows_of(docx: &Path, fonts: &twip::internal::font::Fonts, page: usize, from: usize) {
     let (o, g) = load(docx, fonts);
     let gr = rows(g.get(page - 1).map(|p| &p[..]).unwrap_or(&[]), &[]);
     let or = rows(o.get(page - 1).map(|p| &p[..]).unwrap_or(&[]), &marks(&gr));
@@ -396,7 +397,7 @@ pub fn rows_of(docx: &Path, fonts: &crate::font::Fonts, page: usize, from: usize
 }
 
 /// Writes every matched row's characters as `x_ours x_word` pairs (whitespace dropped) for drift analysis.
-pub fn pairs(docx: &Path, fonts: &crate::font::Fonts, out: &Path) {
+pub fn pairs(docx: &Path, fonts: &twip::internal::font::Fonts, out: &Path) {
     let (o, g) = load(docx, fonts);
     let mut s = String::new();
     for pi in 0..g.len() {
@@ -422,7 +423,7 @@ fn trunc(s: &str) -> String {
 
 /// Runs every fixture under `paths` (folders or .docx files); prints pass rates per folder and writes
 /// `report`. With `features`, only documents whose features are within the set count (`golden --features`).
-pub fn run(paths: &[String], fonts: &crate::font::Fonts, report: &Path, features: Option<&std::collections::BTreeSet<&'static str>>) {
+pub fn run(paths: &[String], fonts: &twip::internal::font::Fonts, report: &Path, features: Option<&std::collections::BTreeSet<&'static str>>) {
     let mut files: Vec<PathBuf> = Vec::new();
     for p in paths {
         collect(Path::new(p), &mut files);
@@ -434,8 +435,8 @@ pub fn run(paths: &[String], fonts: &crate::font::Fonts, report: &Path, features
         let Ok(gold) = std::fs::read_to_string(&gold_path) else { continue };
         let folder = f.parent().and_then(|p| p.file_name()).map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let name = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        let verdict = match std::fs::read(f).map_err(|e| e.to_string()).and_then(|b| crate::docx::read(&b)) {
-            Ok(doc) if features.is_some_and(|f| !crate::features::of(&doc).is_subset(f)) => continue,
+        let verdict = match std::fs::read(f).map_err(|e| e.to_string()).and_then(|b| twip::internal::docx::read(&b)) {
+            Ok(doc) if features.is_some_and(|f| !twip::internal::features::of(&doc).is_subset(f)) => continue,
             Ok(doc) => {
                 let layout = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lay_out(&doc, fonts)));
                 match layout {

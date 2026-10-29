@@ -136,7 +136,7 @@ public sealed class WireTests
     [MemberData(nameof(Fixtures))]
     public void FixtureRoundTrips(string fixture)
     {
-        if (fixture == "") Assert.Skip($"no wire fixtures in {FixtureDir}: run `twip-tools wire-fixtures` to write them");
+        if (fixture == "") Assert.Skip($"no wire fixtures in {FixtureDir}: run `TWIP_WRITE_WIRE=1 cargo test -p twip --lib fixtures_are_current` to write them");
         var root = JsonNode.Parse(File.ReadAllText(Path.Combine(FixtureDir, fixture)));
         var name = Path.GetFileNameWithoutExtension(fixture);
         var examples = root is JsonArray array ? array.ToList() : [root];

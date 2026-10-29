@@ -2,7 +2,7 @@
   "pipeline": { "jobTotal": 3 },
   "targets": {
     "jobs": [
-      ["root:hygiene", "root:format", "root:contract-scripts", "twip:test", "twip:example", "twip:wire", "twip-capi:test"],
+      ["root:hygiene", "root:format", "root:contract-scripts", "twip:test", "twip:example", "twip-capi:test"],
       ["root:lint", "twip-capi:build", "dotnet:build", "dotnet:test"],
       ["twip-wasm:build", "web:build", "web:test", "web:browser-test", "docs:build", "docs:examples"]
     ]

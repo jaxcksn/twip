@@ -8,8 +8,9 @@
 //! - optional fields are left out when unset; fields that state reports as absent are `null`;
 //! - a mixed value is `"mixed"` ([`super::state::Tri`]), lengths are points, colours `#RRGGBB`, bytes base64.
 //!
-//! [`fixtures`] lists one example of every variant of every type; `twip-tools wire-fixtures` writes them to
-//! `crates/twip/tests/wire/<type>.json`, and each SDK round-trips them through its own types.
+//! [`fixtures`] lists one example of every variant of every type, committed as `crates/twip/tests/wire/<type>.json`
+//! (`TWIP_WRITE_WIRE=1 cargo test -p twip --lib fixtures_are_current` rewrites them); each SDK round-trips them
+//! through its own types.
 
 mod examples;
 
@@ -76,5 +77,40 @@ mod tests {
             }
             assert_eq!(committed, serde_json::Value::Array((f.examples)()), "{} differs from its examples", f.name);
         }
+    }
+
+    /// The committed files are byte for byte what the examples write, and no file is left that no type makes.
+    /// `TWIP_WRITE_WIRE=1 cargo test -p twip --lib fixtures_are_current` rewrites them.
+    #[test]
+    fn fixtures_are_current() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wire");
+        let write = std::env::var_os("TWIP_WRITE_WIRE").is_some();
+        let fixtures = fixtures();
+        let mut stale = Vec::new();
+        for f in &fixtures {
+            let path = dir.join(format!("{}.json", f.name));
+            let text = serde_json::to_string_pretty(&(f.examples)()).expect("examples serialize") + "\n";
+            if std::fs::read_to_string(&path).ok().as_deref() == Some(text.as_str()) {
+                continue;
+            }
+            if write {
+                std::fs::write(&path, text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            } else {
+                stale.push(path.display().to_string());
+            }
+        }
+        // `balloons.json` is hand-written: the cases `stack_balloons` must give.
+        for e in std::fs::read_dir(&dir).expect("tests/wire").flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name == "balloons.json" || name.strip_suffix(".json").is_some_and(|n| fixtures.iter().any(|f| f.name == n)) {
+                continue;
+            }
+            if write {
+                std::fs::remove_file(e.path()).unwrap_or_else(|err| panic!("{name}: {err}"));
+            } else {
+                stale.push(e.path().display().to_string());
+            }
+        }
+        assert!(stale.is_empty(), "wire fixtures differ from the api types (rerun with TWIP_WRITE_WIRE=1):\n  {}", stale.join("\n  "));
     }
 }

@@ -1,11 +1,13 @@
-//! The developer tools: `twip-tools <command> ...` (dump, dumpdiff, bench, render, ...). Native only; the browser
-//! module is `twip-wasm`.
+//! The developer tools: `twip-tools <command> ...` (golden, dump, dumpdiff, roundtrip, render, ...). Native only; the
+//! browser module is `twip-wasm`. Speed is measured by the engine's Divan benchmarks (`cargo bench -p twip`).
 
 #[cfg(target_os = "emscripten")]
 fn main() {}
 
 #[cfg(not(target_os = "emscripten"))]
 mod cli;
+#[cfg(not(target_os = "emscripten"))]
+mod golden;
 
 /// Prints a command's error and exits with status 1.
 #[cfg(not(target_os = "emscripten"))]
@@ -49,46 +51,6 @@ fn main() {
             };
             return exit_on_error(cli::dumpdiff::run(std::path::Path::new(x), std::path::Path::new(y), features.as_ref()));
         }
-        Some("editlatency") => {
-            // twip editlatency <doc.docx> [n]: the editor's per-input times (cli/editlatency.rs).
-            let a: Vec<String> = args.skip(1).collect();
-            if a.first().is_some_and(|x| x == "--merge") {
-                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --merge <doc.docx> [n]".into())) };
-                return exit_on_error(cli::editlatency::run_merge(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(100)));
-            }
-            if a.first().is_some_and(|x| x == "--depth") {
-                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --depth <doc.docx> [n]".into())) };
-                return exit_on_error(cli::editlatency::run_depth(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(300)));
-            }
-            if a.first().is_some_and(|x| x == "--api") {
-                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --api <doc.docx> [n]".into())) };
-                return exit_on_error(cli::editlatency::run_api(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(100)));
-            }
-            if a.first().is_some_and(|x| x == "--frames") {
-                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --frames <doc.docx> [dpr]".into())) };
-                return exit_on_error(cli::editlatency::run_frames(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(1.0)));
-            }
-            if a.first().is_some_and(|x| x == "--scroll") {
-                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --scroll <doc.docx> [dpr]".into())) };
-                return exit_on_error(cli::editlatency::run_scroll(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(1.0)));
-            }
-            if a.first().is_some_and(|x| x == "--blink") {
-                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --blink <doc.docx>".into())) };
-                return exit_on_error(cli::editlatency::run_blink(doc));
-            }
-            if a.first().is_some_and(|x| x == "--select") {
-                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --select <doc.docx> [dpr]".into())) };
-                return exit_on_error(cli::editlatency::run_select(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(1.0)));
-            }
-            if a.first().is_some_and(|x| x == "--tracking") {
-                let Some(doc) = a.get(1) else { return exit_on_error(Err("usage: editlatency --tracking <doc.docx> [n]".into())) };
-                return exit_on_error(cli::editlatency::run_tracking(doc, a.get(2).and_then(|n| n.parse().ok()).unwrap_or(100)));
-            }
-            let Some(doc) = a.first() else {
-                return exit_on_error(Err("usage: editlatency [--api|--depth|--merge|--tracking] <doc.docx> [n]".into()));
-            };
-            return exit_on_error(cli::editlatency::run(doc, a.get(1).and_then(|n| n.parse().ok()).unwrap_or(100)));
-        }
         Some("roundtrip") => {
             // twip roundtrip [--edits all] [--keep <dir>] <docx or folders...> (cli/roundtrip.rs).
             let a: Vec<String> = args.skip(1).collect();
@@ -98,27 +60,6 @@ fn main() {
             // twip units <docx or folders...>: atomic units over the limit.
             let a: Vec<String> = args.skip(1).collect();
             return exit_on_error(cli::units::run(&a));
-        }
-        Some("fullbench") => {
-            let a: Vec<String> = args.skip(1).collect();
-            let Some(doc) = a.first() else { return exit_on_error(Err("usage: fullbench <doc.docx> [runs]".into())) };
-            return exit_on_error(cli::fullbench::run(doc, a.get(1).and_then(|n| n.parse().ok()).unwrap_or(5)));
-        }
-        Some("reviewbench") => {
-            // twip reviewbench <doc.docx>: open, view switches, accept and reject all (cli/reviewbench.rs).
-            let Some(doc) = args.nth(1) else { return exit_on_error(Err("usage: reviewbench <doc.docx>".into())) };
-            return exit_on_error(cli::reviewbench::run(&doc));
-        }
-        Some("wire-fixtures") => {
-            // twip wire-fixtures [--check]: the api wire fixtures in tests/wire (cli/wire_fixtures.rs).
-            let check = args.nth(1).is_some_and(|a| a == "--check");
-            return exit_on_error(cli::wire_fixtures::run(check));
-        }
-        Some("memprofile") => {
-            let a: Vec<String> = args.skip(1).collect();
-            let Some(doc) = a.first() else { return exit_on_error(Err("usage: memprofile <doc.docx> [--soak N]".into())) };
-            let soak = a.iter().position(|x| x == "--soak").and_then(|i| a.get(i + 1)).and_then(|n| n.parse().ok());
-            return exit_on_error(cli::memprofile::run(doc, soak));
         }
         _ => {}
     }
@@ -138,20 +79,14 @@ fn main() {
             None => None,
         };
         let fonts = twip::internal::font::Fonts::system();
-        twip::internal::golden::run(&a, &fonts, std::path::Path::new("golden-report.txt"), features.as_ref());
+        golden::run(&a, &fonts, std::path::Path::new("golden-report.txt"), features.as_ref());
         return;
-    }
-    if args.peek().map(String::as_str) == Some("bench") {
-        // twip bench <doc.docx> [runs]: read, layout and keystroke times (ms) (cli/bench.rs).
-        let a: Vec<String> = args.skip(1).collect();
-        let Some(doc) = a.first() else { return exit_on_error(Err("usage: bench <doc.docx> [runs]".into())) };
-        return exit_on_error(cli::bench::run(doc, a.get(1).and_then(|n| n.parse().ok()).unwrap_or(5)));
     }
     if args.peek().map(String::as_str) == Some("diff") {
         // twip diff <fixture.docx> [page row]
         let a: Vec<String> = args.skip(1).collect();
         let want = (a.len() >= 3).then(|| (a[1].parse().unwrap_or(1), a[2].parse().unwrap_or(1)));
-        twip::internal::golden::diff(std::path::Path::new(&a[0]), &twip::internal::font::Fonts::system(), want);
+        golden::diff(std::path::Path::new(&a[0]), &twip::internal::font::Fonts::system(), want);
         return;
     }
     if args.peek().map(String::as_str) == Some("rows") {
@@ -159,13 +94,13 @@ fn main() {
         let a: Vec<String> = args.skip(1).collect();
         let page = a.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
         let from = a.get(2).and_then(|s| s.parse().ok()).unwrap_or(1);
-        twip::internal::golden::rows_of(std::path::Path::new(&a[0]), &twip::internal::font::Fonts::system(), page, from);
+        golden::rows_of(std::path::Path::new(&a[0]), &twip::internal::font::Fonts::system(), page, from);
         return;
     }
     if args.peek().map(String::as_str) == Some("pairs") {
         // twip pairs <fixture.docx> <out.txt>: page row k n x_ours x_word per matched character
         let a: Vec<String> = args.skip(1).collect();
-        twip::internal::golden::pairs(std::path::Path::new(&a[0]), &twip::internal::font::Fonts::system(), std::path::Path::new(&a[1]));
+        golden::pairs(std::path::Path::new(&a[0]), &twip::internal::font::Fonts::system(), std::path::Path::new(&a[1]));
         return;
     }
     if args.peek().map(String::as_str) == Some("metrics") {
@@ -217,9 +152,7 @@ fn main() {
         println!("{}: wrote {}", if gpu { "Graphite (Vulkan)" } else { "CPU raster" }, a[1]);
         return;
     }
-    exit_on_error(Err(
-        "usage: twip-tools <dump|dumpdiff|editlatency|roundtrip|units|fullbench|memprofile|golden|bench|diff|rows|pairs|metrics|render> ...".into(),
-    ));
+    exit_on_error(Err("usage: twip-tools <dump|dumpdiff|roundtrip|units|golden|diff|rows|pairs|metrics|render> ...".into()));
 }
 
 #[cfg(not(target_os = "emscripten"))]

@@ -716,16 +716,16 @@ fn scenarios() {
     let files = scenario_files();
     assert!(!files.is_empty(), "no scenarios found in tests/scenarios");
     let only = std::env::var("SCENARIO").ok();
-    let failed: Vec<String> = files
-        .iter()
-        .filter(|f| only.as_ref().is_none_or(|o| f.to_string_lossy().contains(o.as_str())))
-        .filter_map(|f| {
-            std::panic::catch_unwind(|| run(f)).err().map(|e| {
-                let why = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
-                format!("{}: {}", f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), why.lines().next().unwrap_or(""))
-            })
+    let files: Vec<_> = files.into_iter().filter(|f| only.as_ref().is_none_or(|o| f.to_string_lossy().contains(o.as_str()))).collect();
+    let failed: Vec<String> = super::par_map(&files, |f| {
+        std::panic::catch_unwind(|| run(f)).err().map(|e| {
+            let why = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+            format!("{}: {}", f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), why.lines().next().unwrap_or(""))
         })
-        .collect();
+    })
+    .into_iter()
+    .flatten()
+    .collect();
     assert!(
         failed.is_empty(),
         "{} scenarios failed:

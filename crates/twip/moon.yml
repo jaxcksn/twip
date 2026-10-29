@@ -18,7 +18,3 @@ tasks:
   example:
     command: node ../twip-capi/build-native.mjs run -p twip --example session
     inputs: ['src/**/*', 'examples/**/*', 'Cargo.toml']
-  # The committed wire fixtures are what the api types serialize to; the SDKs' wire tests round-trip them.
-  wire:
-    command: node ../twip-capi/build-native.mjs run -p twip --bin twip-tools -- wire-fixtures --check
-    inputs: ['src/**/*', 'tests/wire/**/*', 'Cargo.toml']

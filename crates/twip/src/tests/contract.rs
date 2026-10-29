@@ -7,6 +7,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::editing::inspect::inspect;
+use crate::editing::tests::par_map;
 use crate::editing::tests::recorder::{Recorder, canonical};
 use crate::editing::tests::scenarios::{Run, scenario_files};
 use crate::render::{Frame, Renderer};
@@ -46,7 +47,7 @@ fn states(path: &Path, mode: usize) -> Vec<Value> {
 fn editing_state_is_the_same_with_any_renderer_or_none() {
     let files = scenario_files();
     assert!(!files.is_empty());
-    for f in &files {
+    let failed = par_map(&files, |f| {
         let plain = states(f, 0);
         for (mode, what) in [(1, "drawing every frame with Skia"), (2, "a lagging, dropping recorder")] {
             let got = states(f, mode);
@@ -55,14 +56,18 @@ fn editing_state_is_the_same_with_any_renderer_or_none() {
                     plain[k].as_object().map(|o| o.keys().filter(|key| got[k][key.as_str()] != plain[k][key.as_str()]).collect()).unwrap_or_default();
                 let _ = std::fs::write(std::env::temp_dir().join("contract-got.json"), serde_json::to_string_pretty(&got[k]).unwrap_or_default());
                 let _ = std::fs::write(std::env::temp_dir().join("contract-plain.json"), serde_json::to_string_pretty(&plain[k]).unwrap_or_default());
-                panic!(
+                return Some(format!(
                     "{}: {what} changed editing state at step {k} in {keys:?}: {} vs {}",
                     f.display(),
                     keys.first().map_or(String::new(), |key| got[k][key.as_str()].to_string().chars().take(300).collect()),
                     keys.first().map_or(String::new(), |key| plain[k][key.as_str()].to_string().chars().take(300).collect())
-                );
+                ));
             }
         }
+        None
+    });
+    if let Some(why) = failed.into_iter().flatten().next() {
+        panic!("{why}");
     }
 }
 

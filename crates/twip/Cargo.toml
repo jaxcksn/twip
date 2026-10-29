@@ -7,18 +7,11 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-# The developer tools (golden, dump, roundtrip, bench, ...). Named apart from the library so its outputs don't
-# collide with twip-capi's twip.dll / twip.pdb.
-[[bin]]
-name = "twip-tools"
-path = "src/main.rs"
-
 # Prebuilt Skia is downloaded for the native feature set (graphite + vulkan + default pdf); the web set (graphite on
 # Dawn + ganesh/gl) is prebuilt by github.com/jaxcksn/skia-wasm-webgpu, so changing the emscripten line below needs a
 # new release there.
 [target.'cfg(not(target_os = "emscripten"))'.dependencies]
 skia-safe = { version = "0.153.3", features = ["graphite", "vulkan"] }
-ash = "0.38"
 
 [target.'cfg(target_os = "emscripten")'.dependencies]
 skia-safe = { version = "0.153.3", features = ["graphite", "ganesh", "gl"] }
@@ -50,3 +43,12 @@ inspect = []
 needless_range_loop = "allow"
 too_many_arguments = "allow"
 type_complexity = "allow"
+
+[dev-dependencies]
+# The benchmarks (benches/engine): `cargo bench -p twip`.
+divan = "0.1.21"
+
+# One benchmark binary, so `cargo bench` links Skia once.
+[[bench]]
+name = "engine"
+harness = false

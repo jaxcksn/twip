@@ -9,6 +9,11 @@ license = "Apache-2.0"
 repository = "https://github.com/jaxcksn/twip"
 rust-version = "1.88"
 
+# Line tables keep backtraces and profiles readable; full debug info made an incremental `cargo test -p twip`
+# rebuild 22 s instead of 18.5 s (Windows, 2026-10-29), mostly in linking. Debuggers lose local variables.
+[profile.dev]
+debug = "line-tables-only"
+
 # Skia compiles at the same level in both profiles, so one prebuilt Skia archive serves debug and release.
 [profile.dev.package.skia-bindings]
 opt-level = "s"
@@ -18,3 +23,10 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# Benchmarks keep release's opt-level but skip its whole-program LTO and single codegen unit, which make every
+# `cargo bench` rebuild take minutes; compare benchmark numbers with each other, not with the shipped library's.
+[profile.bench]
+lto = false
+codegen-units = 16
+incremental = true

@@ -313,19 +313,25 @@ fn fuzz_editing() {
 #[test]
 fn fuzz_regressions() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios/fuzz-regressions");
-    let mut failed = Vec::new();
     // `SCENARIO`: only the regressions whose file name holds it (as the scenario runner filters).
     let only = std::env::var("SCENARIO").ok();
-    for f in std::fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")) {
-        if only.as_ref().is_some_and(|o| !f.to_string_lossy().contains(o.as_str())) {
-            continue;
-        }
-        let s: Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap_or_default()).unwrap_or_default();
+    let files: Vec<_> = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "json") && only.as_ref().is_none_or(|o| p.to_string_lossy().contains(o.as_str())))
+        .collect();
+    let failed: Vec<String> = super::par_map(&files, |f| {
+        let s: Value = serde_json::from_str(&std::fs::read_to_string(f).unwrap_or_default()).unwrap_or_default();
         let steps: Vec<Value> = s["steps"].as_array().cloned().unwrap_or_default();
-        if let Err(why) = replay(s["fixture"].as_str().unwrap_or(""), &steps) {
-            failed.push(format!("{}: {}", f.display(), why.lines().take(3).collect::<Vec<_>>().join(" ")));
-        }
-    }
+        replay(s["fixture"].as_str().unwrap_or(""), &steps)
+            .err()
+            .map(|why| format!("{}: {}", f.display(), why.lines().take(3).collect::<Vec<_>>().join(" ")))
+    })
+    .into_iter()
+    .flatten()
+    .collect();
     assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
 
@@ -409,8 +415,8 @@ fn merge_step(r: &mut Run, rng: &mut Rng) -> Value {
 
 /// Incremental layout while typing in long tables (an edit inside a table's rows lays out only those rows, the
 /// others taken from the baseline's layout of the table): after every input, the same pages as a full layout. The
-/// inputs are `editlatency`'s; FX-TBL-LARGE-NESTED caught a row's text taken from a page record older than the
-/// baseline. Release build: `cargo test --release --lib fuzz_editing -- --ignored`.
+/// inputs are the typing benchmark's (`editing::input`); FX-TBL-LARGE-NESTED caught a row's text taken from a page
+/// record older than the baseline. Release build: `cargo test --release --lib fuzz_editing -- --ignored`.
 #[test]
 #[ignore = "slow: run in a release build with the fuzz"]
 fn fuzz_editing_long_tables() {

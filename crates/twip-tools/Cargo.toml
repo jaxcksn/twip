@@ -1,0 +1,26 @@
+[package]
+name = "twip-tools"
+description = "Developer tools for the engine: golden comparisons, dumps, round trips, renders."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# Built only when asked for (`cargo run -p twip-tools`): no tests, so `cargo test` never links a second Skia binary.
+[[bin]]
+name = "twip-tools"
+path = "src/main.rs"
+test = false
+doctest = false
+
+[target.'cfg(not(target_os = "emscripten"))'.dependencies]
+twip = { path = "../twip" }
+skia-safe = { version = "0.153.3", features = ["graphite", "vulkan"] }
+ash = "0.38"
+serde_json = "1.0.154"
+
+# As the engine's: the golden comparison indexes pages and rows of two layouts in step.
+[lints.clippy]
+needless_range_loop = "allow"

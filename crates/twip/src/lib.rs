@@ -7,8 +7,6 @@ pub(crate) mod editing;
 #[cfg(not(target_os = "emscripten"))]
 pub(crate) mod features;
 pub(crate) mod font;
-#[cfg(not(target_os = "emscripten"))]
-pub(crate) mod golden;
 pub(crate) mod layout;
 pub(crate) mod pdf;
 pub(crate) mod prof;
@@ -17,7 +15,7 @@ pub(crate) mod services;
 #[cfg(test)]
 mod tests;
 
-/// The engine's modules, for the crate's own tools (`twip-tools`: the golden, harness and benchmark commands). Not
+/// The engine's modules, for the crate's own tools (`crates/twip-tools` and the benchmarks in `benches/`). Not
 /// part of the API: no documentation and no compatibility promise.
 #[doc(hidden)]
 pub mod internal {
@@ -33,10 +31,6 @@ pub mod internal {
     }
     pub mod font {
         pub use crate::font::*;
-    }
-    #[cfg(not(target_os = "emscripten"))]
-    pub mod golden {
-        pub use crate::golden::*;
     }
     pub mod layout {
         pub use crate::layout::*;
