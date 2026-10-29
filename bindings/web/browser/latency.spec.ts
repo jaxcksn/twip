@@ -4,7 +4,10 @@
 // timestamp: an upper bound. Each key is pressed alone, once the last one's frame is painted, and the 95th
 // percentile of the samples must be in budget; the numbers are printed either way.
 import { expect, test, type Page } from '@playwright/test';
-import { hello, mount, open } from './helpers.ts';
+import { hello, mount, open, softwareGpu } from './helpers.ts';
+
+// The budgets hold on a machine with a GPU; CI's runner, with a software one and two cores, isn't such a machine.
+test.skip(softwareGpu, 'a software GPU');
 
 const REFRESH = 1000 / 60;
 const SAMPLES = 20;

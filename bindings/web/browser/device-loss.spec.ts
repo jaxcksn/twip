@@ -2,7 +2,7 @@
 // with no host code, on the main thread and in the worker, and an edit's frame follows within a second. Past 3 lost
 // devices, the canvas shows CPU pixels.
 import { expect, test, type Page } from '@playwright/test';
-import { hello, mount, open, pixels } from './helpers.ts';
+import { hello, mount, open, pixels, softwareGpu } from './helpers.ts';
 
 /**
  * Runs in the page, and in the engine worker ahead of its script: keeps each WebGPU device and WebGL 2 context made,
@@ -75,12 +75,13 @@ for (const backend of ['webgl', 'webgpu'] as const) {
   for (const execution of ['main', 'worker'] as const) {
     test(`a lost ${backend} ${backend === 'webgl' ? 'context' : 'device'} draws again within a second (${execution})`, async ({ page }) => {
       const webgl = backend === 'webgl';
+      test.skip(!webgl && softwareGpu, 'a software GPU');
       await page.addInitScript(instrument, webgl);
+      await open(page);
       await page.route('**/web/dist/worker.js', async (route) => {
         const response = await route.fetch();
         await route.fulfill({ response, body: `(${instrument.toString()})(${webgl});\n${await response.text()}` });
       });
-      await open(page);
       await mount(page, { docx: hello, mount: { execution } });
       const scope = engineScope(page, execution);
       const made = await scope.evaluate(() => (globalThis as any).twipMade());
@@ -117,13 +118,13 @@ for (const backend of ['webgl', 'webgpu'] as const) {
 
 for (const execution of ['main', 'worker'] as const) {
   test(`past 3 lost WebGPU devices the canvas shows CPU pixels (${execution})`, async ({ page }) => {
+    test.skip(softwareGpu, 'a software GPU');
     await page.addInitScript(instrument, false);
+    await open(page);
     await page.route('**/web/dist/worker.js', async (route) => {
       const response = await route.fetch();
-      await route.fulfill({ response, body: `(${instrument.toString()})(false);
-${await response.text()}` });
+      await route.fulfill({ response, body: `(${instrument.toString()})(false);\n${await response.text()}` });
     });
-    await open(page);
     await mount(page, { docx: hello, mount: { execution } });
     const scope = engineScope(page, execution);
     test.skip((await scope.evaluate(() => (globalThis as any).twipMade())).devices === 0, 'no webgpu on this machine');

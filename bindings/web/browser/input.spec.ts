@@ -152,8 +152,8 @@ test('scrolling, Ctrl+wheel zoom and resizing the container', async ({ page }) =
   const scroller = page.locator('#editor [data-twip="editor"]');
   const pages = () => page.evaluate(() => (window as any).editor.view.visiblePages().map((p: { page: number }) => p.page));
   await expect.poll(pages).toContain(0);
-  await scroller.evaluate((e) => (e.scrollTop = 1500));
-  await expect.poll(pages).not.toContain(0);
+  // Again on each poll: until layout reaches the later pages, the scroll stops short of them.
+  await expect.poll(async () => (await scroller.evaluate((e) => (e.scrollTop = 1500)), pages())).not.toContain(0);
   await page.mouse.move(300, 200);
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -100);
@@ -191,6 +191,7 @@ test('two editors on one page: bold text copied from one stays bold in the other
   await page.keyboard.press('Control+A');
   await page.keyboard.press('Control+B');
   await page.keyboard.press('Control+C');
+  await clipboard(page).toBe('bold');
   await page.locator('#b canvas').click({ position: { x: 300, y: 120 } });
   await page.keyboard.press('Control+V');
   await page.keyboard.press('Control+A');

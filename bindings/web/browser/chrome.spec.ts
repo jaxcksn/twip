@@ -178,11 +178,14 @@ test('a field dragged from a list outside the editor shows the drop caret and in
   await page.mouse.down();
   await page.mouse.move(end.x + 30, end.y + end.height / 2, { steps: 5 });
   await page.mouse.move(end.x + 2, end.y + end.height / 2, { steps: 5 });
-  // The drop caret: the editor's pixels changed with nothing edited.
-  const during = await pixels(page, editor(page));
-  let changed = 0;
-  for (let y = 0; y < during.height; y += 1) for (let x = 0; x < during.width; x += 4) if (during.at(x, y) !== before.at(x, y)) changed++;
-  expect(changed).toBeGreaterThan(0);
+  // The drop caret: the editor's pixels change with nothing edited, once its frame is drawn.
+  const changed = async () => {
+    const during = await pixels(page, editor(page));
+    let n = 0;
+    for (let y = 0; y < during.height; y += 1) for (let x = 0; x < during.width; x += 4) if (during.at(x, y) !== before.at(x, y)) n++;
+    return n;
+  };
+  await expect.poll(changed).toBeGreaterThan(0);
   await page.mouse.up();
   await page.evaluate(() => (window as any).dropped);
   await expect.poll(() => text(page)).toContain('Dear');

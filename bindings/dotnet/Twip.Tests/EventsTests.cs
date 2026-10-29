@@ -87,6 +87,8 @@ public sealed class EventsTests
         var first = session.Commands.InsertTextAsync("a", Ct);
         var second = session.Commands.InsertTextAsync("b", Ct);
         await first;
+        // A command completes before its events are delivered: let the first one's handler run.
+        await session.WhenIdleAsync();
         try
         {
             // It ran before the dispose reached the engine (its event is dropped), or it failed as destroyed.

@@ -111,12 +111,13 @@ jobs:
       # undocumented public member already failed above: API Extractor's ae-undocumented in web:test, CS1591 in the
       # .NET build, and twip::api's deny(missing_docs) in the rust job.)
       - run: moon run docs:examples
-      # A real browser paints through WebGL 2 and WebGPU: the runner's preinstalled Edge, so nothing to download.
+      # A real browser paints through WebGL 2 and the CPU: the runner's preinstalled Edge, so nothing to download.
       - if: runner.os == 'Linux'
         run: moon run web:browser-test
         env:
-          # Software WebGPU here paints blank; WebGPU is tested on Windows locally until that's understood.
-          TWIP_SKIP_WEBGPU: '1'
+          # The runner's GPU is software: its WebGPU paints blank, and its frames are too slow for a refresh. WebGPU
+          # and GPU frame times are tested on Windows locally.
+          TWIP_SOFTWARE_GPU: '1'
 
   docs:
     runs-on: ubuntu-latest

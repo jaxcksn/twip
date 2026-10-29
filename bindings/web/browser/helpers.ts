@@ -7,26 +7,41 @@ import { expect, type Locator, type Page } from '@playwright/test';
 export const fixture = (name: string) => [...readFileSync(new URL(`../../../crates/twip/tests/fixtures/${name}`, import.meta.url))];
 export const hello = [...readFileSync(new URL('../../hello.docx', import.meta.url))];
 
-/** An empty page on the test server's origin, with the SDK as `window.twip` and a font loaded. */
+/** A software GPU (CI's Linux runners): its WebGPU paints blank ("A valid external Instance reference no longer
+ * exists"), so editors there draw with WebGL 2, and the latency budgets aren't checked. */
+export const softwareGpu = process.env.TWIP_SOFTWARE_GPU === '1';
+
+/** An empty page on the test server's origin, with the SDK as `window.twip` and a font loaded. Register a route for
+ * the engine worker's script after this, to take over the one here. */
 export async function open(page: Page, options: { gpu?: boolean } = {}): Promise<void> {
   page.on('pageerror', (e) => console.log(`page error: ${e.message}`));
   await page.route('**/blank.html', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><body style="margin:0">' }),
   );
+  const gpu = options.gpu ?? true;
+  if (gpu && softwareGpu) {
+    await page.route('**/web/dist/worker.js', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, body: `Object.defineProperty(navigator, 'gpu', { value: undefined });
+${await response.text()}` });
+    });
+  }
   await page.goto('/blank.html');
-  await page.evaluate(async (gpu) => {
-    // The CPU path, which every machine has: no WebGPU adapter and no WebGL 2.
+  await page.evaluate(async ({ gpu, softwareGpu }) => {
+    if (!gpu || softwareGpu) Object.defineProperty(navigator, 'gpu', { value: undefined });
+    // The CPU path, which every machine has: no WebGPU adapter and no WebGL 2, and the engine on the main thread,
+    // where these patches are.
     if (!gpu) {
-      Object.defineProperty(navigator, 'gpu', { value: undefined });
       const get = HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {
         return kind === 'webgl2' ? null : get.call(this, kind as '2d', ...(rest as []));
       } as typeof get;
+      Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', { value: undefined });
     }
     const twip = await import('/web/dist/index.js' as string);
     await twip.FontLibrary.default().add('/font.ttf');
     Object.assign(window, { twip });
-  }, options.gpu ?? true);
+  }, { gpu, softwareGpu });
 }
 
 /** Mounts an editor in a new `width` x `height` container, as `window[name]`. */
