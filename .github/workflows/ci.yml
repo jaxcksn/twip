@@ -37,13 +37,17 @@ jobs:
   # Every check is a moon task; moon ci runs those the change affects (and the tasks that depend on them). The shards
   # are .moon/ci-plan.json's jobs: the rust tests, the native library and .NET, and the web SDK and docs. Locally:
   # `moon ci` on a branch, or `moon ci --force` for everything.
-  moon:
-    name: moon (${{ matrix.os }}, shard ${{ matrix.shard }})
+  tasks:
+    name: 'Tasks: ${{ matrix.shard.name }} (${{ matrix.os }})'
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        shard: [0, 1, 2]
+        # .moon/ci-plan.json's jobs, in its order.
+        shard:
+          - { job: 0, name: Engine }
+          - { job: 1, name: .NET }
+          - { job: 2, name: Web and docs }
     runs-on: ${{ matrix.os }}
     env:
       # The runners' GPU is software: its WebGPU paints blank, and its frames are too slow for a refresh. WebGPU and GPU
@@ -74,7 +78,7 @@ jobs:
           version: '6.0.8'
           actions-cache-folder: emsdk-cache
       # A run by hand checks every task.
-      - run: moon ci --plan .moon/ci-plan.json --job ${{ matrix.shard }} ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
+      - run: moon ci --plan .moon/ci-plan.json --job ${{ matrix.shard.job }} ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
       - uses: moonrepo/run-report-action@v1
         if: success() || failure()
         with:
