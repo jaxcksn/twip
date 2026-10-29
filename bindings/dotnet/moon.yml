@@ -19,3 +19,6 @@ tasks:
     command: dotnet test Twip.Tests -c Release --filter FullyQualifiedName~ContractTests
     deps: [twip-capi:build]
     inputs: ['Twip.Core/**/*', 'Twip.Tests/**/*', '/tests/contract/**/*']
+    # Part of test; for running the contract runners alone.
+    options:
+      runInCI: false

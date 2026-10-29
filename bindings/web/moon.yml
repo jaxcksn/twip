@@ -24,10 +24,22 @@ tasks:
     command: node --test test/contract.test.ts
     deps: [build]
     inputs: ['test/contract.test.ts', '/tests/contract/**/*', '/crates/twip/tests/fixtures/**/*']
+    # Part of test; for running the contract runners alone.
+    options:
+      runInCI: false
   # A mounted editor in a real browser (the installed Edge; PW_CHANNEL=chromium in CI).
+  # Everything but the latency budgets (latency below).
   browser-test:
-    command: pnpm exec playwright test
+    command: pnpm exec playwright test --grep-invert "within a refresh"
     deps: [build]
     inputs: ['browser/**/*', 'playwright.config.mjs']
     options:
       cache: false
+  # The latency budgets (browser/latency.spec.ts) hold on a quiet machine with a GPU, not beside other tasks: run alone.
+  latency:
+    command: pnpm exec playwright test browser/latency.spec.ts
+    deps: [build]
+    inputs: ['browser/**/*', 'playwright.config.mjs']
+    options:
+      cache: false
+      runInCI: false

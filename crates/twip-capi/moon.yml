@@ -8,5 +8,5 @@ tasks:
     command: node build-native.mjs
     inputs: ['src/**/*', 'include/**/*', 'Cargo.toml', 'build-native.mjs', '/crates/twip/src/**/*', '/crates/twip/cpp/**/*', '/crates/twip/build.rs']
   test:
-    command: cargo test -p twip-capi
+    command: node build-native.mjs test -p twip-capi
     inputs: ['src/**/*', 'tests/**/*', 'include/**/*', 'Cargo.toml', '/crates/twip/src/**/*']

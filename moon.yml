@@ -1,0 +1,19 @@
+$schema: './.moon/cache/schemas/project.json'
+id: root
+
+tasks:
+  # Planning ids and rulebook wording (tests/hygiene.mjs).
+  hygiene:
+    command: node tests/hygiene.mjs
+    inputs: ['**/*']
+  format:
+    command: cargo fmt --all --check
+    inputs: ['crates/**/*.rs', 'rustfmt.toml']
+  # Through build-native.mjs, so Windows lints the GPU path too (Graphite on Dawn); plain cargo elsewhere.
+  lint:
+    command: node crates/twip-capi/build-native.mjs clippy --workspace --all-targets -- -D warnings
+    inputs: ['crates/**/*', 'Cargo.toml', 'Cargo.lock', '.cargo/**/*', 'rust-toolchain.toml']
+  # The contract scripts are well formed and name only known commands.
+  contract-scripts:
+    command: python3 -I tests/contract/check.py
+    inputs: ['tests/contract/**/*', 'crates/twip/tests/wire/**/*', 'crates/twip/tests/fixtures/**/*']

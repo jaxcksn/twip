@@ -94,17 +94,22 @@ are compiled in CI (`moon run docs:examples`), so a surface change that breaks a
 
 ## Common tasks
 
+Every check CI runs is a moon task, and CI runs them with `moon ci`. Run the same before you push:
+
 ```sh
-cargo test --workspace            # the engine, the rust contract runner and the C ABI tests
-cargo run -p twip --bin twip-tools -- wire-fixtures --check   # the wire fixtures match the api types
-cargo run -p twip --example session                          # the Rust API end to end
-pnpm moon run web:test            # builds the wasm module (emsdk), then the unit, wire, contract and API report checks
+pnpm moon ci                      # the tasks your branch's changes affect (against main), and those depending on them
+pnpm moon ci --force              # every task
+pnpm moon run twip:test           # one task: the engine's unit tests and the rust contract runner
 pnpm moon run web:browser-test    # a mounted editor in a real browser
-pnpm moon run dotnet:test         # builds twip-capi (build-native.mjs), then the wire, contract and Native AOT smoke tests
-pnpm moon run docs:examples       # the guides' TypeScript and C# examples
 pnpm moon run docs:dev            # the docs site, locally
-cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+The tasks: `root:hygiene` (planning ids, rulebook wording), `root:format`, `root:lint` (clippy), `root:contract-scripts`;
+`twip:test`, `twip:example` (the Rust API end to end), `twip:wire` (the wire fixtures match the api types),
+`twip-capi:test`; `web:test` (builds the wasm module with emsdk, then the unit, wire, contract and API report checks),
+`web:browser-test`, `web:latency` (the latency budgets, on a quiet machine with a GPU; not in CI); `dotnet:build`, `dotnet:test` (builds twip-capi, then the wire, contract and Native AOT smoke
+tests); `docs:build` and `docs:examples` (the guides' TypeScript and C# examples). `cargo fmt --all` fixes what
+`root:format` reports.
 
 ## Layout rules and comments
 

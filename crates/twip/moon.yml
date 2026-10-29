@@ -2,10 +2,23 @@ $schema: '../../.moon/cache/schemas/project.json'
 language: rust
 tags: [engine]
 
+# Native cargo runs through build-native.mjs: on Windows it sets up the prebuilt Skia with Dawn, and a plain cargo run
+# there would unpack a different Skia over it.
 tasks:
+  # The tests and the lint build it too.
   build:
-    command: cargo build -p twip
-    inputs: ['src/**/*', 'Cargo.toml']
+    command: node ../twip-capi/build-native.mjs build -p twip
+    inputs: ['src/**/*', 'cpp/**/*', 'build.rs', 'Cargo.toml']
+    options:
+      runInCI: false
+  # The unit tests and the rust contract runner (tests/contract.rs).
   test:
-    command: cargo test -p twip
-    inputs: ['src/**/*', 'Cargo.toml']
+    command: node ../twip-capi/build-native.mjs test -p twip
+    inputs: ['src/**/*', 'cpp/**/*', 'build.rs', 'tests/**/*', 'examples/**/*', 'Cargo.toml', '/tests/contract/**/*']
+  example:
+    command: node ../twip-capi/build-native.mjs run -p twip --example session
+    inputs: ['src/**/*', 'examples/**/*', 'Cargo.toml']
+  # The committed wire fixtures are what the api types serialize to; the SDKs' wire tests round-trip them.
+  wire:
+    command: node ../twip-capi/build-native.mjs run -p twip --bin twip-tools -- wire-fixtures --check
+    inputs: ['src/**/*', 'tests/wire/**/*', 'Cargo.toml']

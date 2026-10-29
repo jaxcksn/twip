@@ -1,5 +1,7 @@
 $schema: './cache/schemas/workspace.json'
 projects:
+  # The root project: checks over the whole repository (hygiene, formatting, lints).
+  - '.'
   - 'crates/*'
   - 'bindings/*'
   - 'packages/*'

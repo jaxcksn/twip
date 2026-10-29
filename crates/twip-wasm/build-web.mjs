@@ -28,7 +28,9 @@ const download = async (url, to) => {
   writeFileSync(`${to}.part`, Buffer.from(await res.arrayBuffer()));
   renameSync(`${to}.part`, to);
 };
-const tar = (...args) => execFileSync('tar', args, { stdio: 'inherit' });
+// Windows' own tar (bsdtar): Git Bash's GNU tar, first on PATH there, reads `D:` in a path as a remote host.
+const tarExe = process.platform === 'win32' ? join(process.env.SystemRoot, 'System32', 'tar.exe') : 'tar';
+const tar = (...args) => execFileSync(tarExe, args, { stdio: 'inherit' });
 
 const skiaArchive = join(deps, `skia-wasm-${SKIA}.tar.gz`);
 await download(`https://github.com/jaxcksn/skia-wasm-webgpu/releases/download/${SKIA}/skia-binaries.tar.gz`, skiaArchive);

@@ -22,5 +22,7 @@ tasks:
   # (dotnet-api/docfx.json, a .NET tool), run by the docs workflow.
   api:
     command: typedoc
+    options:
+      runInCI: false
     inputs: ['typedoc.json', '/bindings/web/src/**/*', '/bindings/web/tsconfig.json']
     outputs: ['static/api/web']
