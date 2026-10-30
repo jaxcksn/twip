@@ -17,7 +17,7 @@ Work from the body area ([HDR-4](hdr#hdr-4), [HDR-6](hdr#hdr-6)): its left edge 
   Example: Letter with 1in margins (`textW` 468), two columns, space 36 → width 216, columns at x 72 and 324.
 - **Unequal columns** (`w:equalWidth="0"` with `w:col` children): one column per `w:col`, its `w:w` used exactly as written, starting at `left`, each followed by its own `w:space`. Don't scale them; they may run past the right margin. The last column's space is unused.
 - Every column runs from the body top (or from where the section starts on the page) to the body bottom.
-- **Separator** (`w:sep`): between columns k − 1 and k, draw a vertical line 0.72pt wide centred in the gap, `x = (right edge of column k − 1 + left edge of column k) / 2`. Draw it only if column k holds text on this page. It runs from the section's top on the page down to the lowest text baseline in any of its columns plus a quarter of that text's font size.
+- **Separator** (`w:sep`): between columns k − 1 and k, draw a vertical line 0.72pt wide centred in the gap, `x = (right edge of column k − 1 + left edge of column k) / 2`. Draw it only if column k holds text on this page. It runs from the section's top on the page down to the lowest text baseline in any of its columns plus a quarter of that text's font size. Footnotes are not column text: a note at the page bottom doesn't lengthen the line.
 
 ### COL-2. Column flow {#col-2}
 

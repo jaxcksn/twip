@@ -5,6 +5,14 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+/// A document as Word's PDF shows it: its text without markup (the export's "document without markup": tracked
+/// changes accepted, no comments).
+fn read(bytes: &[u8]) -> Result<twip::internal::docx::Document, String> {
+    let mut doc = twip::internal::docx::read(bytes)?;
+    doc.review.view = twip::internal::docx::review::MarkupView::NoMarkup;
+    Ok(doc)
+}
+
 /// A document's characters and image boxes per page.
 pub fn lay_out(doc: &twip::internal::docx::Document, fonts: &twip::internal::font::Fonts) -> (Vec<Vec<Ch>>, Vec<Vec<[f64; 4]>>) {
     let snapshot = twip::internal::layout::layout(doc, fonts);
@@ -126,10 +134,22 @@ pub fn golden(v: &Value) -> Vec<Vec<Ch>> {
             if l["dir"].as_array().map(|d| d[0].as_i64() != Some(1)).unwrap_or(false) {
                 continue; // shortcut: rotated text (TABLE-33) isn't compared yet
             }
-            let line_y = l["y"].as_f64().unwrap_or(0.0);
             let line_seg = seg;
             let spans = l["spans"].as_array().into_iter().flatten();
             let largest = spans.clone().filter_map(|s| s["size"].as_f64()).fold(0.0, f64::max);
+            // A line that starts with a note's number (a short superscript span) has the next span's baseline: the
+            // extractor gives the line the number's. shortcut: a mark is told from a smaller label by its length (up to
+            // 3 characters).
+            let text_of = |s: &Value| s["text"].as_str().unwrap_or("").trim().chars().count();
+            let mut line_y = l["y"].as_f64().unwrap_or(0.0);
+            if let [first, next, ..] = &spans.clone().collect::<Vec<_>>()[..]
+                && first["size"].as_f64().unwrap_or(0.0) <= 0.8 * largest
+                && (1..=3).contains(&text_of(first))
+                && text_of(next) > 0
+                && let Some(y) = next["y"].as_f64()
+            {
+                line_y = y;
+            }
             // The baseline and segment the previous span went to.
             let mut cur = (line_y, line_seg);
             for s in spans {
@@ -339,7 +359,7 @@ pub fn compare(ours: &[Vec<Ch>], gold: &[Vec<Ch>]) -> Verdict {
 }
 
 fn load(docx: &Path, fonts: &twip::internal::font::Fonts) -> (Vec<Vec<Ch>>, Vec<Vec<Ch>>) {
-    let doc = twip::internal::docx::read(&std::fs::read(docx).expect("read docx")).expect("parse docx");
+    let doc = read(&std::fs::read(docx).expect("read docx")).expect("parse docx");
     let g: Value = serde_json::from_str(&std::fs::read_to_string(docx.with_extension("golden.json")).expect("golden")).unwrap();
     (lay_out(&doc, fonts).0, golden(&g))
 }
@@ -439,7 +459,7 @@ pub fn run(paths: &[String], fonts: &twip::internal::font::Fonts, report: &Path,
         let Ok(gold) = std::fs::read_to_string(&gold_path) else { continue };
         let folder = f.parent().and_then(|p| p.file_name()).map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let name = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        let verdict = match std::fs::read(f).map_err(|e| e.to_string()).and_then(|b| twip::internal::docx::read(&b)) {
+        let verdict = match std::fs::read(f).map_err(|e| e.to_string()).and_then(|b| read(&b)) {
             Ok(doc) if features.is_some_and(|f| !twip::internal::features::of(&doc).is_subset(f)) => continue,
             Ok(doc) => {
                 let layout = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lay_out(&doc, fonts)));
@@ -541,5 +561,20 @@ mod tests {
         .unwrap();
         let rows: Vec<String> = rows(&golden(&g)[0], &[]).iter().map(|(_, r)| text(r)).collect();
         assert_eq!(rows, ["□c", "Mailth", "☐"]);
+    }
+
+    #[test]
+    fn a_note_line_starting_with_its_number_is_one_row() {
+        // The extractor gives the line the raised number's baseline; a smaller label above a value stays two rows.
+        let g: Value = serde_json::from_str(
+            r#"{"pages":[{"lines":[
+              {"y":704.26,"dir":[1,0],"spans":[{"font":"ArialMT","size":5.04,"y":704.26,"text":"1","x":[72]},
+                                               {"font":"ArialMT","size":8.04,"y":707.26,"text":" The editor","x":[74,76,81,85,88,91,95,99,101,103,106]}]},
+              {"y":258.17,"dir":[1,0],"spans":[{"font":"ArialNarrow","size":9.96,"y":258.17,"text":"SOCIAL","x":[36,42,48,54,60,66]},
+                                               {"font":"ArialNarrow-Bold","size":14.04,"y":262.01,"text":"555","x":[300,308,316]}]}]}]}"#,
+        )
+        .unwrap();
+        let rows: Vec<(f64, String)> = rows(&golden(&g)[0], &[]).iter().map(|(y, r)| (*y, text(r))).collect();
+        assert_eq!(rows, [(258.17, "SOCIAL".to_string()), (262.01, "555".to_string()), (707.26, "1Theeditor".to_string())]);
     }
 }

@@ -35,7 +35,7 @@ These tabs wait for the text after them, up to the next tab, the line's break or
 |---|---|
 | right | `w − trail` |
 | centre | `(w − trail) / 2` |
-| decimal | the width up to the first `.` or `,`; `w − trail` if there is none |
+| decimal | the width up to the first `.`; `w − trail` if there is none (a comma is ordinary text: `1,250` ends at the stop, `1,250.00` aligns its point) |
 
 ```
 tabWidth = (stop − penAtTab) − d

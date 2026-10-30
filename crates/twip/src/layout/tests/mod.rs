@@ -4,11 +4,13 @@
 mod attempts;
 mod breaking;
 mod cache_keys;
+mod col_separators;
 mod continuation;
 mod convergence;
 mod determinism;
 mod equivalence;
 mod excluded;
+mod hf_frames;
 mod imports;
 mod notes;
 mod pending;
@@ -112,6 +114,34 @@ pub fn plain_doc(texts: &[String]) -> Option<Document> {
         })
         .collect();
     Some(d)
+}
+
+/// Each page's drawn characters: (character, x, baseline).
+pub fn page_chars(doc: &Document) -> Vec<Vec<(char, f64, f64)>> {
+    let snap = crate::layout::layout(doc, &fonts());
+    snap.pages()
+        .iter()
+        .map(|page| {
+            let mut out = Vec::new();
+            for item in crate::layout::traverse::paint_items(page) {
+                if let crate::layout::fragment::Item::Glyphs(r) = item {
+                    out.extend(r.chars.iter().map(|&(c, x, _)| (c, x, r.baseline)));
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// A document read from a package of the given parts (name, XML); `None` if it doesn't read.
+pub fn package(parts: &[(&str, &str)]) -> Option<Document> {
+    use std::io::Write;
+    let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for (name, xml) in parts {
+        z.start_file(*name, zip::write::SimpleFileOptions::default()).ok()?;
+        z.write_all(xml.as_bytes()).ok()?;
+    }
+    crate::docx::read(&z.finish().ok()?.into_inner()).ok()
 }
 
 /// `n` words of filler text.

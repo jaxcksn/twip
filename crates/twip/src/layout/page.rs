@@ -115,6 +115,8 @@ fn glyph_runs(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(f64, f64, f64
     };
     for c in children {
         match c {
+            // COL-1: notes aren't column text, so a page's footnotes don't stretch the lines.
+            Child::Box(b) if b.kind == BoxKind::Notes => {}
             Child::Box(b) => glyph_runs(&b.children, dx + b.offset.0, dy + b.offset.1, out),
             Child::Group { offset, children } => glyph_runs(children, dx + offset.0, dy + offset.1, out),
             Child::Para(p) => {
@@ -541,6 +543,12 @@ pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields 
             match b {
                 Block::Para(p) => {
                     for i in &p.inlines {
+                        // A header's text boxes and frames show its fields (story::float_box).
+                        if let Inline::Float(f, _) = i
+                            && let Some(tb) = &f.text_box
+                        {
+                            walk(&mut tb.blocks.iter(), out, all);
+                        }
                         let Inline::FieldBegin { kind: Some(kind), .. } = i else { continue };
                         match kind {
                             FieldKind::Page => {
@@ -706,7 +714,9 @@ pub fn layout_body(
     let mut effects = fill.at.effects.clone();
     let mut section_end = None;
     if stop == Stop::Done {
-        let mut e = bottoms.iter().copied().fold(page_top, f64::max);
+        // PAGE-10: the section ends below its last space-after, so a continuous section's first paragraph keeps the
+        // ordinary gap to it (PARA-1). A balanced end already includes it (COL-5).
+        let mut e = bottoms.iter().copied().fold(page_top, f64::max) + carry.prev_after;
         if space.balance && cols.len() > 1 {
             match Paginator::balance(&mut fill, sec, cols, &saved, memos)? {
                 Some((h, children, p, c, eff)) => {

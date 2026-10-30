@@ -550,7 +550,8 @@ fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], w
             let mut found = false;
             for &k in &seg {
                 let t = text_of(sp, &pieces[k]);
-                if t.contains('.') || t.contains(',') {
+                // TAB-5: the decimal point only; a comma is text like any other (a thousands separator).
+                if t.contains('.') {
                     found = true;
                     break;
                 }

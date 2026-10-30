@@ -12,7 +12,7 @@ use super::LayoutCtx;
 use super::float::{self, Frames, Placed, Wrap};
 use super::fragment::{BoxFragment, BoxKind, Child, Item, ParaFragment, PlacedLine, TableFragment};
 use super::job::{Memos, Yield};
-use super::join::{Joined, LaidBlock, LaidPara, laid_para, piece_para};
+use super::join::{Joined, LaidPara, laid_para, piece_para};
 use super::line::{Frame, Line, LineOrigin, ParaLines, band, border_key, break_lines, draw_label, draw_line, neighbour_borders};
 use super::node::{Notes, SectionNode};
 use super::paragraph::{gap, lines_to_take, space_after, space_before};
@@ -1111,28 +1111,11 @@ impl<'d> PageFill<'d, '_> {
         if carry.prev.as_ref().is_some_and(|ps| super::paragraph::drops_at_edge(ps, first)) { 0.0 } else { carry.prev_after }
     }
 
-    /// FRAME-1: a frame without `w` is as wide as its content (trailing spaces excluded), at most the column.
+    /// FRAME-1: a frame without `w` is as wide as its content ([`super::story::fit_frame`]).
     pub fn fit_frame(&self, f: &Rc<Float>, width: f64, memos: &mut Memos) -> Result<Rc<Float>, Yield> {
-        let Some(tb) = f.text_box.as_ref().filter(|_| f.auto_w) else { return Ok(f.clone()) };
-        let mut w: f64 = 0.0;
         let fields = FieldValues::default();
-        for b in super::join::laid(&tb.blocks, self.ctx.env.text.review.view) {
-            let LaidBlock::Para(laid) = b else { continue };
-            let p = laid.para();
-            let space = laid.shape_space(&fields, self.note_numbers, &self.ctx.env.text);
-            let shaped = shape(p, &space, self.ctx.fonts, memos)?;
-            let ps = para_space(p.para_style_in(self.ctx.env.text.review.view), None, None, width, 0, 0.0, &self.ctx);
-            let pb = break_lines(&shaped, p, &ps, self.ctx.fonts, memos)?;
-            let pieces = pb.pieces();
-            for l in &pb.lines {
-                for (k, i) in (l.start..l.end).enumerate() {
-                    if pieces[i].kind != Kind::Space {
-                        w = w.max(l.xs[k] + l.widths[k]);
-                    }
-                }
-            }
-        }
-        Ok(Rc::new(Float { w: w.min(width) + tb.insets[0] + tb.insets[2], ..(**f).clone() }))
+        let env = StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers };
+        Ok(super::story::fit_frame(f, width, &env, memos)?.map_or_else(|| f.clone(), Rc::new))
     }
 
     /// A float's height ([`super::story::float_height`]).

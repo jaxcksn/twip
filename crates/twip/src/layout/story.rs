@@ -354,8 +354,9 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         let o = tb.outline;
         let w = (f.w - tb.insets[0] - tb.insets[2] - o).max(1.0);
         let blocks: Vec<&Block> = tb.blocks.iter().collect();
-        let fields = FieldValues::default();
-        let story = layout(&blocks, w, &StoryEnv { fields: &fields, ..*env }, None, memos)?;
+        // A text box or frame shows its story's fields: a header's PAGE counts in its frames (the page number
+        // gallery's framed PAGE); body text boxes get none (page::draw_floats).
+        let story = layout(&blocks, w, env, None, memos)?;
         let (cx, cy) = (x0 + tb.insets[0] + o / 2.0, y0 + tb.insets[1] + o / 2.0);
         let content_bottom = y1 - tb.insets[3] - o / 2.0;
         for u in &story.units {
@@ -408,12 +409,39 @@ pub fn hf_floats(
         let para_top = top + u.top - if bi == 0 { space_before(&env.ctx.env.text, p.para_style_in(env.ctx.env.text.review.view)) } else { 0.0 };
         for i in &p.inlines {
             let Inline::Float(f, _) = i else { continue };
+            let fitted = fit_frame(f, fr.column.1, env, memos)?;
+            let f = fitted.as_ref().unwrap_or(f);
             let h = float_height(f, env, memos)?;
             let (fx, fy) = (super::float::h_pos(f, fr), super::float::v_pos(f, h, fr, para_top, para_top));
             out.push(float_box(f, [fx, fy, fx + f.w, fy + h], para_id(p), env, memos)?);
         }
     }
     Ok(out)
+}
+
+/// FRAME-1: a frame without `w` is as wide as its content (trailing spaces excluded), at most `width`, with the
+/// fields of the story it is in. `None` for any other float.
+pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<Option<Float>, Yield> {
+    let Some(tb) = f.text_box.as_ref().filter(|_| f.auto_w) else { return Ok(None) };
+    let view = env.ctx.env.text.review.view;
+    let mut w: f64 = 0.0;
+    for b in super::join::laid(&tb.blocks, view) {
+        let LaidBlock::Para(laid) = b else { continue };
+        let p = laid.para();
+        let space = laid.shape_space(env.fields, env.notes, &env.ctx.env.text);
+        let shaped = shape(p, &space, env.ctx.fonts, memos)?;
+        let ps = super::flow::para_space(p.para_style_in(view), None, None, width, 0, 0.0, &env.ctx);
+        let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
+        let pieces = pb.pieces();
+        for l in &pb.lines {
+            for (k, i) in (l.start..l.end).enumerate() {
+                if pieces[i].kind != Kind::Space {
+                    w = w.max(l.xs[k] + l.widths[k]);
+                }
+            }
+        }
+    }
+    Ok(Some(Float { w: w.min(width) + tb.insets[0] + tb.insets[2], ..f.clone() }))
 }
 
 /// The header and footer height cap (HDR-8).

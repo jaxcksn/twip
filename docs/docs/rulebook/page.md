@@ -94,3 +94,9 @@ Example: a line at y 690 with pitch 13.44 and space-after 8, above a 40pt note a
 ### PAGE-9. Keep chains and footnotes {#page-9}
 
 When testing whether a keepNext paragraph's successor fits ([PAGE-6](page#page-6)), subtract the column's current footnote area from the bottom first. If a chain member then places no line at all, rewind to the chain's first member and move the whole chain to the next column, as when the fit test fails. A chain that starts at the top of an empty column is still never moved.
+
+### PAGE-10. Space across a continuous section break {#page-10}
+
+A continuous section break doesn't change the space between the paragraphs on either side of it: the section ends below its last paragraph's space-after, and the next section's first paragraph is spaced from that paragraph by [PARA-1](para#para-1)'s gap, `max(spaceAfter, spaceBefore)` (their sum with `doNotUseHTMLParagraphAutoSpacing`). One column or several, compat 12 and 15 alike. A balanced section's end already includes the space-after ([COL-5](col#col-5)).
+
+Example: after 12pt and before 2pt, the next section's first line is 12pt lower than with no space-after; before 20pt, 20pt.
