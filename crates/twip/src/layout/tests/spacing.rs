@@ -149,6 +149,11 @@ fn tab_7_compat_15_a_centre_stop_past_the_edge_moves_to_it_unless_a_tab_follows(
 #[test]
 fn line_14_the_extra_height_is_whole_font_units() {
     // MS Mincho (upem 256, win 220/36): 0.15 × 256 = 38.4 rounds to 38.
-    let Some(f) = fonts().face("MS Mincho", false, false) else { return };
+    let fonts = fonts();
+    // face() falls back to another family when MS Mincho isn't installed.
+    if !fonts.is_installed("MS Mincho") {
+        return;
+    }
+    let Some(f) = fonts.face("MS Mincho", false, false) else { return };
     assert_eq!((f.ascent, f.descent, f.leading), (258.0, 74.0, 0.0));
 }

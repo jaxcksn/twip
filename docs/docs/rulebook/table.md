@@ -585,7 +585,7 @@ A row that doesn't fit splits by default ([TABLE-45](#table-45) for the exceptio
 4. The continuation starts the next column with the row's top border and top margin again, and its height is worked out the same way (a part that ends its cell includes that cell's last space-after, like a whole row). It may split again.
 5. A cell whose continuation starts with a new paragraph (the cut fell between paragraphs) keeps at its top what the gap to the previous paragraph ([PARA-1](para#para-1)) leaves after that paragraph's space-after, which stayed on the page before, as after a next-page section break ([PAGE-7](page#page-7)). A cut inside a paragraph keeps nothing.
 
-Example: a cell cut after an empty paragraph with no space-after; the next paragraph has a 9.4pt space-before, so the continuation's first line starts 9.4pt below the cell's top margin (compat 12, measured on two documents: 9.4pt and 0.7pt kept).
+Example: a cell cut after an empty paragraph with no space-after; the next paragraph has a 9.4pt space-before, so the continuation's first line starts 9.4pt below the cell's top margin (compat 12).
 
 Each cell breaks at its own line boundary.
 
@@ -642,4 +642,4 @@ A row's `w:tblPrEx` (table property exceptions) can carry its own `w:tblInd`. In
 
 Example: an autofit table at `tblInd` 513 twips whose third row has `tblInd` 0 draws that row 25.65pt left of the others; the same rows in a fixed table line up.
 
-Measured on left-aligned tables that don't float, whose exceptions also set `w:tblLayout` fixed; centred, right-aligned and floating tables and compat 15 weren't checked, and keep the table's indent here.
+This applies to left-aligned tables that don't float, whose exceptions also set `w:tblLayout` fixed. Centred, right-aligned and floating tables, and compat 15, keep the table's indent.

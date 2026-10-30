@@ -10,7 +10,7 @@ A field (`w:fldChar` begin, `w:instrText`, separate, cached result, end; or `w:f
 | Fields | What to show |
 |---|---|
 | `PAGE`, `NUMPAGES`, `SECTIONPAGES`, `SECTION`, `PAGEREF` | the value at layout: `PAGE` on the page the field lands on, `SECTION` the section's number; `NUMPAGES`, `SECTIONPAGES` and `PAGEREF` need passes ([FIELD-6](field#field-6)) |
-| `REF`, a one-word code naming no field, `SEQ`, `STYLEREF`, `DATE`, `TIME`, `IF` | the value computed once, in document order, before layout ([FIELD-2](field#field-2)); `STYLEREF` in a header or footer is computed per page |
+| `REF`, a bare bookmark name, `SEQ`, `STYLEREF`, `DATE`, `TIME`, `IF` | the value computed once, in document order, before layout ([FIELD-2](field#field-2)); `STYLEREF` in a header or footer is computed per page |
 | everything else: `=` formulas, `MERGEFIELD`, `DOCPROPERTY`, `AUTHOR`, `FILENAME`, `NUMWORDS`, `TOC`, unknown fields | the cached result |
 
 - A `TOC` shows its cached entries, but the `PAGEREF` fields nested in them are computed.
@@ -20,7 +20,7 @@ A field (`w:fldChar` begin, `w:instrText`, separate, cached result, end; or `w:f
 ### FIELD-2. Field values computed before layout {#field-2}
 
 - **`REF bookmark`**: the text from the bookmark's start to the end of the paragraph it starts in (fields in it as they show).
-- **`bookmark`** alone (one word, switches allowed, that names no Word field): Word reads it as `REF bookmark`, with the bookmark name in any case. A missing bookmark shows "Error! Bookmark not defined." A first word followed by other words (`NUM PAGES`) is not a bookmark: it shows its cached result.
+- **`bookmark`** alone (a single name, switches allowed, that isn't a field's name): it reads as `REF bookmark`, with the bookmark name in any case. A missing bookmark shows "Error! Bookmark not defined." A name followed by more text (`NUM PAGES`) is not a bookmark: it shows its cached result.
 - **`SEQ name`**: one counter per name, in document order. Each `SEQ` adds 1 and shows the value; `\r n` sets the value to n; `\c` shows the current value without adding; `\h` adds 1 and shows nothing. Number switches format the value ([FIELD-3](field#field-3)).
 - **`STYLEREF "style"`**: match the style name against style ids, ignoring case and spaces ("Heading 1" finds `Heading1`), and show that paragraph's text.
   - In the body: the nearest paragraph with that style at or before the field's paragraph, else the first one after it.

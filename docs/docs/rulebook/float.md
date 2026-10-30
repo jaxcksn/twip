@@ -36,7 +36,7 @@ If no free interval in the band can take the next unbreakable piece of text, or 
 
 **Compat ≤ 14, beside `wrapSquare` floats**, a line whose content fits no interval doesn't jump to the exclusion bottom. It retries lower in fixed steps of a trial height `h` (`y += h`) until the line at `y` overlaps no float or its content fits beside it (the same test as everywhere else). The line placed at the final `y` gets its normal height.
 
-- `h` is the height of what was placed when the fit failed. Tabs alone before the item that fits no gap don't make the line fit: `h` is their height. If nothing was placed, `h` is the failing item's own height: an inline picture's height alone (no font descent), or for text the line height (`A + E + D`) of the font where the gap's width ends inside the word (a word that starts at 11pt and turns 24pt after that width steps by the 11pt height).
+- `h` is the height of what was placed when the fit failed. Tabs alone before the item that fits no gap don't make the line fit: `h` is their height. If nothing was placed, `h` is the failing item's own height: an inline picture's height alone (no font descent), or for text the line height (`A + E + D`) of the font at the point where the gap's width runs out (text that starts at 11pt and turns 24pt past that point steps by the 11pt height).
 - On the paragraph's first line `h` also includes the space before it, which moves with every step.
 - A paragraph whose only content is one inline picture wider than the gap is placed in the gap anyway, over the float.
 

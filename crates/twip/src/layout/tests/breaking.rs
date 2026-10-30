@@ -66,6 +66,10 @@ fn spaces_after_a_tab_squeeze_a_word_in() {
     // BREAK-9: up to "with" the text after the tab is 3.6pt too wide for the 432pt left; its spaces give way.
     let p =
         r#"<w:p><w:r><w:tab/><w:t>You are ordered to appear at a hearing on Monday, April 4, 2025 at 10:00 am with your papers.</w:t></w:r></w:p>"#;
+    // Arial's own widths: a substitute's (Liberation Sans) miss the 3.6pt.
+    if !fonts().is_installed("Arial") {
+        return;
+    }
     let Some(l) = lines("", ARIAL_12, p) else { return };
     assert!(l[0].1.ends_with("am with"), "{l:?}");
 }
@@ -187,7 +191,9 @@ fn a_rows_own_indent_moves_it_in_an_autofit_table_only() {
     // TABLE-50: compat 12; the second row's w:tblPrEx indent of 0 moves it 36pt left of the table's 720 in an autofit
     // table, and changes nothing in a fixed one.
     let table = |layout: &str| {
-        let row = |ex: &str, t: &str| format!(r#"<w:tr>{ex}<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#);
+        let row = |ex: &str, t: &str| {
+            format!(r#"<w:tr>{ex}<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#)
+        };
         let ex = r#"<w:tblPrEx><w:tblInd w:w="0" w:type="dxa"/></w:tblPrEx>"#;
         format!(
             r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblInd w:w="720" w:type="dxa"/><w:tblLayout w:type="{layout}"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}{}</w:tbl><w:p/>"#,
