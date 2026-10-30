@@ -8,7 +8,7 @@ A body paragraph with `w:pPr/w:framePr` is laid out in a frame: a text box posit
 ### FRAME-1. Grouping and geometry {#frame-1}
 
 - Consecutive paragraphs whose `w:framePr` attributes are **identical** share one frame. Any difference, even 1 twip, starts a separate frame.
-- **Width**: `w:w` if present and positive. Without it, the frame is as wide as its content: lay its paragraphs out at the column width and take the right edge of the widest line, trailing spaces excluded, at most the column width.
+- **Width**: `w:w` if present and positive. Without it, the frame is as wide as its content: lay its paragraphs out at the column width and take the right edge of the widest line, trailing spaces excluded, at most the column width. A frame in a header or footer is sized the same way, with the values its fields show on that page (a framed `PAGE` reading `10` is two digits wide).
 - **Height**: the content height, including the paragraphs' spacing ([HDR-3](hdr#hdr-3)). `w:h` with `w:hRule="exact"` fixes the height at `h`; `w:h` with `atLeast` or no `hRule` is a minimum: `max(h, content)`.
 - **Horizontal**: `w:hAnchor="margin"` or `"page"` counts from that box; `"text"` (the default) from the column's text edge, not the next paragraph's indent. Then `w:x` (twips) or `w:xAlign` (left, center, right, inside, outside, as [FLOAT-6](float#float-6)).
 - **Vertical**: `w:vAnchor="margin"` or `"page"` counts `w:y` from that box's top. `"text"` (the default) counts from where the frame paragraph would start in the flow, which is the top of the paragraph after it. `w:yAlign` places the frame inside the box; `inline` is ignored (`w:y` applies).

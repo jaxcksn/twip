@@ -14,6 +14,7 @@ A field (`w:fldChar` begin, `w:instrText`, separate, cached result, end; or `w:f
 | everything else: `=` formulas, `MERGEFIELD`, `DOCPROPERTY`, `AUTHOR`, `FILENAME`, `NUMWORDS`, `TOC`, unknown fields | the cached result |
 
 - A `TOC` shows its cached entries, but the `PAGEREF` fields nested in them are computed.
+- A field in a header's or footer's text box or frame (the page number gallery's framed `PAGE`) is computed as in the header itself.
 - `w:dirty="true"` changes nothing: fields not computed above still show their cached results.
 - A computed field that gets no value (a `PAGEREF` naming a missing bookmark, an `IF` it can't evaluate) shows its cached result text. A `REF` naming a missing bookmark shows "Error! Reference source not found."
 

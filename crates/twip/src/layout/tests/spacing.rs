@@ -1,5 +1,6 @@
-//! Vertical space that is easy to get wrong: paragraph spacing across a page break or a cell, row or table edge (PARA-2,
-//! PARA-4), the lines that tabs past the right edge start (TAB-7), and an East Asian font's height (LINE-14).
+//! Vertical space that is easy to get wrong: paragraph spacing across a page break, a continuous section break or a
+//! cell, row or table edge (PARA-2, PAGE-10, PARA-4), the lines that tabs past the right edge start (TAB-7), where a
+//! decimal tab aligns (TAB-5), and an East Asian font's height (LINE-14).
 
 use std::rc::Rc;
 
@@ -8,7 +9,7 @@ use crate::docx::{Block, Document, Inline};
 use crate::layout::fragment::{Child, PageChild};
 use crate::layout::layout as layout_doc;
 
-use super::{fonts, plain_doc, words};
+use super::{fonts, page_chars, plain_doc, words};
 
 fn para_mut(doc: &mut Document, i: usize) -> &mut crate::docx::Paragraph {
     let Block::Para(p) = &mut doc.sections[0].blocks[i] else { unreachable!() };
@@ -59,6 +60,26 @@ fn para_2_a_page_break_after_text_drops_the_space_before() {
     p.inlines.swap(0, 1);
     p.inlines.push(first);
     assert!((page_2_top(&mid) - page_2_top(&none)).abs() < 1e-6, "text before the break: the 6pt go");
+}
+
+/// The baseline of a paragraph that starts a continuous section, after one with `after` that ends the section before.
+fn after_continuous_break(after: f64) -> Option<f64> {
+    let mut doc = plain_doc(&[words(3), words(3)])?;
+    Rc::make_mut(&mut para_mut(&mut doc, 0).style).space_after = after;
+    Rc::make_mut(&mut para_mut(&mut doc, 1).style).space_before = 0.0;
+    let mut next = doc.sections[0].clone();
+    next.break_kind = crate::docx::model::SectionBreak::Continuous;
+    next.blocks = vec![doc.sections[0].blocks.remove(1)];
+    doc.sections.push(next);
+    let chars = &page_chars(&doc)[0];
+    let first = chars.first()?.2;
+    chars.iter().map(|c| c.2).find(|&y| y > first + 1.0)
+}
+
+#[test]
+fn page_10_a_continuous_section_keeps_the_space_after_before_it() {
+    let (Some(none), Some(twelve)) = (after_continuous_break(0.0), after_continuous_break(12.0)) else { return };
+    assert!((twelve - none - 12.0).abs() < 1e-6, "{none} {twelve}");
 }
 
 #[test]
@@ -144,6 +165,26 @@ fn tab_7_compat_15_a_centre_stop_past_the_edge_moves_to_it_unless_a_tab_follows(
     let (Some(centre), Some(right)) = (custom_past_edge(15, &[Center]), custom_past_edge(15, &[Right, Right])) else { return };
     // Its text ends at the edge, on the line; with another tab after its text, the tab and its text wrap.
     assert_eq!((centre, right), (1, 3));
+}
+
+/// x of `c` in "Item", a decimal tab to 200pt, then `value`, measured from the "I".
+fn decimal_x(value: &str, c: char) -> Option<f64> {
+    use crate::docx::props::{Leader, Tab, TabKind};
+    let mut doc = plain_doc(&["Item".to_string()])?;
+    let p = para_mut(&mut doc, 0);
+    Rc::make_mut(&mut p.style).tabs = vec![Tab { pos: 200.0, kind: TabKind::Decimal, leader: Leader::None }];
+    let Inline::Text(_, run) = p.inlines[0].clone() else { unreachable!() };
+    p.inlines.extend([Inline::Tab(run.clone()), Inline::Text(value.into(), run)]);
+    let chars = &page_chars(&doc)[0];
+    Some(chars.iter().find(|ch| ch.0 == c)?.1 - chars.first()?.1)
+}
+
+#[test]
+fn tab_5_a_decimal_tab_aligns_the_point_not_a_comma() {
+    let (Some(point), Some(comma)) = (decimal_x("1,250.00", '.'), decimal_x("1,250", ',')) else { return };
+    assert!((point - 200.0).abs() < 1e-6, "{point}");
+    // No point: the text ends at the stop, so its comma is well before it.
+    assert!(comma < 195.0, "{comma}");
 }
 
 #[test]
