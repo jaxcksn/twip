@@ -4,6 +4,11 @@
   "description": "The Twip DOCX editor for the browser and Node: a managed, framework-independent editor over the WebAssembly engine.",
   "type": "module",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaxcksn/twip.git",
+    "directory": "bindings/web"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
