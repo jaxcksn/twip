@@ -5,4 +5,5 @@
 *.png binary
 *.jpg binary
 *.ttf binary
+*.cur binary
 *.wasm binary

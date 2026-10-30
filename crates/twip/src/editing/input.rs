@@ -9,6 +9,41 @@ pub enum PointerKind {
     Cancel,
 }
 
+/// The pointer's shape over the document.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Cursor {
+    /// The arrow.
+    #[default]
+    Default,
+    /// The I-beam, over text.
+    Text,
+    /// The hand, over links.
+    Pointer,
+    /// Moving an object, or over a table's move handle.
+    Move,
+    /// Resizing a column, or an object from its left or right side.
+    ResizeHorizontal,
+    /// Resizing a row, or an object from its top or bottom.
+    ResizeVertical,
+    /// Resizing from the top-left or bottom-right corner.
+    ResizeNorthWestSouthEast,
+    /// Resizing from the top-right or bottom-left corner.
+    ResizeNorthEastSouthWest,
+    /// A crosshair.
+    Crosshair,
+    /// Nothing can happen here.
+    NotAllowed,
+    /// A dragged selection is copied.
+    Copy,
+    /// Selecting a cell: the black arrow pointing up-right.
+    CellSelect,
+    /// Selecting a column: the black arrow pointing down.
+    ColumnSelect,
+    /// Selecting rows, or lines from the margin: the white arrow pointing right.
+    RowSelect,
+}
+
 /// The visible part of the document, in document points.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Viewport {
@@ -52,7 +87,6 @@ pub enum Request {
     },
     CapturePointer,
     ReleasePointer,
-    Cursor(&'static str),
     Clipboard {
         text: String,
         html: Option<String>,

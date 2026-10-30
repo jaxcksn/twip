@@ -1385,6 +1385,7 @@ impl<'d> PageFill<'d, '_> {
             compat: self.ctx.env.text.compat,
             para: anchor,
             review: &self.ctx.env.text.review,
+            ul_trail_space: self.ctx.env.text.ul_trail_space,
         };
         let mut lines = Vec::new();
         let mut numbers = Vec::new();

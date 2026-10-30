@@ -1,13 +1,17 @@
 //! Native editing tests. Fixtures that are missing fail.
 
 mod basics;
+mod checkboxes;
+mod cursors;
 mod depth;
 mod fuzz;
 mod json;
 mod merge;
 mod perf;
+mod provisional;
 pub(crate) mod recorder;
 pub(crate) mod scenarios;
+mod sections;
 mod steps;
 mod transactions;
 

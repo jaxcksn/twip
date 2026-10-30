@@ -131,6 +131,8 @@ A character the chosen font has no glyph for (other than whitespace, the soft hy
 
 In Symbol, Wingdings, Wingdings 2, Wingdings 3 and Webdings, a `w:sym` character code below U+0100 means U+F000 + code. A Latin-1 code written in `w:t` in Symbol or Wingdings draws the same glyph as its U+F0xx code. The page's text carries the character the glyph shows, not the code: Symbol "·" (B7) is •, Wingdings "§" (A7) is ▪, Wingdings FC is ✓.
 
+When Symbol or Wingdings isn't available, draw that character instead of the code, in the first font that has it (the run's own font, then the fallback fonts). The bullets of the standard bullet list are Symbol B7 (•), Wingdings A7 (▪), 76 (❖), D8 (➢), FC (✓), 75 (◆), 6E (■) and E8 (➔); Courier New "o" needs no symbol font.
+
 ### FONT-14. Balanced space runs {#font-14}
 
 With `w:balanceSingleByteDoubleByteWidth` in the settings, every space of a run of two or more consecutive spaces (U+0020 or U+00A0, across run boundaries) is as wide as the East Asian font's average character, `OS/2.xAvgCharWidth × size / upem` (times `w:w / 100`, plus `w:spacing`). That applies when the run's `w:eastAsia` font is an East Asian font, or when its East Asian slot is a theme font the theme leaves empty (then use the space's own font). A single space, a named non-East-Asian font in the slot, or the setting off leaves spaces as shaped.
@@ -141,8 +143,10 @@ Example: MS Gothic's average character is half an em, so at 10pt each space of a
 
 Draw a run's highlight (or run shading) behind its text, from `baseline − A` to `baseline + D` of its font, including trailing spaces. Draw underline and strikethrough over the text, but not under the spaces that end a line:
 
-- underline at `post.underlinePosition` below the baseline, `post.underlineThickness` thick (at least 0.5pt); `double` draws a second line two thicknesses lower, `thick` doubles the thickness, `words` skips spaces, every other style draws as single;
+- underline at `post.underlinePosition` below the baseline, `post.underlineThickness` thick (at least 0.5pt); `double` draws a second line two thicknesses lower, `thick` doubles the thickness, `words` skips spaces and tabs, every other style draws as single;
 - strikethrough at `OS/2.yStrikeoutPosition` above the baseline, `OS/2.yStrikeoutSize` thick (at least 0.5pt); `w:dstrike` draws two lines one thickness above and below that.
+
+A tab takes its run's highlight, underline and strikethrough across its whole width, wherever it falls on the line; a tab's leader draws too. A tab ends the spaces that end a line: spaces before it are decorated. So an underlined tab at the end of a paragraph draws a fill-in line. With `w:ulTrailSpace` in the settings' `w:compat`, the spaces that end a line are underlined as well (strikethrough still stops before them).
 
 List numbers take no underline and no highlight. Text whose colour is automatic is white over a dark highlight or shading (luma `0.299 R + 0.587 G + 0.114 B < 110`), black otherwise.
 

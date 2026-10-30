@@ -67,6 +67,15 @@ impl Nav<'_> {
         t.rows.get(row)?.cells.get(cell)?.blocks.last().and_then(|b| self.block_end(story, b))
     }
 
+    /// The nearest section after (`forward`) or before section container `c` with any blocks: where reading order
+    /// goes past a section's edge. `None` outside the body's sections.
+    fn section_beside(&self, c: Container, forward: bool) -> Option<Container> {
+        let Container::Section(i) = c else { return None };
+        let has_blocks = |&j: &usize| !self.doc.sections[j].blocks.is_empty();
+        let j = if forward { (i + 1..self.doc.sections.len()).find(has_blocks) } else { (0..i).rev().find(has_blocks) };
+        j.map(Container::Section)
+    }
+
     /// The first place after block `block` of `container` in reading order: the next block, the next
     /// cell (merge continuations skipped), the row's end mark after its last cell.
     fn after(&self, container: Container, block: usize) -> Option<Position> {
@@ -75,7 +84,10 @@ impl Nav<'_> {
         if let Some(b) = blocks.get(block + 1) {
             return self.block_start(story, b);
         }
-        let Container::Cell { table, row, cell } = container else { return None };
+        let Container::Cell { table, row, cell } = container else {
+            let next = self.section_beside(container, true)?;
+            return self.idx.blocks(self.doc, next)?.first().and_then(|b| self.block_start(story, b));
+        };
         let t = self.idx.table(self.doc, table)?;
         let g = Grid::of(t);
         match (cell + 1..t.rows[row].cells.len()).find(|&c| !g.continues(row, c)) {
@@ -104,7 +116,10 @@ impl Nav<'_> {
         if block > 0 {
             return self.block_end(story, &blocks[block - 1]);
         }
-        let Container::Cell { table, row, cell } = container else { return None };
+        let Container::Cell { table, row, cell } = container else {
+            let prev = self.section_beside(container, false)?;
+            return self.idx.blocks(self.doc, prev)?.last().and_then(|b| self.block_end(story, b));
+        };
         let t = self.idx.table(self.doc, table)?;
         let g = Grid::of(t);
         match (0..cell).rev().find(|&c| !g.continues(row, c)) {
@@ -326,7 +341,11 @@ impl Nav<'_> {
         if let Some(b) = blocks.get(block + 1) {
             return self.enter(story, b, x, true);
         }
-        let Container::Cell { table, row, cell } = container else { return None };
+        let Container::Cell { table, row, cell } = container else {
+            let next = self.section_beside(container, true)?;
+            let b = self.idx.blocks(self.doc, next)?.first()?;
+            return self.enter(story, b, x, true);
+        };
         let t = self.idx.table(self.doc, table)?;
         let g = Grid::of(t);
         let col = self.column_at(t, row, cell, x, &g);
@@ -346,7 +365,11 @@ impl Nav<'_> {
         if block > 0 {
             return self.enter(story, &blocks[block - 1], x, false);
         }
-        let Container::Cell { table, row, cell } = container else { return None };
+        let Container::Cell { table, row, cell } = container else {
+            let prev = self.section_beside(container, false)?;
+            let b = self.idx.blocks(self.doc, prev)?.last()?;
+            return self.enter(story, b, x, false);
+        };
         let t = self.idx.table(self.doc, table)?;
         let g = Grid::of(t);
         let col = self.column_at(t, row, cell, x, &g);

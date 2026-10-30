@@ -56,7 +56,8 @@ pub struct Renderer {
     pub palette: Palette,
 }
 
-/// The colours of the overlays the host can set: each at least 3:1 against the page by default.
+/// The colours of the overlays the host can set. By default the lines and marks are at least 3:1 against the page,
+/// and the selection is the light blue of a system text selection, black text over it at least 4.5:1.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
     pub caret: Color,
@@ -72,7 +73,7 @@ impl Default for Palette {
     fn default() -> Palette {
         Palette {
             caret: Color::BLACK,
-            selection: Color::from_rgb(0x4A, 0x90, 0xD9),
+            selection: Color::from_rgb(0xB3, 0xD7, 0xFF),
             object: Color::from_rgb(0x60, 0x60, 0x60),
             drop: Color::from_rgb(0x40, 0x40, 0x40),
             marks: Color::from_rgb(0x2F, 0x6F, 0xB5),
@@ -381,10 +382,10 @@ mod tests {
 
     #[test]
     fn the_default_overlay_colours_have_3_to_1_contrast_with_the_page_and_the_canvas() {
+        // The selection is a light fill text sits on, not a line or mark: its check is black text's contrast over it
+        // (`the_default_selection_keeps_black_text_readable`).
         let p = Palette::default();
-        for (name, c) in
-            [("caret", p.caret), ("selection", p.selection), ("object", p.object), ("drop", p.drop), ("marks", p.marks), ("leaders", p.leaders)]
-        {
+        for (name, c) in [("caret", p.caret), ("object", p.object), ("drop", p.drop), ("marks", p.marks), ("leaders", p.leaders)] {
             for back in [Color::WHITE, Color::from_rgb(0xf3, 0xf3, 0xf3)] {
                 let (a, b) = (luminance(c), luminance(back));
                 let ratio = (a.max(b) + 0.05) / (a.min(b) + 0.05);

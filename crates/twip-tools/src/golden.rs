@@ -51,7 +51,7 @@ pub struct Ch {
 /// A symbol font's private-use character (U+F0xx) as its code, the way both sides can agree on it: Word's PDF reports
 /// symbol-font glyphs as U+F0xx where ours carries the Unicode character it shows ([`symbol_unicode`]) or the code.
 ///
-/// [`symbol_unicode`]: twip::internal::layout::line::symbol_unicode
+/// [`symbol_unicode`]: twip::internal::layout::text::symbol_unicode
 fn fold_symbol(c: char) -> char {
     match c as u32 {
         cp @ 0xF020..=0xF0FF => char::from_u32(cp - 0xF000).unwrap_or(c),
@@ -152,7 +152,7 @@ pub fn golden(v: &Value) -> Vec<Vec<Ch>> {
                 let font = s["font"].as_str().unwrap_or("");
                 let family = if font.starts_with("Symbol") { "Symbol" } else { font.split('-').next().unwrap_or(font) };
                 let text: Vec<char> =
-                    s["text"].as_str().unwrap_or("").chars().map(|c| twip::internal::layout::line::symbol_unicode(family, c)).collect();
+                    s["text"].as_str().unwrap_or("").chars().map(|c| twip::internal::layout::text::symbol_unicode(family, c)).collect();
                 let xs = s["x"].as_array().cloned().unwrap_or_default();
                 for (i, c) in text.iter().enumerate() {
                     let x = xs.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);

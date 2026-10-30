@@ -2,6 +2,7 @@
 
 mod boundaries;
 mod contract;
+mod decorations;
 mod ltb;
 mod merge_us1;
 mod merge_us5;
@@ -11,6 +12,7 @@ mod review_resolve;
 mod review_roundtrip;
 mod review_services;
 mod review_views;
+mod symbols;
 
 /// An engine with one session on `bytes`, the system's fonts in its library.
 fn session(bytes: &[u8]) -> (crate::api::engine::Engine, crate::api::engine::SessionId) {

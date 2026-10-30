@@ -26,8 +26,8 @@ at all.
 
 `OverlayColors` names the colour of each thing drawn over the document: `caret`, `selection`, `object` (a selected
 object's outline and handles), `drop`, `marks` (formatting marks and text boundaries) and `leaders`. Each default
-has at least 3:1 contrast against the page. The selection is blended under the text (multiply), so black text stays
-black over it.
+has at least 3:1 contrast against the page, except `selection`: the light blue of a system text selection
+(`#B3D7FF`). The selection is blended under the text (multiply), so black text stays black over it.
 
 Under forced colours (web) or high contrast (WinForms) the editor uses the system's colours, until you set your own.
 

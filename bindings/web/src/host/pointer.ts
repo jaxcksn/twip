@@ -4,6 +4,7 @@
 // context menu held back while the application listens for `contextMenu`.
 import type { Session } from '../editor.js';
 import { type Cursor, Kind, type HostRequest, type Message } from '../transport/protocol.js';
+import { CELL_SELECT, COLUMN_SELECT, ROW_SELECT } from './cursors.js';
 import type { Dom, Ledger } from './dom.js';
 import { modsOf } from './keys.js';
 import type { Scroll } from './scroll.js';
@@ -13,6 +14,10 @@ const PointerKind = { down: 0, move: 1, up: 2, cancel: 3, leave: 4 } as const;
 /** DOM `PointerEvent.button` to the engine's: primary 0, secondary 1, middle 2. */
 const buttons: Readonly<Record<number, number>> = { 0: 0, 2: 1, 1: 2 };
 
+/** A `.cur` cursor, over the browser's own `fallback` where it can't show one. */
+const cur = (c: { url: string; x: number; y: number }, fallback: string): string => `url("${c.url}") ${c.x} ${c.y}, ${fallback}`;
+
+/** The browser's cursors, and the selection arrows it has none of (`cursors.ts`, the WinForms host's `.cur` files). */
 const cursors: Readonly<Record<Cursor, string>> = {
   default: 'default',
   text: 'text',
@@ -25,6 +30,9 @@ const cursors: Readonly<Record<Cursor, string>> = {
   crosshair: 'crosshair',
   notAllowed: 'not-allowed',
   copy: 'copy',
+  cellSelect: cur(CELL_SELECT, 'cell'),
+  columnSelect: cur(COLUMN_SELECT, 'default'),
+  rowSelect: cur(ROW_SELECT, 'default'),
 };
 
 /** Presses closer than this in time (ms) and distance (CSS px) count as one multi-click. */
@@ -52,6 +60,8 @@ export function startPointer(
   let last = { time: -Infinity, x: 0, y: 0, button: -1 };
   /** The pointer of the press being dragged. */
   let pressed: { id: number; at: PointerEvent } | undefined;
+  /** Where a mouse or pen last moved over the document, until it leaves. */
+  let over: { clientX: number; clientY: number } | undefined;
   /** Touches down, for pinch and pan. */
   const touches = new Map<number, { x: number; y: number }>();
   let pinch: { distance: number; x: number; y: number } | undefined;
@@ -137,7 +147,22 @@ export function startPointer(
   ledger.listen(scroller, 'pointercancel', end(PointerKind.cancel));
   ledger.listen(scroller, 'pointerleave', (e: PointerEvent) => {
     if (!pressed && e.pointerType !== 'touch') send(PointerKind.leave, e, 0, modsOf(e));
+    over = undefined;
   });
+
+  // Ctrl, Shift or Meta pressed or released with the pointer still: the same move again with the new modifiers, so
+  // the shape follows what a press would now do (the hand over a link with Ctrl, copy while dragging).
+  ledger.listen(scroller, 'pointermove', (e: PointerEvent) => {
+    if (e.pointerType !== 'touch') over = { clientX: e.clientX, clientY: e.clientY };
+  });
+  const modifier = (event: Event) => {
+    const e = event as KeyboardEvent;
+    if (!over || e.repeat || !['Control', 'Shift', 'Meta'].includes(e.key)) return;
+    send(PointerKind.move, pressed?.at ?? over, 0, modsOf(e));
+  };
+  const doc = scroller.ownerDocument;
+  ledger.listen(doc, 'keydown', modifier, { capture: true });
+  ledger.listen(doc, 'keyup', modifier, { capture: true });
 
   // Autoscroll: a drag past the viewport's edge scrolls each frame, faster further out, and extends the drag.
   const autoscroll = (e: PointerEvent) => {

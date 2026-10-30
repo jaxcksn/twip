@@ -111,7 +111,10 @@ export type Cursor =
   | 'resizeNorthEastSouthWest'
   | 'crosshair'
   | 'notAllowed'
-  | 'copy';
+  | 'copy'
+  | 'cellSelect'
+  | 'columnSelect'
+  | 'rowSelect';
 
 /** What a copy puts on the clipboard: the engine's `ClipboardData`. */
 export interface ClipboardData {

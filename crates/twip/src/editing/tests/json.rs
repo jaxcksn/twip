@@ -470,7 +470,6 @@ fn request(r: &Request) -> Value {
         Request::Autoscroll { vx, vy } => json!({ "type": "autoscroll", "vx": vx, "vy": vy }),
         Request::CapturePointer => json!({ "type": "capture_pointer" }),
         Request::ReleasePointer => json!({ "type": "release_pointer" }),
-        Request::Cursor(c) => json!({ "type": "cursor", "value": c }),
         Request::Clipboard { text, html } => json!({ "type": "clipboard", "text": text, "html": html }),
         Request::Placeholder(p) => json!({
             "type": "placeholder",

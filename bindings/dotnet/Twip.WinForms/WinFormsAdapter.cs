@@ -36,8 +36,25 @@ internal sealed class WinFormsAdapter(DocumentEditor control) : IEditorHostAdapt
         EditorCursor.Crosshair => Cursors.Cross,
         EditorCursor.NotAllowed => Cursors.No,
         EditorCursor.Copy => Cursors.Arrow,
+        EditorCursor.CellSelect => CellSelect.Value,
+        EditorCursor.ColumnSelect => ColumnSelect.Value,
+        EditorCursor.RowSelect => RowSelect.Value,
         _ => Cursors.Default,
     };
+
+    // The selection arrows Windows has no cursor for (Cursors/, written by its make-cursors.py), loaded
+    // once and shared by every control for the process's life, as the system cursors are.
+    private static readonly Lazy<Cursor> CellSelect = new(() => Load("cell-select.cur"));
+    private static readonly Lazy<Cursor> ColumnSelect = new(() => Load("column-select.cur"));
+    private static readonly Lazy<Cursor> RowSelect = new(() => Load("row-select.cur"));
+
+    private static Cursor Load(string name)
+    {
+        using var stream = typeof(WinFormsAdapter).Assembly.GetManifestResourceStream($"Twip.WinForms.Cursors.{name}");
+        if (stream is null) return Cursors.Arrow;
+        try { return new Cursor(stream); }
+        catch (ArgumentException) { return Cursors.Arrow; }
+    }
 
     public void CapturePointer() => control.Capture = true;
 

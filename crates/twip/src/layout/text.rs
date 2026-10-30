@@ -184,6 +184,56 @@ pub fn hp(x: f64) -> i64 {
 }
 
 /// Script slot for a character (FONT-12).
+/// A Symbol/Wingdings private-use character (U+F0xx), or its Latin-1 code (a symbol font shows the same glyph: bullet
+/// "·" in Symbol, "§" in Wingdings, FONT-13), as the Unicode character it shows, for the text a page carries
+/// (accessibility, copy, comparison) and the character drawn when the symbol font isn't installed; other characters
+/// unchanged.
+pub fn symbol_unicode(family: &str, c: char) -> char {
+    let cp = c as u32;
+    let code = match cp {
+        0xF020..=0xF0FF => cp - 0xF000,
+        0x20..=0xFF if matches!(family, "Symbol" | "Wingdings") => cp,
+        _ => return c,
+    };
+    let mapped = match family {
+        "Symbol" => match code {
+            0xB7 => 0x2022, // bullet
+            0xA7 => 0x2663,
+            0xA8 => 0x2666,
+            0xA9 => 0x2665,
+            0xAA => 0x2660,
+            0xB0 => 0xB0,
+            0xB1 => 0xB1,
+            0xB4 => 0xD7,
+            0xB8 => 0xF7,
+            0xAE => 0x2192,
+            0xAC => 0x2190,
+            0xD6 => 0x221A,
+            0xE5 => 0x2211,
+            _ => 0,
+        },
+        "Wingdings" => match code {
+            0xA7 => 0x25AA, // small square bullet
+            0x6C => 0x25CF,
+            0x6E => 0x25A0,
+            0x6F => 0x25A1,
+            0x71 => 0x2751,
+            0x75 => 0x25C6,
+            0x76 => 0x2756,
+            0xA8 => 0x25FB,
+            0xD8 => 0x27A2,
+            0xE8 => 0x2794,
+            0xFC => 0x2713,
+            0xFD => 0x2612,
+            0xFE => 0x2611,
+            0x9F => 0x2022,
+            _ => 0,
+        },
+        _ => 0,
+    };
+    char::from_u32(mapped).filter(|_| mapped != 0).unwrap_or(c)
+}
+
 fn family_for(c: char, run: &RunStyle) -> &str {
     let cp = c as u32;
     if is_east_asian(cp) || (run.hint_east_asia && shared_with_east_asia(cp)) {
@@ -399,7 +449,19 @@ impl Builder<'_> {
             }
             return Ok(());
         }
-        let shown: String = if run.caps { text.to_uppercase() } else { text.to_string() };
+        let mut shown: String = if run.caps { text.to_uppercase() } else { text.to_string() };
+        // FONT-13: a code in a symbol font that isn't installed draws as the character it shows, in a face that has it.
+        if shown.chars().any(|c| symbol_unicode(family_for(c, run), c) != c) {
+            shown = shown
+                .chars()
+                .map(|c| {
+                    let fam = family_for(c, run);
+                    let m = symbol_unicode(fam, c);
+                    let installed = self.face(fam, run).is_some_and(|f| f.family.eq_ignore_ascii_case(fam));
+                    if installed { c } else { m }
+                })
+                .collect();
+        }
         // Split into same-face stretches.
         let mut stretch_start = 0;
         let mut stretch_face: Option<Rc<Face>> = None;

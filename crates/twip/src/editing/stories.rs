@@ -39,6 +39,14 @@ fn is_note(s: StoryId) -> bool {
     matches!(s, StoryId::Footnote(_) | StoryId::Endnote(_))
 }
 
+/// A header or footer Edit Header or Edit Footer made because the page had none: left with no change since, it goes
+/// away again. `tx` is the history's position right after it was made.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Provisional {
+    story: StoryId,
+    tx: u64,
+}
+
 impl Editor {
     /// The story being edited: a header or footer while the selection is in one, else the body (whose context also
     /// reaches notes and text boxes).
@@ -136,6 +144,8 @@ impl Editor {
     /// when `None`) shows; when it shows none, one is made first, as a step: an empty paragraph in the Header or Footer
     /// style, referenced by the first section (later sections without their own inherit it, HDR-12).
     pub(super) fn edit_header_footer(&mut self, page: Option<usize>, footer: bool, fonts: &Fonts) -> Outcome {
+        // Going from a header just made, unchanged, to another: the first one goes away first.
+        self.end_provisional(fonts);
         let page = page.or_else(|| self.caret_view().map(|c| c.page)).unwrap_or(self.near);
         let Some(info) = self.snapshot().info().get(page).cloned() else { return Outcome::Unchanged("no page") };
         let (slot, part) =
@@ -209,9 +219,34 @@ impl Editor {
         };
         self.near = page;
         self.set_selection(Selection::Caret(Position::text(story, ParaId(first), Unit(0))));
-        match tx {
-            Some(t) => self.commit(t, None, fonts),
-            None => Outcome::Moved,
+        let Some(t) = tx else { return Outcome::Moved };
+        let out = self.commit(t, None, fonts);
+        if matches!(out, Outcome::Changed(_)) {
+            self.provisional = Some(Provisional { story, tx: self.history.position() });
+        }
+        out
+    }
+
+    /// After each input: a header or footer Edit Header made, left with no change since, is undone, and its undo
+    /// isn't kept for redo, so the document is as it was. A change to it, or any later edit, keeps it.
+    // shortcut: redo steps from before the header was made aren't restored (making it cleared them).
+    pub(super) fn settle_provisional(&mut self, fonts: &Fonts) {
+        if self.provisional.is_some_and(|p| self.editing() != p.story) {
+            self.end_provisional(fonts);
+        }
+    }
+
+    /// Ends the provisional header or footer: undone when nothing changed since it was made, the selection staying
+    /// where the input put it (outside the part; removing a part moves nothing else).
+    fn end_provisional(&mut self, fonts: &Fonts) {
+        let Some(p) = self.provisional.filter(|_| self.batch.is_none()) else { return };
+        self.provisional = None;
+        let kept = self.selection;
+        if self.history.position() == p.tx && matches!(self.undo(true, fonts), Outcome::Changed(_)) {
+            self.history.pop_redo();
+            if kept.focus().is_some_and(|f| f.story != p.story) {
+                self.set_selection(kept);
+            }
         }
     }
 

@@ -137,6 +137,13 @@ pub enum ObjectCmd {
     AltText(String),
 }
 
+/// The checkbox a click or Space toggled, and the caret it left after it: Space there toggles it again.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ToggledCheckbox {
+    pub face: Position,
+    pub after: Position,
+}
+
 /// Handle `k`'s side: -1 left or top, 1 right or bottom, 0 neither.
 const HANDLES: [(f64, f64); 8] = [(-1.0, -1.0), (0.0, -1.0), (1.0, -1.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (-1.0, 0.0)];
 
@@ -176,49 +183,46 @@ impl ObjectDrag {
 }
 
 impl Editor {
-    /// A press on a float's handle (while it is selected) or on an object; true when
-    /// handled.
-    pub(super) fn object_press(&mut self, x: f64, y: f64, ctrl: bool, fonts: &Fonts) -> bool {
+    /// The resize handle of the selected object under a point (within 4 px): the object, its box (page
+    /// coordinates), its page and the handle, clockwise from the top-left corner. Objects that can't change have none.
+    pub(super) fn handle_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(ObjectRef, [f64; 4], usize, usize)> {
         let stack = self.stack();
-        let Some((page, px, py)) = stack.page_at(x, y) else { return false };
+        let (page, px, py) = stack.page_at(x, y)?;
         self.ensure_page(page, fonts);
-        let Some(geo) = self.pages.page(page, &self.index) else { return false };
+        let geo = self.pages.page(page, &self.index)?;
         let one = 0.75 / self.viewport.zoom.max(0.1);
-        let selected = match self.selection {
+        let (obj, rect) = match self.selection {
             Selection::Object(o @ ObjectRef::Floating(f)) => geo.stories.iter().find(|s| s.float == Some(f)).map(|s| (o, s.rect)),
             Selection::Object(o @ ObjectRef::Inline { para, offset }) => self.inline_box(&geo, para, offset).map(|r| (o, r)),
             _ => None,
-        };
-        if let Some((obj, rect)) = selected.filter(|(o, _)| !self.object_fixed(*o)) {
-            let [x0, y0, x1, y1] = rect;
-            let (xm, ym) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-            let at = |(sx, sy): (f64, f64)| {
-                (
-                    if sx < 0.0 {
-                        x0
-                    } else if sx > 0.0 {
-                        x1
-                    } else {
-                        xm
-                    },
-                    if sy < 0.0 {
-                        y0
-                    } else if sy > 0.0 {
-                        y1
-                    } else {
-                        ym
-                    },
-                )
-            };
-            if let Some(k) = (0..8).find(|&k| {
-                let (hx, hy) = at(HANDLES[k]);
-                (px - hx).abs() <= 4.0 * one && (py - hy).abs() <= 4.0 * one
-            }) {
-                self.object_drag = Some(ObjectDrag { obj, handle: Some(k), start: (x, y), now: (x, y), rect, page, ctrl });
-                self.requests.push(Request::CapturePointer);
-                return true;
-            }
         }
+        .filter(|(o, _)| !self.object_fixed(*o))?;
+        let [x0, y0, x1, y1] = rect;
+        // A handle's place along one axis: the box's low edge, its high edge or its middle.
+        let at = |side: f64, lo: f64, hi: f64| match side {
+            s if s < 0.0 => lo,
+            s if s > 0.0 => hi,
+            _ => (lo + hi) / 2.0,
+        };
+        let k = (0..8).find(|&k| {
+            let (sx, sy) = HANDLES[k];
+            (px - at(sx, x0, x1)).abs() <= 4.0 * one && (py - at(sy, y0, y1)).abs() <= 4.0 * one
+        })?;
+        Some((obj, rect, page, k))
+    }
+
+    /// A press on a float's handle (while it is selected) or on an object; true when
+    /// handled.
+    pub(super) fn object_press(&mut self, x: f64, y: f64, ctrl: bool, fonts: &Fonts) -> bool {
+        if let Some((obj, rect, page, k)) = self.handle_at(x, y, fonts) {
+            self.object_drag = Some(ObjectDrag { obj, handle: Some(k), start: (x, y), now: (x, y), rect, page, ctrl });
+            self.requests.push(Request::CapturePointer);
+            return true;
+        }
+        let stack = self.stack();
+        let Some((page, ..)) = stack.page_at(x, y) else { return false };
+        self.ensure_page(page, fonts);
+        let Some(geo) = self.pages.page(page, &self.index) else { return false };
         let Some(s) = self.object_hit(x, y, fonts) else { return false };
         self.set_selection(s);
         self.drag = None;
@@ -715,19 +719,34 @@ impl Editor {
         None
     }
 
-    /// A click on a checkbox toggles it and selects it; true when it did.
-    pub(super) fn checkbox_press(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
-        // Design mode: a click doesn't toggle.
-        if self.mode == super::Mode::Design {
-            return false;
+    /// The face of the checkbox a click at a point toggles: none in design mode, read only, or when the control's
+    /// content is locked (the click is then a click on text).
+    pub(super) fn checkbox_toggles_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<Position> {
+        if matches!(self.mode, super::Mode::Design | super::Mode::ReadOnly) {
+            return None;
         }
-        let Some(p) = self.checkbox_at(x, y, fonts) else { return false };
+        let p = self.checkbox_at(x, y, fonts)?;
+        let (para, u) = p.para_offset()?;
+        let Some(Inline::Sym { control: Some(c), .. }) = self.index.para(&self.doc, para).and_then(|q| inline_at(q, u)) else { return None };
+        self.doc.controls.get(c).is_some_and(|k| k.props.lock.editable()).then_some(p)
+    }
+
+    /// A click on a checkbox toggles it, the caret after it; true when it did.
+    pub(super) fn checkbox_press(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
+        let Some(p) = self.checkbox_toggles_at(x, y, fonts) else { return false };
+        self.drag = None;
         self.toggle_checkbox(p, fonts);
         true
     }
 
-    /// The selection is exactly one checkbox: Space toggles it.
+    /// The checkbox Space toggles: the one selected, or the one a click (or Space) just toggled while the caret is
+    /// still where the toggle left it.
     pub(super) fn selected_checkbox(&self) -> Option<Position> {
+        if let Selection::Caret(c) = self.selection
+            && let Some(t) = self.toggled_checkbox.filter(|t| t.after == c)
+        {
+            return Some(t.face);
+        }
         let (a, b) = self.selection.ordered(&self.index)?;
         let ((pa, ua), (pb, ub)) = (a.para_offset()?, b.para_offset()?);
         if pa != pb || ub.0 != ua.0 + 1 {
@@ -744,7 +763,7 @@ impl Editor {
         }
     }
 
-    /// Toggles the checkbox whose face is at `p`, leaving it selected.
+    /// Toggles the checkbox whose face is at `p`, the caret after it.
     pub(super) fn toggle_checkbox(&mut self, p: Position, fonts: &Fonts) -> Outcome {
         let Some((para, u)) = p.para_offset() else { return Outcome::Unchanged("no checkbox") };
         let Some(Inline::Sym { ch, font, run, control: Some(c) }) = self.index.para(&self.doc, para).and_then(|q| inline_at(q, u)).cloned() else {
@@ -770,7 +789,9 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("stale checkbox");
         }
-        self.selection = Selection::range(p, Position::text(p.story, para, Unit(u.0 + 1)), Granularity::Char);
+        let after = Position::text(p.story, para, Unit(u.0 + 1));
+        self.selection = Selection::Caret(after);
+        self.toggled_checkbox = Some(ToggledCheckbox { face: p, after });
         self.commit(tx, None, fonts)
     }
 }

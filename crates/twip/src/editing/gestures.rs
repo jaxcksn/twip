@@ -32,6 +32,7 @@ impl Editor {
     pub fn pointer_input(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {
         let activate = (kind == PointerKind::Down && clicks == 2 && self.mode == Mode::Design).then(|| self.hit_laid_out(x, y));
         self.pointer(kind, x, y, clicks, mods, fonts);
+        self.settle_provisional(fonts);
         if let Some(at) = activate {
             let object = matches!(self.selection, Selection::Object(_));
             match at.filter(|_| !object) {
@@ -49,8 +50,8 @@ impl Editor {
 
     /// The gesture a primary press at a document point makes, changing nothing. Presses that only place the caret,
     /// and those that start a drag (whose gesture is its release's), make none.
-    // shortcut: a design-mode region title, a checkbox and a note reference take their press before the gestures
-    // below; those presses are named as the gesture under them, which matters only when that gesture is rebound.
+    // shortcut: a design-mode region title and a note reference take their press before the gestures below; those
+    // presses are named as the gesture under them, which matters only when that gesture is rebound.
     pub(crate) fn press_gesture(&mut self, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) -> Option<Gesture> {
         use GestureId as G;
         let (page, _, py) = self.stack().page_at(x, y)?;
@@ -84,6 +85,10 @@ impl Editor {
         if !shift && let Some(s) = self.object_hit(x, y, fonts) {
             let placeholder = self.mode != Mode::Design && self.with_selection(s, |e| e.selected_placeholder().is_some());
             return if clicks == 1 && placeholder { found(G::PlaceholderClick, GestureTarget::Menu(MenuTarget::Picture)) } else { None };
+        }
+        // A checkbox takes every click: it toggles, naming no gesture.
+        if !shift && self.checkbox_toggles_at(x, y, fonts).is_some() {
+            return None;
         }
         if clicks == 1
             && !shift

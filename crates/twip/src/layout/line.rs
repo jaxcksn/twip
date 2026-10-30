@@ -18,7 +18,7 @@ use super::fragment::{Atom, GlyphRun, ImageKey, Item, LineFragment};
 use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
 use super::space::{BorderKey, ParaSpace};
-use super::text::{Kind, Object, Piece, ShapedPara, metrics, para_id};
+use super::text::{Kind, Object, Piece, ShapedPara, metrics, para_id, symbol_unicode};
 
 const EPS: f64 = 1e-6;
 
@@ -109,6 +109,8 @@ pub struct ParaLines {
     compat: i64,
     /// How revisions draw ([`ParaSpace::env`]).
     review: ReviewView,
+    /// `w:ulTrailSpace` ([`ParaSpace::env`]).
+    ul_trail_space: bool,
 }
 
 impl PartialEq for ParaLines {
@@ -144,6 +146,7 @@ impl ParaLines {
             compat: self.compat,
             para: self.para,
             review: &self.review,
+            ul_trail_space: self.ul_trail_space,
         }
     }
 
@@ -241,6 +244,7 @@ pub fn break_lines_uncached(
         drawn: (0..n).map(|_| OnceCell::new()).collect(),
         compat: space.env.compat,
         review: space.env.review.clone(),
+        ul_trail_space: space.env.ul_trail_space,
     })
 }
 
@@ -1199,54 +1203,6 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     }
 }
 
-/// A Symbol/Wingdings private-use character (U+F0xx), or its Latin-1 code (a symbol font shows the same glyph: bullet
-/// "·" in Symbol, "§" in Wingdings, FONT-13), as the Unicode character it shows, for the text a page carries
-/// (accessibility, copy, comparison); other characters unchanged.
-pub fn symbol_unicode(family: &str, c: char) -> char {
-    let cp = c as u32;
-    let code = match cp {
-        0xF020..=0xF0FF => cp - 0xF000,
-        0x20..=0xFF if matches!(family, "Symbol" | "Wingdings") => cp,
-        _ => return c,
-    };
-    let mapped = match family {
-        "Symbol" => match code {
-            0xB7 => 0x2022, // bullet
-            0xA7 => 0x2663,
-            0xA8 => 0x2666,
-            0xA9 => 0x2665,
-            0xAA => 0x2660,
-            0xB0 => 0xB0,
-            0xB1 => 0xB1,
-            0xB4 => 0xD7,
-            0xB8 => 0xF7,
-            0xAE => 0x2192,
-            0xAC => 0x2190,
-            0xD6 => 0x221A,
-            0xE5 => 0x2211,
-            _ => 0,
-        },
-        "Wingdings" => match code {
-            0xA7 => 0x25AA, // small square bullet
-            0x6C => 0x25CF,
-            0x6E => 0x25A0,
-            0x6F => 0x25A1,
-            0x71 => 0x2751,
-            0x75 => 0x25C6,
-            0x76 => 0x2756,
-            0xA8 => 0x25FB,
-            0xD8 => 0x27A2,
-            0xFC => 0x2713,
-            0xFD => 0x2612,
-            0xFE => 0x2611,
-            0x9F => 0x2022,
-            _ => 0,
-        },
-        _ => 0,
-    };
-    char::from_u32(mapped).filter(|_| mapped != 0).unwrap_or(c)
-}
-
 /// A run's text colour: its revision's colour in All markup (REV-3); else automatic text is white on a dark highlight
 /// or shading (FONT-15), else black (`None`).
 fn ink(r: &RunStyle, review: &ReviewView) -> Option<u32> {
@@ -1298,6 +1254,8 @@ pub struct LineOrigin<'a> {
     pub compat: i64,
     pub para: ParaId,
     pub review: &'a ReviewView,
+    /// `w:ulTrailSpace` (FONT-15).
+    pub ul_trail_space: bool,
 }
 
 impl LineOrigin<'_> {
@@ -1575,7 +1533,8 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, out: &
     };
     for (k, p) in pieces.iter().enumerate() {
         let st = &sp.styles[p.style as usize];
-        let Some(face) = st.face.as_ref().filter(|_| matches!(p.kind, Kind::Text | Kind::Space | Kind::ListNumber)) else { continue };
+        // FONT-15: a tab is decorated across its width, like text.
+        let Some(face) = st.face.as_ref().filter(|_| matches!(p.kind, Kind::Text | Kind::Space | Kind::Tab | Kind::ListNumber)) else { continue };
         let (r, label) = (&st.run, p.kind == Kind::ListNumber);
         let (x, w) = (x0 + line.xs[k], line.widths[k]);
         if w <= 0.0 {
@@ -1587,7 +1546,9 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, out: &
         if let Some(fill) = fill {
             push(&mut bg, [x, y - face.ascent * em, x + w, y + face.descent * em], fill);
         }
-        if k >= content {
+        // FONT-15: the spaces that end a line take no underline (unless `w:ulTrailSpace`) and no strikethrough.
+        let trailing = k >= content;
+        if trailing && !o.ul_trail_space {
             continue;
         }
         let ink = ink(r, review).unwrap_or(0);
@@ -1598,7 +1559,7 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, out: &
         let kind = |m: &Option<Rc<crate::docx::review::RevisionMark>>| m.as_ref().filter(|_| marked).map(|m| m.kind);
         let (ins, del) = (kind(&r.rev.ins), kind(&r.rev.del));
         let rev_u = ins.map(|k| if k == MarkKind::MoveTo { "double" } else { "single" });
-        if let Some(u) = rev_u.or(r.underline.as_deref()).filter(|u| !label && !(*u == "words" && p.kind == Kind::Space)) {
+        if let Some(u) = rev_u.or(r.underline.as_deref()).filter(|u| !label && !(*u == "words" && matches!(p.kind, Kind::Space | Kind::Tab))) {
             let (pos, thick) =
                 if face.underline_thick > 0.0 { (face.underline_pos, face.underline_thick) } else { (0.1 * face.upem, 0.05 * face.upem) };
             let (uy, t) = (y + pos * em, (thick * em).max(0.5));
@@ -1613,7 +1574,7 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, out: &
             }
         }
         let dstrike = r.dstrike || del == Some(MarkKind::MoveFrom);
-        if r.strike || dstrike || del.is_some() {
+        if (r.strike || dstrike || del.is_some()) && !trailing {
             let t = (face.strike_thick * em).max(0.5);
             let sy = y - face.strike_pos * em;
             if dstrike {

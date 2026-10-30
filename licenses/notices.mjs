@@ -1,5 +1,5 @@
-// Writes THIRD-PARTY-NOTICES.md: the Rust crates' licenses (cargo about) and the C/C++ libraries linked into the
-// native library and the WebAssembly module (license texts in this folder). Usage: node licenses/notices.mjs <out>
+// Writes THIRD-PARTY-NOTICES.md: the Rust crates' licenses (cargo about) and the C/C++ libraries and fonts built into
+// the native library and the WebAssembly module (license texts in this folder). Usage: node licenses/notices.mjs <out>
 import { execFileSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,6 +23,8 @@ const native = [
   ['SPIRV-Headers', 'MIT', 'native', 'spirv-headers.txt'],
   ['Vulkan-Headers', 'Apache-2.0 OR MIT', 'native', 'vulkan-headers.txt'],
   ['Emscripten WebGPU port', 'MIT OR NCSA', 'WebAssembly', 'emscripten-webgpu.txt'],
+  // The engine's last-resort symbol font, a subset of DejaVu Sans (font.rs).
+  ['DejaVu Sans (subset)', 'Bitstream-Vera', 'both', 'dejavu-fonts.txt'],
 ];
 // cargo about refuses to write to a pipe on Windows, so it writes a file.
 const tmp = `${out}.crates`;
@@ -31,5 +33,5 @@ const crates = readFileSync(tmp, 'utf8');
 rmSync(tmp);
 const libs = native.map(([name, id, where, file]) =>
   `### ${name} (${id})\n\nIn: ${where === 'both' ? 'the native library and the WebAssembly module' : `the ${where === 'native' ? 'native library' : 'WebAssembly module'}`}\n\n\`\`\`\n${readFileSync(join(dir, file), 'utf8').trim()}\n\`\`\`\n`);
-writeFileSync(out, `${crates.trim()}\n\n## C and C++ libraries\n\n${libs.join('\n')}`);
+writeFileSync(out, `${crates.trim()}\n\n## C and C++ libraries, and fonts\n\n${libs.join('\n')}`);
 console.log(`wrote ${out}`);

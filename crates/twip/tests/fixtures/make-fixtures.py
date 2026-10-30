@@ -3,7 +3,7 @@
 One FX-<ID>.docx per fixture family (see that folder's README.md for what each exercises). Standard library only and
 no randomness: the same bytes on every run. Every package is plain OOXML that Word opens without a repair prompt.
 Fonts are limited to Calibri, Times New Roman, Arial and Segoe UI Emoji, except FX-font-families, which also names a
-web-only family and an unknown one. fonts/ gets three generated stand-in fonts, one variable.
+web-only family and an unknown one, and FX-BULLETS and FX-CHECKBOXES, which name the symbol fonts lists and checkboxes use. fonts/ gets three generated stand-in fonts, one variable.
 Run: python -I crates/twip/tests/fixtures/make-fixtures.py [out dir]
 """
 
@@ -183,6 +183,7 @@ class Doc:
         self.custom_xml = []  # (xml, ds:itemID) per custom XML part (data parts)
         self.glossary = False  # a glossary part with the default content-control placeholder
         self.settings_extra = ""  # settings elements before w:compat (tracking, protection)
+        self.compat_extra = ""  # w:compat children before compatSetting
         self.styles = STYLES  # a fixture may change the defaults or add styles
         self.media = {}  # colour index -> image bytes, replacing the generated PNG
 
@@ -276,7 +277,8 @@ class Doc:
         rels = [("rIdStyles", REL + "styles", "styles.xml"), ("rIdSettings", REL + "settings", "settings.xml")]
         notes_pr = ""
         if self.numbering:
-            files.append(("word/numbering.xml", NUMBERING, f"{CT}numbering+xml"))
+            numbering = self.numbering if isinstance(self.numbering, str) else NUMBERING
+            files.append(("word/numbering.xml", numbering, f"{CT}numbering+xml"))
             rels.append(("rIdNumbering", REL + "numbering", "numbering.xml"))
         for kind, notes in (("footnote", self.footnotes), ("endnote", self.endnotes)):
             if notes:
@@ -290,7 +292,7 @@ class Doc:
         settings = (
             f'{XML_DECL}<w:settings xmlns:w="{NS["w"]}"><w:defaultTabStop w:val="720"/>'
             f'{self.settings_extra}{"<w:evenAndOddHeaders/>" if self.even_and_odd else ""}{notes_pr}'
-            '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'
+            f'<w:compat>{self.compat_extra}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'
         )
         files.append(("word/settings.xml", settings, f"{CT}settings+xml"))
         files += [(f"word/{name}", xml, ctype) for name, xml, ctype in self.parts]
@@ -1255,6 +1257,113 @@ def fx_tabs(d):
     ), two_columns
 
 
+def fx_sections(d):
+    """One page of four sections joined by continuous breaks: one column, two columns, one column, three columns with
+    a separator line. Each paragraph starts with its section and paragraph (S2 P3)."""
+
+    def cols(n, extra=""):
+        return sect(kind="continuous").replace('<w:cols w:space="720"/>', f'<w:cols w:num="{n}" w:space="540"{extra}/>')
+
+    def paras(s, n, words, last_sect):
+        out = [P(f"S{s} P{k + 1} " + filler(words, s * 10 + k)) for k in range(n)]
+        out[-1] = P(f"S{s} P{n} " + filler(words, s * 10 + n - 1), last_sect)
+        return out
+
+    body = paras(1, 4, 8, sect())
+    body += paras(2, 6, 14, cols(2))
+    body += paras(3, 2, 8, sect(kind="continuous"))
+    body += [P(f"S4 P{k + 1} " + filler(8, 40 + k)) for k in range(6)]
+    return "".join(body), cols(3, ' w:sep="1"')
+
+
+# The bullets of the default bullet library: (font, lvlText).
+BULLET_LIBRARY = [
+    ("Symbol", ""),
+    ("Courier New", "o"),
+    ("Wingdings", ""),
+    ("Wingdings", ""),
+    ("Wingdings", ""),
+    ("Wingdings", ""),
+    ("Wingdings", ""),
+    ("Wingdings", ""),
+    ("Wingdings", ""),
+]
+
+
+def fx_bullets(d):
+    """One list per bullet of the default bullet library (Symbol, Courier New and Wingdings bullets), then a
+    w:sym run in Symbol and one in Wingdings."""
+    abstracts, nums = [], []
+    for k, (face, text) in enumerate(BULLET_LIBRARY):
+        rpr = f'<w:rPr><w:rFonts w:ascii="{face}" w:hAnsi="{face}" w:hint="default"/></w:rPr>'
+        abstracts.append(f'<w:abstractNum w:abstractNumId="{k}"><w:multiLevelType w:val="hybridMultilevel"/>{_levels([("bullet", text, rpr)])}</w:abstractNum>')
+        nums.append(f'<w:num w:numId="{k + 1}"><w:abstractNumId w:val="{k}"/></w:num>')
+    d.numbering = f"{XML_DECL}<w:numbering {NAMESPACES}>{''.join(abstracts)}{''.join(nums)}</w:numbering>"
+    body = [P("FX-BULLETS", HEADING)]
+    body += [P(f"Bullet {k + 1}: {face} {ord(text):04X}", numbered(0, k + 1)) for k, (face, text) in enumerate(BULLET_LIBRARY)]
+    sym = lambda face, code: f'<w:r><w:sym w:font="{face}" w:char="{code}"/></w:r>'
+    body.append(p(r("Symbol bullet: ") + sym("Symbol", "F0B7") + r(" Wingdings check: ") + sym("Wingdings", "F0FC") + r(" end.")))
+    return "".join(body)
+
+
+def fx_checkboxes(d):
+    """Checkbox content controls: unchecked and checked in body text, one in a table cell, one whose contents are
+    locked, and one with custom faces (heavy check, ballot box)."""
+    sdt_id = iter(range(5001, 6000))
+    gothic = font("MS Gothic")
+
+    def checkbox(checked, lock="", on="2612", off="2610"):
+        face = chr(int(on if checked else off, 16))
+        return (
+            f'<w:sdt><w:sdtPr><w:id w:val="{next(sdt_id)}"/>{lock}<w14:checkbox><w14:checked w14:val="{int(checked)}"/>'
+            f'<w14:checkedState w14:val="{on}" w14:font="MS Gothic"/><w14:uncheckedState w14:val="{off}" w14:font="MS Gothic"/>'
+            f"</w14:checkbox></w:sdtPr><w:sdtContent>{r(face, gothic)}</w:sdtContent></w:sdt>"
+        )
+
+    widths = split(TEXT_WIDTH, 2)
+    return (
+        P("FX-CHECKBOXES", HEADING)
+        + p(checkbox(False) + r(" Unchecked item"))
+        + p(checkbox(True) + r(" Checked item"))
+        + grid([["Task in a cell", p(checkbox(False) + r(" cell box"))]], widths)
+        + p(checkbox(False, lock='<w:lock w:val="contentLocked"/>') + r(" Locked item"))
+        + p(checkbox(False, on="2714") + r(" Custom faces"))
+        + P("After the checkboxes.")
+    )
+
+
+def fx_underline_tabs(d, trailing=False):
+    """Underline and strikethrough over tabs and spaces: a signature line (an underlined tab to a right stop ending the
+    paragraph), an underlined tab mid-line, a paragraph that is only an underlined tab, an underlined tab with a dot
+    leader, underlined trailing spaces, a paragraph of only underlined spaces, words-only underline over a space and a
+    tab, then the signature line, trailing spaces and words cases again with strikethrough. `trailing` sets
+    w:ulTrailSpace."""
+    if trailing:
+        d.compat_extra = "<w:ulTrailSpace/>"
+    stop = '<w:tabs><w:tab w:val="right" w:pos="8640"/></w:tabs>'
+    dots = '<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="8640"/></w:tabs>'
+    mid = '<w:tabs><w:tab w:val="left" w:pos="4320"/></w:tabs>'
+
+    def tab(rpr):
+        return f"<w:r><w:rPr>{rpr}</w:rPr><w:tab/></w:r>"
+
+    def cases(deco, words):
+        return [
+            p(r("Name: ") + tab(deco), stop),
+            p(r("Before", deco) + tab(deco) + r("after", deco), mid),
+            p(tab(deco), stop),
+            p(r("Leader") + tab(deco), dots),
+            p(r("Trailing spaces", deco) + r("   ", deco)),
+            p(r("   ", deco)),
+            p(r("a b", words) + tab(words) + r("c", words), mid),
+        ]
+
+    strike = "<w:strike/>"
+    body = [P("FX-UNDERLINE-TABS", HEADING)] + cases(U, '<w:u w:val="words"/>')
+    body += [p(r("Name: ") + tab(strike), stop), p(r("Trailing spaces", strike) + r("   ", strike)), p(r("a b", strike) + tab(strike) + r("c", strike), mid)]
+    return "".join(body)
+
+
 def fx_services(d):
     """Everything the host services act on: misspellings (Teh, brwon, quikc, zorbly), one word in three cases with
     three formats (Apple bold, apple plain, APPLE italic), a hyperlink, a word deleted with tracking, a floating
@@ -1766,6 +1875,11 @@ FIXTURES = {
     "FX-END-TABLE": fx_end_table,
     "FX-EXACT-ROW": fx_exact_row,
     "FX-REPEAT-REGION": fx_repeat_region,
+    "FX-SECTIONS": fx_sections,
+    "FX-BULLETS": fx_bullets,
+    "FX-CHECKBOXES": fx_checkboxes,
+    "FX-UNDERLINE-TABS": fx_underline_tabs,
+    "FX-UNDERLINE-TABS-TRAIL": lambda d: fx_underline_tabs(d, trailing=True),
 }
 
 

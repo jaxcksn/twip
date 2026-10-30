@@ -17,53 +17,7 @@ use crate::editing::input::Request;
 use crate::render::{Frame, Renderer};
 use crate::services::ruler::{Bands, Marker};
 
-/// The pointer's shape over the document.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Cursor {
-    /// The arrow.
-    #[default]
-    Default,
-    /// The I-beam, over text.
-    Text,
-    /// The hand, over links.
-    Pointer,
-    /// Moving an object.
-    Move,
-    /// Resizing a column.
-    ResizeHorizontal,
-    /// Resizing a row.
-    ResizeVertical,
-    /// Resizing from the top-left or bottom-right corner.
-    ResizeNorthWestSouthEast,
-    /// Resizing from the top-right or bottom-left corner.
-    ResizeNorthEastSouthWest,
-    /// A crosshair.
-    Crosshair,
-    /// Nothing can happen here.
-    NotAllowed,
-    /// A dragged selection is copied.
-    Copy,
-}
-
-impl Cursor {
-    /// The cursor for one of the editor's CSS cursor names.
-    fn of(css: &str) -> Cursor {
-        match css {
-            "text" => Cursor::Text,
-            "pointer" => Cursor::Pointer,
-            "move" => Cursor::Move,
-            "col-resize" | "ew-resize" => Cursor::ResizeHorizontal,
-            "row-resize" | "ns-resize" => Cursor::ResizeVertical,
-            "nwse-resize" => Cursor::ResizeNorthWestSouthEast,
-            "nesw-resize" => Cursor::ResizeNorthEastSouthWest,
-            "crosshair" => Cursor::Crosshair,
-            "not-allowed" => Cursor::NotAllowed,
-            "copy" => Cursor::Copy,
-            _ => Cursor::Default,
-        }
-    }
-}
+pub use crate::editing::input::Cursor;
 
 /// Something only the host showing the session can do, given to the sink [`HostSurface::attach`] takes. Positions
 /// are content CSS px: they scroll with the document. On the wire it is the `host_request` callback, `type` tagged.
@@ -153,13 +107,14 @@ pub struct FrameInfo {
 }
 
 /// The colours of what the editor draws over the document ([`HostSurface::set_overlay_palette`]). The defaults are at
-/// least 3:1 against the page.
+/// least 3:1 against the page, except the selection: a light fill, black text over it at least 4.5:1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OverlayPalette {
     /// The caret. Default black.
     pub caret: Color,
-    /// The selection, blended under the content (multiply), so black text stays black over it. Default `#4A90D9`.
+    /// The selection, blended under the content (multiply), so black text stays black over it. Default `#B3D7FF`, a system
+    /// text selection's light blue.
     pub selection: Color,
     /// A selected object's outline and handles. Default `#606060`.
     pub object: Color,
@@ -175,7 +130,7 @@ impl Default for OverlayPalette {
     fn default() -> OverlayPalette {
         OverlayPalette {
             caret: Color(0x000000),
-            selection: Color(0x4A90D9),
+            selection: Color(0xB3D7FF),
             object: Color(0x606060),
             drop: Color(0x404040),
             marks: Color(0x2F6FB5),
@@ -520,8 +475,6 @@ impl Session {
                         out.push(HostRequest::ScrollTo { x: x * k, y: y * k, width: (x1 - x0) * k, height: (y1 - y0) * k });
                     }
                 }
-                // The cursor is the view's, compared below.
-                Request::Cursor(_) => {}
                 // shortcut: hosts autoscroll a drag themselves, and placeholder activation is an event the
                 // pointer work emits; neither reaches the host from here.
                 Request::Autoscroll { .. } | Request::Placeholder(_) => {}
@@ -529,7 +482,7 @@ impl Session {
         }
         let view = self.editor.view(0..0);
         let hovered = self.editor.hover_tooltip();
-        let cursor = Cursor::of(view.cursor);
+        let cursor = view.cursor;
         let s = &mut self.presentation.sink;
         if s.cursor != Some(cursor) {
             s.cursor = Some(cursor);
