@@ -2167,7 +2167,7 @@ impl Editor {
         let table = match z {
             geometry::Zone::Cell(t, ..) | geometry::Zone::Row(t, _) | geometry::Zone::Column(t, ..) | geometry::Zone::Table(t) => t,
         };
-        let story = self.index.table_slot(table).map(|s| self.index.story(s.container));
+        let story = self.index.table_slot(table).map(|s| self.index.host(self.index.story(s.container)));
         (story.map(|s| stories::reachable(self.editing(), s)) == Some(true)).then_some(z)
     }
 
