@@ -167,8 +167,9 @@ def position(axis, relative, at):
     return f'<wp:position{axis} relativeFrom="{relative}">{value}</wp:position{axis}>'
 
 
-def anchor_at(wrap=SQUARE, h=("column", 0.0), v=("paragraph", 0.0), behind=False, locked=False, in_cell=True):
-    return dict(wrap=wrap, h=h, v=v, behind=behind, locked=locked, in_cell=in_cell)
+def anchor_at(wrap=SQUARE, h=("column", 0.0), v=("paragraph", 0.0), behind=False, locked=False, in_cell=True, rel_size=False):
+    """A float's placement; rel_size adds the zero relative sizes written for a page-sized picture."""
+    return dict(wrap=wrap, h=h, v=v, behind=behind, locked=locked, in_cell=in_cell, rel_size=rel_size)
 
 
 class Doc:
@@ -210,12 +211,16 @@ class Doc:
                 f'<wp:effectExtent l="0" t="0" r="0" b="0"/>{doc_pr}<wp:cNvGraphicFramePr/>{graphic}</wp:inline></w:drawing>'
             )
         f = float_at
+        rel_size = (
+            '<wp14:sizeRelH relativeFrom="page"><wp14:pctWidth>0</wp14:pctWidth></wp14:sizeRelH>'
+            '<wp14:sizeRelV relativeFrom="page"><wp14:pctHeight>0</wp14:pctHeight></wp14:sizeRelV>'
+        ) if f["rel_size"] else ""
         return (
             f'<w:drawing><wp:anchor distT="45720" distB="45720" distL="114300" distR="114300" simplePos="0" '
             f'relativeHeight="{251658240 + i * 1024}" behindDoc="{int(f["behind"])}" locked="{int(f["locked"])}" '
             f'layoutInCell="{int(f["in_cell"])}" allowOverlap="1"><wp:simplePos x="0" y="0"/>'
             f'{position("H", *f["h"])}{position("V", *f["v"])}<wp:extent cx="{cx}" cy="{cy}"/>'
-            f'<wp:effectExtent l="0" t="0" r="0" b="0"/>{f["wrap"]}{doc_pr}<wp:cNvGraphicFramePr/>{graphic}</wp:anchor></w:drawing>'
+            f'<wp:effectExtent l="0" t="0" r="0" b="0"/>{f["wrap"]}{doc_pr}<wp:cNvGraphicFramePr/>{graphic}{rel_size}</wp:anchor></w:drawing>'
         )
 
     def picture(self, w=1.0, h=0.75, colour=0, float_at=None):
@@ -713,6 +718,21 @@ def fx_stories(d):
         if n % 5 == 2:
             content += d.endnote(f"Endnote {len(d.endnotes) + 1}: " + filler(12, n))
         body.append(p(content))
+    return "".join(body), sect(refs, title_page=True)
+
+
+def fx_header_background(d):
+    # A page-sized picture behind the text in the default and first-page headers, as letterhead templates draw a page
+    # background, over two pages of body text; and a body picture behind a paragraph's text, reaching into the margin.
+    background = lambda colour: d.picture(8.5, 11.0, colour, anchor_at(NONE, ("page", 0.0), ("page", 0.0), behind=True, rel_size=True))  # noqa: E731
+    style = '<w:pStyle w:val="Header"/>'
+    refs = (
+        d.story("header", "default", p(background(0) + r("Default header"), style))
+        + d.story("header", "first", p(background(1) + r("First-page header"), style))
+    )
+    behind = d.picture(2.0, 1.5, 2, anchor_at(NONE, ("column", 5.5), ("paragraph", 0.0), behind=True))
+    body = [P("FX-HEADER-BACKGROUND", HEADING), p(behind + r("A picture behind this paragraph's text. " + filler(80, 1)))]
+    body += [P(filler(110, n + 2)) for n in range(8)]
     return "".join(body), sect(refs, title_page=True)
 
 
@@ -1868,6 +1888,7 @@ FIXTURES = {
     "FX-OBJ": fx_obj,
     "FX-OBJ-CELL": fx_obj_cell,
     "FX-STORIES": fx_stories,
+    "FX-HEADER-BACKGROUND": fx_header_background,
     "FX-TBL-LARGE": lambda d: large(d, False),
     "FX-TBL-LARGE-NESTED": lambda d: large(d, True),
     "FX-EMPTY": fx_empty,

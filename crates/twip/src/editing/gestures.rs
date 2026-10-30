@@ -72,7 +72,7 @@ impl Editor {
                 };
             }
             (true, true) if clicks >= 2 => return found(G::BodyDoubleClickInHeaderFooter, TEXT),
-            (true, true) => return None,
+            (true, true) if self.object_hit(x, y, fonts).is_none() => return None,
             _ => {}
         }
         if self.mode == Mode::Design

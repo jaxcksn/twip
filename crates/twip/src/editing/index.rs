@@ -323,6 +323,17 @@ impl DocIndex {
         }
     }
 
+    /// The story whose area of the page shows story `s`: a text box's is its anchor's (outward through text boxes in
+    /// text boxes); any other story is its own.
+    pub fn host(&self, mut s: StoryId) -> StoryId {
+        while let StoryId::TextBox(f) = s
+            && let Some(slot) = self.float_anchor(f).and_then(|p| self.para_slot(p))
+        {
+            s = self.story(slot.container);
+        }
+        s
+    }
+
     /// The enclosing table cells of a container, outermost first (the table context chain).
     pub fn chain(&self, container: Container) -> Vec<Level> {
         let mut out = Vec::new();

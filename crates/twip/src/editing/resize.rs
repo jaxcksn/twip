@@ -89,7 +89,7 @@ impl Editor {
         let mut rows: Vec<&super::geometry::GRow> = geo
             .rows
             .iter()
-            .filter(|r| !r.repeat && reachable(ctx, geo.stories[r.story].story) && r.rect[0] - tol <= px && px <= r.rect[2] + tol)
+            .filter(|r| !r.repeat && reachable(ctx, geo.stories[r.story].host) && r.rect[0] - tol <= px && px <= r.rect[2] + tol)
             .collect();
         rows.sort_by_key(|r| std::cmp::Reverse(r.outer.len()));
         let table_span = |t: TableId| {
@@ -130,7 +130,7 @@ impl Editor {
         let found = found.or_else(|| {
             geo.rows
                 .iter()
-                .filter(|r| !r.repeat && reachable(ctx, geo.stories[r.story].story))
+                .filter(|r| !r.repeat && reachable(ctx, geo.stories[r.story].host))
                 .filter(|r| r.outer.is_empty() || held.contains(&r.table))
                 .filter(|r| !geo.rows.iter().any(|o| o.table == r.table && o.row > r.row))
                 .find(|r| px >= r.rect[2] && px <= r.rect[2] + 4.0 * tol && py >= r.rect[3] && py <= r.rect[3] + 4.0 * tol)

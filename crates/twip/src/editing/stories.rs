@@ -11,8 +11,9 @@ use super::geometry::PageGeometry;
 use super::position::{Position, StoryId};
 use super::selection::{ObjectRef, Selection};
 
-/// Whether a click while `ctx` is edited can reach story `s`: headers and footers only while one is edited, the other
-/// stories (body, notes, text boxes) only while none is.
+/// Whether a click while `ctx` is edited can reach what host story `s` shows (a text box goes by its host, see
+/// [`super::index::DocIndex::host`]): headers and footers only while one is edited, the other stories (body, notes)
+/// only while none is.
 pub(super) fn reachable(ctx: StoryId, s: StoryId) -> bool {
     matches!(ctx, StoryId::HeaderFooter(_)) == matches!(s, StoryId::HeaderFooter(_))
 }
@@ -48,14 +49,16 @@ pub(super) struct Provisional {
 }
 
 impl Editor {
-    /// The story being edited: a header or footer while the selection is in one, else the body (whose context also
-    /// reaches notes and text boxes).
+    /// The story being edited: a header or footer while the selection is in one (or in a text box or on an object
+    /// there), else the body (whose context also reaches notes and the text boxes anchored in them).
     pub(super) fn editing(&self) -> StoryId {
         let s = match self.selection {
             Selection::Cells { table, .. } => self.index.table_slot(table).map(|s| self.index.story(s.container)),
+            Selection::Object(ObjectRef::Floating(f)) => Some(StoryId::TextBox(f)),
+            Selection::Object(ObjectRef::Inline { para, .. }) => self.index.para_slot(para).map(|s| self.index.story(s.container)),
             _ => self.selection.focus().map(|p| p.story),
         };
-        match s {
+        match s.map(|s| self.index.host(s)) {
             Some(s @ StoryId::HeaderFooter(_)) => s,
             _ => StoryId::Body,
         }
@@ -89,8 +92,8 @@ impl Editor {
                 self.body_return = None;
                 h
             }
-            // While a header or footer is edited, a single click or a drag in the body does nothing.
-            (true, true) => return true,
+            // While a header or footer is edited, a single click or a drag in the body does nothing, except on its floats.
+            (true, true) if self.object_hit(x, y, fonts).is_none() => return true,
             _ => return false,
         };
         self.near = page;

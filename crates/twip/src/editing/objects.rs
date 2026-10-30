@@ -14,9 +14,9 @@ use super::step::Step;
 use super::stories::{inline_at, reachable};
 
 impl Editor {
-    /// The object a press selects, in paint order: a floating picture anywhere on it, a text box on its
-    /// border band (the border to 4 px inside; on the left edge beside a line, that line instead), an inline
-    /// picture on its box.
+    /// The object a press selects, in paint order, among those of the story being edited: a floating picture anywhere
+    /// on it, a text box on its border band (the border to 4 px inside; on the left edge beside a line, that line
+    /// instead), an inline picture on its box. A float behind the text takes only presses where no line is over it.
     pub(super) fn object_hit(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<Selection> {
         let stack = self.stack();
         let (page, px, py) = stack.page_at(x, y)?;
@@ -28,7 +28,20 @@ impl Editor {
         for (si, s) in geo.stories.iter().enumerate().rev() {
             let Some(f) = s.float else { continue };
             let [x0, y0, x1, y1] = s.rect;
-            if !reachable(ctx, s.story) || px < x0 - one || px > x1 + one || py < y0 - one || py > y1 + one {
+            if !reachable(ctx, s.host) || px < x0 - one || px > x1 + one || py < y0 - one || py > y1 + one {
+                continue;
+            }
+            // Behind the text, a line over it takes the press.
+            let text_over = || {
+                geo.lines.iter().any(|l| {
+                    l.story != si
+                        && py >= l.top
+                        && py < l.bottom
+                        && l.stops.first().zip(l.stops.last()).is_some_and(|(a, b)| px >= a.x && px <= b.x)
+                        && reachable(ctx, geo.stories[l.story].host)
+                })
+            };
+            if self.float_behind(f) && text_over() {
                 continue;
             }
             if self.index.text_box(&self.doc, f).is_none() {
@@ -47,7 +60,7 @@ impl Editor {
             }
             return Some(Selection::Object(ObjectRef::Floating(f)));
         }
-        for l in geo.lines.iter().filter(|l| py >= l.top && py < l.bottom && reachable(ctx, geo.stories[l.story].story)) {
+        for l in geo.lines.iter().filter(|l| py >= l.top && py < l.bottom && reachable(ctx, geo.stories[l.story].host)) {
             for w in l.stops.windows(2) {
                 if w[1].para == w[0].para && w[1].unit.0 == w[0].unit.0 + 1 && px >= w[0].x && px < w[1].x {
                     let p = self.index.para(&self.doc, w[0].para)?;
@@ -292,6 +305,14 @@ impl Editor {
                 .is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f && fl.lock_aspect)))
     }
 
+    /// A float drawn behind the text (`behindDoc`).
+    fn float_behind(&self, f: FloatId) -> bool {
+        self.index
+            .float_anchor(f)
+            .and_then(|a| self.index.para(&self.doc, a))
+            .is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f && fl.behind)))
+    }
+
     /// An inline picture's box on a page: the rectangle layout drew it in.
     pub(super) fn inline_box(&self, geo: &super::geometry::PageGeometry, para: crate::layout::ParaId, offset: Unit) -> Option<[f64; 4]> {
         geo.lines.iter().find_map(|l| l.pictures.iter().find(|(p, u, _)| *p == para && *u == offset).map(|(_, _, r)| *r))
@@ -478,8 +499,9 @@ impl Editor {
             }
         }
         let mut floats = Vec::new();
-        for s in &self.doc.sections {
-            walk(&s.blocks, &mut floats);
+        match self.editing() {
+            s @ StoryId::HeaderFooter(_) => walk(self.index.blocks(&self.doc, super::index::Container::Story(s)).map_or(&[], |b| b), &mut floats),
+            _ => self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut floats)),
         }
         if floats.is_empty() {
             return Outcome::Unchanged("no floating objects");
@@ -704,7 +726,7 @@ impl Editor {
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
         let ctx = self.editing();
-        for l in geo.lines.iter().filter(|l| py >= l.top && py < l.bottom && reachable(ctx, geo.stories[l.story].story)) {
+        for l in geo.lines.iter().filter(|l| py >= l.top && py < l.bottom && reachable(ctx, geo.stories[l.story].host)) {
             for w in l.stops.windows(2) {
                 if w[1].para == w[0].para && w[1].unit.0 == w[0].unit.0 + 1 && px >= w[0].x && px < w[1].x {
                     let p = self.index.para(&self.doc, w[0].para)?;

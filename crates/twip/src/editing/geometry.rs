@@ -137,6 +137,9 @@ pub struct GRow {
 #[derive(Debug)]
 pub struct GStory {
     pub story: StoryId,
+    /// The story whose area shows this one: a float's is the story it is anchored in (the body, a header or footer, a
+    /// note); any other story is its own. Whether a click reaches the story goes by it.
+    pub host: StoryId,
     /// A floating object's box (a picture or a text box).
     pub float: Option<FloatId>,
     pub rect: [f64; 4],
@@ -209,7 +212,7 @@ impl PageGeometry {
                 StoryRef::Float { float, .. } => (StoryId::TextBox(float), Some(float)),
             };
             let si = g.stories.len();
-            g.stories.push(GStory { story, float, rect: s.rect });
+            g.stories.push(GStory { story, host: idx.host(story), float, rect: s.rect });
             g.nodes(&s.nodes, si, &Rc::from([]), false);
         }
         // Endnotes are laid out in the body's flow: their lines get their own story, boxed by those lines.
@@ -233,7 +236,7 @@ impl PageGeometry {
                 }
                 None => {
                     let r = g.stories[si].rect;
-                    g.stories.push(GStory { story: s, float: None, rect: [r[0], top, r[2], bottom] });
+                    g.stories.push(GStory { story: s, host: s, float: None, rect: [r[0], top, r[2], bottom] });
                     g.stories.len() - 1
                 }
             };
@@ -493,11 +496,11 @@ impl PageGeometry {
         })
     }
 
-    /// The story under a point: a floating text box, else the first story whose box contains it and that `want`
-    /// accepts (the body, or the header or footer being edited).
+    /// The story under a point: a floating text box whose host `want` accepts, else the first story whose box contains
+    /// it and that `want` accepts (the body, or the header or footer being edited).
     fn story_at(&self, x: f64, y: f64, want: &dyn Fn(StoryId) -> bool) -> Option<usize> {
         let inside = |r: &[f64; 4]| x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
-        let float = self.stories.iter().enumerate().rev().find(|(_, s)| s.float.is_some() && want(s.story) && inside(&s.rect) && self.has_lines(s));
+        let float = self.stories.iter().enumerate().rev().find(|(_, s)| s.float.is_some() && want(s.host) && inside(&s.rect) && self.has_lines(s));
         if let Some((i, _)) = float {
             return Some(i);
         }

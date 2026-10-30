@@ -1,5 +1,6 @@
 //! Native editing tests. Fixtures that are missing fail.
 
+mod backgrounds;
 mod basics;
 mod checkboxes;
 mod cursors;
