@@ -239,7 +239,38 @@ impl PageGeometry {
             };
             g.lines[i].story = k;
         }
+        g.split_bodies();
         Some(g)
+    }
+
+    /// Several sections' bodies on one page: each body story's box is the band its lines and rows take, split
+    /// halfway between neighbouring bands, so a point resolves to the section drawn there. The first band reaches the
+    /// page's top and the last its bottom, so a page with one section keeps the whole page. A body with nothing on
+    /// the page gets no area.
+    fn split_bodies(&mut self) {
+        let bodies: Vec<usize> =
+            (0..self.stories.len()).filter(|&i| self.stories[i].story == StoryId::Body && self.stories[i].float.is_none()).collect();
+        if bodies.len() < 2 {
+            return;
+        }
+        let extent = |i: usize| {
+            let lines = self.lines.iter().filter(|l| l.story == i).map(|l| (l.top, l.bottom));
+            let rows = self.rows.iter().filter(|r| r.story == i).map(|r| (r.rect[1], r.rect[3]));
+            lines.chain(rows).reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)))
+        };
+        let mut bands: Vec<(usize, f64, f64)> = bodies.iter().filter_map(|&i| extent(i).map(|(t, b)| (i, t, b))).collect();
+        bands.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let (page_top, page_bottom) = (self.stories[bodies[0]].rect[1], self.stories[bodies[0]].rect[3]);
+        for &i in &bodies {
+            let r = &mut self.stories[i].rect;
+            r[3] = r[1];
+        }
+        for (k, &(i, top, bottom)) in bands.iter().enumerate() {
+            let from = if k == 0 { page_top } else { (bands[k - 1].2 + top) / 2.0 };
+            let to = bands.get(k + 1).map_or(page_bottom, |next| (bottom + next.1) / 2.0);
+            let r = &mut self.stories[i].rect;
+            (r[1], r[3]) = (from, to);
+        }
     }
 
     fn nodes(&mut self, nodes: &[SpatialNode], story: usize, chain: &Rc<[CellKey]>, repeat: bool) {
@@ -551,9 +582,9 @@ impl PageGeometry {
     /// A point in the selection bar (from the page's left edge to `left`, the text column's left edge
     /// less 2 px): the body line beside it, nearest vertically. Beside a table row it is the row's zone, not the bar.
     pub fn selection_bar(&self, x: f64, y: f64, left: f64) -> Option<usize> {
-        let si = self.stories.iter().position(|s| s.story == StoryId::Body && s.float.is_none())?;
-        let body = self.stories[si].rect;
-        if x < 0.0 || x > left || y < body[1] || y > body[3] {
+        // The body (of the section) beside the point.
+        let si = self.stories.iter().position(|s| s.story == StoryId::Body && s.float.is_none() && y >= s.rect[1] && y <= s.rect[3])?;
+        if x < 0.0 || x > left {
             return None;
         }
         if self.rows.iter().any(|r| r.story == si && r.outer.is_empty() && y >= r.rect[1] && y < r.rect[3]) {

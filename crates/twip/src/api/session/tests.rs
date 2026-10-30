@@ -590,3 +590,19 @@ fn leaders_draw_over_the_frame_until_cleared() {
     s.host().frame_rgba(&mut lined, 400, 300).expect("a frame");
     assert_eq!(plain, lined, "cleared: the frame as before");
 }
+
+#[test]
+fn the_default_selection_keeps_black_text_readable() {
+    // WCAG relative luminance: black text over the default selection (multiplied over white: the colour itself).
+    let luminance = |c: u32| {
+        let lin = |v: u32| {
+            let s = v as f64 / 255.0;
+            if s <= 0.03928 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
+        };
+        0.2126 * lin(c >> 16 & 0xFF) + 0.7152 * lin(c >> 8 & 0xFF) + 0.0722 * lin(c & 0xFF)
+    };
+    let selection = super::host::OverlayPalette::default().selection.0;
+    let contrast = (luminance(selection) + 0.05) / 0.05;
+    assert!(contrast >= 4.5, "black on the selection: {contrast:.1}:1");
+    assert_eq!(crate::render::Palette::default().selection, crate::render::rgb(selection), "the renderer's default is the API's");
+}

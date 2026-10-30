@@ -24,6 +24,8 @@ pub struct TextEnv {
     pub grow_autofit: bool,
     /// `w:balanceSingleByteDoubleByteWidth` (FONT-14: runs of spaces widen).
     pub balance_spaces: bool,
+    /// `w:ulTrailSpace` (FONT-15: the spaces that end a line are underlined too).
+    pub ul_trail_space: bool,
     /// `w:characterSpacingControl` compressPunctuation (BREAK-8: no break after a hyphen in East Asian runs).
     pub compress_punctuation: bool,
     /// The markup view and author colours: which revisions show, and how.
@@ -44,6 +46,7 @@ impl TextEnv {
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
             grow_autofit: s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),
+            ul_trail_space: s.has("ulTrailSpace"),
             compress_punctuation: s.compress_punctuation,
             review: doc.review.clone(),
         }

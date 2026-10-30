@@ -27,5 +27,6 @@
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
     <InternalsVisibleTo Include="Twip.Tests" />
     <None Include="README.md" Pack="true" PackagePath="" />
+    <EmbeddedResource Include="Cursors/*.cur" LogicalName="Twip.WinForms.Cursors.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

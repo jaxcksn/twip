@@ -9,5 +9,8 @@
   "resizeNorthEastSouthWest",
   "crosshair",
   "notAllowed",
-  "copy"
+  "copy",
+  "cellSelect",
+  "columnSelect",
+  "rowSelect"
 ]

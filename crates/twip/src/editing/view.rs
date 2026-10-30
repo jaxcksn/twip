@@ -90,7 +90,7 @@ pub struct View {
     /// The selected float's anchor: its page and the anchor paragraph's first line's top left, page
     /// coordinates, for display when formatting marks are shown.
     pub anchor: Option<(usize, [f64; 2])>,
-    pub cursor: &'static str,
+    pub cursor: super::input::Cursor,
     /// Unfilled placeholders on the visible pages drawn the host's way: page coordinates.
     pub placeholders: Vec<PlaceholderView>,
     /// Misspellings to underline (the host's spell checker fills these): page and the words' box, page coordinates.
@@ -327,7 +327,7 @@ pub fn canonical(v: &View) -> String {
         "caret": v.caret.map(|c| serde_json::json!({ "page": c.page, "x": r2(c.x), "top": r2(c.top), "bottom": r2(c.bottom) })),
         "selection": selection,
         "story": format!("{:?}", v.story),
-        "cursor": v.cursor,
+        "cursor": serde_json::to_value(v.cursor).unwrap_or_default(),
     });
     // A drop caret, marks and a tooltip only while there are some, so views recorded before
     // them read the same.

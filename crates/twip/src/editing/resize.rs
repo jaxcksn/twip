@@ -143,16 +143,6 @@ impl Editor {
         found.map(|(table, border, at, row_top, span, row)| (page, table, border, at, row_top, span, row))
     }
 
-    /// The pointer's shape over a point with no drag: a resize cursor over a border, else text.
-    pub(super) fn hover(&mut self, x: f64, y: f64, fonts: &Fonts) -> &'static str {
-        match self.border_at(x, y, fonts) {
-            Some((_, _, Border::Column(_), ..)) => "col-resize",
-            Some((_, _, Border::Row(_), ..)) => "row-resize",
-            Some((_, _, Border::Handle, ..)) => "nwse-resize",
-            None => "text",
-        }
-    }
-
     /// The release of a border drag: the resize as one step (none when the pointer didn't move).
     pub(super) fn border_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.border_drag.take()?;

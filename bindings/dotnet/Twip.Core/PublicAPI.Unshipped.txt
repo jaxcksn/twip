@@ -1548,6 +1548,8 @@ Twip.Hosting.CompositionPhase.Commit = 2 -> Twip.Hosting.CompositionPhase
 Twip.Hosting.CompositionPhase.Start = 0 -> Twip.Hosting.CompositionPhase
 Twip.Hosting.CompositionPhase.Update = 1 -> Twip.Hosting.CompositionPhase
 Twip.Hosting.EditorCursor
+Twip.Hosting.EditorCursor.CellSelect = 11 -> Twip.Hosting.EditorCursor
+Twip.Hosting.EditorCursor.ColumnSelect = 12 -> Twip.Hosting.EditorCursor
 Twip.Hosting.EditorCursor.Copy = 10 -> Twip.Hosting.EditorCursor
 Twip.Hosting.EditorCursor.Crosshair = 8 -> Twip.Hosting.EditorCursor
 Twip.Hosting.EditorCursor.Default = 0 -> Twip.Hosting.EditorCursor
@@ -1558,6 +1560,7 @@ Twip.Hosting.EditorCursor.ResizeHorizontal = 4 -> Twip.Hosting.EditorCursor
 Twip.Hosting.EditorCursor.ResizeNorthEastSouthWest = 7 -> Twip.Hosting.EditorCursor
 Twip.Hosting.EditorCursor.ResizeNorthWestSouthEast = 6 -> Twip.Hosting.EditorCursor
 Twip.Hosting.EditorCursor.ResizeVertical = 5 -> Twip.Hosting.EditorCursor
+Twip.Hosting.EditorCursor.RowSelect = 13 -> Twip.Hosting.EditorCursor
 Twip.Hosting.EditorCursor.Text = 1 -> Twip.Hosting.EditorCursor
 Twip.Hosting.EditorHost
 Twip.Hosting.EditorHost.Background.get -> System.Drawing.Color

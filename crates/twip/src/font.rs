@@ -298,9 +298,19 @@ pub struct Fonts {
     faces: RefCell<HashMap<(String, bool, bool), Option<Rc<Face>>>>,
     resolved: RefCell<HashMap<(String, bool, bool), String>>,
     fallbacks: RefCell<HashMap<(char, bool, bool), Option<Rc<Face>>>>,
+    /// [`SYMBOL_FALLBACK`]'s face, loaded on first use behind `&self` like the caches above.
+    symbol_fallback: std::cell::OnceCell<Option<Rc<Face>>>,
     /// Bumped whenever faces, rules or the default change: part of every layout cache key that used fonts.
     revision: u64,
 }
+
+/// The last fallback, shipped so bullets and symbols draw where no installed font has them (the browser, Linux):
+/// the characters Symbol and Wingdings codes show (FONT-13) and checkbox faces, from DejaVu Sans 2.37 (licence in
+/// `licenses/dejavu-fonts.txt`), renamed so it never stands in for an installed DejaVu. Made with fontTools:
+/// `pyftsubset DejaVuSans.ttf --unicodes=2022,25E6,25AA,25A0,25A1,25CF,25CB,25C6,2756,27A2,2794,2713,2714,2610-2612,2605,
+/// 2660,2663,2665,2666,2190,2192,221A,2211,25FB,2751,B0,B1,D7,F7 --layout-features= --no-hinting --desubroutinize`,
+/// then name IDs 1, 4 and 16 set to "Twip Symbol Fallback" (6: "TwipSymbolFallback").
+const SYMBOL_FALLBACK: &[u8] = include_bytes!("symbol-fallback.ttf");
 
 /// Office cloud fonts often missing outside Office, and metric-compatible open fonts.
 const SUBSTITUTES: &[(&str, &str)] = &[
@@ -641,9 +651,21 @@ impl Fonts {
             .iter()
             .filter_map(|fam| Some((fam, self.matches(fam, bold, italic)?)))
             .filter_map(|(fam, i)| self.load(i, fam, bold, italic))
-            .find(|f| f.has_glyph(c));
+            .find(|f| f.has_glyph(c))
+            .or_else(|| self.symbol_fallback().filter(|f| f.has_glyph(c)));
         self.fallbacks.borrow_mut().insert((c, bold, italic), f.clone());
         f
+    }
+
+    /// The shipped [`SYMBOL_FALLBACK`] face: outside the catalog, so it is never a family a document can name.
+    fn symbol_fallback(&self) -> Option<Rc<Face>> {
+        self.symbol_fallback
+            .get_or_init(|| {
+                let mut own = Fonts::default();
+                own.add_bytes(SYMBOL_FALLBACK.to_vec()).ok()?;
+                own.load(0, "Twip Symbol Fallback", false, false)
+            })
+            .clone()
     }
 }
 

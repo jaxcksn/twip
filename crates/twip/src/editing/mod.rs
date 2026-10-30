@@ -115,6 +115,10 @@ pub struct Editor {
     body_return: Option<Selection>,
     /// A float being moved or resized by the pointer.
     object_drag: Option<objects::ObjectDrag>,
+    /// The checkbox a click or Space last toggled, while the caret stays after it.
+    toggled_checkbox: Option<objects::ToggledCheckbox>,
+    /// A header or footer made by entering it, removed if left unchanged.
+    provisional: Option<stories::Provisional>,
     /// The host's placeholder looks by key (`""`: every placeholder without its own).
     placeholder_looks: std::collections::HashMap<String, view::PlaceholderLook>,
     /// A table border being dragged.
@@ -122,7 +126,7 @@ pub struct Editor {
     /// A cell block being dragged from a cell, row or column zone: its table, start cell and shape.
     zone_drag: Option<(TableId, selection::CellRef, selection::CellShape)>,
     /// The pointer's shape where it last moved without a drag.
-    cursor: &'static str,
+    cursor: input::Cursor,
     /// The history's position and the tracking setting when the document was last saved: away from them, the
     /// document is modified.
     saved: (u64, bool),
@@ -304,10 +308,12 @@ impl Editor {
             viewport: Viewport::default(),
             body_return: None,
             object_drag: None,
+            toggled_checkbox: None,
+            provisional: None,
             placeholder_looks: std::collections::HashMap::new(),
             border_drag: None,
             zone_drag: None,
-            cursor: "text",
+            cursor: input::Cursor::Text,
             saved: (0, false),
             origin: Origin::User,
             batch: None,
@@ -2182,7 +2188,7 @@ impl Editor {
                 if !mods.shift && self.object_press(x, y, mods.ctrl, fonts) {
                     return;
                 }
-                if !mods.shift && clicks == 1 && self.checkbox_press(x, y, fonts) {
+                if !mods.shift && self.checkbox_press(x, y, fonts) {
                     return;
                 }
                 // A link: Ctrl+click (a click when read only) activates it, for the application to open.
@@ -2354,7 +2360,7 @@ impl Editor {
                     return;
                 }
                 let Some(mut d) = self.drag else {
-                    self.cursor = self.hover(x, y, fonts);
+                    self.cursor = self.hover(x, y, mods, fonts);
                     self.set_hover(x, y);
                     return;
                 };
@@ -2729,20 +2735,7 @@ impl Editor {
             formatting_marks: Vec::new(),
             boundaries: Vec::new(),
             drop: self.text_drag.filter(|d| d.moved).and_then(|d| d.drop).or(self.drop).and_then(|p| self.caret_at(p)),
-            cursor: match self.border_drag.map(|d| d.border) {
-                Some(resize::Border::Column(_)) => "col-resize",
-                Some(resize::Border::Row(_)) => "row-resize",
-                Some(resize::Border::Handle) => "nwse-resize",
-                None if self.object_drag.is_some() => "move",
-                None if self.text_drag.is_some_and(|d| d.moved) => {
-                    if self.text_drag.is_some_and(|d| d.copy) {
-                        "copy"
-                    } else {
-                        "default"
-                    }
-                }
-                None => self.cursor,
-            },
+            cursor: self.drag_cursor().unwrap_or(self.cursor),
         }
     }
 

@@ -662,6 +662,7 @@ public class DocumentEditor : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        ModifierChanged(e);
         if (e.Handled || _host is null) return;
         if (e.KeyData == _routed)
         {
@@ -684,6 +685,24 @@ public class DocumentEditor : Control
     {
         _routed = Keys.None;
         base.OnKeyUp(e);
+        ModifierChanged(e);
+    }
+
+    /// <summary>Ctrl, Shift or the Windows key pressed or released with the pointer still over the document: the same
+    /// move again with the new modifiers, so the cursor follows what a press would now do (the hand over a link with
+    /// Ctrl).</summary>
+    private void ModifierChanged(KeyEventArgs e)
+    {
+        if (_host is null || e.KeyCode is not (Keys.ControlKey or Keys.ShiftKey or Keys.LWin or Keys.RWin)) return;
+        var at = PointToClient(MousePosition);
+        if (!ClientRectangle.Contains(at)) return;
+        var button = MouseButtons switch
+        {
+            MouseButtons.Right => PointerButton.Secondary,
+            MouseButtons.Middle => PointerButton.Middle,
+            _ => PointerButton.Primary,
+        };
+        _host.OnPointer(PointerKind.Move, at.X, at.Y, button, 0, KeyMap.Modifiers(ModifierKeys));
     }
 
     /// <inheritdoc/>

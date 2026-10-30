@@ -1,6 +1,6 @@
 {
   "id": "E2E-CC-01",
-  "title": "A click on a checkbox content control toggles it and selects it; Space toggles it back; undo restores it (selecting the glyph is ID-07)",
+  "title": "A click on a checkbox content control toggles it and leaves the caret after it, nothing selected; Space toggles it back; undo restores it",
   "fixture": "FX-REPEAT-REGION.docx",
   "methods": [
     "M",
@@ -21,15 +21,11 @@
           "10": "☒ done"
         },
         "selection": {
-          "kind": "text",
-          "anchor": {
-            "para": 7,
-            "offset": 0
-          },
-          "focus": {
-            "para": 7,
-            "offset": 1
-          }
+          "kind": "caret"
+        },
+        "caret": {
+          "para": 7,
+          "offset": 1
         }
       }
     },

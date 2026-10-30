@@ -51,7 +51,7 @@ export interface ClientPoint {
 export interface OverlayColors {
   /** The caret. Default black. */
   caret: Color;
-  /** The selection, blended under the text (multiply), so black text stays black. Default `'#4A90D9'`. */
+  /** The selection, blended under the text (multiply), so black text stays black. Default `'#B3D7FF'`, a system text selection's light blue. */
   selection: Color;
   /** A selected object's outline and handles. Default `'#606060'`. */
   object: Color;

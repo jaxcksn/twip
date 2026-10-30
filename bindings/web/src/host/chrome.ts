@@ -89,7 +89,7 @@ export function startChrome(
   }
 
   // The overlay colours: the engine's, or the system's in forced-colours mode until the application sets them.
-  const defaults: OverlayColors = { caret: '#000000', selection: '#4A90D9', object: '#606060', drop: '#404040', marks: '#2F6FB5', leaders: '#767676' };
+  const defaults: OverlayColors = { caret: '#000000', selection: '#B3D7FF', object: '#606060', drop: '#404040', marks: '#2F6FB5', leaders: '#767676' };
   let overlay = defaults;
   const system = (css: string): Color => {
     const probe = Object.assign(document.createElement('span'), { hidden: true });

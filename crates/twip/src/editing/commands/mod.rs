@@ -140,6 +140,7 @@ impl Editor {
         let out = self.execute_editable(cmd, fonts);
         // Images for pictures that never went in.
         self.pending_images.clear();
+        self.settle_provisional(fonts);
         out
     }
 
