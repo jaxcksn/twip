@@ -352,10 +352,13 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
     if justify_smart {
         planned = plan_justified(pieces, style, frame, continued);
     }
+    // BREAK-6 with tabs: chosen line by line, from where the tabs put the text.
+    let with_tabs = justify_smart && pieces.iter().any(|p| p.kind == Kind::Tab);
     let mut first = !continued;
     loop {
         let left = style.ind_left + if first { style.ind_first } else { 0.0 };
-        let limit_end = planned.iter().copied().find(|&e| e > start);
+        let limit_end =
+            if with_tabs { justified_tab_end(sp, pieces, start, left, right, style, frame) } else { planned.iter().copied().find(|&e| e > start) };
         let fit = fit_line(sp, pieces, start, left, right, style, frame, limit_end, false);
         let end = fit.end.max(start + 1).min(n.max(start + 1));
         let is_last = end >= n;
@@ -875,6 +878,64 @@ fn plan_justified(pieces: &[Piece], style: &ParaStyle, frame: &Frame, continued:
     ends
 }
 
+/// BREAK-6 on a line of a justified paragraph with tabs: the end that beats the greedy one, if any. Only the spaces
+/// after the last tab before an end shrink or stretch for it; positions come from laying the segment out unbroken.
+/// `None` keeps the greedy end, as does a paragraph with right, centre or decimal stops.
+#[allow(clippy::too_many_arguments, reason = "the same inputs as fit_line, which it runs twice")]
+fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64, right: f64, style: &ParaStyle, frame: &Frame) -> Option<usize> {
+    // shortcut: text after a right, centre or decimal tab (or a positional tab) keeps greedy breaking.
+    if style.tabs.iter().any(|t| matches!(t.kind, TabKind::Right | TabKind::Center | TabKind::Decimal))
+        || pieces.iter().any(|p| p.kind == Kind::Tab && p.object.is_some())
+    {
+        return None;
+    }
+    let greedy = fit_line(sp, pieces, start, left, right, style, frame, None, false);
+    let seg_end = segment_end(pieces, start);
+    if greedy.hard.is_some() || greedy.end >= seg_end {
+        return None;
+    }
+    let all = fit_line(sp, pieces, start, left, right, style, frame, Some(seg_end), false);
+    let lu = |x: f64| x * LU_PER_PT;
+    // An end: the index of the word it ends before, with its natural line end and capacities (in layout units).
+    let end_at = |e: usize| -> (f64, i64, i64) {
+        let ink = (start..e).rev().find(|&k| !matches!(pieces[k].kind, Kind::Space | Kind::Anchor));
+        let x = ink.map_or(left, |k| all.xs[k - start] + all.widths[k - start])
+            + if pieces[e - 1].soft_hyphen { hyphen_width(sp, &pieces[e - 1]) } else { 0.0 };
+        let from = (start..e).rev().find(|&k| pieces[k].kind == Kind::Tab).map_or(start, |t| t + 1);
+        let first = (from..e).find(|&k| pieces[k].kind != Kind::Space).unwrap_or(e);
+        let last = ink.map_or(first, |k| k + 1);
+        let (mut shrink, mut stretch) = (0, 0);
+        for k in (first..last).filter(|&k| pieces[k].kind == Kind::Space) {
+            let w = lu(all.widths[k - start]).round() as i64;
+            shrink += (w + 2) >> 2;
+            stretch += (w + 1) >> 1;
+        }
+        (lu(x) - lu(right), shrink, stretch)
+    };
+    let is_end = |e: usize| (pieces[e - 1].break_after || pieces[e - 1].kind == Kind::Tab) && pieces[e].kind != Kind::Space;
+    let longest = (greedy.end + 1..seg_end.min(all.xs.len() + start))
+        .filter(|&e| is_end(e))
+        .take_while(|&e| {
+            let (over, shrink, _) = end_at(e);
+            over <= shrink as f64 + LU_EPS
+        })
+        .last()?;
+    let demerits = |e: usize| {
+        let (over, shrink, stretch) = end_at(e);
+        end_demerits(over, shrink, stretch)
+    };
+    let mut best = longest;
+    let mut best_cost = demerits(longest);
+    for e in (greedy.end..longest).rev().filter(|&e| e == greedy.end || is_end(e)) {
+        let c = demerits(e);
+        if c.is_some_and(|c| best_cost.is_none_or(|b| c < b)) {
+            best = e;
+            best_cost = c;
+        }
+    }
+    (best != greedy.end).then_some(best)
+}
+
 /// The end of the hard-break segment (its break included) that `from` is in.
 fn segment_end(pieces: &[Piece], from: usize) -> usize {
     pieces[from..]
@@ -907,6 +968,17 @@ struct Gap {
 
 /// Comparisons in layout units allow for the rounding of summed point widths.
 const LU_EPS: f64 = 1e-6;
+
+/// BREAK-6: the cost of a justified line end that overflows by `over` layout units (short of the edge when negative),
+/// given its spaces' shrink and stretch; `None` when it is infeasible.
+fn end_demerits(over: f64, shrink: i64, stretch: i64) -> Option<i64> {
+    let (used, cap) = if over > LU_EPS { (over, shrink) } else { (-over.min(0.0), stretch) };
+    if cap <= 0 {
+        return None;
+    }
+    let l = (1000.0 * used / cap as f64).floor() as i64;
+    (l <= 4700).then(|| (1000 + l * l * l / 100_000).pow(2))
+}
 
 /// BREAK-6: where a justified line starting at `from` ends in `column` points: a per-line choice, so it serves a full
 /// line and an interval beside a float alike.
@@ -968,15 +1040,7 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
     }
     // BREAK-6: cost every end from the longest back to the greedy one; the longest is kept unless a later end costs
     // strictly less. An end without capacity, or using more than 4.7 times it, is infeasible.
-    let demerits = |e: usize| -> Option<i64> {
-        let over = natural(e) - column;
-        let (used, cap) = if over > LU_EPS { (over, shrink(e)) } else { (-over.min(0.0), stretch(e)) };
-        if cap <= 0 {
-            return None;
-        }
-        let l = (1000.0 * used / cap as f64).floor() as i64;
-        (l <= 4700).then(|| (1000 + l * l * l / 100_000).pow(2))
-    };
+    let demerits = |e: usize| end_demerits(natural(e) - column, shrink(e), stretch(e));
     let mut best = longest;
     let mut best_cost = demerits(longest);
     for e in (greedy.max(1)..longest).rev() {
