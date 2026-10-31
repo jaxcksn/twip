@@ -101,6 +101,7 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
         // spaces) gets an empty glyph record at its baseline and the end of what it holds, so it is listed with its x.
         let mut used = Vec::new();
         let mut bare = Vec::new();
+        let mut objects = Vec::new();
         paint_lines(
             page,
             &mut |p| {
@@ -109,6 +110,15 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                 }
             },
             &mut |line, para, placed, dx, dy| {
+                // An inline picture (one with a caret stop at its left edge; a float drawn with the line has none) shows
+                // as U+FFFC there, on its line's baseline.
+                for it in placed.line.items.iter() {
+                    if let Item::Image { rect, .. } = it
+                        && placed.line.atoms.iter().any(|a| !a.brk && (a.x0 - rect[0]).abs() < 0.01)
+                    {
+                        objects.push((line, dx + placed.x + rect[0], dy + placed.y + placed.line.baseline, para.map_or(0, |p| p.0)));
+                    }
+                }
                 // A line without ink: nothing drawn, or only spaces. Its x is where its spaces, tabs and breaks end.
                 let blank = |it: &Item| matches!(it, Item::Glyphs(r) if r.chars.iter().all(|c| c.0.is_whitespace()));
                 if placed.line.items.iter().all(blank) {
@@ -122,10 +132,10 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                 }
             },
         );
-        used.extend(bare.iter().map(|b| b.0));
+        used.extend(bare.iter().chain(&objects).map(|b| b.0));
         used.sort_unstable();
         used.dedup();
-        let number = |line: u32| base + used.binary_search(&line).unwrap_or_default();
+        let number = |line: u32| base + used.binary_search(&line).expect("every numbered line was collected");
         paint_lines(
             page,
             &mut |p| match p.absolute() {
@@ -162,6 +172,18 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
             },
             &mut |_, _, _, _, _| {},
         );
+        for &(line, x, y, para) in &objects {
+            writeln!(
+                s,
+                "G - size 0.000 y {} x {} color None para {} line {} glyphs [] chars \"\\u{{fffc}}\" cx [{}] src []",
+                f(y),
+                f(x),
+                id(para),
+                number(line),
+                f(x)
+            )
+            .unwrap();
+        }
         for &(line, x, y, para) in &bare {
             writeln!(s, "G - size 0.000 y {} x {} color None para {} line {} glyphs [] chars \"\" cx [] src []", f(y), f(x), id(para), number(line))
                 .unwrap();
