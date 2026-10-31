@@ -625,7 +625,7 @@ If a table starts below other content in a column and the first row after its he
 
 - The space-after of the paragraph before a table applies, in full, above the table's top border edge (not if the table starts at the top of an empty column), unless contextual spacing drops it ([PARA-4](para#para-4)).
 - The paragraph after a table takes its full space-before, from the table's bottom border edge, unless contextual spacing drops it ([PARA-4](para#para-4)); nothing collapses against the table.
-- A `w:keepNext` paragraph before a table keeps with its first row: if the table can't place its first row (or a first part of it) in this column, the keepNext chain moves on with it ([PAGE-6](page#page-6)).
+- A `w:keepNext` paragraph before a table keeps with its first row: if the table can't place its first row (or a first part of it) in this column, the keepNext chain gives way as [PAGE-6](page#page-6) says (compat 15: only the last line, or two with widow control, of the paragraph next to the table moves).
 
 ### TABLE-49. Floating table position {#table-49}
 

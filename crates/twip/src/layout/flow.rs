@@ -139,6 +139,9 @@ pub struct AttemptState {
     /// Whether the attempt drew notes (SETUP-1 isn't applied then).
     pub notes_drawn: bool,
     pub effects: PageEffects,
+    /// PAGE-6, compat 15: the keep-with-next paragraph (block) that must end on this page, and the most lines it may
+    /// keep here.
+    pub keep_cap: Option<(usize, usize)>,
 }
 
 /// A page being filled: the section, the inputs every column shares, and the attempt's state.
@@ -681,6 +684,7 @@ impl<'d> PageFill<'d, '_> {
         let mut y = col.top;
         let mut empty = true;
         // The start of a keep-with-next chain (PAGE-6): where to rewind when the chain can't share the column.
+        #[derive(Clone)]
         struct Breakpoint {
             pos: FlowToken,
             carry: FlowState,
@@ -691,7 +695,29 @@ impl<'d> PageFill<'d, '_> {
             starts: usize,
             effects: PageEffects,
         }
+        /// PAGE-6, compat 15: going back from the chain's last paragraph, the first that can end on this page without
+        /// its last line (two with widowControl): where it started and how many lines it keeps. A keepLines paragraph
+        /// moves whole and the step goes on; none when the step reaches the frame's first paragraph.
+        fn step_back(members: &[(Breakpoint, usize, bool, bool)]) -> Option<(Breakpoint, usize)> {
+            for (bp, here, keep_lines, widow) in members.iter().rev() {
+                if bp.empty {
+                    return None;
+                }
+                if *keep_lines {
+                    continue;
+                }
+                let keep = here.saturating_sub(if *widow { 2 } else { 1 });
+                if keep >= if *widow { 2 } else { 1 } {
+                    return Some((bp.clone(), keep));
+                }
+            }
+            None
+        }
         let mut chain: Option<Breakpoint> = None;
+        // The chain's paragraphs, for compat 15's step back (PAGE-6): where each started, its lines here, keepLines and
+        // widowControl.
+        let mut members: Vec<(Breakpoint, usize, bool, bool)> = Vec::new();
+        let generic = self.ctx.env.text.compat == Compat::Generic;
         loop {
             if pos.block >= nblocks {
                 let end = y + if col.balance { carry.prev_after } else { 0.0 };
@@ -749,10 +775,27 @@ impl<'d> PageFill<'d, '_> {
                     }
                     // PAGE-6: keep with next.
                     if style.keep_next {
+                        let here = out[start_state.out..].iter().map(|c| if let Child::Para(f) = c { f.lines.len() } else { 0 }).sum();
+                        members.push((start_state.clone(), here, style.keep_lines, style.widow_control));
                         if chain.is_none() {
                             chain = Some(start_state);
                         }
-                        if !self.next_fits(pos.block, carry, &col, y, area.total(), memos)?
+                        let fits = self.next_fits(pos.block, carry, &col, y, area.total(), memos)?;
+                        if !fits && let Some((c, cap)) = generic.then(|| step_back(&members)).flatten() {
+                            *pos = c.pos;
+                            *carry = c.carry;
+                            *area = c.area;
+                            out.truncate(c.out);
+                            self.at.starts.truncate(c.starts);
+                            self.at.found.truncate(found_len);
+                            self.at.effects = c.effects;
+                            self.at.keep_cap = Some((pos.block, cap));
+                            (chain, members) = (None, Vec::new());
+                            y = c.y;
+                            empty = c.empty;
+                            continue;
+                        }
+                        if !fits
                             && let Some(c) = chain.take()
                             && !c.empty
                         {
@@ -767,7 +810,7 @@ impl<'d> PageFill<'d, '_> {
                             return Ok((Stop::Full, c.y));
                         }
                     } else {
-                        chain = None;
+                        (chain, members) = (None, Vec::new());
                     }
                 }
                 Some(Block::Table(t)) => {
@@ -783,9 +826,25 @@ impl<'d> PageFill<'d, '_> {
                     }
                     let tb = self.table_layout(bi, col.width, memos)?;
                     match self.place_table(&tb, pos, carry, &col, &mut y, &mut empty, area, out, memos)? {
-                        Stop::Done => chain = None,
+                        Stop::Done => (chain, members) = (None, Vec::new()),
                         s => {
-                            // A keepNext paragraph before a table keeps with its first row (PAGE-6).
+                            // A keepNext paragraph before a table keeps with its first row (PAGE-6, TABLE-48).
+                            if pos.block == bi
+                                && pos.at.at_start()
+                                && let Some((c, cap)) = generic.then(|| step_back(&members)).flatten()
+                            {
+                                *pos = c.pos;
+                                *carry = c.carry;
+                                *area = c.area;
+                                out.truncate(c.out);
+                                self.at.starts.truncate(c.starts);
+                                self.at.effects = c.effects;
+                                self.at.keep_cap = Some((pos.block, cap));
+                                (chain, members) = (None, Vec::new());
+                                y = c.y;
+                                empty = c.empty;
+                                continue;
+                            }
                             if let Some(c) = chain.take()
                                 && !c.empty
                                 && pos.block == bi
@@ -986,6 +1045,14 @@ impl<'d> PageFill<'d, '_> {
         }
         let hard = pb.lines[..fit.min(n)].iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
         let mut take = lines_to_take(n, fit, hard, first_part, style.keep_lines, style.widow_control);
+        // PAGE-6, compat 15: a keep-with-next paragraph stepped back to ends here without its last lines.
+        if let Some((b, cap)) = self.at.keep_cap
+            && b == pos.block
+            && first_part
+        {
+            self.at.keep_cap = None;
+            take = take.min(cap);
+        }
         // Balancing: the paragraph's space-after must fit too.
         if col.balance && take == n && yy + after > col.bottom + EPS && !at_top {
             take = 0;
