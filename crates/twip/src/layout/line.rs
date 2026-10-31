@@ -661,6 +661,8 @@ fn fit_line(
                     } else if i > start && limit_end.is_none() {
                         return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
                     } else {
+                        // The tab first on its line fills it to the edge.
+                        stop = edge;
                         kind = TabKind::Left;
                     }
                 }
