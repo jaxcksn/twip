@@ -879,14 +879,12 @@ fn plan_justified(pieces: &[Piece], style: &ParaStyle, frame: &Frame, continued:
 }
 
 /// BREAK-6 on a line of a justified paragraph with tabs: the end that beats the greedy one, if any. Only the spaces
-/// after the last tab before an end shrink or stretch for it; positions come from laying the segment out unbroken.
-/// `None` keeps the greedy end, as does a paragraph with right, centre or decimal stops.
-#[allow(clippy::too_many_arguments, reason = "the same inputs as fit_line, which it runs twice")]
+/// after the last tab before an end shrink or stretch for it; an end's natural width is the line laid out to it, so a
+/// right, centre or decimal tab's text that runs past its stop counts where it ends. `None` keeps the greedy end.
+#[allow(clippy::too_many_arguments, reason = "the same inputs as fit_line, which it runs per end")]
 fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64, right: f64, style: &ParaStyle, frame: &Frame) -> Option<usize> {
-    // shortcut: text after a right, centre or decimal tab (or a positional tab) keeps greedy breaking.
-    if style.tabs.iter().any(|t| matches!(t.kind, TabKind::Right | TabKind::Center | TabKind::Decimal))
-        || pieces.iter().any(|p| p.kind == Kind::Tab && p.object.is_some())
-    {
+    // shortcut: a paragraph with a positional tab keeps greedy breaking.
+    if pieces.iter().any(|p| p.kind == Kind::Tab && p.object.is_some()) {
         return None;
     }
     let greedy = fit_line(sp, pieces, start, left, right, style, frame, None, false);
@@ -894,10 +892,10 @@ fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64,
     if greedy.hard.is_some() || greedy.end >= seg_end {
         return None;
     }
-    let all = fit_line(sp, pieces, start, left, right, style, frame, Some(seg_end), false);
     let lu = |x: f64| x * LU_PER_PT;
     // An end: the index of the word it ends before, with its natural line end and capacities (in layout units).
     let end_at = |e: usize| -> (f64, i64, i64) {
+        let all = fit_line(sp, pieces, start, left, right, style, frame, Some(e), false);
         let ink = (start..e).rev().find(|&k| !matches!(pieces[k].kind, Kind::Space | Kind::Anchor));
         let x = ink.map_or(left, |k| all.xs[k - start] + all.widths[k - start])
             + if pieces[e - 1].soft_hyphen { hyphen_width(sp, &pieces[e - 1]) } else { 0.0 };
@@ -913,7 +911,7 @@ fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64,
         (lu(x) - lu(right), shrink, stretch)
     };
     let is_end = |e: usize| (pieces[e - 1].break_after || pieces[e - 1].kind == Kind::Tab) && pieces[e].kind != Kind::Space;
-    let longest = (greedy.end + 1..seg_end.min(all.xs.len() + start))
+    let longest = (greedy.end + 1..seg_end)
         .filter(|&e| is_end(e))
         .take_while(|&e| {
             let (over, shrink, _) = end_at(e);
