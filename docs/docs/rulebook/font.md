@@ -17,7 +17,9 @@ For each run, take ascent **A**, descent **D** and external leading **E** from t
 
 A font without an OS/2 table uses `hhea.ascender`, `−hhea.descender` and `max(0, hhea.lineGap)`. An East Asian font replaces these values ([LINE-14](line#line-14)).
 
-Example: Arial (upem 2048, win 1854/434, hhea 1854/−434/67) at 12pt: A = 10.8633, D = 2.5430, E = 67 × 12/2048 = 0.3926.
+Each run converts its own values to layout units ([UNIT-4](unit#unit-4)), the ascent with the leading as one value: with `hp` the size in half-points, `A + E` and `D` each become `(v × hp × 2048 + upem div 2) div upem` lu, in integer arithmetic.
+
+Example: Arial (upem 2048, win 1854/434, hhea 1854/−434/67) at 12pt (hp 24): A + E = 1921 × 24 = 46104 lu = 11.2559pt, D = 434 × 24 = 10416 lu = 2.5430pt.
 
 ### FONT-2. Glyph advances {#font-2}
 

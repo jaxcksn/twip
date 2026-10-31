@@ -19,6 +19,7 @@ use super::env::TextEnv;
 use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
 use super::space::ShapeSpace;
+use super::units::Lu;
 
 /// The height an emphasis mark adds, per point of the text's size (LINE-15).
 pub(crate) const EM_MARK: f64 = 3.4 / 11.0;
@@ -172,10 +173,13 @@ impl ShapedPara {
     }
 }
 
-/// Font metrics in points for one face at one size.
+/// Font metrics in points for one face at one size: ascent, descent and line gap, on the layout-unit grid. The ascent
+/// with the gap and the descent are each rounded once (UNIT-4, LINE-1); the gap is split off the rounded sum.
 pub fn metrics(face: &Face, size: f64) -> (f64, f64, f64) {
-    let s = face.scale(size);
-    (face.ascent * s, face.descent * s, face.leading * s)
+    let above = Lu::from_font(face.ascent + face.leading, size, face.upem);
+    let gap = Lu::from_font(face.leading, size, face.upem);
+    let below = Lu::from_font(face.descent, size, face.upem);
+    (Lu(above.0 - gap.0).to_pt(), below.to_pt(), gap.to_pt())
 }
 
 /// Half-points, rounded half away from zero (UNIT-5).
