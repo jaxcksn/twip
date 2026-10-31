@@ -1,5 +1,8 @@
 //! The layout unit (UNIT-4): 1/4096 pt, the grid every vertical quantity and fit test is on.
 
+/// Layout units per point.
+pub const LU_PER_PT: f64 = 4096.0;
+
 /// A length in layout units, 1/4096 pt (294912 per inch, 204.8 per twip).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Lu(pub i32);
@@ -14,7 +17,7 @@ impl Lu {
 
     /// Exact: every layout unit is a whole number of 1/4096 pt.
     pub fn to_pt(self) -> f64 {
-        f64::from(self.0) / 4096.0
+        f64::from(self.0) / LU_PER_PT
     }
 }
 

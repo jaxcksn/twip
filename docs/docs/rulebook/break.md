@@ -39,28 +39,33 @@ When the first character that doesn't fit has no break opportunity before it on 
 
 ### BREAK-6. Compat-15 justified breaking {#break-6}
 
-Break each stretch between hard line breaks separately. Split it into items (the text between spaces, also ended by a break opportunity inside it: after a hyphen, [BREAK-3](break#break-3), but not a soft hyphen; the next item then follows with no gap) with their widths, and the width of each gap of spaces before an item. `column` is the line's available width (first-line indent on the first line). Then, for each line starting at item `i`:
+Break each stretch between hard line breaks separately. Split it into items (the text between spaces, also ended by a break opportunity inside it: after a hyphen, [BREAK-3](break#break-3), but not a soft hyphen; the next item then follows with no gap) with their widths, and the width of each gap of spaces before an item. `column` is the line's available width (first-line indent on the first line). In layout units ([UNIT-4](unit#unit-4)), a space of width `w` may shrink by `(w + 2) >> 2` and stretch by `(w + 1) >> 1`; `C(e)` and `E(e)` sum these over the gaps inside items `i … e − 1` (the spaces before the first item and after the last don't count). Then, for each line starting at item `i`:
 
 ```
-jmax = the most items that fit with every gap shrunk by 25%:
-       Σ item widths + 0.75 · Σ gaps ≤ column                (hard limit)
 if the rest of the stretch fits unshrunk: it is the last line, stop
-for each end e in i+1 … jmax  (g = Σ gaps inside the line, excess = natural width − column):
-    r(e) = excess / (0.25 · g)       if excess > 0     (compression)
-    r(e) = −excess / (0.50 · g)      otherwise         (expansion)
-    a one-item line is a candidate only when nothing longer fits
-end the line at the e with the smallest r; on a tie take more items
+longest = the most items whose overflow (natural width − column) is at most C(e)
+greedy  = the most items that fit unshrunk
+if longest = greedy: end the line there
+cost each end e from longest down to greedy (an end of at least one item):
+    used, cap = overflow, C(e)            if the end overflows
+                column − width, E(e)      otherwise
+    l = floor(1000 · used / cap)          (integers)
+    infeasible when cap = 0 or l > 4700
+    demerits = (1000 + floor(l³ / 100000))²
+keep the longest end unless a later one has strictly smaller demerits; a feasible end beats an infeasible one
 ```
+
+Every `l` below 47 costs the same, so small adjustments tie and the longer line wins.
 
 - The line ends after the chosen item, with its following spaces hanging ([BREAK-2](break#break-2)).
-- A line that can only expand stays expanded however loose; no line is ever compressed past 25% ([JUST-2](just#just-2)).
+- A line that can only expand stays expanded however loose; no line shrinks by more than its spaces' capacity ([JUST-2](just#just-2)).
 - The last line is taken as it is when it fits without shrinking; otherwise it goes through the same choice, so it can end up compressed, or split leaving a short last line. A last line is never expanded ([JUST-3](just#just-3)).
 - Use each gap's own width, so mixed fonts work.
 - Fall back to greedy breaking ([BREAK-5](break#break-5)) for the whole paragraph when it contains a tab, or when a single item is wider than a line.
 - The choice is per line, never a paragraph-wide optimisation. Only the spaces change width; the spacing inside items never changes.
 - Being per line, it applies to a free interval beside a float too ([FLOAT-7](float#float-7)): `column` is the interval's width. An interval whose stretch holds a tab is filled greedily.
 
-Example: with `column` 468, items of natural line width 470.2 at e = jmax (8 gaps of 2.4868, g = 19.894) and 455.1 at e = jmax − 1 (7 gaps, g = 17.408): r(jmax) = 2.2 / 4.974 = 0.44, r(jmax − 1) = 12.9 / 8.704 = 1.48; end at jmax and compress.
+Example: Calibri 11pt spaces (10186 lu: shrink 2547, stretch 5093), `column` 468pt. The longest end overflows by 2.2pt = 9011 lu over 8 gaps, `C` = 20376: `l` = 442, demerits (1000 + 863)² = 3470769. The greedy end is 12.9pt = 52838 lu short over 7 gaps, `E` = 35651: `l` = 1482, demerits (1000 + 32549)². The longest end is kept and compressed.
 
 ### BREAK-7. Hyphens {#break-7}
 

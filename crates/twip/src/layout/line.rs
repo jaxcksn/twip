@@ -20,6 +20,7 @@ use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
 use super::space::{BorderKey, ParaSpace};
 use super::text::{Kind, Object, Piece, ShapedPara, metrics, para_id, symbol_unicode};
+use super::units::LU_PER_PT;
 
 const EPS: f64 = 1e-6;
 
@@ -895,18 +896,34 @@ enum LineChoice {
     End(usize),
 }
 
+/// The spaces before a word on a justified line (BREAK-6): their width in points, and the shrink and stretch they
+/// give in layout units.
+#[derive(Clone, Copy, Default)]
+struct Gap {
+    width: f64,
+    shrink: i64,
+    stretch: i64,
+}
+
+/// Comparisons in layout units allow for the rounding of summed point widths.
+const LU_EPS: f64 = 1e-6;
+
 /// BREAK-6: where a justified line starting at `from` ends in `column` points: a per-line choice, so it serves a full
 /// line and an interval beside a float alike.
 fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) -> LineChoice {
-    // Words (start, end, width) and the gap width before each word.
+    // Words (start, end, width) and the gap before each word: its width, and how far its spaces may shrink and stretch
+    // (BREAK-6: a quarter and a half of each space's width in layout units, rounded half up).
     let mut words: Vec<(usize, usize, f64)> = Vec::new();
-    let mut gaps: Vec<f64> = Vec::new();
+    let mut gaps: Vec<Gap> = Vec::new();
     let mut k = from;
-    let mut gap = 0.0;
+    let mut gap = Gap::default();
     while k < seg_end {
         let p = &pieces[k];
         if matches!(p.kind, Kind::Space) {
-            gap += p.width;
+            let w = (p.width * LU_PER_PT).round() as i64;
+            gap.width += p.width;
+            gap.shrink += (w + 2) >> 2;
+            gap.stretch += (w + 1) >> 1;
             k += 1;
             continue;
         }
@@ -924,49 +941,49 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
                 break;
             }
         }
-        gaps.push(if words.is_empty() { 0.0 } else { gap });
-        gap = 0.0;
+        // Leading spaces never shrink (BREAK-6).
+        gaps.push(if words.is_empty() { Gap::default() } else { gap });
+        gap = Gap::default();
         words.push((ws, k, w));
     }
     if words.is_empty() {
         return LineChoice::Empty;
     }
-    let i = 0;
-    let natural = |a: usize, e: usize| -> f64 { (a..e).map(|j| words[j].2 + if j > a { gaps[j] } else { 0.0 }).sum() };
-    let gapsum = |a: usize, e: usize| -> f64 { (a + 1..e).map(|j| gaps[j]).sum() };
-    // jmax: the most words that fit with every space shrunk by 25% (hard limit).
-    let mut jmax = i;
-    for e in i + 1..=words.len() {
-        if natural(i, e) - 0.25 * gapsum(i, e) <= column + EPS {
-            jmax = e;
-        } else {
-            break;
-        }
-    }
-    if natural(i, words.len()) <= column + EPS {
+    // In layout units: the natural width of words 0..e and the shrink and stretch their interior spaces give.
+    let column = column * LU_PER_PT;
+    let natural = |e: usize| -> f64 { (0..e).map(|j| (words[j].2 + gaps[j].width) * LU_PER_PT).sum() };
+    let shrink = |e: usize| -> i64 { gaps[1..e].iter().map(|g| g.shrink).sum() };
+    let stretch = |e: usize| -> i64 { gaps[1..e].iter().map(|g| g.stretch).sum() };
+    let fits = |e: usize| natural(e) <= column + LU_EPS;
+    // BREAK-6: the rest of the segment fits without shrinking: its last line.
+    if fits(words.len()) {
         return LineChoice::Last;
     }
-    if jmax <= i {
+    // The longest end that fits when the spaces shrink (the crossing word stays while its overflow is at most the
+    // shrink), and the longest that fits as is.
+    let longest = (1..=words.len()).take_while(|&e| natural(e) - column <= shrink(e) as f64 + LU_EPS).last().unwrap_or(0);
+    let greedy = (1..=words.len()).take_while(|&e| fits(e)).last().unwrap_or(0);
+    if longest == 0 {
         return LineChoice::Abort;
     }
-    let mut best = jmax;
-    let mut best_r = f64::INFINITY;
-    for e in i + 1..=jmax {
-        let g = gapsum(i, e);
-        if e == i + 1 && jmax > i + 1 {
-            continue; // a one-word line only if nothing else fits
+    // BREAK-6: cost every end from the longest back to the greedy one; the longest is kept unless a later end costs
+    // strictly less. An end without capacity, or using more than 4.7 times it, is infeasible.
+    let demerits = |e: usize| -> Option<i64> {
+        let over = natural(e) - column;
+        let (used, cap) = if over > LU_EPS { (over, shrink(e)) } else { (-over.min(0.0), stretch(e)) };
+        if cap <= 0 {
+            return None;
         }
-        let excess = natural(i, e) - column;
-        let r = if g <= 0.0 {
-            if excess > 0.0 { f64::INFINITY } else { f64::MAX / 2.0 }
-        } else if excess > 0.0 {
-            excess / (g * 0.25)
-        } else {
-            -excess / (g * 0.5)
-        };
-        if r <= best_r + 1e-12 {
-            best_r = r;
+        let l = (1000.0 * used / cap as f64).floor() as i64;
+        (l <= 4700).then(|| (1000 + l * l * l / 100_000).pow(2))
+    };
+    let mut best = longest;
+    let mut best_cost = demerits(longest);
+    for e in (greedy.max(1)..longest).rev() {
+        let c = demerits(e);
+        if c.is_some_and(|c| best_cost.is_none_or(|b| c < b)) {
             best = e;
+            best_cost = c;
         }
     }
     // The line ends after word best-1, including the spaces that follow it (they hang, BREAK-2).
