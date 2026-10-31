@@ -20,7 +20,7 @@ use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
 use super::space::{BorderKey, ParaSpace};
 use super::text::{Kind, Object, Piece, ShapedPara, metrics, para_id, symbol_unicode};
-use super::units::LU_PER_PT;
+use super::units::{LU_PER_PT, Lu};
 
 const EPS: f64 = 1e-6;
 
@@ -1157,6 +1157,13 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
     }
 }
 
+/// LINE-7: `h` points times the line multiple `m` (`w:line` / 240), rounded half up to a layout unit in integers:
+/// `(h_lu × line + 120) div 240`.
+fn times_line(h: f64, m: f64) -> f64 {
+    let (h, line) = (Lu::round_half_up(h).0 as i64, (m * 240.0).round() as i64);
+    Lu(((h * line + 120).div_euclid(240)) as i32).to_pt()
+}
+
 /// Vertical size of a line: LINE-1 to LINE-5, LIST-7, FLOAT-5, then the line spacing rule (LINE-6 to LINE-13).
 fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, fonts: &Fonts, last: bool, compat: Compat) {
     let (mut asc, mut desc) = (0.0f64, 0.0f64);
@@ -1164,6 +1171,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     // The same without raised or lowered text's shift (w:position): what a line multiple scales, so the line grows by
     // the shift once (LINE-13).
     let (mut un_asc, mut un_desc, mut un_text_asc, mut un_text_desc) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    // LINE-13: the tallest text run's own height (ascent + descent), what a line multiple scales.
+    let mut run_h = 0.0f64;
     let (mut em_up, mut em_down) = (0.0f64, 0.0f64);
     let mut num_asc = 0.0f64;
     let mut has_content = false;
@@ -1195,6 +1204,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 } else {
                     un_text_asc = un_text_asc.max(a0);
                     un_text_desc = un_text_desc.max(d0);
+                    run_h = run_h.max(a0 + d0);
                 }
             }
             Kind::ListNumber => {
@@ -1244,9 +1254,9 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     line.descent = desc;
     // LINE-13: on a line holding a picture the multiple scales the text's height only: the mark's when the line has no
     // text, and in compat 15 the mark's too when it's taller (not on text-only lines, where H = h).
-    let mut text_h = un_asc + un_desc;
+    let mut text_h = if has_text && run_h > 0.0 { run_h } else { un_asc + un_desc };
     if object {
-        text_h = un_text_asc + un_text_desc;
+        text_h = run_h;
         if (text_h == 0.0 || compat == Compat::Generic && last)
             && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
         {
@@ -1259,12 +1269,12 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
             // Height h + (m − 1)·H; below single the cut comes off the top (a picture rises above the line, LINE-13)
             // and m·descent stays under the baseline.
             let m = style.line;
-            line.pitch = h + (m - 1.0) * text_h;
+            line.pitch = h + times_line(text_h, m) - text_h;
             if m >= 1.0 {
                 line.baseline = asc;
                 line.below = line.pitch - h;
             } else {
-                line.baseline = line.pitch - m * desc;
+                line.baseline = line.pitch - times_line(desc, m);
             }
         }
         LineRule::AtLeast => {

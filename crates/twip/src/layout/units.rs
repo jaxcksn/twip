@@ -15,6 +15,11 @@ impl Lu {
         Lu(((v * hp * 2048.0 + (upem / 2.0).floor()) / upem).floor() as i32)
     }
 
+    /// `pt` points to the nearest layout unit, halves up.
+    pub fn round_half_up(pt: f64) -> Lu {
+        Lu((pt * LU_PER_PT + 0.5).floor() as i32)
+    }
+
     /// Exact: every layout unit is a whole number of 1/4096 pt.
     pub fn to_pt(self) -> f64 {
         f64::from(self.0) / LU_PER_PT

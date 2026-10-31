@@ -52,21 +52,23 @@ Single spacing (`auto`, 240): pitch `H`, baseline `Abase`. No rounding: keep the
 ### LINE-7. Multiple spacing, m ≥ 1 {#line-7}
 
 ```
-pitch    = m · H
+pitch    = H + m·M − M
 baseline = Abase
 below    = pitch − H
 ```
 
-The extra space goes below the text. It doesn't have to fit at the bottom of a page ([PAGE-2](page#page-2)).
+`m·M` is computed in layout units, rounded half up: `(M × w:line + 120) div 240` with `M` in lu ([UNIT-4](unit#unit-4)). `M` is the height of the line's tallest text run: the largest `A + E + D` of any one run, not the line's largest ascent plus its largest descent; on a line of one font, `M = H` and `pitch = m · H`. The extra space goes below the text. It doesn't have to fit at the bottom of a page ([PAGE-2](page#page-2)).
 
 Example: Calibri 11 at 1.5 lines (360): pitch 20.1416, baseline 10.4736, below 6.7139.
 
 ### LINE-8. Multiple spacing, m < 1 {#line-8}
 
 ```
-pitch    = m · H
-baseline = pitch − m · D  ( = m · Abase )
+pitch    = H + m·M − M
+baseline = pitch − m·D
 ```
+
+with `M` and the rounding of `m·M` and `m·D` as in [LINE-7](line#line-7).
 
 The cut comes off the top: the text rises toward or past the line's top.
 
@@ -118,15 +120,15 @@ On a line holding an inline picture, multiple spacing scales only the text's hei
 
 ```
 h        = Abase + D               (picture included, LINE-1)
-Ht       = max text (A + E) + max text D
-pitch    = h + (m − 1) · Ht
+Ht       = the tallest text run's A + E + D
+pitch    = h + m·Ht − Ht           (m·Ht rounded as in LINE-7)
 baseline = Abase                   if m ≥ 1 (below = pitch − h)
-           pitch − m · D           if m < 1
+           pitch − m·D             if m < 1
 ```
 
 `Ht` is the mark's single height (`Amark + Emark + Dmark`) when the line has no text. In compat 15, on the paragraph's last line, `Ht = max(Ht, mark height)`. A line of text only keeps `Ht = H`: the mark joins it only as [LINE-4](line#line-4) says.
 
-On every line, the height a multiple scales leaves out raised or lowered text's shift (`w:position`, [FONT-7](font#font-7)): such a run counts in `Ht` (and in `H` on a text-only line, so `pitch = h + (m − 1) · H`) with its unshifted ascent and descent, so the line grows by the shift once, unscaled. A superscript's or subscript's raise or drop doesn't count at all ([LINE-2](line#line-2)).
+On every line, the height a multiple scales leaves out raised or lowered text's shift (`w:position`, [FONT-7](font#font-7)): such a run counts in `Ht` (and in `H` on a text-only line, so `pitch = h + m·H − H`) with its unshifted ascent and descent, so the line grows by the shift once, unscaled. A superscript's or subscript's raise or drop doesn't count at all ([LINE-2](line#line-2)).
 
 Example: a 60pt picture alone on the line, an 11pt Calibri mark, `w:line="225"` (m = 0.9375): h = 60, Ht = 13.4277, pitch = 60 − 0.0625 · 13.4277 = 59.1608; baseline 59.1608, so the picture's top rises 0.84pt above the line's top.
 
