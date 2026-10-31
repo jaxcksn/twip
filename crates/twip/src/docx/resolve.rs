@@ -420,7 +420,7 @@ mod tests {
                 sz(normal)
             );
             let mut styles = Styles::parse(Some(&xml));
-            styles.compat15 = compat15;
+            styles.compat = if compat15 { Compat::Generic } else { Compat::Legacy };
             let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
             let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
             let direct = ParaProps { style: p_style.map(str::to_string), ..ParaProps::default() };

@@ -1,6 +1,7 @@
 //! Document-wide inputs to layout: the settings text layout reads, and the ones page layout adds. Both are
 //! compared by equality wherever results are reused; a change sets `Accumulated.full`.
 
+use crate::docx::Compat;
 use crate::docx::review::ReviewView;
 use crate::docx::{Document, Run};
 
@@ -9,7 +10,7 @@ use crate::docx::{Document, Run};
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextEnv {
     /// `w:compatSetting compatibilityMode` (COMPAT-1 to COMPAT-3).
-    pub compat: i64,
+    pub compat: Compat,
     /// `w:defaultTabStop`, points (TAB-2).
     pub default_tab: f64,
     pub do_not_expand_shift_return: bool,
@@ -36,7 +37,7 @@ impl TextEnv {
     pub fn new(doc: &Document) -> TextEnv {
         let s = &doc.settings;
         TextEnv {
-            compat: s.compat_mode,
+            compat: s.compat(),
             default_tab: s.default_tab,
             do_not_expand_shift_return: s.has("doNotExpandShiftReturn"),
             split_pg_break_and_para_mark: s.has("splitPgBreakAndParaMark"),

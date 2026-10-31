@@ -2,6 +2,7 @@
 //! note stream (FLOAT-11, COL-3), vertical alignment (SETUP-1), balancing (COL-5) and column separators. Each
 //! attempt owns its state.
 
+use crate::docx::Compat;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -635,7 +636,7 @@ pub fn layout_body(
     // FLOAT-11: fill the page again until the floats met agree with the ones the text wrapped around.
     let mut known = Vec::new();
     // COL-3: compat 15's one note stream across the columns.
-    let shared = cols.len() > 1 && env.ctx.env.text.compat >= 15;
+    let shared = cols.len() > 1 && env.ctx.env.text.compat == Compat::Generic;
     let mut reserve = 0.0;
     let mut fill = PageFill {
         ctx: env.ctx,

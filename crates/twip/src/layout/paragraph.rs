@@ -1,6 +1,7 @@
 //! Paragraph spacing (PARA-1 to PARA-5) and how many of a paragraph's lines a column takes (PAGE-3 widow/orphan
 //! control, PAGE-6 keepLines), separate from the column fill so they can be tested alone.
 
+use crate::docx::Compat;
 use crate::docx::ParaStyle;
 
 use super::env::TextEnv;
@@ -45,7 +46,7 @@ pub fn drops_at_edge(p: &ParaStyle, other: Option<&Option<String>>) -> bool {
 
 /// Whether contextual spacing applies here (PARA-4).
 pub fn contextual_in(env: &TextEnv, in_cell: bool) -> bool {
-    !(in_cell && env.compat <= 14 && env.allow_space_of_same_style_in_table)
+    !(in_cell && env.compat == Compat::Legacy && env.allow_space_of_same_style_in_table)
 }
 
 /// How many of a paragraph's `n` lines to place when `fit` of them fit in the column (`hard`: one of the fitting

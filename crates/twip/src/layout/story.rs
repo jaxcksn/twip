@@ -1,6 +1,7 @@
 //! Stories laid out without pagination (cells, headers and footers, notes, text boxes): one unit per line or table
 //! row. The paragraph algorithms are the body's (HDR-3, TABLE-29).
 
+use crate::docx::Compat;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -250,7 +251,7 @@ pub fn layout_with(
                             };
                             let h = float_height(f, env, memos)?;
                             let (fx, fy) = (super::float::h_pos(f, &fr), super::float::v_pos(f, h, &fr, para_top, y) - y);
-                            if text.compat >= 15 || f.layout_in_cell {
+                            if text.compat == Compat::Generic || f.layout_in_cell {
                                 float_bottom = float_bottom.max(y + fy + h);
                             }
                             if f.wrap != "none" {
@@ -282,7 +283,7 @@ pub fn layout_with(
                     _ => super::table::units(t, width, env, memos)?,
                 };
                 // TABLE-25: in compat <= 14 a nested table's negative indent counts as 0.
-                let shift = if in_cell && text.compat <= 14 { super::table::nested_shift(t) - t.ind.min(0.0) } else { 0.0 };
+                let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t) - t.ind.min(0.0) } else { 0.0 };
                 for mut u in rows {
                     u.block = bi;
                     u.top += y;
@@ -445,8 +446,8 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
 }
 
 /// The header and footer height cap (HDR-8).
-pub fn hf_limit(compat: i64, page_h: f64) -> f64 {
-    if compat <= 14 { page_h / 2.0 } else { f64::INFINITY }
+pub fn hf_limit(compat: Compat, page_h: f64) -> f64 {
+    if compat == Compat::Legacy { page_h / 2.0 } else { f64::INFINITY }
 }
 
 /// The units of a story that end within `limit` of its top (HDR-8 keeps whole lines), placed at (`x0`, `top`), and the

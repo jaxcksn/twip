@@ -1,6 +1,7 @@
 //! Tables: column widths (TABLE-4 to TABLE-22), cell content, row heights (TABLE-27 to TABLE-32), borders
 //! (TABLE-36), and drawing a row as a [`RowFragment`]. Rows are paginated by the column fill (TABLE-40 to TABLE-47).
 
+use crate::docx::Compat;
 use std::rc::Rc;
 
 use crate::docx::model::*;
@@ -533,13 +534,13 @@ pub fn nested_shift(t: &Table) -> f64 {
 }
 
 /// TABLE-17: the per-side edge allowance added to the available width (left, right).
-fn edge_add(compat: i64, t: &Table) -> (f64, f64) {
+fn edge_add(compat: Compat, t: &Table) -> (f64, f64) {
     let first = t.rows.first();
     let lc = first.and_then(|r| r.cells.first());
     let rc = first.and_then(|r| r.cells.last());
     let lw = bw(&conflict((lc.and_then(|c| c.left.as_ref()), true), (t.borders[1].as_ref(), false)));
     let rw = bw(&conflict((rc.and_then(|c| c.right.as_ref()), true), (t.borders[3].as_ref(), false)));
-    if compat >= 15 {
+    if compat == Compat::Generic {
         (-half_border(lw), -half_border(rw))
     } else {
         (half_border(lw).max(lc.map_or(0.0, |c| c.margins[1])), half_border(rw).max(rc.map_or(0.0, |c| c.margins[3])))
@@ -573,7 +574,7 @@ fn twips(x: f64) -> i64 {
 /// A nested table supplies its own autofit's minimum, width with A = MAXW, and hard minimum (TABLE-11).
 fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, memos: &mut Memos) -> Result<(i64, i64, i64), Yield> {
     let (mut mn, mut mx, mut hard) = (0i64, 0i64, 0i64);
-    let old = env.ctx.env.text.compat < 15;
+    let old = env.ctx.env.text.compat == Compat::Legacy;
     for b in blocks {
         match b {
             LaidBlock::Para(laid) => {
@@ -1159,7 +1160,7 @@ fn assemble(
     });
     let (lw, lmar) = first_left.unwrap_or((bw(&t.borders[1]), 0.0));
     // TABLE-23.
-    let mut x0 = if compat >= 15 { t.ind + lw / 2.0 } else { t.ind - lmar.max(half_border(lw)) };
+    let mut x0 = if compat == Compat::Generic { t.ind + lw / 2.0 } else { t.ind - lmar.max(half_border(lw)) };
     match t.jc {
         // A row's empty grid before and after its cells isn't centred, only the cells (the first row's, for the table).
         Jc::Center => {
@@ -1178,9 +1179,9 @@ fn assemble(
         x0 = match fp.x_spec {
             Some(Jc::Center) => (text_w - total + lmar) / 2.0,
             Some(Jc::Right) => text_w - total - bw(&t.borders[3]) / 2.0,
-            Some(_) if compat >= 15 => lw / 2.0,
+            Some(_) if compat == Compat::Generic => lw / 2.0,
             Some(_) => -lmar.max(half_border(lw)),
-            None if compat >= 15 => fp.x + lw / 2.0,
+            None if compat == Compat::Generic => fp.x + lw / 2.0,
             None => fp.x - lmar.max(half_border(lw)),
         };
     }
@@ -1193,7 +1194,7 @@ fn assemble(
         // fixed table's rows all keep the table's.
         // shortcut: left-aligned, non-floating tables only (as measured); the row's width isn't re-solved.
         let shift = match r.ind {
-            Some(i) if compat <= 14 && !t.fixed && t.jc == Jc::Left && t.floating.is_none() => i - t.ind,
+            Some(i) if compat == Compat::Legacy && !t.fixed && t.jc == Jc::Left && t.floating.is_none() => i - t.ind,
             _ => 0.0,
         };
         let mut cells = Vec::new();
@@ -1204,9 +1205,9 @@ fn assemble(
             let content_h = units.height;
             // TABLE-30: with doNotVertAlignCellWithSp (compat ≤ 14) a cell holding a float laid out in it isn't
             // aligned; otherwise its floats' bottoms count in the content height it aligns.
-            let unaligned = compat <= 14 && env.ctx.env.text.do_not_vert_align_cell_with_sp && holds_float(c);
+            let unaligned = compat == Compat::Legacy && env.ctx.env.text.do_not_vert_align_cell_with_sp && holds_float(c);
             let align_h = content_h.max(units.float_bottom);
-            let fixed_floats = if compat <= 14 { outside_floats(c) } else { Box::default() };
+            let fixed_floats = if compat == Compat::Legacy { outside_floats(c) } else { Box::default() };
             cells.push(CellBox {
                 x: g.x + shift,
                 w: g.w,

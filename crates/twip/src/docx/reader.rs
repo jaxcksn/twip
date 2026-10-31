@@ -99,7 +99,7 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
     let numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref());
     let theme = ThemeFonts::parse(part_of("theme").and_then(|p| pkg.read_str(&p)).as_deref());
     let settings = read_settings(part_of("settings").and_then(|p| pkg.read_str(&p)).as_deref());
-    styles.compat15 = settings.compat_mode >= 15;
+    styles.compat = settings.compat();
     let xml = pkg.read_str(&main).ok_or("no main document part")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.

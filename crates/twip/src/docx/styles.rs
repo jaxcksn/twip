@@ -1,5 +1,6 @@
 //! styles.xml and the theme's fonts: style chains and the cascade of STYLE-1–STYLE-4.
 
+use super::model::Compat;
 use std::collections::HashMap;
 
 use roxmltree::Node;
@@ -136,7 +137,7 @@ pub struct Styles {
     pub doc_rpr: RunProps,
     pub doc_ppr: ParaProps,
     /// compat 15: no table-style size exception (STYLE-4).
-    pub compat15: bool,
+    pub compat: Compat,
 }
 
 impl Styles {
@@ -292,7 +293,7 @@ impl Styles {
         out.rpr = RunProps::fold_chain(rprs.into_iter());
         // STYLE-4's exception (compat ≤ 14): a table style that sets some paragraph, run or region property.
         let sets = chain.iter().any(|s| s.base.sets_text || !s.regions.is_empty());
-        if !self.compat15 && id.is_some() && id != self.default_table.as_deref() && sets {
+        if self.compat == Compat::Legacy && id.is_some() && id != self.default_table.as_deref() && sets {
             out.size_over_normal = out.rpr.size.or(self.doc_rpr.size).filter(|s| *s != 10.0);
         }
         out

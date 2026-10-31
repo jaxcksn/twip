@@ -720,8 +720,17 @@ pub struct Section {
     pub change: Option<Rc<SectionChange>>,
 }
 
+/// The layout engine a document gets (COMPAT-1): `Generic` for compat 15, `Legacy` for every older mode.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Compat {
+    #[default]
+    Legacy,
+    Generic,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
+    /// `w:compatSetting compatibilityMode` as written; 12 without one (COMPAT-1).
     pub compat_mode: i64,
     /// `w:compat` child options that are on.
     pub compat: std::collections::HashSet<String>,
@@ -745,6 +754,11 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// COMPAT-1: compat 15 is `compatibilityMode` ≥ 15.
+    pub fn compat(&self) -> Compat {
+        if self.compat_mode >= 15 { Compat::Generic } else { Compat::Legacy }
+    }
+
     pub fn has(&self, flag: &str) -> bool {
         self.compat.contains(flag)
     }

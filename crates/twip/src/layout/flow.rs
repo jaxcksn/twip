@@ -2,6 +2,7 @@
 //! FLOAT-9), table rows (TABLE-40 to TABLE-48), footnotes (NOTE-1 to NOTE-8) and line numbers (LNUM-1, LNUM-2). Drawn
 //! items are fragments, positions are tokens, and the page attempt's state is explicit ([`PageFill`]).
 
+use crate::docx::Compat;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -715,7 +716,7 @@ impl<'d> PageFill<'d, '_> {
                     let style = p.para_style_in(self.ctx.env.text.review.view);
                     if pos.at.at_start() && style.page_break_before && !(empty && page_empty) {
                         // PAGE-6: always a new page; PARA-2: its space-before is dropped in compat 15, kept in 14.
-                        carry.keep_top = self.ctx.env.text.compat < 15;
+                        carry.keep_top = self.ctx.env.text.compat == Compat::Legacy;
                         return Ok((Stop::Page, y));
                     }
                     let pb = self.para_lines(&laid, bi, end, col.width, pos.at.index(), col.x, memos)?;
@@ -1161,7 +1162,7 @@ impl<'d> PageFill<'d, '_> {
         // FLOAT-4 (compat <= 14): a paragraph holding only one inline picture is placed in the gap even when it's
         // wider, over the float.
         let mut content = pieces.iter().filter(|q| q.kind != Kind::Anchor);
-        let lone_picture = compat <= 14 && content.next().is_some_and(|q| q.kind == Kind::Object) && content.next().is_none();
+        let lone_picture = compat == Compat::Legacy && content.next().is_some_and(|q| q.kind == Kind::Object) && content.next().is_none();
         // Bands: (top, segments).
         let mut bands: Vec<(f64, Vec<Line>)> = Vec::new();
         let mut yy = top;
@@ -1231,7 +1232,7 @@ impl<'d> PageFill<'d, '_> {
                 _ => {
                     // FLOAT-4 (compat <= 14): beside square floats the line retries lower in steps of its trial height.
                     let square = here.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
-                    if let Some(t) = trial.filter(|&t| compat <= 14 && square && t > EPS) {
+                    if let Some(t) = trial.filter(|&t| compat == Compat::Legacy && square && t > EPS) {
                         yy = (yy + t).min(col.bottom.max(yy + EPS));
                         continue;
                     }
@@ -1479,7 +1480,7 @@ impl<'d> PageFill<'d, '_> {
             }
         }
         let page_floats = match self.sec.blocks.get(pos.block) {
-            Some(Block::Table(t)) if self.ctx.env.text.compat <= 14 => page_floats(t),
+            Some(Block::Table(t)) if self.ctx.env.text.compat == Compat::Legacy => page_floats(t),
             _ => HashMap::new(),
         };
         let frames = Frames {
