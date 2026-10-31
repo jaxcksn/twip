@@ -344,7 +344,8 @@ pub fn words(code: &str) -> Vec<String> {
     out
 }
 
-pub fn evaluate(doc: &mut Document) {
+/// FIELD-2: computes the fields that don't depend on pagination; `DATE`/`TIME` show `now` (seconds since 1970, UTC).
+pub fn evaluate(doc: &mut Document, now: i64) {
     // Bookmark texts (to the end of the bookmark's paragraph) and every paragraph's style and text, in order.
     let mut marks: HashMap<String, String> = HashMap::new();
     let mut order: Vec<(String, String)> = Vec::new();
@@ -390,7 +391,7 @@ pub fn evaluate(doc: &mut Document) {
                     ),
                     FieldKind::If => if_field(&w),
                     FieldKind::Invalid => Some(String::new()),
-                    FieldKind::Date => Some(date(code)),
+                    FieldKind::Date => Some(date(code, now)),
                     // In the body: the nearest paragraph with the style before the field, else the next one.
                     FieldKind::StyleRef(st) => {
                         let key = style_key(st);
@@ -450,10 +451,9 @@ fn if_field(w: &[String]) -> Option<String> {
     Some(if hit { yes.clone() } else { no })
 }
 
-/// `DATE`/`TIME` with a `\@` picture (default M/d/yyyy), from the system clock in UTC.
+/// `DATE`/`TIME` with a `\@` picture (default M/d/yyyy) at `secs` since 1970, UTC.
 // shortcut: UTC, no time zone; English month/day names.
-fn date(code: &str) -> String {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()) as i64;
+fn date(code: &str, secs: i64) -> String {
     let (days, sod) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     // Civil date from days since 1970-01-01 (H. Hinnant).
     let z = days + 719468;
@@ -611,9 +611,11 @@ mod tests {
         assert_eq!(words(r#"IF 1 = 1 "yes" "no""#), ["IF", "1", "=", "1", "yes", "no"]);
         assert_eq!(if_field(&words(r#"IF 1 = 1 "yes" "no""#)).as_deref(), Some("yes"));
         assert_eq!(if_field(&words(r#"IF 2 < 1 "yes" "no""#)).as_deref(), Some("no"));
-        assert_eq!(date(r#"DATE \@ "yyyy""#).len(), 4);
-        let d = date(r#"DATE \@ "'x 'yyyy am/pm""#);
-        assert!(d.starts_with("x ") && (d.ends_with(" AM") || d.ends_with(" PM")) && d.len() == 9, "{d}");
+        // 2026-10-30T15:04:05Z, a Friday.
+        let now = 1_793_372_645;
+        assert_eq!(date(r#"DATE \@ "yyyy""#, now), "2026");
+        assert_eq!(date(r#"DATE \@ "'x 'yyyy am/pm""#, now), "x 2026 PM");
+        assert_eq!(date(r#"DATE \@ "dddd d MMMM HH:mm""#, now), "Friday 30 October 15:04");
     }
 
     #[test]

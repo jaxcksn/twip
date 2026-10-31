@@ -30,7 +30,8 @@ pub fn run(out: &Path, paths: &[String], text: impl Fn(&Document) -> String) -> 
     for (n, file) in files.iter().enumerate() {
         let name = format!("{n:04}-{}.txt", file.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default());
         let Ok(bytes) = std::fs::read(file) else { continue };
-        let dump = match twip::internal::docx::read(&bytes) {
+        // A fixed clock (2026-10-30T00:00:00Z): DATE/TIME fields dump the same on every run.
+        let dump = match twip::internal::docx::read_at(&bytes, 1_793_318_400) {
             Ok(doc) => text(&doc),
             Err(e) => format!("read error {e:?}\n"),
         };

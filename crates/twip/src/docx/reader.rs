@@ -73,13 +73,23 @@ fn resolve_path(dir: &str, target: &str) -> String {
 }
 
 pub fn read(bytes: &[u8]) -> Result<Document, String> {
-    read_with(bytes, false)
+    read_with(bytes, false, now_utc())
+}
+
+/// As [`read`], with `DATE`/`TIME` fields computed at `now` (seconds since 1970, UTC) instead of the system clock, so
+/// the layout is the same on every run.
+pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
+    read_with(bytes, false, now)
+}
+
+fn now_utc() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
 /// As [`read`], keeping what saving needs: the package, the main part's XML, where each body paragraph and table came
 /// from ([`Paragraph::src`], [`Table::src`]) and each run's direct formatting ([`RunStyle::direct`]).
 pub fn read_editable(bytes: &[u8]) -> Result<Document, String> {
-    read_with(bytes, true)
+    read_with(bytes, true, now_utc())
 }
 
 /// The XML text of an element as written.
@@ -87,7 +97,7 @@ fn raw(n: Node) -> Rc<str> {
     n.document().input_text()[n.range()].into()
 }
 
-fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
+fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
     let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(|e| e.to_string())?;
     let mut pkg = Package { zip };
     let root_rels = pkg.rels("");
@@ -255,7 +265,7 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
     doc.review_ids = r.ids;
     doc.diagnostics = r.diagnostics;
     doc.resolver = Some(Rc::new(r.res));
-    super::fields::evaluate(&mut doc);
+    super::fields::evaluate(&mut doc, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
     if editable {
