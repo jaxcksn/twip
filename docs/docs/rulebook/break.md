@@ -33,9 +33,9 @@ When the first character that doesn't fit has no break opportunity before it on 
 
 | Alignment | Compat | Breaker |
 |---|---|---|
-| left, centre, right, distribute | any | greedy: fill to the last break opportunity that fits; spaces never shrink |
-| justified (`both`) | ≤ 14 | greedy; spaces only expand ([JUST-1](just#just-1)) |
-| justified (`both`) | 15 | [BREAK-6](break#break-6) |
+| left, centre, right | any | greedy: fill to the last break opportunity that fits; spaces never shrink |
+| justified (`both`), distributed | ≤ 14 | greedy; spaces only expand ([JUST-1](just#just-1), [JUST-5](just#just-5)) |
+| justified (`both`), distributed | 15 | [BREAK-6](break#break-6) |
 
 ### BREAK-6. Compat-15 justified breaking {#break-6}
 

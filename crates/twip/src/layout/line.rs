@@ -344,7 +344,7 @@ struct Fit {
 pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, frame: &Frame, fonts: &Fonts, continued: bool) -> Vec<Line> {
     let mut lines = Vec::new();
     let right = frame.width - style.ind_right;
-    let justify_smart = style.jc == Jc::Both && frame.compat == Compat::Generic;
+    let justify_smart = matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic;
     let mut start = 0;
     let n = pieces.len();
     // Precomputed BREAK-6 line ends, per hard-break segment.
@@ -431,7 +431,7 @@ pub fn band(
         }
         gap.get_or_insert(right - left);
         // BREAK-6 in the interval too (compat-15 justified), unless its segment has tabs.
-        let planned = if style.jc == Jc::Both && frame.compat == Compat::Generic && s < n {
+        let planned = if matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && s < n {
             let seg_end = segment_end(pieces, s);
             match justified_line(pieces, s, seg_end, right - left) {
                 LineChoice::End(e) if !pieces[s..seg_end].iter().any(|p| p.kind == Kind::Tab) => Some(e),
