@@ -1310,7 +1310,9 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         LineRule::Exact => {
             line.pitch = style.line;
             // LINE-10, LINE-11.
-            line.baseline = style.line * 0.8
+            // The baseline is X − trunc(X / 5) layout units below the top.
+            let x = Lu::round_half_up(style.line).0;
+            line.baseline = Lu(x - x / 5).to_pt()
                 + match style.text_alignment.as_str() {
                     "top" => asc,
                     "center" => (asc - desc) / 2.0,

@@ -88,8 +88,10 @@ The extra space goes above the text.
 
 ```
 pitch    = X
-baseline = 0.8 · X     (whatever the font, unless w:textAlignment moves it, LINE-11)
+baseline = X − trunc(X / 5)    (in layout units, whatever the font, unless w:textAlignment moves it, LINE-11)
 ```
+
+With `X` in layout units ([UNIT-4](unit#unit-4)), the distance from the line's bottom to the baseline is `X div 5`, truncated; in points the baseline is within 1/4096pt of `0.8 · X`.
 
 Glyphs may overflow the line box above or below.
 
