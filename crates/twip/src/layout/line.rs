@@ -567,9 +567,9 @@ fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], w
         _ => 0.0,
     };
     let mut tw = (p.stop - p.pen_at_tab) - d;
-    // TAB-6: text that would pass the right limit narrows the tab so it ends there.
+    // TAB-6: text that would pass the right limit narrows the tab so it ends there; a decimal tab collapses.
     if p.pen_at_tab + tw + w - trail > right + EPS && p.stop <= right + EPS {
-        tw = right - (p.pen_at_tab + w) + trail;
+        tw = if p.kind == TabKind::Decimal { 0.0 } else { right - (p.pen_at_tab + w) + trail };
     }
     let tw = tw.max(0.0); // TAB-8
     ws[p.idx - start] = tw;

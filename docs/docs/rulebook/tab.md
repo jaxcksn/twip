@@ -53,6 +53,8 @@ When the stop is at or before `rightEdge` but the aligned text would end past it
 tabWidth = rightEdge − (penAtTab + w) + trail
 ```
 
+A decimal tab doesn't narrow: when its aligned text would end past `rightEdge`, its width is 0 and the text starts at `penAtTab`.
+
 ### TAB-7. Stops past the right edge {#tab-7}
 
 - **Compat 15, a right, centre or decimal stop** past `rightEdge` whose text runs to the end of the paragraph (no later tab): the stop moves to `rightEdge`. Right-tab text then ends at `rightEdge`; decimal-tab text too, through [TAB-6](tab#tab-6); centre-tab text also *ends* at `rightEdge` (it works as a right tab there) and doesn't wrap.
