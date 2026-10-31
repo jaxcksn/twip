@@ -126,11 +126,11 @@ baseline = Abase                   if m ≥ 1 (below = pitch − h)
            pitch − m·D             if m < 1
 ```
 
-`Ht` is the mark's single height (`Amark + Emark + Dmark`) when the line has no text. In compat 15, on the paragraph's last line, `Ht = max(Ht, mark height)`. A line of text only keeps `Ht = H`: the mark joins it only as [LINE-4](line#line-4) says.
+A picture adds a height of its own to `Ht`. In compat 15 it is the font height (`A + E + D`) of the picture's own run, whatever the line's text. In compat ≤ 14 it counts only when the line has no text run: each picture takes the font height of the nearest text or spaces before it on the line; when no picture has any, the line's last run's font height is used, which is the paragraph mark's on a paragraph's last line. The paragraph mark never joins a line with text.
 
 On every line, the height a multiple scales leaves out raised or lowered text's shift (`w:position`, [FONT-7](font#font-7)): such a run counts in `Ht` (and in `H` on a text-only line, so `pitch = h + m·H − H`) with its unshifted ascent and descent, so the line grows by the shift once, unscaled. A superscript's or subscript's raise or drop doesn't count at all ([LINE-2](line#line-2)).
 
-Example: a 60pt picture alone on the line, an 11pt Calibri mark, `w:line="225"` (m = 0.9375): h = 60, Ht = 13.4277, pitch = 60 − 0.0625 · 13.4277 = 59.1608; baseline 59.1608, so the picture's top rises 0.84pt above the line's top.
+Example: a 60pt picture alone on the line, in an 11pt Calibri run with an 11pt Calibri mark (either mode), `w:line="225"` (m = 0.9375): h = 60, Ht = 13.4277, pitch = 60 − 0.0625 · 13.4277 = 59.1608; baseline 59.1608, so the picture's top rises 0.84pt above the line's top.
 
 ### LINE-14. East Asian font height {#line-14}
 

@@ -1157,6 +1157,37 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
     }
 }
 
+/// LINE-13: the height a line multiple scales on a line with a picture, besides its text runs' (`run_h`). Compat 15:
+/// each picture counts its own run's font height. Compat <= 14, only when no text run gives one: each picture counts
+/// the font height of the nearest text or space before it on the line; with none, the line's last run's font (the
+/// paragraph mark's on a paragraph's last line).
+fn picture_line_height(sp: &ShapedPara, line: &[Piece], mark: &Run, fonts: &Fonts, last: bool, compat: Compat, run_h: f64) -> f64 {
+    let height = |run: &Run| {
+        fonts.face(&run.ascii, run.bold, run.italic).map_or(0.0, |f| {
+            let (a, d, e) = metrics(&f, run.size);
+            a + e + d
+        })
+    };
+    let objects = line.iter().enumerate().filter(|(_, p)| p.kind == Kind::Object);
+    match compat {
+        Compat::Generic => objects.map(|(_, p)| height(&sp.styles[p.style as usize].run)).fold(0.0, f64::max),
+        Compat::Legacy if run_h > 0.0 => 0.0,
+        Compat::Legacy => {
+            let before = objects
+                .filter_map(|(k, _)| line[..k].iter().rev().find(|q| matches!(q.kind, Kind::Text | Kind::Space)))
+                .map(|q| height(&sp.styles[q.style as usize].run))
+                .fold(0.0, f64::max);
+            if before > 0.0 {
+                before
+            } else if last {
+                height(mark)
+            } else {
+                line.last().map_or(0.0, |p| height(&sp.styles[p.style as usize].run))
+            }
+        }
+    }
+}
+
 /// LINE-7: `h` points times the line multiple `m` (`w:line` / 240), rounded half up to a layout unit in integers:
 /// `(h_lu × line + 120) div 240`.
 fn times_line(h: f64, m: f64) -> f64 {
@@ -1256,13 +1287,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     // text, and in compat 15 the mark's too when it's taller (not on text-only lines, where H = h).
     let mut text_h = if has_text && run_h > 0.0 { run_h } else { un_asc + un_desc };
     if object {
-        text_h = run_h;
-        if (text_h == 0.0 || compat == Compat::Generic && last)
-            && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
-        {
-            let (a, d, e) = metrics(&f, mark.size);
-            text_h = text_h.max(a + e + d);
-        }
+        text_h = run_h.max(picture_line_height(sp, &pieces[line.start..line.end.min(pieces.len())], mark, fonts, last, compat, run_h));
     }
     match style.line_rule {
         LineRule::Auto => {
