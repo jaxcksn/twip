@@ -97,8 +97,8 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
     let f = |v: f64| format!("{:.3}", v + 0.0);
     for (pi, page) in snapshot.pages().iter().enumerate() {
         writeln!(s, "page {pi} {} {} {:?}", f(page.w), f(page.h), page.body_area.map(|(a, b)| (f(a), f(b)))).unwrap();
-        // Lines are numbered in paint order. A line that draws nothing (a tab alone, the empty line after a break) gets
-        // an empty glyph record at its baseline and its end, so it is listed too.
+        // Lines are numbered in paint order. A line without ink (a tab alone, the empty line after a break, a line of
+        // spaces) gets an empty glyph record at its baseline and the end of what it holds, so it is listed with its x.
         let mut used = Vec::new();
         let mut bare = Vec::new();
         paint_lines(
@@ -109,8 +109,15 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                 }
             },
             &mut |line, para, placed, dx, dy| {
-                if placed.line.items.is_empty() {
-                    let end = placed.line.atoms.iter().map(|a| a.x1).fold(0.0, f64::max);
+                // A line without ink: nothing drawn, or only spaces. Its x is where its spaces, tabs and breaks end.
+                let blank = |it: &Item| matches!(it, Item::Glyphs(r) if r.chars.iter().all(|c| c.0.is_whitespace()));
+                if placed.line.items.iter().all(blank) {
+                    let runs = placed.line.items.iter().filter_map(|it| match it {
+                        // An empty run marks the caret: it ends where it starts.
+                        Item::Glyphs(r) => Some(r.glyphs.last().map_or(r.x, |&(g, x)| x + r.face.advance(g) * r.face.scale(r.size))),
+                        _ => None,
+                    });
+                    let end = placed.line.atoms.iter().map(|a| a.x1).chain(runs).fold(0.0, f64::max);
                     bare.push((line, dx + placed.x + end, dy + placed.y + placed.line.baseline, para.map_or(0, |p| p.0)));
                 }
             },
