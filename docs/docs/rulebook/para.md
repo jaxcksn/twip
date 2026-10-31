@@ -60,7 +60,7 @@ Example: after 10pt, then 6pt before: 0 when the first is contextual (the 6pt ad
 
 ### PARA-5. Automatic spacing {#para-5}
 
-`w:beforeAutospacing` and `w:afterAutospacing` replace the written value with 14pt, and the result collapses like any other spacing ([PARA-1](para#para-1)). The automatic space-before is 0 on the document's first paragraph; on the first paragraph of a table cell, header, footer, note or text box it stays 14pt.
+`w:beforeAutospacing` and `w:afterAutospacing` replace the written value with 14pt, and the result collapses like any other spacing ([PARA-1](para#para-1)). The automatic space-before is 0 on the document's first paragraph; on the first paragraph of a header, footer, note or text box it stays 14pt. In a table cell, the first paragraph's automatic space-before and the last paragraph's automatic space-after are 0, except that a list paragraph ending the cell keeps its automatic space-after.
 
 Two consecutive paragraphs are in the same list when both have numbering whose `w:num` uses the same `w:abstractNum`, whatever their `w:numId`s and levels. Between them, a side that comes from autospacing is 0 (the first paragraph's automatic space-after, the second's automatic space-before); an explicit value on the other side stays, and PARA-1 applies. The first item's automatic space-before and the last item's automatic space-after stay. Different abstract lists, or a list paragraph next to a plain one, keep 14pt.
 

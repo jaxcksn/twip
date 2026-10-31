@@ -214,11 +214,12 @@ pub fn layout_with(
                 let ps = ParaSpace { width, start: 0, borders: neighbour_borders(style, prev, next), x0: 0.0, env: text.clone() };
                 let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
                 let (mut before, mut after) = (space_before(text, style), space_after(text, style));
-                // PARA-5: a cell's first paragraph takes no automatic space-before, its last no automatic space-after.
+                // PARA-5: a cell's first paragraph takes no automatic space-before, its last no automatic space-after
+                // unless it is a list paragraph.
                 if in_cell && style.before_auto && bi == 0 {
                     before = 0.0;
                 }
-                if in_cell && style.after_auto && bi + 1 == blocks.len() {
+                if in_cell && style.after_auto && bi + 1 == blocks.len() && style.list.is_none() {
                     after = 0.0;
                 }
                 let g = match prev {
