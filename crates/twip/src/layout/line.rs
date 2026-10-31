@@ -1414,7 +1414,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 flush(&mut run, &mut out);
                 draw_leader(o, line, k, x0, base, &mut out);
                 if let Some(unit) = first {
-                    atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x), para: q, unit, brk: false });
+                    atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + line.widths[k]), para: q, unit, brk: false });
                 }
                 continue;
             }

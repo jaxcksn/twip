@@ -56,18 +56,23 @@ fn below_page(item: &Item, dy: f64, h: f64) -> bool {
     matches!(item, Item::Glyphs(r) if r.baseline + dy - r.size >= h)
 }
 
-/// Numbers drawn lines as a traversal meets them.
-struct Lines(u32);
+/// Numbers drawn lines as a traversal meets them, and reports each placed line with its number, paragraph and offset
+/// (also the lines that draw nothing).
+struct Lines<'a, 'f> {
+    n: u32,
+    placed: &'f mut dyn FnMut(u32, Option<ParaId>, &'a PlacedLine, f64, f64),
+}
 
-impl Lines {
+impl Lines<'_, '_> {
     fn next(&mut self) -> u32 {
-        self.0 += 1;
-        self.0
+        self.n += 1;
+        self.n
     }
 }
 
-fn line_items<'a>(p: &'a PlacedLine, dx: f64, dy: f64, lines: &mut Lines, out: &mut dyn FnMut(Placed<'a>)) {
+fn line_items<'a>(para: Option<ParaId>, p: &'a PlacedLine, dx: f64, dy: f64, lines: &mut Lines<'a, '_>, out: &mut dyn FnMut(Placed<'a>)) {
     let line = lines.next();
+    (lines.placed)(line, para, p, dx, dy);
     for it in p.line.items.iter() {
         out(Placed { dx: dx + p.x, dy: dy + p.y, item: it, line });
     }
@@ -97,7 +102,7 @@ fn backgrounds<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKi
 
 /// Everything in `children` but backgrounds, in flow order; floats and note areas are left to their own phases when
 /// `skip` says so.
-fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool, lines: &mut Lines, out: &mut dyn FnMut(Placed<'a>)) {
+fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool, lines: &mut Lines<'a, '_>, out: &mut dyn FnMut(Placed<'a>)) {
     for c in children {
         match c {
             Child::Box(b) if skip(&b.kind) => {}
@@ -105,7 +110,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
             Child::Group { offset, children } => flow(children, dx + offset.0, dy + offset.1, skip, lines, out),
             Child::Para(p) => {
                 for l in p.lines.iter() {
-                    line_items(l, dx, dy, lines, out);
+                    line_items(Some(p.para), l, dx, dy, lines, out);
                 }
                 for label in p.line_numbers.iter() {
                     let line = lines.next();
@@ -119,7 +124,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
                     row(r, dx, dy, skip, lines, out);
                 }
             }
-            Child::Line { placed, .. } => line_items(placed, dx, dy, lines, out),
+            Child::Line { para, placed } => line_items(*para, placed, dx, dy, lines, out),
             Child::Items(items) => {
                 let line = lines.next();
                 for it in items.iter() {
@@ -130,7 +135,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
     }
 }
 
-fn row<'a>(r: &'a RowFragment, dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool, lines: &mut Lines, out: &mut dyn FnMut(Placed<'a>)) {
+fn row<'a>(r: &'a RowFragment, dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool, lines: &mut Lines<'a, '_>, out: &mut dyn FnMut(Placed<'a>)) {
     for cell in r.cells.iter() {
         flow(&cell.content, dx, dy, skip, lines, out);
     }
@@ -162,13 +167,23 @@ fn is_notes(k: &BoxKind) -> bool {
 
 /// The page's items in paint order, each with its offset to page coordinates.
 pub fn paint<'a>(page: &'a PageFragment, out: &mut dyn FnMut(Placed<'a>)) {
+    paint_lines(page, out, &mut |_, _, _, _, _| {});
+}
+
+/// [`paint`], also reporting every placed line as the traversal meets it: its [`Placed::line`] number, its paragraph,
+/// the line and the offset of its coordinates. A line that draws nothing is reported too.
+pub fn paint_lines<'a>(
+    page: &'a PageFragment,
+    out: &mut dyn FnMut(Placed<'a>),
+    placed: &mut dyn FnMut(u32, Option<ParaId>, &'a PlacedLine, f64, f64),
+) {
     let h = page.h;
     let mut visible = |p: Placed<'a>| {
         if !below_page(p.item, p.dy, h) {
             out(p);
         }
     };
-    let mut lines = Lines(0);
+    let mut lines = Lines { n: 0, placed };
     let bodies = || page.children.iter().filter_map(|c| if let PageChild::Body(b) = c { Some(&**b) } else { None });
     let neither = |k: &BoxKind| is_float(k) || is_notes(k);
     for b in bodies() {
@@ -215,7 +230,7 @@ pub fn excluded_in(body: &BoxFragment, h: f64) -> Vec<(ParaId, std::ops::Range<U
             }
         }
     };
-    flow(&body.children, body.offset.0, body.offset.1, &|_| false, &mut Lines(0), &mut each);
+    flow(&body.children, body.offset.0, body.offset.1, &|_| false, &mut Lines { n: 0, placed: &mut |_, _, _, _, _| {} }, &mut each);
     out
 }
 
@@ -232,8 +247,12 @@ pub fn excluded(page: &PageFragment) -> Vec<(Option<ParaId>, Vec<Unit>)> {
     // Paint skips them, so walk the flow directly (glyph runs are never in the background phase).
     for c in page.children.iter() {
         match c {
-            PageChild::Body(b) => flow(&b.children, b.offset.0, b.offset.1, &|_| false, &mut Lines(0), &mut each),
-            PageChild::Header(b) | PageChild::Footer(b) => flow(&b.children, b.offset.0, b.offset.1, &|_| false, &mut Lines(0), &mut each),
+            PageChild::Body(b) => {
+                flow(&b.children, b.offset.0, b.offset.1, &|_| false, &mut Lines { n: 0, placed: &mut |_, _, _, _, _| {} }, &mut each)
+            }
+            PageChild::Header(b) | PageChild::Footer(b) => {
+                flow(&b.children, b.offset.0, b.offset.1, &|_| false, &mut Lines { n: 0, placed: &mut |_, _, _, _, _| {} }, &mut each)
+            }
         }
     }
     all
