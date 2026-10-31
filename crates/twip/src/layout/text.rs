@@ -434,7 +434,7 @@ impl Builder<'_> {
             let mut small = (**run).clone();
             small.small_caps = false;
             small.caps = true;
-            small.size = hp(run.size * 0.8) as f64 / 2.0;
+            small.size = ((hp(run.size) * 4 + 2) / 5).clamp(2, 3276) as f64 / 2.0;
             let small = Rc::new(small);
             let mut plain = (**run).clone();
             plain.small_caps = false;
@@ -442,7 +442,9 @@ impl Builder<'_> {
             let mut seg = String::new();
             let mut seg_small = false;
             for c in text.chars() {
-                let is_small = c.is_lowercase() || (c.is_whitespace() && seg_small);
+                // Lower-case letters, every space and the Vietnamese tone marks are small; the rest keeps its size.
+                let is_small =
+                    c.is_lowercase() || matches!(c, ' ' | '\u{3000}' | '\u{2005}' | '\u{300}' | '\u{301}' | '\u{303}' | '\u{309}' | '\u{323}');
                 if is_small != seg_small && !seg.is_empty() {
                     self.text(&seg, if seg_small { &small } else { &plain })?;
                     seg.clear();

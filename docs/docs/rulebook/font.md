@@ -45,9 +45,9 @@ Example: a Calibri 11 space is 2.4868pt; with `w:spacing w:val="20"` it is 3.486
 
 With `w:smallCaps` on (and `w:caps` off), split the run's text:
 
-- lower-case letters (accented ones too) are drawn as capitals at the small size `hp(0.8 × size) / 2` ([UNIT-5](unit#unit-5)): 11pt → 9pt, 12pt → 9.5pt, 13pt → 10.5pt;
-- a space that follows a lower-case letter (or another such space) goes with it at the small size;
-- capitals, digits, punctuation, and spaces after them stay at the full size.
+- lower-case letters (accented ones too) are drawn as capitals at the small size: with `hp` the run's size in half-points, `(hp × 4 + 2) div 5` half-points, at least 2 and at most 3276: 11pt → 9pt, 12pt → 9.5pt, 13pt → 10.5pt;
+- every space (U+0020, U+3000, U+2005) and the Vietnamese tone marks (U+0300, U+0301, U+0303, U+0309, U+0323) are at the small size too, between capitals as well;
+- capitals, digits and punctuation stay at the full size.
 
 Each piece is shaped and sized at its own size ([LINE-1](line#line-1)). `w:caps` simply draws every letter as a capital at the run's size.
 
