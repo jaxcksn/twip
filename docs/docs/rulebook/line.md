@@ -3,7 +3,7 @@ title: Line height and spacing
 sidebar_position: 5
 ---
 
-These rules size each line once its content is known ([BREAK-1](break#break-1) onward): first the single line height from the runs' font metrics ([FONT-1](font#font-1)), then the pitch and baseline from the paragraph's `w:spacing/@w:line` and `@w:lineRule`. Below, `A`, `D` and `E` are a run's ascent, descent and external leading in points, after any raise or drop ([FONT-7](font#font-7) to [FONT-10](font#font-10)).
+These rules size each line once its content is known ([BREAK-1](break#break-1) onward): first the single line height from the runs' font metrics ([FONT-1](font#font-1)), then the pitch and baseline from the paragraph's `w:spacing/@w:line` and `@w:lineRule`. Below, `A`, `D` and `E` are a run's ascent, descent and external leading in points, after any `w:position` raise or lowering ([FONT-7](font#font-7)).
 
 ### LINE-1. Single line height {#line-1}
 
@@ -19,7 +19,9 @@ Example: 11pt Calibri (A + E 10.4736, D 2.9541) beside 11pt Arial (A + E 9.9580 
 
 ### LINE-2. Lines of only superscript or subscript text {#line-2}
 
-A superscript or subscript run contributes its own size's ascent and descent with no external leading, shifted and capped as in [FONT-9](font#font-9) and [FONT-10](font#font-10). When a paragraph's last line holds text and all of it is superscript or subscript (no pictures), the paragraph mark's font at the mark's size also takes part: `Abase = max(Abase, Amark + Emark)`, `D = max(D, Dmark)`. Other lines of shifted text use only their own runs.
+A superscript or subscript run contributes the ascent (with external leading) and descent of its base size, `w:sz`, like any run: its smaller drawn size ([FONT-8](font#font-8)) and its raise or drop ([FONT-9](font#font-9), [FONT-10](font#font-10)) only place its glyphs. A line multiple scales that height like any other. The paragraph mark doesn't join a line of shifted text.
+
+Example: a 20pt Calibri superscript in 8pt text makes its line as tall as a 20pt Calibri line.
 
 ### LINE-3. The baseline {#line-3}
 
@@ -27,7 +29,7 @@ With single spacing the baseline is `Abase` below the line's top: external leadi
 
 ### LINE-4. Lines without text {#line-4}
 
-A line with no text, picture or list number (an empty paragraph, or a line of only spaces and tabs) takes its height from the paragraph mark's run properties ([STYLE-5](style#style-5)): `Abase = Amark + Emark`, `D = Dmark` for the mark's font and size. So does the empty line that follows a paragraph-final line break or column break. The mark never changes a line that holds text, except as [LINE-2](line#line-2) says.
+A line with no text, picture or list number (an empty paragraph, or a line of only spaces and tabs) takes its height from the paragraph mark's run properties ([STYLE-5](style#style-5)): `Abase = Amark + Emark`, `D = Dmark` for the mark's font and size. So does the empty line that follows a paragraph-final line break or column break. So does a paragraph's last line when it holds only the list number ([LIST-7](list#list-7)). The mark never changes a line that holds text or a picture.
 
 Example: an empty paragraph whose mark is 24pt Calibri is a 29.2969pt line, whatever the paragraph's style size.
 
@@ -122,9 +124,9 @@ baseline = Abase                   if m ≥ 1 (below = pitch − h)
            pitch − m · D           if m < 1
 ```
 
-`Ht` is the mark's single height (`Amark + Emark + Dmark`) when the line has no text. In compat 15, on the paragraph's last line, `Ht = max(Ht, mark height)`. A line of text only keeps `Ht = H`: the mark joins it only as [LINE-2](line#line-2) and [LINE-4](line#line-4) say.
+`Ht` is the mark's single height (`Amark + Emark + Dmark`) when the line has no text. In compat 15, on the paragraph's last line, `Ht = max(Ht, mark height)`. A line of text only keeps `Ht = H`: the mark joins it only as [LINE-4](line#line-4) says.
 
-On every line, the height a multiple scales leaves out raised or lowered text's shift (`w:position`, [FONT-7](font#font-7)): such a run counts in `Ht` (and in `H` on a text-only line, so `pitch = h + (m − 1) · H`) with its unshifted ascent and descent, so the line grows by the shift once, unscaled. A superscript's or subscript's own shift ([FONT-9](font#font-9), [FONT-10](font#font-10)) is scaled.
+On every line, the height a multiple scales leaves out raised or lowered text's shift (`w:position`, [FONT-7](font#font-7)): such a run counts in `Ht` (and in `H` on a text-only line, so `pitch = h + (m − 1) · H`) with its unshifted ascent and descent, so the line grows by the shift once, unscaled. A superscript's or subscript's raise or drop doesn't count at all ([LINE-2](line#line-2)).
 
 Example: a 60pt picture alone on the line, an 11pt Calibri mark, `w:line="225"` (m = 0.9375): h = 60, Ht = 13.4277, pitch = 60 − 0.0625 · 13.4277 = 59.1608; baseline 59.1608, so the picture's top rises 0.84pt above the line's top.
 

@@ -61,7 +61,7 @@ Example: compat 12, docDefaults 11pt, Normal 12pt, a table style setting only `w
 The paragraph mark's run properties (`w:pPr/w:rPr`, through its `w:rStyle` and the paragraph's cascade) don't change a line that holds text. They are used for:
 
 - the height of an empty paragraph's line, and of any line holding nothing but spaces and tabs ([LINE-4](line#line-4));
-- the paragraph's last line when it holds only superscript or subscript text ([LINE-2](line#line-2));
+- the paragraph's last line when it holds only the list number ([LINE-4](line#line-4));
 - the text height on a picture line under multiple spacing ([LINE-13](line#line-13));
 - the list number's formatting ([LIST-6](list#list-6)).
 

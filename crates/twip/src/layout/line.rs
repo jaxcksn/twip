@@ -1086,13 +1086,13 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let (mut em_up, mut em_down) = (0.0f64, 0.0f64);
     let mut num_asc = 0.0f64;
     let mut has_content = false;
-    let mut all_shifted = true;
+    let mut has_text = false;
     let mut brk: Option<(f64, f64)> = None;
     for p in &pieces[line.start..line.end.min(pieces.len())] {
         match p.kind {
             Kind::Text | Kind::Object => {
                 has_content = true;
-                all_shifted &= p.kind == Kind::Text && sp.styles[p.style as usize].run.vert_align != crate::docx::props::VertAlign::Baseline;
+                has_text = true;
                 asc = asc.max(p.ascent);
                 desc = desc.max(p.descent);
                 let st = &sp.styles[p.style as usize];
@@ -1133,9 +1133,9 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         un_asc = a;
         un_desc = d;
     }
-    // LINE-4, LINE-2, STYLE-5: an empty line (or only spaces), and a paragraph's last line holding only
-    // superscript/subscript text, take the paragraph mark's font.
-    else if (!has_content || (last && all_shifted))
+    // LINE-4, LIST-7, STYLE-5: an empty line (or only spaces), and a paragraph's last line holding only its number, take
+    // the paragraph mark's font; a line with text never does (LINE-2).
+    else if (!has_content || (last && !has_text))
         && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
     {
         let (a, d, e) = metrics(&f, mark.size);

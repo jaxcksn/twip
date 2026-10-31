@@ -66,7 +66,7 @@ Example: Calibri 11 with `w:position w:val="6"`: raise 3pt, ascent 10.4736 + 3 =
 
 ### FONT-8. Superscript and subscript size {#font-8}
 
-`w:vertAlign="superscript"` draws at `hp(size × OS/2.ySuperscriptYSize / upem) / 2` points; `subscript` uses `ySubscriptYSize`. Without an OS/2 table, both sizes are 0.65 em. Kerning and widths use this size.
+`w:vertAlign="superscript"` draws at `max(2, hp(size × OS/2.ySuperscriptYSize / upem)) / 2` points; `subscript` uses `ySubscriptYSize`. Without an OS/2 table, both sizes are 0.65 em. Kerning and widths use this size; the line height doesn't ([LINE-2](line#line-2)).
 
 Example: Calibri (ySuperscriptYSize 1331) at 11pt: 11 × 1331/2048 = 7.149 → 14 half-points, 7pt.
 
@@ -81,7 +81,7 @@ limit = max(a div 3, a − asup)
 raise = min(hp(size × OS/2.ySuperscriptYOffset / upem), limit)
 ```
 
-The run is raised by `raise / 2` points. Its ascent is the superscript font's `Asup` (no external leading) plus the raise, but never more than the base size's `A + E`; its descent is the superscript size's `D` less the raise, never below 0. Without an OS/2 table, the offset is 0.35 em.
+The run's glyphs are drawn `raise / 2` points up. The raise only places the glyphs: the run's ascent and descent are its base size's ([LINE-2](line#line-2)). Without an OS/2 table, the offset is 0.35 em.
 
 Example: Calibri 11: a = hp(10.4736) = 21, asup = hp(1950 × 7/2048 = 6.665) = 13, limit = max(7, 8) = 8; the OS/2 offset (5.24pt) gives 10, so raise = 8 half-points, 4pt.
 
@@ -95,7 +95,7 @@ limit = hp(D) − hp(Dsub)
 drop  = limit > 0 ? clamp(off, 0, limit) : max(off, 0)
 ```
 
-The run is lowered by `drop / 2` points. Its ascent is the subscript size's `A` (no external leading) less the drop, never below 0; its descent is `Dsub` plus the drop, but never more than the base size's `D`. A font with offset 0 doesn't drop. Without an OS/2 table, the offset is 0.14 em.
+The run's glyphs are drawn `drop / 2` points down; like a raise, the drop doesn't change the run's ascent or descent ([LINE-2](line#line-2)). A font with offset 0 doesn't drop. Without an OS/2 table, the offset is 0.14 em.
 
 ### FONT-11. Reference metrics {#font-11}
 

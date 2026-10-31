@@ -336,7 +336,7 @@ impl Builder<'_> {
         let (size, mut raise) = match run.vert_align {
             VertAlign::Baseline => (base, 0.0),
             VertAlign::Superscript => {
-                let size = hp(base * face.sup_size / face.upem) as f64 / 2.0;
+                let size = hp(base * face.sup_size / face.upem).max(2) as f64 / 2.0;
                 let (a, _, e) = metrics(face, base);
                 let (asup, _, _) = metrics(face, size);
                 let (a_hp, asup_hp) = (hp(a + e), hp(asup));
@@ -345,7 +345,7 @@ impl Builder<'_> {
                 (size, r as f64 / 2.0)
             }
             VertAlign::Subscript => {
-                let size = hp(base * face.sub_size / face.upem) as f64 / 2.0;
+                let size = hp(base * face.sub_size / face.upem).max(2) as f64 / 2.0;
                 let (_, d, _) = metrics(face, base);
                 let (_, dsub, _) = metrics(face, size);
                 let off = hp(base * face.sub_offset / face.upem);
@@ -361,17 +361,19 @@ impl Builder<'_> {
 
     /// A piece's vertical metrics (LINE-2, FONT-7) for a face at a size.
     fn new_piece(&self, kind: Kind, run: &Run, face: Option<Rc<Face>>, size: f64, raise: f64) -> NewPiece {
+        // LINE-2: a superscript or subscript run counts its unreduced size's ascent and descent; its smaller size and
+        // its raise or drop only place the glyphs (FONT-9, FONT-10).
+        let (metric_size, shift) = if run.vert_align == VertAlign::Baseline { (size, raise) } else { (run.size, run.position) };
         let (mut ascent, mut descent) = match &face {
             Some(f) => {
-                let (a, d, e) = metrics(f, size);
-                // LINE-2: a superscript/subscript run's ascent has no external leading.
-                (a + if run.vert_align == VertAlign::Baseline { e } else { 0.0 }, d)
+                let (a, d, e) = metrics(f, metric_size);
+                (a + e, d)
             }
             None => (0.0, 0.0),
         };
         // FONT-7: raised text grows the line above, lowered text below.
-        ascent = (ascent + raise).max(0.0);
-        descent = (descent - raise).max(0.0);
+        ascent = (ascent + shift).max(0.0);
+        descent = (descent - shift).max(0.0);
         NewPiece {
             kind,
             style: PieceStyle { run: run.clone(), face, size, raise, squeeze_avg: 0.0 },
@@ -564,14 +566,6 @@ impl Builder<'_> {
             let kind = if first == ' ' || first == '\u{3000}' || first == '\u{2002}' || first == '\u{2003}' { Kind::Space } else { Kind::Text };
             let n_chars = c1 - c0;
             let mut p = self.new_piece(kind, run, Some(face.clone()), size, raise);
-            // FONT-9, FONT-10: a superscript stays within its base size's ascent, a subscript within its descent.
-            if run.vert_align != VertAlign::Baseline {
-                let (ba, bd, be) = metrics(&face, run.size);
-                match run.vert_align {
-                    VertAlign::Superscript => p.ascent = p.ascent.min(ba + be),
-                    _ => p.descent = p.descent.min(bd),
-                }
-            }
             p.width = cluster_glyphs.iter().map(|g| g.advance).sum::<f64>() * scale + run.spacing * n_chars as f64;
             // BREAK-3: a break after an en dash too.
             p.break_after = kind == Kind::Space || first == '-' || first == '\u{2010}' || first == '\u{2013}';
