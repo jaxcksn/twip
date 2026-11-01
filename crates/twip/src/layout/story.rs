@@ -43,6 +43,18 @@ pub struct StoryUnit {
     pub keep_lines: bool,
     /// Notes referenced on this line (NOTE-8: references in table cells place their notes like body lines).
     pub notes: Box<[(NoteKind, i64)]>,
+    /// A nested table's row: what a row split redraws it from (TABLE-41).
+    pub row: Option<Rc<NestedRow>>,
+}
+
+/// A nested table row as a story unit: its table, its row, the table's offset in the story (TABLE-25) and, for the
+/// continuation of a row split on an earlier page, what each cell still holds (TABLE-41).
+#[derive(Clone, Debug)]
+pub struct NestedRow {
+    pub table: Rc<TableLayout>,
+    pub ri: usize,
+    pub shift: f64,
+    pub rest: Option<Rc<[Vec<StoryUnit>]>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -297,6 +309,7 @@ pub fn layout_with(
                         keep_next: style.keep_next,
                         keep_lines: style.keep_lines,
                         notes: lines.notes(i).into_boxed_slice(),
+                        row: None,
                     });
                     y += line.pitch;
                 }
@@ -328,6 +341,7 @@ pub fn layout_with(
                     u.top += y;
                     if shift != 0.0 {
                         u.content = Rc::from([Child::Group { offset: (shift, 0.0), children: u.content }]);
+                        u.row = u.row.map(|r| Rc::new(NestedRow { shift, ..(*r).clone() }));
                     }
                     units.push(u);
                 }

@@ -3,6 +3,7 @@
 //! items are fragments, positions are tokens, and the page attempt's state is explicit ([`PageFill`]).
 
 use crate::docx::Compat;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -20,7 +21,7 @@ use super::node::{Notes, SectionNode};
 use super::paragraph::{gap, lines_to_take, space_after, space_before};
 use super::record::PageEffects;
 use super::space::{BorderKey, ColumnSpace, ParaSpace};
-use super::story::{StoryEnv, StoryLayout, StoryUnit};
+use super::story::{NestedRow, StoryEnv, StoryLayout, StoryUnit};
 use super::table::{CellPart, DrawnRow, TableLayout, draw_row, draw_whole_row, whole};
 use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape};
 use super::token::{At, FlowState, FlowToken, NotePart};
@@ -206,14 +207,140 @@ pub fn note_cut(units: &[StoryUnit], room: f64) -> usize {
 /// How many of a cell's units stay on this page when its row splits (TABLE-41, TABLE-43, TABLE-44). A cell that keeps
 /// nothing fails TABLE-42, so the row moves on whole. `continued`: the units continue a row split on an earlier page.
 fn cell_cut(units: &[StoryUnit], room: f64, continued: bool, compat: Compat) -> usize {
-    // TABLE-44: a cell line stays only if its full pitch fits (none of PAGE-2's allowance below the text), and its
-    // paragraph's space-after when it ends it.
-    let fit = units.iter().position(|u| u.top + u.height + u.after > room + EPS).unwrap_or(units.len());
+    let fit = fit_count(units, room, compat);
     // TABLE-43: compat ≤ 14 cells have no widow, orphan or keep control at a row split.
     if compat == Compat::Legacy || fit == 0 || fit >= units.len() {
         return fit;
     }
     cell_keeps(units, widow_cut(units, fit, continued))
+}
+
+/// How many of a cell's leading units fit in `room`. TABLE-44: a cell line stays only if its full pitch fits (none of
+/// PAGE-2's allowance below the text), and its paragraph's space-after when it ends it. TABLE-41: in compat 15 a
+/// nested table's row stays only if the table's bottom border, which closes the part, fits below it too.
+fn fit_count(units: &[StoryUnit], room: f64, compat: Compat) -> usize {
+    let close = |u: &StoryUnit| match &u.row {
+        Some(r) if compat == Compat::Generic && !r.table.is_last(r.ri) => r.table.bottom_border,
+        _ => 0.0,
+    };
+    units.iter().position(|u| u.top + u.height + u.after + close(u) > room + EPS).unwrap_or(units.len())
+}
+
+/// A cell's cut at a row split: `keep` units stay whole, then `head` (a nested table's row redrawn as its part on
+/// this page); the continuation starts with `tail` (the rest of that row), then the units from `next` (TABLE-41).
+#[derive(Clone)]
+struct Cut {
+    keep: usize,
+    head: Option<StoryUnit>,
+    tail: Option<StoryUnit>,
+    next: usize,
+}
+
+impl Cut {
+    fn at(n: usize) -> Cut {
+        Cut { keep: n, head: None, tail: None, next: n }
+    }
+
+    /// The part keeps something.
+    fn any(&self) -> bool {
+        self.keep > 0 || self.head.is_some()
+    }
+
+    /// The units the part keeps.
+    fn kept<'a>(&self, units: &'a [StoryUnit]) -> Cow<'a, [StoryUnit]> {
+        match &self.head {
+            None => Cow::Borrowed(&units[..self.keep]),
+            Some(h) => Cow::Owned(units[..self.keep].iter().chain([h]).cloned().collect()),
+        }
+    }
+
+    /// The continuation's units, from 0. TABLE-41: one that starts a new paragraph keeps what its space-before adds to
+    /// the space-after left on this page.
+    fn rest(self, units: &[StoryUnit]) -> Vec<StoryUnit> {
+        let n = self.next;
+        let Some(first) = units.get(n) else { return self.tail.into_iter().collect() };
+        let shift = match (&self.tail, n.checked_sub(1).map(|k| &units[k])) {
+            (Some(t), Some(p)) => t.height - (p.top + p.height),
+            (None, Some(p)) if p.block != first.block => (first.top - (p.top + p.height + p.after)).max(0.0) - first.top,
+            _ => -first.top,
+        };
+        self.tail.into_iter().chain(units[n..].iter().map(|u| StoryUnit { top: u.top + shift, ..u.clone() })).collect()
+    }
+}
+
+/// TABLE-41: a cell's cut, nested tables included. A nested table's row that doesn't fit splits as a table's row
+/// does; a nested table cut between its rows closes the part with its bottom border.
+fn cut_cell(units: &[StoryUnit], room: f64, continued: bool, compat: Compat) -> Cut {
+    let fit = fit_count(units, room, compat);
+    if let Some(u) = units.get(fit)
+        && let Some((head, tail)) = split_nested(u, room - u.top, compat)
+    {
+        return Cut { keep: fit, head: Some(head), tail: Some(tail), next: fit + 1 };
+    }
+    let n = cell_cut(units, room, continued, compat);
+    match n.checked_sub(1).map(|k| &units[k]) {
+        Some(u) if n < units.len() && u.row.as_ref().is_some_and(|r| !r.table.is_last(r.ri)) => {
+            Cut { keep: n - 1, head: Some(nested_unit(u, None, true)), tail: None, next: n }
+        }
+        _ => Cut::at(n),
+    }
+}
+
+/// A nested table's row unit drawn again (TABLE-41): with `parts` (else what the unit holds); `close`: ending the
+/// table's part on this page with its bottom border.
+fn nested_unit(u: &StoryUnit, parts: Option<Vec<Vec<StoryUnit>>>, close: bool) -> StoryUnit {
+    let Some(nr) = &u.row else { return u.clone() };
+    let (tb, ri) = (&nr.table, nr.ri);
+    let last = close || tb.is_last(ri);
+    let held: Option<Rc<[Vec<StoryUnit>]>> = parts.map(Rc::from).or_else(|| nr.rest.clone());
+    let cells: Option<Vec<CellPart>> = held.as_ref().map(|r| r.iter().map(|v| CellPart { units: v, base: 0.0, ends: !close }).collect());
+    let h = match &cells {
+        Some(c) => part_height(&tb.rows[ri], c),
+        None => tb.rows[ri].height,
+    };
+    let row = draw_row(tb, ri, nr.shift, 0.0, h, cells.as_deref(), last);
+    let notes: Box<[(NoteKind, i64)]> = match &held {
+        Some(r) => r.iter().flatten().flat_map(|x| x.notes.iter().copied()).collect(),
+        None => u.notes.clone(),
+    };
+    StoryUnit {
+        height: h + if last { tb.bottom_border } else { 0.0 },
+        content: Rc::from([Child::Table(TableFragment { table: tb.id, rows: Box::new([row]) })]),
+        notes,
+        row: if close { None } else { Some(Rc::new(NestedRow { rest: held, ..(**nr).clone() })) },
+        ..u.clone()
+    }
+}
+
+/// TABLE-41: a nested table's row `u` split `room` below its top as a table's row is: each cell keeps what fits; not
+/// when a cell with content keeps nothing (TABLE-42), nor for an exact or cantSplit row, a compat ≤ 14 header row or
+/// an atLeast row whose minimum doesn't fit (TABLE-45). The part here, closed with the table's bottom border, and the
+/// continuation.
+fn split_nested(u: &StoryUnit, room: f64, compat: Compat) -> Option<(StoryUnit, StoryUnit)> {
+    let nr = u.row.as_ref()?;
+    let row = &nr.table.rows[nr.ri];
+    let avail = room - if compat == Compat::Generic { nr.table.bottom_border } else { 0.0 };
+    if row.cant_split || row.exact || row.header && compat == Compat::Legacy || row.min_h > avail + EPS {
+        return None;
+    }
+    let held: Vec<&[StoryUnit]> = match &nr.rest {
+        Some(r) => r.iter().map(|v| &v[..]).collect(),
+        None => row.cells.iter().map(|c| &c.units.units[..]).collect(),
+    };
+    let (mut kept, mut left) = (Vec::new(), Vec::new());
+    for (c, units) in row.cells.iter().zip(&held) {
+        let cut = cut_cell(units, avail - row.top_border - c.margins[0] - c.margins[2], nr.rest.is_some(), compat);
+        if !units.is_empty() && !cut.any() {
+            return None;
+        }
+        kept.push(cut.kept(units).into_owned());
+        left.push(cut.rest(units));
+    }
+    if left.iter().all(|l| l.is_empty()) {
+        return None;
+    }
+    let tail = StoryUnit { top: 0.0, ..nested_unit(u, Some(left), false) };
+    Some((nested_unit(u, Some(kept), true), tail))
 }
 
 /// TABLE-43: widow and orphan control at a cell cut `fit`, inside the paragraph it falls in.
@@ -551,6 +678,7 @@ impl<'d> PageFill<'d, '_> {
                         keep_next: false,
                         keep_lines: false,
                         notes: Box::new([]),
+                        row: None,
                     }],
                     height: h,
                     float_bottom: 0.0,
@@ -1796,7 +1924,7 @@ impl<'d> PageFill<'d, '_> {
                 && !row.exact
                 && (!no_split || at_top && self.ctx.env.text.compat == Compat::Generic)
                 && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
-            let mut fitted: Vec<CellPart> = Vec::new();
+            let mut fitted: Vec<(Cow<[StoryUnit]>, bool)> = Vec::new();
             let mut left: Vec<Vec<StoryUnit>> = Vec::new();
             if can_split {
                 let compat = self.ctx.env.text.compat;
@@ -1805,37 +1933,36 @@ impl<'d> PageFill<'d, '_> {
                 for (k, cu) in parts.iter().enumerate() {
                     let m = &row.cells[k].margins;
                     let room = avail - m[0] - m[2];
-                    let first = cell_cut(cu.units, room, rest.is_some(), compat);
-                    let mut cut = first;
+                    let first = cut_cell(cu.units, room, rest.is_some(), compat);
+                    let mut cut = first.clone();
                     // NOTE-8: a cell line stays only if its notes and those kept before it can start below it (NOTE-5);
                     // else the cut moves above it, and a cell left with nothing moves the row (TABLE-42).
-                    while cut > 0 {
-                        let u = &cu.units[cut - 1];
+                    while cut.any() {
+                        let held = cut.kept(cu.units);
+                        let u = &held[held.len() - 1];
                         let bottom = (*y + row.top_border + m[0] + u.top + u.height + u.after + m[2] + tb.bottom_border).max(low);
                         let mut refs = kept.clone();
-                        refs.extend(cu.units[..cut].iter().flat_map(|u| u.notes.iter().copied()));
+                        refs.extend(held.iter().flat_map(|u| u.notes.iter().copied()));
                         if refs.is_empty() || self.add_notes(&refs, &mut area.clone(), col, bottom, &mut Vec::new(), memos)? {
                             (kept, low) = (refs, bottom);
                             break;
                         }
-                        cut = cell_cut(cu.units, u.top, rest.is_some(), compat).min(cut - 1);
+                        // The cut moves above the last unit it kept.
+                        let next = cut_cell(cu.units, u.top, rest.is_some(), compat);
+                        let (a, b) = (next.keep + next.head.is_some() as usize, cut.keep + cut.head.is_some() as usize);
+                        cut = if a < b { next } else { Cut::at(b - 1) };
                     }
                     // PAGE-5: at the top of a column the cut stands without its notes.
-                    if cut == 0 && at_top {
+                    if !cut.any() && at_top {
                         cut = first;
                     }
-                    fitted.push(CellPart { units: &cu.units[..cut], base: 0.0, ends: cu.ends && cut == cu.units.len() });
-                    let mut rest = rebase(&cu.units[cut..]);
-                    // TABLE-41: a continuation that starts a new paragraph keeps what its space-before adds to the
-                    // space-after left on this page.
-                    if cut > 0 && cut < cu.units.len() && cu.units[cut].block != cu.units[cut - 1].block {
-                        let p = &cu.units[cut - 1];
-                        let keep = (cu.units[cut].top - (p.top + p.height + p.after)).max(0.0);
-                        rest.iter_mut().for_each(|u| u.top += keep);
-                    }
-                    left.push(rest);
+                    let held = cut.kept(cu.units);
+                    let ends = cu.ends && cut.head.is_none() && held.len() == cu.units.len();
+                    fitted.push((held, ends));
+                    left.push(cut.rest(cu.units));
                 }
             }
+            let fitted: Vec<CellPart> = fitted.iter().map(|(units, ends)| CellPart { units, base: 0.0, ends: *ends }).collect();
             let merged = if can_split && rest.is_none() {
                 merged_splits(tb, ri, &placed, col.bottom - area.total() - tb.bottom_border, self.ctx.env.text.compat)
             } else {

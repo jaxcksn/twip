@@ -611,7 +611,7 @@ where `tableBottomBorder` is the table's bottom border space ([TABLE-27](#table-
 A row that doesn't fit splits by default ([TABLE-45](#table-45) for the exceptions):
 
 1. `room = columnBottom − noteArea − rowTop − topBorder − tableBottomBorder`.
-2. Each cell keeps, from its content, the lines (and nested-table rows) that fit in `room − topMargin − bottomMargin` ([TABLE-43](#table-43), [TABLE-44](#table-44) say which), a line that references footnotes only with its notes ([NOTE-8](note#note-8)); the rest goes on.
+2. Each cell keeps, from its content, the lines (and nested-table rows, below) that fit in `room − topMargin − bottomMargin` ([TABLE-43](#table-43), [TABLE-44](#table-44) say which), a line that references footnotes only with its notes ([NOTE-8](note#note-8)); the rest goes on.
 3. If the split is allowed ([TABLE-42](#table-42)), draw the part on this page with height `topBorder + max over cells of (topMargin + kept height + bottomMargin)`, where a cell whose part ends with a whole paragraph (the end of its content, or a paragraph the cut kept whole) also counts that paragraph's space-after. Give it a closing bottom border (each cell's bottom edge, [TABLE-37](#table-37)). The page is then full.
 4. The continuation starts the next column with the row's top border and top margin again, and its height is worked out the same way (a part that ends its cell includes that cell's last space-after, like a whole row). It may split again.
 5. A cell whose continuation starts with a new paragraph (the cut fell between paragraphs) keeps at its top what the gap to the previous paragraph ([PARA-1](para#para-1)) leaves after that paragraph's space-after, which stayed on the page before, as after a next-page section break ([PAGE-7](page#page-7)). A cut inside a paragraph keeps nothing.
@@ -619,6 +619,10 @@ A row that doesn't fit splits by default ([TABLE-45](#table-45) for the exceptio
 Example: a cell cut after an empty paragraph with no space-after; the next paragraph has a 9.4pt space-before, so the continuation's first line starts 9.4pt below the cell's top margin (compat 12).
 
 Each cell breaks at its own line boundary.
+
+A nested table is cut by the same rules inside its cell's room. Its rows stay while they fit, as the cell's lines do; a nested row that doesn't fit splits like a table's row (steps 2 to 5 against the room left below its top, [TABLE-42](#table-42)), so each nested cell keeps its leading lines that fit. It moves on whole only when that fails or the row may not split: a cantSplit, exact or atLeast row as in [TABLE-45](#table-45), and in compat ≤ 14 a header row. A nested table cut on a page, between its rows or inside one, ends its part there with its bottom border, which counts in the cell's kept height. In compat 15 that border must fit below the last row kept; in compat ≤ 14 the fit test leaves it out. The continuation starts with the next row, or the split row's rest, with its top border. Nested rows have no keep-with-next, `pageBreakBefore` or repeated header rows ([TABLE-45](#table-45), [TABLE-46](#table-46)).
+
+Example: a cell whose nested table's last row on the page holds two lines in its first cell and one in its second, with room for one line: the first line of the first cell and the one line of the second stay, closed by the nested table's bottom border, and the second line continues on the next page at the top of that row's rest.
 
 ### TABLE-42. When a row may split {#table-42}
 

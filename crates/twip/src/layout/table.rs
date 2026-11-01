@@ -17,7 +17,7 @@ use super::job::{Memos, Yield};
 use super::join::LaidBlock;
 use super::line::{break_lines, neighbour_borders};
 use super::space::ParaSpace;
-use super::story::{CellEnds, StoryEnv, StoryKey, StoryLayout, StoryUnit, child_ids};
+use super::story::{CellEnds, NestedRow, StoryEnv, StoryKey, StoryLayout, StoryUnit, child_ids};
 use super::text::{Kind, shape};
 use super::units::Lu;
 
@@ -2110,7 +2110,7 @@ pub fn draw_whole_row(
 }
 
 /// A laid-out table's rows as story units, and their height.
-pub fn table_units(tb: &TableLayout) -> (Vec<StoryUnit>, f64) {
+pub fn table_units(tb: &Rc<TableLayout>) -> (Vec<StoryUnit>, f64) {
     let mut y = 0.0;
     let mut units = Vec::new();
     let n = tb.rows.len();
@@ -2132,6 +2132,7 @@ pub fn table_units(tb: &TableLayout) -> (Vec<StoryUnit>, f64) {
             keep_next: false,
             keep_lines: false,
             notes: notes.into_boxed_slice(),
+            row: Some(Rc::new(NestedRow { table: tb.clone(), ri, shift: 0.0, rest: None })),
         });
         y += h + extra;
     }

@@ -404,3 +404,23 @@ fn a_split_rows_continuation_keeps_its_first_paragraphs_space_before() {
     };
     assert!((y(240) - y(0) - 12.0).abs() < 0.01, "{} {}", y(240), y(0));
 }
+
+#[test]
+fn a_nested_row_splits_inside_its_cell() {
+    // TABLE-41: a nested row's first cell holds "a" and "b", its second "c"; one line of room is left: "a" and "c"
+    // stay on page 1 and "b" continues on page 2, where the nested row goes on.
+    let cell = |w: u32, paras: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{paras}</w:tc>"#);
+    let p = |t: char| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let nested = format!(
+        r#"<w:tbl><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl>"#,
+        cell(1500, &format!("{}{}", p('a'), p('b'))),
+        cell(1500, &p('c'))
+    );
+    let body = format!(
+        r#"<w:p><w:pPr><w:spacing w:after="0" w:line="12560" w:lineRule="exact"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="3200"/></w:tblGrid><w:tr>{}</w:tr></w:tbl><w:p/>"#,
+        cell(3200, &format!("{nested}{}", p('d')))
+    );
+    let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    let page = |ch: char| glyphs(&doc).iter().position(|p| p.iter().any(|c| c.0 == ch));
+    assert_eq!([page('a'), page('b'), page('c'), page('d')], [Some(0), Some(1), Some(0), Some(1)]);
+}
