@@ -1035,7 +1035,11 @@ impl FieldValues {
             FieldKind::NumPages => self.num_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::SectionPages => self.section_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::Section => self.section.clone().map(|p| format_field(&p, code, None)),
-            FieldKind::PageRef(name) => self.page_refs.as_ref().and_then(|m| m.get(name)).map(|p| format_field(p, code, None)),
+            // FIELD-2: a PAGEREF to a bookmark the document doesn't have shows the error text, once pages are known.
+            FieldKind::PageRef(name) => self
+                .page_refs
+                .as_ref()
+                .map(|m| m.get(name).map_or_else(|| "Error! Bookmark not defined.".to_string(), |p| format_field(p, code, None))),
             FieldKind::StyleRef(st) => {
                 let key = crate::docx::fields::style_key(st);
                 self.style_refs.iter().find(|(k, _)| *k == key).map(|(_, t)| t.clone())
