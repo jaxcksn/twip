@@ -1330,6 +1330,8 @@ fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k Ro
         }
         grid_cells.push(v);
     }
+    // TABLE-39: with cell spacing each cell keeps its own candidates; neighbours' edges don't meet.
+    let alone = t.cell_spacing > 0.0;
     let mut out = Vec::new();
     for (ri, r) in t.rows.iter().enumerate() {
         if let Some(k) = kept(ri).filter(|k| k.cells.iter().all(|c| c.index < r.cells.len())) {
@@ -1352,28 +1354,28 @@ fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k Ro
             let neighbour = |rr: usize, cc: usize| -> Option<&Cell> {
                 t.rows.get(rr).and_then(|row| grid_cells[rr].iter().position(|&(c0, s)| cc >= c0 && cc < c0 + s).map(|i| &row.cells[i]))
             };
-            let top_e = if ri == 0 {
+            let top_e = if ri == 0 || alone {
                 conflict((top.b.as_ref(), top.cell), (None, false))
             } else {
                 let above = neighbour(ri - 1, col);
                 let ab = above.map(|a| side(&a.bottom, &t.borders[4]));
                 conflict((top.b.as_ref(), top.cell), ab.as_ref().map_or((None, false), |s| (s.b.as_ref(), s.cell)))
             };
-            let bot_e = if ri + 1 == nrows {
+            let bot_e = if ri + 1 == nrows || alone {
                 conflict((bottom.b.as_ref(), bottom.cell), (None, false))
             } else {
                 let below = neighbour(ri + 1, col);
                 let bl = below.map(|a| side(&a.top, &t.borders[4]));
                 conflict((bottom.b.as_ref(), bottom.cell), bl.as_ref().map_or((None, false), |s| (s.b.as_ref(), s.cell)))
             };
-            let left_e = if ci == 0 {
+            let left_e = if ci == 0 || alone {
                 conflict((left.b.as_ref(), left.cell), (None, false))
             } else {
                 let lc = &r.cells[ci - 1];
                 let ls = side(&lc.right, &t.borders[5]);
                 conflict((left.b.as_ref(), left.cell), (ls.b.as_ref(), ls.cell))
             };
-            let right_e = if ci + 1 == r.cells.len() {
+            let right_e = if ci + 1 == r.cells.len() || alone {
                 conflict((right.b.as_ref(), right.cell), (None, false))
             } else {
                 let rc = &r.cells[ci + 1];

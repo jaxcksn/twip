@@ -504,3 +504,18 @@ fn an_art_border_takes_its_art_width_across_rows() {
     let d = baseline("apples") - baseline("single");
     assert!((d - 21.0).abs() < 0.01, "{d}");
 }
+
+#[test]
+fn with_cell_spacing_a_cells_top_border_leaves_the_row_above_alone() {
+    // TABLE-39: a 4.5pt double top border on the second row's cell moves its text down by 4.5pt only; the first
+    // row's bottom edge stays its own (none), not the winner against the cell below.
+    let baseline = |top: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblCellSpacing w:w="100" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:tcBorders>{top}</w:tcBorders></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        glyphs(&doc)[0].iter().find(|c| c.0 == 'b').map(|c| c.1).expect("b is drawn")
+    };
+    let d = baseline(r#"<w:top w:val="double" w:sz="12" w:space="0" w:color="FF0000"/>"#) - baseline("");
+    assert!((d - 4.5).abs() < 0.01, "{d}");
+}
