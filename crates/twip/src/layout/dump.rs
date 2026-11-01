@@ -88,8 +88,8 @@ pub(crate) fn rows<'a>(page: &'a PageFragment, out: &mut Vec<(&'a RowFragment, u
     }
 }
 
-/// The text boxes of a page: its floats that hold text, by their placed boxes (page coordinates) and the paragraphs
-/// they hold.
+/// The text boxes of a page: its floats that hold text, and its header and footer, by their boxes (page coordinates)
+/// and the paragraphs they hold.
 fn text_boxes(page: &PageFragment, out: &mut Vec<([f64; 4], Vec<u64>)>) {
     fn paras(children: &[Child], out: &mut Vec<u64>) {
         for c in children {
@@ -125,7 +125,16 @@ fn text_boxes(page: &PageFragment, out: &mut Vec<([f64; 4], Vec<u64>)>) {
     for c in page.children.iter() {
         let b: &BoxFragment = match c {
             PageChild::Body(b) => b,
-            PageChild::Header(b) | PageChild::Footer(b) => b,
+            PageChild::Header(b) | PageChild::Footer(b) => {
+                // A header or footer, as a box holding its paragraphs: none of them is a body line.
+                let mut ps = Vec::new();
+                paras(&b.children, &mut ps);
+                if !ps.is_empty() {
+                    ps.dedup();
+                    out.push(([b.offset.0, b.offset.1, b.offset.0 + b.size.0, b.offset.1 + b.size.1], ps));
+                }
+                b
+            }
         };
         walk(&b.children, out);
     }
