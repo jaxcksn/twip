@@ -1685,11 +1685,15 @@ impl Reader {
         let col_band = tbl.col_band.unwrap_or(0);
         let mut rows = Vec::new();
         let mut row_jc: Option<Option<Jc>> = None;
+        let mut first_row_jc: Option<Jc> = None;
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
             // Every row's alignment, or none when they differ.
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
+            if ri == 0 {
+                first_row_jc = trp.jc;
+            }
             let cell_nodes: Vec<(Node, Vec<ControlId>)> = self.cells_of(*rn, &[]);
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
@@ -1762,7 +1766,12 @@ impl Reader {
             width: tbl.width.unwrap_or(Width::Auto),
             // TABLE-3: a row's `w:jc` aligns the table when its `w:tblPr` has none.
             // shortcut: only when every row has the same one; rows aligned differently aren't placed apart.
-            jc: tbl.jc.or(row_jc.flatten()).unwrap_or(Jc::Left),
+            // TABLE-23 (compat 15): a table that isn't floating is aligned by its first row's w:jc when it has one.
+            jc: first_row_jc
+                .filter(|_| self.res.styles.compat == Compat::Generic && tbl.floating.is_none())
+                .or(tbl.jc)
+                .or(row_jc.flatten())
+                .unwrap_or(Jc::Left),
             ind: tbl.ind.unwrap_or(0.0),
             ind_set: tbl.ind.is_some(),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],

@@ -391,6 +391,7 @@ Place the table's left border centre `x0`, from the left edge of the text column
 - `lw` = the width of the first row's first cell's left border, resolved: the cell's own if it is a real border, else the table's left border. `lm` = that cell's left margin.
 - compat 15: `x0 = tblInd + lw/2` (the outer border edge sits on the margin).
 - compat ≤ 14: `x0 = tblInd − max(lm, halfBorder(lw))` with `halfBorder` as in [TABLE-17](#table-17), in points (so the cell text lines up with the margin). A table whose `w:tblInd` is set neither directly nor by its table style's `w:basedOn` chain isn't pulled left: `x0 = 0`, so its text starts `lm` inside the column. A table without `w:tblStyle` takes the default table style, whose indent counts as set.
+- The alignment is the table's `w:jc`; in compat 15 a table that isn't floating takes its first row's `w:trPr/w:jc` instead when that row has one, for every row.
 - `w:jc="center"`: `x0 = (textW − Σ columns)/2` (the indent is ignored).
 - `w:jc="right"` (or `end`): `x0 = textW − Σ columns − (table right border width)/2`.
 
