@@ -483,7 +483,7 @@ With `free = rowPitch − topBorder − topMargin − bottomMargin − contentHe
 A cell that anchors a float laid out in it (`layoutInCell="1"`, [FLOAT-14](float#float-14)), any wrap, picture or text box:
 
 - with `w:compat/w:doNotVertAlignCellWithSp` in compat ≤ 14, its offset is 0, for `center` and `bottom` alike (compat 15 ignores the flag);
-- otherwise the float counts in `contentHeight`: `contentHeight = max(contentHeight, bottom of each float in the cell − cell content top)`, the float where a top-aligned cell puts it (for a `paragraph`-relative one, anchor paragraph top + `posOffset` + its height). The float still doesn't make the row taller.
+- otherwise the float counts in `contentHeight`: `contentHeight = max(contentHeight, bottom of each float in the cell − cell content top)`, the float where a top-aligned cell puts it (for a `paragraph`-relative one, anchor paragraph top + `posOffset` + its height). It makes the row taller only as [FLOAT-14](float#float-14) says (a wrapping `paragraph`- or `line`-relative float).
 
 A compat ≤ 14 float that [FLOAT-14](float#float-14) places outside the cell (`layoutInCell="0"`, not `character`- or `line`-relative) doesn't count; an inline picture counts only as its line.
 

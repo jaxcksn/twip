@@ -212,6 +212,8 @@ pub fn layout_with(
     // A cell's wrapping floats: (unit, child, top and bottom of the wrap exclusion in the story's coordinates).
     let mut wrapping: Vec<(usize, usize, f64, f64)> = Vec::new();
     let mut float_bottom = 0.0f64;
+    // FLOAT-14: the lowest bottom of the wrapping floats the cell's content height holds.
+    let mut held = 0.0f64;
     // HDR-11: the table just before (its style, layout and bottom border), while nothing came between.
     let mut prev_table: Option<(&Table, f64)> = None;
     for (bi, b) in blocks.iter().enumerate() {
@@ -252,9 +254,10 @@ pub fn layout_with(
                     let placed = PlacedLine { x: 0.0, y: 0.0, line: lines.fragment(i, p, env.ctx.fonts) };
                     let mut content = vec![Child::Line { para: Some(id), placed }];
                     if in_cell {
-                        // A float anchored in a cell, whatever its wrap: drawn from the anchor line, the cell's rows
-                        // don't make room for it (FLOAT-14: positioned in the cell, `move_floats` places compat ≤ 14's
-                        // layoutInCell="0" ones like the body's).
+                        // A float anchored in a cell, whatever its wrap: drawn from the anchor line (FLOAT-14:
+                        // positioned in the cell, `move_floats` places compat ≤ 14's layoutInCell="0" ones like the
+                        // body's). A wrapping one placed from its paragraph or line without an alignment holds the
+                        // cell's content height down to its bottom.
                         // shortcut: the cell's text doesn't wrap a wrapping float, so one that a line of text would
                         // have to wrap isn't drawn (below); `page` is taken as the cell's content box rather than the
                         // cell inside its borders.
@@ -270,6 +273,9 @@ pub fn layout_with(
                             let (fx, fy) = (super::float::h_pos(f, &fr), super::float::v_pos(f, h, &fr, para_top, y) - y);
                             if f.in_cell(text.compat) {
                                 float_bottom = float_bottom.max(y + fy + h);
+                                if f.wrap != "none" && f.v_align.is_none() && matches!(f.v_relative.as_str(), "paragraph" | "line") {
+                                    held = held.max(y + fy + h);
+                                }
                             }
                             if f.wrap != "none" {
                                 wrapping.push((units.len(), content.len(), y + fy - f.dist[0], y + fy + h + f.dist[1]));
@@ -335,7 +341,7 @@ pub fn layout_with(
         y += prev_after;
     }
     unwrapped_floats(&mut units, &wrapping);
-    Ok(StoryLayout { units, height: y, float_bottom })
+    Ok(StoryLayout { units, height: y.max(held), float_bottom })
 }
 
 /// Drops the `wrapping` floats (unit, child, exclusion top and bottom) that a unit with text overlaps: its text would

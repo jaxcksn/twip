@@ -317,6 +317,21 @@ mod floats {
     }
 
     #[test]
+    fn float_14_a_wrapping_cell_float_makes_an_auto_row_taller() {
+        // A 60pt box in an auto row: square-wrapped, the row ends at its bottom (60pt down); wrapNone, below the
+        // paragraph (about 22pt).
+        let after = |wrap: &str| {
+            let body = format!(
+                r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>{}</w:tc></w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+                text_box(wrap, 60.0, "Boxed")
+            );
+            baseline_of(&doc(&body), "After").expect("the paragraph after the table")
+        };
+        let (square, none) = (after(r#"<wp:wrapSquare wrapText="bothSides"/>"#), after("<wp:wrapNone/>"));
+        assert!(square - none > 30.0, "square {square} vs none {none}");
+    }
+
+    #[test]
     fn float_14_a_line_relative_float_stays_in_its_cell_whatever_layout_in_cell() {
         // Compat ≤ 14: layoutInCell="0" moves a paragraph-relative box out of the cell, so the centred cell doesn't
         // move it; a line-relative one stays in the cell and moves with the text.
