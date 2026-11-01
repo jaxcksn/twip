@@ -1309,7 +1309,7 @@ fn assemble(
         };
         // TABLE-23: in compat ≤ 14 each row of a table that isn't floating is aligned by its own w:jc, else the table's:
         // centred, or right-aligned with its first cell's left margin past the column's right edge, by its own cells'
-        // extent with alignTablesRowByRow, else by the whole grid's.
+        // extent with alignTablesRowByRow, else by the whole grid's; a left-aligned one at the left edge allowance.
         // shortcut: a nested table's rows are aligned as a body table's.
         let shift = shift
             + match r.jc.unwrap_or(t.jc) {
@@ -1323,6 +1323,8 @@ fn assemble(
                     let left = if jc == Jc::Center { (text_w - width) / 2.0 } else { text_w - width + gap };
                     left - (x0 + before)
                 }
+                // A left-aligned row of a centred or right-aligned table: the table's indent is ignored.
+                Jc::Left if compat == Compat::Legacy && t.floating.is_none() && t.jc != Jc::Left => -edge_gap(t, lw, lmar) - x0,
                 _ => 0.0,
             };
         let mut cells = Vec::new();
