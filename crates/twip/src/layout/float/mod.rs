@@ -9,6 +9,9 @@ use crate::docx::model::Float;
 use super::ids::ParaId;
 use super::units::LU_PER_PT;
 
+mod fit;
+mod position;
+
 const EPS: f64 = 1e-6;
 
 /// TABLE-49: the anchor piece of a floating table's obstacle (it has none); the table draws its own rows.
@@ -145,111 +148,8 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], page_w: f64, body_bottom: f64) -
     false
 }
 
-/// Horizontal position (FLOAT-6): `relativeFrom` column / margin / page, `align` left/center/right or an offset.
-pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
-    let (x0, w) = match f.h_relative.as_str() {
-        "page" => (0.0, fr.page_w),
-        "margin" => (fr.margin[0], fr.page_w - fr.margin[0] - fr.margin[1]),
-        "leftMargin" => (0.0, fr.margin[0]),
-        "rightMargin" => (fr.page_w - fr.margin[1], fr.margin[1]),
-        // shortcut: character / insideMargin / outsideMargin are not measured; treated as the column (FLOAT-6).
-        _ => fr.column,
-    };
-    // Compat ≤ 14: left or right of the page puts the float in the margin area when it fits there.
-    if fr.compat == Compat::Legacy && f.h_relative == "page" {
-        match f.h_align.as_deref() {
-            Some("left") if fr.margin[0] >= f.w => return fr.margin[0] - f.w,
-            Some("right") if fr.margin[1] >= f.w => return fr.page_w - fr.margin[1],
-            _ => {}
-        }
-    }
-    match f.h_align.as_deref() {
-        Some("center") => x0 + (w - f.w) / 2.0,
-        Some("right" | "outside") => x0 + w - f.w,
-        Some(_) => x0,
-        None => x0 + f.h_offset,
-    }
-}
-
-/// Vertical position (FLOAT-6). `para_top` = the anchor paragraph's first line box top, `line_top` = the anchor line's.
-pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f64 {
-    let (y0, ht) = match f.v_relative.as_str() {
-        "page" => (0.0, fr.page_h),
-        "margin" => (fr.margin[2], fr.page_h - fr.margin[2] - fr.margin[3]),
-        "topMargin" => (0.0, fr.margin[2]),
-        "bottomMargin" => (fr.page_h - fr.margin[3], fr.margin[3]),
-        "line" => (line_top, 0.0),
-        // An alignment against the paragraph puts the float at its top.
-        _ => return para_top + if f.v_align.is_some() { 0.0 } else { f.v_offset },
-    };
-    match f.v_align.as_deref() {
-        Some("center") => y0 + (ht - h) / 2.0,
-        Some("bottom" | "outside") => y0 + ht - h,
-        Some(_) => y0,
-        None => y0 + f.v_offset,
-    }
-}
-
-/// FLOAT-2, FLOAT-3: the free intervals of a column [x0, x1] in a band, around every square-wrapped float overlapping
-/// it. Returns None when a topAndBottom float overlaps the band (the line must move below it, FLOAT-8).
-pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64) -> Option<Vec<(f64, f64)>> {
-    let mut free = vec![(x0, x1)];
-    for f in floats.iter().filter(|f| f.in_band(top, bottom)) {
-        // Only floats overlapping the column horizontally affect it (FLOAT-11).
-        if f.excl[2] <= x0 + EPS || f.excl[0] >= x1 - EPS {
-            continue;
-        }
-        if f.wrap == Wrap::TopAndBottom {
-            return None;
-        }
-        let (l, r) = (f.excl[0], f.excl[2]);
-        let side = match f.side {
-            Side::Largest => {
-                // A tie goes to the left side (FLOAT-3).
-                if (l - x0) >= (x1 - r) - EPS { Side::Left } else { Side::Right }
-            }
-            s => s,
-        };
-        let block = match side {
-            Side::Left => (l, f64::INFINITY),
-            Side::Right => (f64::NEG_INFINITY, r),
-            _ => (l, r),
-        };
-        let mut next = Vec::new();
-        for (a, b) in free {
-            if block.1 <= a + EPS || block.0 >= b - EPS {
-                next.push((a, b));
-                continue;
-            }
-            if block.0 > a + EPS {
-                next.push((a, block.0));
-            }
-            if block.1 < b - EPS {
-                next.push((block.1, b));
-            }
-        }
-        free = next;
-    }
-    // FLOAT-7: once a float cuts the column, an interval narrower than 18pt takes no text.
-    if free.len() != 1 || free[0] != (x0, x1) {
-        free.retain(|&(a, b)| b - a >= MIN_GAP - EPS);
-    }
-    Some(free)
-}
-
-/// FLOAT-7: the narrowest interval beside a float that takes text.
-const MIN_GAP: f64 = 18.0;
-
-/// FLOAT-4: the lowest edge a blocked band can move down to: the nearest exclusion bottom below `top` among floats
-/// overlapping the band.
-pub fn next_edge(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64) -> Option<f64> {
-    floats
-        .iter()
-        .filter(|f| f.in_band(top, bottom) && f.excl[2] > x0 + EPS && f.excl[0] < x1 - EPS)
-        .map(|f| f.excl[3])
-        .filter(|&b| b > top + EPS)
-        .fold(None, |m: Option<f64>, b| Some(m.map_or(b, |m| m.min(b))))
-}
+pub use fit::{intervals, next_edge};
+pub use position::{h_pos, v_pos};
 
 #[cfg(test)]
 mod tests {
