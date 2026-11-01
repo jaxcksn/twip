@@ -1287,8 +1287,9 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         asc = asc.max(a + e + d);
     }
     let asc = asc.max(num_asc); // LIST-7: the number's ascent, not its descent
-    // LIST-7: a line multiple scales the text's height, not a taller number's (a line holding only the number: its).
-    let un_asc = if un_asc > 0.0 { un_asc } else { num_asc };
+    // LIST-7: a line multiple scales the text's height, not a taller number's; a line holding only the number scales
+    // the number's ascent (or the mark's, when taller) with the mark's descent.
+    let un_asc = if !has_text { un_asc.max(num_asc) } else { un_asc };
     let (asc, desc) = (asc + em_up, desc + em_down);
     let h = asc + desc;
     line.ascent = asc;

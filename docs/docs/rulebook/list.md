@@ -51,6 +51,8 @@ lineHeight = max(textAscent, numberAscent) + textDescent
 
 This holds for large numbers, other fonts and symbol-font bullets alike. The suffix tab adds nothing ([LINE-5](line#line-5)).
 
+A line multiple ([LINE-7](line#line-7)) scales the text's height, not the number's. A line holding only the number (an empty list paragraph) takes the paragraph mark's ascent and descent, its ascent raised to the number's, and the multiple scales all of that: `pitch = (max(markAscent, numberAscent) + markDescent) × m`.
+
 Example: a 20pt Calibri number (A 19.043) before 11pt Calibri text: height 19.043 + 2.954 = 21.997.
 
 ### LIST-8. Bullets {#list-8}
