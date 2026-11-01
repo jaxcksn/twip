@@ -477,7 +477,8 @@ fn thick(b: &Border) -> f64 {
     stripes(b).iter().sum()
 }
 
-/// TABLE-37: the space a border takes across a row boundary in layout: `w:space` plus its line (twice with
+/// TABLE-37: the space a border takes across a row boundary in layout, and (TABLE-17, TABLE-23, TABLE-24) its width
+/// in horizontal geometry (cell boxes, edge allowances, x0): `w:space` plus its line (twice with
 /// `w:shadow`), the line's width rounded down to whole twips; wave, doubleWave and dashDotStroked take a fixed height,
 /// threeDEmboss and threeDEngrave 1.5pt more (3pt from 3pt wide).
 /// shortcut: art borders count as their line width.
@@ -554,8 +555,8 @@ pub fn nested_shift(t: &Table) -> f64 {
         .rows
         .first()
         .and_then(|r| r.cells.first())
-        .map_or((bw(&t.borders[1]), 0.0), |c| (if c.left.is_some() { bw(&c.left) } else { bw(&t.borders[1]) }, c.margins[1]));
-    lw / 2.0 + lmar.max(half_border(lw))
+        .map_or((space_h(&t.borders[1]), 0.0), |c| (space_h(if c.left.is_some() { &c.left } else { &t.borders[1] }), c.margins[1]));
+    lw / 2.0 + edge_gap(t, lw, lmar)
 }
 
 /// TABLE-17: the per-side edge allowance added to the available width (left, right).
@@ -563,13 +564,19 @@ fn edge_add(compat: Compat, t: &Table) -> (f64, f64) {
     let first = t.rows.first();
     let lc = first.and_then(|r| r.cells.first());
     let rc = first.and_then(|r| r.cells.last());
-    let lw = bw(&conflict((lc.and_then(|c| c.left.as_ref()), true), (t.borders[1].as_ref(), false)));
-    let rw = bw(&conflict((rc.and_then(|c| c.right.as_ref()), true), (t.borders[3].as_ref(), false)));
+    let lw = space_h(&conflict((lc.and_then(|c| c.left.as_ref()), true), (t.borders[1].as_ref(), false)));
+    let rw = space_h(&conflict((rc.and_then(|c| c.right.as_ref()), true), (t.borders[3].as_ref(), false)));
     if compat == Compat::Generic {
         (-half_border(lw), -half_border(rw))
     } else {
-        (half_border(lw).max(lc.map_or(0.0, |c| c.margins[1])), half_border(rw).max(rc.map_or(0.0, |c| c.margins[3])))
+        (edge_gap(t, lw, lc.map_or(0.0, |c| c.margins[1])), edge_gap(t, rw, rc.map_or(0.0, |c| c.margins[3])))
     }
+}
+
+/// TABLE-17, TABLE-23 (compat <= 14): the edge allowance of the first cell's left side or the last cell's right side: its gapHalf (the
+/// margin; with cell spacing 2s, the border and the margin), at least half the border.
+fn edge_gap(t: &Table, b: f64, mar: f64) -> f64 {
+    half_border(b).max(if t.cell_spacing > 0.0 { 2.0 * t.cell_spacing + b + mar } else { mar })
 }
 
 /// TABLE-39: the cell-spacing gap on a cell side: 2s on the table's outer boundary, s inside.
@@ -747,7 +754,7 @@ fn fit_inputs<'k>(
         let mut widths = Vec::new();
         for g in gs {
             let c = &r.cells[g.ci];
-            let (bl, br) = (twips(bw(&g.edges[1])), twips(bw(&g.edges[3])));
+            let (bl, br) = (twips(space_h(&g.edges[1])), twips(space_h(&g.edges[3])));
             let (ml, mr) = (twips(c.margins[1]), twips(c.margins[3]));
             let gap = |b: i64, m: i64| if t.cell_spacing > 0.0 { spacing + b + m } else { m };
             let pad = (gap(bl, ml) + gap(br, mr)).max((bl + br + 1) / 2);
@@ -1193,11 +1200,11 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
                     // TABLE-24; with cell spacing, TABLE-39.
                     let (cx, cw) = if t.cell_spacing > 0.0 {
                         let (gl, gr) = (gap(t.cell_spacing, col == 0), gap(t.cell_spacing, col + span >= ncols));
-                        let cx = gl + bw(left_e) + c.margins[1];
-                        (cx, (w - cx - c.margins[3] - bw(right_e) - gr).max(0.0))
+                        let cx = gl + space_h(left_e) + c.margins[1];
+                        (cx, (w - cx - c.margins[3] - space_h(right_e) - gr).max(0.0))
                     } else {
-                        let cx = c.margins[1].max(bw(left_e) / 2.0);
-                        (cx, (w - cx - c.margins[3].max(bw(right_e) / 2.0)).max(0.0))
+                        let cx = c.margins[1].max(space_h(left_e) / 2.0);
+                        (cx, (w - cx - c.margins[3].max(space_h(right_e) / 2.0)).max(0.0))
                     };
                     CellGeo { ci: e.ci, col, span, x, w, cx, cw, edges: e.edges.clone() }
                 })
@@ -1222,15 +1229,15 @@ fn assemble(
     // TABLE-23: the left border centre.
     let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| {
         let own = conflict((c.left.as_ref(), true), (t.borders[1].as_ref(), false));
-        (bw(&own), c.margins[1])
+        (space_h(&own), c.margins[1])
     });
-    let (lw, lmar) = first_left.unwrap_or((bw(&t.borders[1]), 0.0));
+    let (lw, lmar) = first_left.unwrap_or((space_h(&t.borders[1]), 0.0));
     // TABLE-23.
     // TABLE-23: in compat ≤ 14 a table with no tblInd, set directly or by its style, isn't pulled left.
     let mut x0 = match compat {
         Compat::Generic => t.ind + lw / 2.0,
         Compat::Legacy if !t.ind_set => t.ind,
-        Compat::Legacy => t.ind - lmar.max(half_border(lw)),
+        Compat::Legacy => t.ind - edge_gap(t, lw, lmar),
     };
     match t.jc {
         // A row's empty grid before and after its cells isn't centred, only the cells (the first row's, for the table).
@@ -1240,7 +1247,7 @@ fn assemble(
             let after: f64 = cols[cols.len() - ga.min(cols.len() - gb)..].iter().sum();
             x0 = (text_w - (total - before - after)) / 2.0 - before;
         }
-        Jc::Right => x0 = text_w - total - bw(&t.borders[3]) / 2.0,
+        Jc::Right => x0 = text_w - total - space_h(&t.borders[3]) / 2.0,
         _ => {}
     }
     // TABLE-49: a floating table's tblpX takes tblInd's place; tblpXSpec aligns it in the column.
@@ -1249,11 +1256,11 @@ fn assemble(
     if let Some(fp) = t.floating {
         x0 = match fp.x_spec {
             Some(Jc::Center) => (text_w - total + lmar) / 2.0,
-            Some(Jc::Right) => text_w - total - bw(&t.borders[3]) / 2.0,
+            Some(Jc::Right) => text_w - total - space_h(&t.borders[3]) / 2.0,
             Some(_) if compat == Compat::Generic => lw / 2.0,
-            Some(_) => -lmar.max(half_border(lw)),
+            Some(_) => -edge_gap(t, lw, lmar),
             None if compat == Compat::Generic => fp.x + lw / 2.0,
-            None => fp.x - lmar.max(half_border(lw)),
+            None => fp.x - edge_gap(t, lw, lmar),
         };
     }
     let mut stories = stories.iter();
@@ -1341,11 +1348,11 @@ fn assemble(
         let mut cell_bottom = 0.0;
         if t.cell_spacing > 0.0 {
             // TABLE-39: 2s above the first row's boxes (and the table's top border), s above the others; s below every
-            // row's boxes but the last's (the table's bottom adds its 2s).
+            // row's boxes, 2s below the last's (inside the row: the table's bottom is only its outer border).
             let s = t.cell_spacing;
             gap_top = if ri == 0 { 2.0 * s + space_h(&t.borders[0]) } else { s };
             top_border += gap_top;
-            cell_bottom = cells.iter().map(|c| bw(&c.edges[2])).fold(0.0, f64::max) + if ri + 1 < t.rows.len() { s } else { 0.0 };
+            cell_bottom = cells.iter().map(|c| bw(&c.edges[2])).fold(0.0, f64::max) + gap(s, ri + 1 == t.rows.len());
         }
         let content =
             cells.iter().filter(|c| c.v_merge == VMerge::None).map(|c| c.margins[0] + c.content_h + c.margins[2] + cell_bottom).fold(0.0, f64::max);
@@ -1397,7 +1404,7 @@ fn assemble(
     // TABLE-37: the table's bottom border takes its layout height.
     let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
     if t.cell_spacing > 0.0 {
-        bottom_border = 2.0 * t.cell_spacing + space_h(&t.borders[2]);
+        bottom_border = space_h(&t.borders[2]);
     }
     let outer = [t.borders[0].clone(), t.borders[1].clone(), t.borders[2].clone(), t.borders[3].clone()];
     TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit }
@@ -1641,8 +1648,8 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             let ncols = tb.cols.len();
             let bx0 = x0 + c.x + gap(tb.spacing, c.col == 0);
             let bx1 = x0 + c.x + c.w - gap(tb.spacing, c.col + c.span >= ncols);
-            // TABLE-39: a cell box ends the spacing above its row's bottom, but on the table's last row.
-            let (by0, by1) = (top + row.gap_top, top + height - if tb.is_last(ri) { 0.0 } else { tb.spacing });
+            // TABLE-39: a cell box ends the spacing above its row's bottom (2s on the table's last row).
+            let (by0, by1) = (top + row.gap_top, top + height - gap(tb.spacing, tb.is_last(ri)));
             if let Some(fill) = c.shading {
                 background.push(Item::Rect { rect: [bx0, by0, bx1, by1], colour: fill });
             }

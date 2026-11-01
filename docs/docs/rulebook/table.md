@@ -255,10 +255,10 @@ padTotal = s2 × (n + 1)
 A        = round(textW − tblInd + eL + eR)          (twips)
 ```
 
-The **edge allowances** `eL`, `eR` come from the first row: its first cell's left border and left margin, its last cell's right border and right margin, each border taken after the cell-versus-table conflict ([TABLE-36](#table-36)). With `halfBorder = (borderTwips + 1) div 2` (rounded up):
+The **edge allowances** `eL`, `eR` come from the first row: its first cell's left border and left margin, its last cell's right border and right margin, each border taken after the cell-versus-table conflict ([TABLE-36](#table-36)). A border's width in horizontal geometry (here and in [TABLE-23](#table-23), [TABLE-24](#table-24), [TABLE-39](#table-39)) is its layout width: `w:space` plus its line, as [TABLE-37](#table-37) gives it. With `halfBorder = (borderTwips + 1) div 2` (rounded up):
 
 - compat 15: `e = −halfBorder`;
-- compat ≤ 14: `e = +max(halfBorder, cell margin)`.
+- compat ≤ 14: `e = +max(halfBorder, cell margin)`; with cell spacing `s`, `e = +max(halfBorder, 2s + border + cell margin)` ([TABLE-39](#table-39)).
 
 Example: compat 15, 0.5pt borders, 6.5in of text: `A = 9360 − 5 − 5 = 9350`. Compat 12, 108-twip margins: `A = 9360 + 108 + 108 = 9576`.
 
@@ -390,7 +390,7 @@ Place the table's left border centre `x0`, from the left edge of the text column
 
 - `lw` = the width of the first row's first cell's left border, resolved: the cell's own if it is a real border, else the table's left border. `lm` = that cell's left margin.
 - compat 15: `x0 = tblInd + lw/2` (the outer border edge sits on the margin).
-- compat ≤ 14: `x0 = tblInd − max(lm, halfBorder(lw))` with `halfBorder` as in [TABLE-17](#table-17), in points (so the cell text lines up with the margin). A table whose `w:tblInd` is set neither directly nor by its table style's `w:basedOn` chain isn't pulled left: `x0 = 0`, so its text starts `lm` inside the column. A table without `w:tblStyle` takes the default table style, whose indent counts as set.
+- compat ≤ 14: `x0 = tblInd − e`, with `e` the left edge allowance of [TABLE-17](#table-17) (`max(lm, halfBorder(lw))`, or with cell spacing `max(halfBorder(lw), 2s + lw + lm)`), with `halfBorder` as in [TABLE-17](#table-17), in points (so the cell text lines up with the margin). A table whose `w:tblInd` is set neither directly nor by its table style's `w:basedOn` chain isn't pulled left: `x0 = 0`, so its text starts `lm` inside the column. A table without `w:tblStyle` takes the default table style, whose indent counts as set.
 - The alignment is the table's `w:jc`; in compat 15 a table that isn't floating takes its first row's `w:trPr/w:jc` instead when that row has one, for every row.
 - `w:jc="center"`: `x0 = (textW − Σ columns)/2` (the indent is ignored).
 - `w:jc="right"` (or `end`): `x0 = textW − Σ columns − (table right border width)/2`.
@@ -563,10 +563,10 @@ Example: a cell with a 0.72pt bottom border above a wide cell whose top is `nil`
 With `w:tblCellSpacing` = s > 0 (the table's value, in points):
 
 - **Gaps:** a cell side on the table's outer boundary gets 2s, an interior side s. Neighbouring cells are s + s apart; outer cells are 2s from the table's border centre line.
-- **Each cell draws its own box**, from `cellX + gapL` to `cellX + w − gapR`, and from `rowTop + gapTop` to `s` above the row's bottom (to the row's bottom on the table's last row), where `gapTop = 2s` plus the table's top border on the first row, and `s` on the others. Its four winning edges are drawn **inside** that box (top band from the box top down, bottom band up from the box bottom, left and right bands inside the box's sides). Shading fills the box.
+- **Each cell draws its own box**, from `cellX + gapL` to `cellX + w − gapR`, and from `rowTop + gapTop` to `s` above the row's bottom (`2s` above it on the table's last row, whose height holds that gap), where `gapTop = 2s` plus the table's top border on the first row, and `s` on the others. Its four winning edges are drawn **inside** that box (top band from the box top down, bottom band up from the box bottom, left and right bands inside the box's sides). Shading fills the box.
 - **Cell text** starts at `cellX + gapL + bL + marginL` and is `w − that − marginR − bR − gapR` wide.
 - **Row pitch:** `topBorder` of [TABLE-27](#table-27) plus `gapTop`; each cell's content counts `topMargin + content + bottomMargin + (the widest bottom edge in the row)`, plus `s` on every row but the last.
-- **Table bottom:** `2s + the table's bottom border width`.
+- **Table bottom:** the table's bottom border width (the last row holds the 2s above it).
 - **The table's own border** (`w:tblBorders` outer sides) is drawn as usual around the cells: its top on the first row from the row's top, its sides on every row centred on the table's left and right border centres, its bottom below the last row, 2s under the last cell box.
 - Autofit counts the spacing as in [TABLE-7](#table-7), [TABLE-17](#table-17) and [TABLE-21](#table-21). The rule of [TABLE-38](#table-38) doesn't apply.
 
