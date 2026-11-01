@@ -583,6 +583,9 @@ pub struct Table {
     pub width: Width,
     pub jc: Jc,
     pub ind: f64,
+    /// `w:tblInd` is set, directly or by the table style's chain (TABLE-23: in compat ≤ 14 a table without one isn't
+    /// pulled left by its edge allowance).
+    pub ind_set: bool,
     pub borders: [Option<Border>; 6],
     pub fixed: bool,
     pub cell_spacing: f64,

@@ -106,6 +106,7 @@ fn shell(t: &Table) -> Table {
         width,
         jc,
         ind,
+        ind_set,
         borders,
         fixed,
         cell_spacing,
@@ -187,6 +188,7 @@ fn shell(t: &Table) -> Table {
         width: *width,
         jc: *jc,
         ind: *ind,
+        ind_set: *ind_set,
         borders: borders.clone(),
         fixed: *fixed,
         cell_spacing: *cell_spacing,
@@ -211,6 +213,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         width,
         jc,
         ind,
+        ind_set,
         borders,
         fixed,
         cell_spacing,
@@ -230,6 +233,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         && *width == t.width
         && *jc == t.jc
         && *ind == t.ind
+        && *ind_set == t.ind_set
         && *borders == t.borders
         && *fixed == t.fixed
         && *cell_spacing == t.cell_spacing
@@ -1160,7 +1164,12 @@ fn assemble(
     });
     let (lw, lmar) = first_left.unwrap_or((bw(&t.borders[1]), 0.0));
     // TABLE-23.
-    let mut x0 = if compat == Compat::Generic { t.ind + lw / 2.0 } else { t.ind - lmar.max(half_border(lw)) };
+    // TABLE-23: in compat ≤ 14 a table with no tblInd, set directly or by its style, isn't pulled left.
+    let mut x0 = match compat {
+        Compat::Generic => t.ind + lw / 2.0,
+        Compat::Legacy if !t.ind_set => t.ind,
+        Compat::Legacy => t.ind - lmar.max(half_border(lw)),
+    };
     match t.jc {
         // A row's empty grid before and after its cells isn't centred, only the cells (the first row's, for the table).
         Jc::Center => {

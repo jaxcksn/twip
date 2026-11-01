@@ -585,6 +585,7 @@ impl Editor {
             width: crate::docx::props::Width::Auto,
             jc: crate::docx::props::Jc::Left,
             ind: 0.0,
+            ind_set: true,
             borders: if grid_style {
                 Default::default()
             } else {

@@ -1764,6 +1764,7 @@ impl Reader {
             // shortcut: only when every row has the same one; rows aligned differently aren't placed apart.
             jc: tbl.jc.or(row_jc.flatten()).unwrap_or(Jc::Left),
             ind: tbl.ind.unwrap_or(0.0),
+            ind_set: tbl.ind.is_some(),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
