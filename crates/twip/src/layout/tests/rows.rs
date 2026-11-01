@@ -117,6 +117,24 @@ fn a_cell_float_counts_in_the_centred_content_unless_the_flag_says_not_to_align(
     assert!((counted - b - 10.0).abs() < 1e-6, "the float counts in the content height: {counted} vs top {b}");
 }
 
+#[test]
+fn a_right_to_left_table_draws_its_first_cell_on_the_right() {
+    // TABLE-23: w:bidiVisual, two 100pt cells, jc absent: right-aligned, the first cell rightmost, each 100pt apart.
+    let body = r#"<w:tbl><w:tblPr><w:bidiVisual/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+    let s = layout(&doc, &fonts());
+    let mut xs = Vec::new();
+    crate::layout::traverse::paint(&s.pages()[0], &mut |p| {
+        if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
+            xs.extend(r.chars.iter().map(|&(c, x, _)| (c, x)));
+        }
+    });
+    let x = |c: char| xs.iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
+    assert!((x('a') - x('b') - 100.0).abs() < 0.1, "a {} is 100pt right of b {}", x('a'), x('b'));
+    let page_w = doc.sections[0].page_w - doc.sections[0].right;
+    assert!(page_w - x('a') < 100.0, "the first cell ends at the right margin: a {} margin {page_w}", x('a'));
+}
+
 /// `src` with its body's first empty paragraph replaced by `body`.
 pub(super) fn with_body(src: &[u8], body: &str) -> Vec<u8> {
     use std::io::{Read, Write};

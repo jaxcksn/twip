@@ -1782,6 +1782,7 @@ impl Reader {
             look: direct.look,
             bands: (row_band, col_band),
             floating: tbl.floating,
+            bidi_visual: tbl.bidi_visual.unwrap_or(false),
             grid,
             rows,
             src: self.record.then(|| Rc::new(t.range())),

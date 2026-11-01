@@ -596,6 +596,7 @@ impl Editor {
             look: None,
             bands: (0, 0),
             floating: None,
+            bidi_visual: false,
             grid: vec![w; ncols],
             rows: (0..nrows)
                 .map(|_| Row {

@@ -114,6 +114,7 @@ fn shell(t: &Table) -> Table {
         look,
         bands,
         floating,
+        bidi_visual,
         grid,
         rows,
         src: _,
@@ -197,6 +198,7 @@ fn shell(t: &Table) -> Table {
         look: *look,
         bands: *bands,
         floating: *floating,
+        bidi_visual: *bidi_visual,
         grid: grid.clone(),
         rows,
         src: None,
@@ -222,6 +224,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         look,
         bands,
         floating,
+        bidi_visual,
         grid,
         rows,
         src: _,
@@ -242,6 +245,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         && *look == t.look
         && *bands == t.bands
         && *floating == t.floating
+        && *bidi_visual == t.bidi_visual
         && *grid == t.grid
         && *id == t.id
         && *change == t.change
@@ -389,6 +393,9 @@ pub struct TableLayout {
     pub outer: [Option<Border>; 4],
     /// Each row's cells' autofit inputs (width-free): an edit in other rows reuses them.
     pub fit: Rc<[FitRow]>,
+    /// Drawn right to left (TABLE-23): the cells' `x` and `cx` are as drawn, their `col`, `edges` and the spacing
+    /// gaps logical.
+    pub rtl: bool,
 }
 
 /// A row's cells' autofit inputs, and the cached content widths they came from: held while the layout is, so eviction
@@ -551,16 +558,30 @@ fn half_border(w: f64) -> f64 {
 /// TABLE-49: a table's outer box, left and right relative to the column, widest over its rows: from the first cell's
 /// left border outer edge (half rounded up) to the last cell's right border outer edge (half).
 pub fn outer_box(tb: &TableLayout) -> (f64, f64) {
-    tb.rows.iter().filter_map(|r| Some((r.cells.first()?, r.cells.last()?))).fold((f64::INFINITY, f64::NEG_INFINITY), |(l, r), (a, z)| {
-        (l.min(tb.x0 + a.x - half_border(bw(&a.edges[1]))), r.max(tb.x0 + z.x + z.w + bw(&z.edges[3]) / 2.0))
+    // TABLE-23: a right-to-left row's first cell is on its right.
+    let ends = |r: &RowBox| {
+        let last = r.cells.len().checked_sub(1)?;
+        Some(if tb.rtl { (last, 0) } else { (0, last) })
+    };
+    tb.rows.iter().filter_map(|r| ends(r).map(|(a, z)| (&r.cells[a], &r.cells[z]))).fold((f64::INFINITY, f64::NEG_INFINITY), |(l, r), (a, z)| {
+        let (al, zr) = (drawn_edges(tb, a)[1], drawn_edges(tb, z)[3]);
+        (l.min(tb.x0 + a.x - half_border(bw(al))), r.max(tb.x0 + z.x + z.w + bw(zr) / 2.0))
     })
 }
 
 /// TABLE-25: what a cell story shifts a nested table right by, the difference [`assemble`]'s compat <= 14 position
-/// leaves. Left-aligned tables only.
+/// leaves. Left-aligned and right-to-left tables only.
 pub fn nested_shift(t: &Table) -> f64 {
+    if rtl(t) {
+        // TABLE-23: a nested right-to-left table takes the compat 15 placement.
+        let edges = cell_edges(t, grid_columns(t), &|_| None);
+        let res = rtl_sides(edges.first().into_iter().flatten().map(|c| &*c.edges));
+        return rtl_x0(t, 0.0, 0.0, res, false) - rtl_x0(t, 0.0, 0.0, res, true);
+    }
+    // In compat <= 14 a nested table's negative indent counts as 0.
+    let ind = -t.ind.min(0.0);
     if matches!(t.jc, Jc::Center | Jc::Right) {
-        return 0.0;
+        return ind;
     }
     // The first cell's own left border, nil included, else the table's (TABLE-25).
     let (lw, lmar) = t
@@ -568,14 +589,62 @@ pub fn nested_shift(t: &Table) -> f64 {
         .first()
         .and_then(|r| r.cells.first())
         .map_or((space_h(&t.borders[1]), 0.0), |c| (space_h(if c.left.is_some() { &c.left } else { &t.borders[1] }), c.margins[1]));
-    lw / 2.0 + edge_gap(t, lw, lmar)
+    ind + lw / 2.0 + edge_gap(t, lw, lmar)
+}
+
+/// TABLE-23: whether the table is drawn right to left (`w:bidiVisual`; a floating table isn't).
+fn rtl(t: &Table) -> bool {
+    t.bidi_visual && t.floating.is_none()
+}
+
+/// TABLE-23: the resolved right border of the first row's first cell and the resolved left border of its last, in
+/// twips (a right-to-left table's inner sides of its outer cells, with cell spacing).
+fn rtl_sides<'a>(mut row: impl Iterator<Item = &'a [Option<Border>; 4]>) -> (i64, i64) {
+    let first = row.next();
+    let last = row.last().or(first);
+    (first.map_or(0, |e| twips(space_h(&e[3]))), last.map_or(0, |e| twips(space_h(&e[1]))))
+}
+
+/// TABLE-23: a right-to-left table's left border centre (its logical last edge) from the column's left edge, for a
+/// table `total` wide in a column `text_w` wide. `res`: [`rtl_sides`]. `sloppy`: the compat <= 14 placement.
+fn rtl_x0(t: &Table, total: f64, text_w: f64, res: (i64, i64), sloppy: bool) -> f64 {
+    let row = t.rows.first();
+    let (first, last) = (row.and_then(|r| r.cells.first()), row.and_then(|r| r.cells.last()));
+    let side = |own: Option<&Border>, table: &Option<Border>| twips(space_h(&conflict((own, true), (table.as_ref(), false))));
+    // The table's left and right borders are its start and end: its right and left sides as drawn.
+    let b_start = side(first.and_then(|c| c.left.as_ref()), &t.borders[1]);
+    let b_end = side(last.and_then(|c| c.right.as_ref()), &t.borders[3]);
+    // The last cell is the first too: its left is the table's.
+    let alone = row.is_some_and(|r| r.grid_before == 0 && r.cells.len() == 1);
+    let first_outer = row.is_some_and(|r| r.grid_after == 0 && r.cells.len() == 1);
+    let b_last = side(last.and_then(|c| c.left.as_ref()), &t.borders[if alone { 1 } else { 5 }]);
+    let hb = |b: i64| (b + 1) / 2;
+    let (w, width, ind, s) = (twips(text_w), twips(total), twips(t.ind), twips(t.cell_spacing.max(0.0)));
+    let margin = |c: Option<&Cell>| c.map_or(0, |c| twips(c.margins[1]));
+    // TABLE-39: with cell spacing a cell's gap on its left as drawn holds the spacing and border of its logical right.
+    let gap = |outer: bool, b: i64| if s > 0 { s * if outer { 2 } else { 1 } + b } else { 0 };
+    let extra = (b_start + b_last) / 2;
+    let left = match t.jc {
+        // jc right (end): at the left edge, the indent ignored.
+        Jc::Right if sloppy => -hb(b_end).max(margin(last) + gap(alone, res.1)),
+        Jc::Right => 0,
+        Jc::Center if sloppy => (w - width).div_euclid(2),
+        Jc::Center => (w - width - extra).div_euclid(2),
+        // jc absent, left (start), both: at the right edge, the indent from it.
+        _ if sloppy => w - ind + hb(b_start).max(margin(first) + gap(first_outer, res.0)) - width,
+        _ => w - ind - extra - width,
+    };
+    left as f64 / 20.0
 }
 
 /// TABLE-17: the per-side edge allowance added to the available width (left, right).
 fn edge_add(compat: Compat, t: &Table) -> (f64, f64) {
     let first = t.rows.first();
-    let lc = first.and_then(|r| r.cells.first());
-    let rc = first.and_then(|r| r.cells.last());
+    let (mut lc, mut rc) = (first.and_then(|r| r.cells.first()), first.and_then(|r| r.cells.last()));
+    // TABLE-23: a right-to-left table's first and last cells swap, each still against the table's own side.
+    if rtl(t) {
+        (lc, rc) = (rc, lc);
+    }
     let lw = space_h(&conflict((lc.and_then(|c| c.left.as_ref()), true), (t.borders[1].as_ref(), false)));
     let rw = space_h(&conflict((rc.and_then(|c| c.right.as_ref()), true), (t.borders[3].as_ref(), false)));
     if compat == Compat::Generic {
@@ -1001,6 +1070,7 @@ impl ViewTable {
             id: tb.id,
             outer: tb.outer.clone(),
             fit: fit.into(),
+            rtl: tb.rtl,
         })
     }
 }
@@ -1210,11 +1280,17 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
             row.iter()
                 .map(|e| {
                     let (c, col, span) = (&r.cells[e.ci], e.col, e.span);
-                    let (left_e, right_e) = (&e.edges[1], &e.edges[3]);
+                    let (mut left_e, mut right_e) = (&e.edges[1], &e.edges[3]);
+                    let (mut left_outer, mut right_outer) = (col == 0, col + span >= ncols);
+                    // TABLE-23: a right-to-left cell's margins stay on their sides as drawn; its borders and spacing
+                    // are logical, so they swap.
+                    if rtl(t) {
+                        (left_e, right_e, left_outer, right_outer) = (right_e, left_e, right_outer, left_outer);
+                    }
                     let (x, w) = (col_x[col], col_x[col + span] - col_x[col]);
                     // TABLE-24; with cell spacing, TABLE-39.
                     let (cx, cw) = if t.cell_spacing > 0.0 {
-                        let (gl, gr) = (gap(t.cell_spacing, col == 0), gap(t.cell_spacing, col + span >= ncols));
+                        let (gl, gr) = (gap(t.cell_spacing, left_outer), gap(t.cell_spacing, right_outer));
                         let cx = gl + space_h(left_e) + c.margins[1];
                         (cx, (w - cx - c.margins[3] - space_h(right_e) - gr).max(0.0))
                     } else {
@@ -1297,6 +1373,12 @@ fn assemble(
             None => fp.x + e0 + ind,
         };
     }
+    // TABLE-23: a right-to-left table is laid out in logical order and drawn mirrored; x0 is its logical last edge.
+    let rtl = rtl(t);
+    if rtl {
+        x0 = rtl_x0(t, total, text_w, rtl_sides(geo.first().into_iter().flatten().map(|g| &*g.edges)), compat == Compat::Legacy);
+    }
+    let mirror = |x: f64, w: f64| if rtl { total - x - w } else { x };
     let mut stories = stories.iter();
     let mut closings = closings.iter();
     let mut rows = Vec::new();
@@ -1306,7 +1388,7 @@ fn assemble(
         // fixed table's rows all keep the table's.
         // shortcut: left-aligned, non-floating tables only (as measured); the row's width isn't re-solved.
         let shift = match r.ind {
-            Some(i) if compat == Compat::Legacy && !t.fixed && t.jc == Jc::Left && t.floating.is_none() => i - t.ind,
+            Some(i) if compat == Compat::Legacy && !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - t.ind,
             _ => 0.0,
         };
         // TABLE-23: in compat ≤ 14 each row of a table that isn't floating is aligned by its own w:jc, else the table's:
@@ -1315,7 +1397,7 @@ fn assemble(
         // shortcut: a nested table's rows are aligned as a body table's.
         let shift = shift
             + match r.jc.unwrap_or(t.jc) {
-                jc @ (Jc::Center | Jc::Right) if compat == Compat::Legacy && t.floating.is_none() => {
+                jc @ (Jc::Center | Jc::Right) if compat == Compat::Legacy && t.floating.is_none() && !rtl => {
                     let n = cols.len();
                     let (gb, ga) = if env.ctx.env.text.align_tables_row_by_row { (r.grid_before.min(n), r.grid_after) } else { (0, 0) };
                     let before: f64 = cols[..gb].iter().sum();
@@ -1326,7 +1408,7 @@ fn assemble(
                     left - (x0 + before)
                 }
                 // A left-aligned row of a centred or right-aligned table: the table's indent is ignored.
-                Jc::Left if compat == Compat::Legacy && t.floating.is_none() && t.jc != Jc::Left => -edge_gap(t, lw, lmar) - x0,
+                Jc::Left if compat == Compat::Legacy && t.floating.is_none() && !rtl && t.jc != Jc::Left => -edge_gap(t, lw, lmar) - x0,
                 _ => 0.0,
             };
         let mut cells = Vec::new();
@@ -1341,7 +1423,7 @@ fn assemble(
             let align_h = content_h.max(units.float_bottom);
             let fixed_floats = if compat == Compat::Legacy { outside_floats(c) } else { Box::default() };
             cells.push(CellBox {
-                x: g.x + shift,
+                x: mirror(g.x, g.w) + shift,
                 w: g.w,
                 cx: g.cx,
                 cw: g.cw,
@@ -1378,7 +1460,9 @@ fn assemble(
                 })
                 .filter_map(|a| {
                     let b = a.edges[2].clone().filter(|b| b.visible())?;
-                    Some((a.x - bw(&a.edges[1]) / 2.0, a.x + a.w + bw(&a.edges[3]) / 2.0, b))
+                    let (l, r) = if rtl { (&a.edges[3], &a.edges[1]) } else { (&a.edges[1], &a.edges[3]) };
+                    let x = mirror(a.x, a.w);
+                    Some((x - bw(l) / 2.0, x + a.w + bw(r) / 2.0, b))
                 })
                 .collect(),
             _ => Vec::new(),
@@ -1466,8 +1550,10 @@ fn assemble(
     if t.cell_spacing > 0.0 {
         bottom_border = space_h(&t.borders[2]);
     }
-    let outer = [t.borders[0].clone(), t.borders[1].clone(), t.borders[2].clone(), t.borders[3].clone()];
-    TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit }
+    // Drawn sides: a right-to-left table's left border is on its right.
+    let (l, r) = if rtl { (3, 1) } else { (1, 3) };
+    let outer = [t.borders[0].clone(), t.borders[l].clone(), t.borders[2].clone(), t.borders[r].clone()];
+    TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit, rtl }
 }
 
 /// REV-5: in All markup an inserted or deleted row or cell is tinted with its author's colour at a quarter over its
@@ -1633,6 +1719,12 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, bottom: f64) -> Option<Child> {
     }
 }
 
+/// A cell's edges as drawn: top, left, bottom, right (TABLE-23: a right-to-left cell's logical left is on its right).
+fn drawn_edges<'a>(tb: &TableLayout, c: &'a CellBox) -> [&'a Option<Border>; 4] {
+    let [t, l, b, r] = &*c.edges;
+    if tb.rtl { [t, r, b, l] } else { [t, l, b, r] }
+}
+
 /// Draws row `ri` with its top at `top` and the column's left edge at `left`; `parts`: the units of each cell to draw
 /// (a row broken across pages), else all of them.
 pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, parts: Option<&[CellPart]>, last_of_table: bool) -> RowFragment {
@@ -1642,9 +1734,19 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
     // The row's place for table handles: its extent and the column borders crossing it.
     let mut edges: Vec<(f64, usize)> = Vec::new();
     let mut rect = [x0, top, x0, top + height];
-    if let (Some(first), Some(end)) = (row.cells.first(), row.cells.last()) {
-        for c in &row.cells {
-            for e in [(x0 + c.x, c.col), (x0 + c.x + c.w, c.col + c.span)] {
+    if let (Some(mut first), Some(mut end)) = (row.cells.first(), row.cells.last()) {
+        // TABLE-23: a right-to-left row's first cell is on its right.
+        if tb.rtl {
+            (first, end) = (end, first);
+        }
+        // Left to right as drawn.
+        let mut order: Vec<&CellBox> = row.cells.iter().collect();
+        if tb.rtl {
+            order.reverse();
+        }
+        for c in order {
+            let (l, r) = if tb.rtl { (c.col + c.span, c.col) } else { (c.col, c.col + c.span) };
+            for e in [(x0 + c.x, l), (x0 + c.x + c.w, r)] {
                 if !edges.iter().any(|x| x.1 == e.1) {
                     edges.push(e);
                 }
@@ -1708,14 +1810,18 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         if tb.spacing > 0.0 {
             // TABLE-39: the cell's own box, its borders inside it.
             let ncols = tb.cols.len();
-            let bx0 = x0 + c.x + gap(tb.spacing, c.col == 0);
-            let bx1 = x0 + c.x + c.w - gap(tb.spacing, c.col + c.span >= ncols);
+            let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= ncols);
+            if tb.rtl {
+                (lo, ro) = (ro, lo);
+            }
+            let bx0 = x0 + c.x + gap(tb.spacing, lo);
+            let bx1 = x0 + c.x + c.w - gap(tb.spacing, ro);
             // TABLE-39: a cell box ends the spacing above its row's bottom (2s on the table's last row).
             let (by0, by1) = (top + row.gap_top, top + height - gap(tb.spacing, tb.is_last(ri)));
             if let Some(fill) = c.shading {
                 background.push(Item::Rect { rect: [bx0, by0, bx1, by1], colour: fill });
             }
-            let [t, l, b, r] = &*c.edges;
+            let [t, l, b, r] = drawn_edges(tb, c);
             let vis = |e: &'_ Option<Border>| e.as_ref().filter(|b| b.visible()).map(|b| (thick(b), b.clone()));
             if let Some((w, e)) = vis(t) {
                 edge(&mut borders, [bx0, by0, bx1, by0 + w], true, &e);
@@ -1735,7 +1841,7 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             background.push(Item::Rect { rect: [x0 + c.x, top, x0 + c.x + c.w, top + height], colour: fill });
         }
         // Borders as filled rectangles centred on the cell edges; edges without one are gridlines (screen only).
-        let [t, l, b, r] = &*c.edges;
+        let [t, l, b, r] = drawn_edges(tb, c);
         let (cx0, cx1) = (x0 + c.x, x0 + c.x + c.w);
         let shown = |e: &Option<Border>| e.as_ref().is_some_and(|b| b.visible());
         if !shown(t) && c.v_merge != VMerge::Continue {
@@ -1825,6 +1931,7 @@ pub struct RowKey {
     cols: Vec<f64>,
     outer: [Option<Border>; 4],
     bottom_border: u64,
+    rtl: bool,
 }
 
 /// A [`RowKey`] borrowed.
@@ -1879,6 +1986,7 @@ impl CacheKey for RowKey {
             && self.bottom_border == tb.bottom_border.to_bits()
             && self.cols == tb.cols
             && self.outer == tb.outer
+            && self.rtl == tb.rtl
             && same_row(&self.row, &tb.rows[p.ri])
     }
 
@@ -1894,6 +2002,7 @@ impl CacheKey for RowKey {
             cols: tb.cols.clone(),
             outer: tb.outer.clone(),
             bottom_border: tb.bottom_border.to_bits(),
+            rtl: tb.rtl,
         }
     }
 }

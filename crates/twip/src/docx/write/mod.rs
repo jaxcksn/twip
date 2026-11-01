@@ -3712,6 +3712,9 @@ fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
     }
+    if t.bidi_visual {
+        s.push_str(&format!("<{w}bidiVisual/>"));
+    }
     s.push_str(&width(w, "tblW", &t.width));
     match t.jc {
         Jc::Center => s.push_str(&format!("<{w}jc {w}val=\"center\"/>")),

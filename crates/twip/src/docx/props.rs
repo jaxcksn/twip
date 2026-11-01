@@ -712,6 +712,7 @@ pub struct TblProps {
     pub col_band: Option<i64>,
     pub floating: Option<TablePos>,
     pub shading: Option<Option<u32>>,
+    pub bidi_visual: Option<bool>,
 }
 
 /// What `w:tblpVertAnchor` measures a floating table's `tblpY` from.
@@ -748,6 +749,7 @@ impl TblProps {
             match c.tag_name().name() {
                 "tblStyle" => p.style = val(c).map(str::to_string),
                 "tblW" => p.width = Some(Width::parse(c)),
+                "bidiVisual" => p.bidi_visual = Some(on_off(c)),
                 "jc" => {
                     p.jc = Some(match val(c) {
                         Some("center") => Jc::Center,
@@ -820,7 +822,7 @@ impl TblProps {
         macro_rules! take {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
-        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, floating, shading);
+        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, floating, shading, bidi_visual);
         self.borders.merge(&o.borders);
         self.margins.merge(&o.margins);
     }

@@ -313,8 +313,8 @@ pub fn layout_with(
                 {
                     y -= bottom;
                 }
-                // TABLE-25: in compat <= 14 a nested table's negative indent counts as 0.
-                let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t) - t.ind.min(0.0) } else { 0.0 };
+                // TABLE-25.
+                let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t) } else { 0.0 };
                 for mut u in rows {
                     u.block = bi;
                     u.top += y;

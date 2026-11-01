@@ -599,6 +599,8 @@ pub struct Table {
     pub bands: (i64, i64),
     /// `w:tblpPr`: placed at its anchor, taking no room in the flow; text wraps around it (TABLE-49).
     pub floating: Option<TablePos>,
+    /// `w:bidiVisual`: laid out in logical order, drawn right to left (TABLE-23).
+    pub bidi_visual: bool,
     pub grid: Vec<f64>,
     pub rows: Vec<Row>,
     /// The `w:tbl` element's byte range in [`Source::xml`] (editable reads only).

@@ -402,6 +402,14 @@ Each cell then spans from `x0 + edge[col]` to `x0 + edge[col + span]` ([TABLE-21
 
 Example: compat 15, 0.5pt borders: `x0 = 0.25pt`. Compat 12, 5.4pt margins, 0.5pt borders: `x0 = −5.4pt`.
 
+**Right-to-left tables** (`w:bidiVisual`, not floating). The grid is resolved in logical order (column 0 first) and drawn mirrored: column 0 is on the right. The table's `left`/`right` borders are logical (left = start, drawn on the right), and so are cell borders and cell spacing; cell margins are visual (`w:left` is on each cell's left as drawn, in the content box of [TABLE-24](#table-24) and [TABLE-39](#table-39), whose border and spacing sides swap). The edge allowances of [TABLE-17](#table-17) take the first row's last cell for the left side and its first cell for the right, each against the table's own left and right border. In twips, with `width = Σ columns`, `bS` the first cell's left border against the table's left (the start border), `bE` the last cell's right border against the table's right, `bLL` the last cell's left border against the inside vertical border (the table's left when it is the row's only cell), `gS` the first cell's left margin (with cell spacing plus `s`, or `2s` when it is the row's only cell, and its resolved right border), `gE` likewise for the last cell, and `x0` here the table's left edge as drawn:
+
+- `w:jc` absent, `left`, `start` or `both`: right-aligned, the indent counted from the right. Compat ≤ 14: `x0 = textW − tblInd + max(halfBorder(bS), gS) − width`; compat 15: `x0 = textW − tblInd − (bS + bLL) div 2 − width`.
+- `w:jc="right"` or `end`: left-aligned, the indent ignored. Compat ≤ 14: `x0 = −max(halfBorder(bE), gE)`; compat 15: `x0 = 0`.
+- `w:jc="center"`: compat ≤ 14: `x0 = (textW − width) div 2`; compat 15: `x0 = (textW − width − (bS + bLL) div 2) div 2`.
+
+Every row takes the table's placement: the compat ≤ 14 row alignment above and a row's own indent ([TABLE-50](#table-50)) don't apply. A nested right-to-left table takes the compat 15 placement in every mode ([TABLE-25](#table-25)). A floating table with `w:bidiVisual` is placed and drawn left to right.
+
 ### TABLE-24. The cell's content box {#table-24}
 
 Borders take no horizontal space: column widths don't change with border width. With no cell spacing, a cell of width `w` (border centre to border centre) has its content box at
