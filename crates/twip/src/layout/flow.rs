@@ -1836,13 +1836,17 @@ impl<'d> PageFill<'d, '_> {
         };
         // FLOAT-14: compat ≤ 14, a square or top-and-bottom body-level float of the first row, placed from the
         // column and the paragraph (the row's top), that overlaps that row moves the whole table below it, its bottom
-        // distance included; the floats stay where the row's first place put them.
-        // shortcut: a float overlapping only a later row doesn't split the table there; tight and through floats
-        // don't move it, as their wrap polygon (often empty) isn't read.
+        // distance included; the floats stay where the row's first place put them. One overlapping only a later row
+        // (`later`, its exclusion's top and bottom on the page) ends the part above that row there, closed with the
+        // table's bottom border, and the rows from that one on start below it.
+        // shortcut: tight and through floats don't move the table, as their wrap polygon (often empty) isn't read.
+        let mut later: Vec<(f64, f64)> = Vec::new();
         let lift = match (tb.rows.first(), self.sec.blocks.get(pos.block)) {
             (Some(r0), Some(Block::Table(t))) if fp.is_none() && pos.at.at_start() && !page_floats.is_empty() => {
                 let (l, r) = (at_x + tb.x0, at_x + tb.x0 + tb.cols.iter().sum::<f64>());
-                t.rows
+                let mut lift = 0.0f64;
+                for f in t
+                    .rows
                     .first()
                     .into_iter()
                     .flat_map(|row| row.cells.iter())
@@ -1859,10 +1863,17 @@ impl<'d> PageFill<'d, '_> {
                     })
                     .filter(|f| {
                         let x = float::h_pos(f, &frames);
-                        x < r && x + f.w > l && f.v_offset - f.dist[0] < r0.height
+                        x < r && x + f.w > l
                     })
-                    .map(|f| f.v_offset + f.h + f.dist[1])
-                    .fold(0.0, f64::max)
+                {
+                    let (top, bottom) = (f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]);
+                    if top < r0.height {
+                        lift = lift.max(bottom);
+                    } else {
+                        later.push((*y + top, *y + bottom));
+                    }
+                }
+                lift
             }
             _ => 0.0,
         };
@@ -1909,6 +1920,19 @@ impl<'d> PageFill<'d, '_> {
             } else {
                 height
             };
+            // FLOAT-14: a body-level float of the first row over this row (`later`) closes the part above with the
+            // table's bottom border; this row goes on below the float.
+            if rest.is_none()
+                && !rows.is_empty()
+                && let Some(&(_, bottom)) = later.iter().find(|&&(t, b)| *y < b - EPS && t < *y + height - EPS)
+            {
+                if let Some(&(rs, top, idx)) = placed.last().filter(|p| p.2 + 1 == rows.len()) {
+                    let (mut drawn, _) = draw_whole_row(tb, rs, at_x, top, tb.rows[rs].height, true, memos);
+                    move_floats(Some(&mut drawn), &page_floats, &frames, tb.rows[rs].top_border, up(rs));
+                    rows[idx] = drawn;
+                }
+                *y = bottom;
+            }
             // NOTE-8: a row's references place their notes like a body line's.
             let refs: Vec<(NoteKind, i64)> = parts.iter().flat_map(|cu| cu.units.iter().flat_map(|u| u.notes.iter().copied())).collect();
             let mut a = area.clone();

@@ -386,6 +386,28 @@ mod floats {
     }
 
     #[test]
+    fn float_14_a_body_level_float_over_a_later_row_moves_the_rows_from_there_below_it() {
+        // Compat ≤ 14: a 40pt square-wrapped box with layoutInCell="0", 30pt below the first row's top, misses that row
+        // but covers the second, which starts at the box's bottom (70pt down); wrapNone, right below the first row.
+        let gap = |wrap: &str| {
+            let b = text_box(wrap, 40.0, "Boxed")
+                .replace(r#"layoutInCell="1""#, r#"layoutInCell="0""#)
+                .replacen("<wp:posOffset>0</wp:posOffset></wp:positionV>", "<wp:posOffset>381000</wp:posOffset></wp:positionV>", 1)
+                .replacen("<w:p>", "<w:p><w:r><w:t>First</w:t></w:r>", 1);
+            let row = |c: &str| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>{c}</w:tc></w:tr>"#);
+            let body = format!(
+                r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>{}{}</w:tbl><w:p/>"#,
+                row(&b),
+                row("<w:p><w:r><w:t>Second</w:t></w:r></w:p>")
+            );
+            let d = doc(&body);
+            baseline_of(&d, "Second").expect("the second row") - baseline_of(&d, "First").expect("the first row")
+        };
+        let (square, none) = (gap(r#"<wp:wrapSquare wrapText="bothSides"/>"#), gap("<wp:wrapNone/>"));
+        assert!(square > 69.0 && square < 72.0 && none < 30.0, "square {square} vs none {none}");
+    }
+
+    #[test]
     fn float_14_a_line_relative_float_stays_in_its_cell_whatever_layout_in_cell() {
         // Compat ≤ 14: layoutInCell="0" moves a paragraph-relative box out of the cell, so the centred cell doesn't
         // move it; a line-relative one stays in the cell and moves with the text.
