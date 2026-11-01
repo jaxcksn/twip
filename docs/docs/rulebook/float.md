@@ -86,6 +86,7 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 - An interval's edges replace the paragraph's indents, except that an interval reaching the column's right edge keeps the paragraph's right indent, a negative one too.
 - Fill the free intervals of a band one after another, each **independently, one unbreakable piece of text at a time** (up to the next break opportunity). If the next piece doesn't fit the current interval, that interval stays as it is and the text continues in the next interval of the same band. Once a float cuts the column, an interval narrower than 18pt takes no text; one of exactly 18pt does.
 - Several floats give several intervals.
+- A text-wrapping break (`w:br`) ends its interval, not the line: the text after it goes on in the next interval of the same band. A break in the band's last interval ends the line. (`w:clear` isn't read: every break is plain.)
 - An interval that starts at a float's edge (not the column's) takes the place of the left indent: its lines start at `max(edge, left indent)`, and the first line adds its first-line indent to that, so a hanging first line starts left of the edge, over the float's distance or the float itself.
 
 - Tabs in an interval that starts at a float's edge: compat ≤ 14 lays the interval out as a line of its own, so default stops are at `edge + k·defaultTabStop` and custom stops shift by the edge. Compat 15 keeps the stops counted from the margin; stops left of the interval start are skipped.

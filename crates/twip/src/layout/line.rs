@@ -491,7 +491,8 @@ pub fn band(
             Line { end: fit.end.min(n), xs: fit.xs, widths: fit.widths, hard: fit.hard, hyphen: fit.hyphen, leaders: fit.leaders, ..Line::empty(s) };
         align(&mut line, sp, pieces, style, frame, left, right, fit.end >= n);
         s = fit.end;
-        let hard = line.hard.is_some();
+        // FLOAT-7: a text-wrapping break ends its interval, not the line: the text goes on in the next interval.
+        let hard = line.hard.is_some_and(|k| k != Kind::LineBreak);
         segs.push(line);
         if hard || s >= n {
             break;

@@ -302,3 +302,12 @@ fn no_column_balance_leaves_a_continuous_sections_columns_unbalanced() {
     let Some(balanced) = right("") else { return };
     assert_eq!((balanced, right("<w:compat><w:noColumnBalance/></w:compat>").unwrap()), (3, 0));
 }
+
+#[test]
+fn a_line_break_beside_a_float_ends_only_its_interval() {
+    // FLOAT-7: "aa", a text-wrapping break, then "bb", beside a float in mid-column: "aa" fills the left gap and "bb"
+    // goes on in the right gap of the same line.
+    let Some(l) = beside_float(r#"<w:p><w:r><w:t>aa</w:t><w:br/><w:t>bb</w:t></w:r></w:p>"#) else { return };
+    let (aa, bb) = (l.iter().find(|x| x.1 == "aa").expect("aa"), l.iter().find(|x| x.1 == "bb").expect("bb"));
+    assert!((aa.3 - bb.3).abs() < 0.01 && bb.0 > 400.0, "{l:?}");
+}
