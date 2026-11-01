@@ -3,6 +3,7 @@
 
 use std::rc::Rc;
 
+use crate::docx::Compat;
 use crate::docx::model::Float;
 
 use super::ids::ParaId;
@@ -54,6 +55,7 @@ pub struct Frames {
     pub margin: [f64; 4],
     /// The anchor's column: x, width.
     pub column: (f64, f64),
+    pub compat: Compat,
 }
 
 impl Placed {
@@ -153,6 +155,14 @@ pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
         // shortcut: character / insideMargin / outsideMargin are not measured; treated as the column (FLOAT-6).
         _ => fr.column,
     };
+    // Compat ≤ 14: left or right of the page puts the float in the margin area when it fits there.
+    if fr.compat == Compat::Legacy && f.h_relative == "page" {
+        match f.h_align.as_deref() {
+            Some("left") if fr.margin[0] >= f.w => return fr.margin[0] - f.w,
+            Some("right") if fr.margin[1] >= f.w => return fr.page_w - fr.margin[1],
+            _ => {}
+        }
+    }
     match f.h_align.as_deref() {
         Some("center") => x0 + (w - f.w) / 2.0,
         Some("right" | "outside") => x0 + w - f.w,
@@ -169,7 +179,8 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
         "topMargin" => (0.0, fr.margin[2]),
         "bottomMargin" => (fr.page_h - fr.margin[3], fr.margin[3]),
         "line" => (line_top, 0.0),
-        _ => (para_top, 0.0),
+        // An alignment against the paragraph puts the float at its top.
+        _ => return para_top + if f.v_align.is_some() { 0.0 } else { f.v_offset },
     };
     match f.v_align.as_deref() {
         Some("center") => y0 + (ht - h) / 2.0,
@@ -299,5 +310,26 @@ mod tests {
         // FLOAT-7: a gap under 18pt takes no text; one of exactly 18pt does.
         let f = [fl(89.0, 522.0, Side::Both)];
         assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(522.0, 540.0)]);
+    }
+
+    #[test]
+    fn positions() {
+        // FLOAT-6, a 40 × 40pt float on a Letter page with 1in margins.
+        let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat };
+        let f = |h: &str, ha: Option<&str>, v: &str, va: Option<&str>| Float {
+            h_relative: h.into(),
+            h_align: ha.map(Into::into),
+            v_relative: v.into(),
+            v_align: va.map(Into::into),
+            ..(*fl(0.0, 40.0, Side::Both).float).clone()
+        };
+        // Compat ≤ 14 puts a page-left or page-right float in the margin area; compat 15 at the page edge.
+        let x = |ha, c| h_pos(&f("page", Some(ha), "page", None), &fr(c));
+        assert_eq!((x("left", Compat::Legacy), x("right", Compat::Legacy)), (32.0, 540.0));
+        assert_eq!((x("left", Compat::Generic), x("right", Compat::Generic)), (0.0, 572.0));
+        // Any alignment against the paragraph is its top.
+        for va in ["top", "center", "bottom"] {
+            assert_eq!(v_pos(&f("column", None, "paragraph", Some(va)), 40.0, &fr(Compat::Generic), 200.0, 220.0), 200.0);
+        }
     }
 }

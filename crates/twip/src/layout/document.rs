@@ -422,7 +422,13 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
     let (left, right, top) = margins(sec, &ctx, num);
     let s = sec.section_in(ctx.env.text.review.view);
     let width = s.page_w - left - right;
-    let frames = super::float::Frames { page_w: s.page_w, page_h: s.page_h, margin: [left, right, top, s.bottom], column: (left, width) };
+    let frames = super::float::Frames {
+        page_w: s.page_w,
+        page_h: s.page_h,
+        margin: [left, right, top, s.bottom],
+        column: (left, width),
+        compat: ctx.env.text.compat,
+    };
     let fields = hf_fields(run, cx, i);
     let parts = hf_parts(run, cx, i);
     let env = StoryEnv { ctx, fields: &fields, notes: &cx.notes.numbers };

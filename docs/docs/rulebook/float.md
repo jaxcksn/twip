@@ -58,7 +58,7 @@ An inline picture (`wp:inline`) is a glyph whose bottom sits on the baseline: as
 | `rightMargin` | `[pageWidth − rightMargin, pageWidth)` |
 | `column` and everything else (`character`, `insideMargin`, `outsideMargin`) | the column holding the anchor |
 
-Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `wp:align`: `center` → `x0 + (w − floatW)/2`; `right` or `outside` → `x0 + w − floatW`; `left`, `inside` → `x0`. Without align, `x0 + wp:posOffset`.
+Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `wp:align`: `center` → `x0 + (w − floatW)/2`; `right` or `outside` → `x0 + w − floatW`; `left`, `inside` → `x0`. Without align, `x0 + wp:posOffset`. In compat ≤ 14, `left` or `right` of the `page` puts the float in the margin area when it fits there: left at `leftMargin − floatW`, right at `pageWidth − rightMargin` (a 40pt float with 1in margins: 32 and 540; compat 15: 0 and 572).
 
 **Vertical** (`wp:positionV/@relativeFrom`):
 
@@ -71,7 +71,9 @@ Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `
 | `topMargin` | `[0, topMargin)` |
 | `bottomMargin` | `[pageHeight − bottomMargin, pageHeight)` |
 
-`wp:align`: `center` → `y0 + (h − floatH)/2`; `bottom` or `outside` → `y0 + h − floatH`; others → `y0`. Without align, `y0 + posOffset`. Offsets may be negative. In compat 15 a `paragraph`- or `line`-relative float that wraps text (not wrapNone) is placed no higher than the top margin: `y = max(y, topMargin)`; compat ≤ 14 keeps the offset's position.
+`wp:align`: `center` → `y0 + (h − floatH)/2`; `bottom` or `outside` → `y0 + h − floatH`; others → `y0`; any alignment against the `paragraph` → its top. Without align, `y0 + posOffset`. Offsets may be negative. In compat 15 a `paragraph`- or `line`-relative float that wraps text (not wrapNone) is placed no higher than the top margin: `y = max(y, topMargin)`, and its wrap box (the float grown by `distL` and `distR`) is moved onto the page: right if it starts left of 0, else left if it ends past the page's right edge (no further than its left edge allows); compat ≤ 14 keeps the offset's position.
+
+**`simplePos="1"`**: an axis without an alignment is at `wp:simplePos` on the page; an axis with an alignment keeps it and its `relativeFrom`.
 
 **An anchor after a page or column break in its paragraph**: compat ≤ 14 continues the paragraph after the break at the top of the next page or column, so the anchor is placed there, `paragraph` counting from the continuation's top. Compat 15 ends the paragraph at the break. Not done: compat 15 placing such an anchor on the paragraph's first page (it isn't drawn).
 

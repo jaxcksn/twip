@@ -267,7 +267,7 @@ pub fn layout_with(
                 y += g;
                 let id = para_id(p);
                 let para_top = y;
-                let fr = float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width) };
+                let fr = float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width), compat: text.compat };
                 // FLOAT-14: the wrapping floats the paragraph lays out in the cell from its column (or character) and
                 // its paragraph (or line) without a vertical alignment, by anchor piece, placed against its top.
                 let mut own: Vec<(usize, Placed)> = Vec::new();

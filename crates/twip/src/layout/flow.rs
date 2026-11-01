@@ -1544,6 +1544,7 @@ impl<'d> PageFill<'d, '_> {
             page_h: self.page_h,
             margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
             column: (col.x, col.width),
+            compat: self.ctx.env.text.compat,
         };
         let bi = pos.block;
         let si = self.sec.index;
@@ -1562,7 +1563,7 @@ impl<'d> PageFill<'d, '_> {
             let h = self.float_height(f, memos)?;
             let line_top = bands[b].0;
             let para_top = if first_part { top } else { bands[0].0 };
-            let x = float::h_pos(f, &frames);
+            let mut x = float::h_pos(f, &frames);
             let mut fy = float::v_pos(f, h, &frames, para_top, line_top);
             // FLOAT-13: a wrapNone float stays where it is, and so does its paragraph. Small square or tight floats
             // beside a one-line anchor may stay too (moved up only past the page edge); not separated from FLOAT-9 yet.
@@ -1570,9 +1571,16 @@ impl<'d> PageFill<'d, '_> {
                 anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
                 continue;
             }
-            // FLOAT-6 (compat 15): a wrapped paragraph- or line-relative float never rises above the top margin.
+            // FLOAT-6 (compat 15): a wrapped paragraph- or line-relative float never rises above the top margin, and its
+            // wrap box (the float and its side distances) is moved onto the page.
             if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
                 fy = fy.max(frames.margin[2]);
+                let (l, r) = (x - f.dist[2], x + f.w + f.dist[3]);
+                if l < 0.0 {
+                    x -= l;
+                } else if r > frames.page_w {
+                    x -= (r - frames.page_w).min(l);
+                }
             }
             // FLOAT-9.
             if matches!(f.v_relative.as_str(), "paragraph" | "line") && fy + h > col.bottom + EPS {
@@ -1833,6 +1841,7 @@ impl<'d> PageFill<'d, '_> {
             page_h: self.page_h,
             margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
             column: (col.x, col.width),
+            compat: self.ctx.env.text.compat,
         };
         // FLOAT-14: compat ≤ 14, a square or top-and-bottom body-level float of the first row, placed from the
         // column and the paragraph (the row's top), that overlaps that row moves the whole table below it, its bottom

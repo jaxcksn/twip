@@ -1576,8 +1576,19 @@ impl Reader {
             return;
         }
         let pos = |name: &str| item.children().find(|c| is(*c, WP, name));
-        let (h_rel, h_align, h_off) = position(pos("positionH"));
-        let (v_rel, v_align, v_off) = position(pos("positionV"));
+        let (mut h_rel, h_align, mut h_off) = position(pos("positionH"));
+        let (mut v_rel, v_align, mut v_off) = position(pos("positionV"));
+        // FLOAT-6: with simplePos, an axis without an alignment is at wp:simplePos on the page.
+        if item.attribute("simplePos").is_some_and(|v| on_off_str(Some(v))) {
+            let sp = pos("simplePos");
+            let at = |n: &str| sp.and_then(|p| emu(p.attribute(n))).unwrap_or(0.0);
+            if h_align.is_none() {
+                (h_rel, h_off) = ("page".into(), at("x"));
+            }
+            if v_align.is_none() {
+                (v_rel, v_off) = ("page".into(), at("y"));
+            }
+        }
         let wrap_el = item.children().find(|c| {
             c.tag_name().namespace() == Some(WP)
                 && matches!(c.tag_name().name(), "wrapSquare" | "wrapTight" | "wrapThrough" | "wrapTopAndBottom" | "wrapNone")
