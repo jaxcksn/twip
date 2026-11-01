@@ -152,7 +152,8 @@ change or add a behaviour, update the rule in the same pull request.
 ## Releases
 
 Every release comes from `main`. There are no release branches. Before 1.0, a fix ships in the next release and older
-versions aren't patched. Maintainers can also publish a prerelease (`x.y.z-pre.N`) from `main` for testing.
+versions aren't patched. Maintainers can also publish a canary of any branch
+(`x.y.z-canary.N`) to GitHub Packages by running the Release workflow from it with no tag.
 
 ## License
 
