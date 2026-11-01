@@ -24,7 +24,12 @@ fn lines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64)
 fn baselines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64, f64)>> {
     let fonts = fonts();
     fonts.face("Arial", false, false)?;
-    let compat = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
+    // Compat 12 unless the settings give a mode.
+    let compat = if settings.contains("compatibilityMode") {
+        ""
+    } else {
+        r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#
+    };
     let parts = [
         (
             "word/document.xml",
@@ -230,4 +235,18 @@ fn a_rows_own_indent_moves_it_in_an_autofit_table_only() {
     let Some(first) = x("autofit", "first") else { return };
     assert!((first - x("autofit", "second").unwrap() - 36.0).abs() < 0.01);
     assert!((x("fixed", "first").unwrap() - x("fixed", "second").unwrap()).abs() < 0.01);
+}
+
+#[test]
+fn a_compat_15_section_break_after_a_table_takes_a_line_in_balanced_columns() {
+    // COL-6: two continuous columns end with a one-row table; in compat 15 the empty paragraph holding the section
+    // break still takes a line below it, so the next section starts a line lower than in compat 12.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let row = r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let body = format!(
+        r#"<w:p><w:r><w:t>One</w:t></w:r></w:p>{row}<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr></w:p>"#
+    );
+    let after = |settings: &str| baselines(settings, ARIAL_12, &body).and_then(|l| l.into_iter().find(|l| l.1 == "After")).map(|l| l.3);
+    let (Some(a12), Some(a15)) = (after(""), after(c15)) else { return };
+    assert!((a15 - a12 - 13.8).abs() < 0.05, "{a12} {a15}");
 }

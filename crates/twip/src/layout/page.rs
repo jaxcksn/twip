@@ -454,11 +454,12 @@ impl<'d> Paginator<'d, '_> {
     ) -> Result<Option<(f64, Vec<Child>, FlowToken, FlowState, PageEffects)>, Yield> {
         let (p0, c0) = saved;
         let top = cols[0].top;
-        // COL-6: the empty paragraph holding the section break takes no space.
+        // COL-6: the empty paragraph holding the section break takes no space. In compat 15 one right after a table
+        // still takes its line, below the content of the column it ends in, past the balanced height if need be.
         let blocks = &sec.blocks;
-        // shortcut: in compat 15 one right after a table is an ordinary line that may run below the column bottom; it is
-        // left out here too.
-        let skip_last = matches!(blocks.get(blocks.len().wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && blocks.len() > 1);
+        let n = blocks.len();
+        let skip_last = matches!(blocks.get(n.wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && n > 1);
+        let mark_line = skip_last && fill.ctx.env.text.compat == Compat::Generic && matches!(blocks.get(n.wrapping_sub(2)), Some(Block::Table(_)));
         let state = fill.at.clone();
         // One fill at column height `h`: the result when the content ends in these columns, and each column's
         // statistics.
@@ -482,19 +483,27 @@ impl<'d> Paginator<'d, '_> {
                 let s = r.stop;
                 (pos, carry) = (r.token, r.state);
                 stats.push(ColStats::of(&r.children, r.bottom - top));
+                let mut kids = r.children;
+                let mut bottom = r.bottom;
+                let at_mark = skip_last && pos.block + 1 == n && pos.at.at_start();
+                if at_mark && mark_line && !fill.at.forced {
+                    let m = fill.fill(&pos, &carry, ColumnSpace { top: r.bottom, bottom: f64::INFINITY, ..col }, false, memos)?;
+                    (pos, carry, bottom) = (m.token, m.state, m.bottom);
+                    kids.extend(m.children);
+                }
                 children.push(Child::Box(BoxFragment {
                     kind: BoxKind::Column,
                     id: None,
                     offset: (0.0, 0.0),
                     size: (0.0, 0.0),
-                    children: r.children.into(),
+                    children: kids.into(),
                 }));
                 // A column ends below its last line and that paragraph's space-after.
-                end = end.max(r.bottom + carry.prev_after);
+                end = end.max(bottom + carry.prev_after);
                 if fill.at.forced {
                     return Ok((None, stats));
                 }
-                if s == Stop::Done || (skip_last && pos.block + 1 == blocks.len() && pos.at.at_start()) {
+                if s == Stop::Done || at_mark {
                     return Ok((Some((pos, carry, children, end, fill.at.effects.clone())), stats));
                 }
                 if k + 1 < cols.len() {
