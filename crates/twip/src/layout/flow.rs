@@ -412,9 +412,9 @@ fn page_floats(t: &Table) -> HashMap<u64, &Float> {
     out
 }
 
-/// Moves a placed row's [`page_floats`] from the cell to their page position. Paragraph and line offsets stay as in
-/// the cell, less the row's top border (FLOAT-14).
-fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<u64, &Float>, fr: &Frames, top_border: f64) {
+/// Moves a placed row's [`page_floats`] from the cell to their page position. Paragraph offsets stay as in the cell,
+/// less the row's top border and `up`, how far the table moved below its floats (FLOAT-14).
+fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<u64, &Float>, fr: &Frames, top_border: f64, up: f64) {
     let Some(row) = row.filter(|_| !floats.is_empty()) else { return };
     for cell in row.cells.iter_mut() {
         for c in cell.content.iter_mut() {
@@ -431,7 +431,7 @@ fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<
                             let f = floats[&float.0];
                             let x = float::h_pos(f, fr) - offset.0;
                             let y = match f.v_relative.as_str() {
-                                "paragraph" | "line" => rect[1] - top_border,
+                                "paragraph" | "line" => rect[1] - top_border - up,
                                 _ => float::v_pos(f, rect[3] - rect[1], fr, 0.0, 0.0) - offset.1,
                             };
                             let d = (x - rect[0], y - rect[1]);
@@ -1681,6 +1681,34 @@ impl<'d> PageFill<'d, '_> {
             margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
             column: (col.x, col.width),
         };
+        // FLOAT-14: compat ≤ 14, a square or top-and-bottom body-level float of the first row, placed from the
+        // column and the paragraph (the row's top), that overlaps that row moves the whole table below it, its bottom
+        // distance included; the floats stay where the row's first place put them.
+        // shortcut: a float overlapping only a later row doesn't split the table there; tight and through floats
+        // don't move it, as their wrap polygon (often empty) isn't read.
+        let lift = match (tb.rows.first(), self.sec.blocks.get(pos.block)) {
+            (Some(r0), Some(Block::Table(t))) if fp.is_none() && pos.at.at_start() && !page_floats.is_empty() => {
+                let (l, r) = (at_x + tb.x0, at_x + tb.x0 + tb.cols.iter().sum::<f64>());
+                t.rows
+                    .first()
+                    .into_iter()
+                    .flat_map(|row| row.cells.iter())
+                    .flat_map(|c| c.blocks.iter())
+                    .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+                    .flat_map(|p| p.inlines.iter())
+                    .filter_map(|i| if let Inline::Float(f, _) = i { page_floats.get(&f.id).copied() } else { None })
+                    .filter(|f| matches!(f.wrap.as_str(), "square" | "topAndBottom") && f.h_relative == "column" && f.v_relative == "paragraph" && f.h_align.is_none() && f.v_align.is_none())
+                    .filter(|f| {
+                        let x = float::h_pos(f, &frames);
+                        x < r && x + f.w > l && f.v_offset - f.dist[0] < r0.height
+                    })
+                    .map(|f| f.v_offset + f.h + f.dist[1])
+                    .fold(0.0, f64::max)
+            }
+            _ => 0.0,
+        };
+        *y += lift;
+        let up = |r: usize| if r == 0 { lift } else { 0.0 };
         let mut placed_here = 0;
         // Rows placed whole on this page: (row, top, index in `rows`), for a merged region that splits (TABLE-32).
         let mut placed: Vec<(usize, f64, usize)> = Vec::new();
@@ -1742,7 +1770,7 @@ impl<'d> PageFill<'d, '_> {
                     }
                     Some(_) => draw_row(tb, ri, at_x, *y, height, Some(&parts), last),
                 });
-                move_floats(rows.last_mut(), &page_floats, &frames, row.top_border);
+                move_floats(rows.last_mut(), &page_floats, &frames, row.top_border, up(ri));
                 *y += height + if last { tb.bottom_border } else { 0.0 };
                 *empty = false;
                 pos.at = At::Row(ri + 1);
@@ -1822,11 +1850,11 @@ impl<'d> PageFill<'d, '_> {
                 for m in &merged {
                     let (rs, top, idx) = placed[m.pi];
                     let mut redrawn = draw_merged_part(tb, m, ri, h, at_x, top);
-                    move_floats(Some(&mut redrawn), &page_floats, &frames, tb.rows[rs].top_border);
+                    move_floats(Some(&mut redrawn), &page_floats, &frames, tb.rows[rs].top_border, up(rs));
                     rows[idx] = redrawn;
                 }
                 rows.push(draw_row(tb, ri, at_x, *y, h, Some(&fitted), true));
-                move_floats(rows.last_mut(), &page_floats, &frames, row.top_border);
+                move_floats(rows.last_mut(), &page_floats, &frames, row.top_border, up(ri));
                 *y += h;
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
@@ -1837,7 +1865,7 @@ impl<'d> PageFill<'d, '_> {
             if at_top {
                 // PAGE-5: nothing fits in an empty column; place the row anyway.
                 rows.push(draw_row(tb, ri, at_x, *y, height, Some(&parts), last));
-                move_floats(rows.last_mut(), &page_floats, &frames, row.top_border);
+                move_floats(rows.last_mut(), &page_floats, &frames, row.top_border, up(ri));
                 *y += height + if last { tb.bottom_border } else { 0.0 };
                 *empty = false;
                 pos.at = At::Row(ri + 1);

@@ -332,6 +332,21 @@ mod floats {
     }
 
     #[test]
+    fn float_14_a_body_level_float_over_the_first_row_moves_the_table_below_it() {
+        // Compat ≤ 14: a 40pt square-wrapped box with layoutInCell="0" over the first row puts the table below it; with
+        // layoutInCell="1" the row grows instead and its text stays at the top.
+        let cell = |in_cell: &str| {
+            let b = text_box(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 40.0, "Boxed").replace(r#"layoutInCell="1""#, &format!(r#"layoutInCell="{in_cell}""#));
+            let body = format!(
+                r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>{b}<w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+            );
+            baseline_of(&doc(&body), "Cell").expect("the cell text")
+        };
+        let (outside, inside) = (cell("0"), cell("1"));
+        assert!((outside - inside - 40.0).abs() < 0.01, "outside {outside} vs inside {inside}");
+    }
+
+    #[test]
     fn float_14_a_line_relative_float_stays_in_its_cell_whatever_layout_in_cell() {
         // Compat ≤ 14: layoutInCell="0" moves a paragraph-relative box out of the cell, so the centred cell doesn't
         // move it; a line-relative one stays in the cell and moves with the text.
