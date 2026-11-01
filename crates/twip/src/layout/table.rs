@@ -560,31 +560,8 @@ fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, b: &Border) {
     let colour = b.color.unwrap_or(0);
     let [x0, y0, x1, y1] = rect;
     let st = stripes(b);
-    // TABLE-37: patterned lines are dashes in units of the line width, on and off from the band's start (a
-    // dashSmallGap's unit is the band's thickness, the same for a single line).
-    // shortcut: wave, doubleWave and dashDotStroked are drawn as solid lines.
-    let pattern: &[f64] = match b.style.as_str() {
-        "dotted" => &[1.0, 1.0],
-        "dashed" => &[3.0, 1.0],
-        "dotDash" => &[3.0, 1.0, 1.0, 1.0],
-        "dotDotDash" => &[3.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        "dashSmallGap" => &[4.0, 1.0],
-        _ => &[],
-    };
-    let unit = if horizontal { y1 - y0 } else { x1 - x0 };
-    if st.len() == 1 && !pattern.is_empty() && unit > EPS {
-        let (start, end) = if horizontal { (x0, x1) } else { (y0, y1) };
-        let mut at = start;
-        for (k, len) in pattern.iter().cycle().enumerate() {
-            if at >= end - EPS {
-                break;
-            }
-            let to = (at + len * unit).min(end);
-            if k % 2 == 0 {
-                out.push(Item::Rect { rect: if horizontal { [at, y0, to, y1] } else { [x0, at, x1, to] }, colour });
-            }
-            at = to;
-        }
+    if st.len() == 1 && !dash_pattern(&b.style).is_empty() {
+        out.extend(dashes(&b.style, rect, horizontal).into_iter().map(|rect| Item::Rect { rect, colour }));
         return;
     }
     if st.len() == 1 {
@@ -598,6 +575,43 @@ fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, b: &Border) {
         }
         at += w;
     }
+}
+
+/// TABLE-37, PARA-7: a patterned line's dashes, on and off in units of its width (a dashSmallGap's of the band's
+/// thickness, the same for a single line); empty for a solid line.
+/// shortcut: wave, doubleWave and dashDotStroked are drawn as solid lines.
+pub(super) fn dash_pattern(style: &str) -> &'static [f64] {
+    match style {
+        "dotted" => &[1.0, 1.0],
+        "dashed" => &[3.0, 1.0],
+        "dotDash" => &[3.0, 1.0, 1.0, 1.0],
+        "dotDotDash" => &[3.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        "dashSmallGap" => &[4.0, 1.0],
+        _ => &[],
+    }
+}
+
+/// The dashes of a patterned line filling `rect` (its thickness across), from the band's start.
+pub(super) fn dashes(style: &str, rect: [f64; 4], horizontal: bool) -> Vec<[f64; 4]> {
+    let [x0, y0, x1, y1] = rect;
+    let unit = if horizontal { y1 - y0 } else { x1 - x0 };
+    let (start, end) = if horizontal { (x0, x1) } else { (y0, y1) };
+    if unit <= EPS {
+        return vec![rect];
+    }
+    let mut out = Vec::new();
+    let mut at = start;
+    for (k, len) in dash_pattern(style).iter().cycle().enumerate() {
+        if at >= end - EPS {
+            break;
+        }
+        let to = (at + len * unit).min(end);
+        if k % 2 == 0 {
+            out.push(if horizontal { [at, y0, to, y1] } else { [x0, at, x1, to] });
+        }
+        at = to;
+    }
+    out
 }
 
 /// TABLE-17: half a border in whole twips, rounded up.

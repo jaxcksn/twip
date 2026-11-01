@@ -299,7 +299,13 @@ fn apply_borders(
         let parts: Vec<(f64, f64)> =
             if b.style == "double" { vec![(a, a + b.width), (a + 2.0 * b.width, a + 3.0 * b.width)] } else { vec![(a, a + b.width)] };
         for (p, q) in parts {
-            rects.push((if horizontal { [from, p, to, q] } else { [p, from, q, to] }, color(b)));
+            let r = if horizontal { [from, p, to, q] } else { [p, from, q, to] };
+            // PARA-7: a patterned line as its dashes (TABLE-37).
+            if super::table::dash_pattern(&b.style).is_empty() {
+                rects.push((r, color(b)));
+            } else {
+                rects.extend(super::table::dashes(&b.style, r, horizontal).into_iter().map(|r| (r, color(b))));
+            }
         }
     };
     let (mut shade_top, mut shade_bottom) = (0.0, None);

@@ -76,7 +76,7 @@ Example: Calibri 11: lines 13.4277 × 259/240 = 14.4907 apart, and 8pt more betw
 
 ### PARA-7. Paragraph borders {#para-7}
 
-Border widths are `w:sz / 8` points, `w:space` is in points. A `double` border is a line, a gap and a line, each that width: it takes 3× the width.
+Border widths are `w:sz / 8` points, `w:space` is in points. A `double` border is a line, a gap and a line, each that width: it takes 3× the width. A patterned line (`dotted`, `dashed`, `dotDash`, `dotDotDash`, `dashSmallGap`) is drawn as dashes, as table borders are ([TABLE-37](table#table-37)).
 
 - **Vertically**, a bordered paragraph occupies: top border width + top `w:space` + its lines + bottom `w:space` + bottom border width. Add the top part above the first line (it moves the first line's baseline down by the same amount) and the bottom part below the last line. The paragraph spacing ([PARA-1](para#para-1)) stays outside the box.
 - **Consecutive paragraphs with identical border settings** (all of top, left, bottom, right and between) form one box: the first has the top border, the last the bottom border, and nothing is drawn or added between them. Paragraphs whose settings differ in any way are separate boxes. `w:between` borders are never drawn.
