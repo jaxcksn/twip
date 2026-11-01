@@ -1016,8 +1016,8 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
                 break;
             }
         }
-        // Leading spaces never shrink (BREAK-6).
-        gaps.push(if words.is_empty() { Gap::default() } else { gap });
+        // Leading spaces take their width but never shrink or stretch (BREAK-6).
+        gaps.push(if words.is_empty() { Gap { width: gap.width, ..Gap::default() } } else { gap });
         gap = Gap::default();
         words.push((ws, k, w));
     }

@@ -39,7 +39,7 @@ When the first character that doesn't fit has no break opportunity before it on 
 
 ### BREAK-6. Compat-15 justified breaking {#break-6}
 
-Break each stretch between hard line breaks separately. Split it into items (the text between spaces, also ended by a break opportunity inside it: after a hyphen, [BREAK-3](break#break-3), but not a soft hyphen; the next item then follows with no gap) with their widths, and the width of each gap of spaces before an item. `column` is the line's available width (first-line indent on the first line). In layout units ([UNIT-4](unit#unit-4)), a space of width `w` may shrink by `(w + 2) >> 2` and stretch by `(w + 1) >> 1`; `C(e)` and `E(e)` sum these over the gaps inside items `i … e − 1` (the spaces before the first item and after the last don't count). Then, for each line starting at item `i`:
+Break each stretch between hard line breaks separately. Split it into items (the text between spaces, also ended by a break opportunity inside it: after a hyphen, [BREAK-3](break#break-3), but not a soft hyphen; the next item then follows with no gap) with their widths, and the width of each gap of spaces before an item. `column` is the line's available width (first-line indent on the first line). In layout units ([UNIT-4](unit#unit-4)), a space of width `w` may shrink by `(w + 2) >> 2` and stretch by `(w + 1) >> 1`; `C(e)` and `E(e)` sum these over the gaps inside items `i … e − 1` (the spaces before the first item and after the last don't count; the spaces before the first item still take their width in the natural width). Then, for each line starting at item `i`:
 
 ```
 if the rest of the stretch fits unshrunk: it is the last line, stop
