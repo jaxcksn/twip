@@ -123,6 +123,16 @@ fn a_tight_float_wraps_around_its_polygon_box() {
     assert!((l[0].0 - 81.0).abs() < 0.01 && (l[1].0 - 72.0).abs() < 0.01, "{l:?}");
 }
 
+#[test]
+fn compat_14_tabs_beside_a_float_count_from_the_interval() {
+    // FLOAT-7: beside a float ending at 261pt (180pt + distR 9pt), the default stop is 36pt past the interval start
+    // (297pt), not the next 36pt multiple from the margin (288pt).
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="114300" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="2286000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = format!(r#"<w:p>{float}<w:r><w:tab/><w:t>x</w:t></w:r></w:p>"#);
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 297.0).abs() < 0.01, "{l:?}");
+}
+
 /// A 360 × 100pt square float 54pt into the column (9pt left and right of it, a 45pt gap each side), anchored after
 /// "Hi" in the first paragraph; then `p` and "After", in Arial 12 (line height 13.8).
 fn beside_float(p: &str) -> Option<Vec<(f64, String, f64, f64)>> {

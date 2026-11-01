@@ -71,6 +71,7 @@ impl Line {
 }
 
 /// Horizontal context of a paragraph's lines.
+#[derive(Clone, Copy)]
 pub struct Frame {
     /// Column (or cell content) width.
     pub width: f64,
@@ -81,6 +82,8 @@ pub struct Frame {
     pub split_page_break: bool,
     /// TABLE-51: a fitted cell's paragraph doesn't wrap; its lines end only at breaks and start at the left.
     pub no_wrap: bool,
+    /// Where tab stops are measured from: 0, or a compat <= 14 piece's interval start beside a float (FLOAT-7).
+    pub tab_origin: f64,
 }
 
 impl Frame {
@@ -93,6 +96,7 @@ impl Frame {
             expand_shift_return: !e.do_not_expand_shift_return,
             split_page_break: e.compat == Compat::Legacy && e.split_pg_break_and_para_mark,
             no_wrap: space.fit,
+            tab_origin: 0.0,
         }
     }
 }
@@ -458,6 +462,10 @@ pub fn band(
             continue;
         }
         gap.get_or_insert(right - left);
+        // FLOAT-7: compat <= 14 lays a piece beside a float out as a line of its own: its tab stops count from the
+        // interval start.
+        let piece_frame = Frame { tab_origin: if frame.compat == Compat::Legacy { a } else { 0.0 }, ..*frame };
+        let frame = &piece_frame;
         // BREAK-6 in the interval too (compat-15 justified), unless its segment has tabs; an interval as wide as the
         // column is a whole line, chosen per line as `break_paragraph` does with tabs.
         let planned = if matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && s < n {
@@ -540,6 +548,12 @@ fn ptab_stop(t: &crate::docx::PTab, style: &ParaStyle, frame: &Frame) -> (f64, T
 
 /// The stop a tab at `pen` goes to (TAB-1 to TAB-3), and its kind.
 fn next_stop(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leader) {
+    let o = frame.tab_origin;
+    let (stop, kind, leader) = stop_from(pen - o, style, frame);
+    (stop + o, kind, leader)
+}
+
+fn stop_from(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leader) {
     let custom = style.tabs.iter().find(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
     let (mut stop, mut kind, mut leader) = match custom {
         Some(t) => (t.pos, t.kind, t.leader),
