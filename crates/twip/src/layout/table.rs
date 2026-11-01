@@ -1848,11 +1848,6 @@ pub fn draw_whole_row(
     }
 }
 
-/// The units of a whole table, for stories and cells (no page breaks): one unit per row, drawn relative to its top.
-pub fn units(t: &Table, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<(Vec<StoryUnit>, f64), Yield> {
-    Ok(table_units(&*layout(t, width, env, None, false, memos)?))
-}
-
 /// A laid-out table's rows as story units, and their height.
 pub fn table_units(tb: &TableLayout) -> (Vec<StoryUnit>, f64) {
     let mut y = 0.0;

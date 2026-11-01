@@ -5,7 +5,7 @@ use crate::docx::Compat;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::docx::{Block, Float, Inline, NoteKind, ParaStyle};
+use crate::docx::{Block, Float, Inline, NoteKind, ParaStyle, Table};
 
 use super::LayoutCtx;
 use super::cache::{CacheKey, cached};
@@ -201,6 +201,8 @@ pub fn layout_with(
     // A cell's wrapping floats: (unit, child, top and bottom of the wrap exclusion in the story's coordinates).
     let mut wrapping: Vec<(usize, usize, f64, f64)> = Vec::new();
     let mut float_bottom = 0.0f64;
+    // HDR-11: the table just before (its style, layout and bottom border), while nothing came between.
+    let mut prev_table: Option<(&Table, f64)> = None;
     for (bi, b) in blocks.iter().enumerate() {
         match b {
             LaidBlock::Para(laid) => {
@@ -281,13 +283,25 @@ pub fn layout_with(
                 }
                 prev = Some(style);
                 prev_after = after;
+                prev_table = None;
             }
             LaidBlock::Table(t) => {
                 y += prev_after; // TABLE-48: the space-after before a table applies to its border edge
-                let (rows, h) = match resolved.get(bi) {
-                    Some(ChildId::Table(tb)) => super::table::table_units(tb),
-                    _ => super::table::units(t, width, env, memos)?,
+                let tl = match resolved.get(bi) {
+                    Some(ChildId::Table(tb)) => tb.clone(),
+                    _ => super::table::layout(t, width, env, None, false, memos)?,
                 };
+                let (rows, h) = super::table::table_units(&tl);
+                // HDR-11: outside cells, a table right after another of the same style and layout continues it: one
+                // border between them, not the first one's bottom border and then this one's top.
+                // shortcut: each keeps its own borders and cell margins; only the first's bottom border goes.
+                if !in_cell
+                    && let Some((p, bottom)) = prev_table
+                    && p.style_id == t.style_id
+                    && p.fixed == t.fixed
+                {
+                    y -= bottom;
+                }
                 // TABLE-25: in compat <= 14 a nested table's negative indent counts as 0.
                 let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t) - t.ind.min(0.0) } else { 0.0 };
                 for mut u in rows {
@@ -301,6 +315,7 @@ pub fn layout_with(
                 y += h;
                 prev = None;
                 prev_after = 0.0;
+                prev_table = Some((*t, tl.bottom_border));
             }
         }
     }

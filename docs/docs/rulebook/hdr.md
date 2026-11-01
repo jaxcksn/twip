@@ -70,7 +70,7 @@ Don't draw a body glyph whose top (`baseline − fontSize`) is at or below the p
 
 ### HDR-11. Tables in headers and footers {#hdr-11}
 
-Tables in headers and footers follow the table rules ([TABLE-1](table#table-1)). A story never ends with a table in the file: the paragraph after it is laid out as any other and adds its line to the height. Footers still grow upward ([HDR-2](hdr#hdr-2)).
+Tables in headers and footers follow the table rules ([TABLE-1](table#table-1)). A table that follows another with nothing between them, the same `w:tblStyle` and the same layout (fixed or autofit), continues it: the two meet at one border, so the first table's bottom border takes no height (two 0.5pt-bordered tables are 0.5pt shorter than when laid out apart). A story never ends with a table in the file: the paragraph after it is laid out as any other and adds its line to the height. Footers still grow upward ([HDR-2](hdr#hdr-2)).
 
 ### HDR-12. Sections {#hdr-12}
 
