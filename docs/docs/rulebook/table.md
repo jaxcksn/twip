@@ -679,7 +679,7 @@ In compat 15, if a table starts below other content in a column and the first ro
 ### TABLE-49. Floating table position {#table-49}
 
 - **Horizontally**, `w:tblpX` takes `w:tblInd`'s place ([TABLE-23](#table-23)): compat 15, left border centre = `tblpX + hb(bL)`; compat ≤ 14, `tblpX − max(hb(bL), lm) + tblInd` (`lm` the first cell's left margin, `hb` half a border rounded up to a twip, `tblInd` its `dxa` value). `w:tblpXSpec` `left` (and `inside`) is `tblpX` 0. `center` and `right` (`outside`) place the table's **frame** in the reference: centred, or against its right end. The frame:
-  - compat 15: from the table's outer box left to the widest row's last cell edge, plus that cell's right border width less its half (truncated to a twip); a cell with no right border at all counts 0.75pt. The outer box starts at the frame's left.
+  - compat 15: from the table's outer box left to the widest row's last cell edge, plus that cell's right border width less its half (truncated to a twip); a cell with no right border at all counts a whole 0.75pt, no half taken off (a `none` one counts 0). The outer box starts at the frame's left.
   - compat ≤ 14: `tblInd` plus the widest row's last-cell content right, from the first cell edge: the borders and padding hang outside it. The first edge sits `tblInd` right of the frame's left (the left border centre `max(hb(bL), lm)` left of that edge).
   - The reference is the column (`w:horzAnchor` `text`, `margin`) or the page (`page`).
   - Compat ≤ 14 with a negative `tblInd`: the obstacle (below) keeps starting at `tblpX`, not at the table that hangs out left of it.

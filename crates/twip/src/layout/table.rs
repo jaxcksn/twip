@@ -1466,7 +1466,7 @@ fn assemble(
     // TABLE-49: a floating table's tblpX takes tblInd's place (compat ≤ 14 adds the tblInd to it); tblpXSpec centres
     // or right-aligns its frame in the column (horzAnchor page: the flow moves it). The frame of an aligned table:
     // compat 15, from the outer box's left to the widest row's last edge plus that cell's right border less its
-    // truncated half (no border at all counts 0.75pt), with the box at its left; compat ≤ 14, the tblInd plus the
+    // truncated half (no border at all counts a whole 0.75pt), with the box at its left; compat ≤ 14, the tblInd plus the
     // widest row's last-cell content right from the first edge (borders and padding hang outside), the first edge
     // tblInd right of its left.
     if let Some(fp) = t.floating {
@@ -1475,18 +1475,19 @@ fn assemble(
             Compat::Legacy => (-edge_gap(t, lw, lmar), t.ind),
         };
         let frame = || {
-            let row_w = |g: &CellGeo| match compat {
+            let row_w = |(r, g): (&Row, &CellGeo)| match compat {
                 Compat::Generic => {
-                    let b = match &g.edges[3] {
-                        None => 0.75,
-                        Some(b) if b.visible() => thick(b),
-                        Some(_) => 0.0,
+                    let table = if g.col + g.span >= cols.len() { &t.borders[3] } else { &t.borders[5] };
+                    let b = match (&g.edges[3], candidate(r.cells.get(g.ci).map(|c| &c.right), table)) {
+                        (Some(b), _) => thick(b) - ((thick(b) * 20.0).round() as i64 / 2) as f64 / 20.0,
+                        (None, None) => 0.75,
+                        (None, Some(_)) => 0.0,
                     };
-                    g.x + g.w + e0 + b - ((b * 20.0).round() as i64 / 2) as f64 / 20.0
+                    g.x + g.w + e0 + b
                 }
                 Compat::Legacy => g.x + g.cx + g.cw + e0,
             };
-            geo.iter().filter_map(|r| r.last()).map(row_w).fold(0.0, f64::max) + ind
+            t.rows.iter().zip(geo).filter_map(|(r, gs)| gs.last().map(|g| (r, g))).map(row_w).fold(0.0, f64::max) + ind
         };
         x0 = match fp.x_spec {
             Some(Jc::Center) => (text_w - frame()) / 2.0 + e0 + ind,

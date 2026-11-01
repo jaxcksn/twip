@@ -321,3 +321,20 @@ fn a_compat_14_column_aligned_float_counts_from_the_paragraph_indent() {
     let Some(l) = lines("", ARIAL_12, &p) else { return };
     assert!((l[0].0 - 148.0).abs() < 0.01, "{l:?}");
 }
+
+#[test]
+fn a_right_aligned_floating_tables_frame_counts_a_missing_border_whole() {
+    // TABLE-49: compat 15, a 300pt right-aligned floating table; its frame is 300.75pt wide with no right border at
+    // all (the cell's text at 72 + 468 - 300.75 + 5.4), 300pt with a `none` one.
+    let at = |borders: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="page" w:tblpXSpec="right" w:tblpY="2000"/><w:tblW w:w="6000" w:type="dxa"/><w:tblBorders>{borders}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+        lines(c15, ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _)| t == "cell").expect("drawn").0)
+    };
+    let Some(missing) = at("") else { return };
+    assert!((missing - 244.65).abs() < 0.01, "{missing}");
+    let none = at(r#"<w:right w:val="none" w:sz="0" w:space="0" w:color="000000"/>"#).unwrap();
+    assert!((none - 245.4).abs() < 0.01, "{none}");
+}
