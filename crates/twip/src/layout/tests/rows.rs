@@ -528,7 +528,9 @@ fn a_header_row_after_row_0_joins_the_first_row_run() {
     let styles = format!(
         r#"<w:styles xmlns:w="{w}"><w:style w:type="table" w:styleId="TS"><w:name w:val="TS"/><w:tblPr><w:tblStyleRowBandSize w:val="1"/></w:tblPr><w:tblStylePr w:type="firstRow"><w:rPr><w:sz w:val="40"/></w:rPr></w:tblStylePr><w:tblStylePr w:type="band1Horz"><w:rPr><w:sz w:val="28"/></w:rPr></w:tblStylePr></w:style></w:styles>"#
     );
-    let row = |pr: &str, t: char| format!(r#"<w:tr>{pr}<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#);
+    let row = |pr: &str, t: char| {
+        format!(r#"<w:tr>{pr}<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#)
+    };
     let body = format!(
         r#"<w:tbl><w:tblPr><w:tblStyle w:val="TS"/><w:tblLook w:val="0420"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}{}{}</w:tbl><w:p/>"#,
         row("", 'a'),
@@ -536,7 +538,8 @@ fn a_header_row_after_row_0_joins_the_first_row_run() {
         row("", 'c')
     );
     let parts = [("word/styles.xml".to_string(), styles.into_bytes())];
-    let src = crate::docx::write::repackage(&with_body(&crate::docx::blank::blank_docx(), &body), &parts, zip::CompressionMethod::Deflated).expect("repackages");
+    let src = crate::docx::write::repackage(&with_body(&crate::docx::blank::blank_docx(), &body), &parts, zip::CompressionMethod::Deflated)
+        .expect("repackages");
     let doc = crate::docx::read(&src).expect("reads");
     let Some(Block::Table(t)) = doc.sections[0].blocks.first() else { panic!("a table") };
     let size = |ri: usize| match &t.rows[ri].cells[0].blocks[0] {
