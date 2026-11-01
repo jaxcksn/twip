@@ -1697,7 +1697,13 @@ impl<'d> PageFill<'d, '_> {
                     .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
                     .flat_map(|p| p.inlines.iter())
                     .filter_map(|i| if let Inline::Float(f, _) = i { page_floats.get(&f.id).copied() } else { None })
-                    .filter(|f| matches!(f.wrap.as_str(), "square" | "topAndBottom") && f.h_relative == "column" && f.v_relative == "paragraph" && f.h_align.is_none() && f.v_align.is_none())
+                    .filter(|f| {
+                        matches!(f.wrap.as_str(), "square" | "topAndBottom")
+                            && f.h_relative == "column"
+                            && f.v_relative == "paragraph"
+                            && f.h_align.is_none()
+                            && f.v_align.is_none()
+                    })
                     .filter(|f| {
                         let x = float::h_pos(f, &frames);
                         x < r && x + f.w > l && f.v_offset - f.dist[0] < r0.height
@@ -1783,7 +1789,10 @@ impl<'d> PageFill<'d, '_> {
             // TABLE-45: a cantSplit, header or keep-with-next row doesn't split, except in compat 15 at the top of a column
             // (in compat <= 14 it is placed whole there and runs past the column's bottom, PAGE-5).
             let no_split = row.cant_split || row.header || keeps;
-            let can_split = !breaks && !row.exact && (!no_split || at_top && self.ctx.env.text.compat == Compat::Generic) && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
+            let can_split = !breaks
+                && !row.exact
+                && (!no_split || at_top && self.ctx.env.text.compat == Compat::Generic)
+                && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
             let mut fitted: Vec<CellPart> = Vec::new();
             let mut left: Vec<Vec<StoryUnit>> = Vec::new();
             if can_split {

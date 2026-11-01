@@ -837,7 +837,11 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                         let full = l.xs.last().zip(l.widths.last()).map_or(start_x, |(x, w)| x + w - shift);
                         let mark = p.mark_in(env.ctx.env.text.review.view);
                         let glyph = if bi + 1 == blocks.len() { '\u{a4}' } else { '\u{b6}' };
-                        let mark_w = env.ctx.fonts.face(&mark.ascii, mark.bold, mark.italic).and_then(|f| Some(f.advance(f.glyph(glyph)?) * f.scale(mark.size)));
+                        let mark_w = env
+                            .ctx
+                            .fonts
+                            .face(&mark.ascii, mark.bold, mark.italic)
+                            .and_then(|f| Some(f.advance(f.glyph(glyph)?) * f.scale(mark.size)));
                         w = w.max(full + mark_w.unwrap_or(0.0) + s.ind_right);
                     }
                     mx = mx.max(up(w));
@@ -1469,7 +1473,8 @@ fn assemble(
                     let before: f64 = cols[..gb].iter().sum();
                     let after: f64 = cols[n - ga.min(n - gb)..].iter().sum();
                     let width = total - before - after;
-                    let gap = r.cells.first().map_or(0.0, |c| c.margins[1]) + if t.cell_spacing > 0.0 { 2.0 * t.cell_spacing + space_h(&t.borders[1]) } else { 0.0 };
+                    let gap = r.cells.first().map_or(0.0, |c| c.margins[1])
+                        + if t.cell_spacing > 0.0 { 2.0 * t.cell_spacing + space_h(&t.borders[1]) } else { 0.0 };
                     let left = if jc == Jc::Center { (text_w - width) / 2.0 } else { text_w - width + gap };
                     left - (x0 + before)
                 }

@@ -1671,7 +1671,8 @@ impl Reader {
             Rc::new(GridChange { mark: self.mark(c, MarkKind::Format), previous })
         });
         // TABLE-3: the table's own w:tblLook, never its style's (a table without one has the default look).
-        let look = direct.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
+        let look =
+            direct.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
         let row_nodes: Vec<(Node, Vec<ControlId>)> = self.rows_of(t, &[]);
         let nrows = row_nodes.len();
         let row_band = tbl.row_band.unwrap_or(0);
