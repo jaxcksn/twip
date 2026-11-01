@@ -2006,3 +2006,24 @@ fn the_caret_shows_after_the_document_gets_shorter_than_its_last_page() {
     assert_eq!(e.snapshot().pages().len(), 1);
     assert!(e.caret_view().is_some(), "the caret shows");
 }
+
+#[test]
+fn after_a_page_break_the_caret_shows_on_the_next_page() {
+    let mut e = crate::editing::Editor::open(&blank_with("Conversation"), fonts()).unwrap();
+    e.execute(super::mv(MoveBy::Story, Dir::Forward, false), fonts());
+    let p0 = e.caret_view().expect("caret").page;
+    e.execute(Command::InsertPageBreak, fonts());
+    assert_eq!(e.caret_view().expect("caret").page, p0 + 1, "the caret follows the break");
+    assert_eq!(texts(&e), ["Conversation\u{c}", ""], "the break ends its paragraph");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(texts(&e), ["Conversation"], "one undo step");
+    e.execute(Command::Redo, fonts());
+    e.execute(Command::InsertText("abc".into()), fonts());
+    let typed = e.caret_view().expect("caret");
+    assert_eq!(typed.page, p0 + 1);
+    assert!(typed.x > 40.0, "the caret is after the typed text: {typed:?}");
+    // Up from the next paragraph returns to the typed line, not the line before the break.
+    e.execute(Command::InsertParagraph, fonts());
+    e.execute(super::mv(MoveBy::Line, Dir::Back, false), fonts());
+    assert_eq!(e.caret_view().expect("caret").page, p0 + 1);
+}

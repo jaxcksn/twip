@@ -13,10 +13,6 @@ impl Editor {
         self.insert_inline(|run| Inline::Break(BreakKind::Line, run), "Line Break", fonts)
     }
 
-    pub(in crate::editing) fn page_break(&mut self, fonts: &Fonts) -> Outcome {
-        self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts)
-    }
-
     // shortcut: saving can't add sections yet, so a section break is refused.
     pub(in crate::editing) fn section_break(&mut self, _kind: SectionBreakKind) -> Outcome {
         Outcome::unsupported("section breaks")

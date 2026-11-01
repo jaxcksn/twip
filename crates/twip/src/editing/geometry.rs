@@ -763,10 +763,16 @@ impl Pages {
         idx: &DocIndex,
     ) -> Option<(usize, Rc<PageGeometry>, usize)> {
         let pages = self.pages_of(para, near, idx);
+        // A page whose lines all end before `u` (a page break inside the paragraph) only answers if no later page shows it.
+        let mut before = None;
         for (k, &page) in pages.iter().enumerate() {
             let Some(geo) = self.page(page, idx) else { continue };
             let Some(i) = geo.line_at(para, u, affinity) else { continue };
             let l = &geo.lines[i];
+            if l.last_of(para).is_some_and(|e| e < u) {
+                before = Some((page, geo, i));
+                continue;
+            }
             if affinity == Affinity::Downstream
                 && l.last_of(para) == Some(u)
                 && l.first_of(para) != Some(u)
@@ -780,7 +786,7 @@ impl Pages {
             }
             return Some((page, geo, i));
         }
-        None
+        before
     }
 
     /// The pages showing `para`, searching outward from `near` (where the caret was last).
