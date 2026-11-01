@@ -97,24 +97,11 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0 # moon compares with the base branch
-      - uses: moonrepo/setup-toolchain@v0
-      - run: moon setup
-      - run: pnpm install --frozen-lockfile
-      - uses: mymindstorm/setup-emsdk@v16
+      - uses: ./.github/actions/build-web
         with:
-          version: '6.0.8'
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
-      - run: node licenses/notices.mjs THIRD-PARTY-NOTICES.md
-      - if: inputs.canary
-        run: sh .github/stamp-canary.sh
-      - run: moon run web:test
-      # The package is dist/: the module, its types, the engine and the worker entry.
-      - working-directory: bindings/web
-        run: |
-          test -f dist/index.js && test -f dist/index.d.ts && test -f dist/worker.js
-          pnpm pack --pack-destination "$RUNNER_TEMP/npm"
+          canary: ${{ inputs.canary }}
+      - run: pnpm pack --pack-destination "$RUNNER_TEMP/npm"
+        working-directory: bindings/web
       - uses: actions/upload-artifact@v7
         with:
           name: npm
