@@ -100,14 +100,14 @@ impl PartialEq for ChildId {
 
 /// The children of `blocks` (as laid out, REV-6), shaped (and nested tables laid out: at `width`, or measured when
 /// `None`) through the cache.
-pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, memos: &mut Memos) -> Result<Vec<ChildId>, Yield> {
+pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, cell: Option<CellEnds>, memos: &mut Memos) -> Result<Vec<ChildId>, Yield> {
     let mut out = Vec::with_capacity(blocks.len());
     for b in blocks {
         out.push(match b {
             LaidBlock::Para(p) => ChildId::Para(shape(p.para(), &p.shape_space(env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?),
             LaidBlock::Table(t) => ChildId::Table(match width {
-                Some(w) => super::table::layout(t, w, env, None, false, memos)?,
-                None => super::table::layout(t, 1e9, env, None, true, memos)?,
+                Some(w) => super::table::layout(&as_nested(t, cell), w, env, None, false, memos)?,
+                None => super::table::layout(&as_nested(t, cell), 1e9, env, None, true, memos)?,
             }),
         });
     }
@@ -115,11 +115,22 @@ pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, memos
 }
 
 /// A cell story's ends (PARA-4): whether its first paragraph drops its space-before and its last its space-after,
-/// against their neighbours in document order outside the cell.
+/// against their neighbours in document order outside the cell; and its table's layout, which its nested tables take.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CellEnds {
     pub before: bool,
     pub after: bool,
+    /// The cell's table is laid out fixed (TABLE-5).
+    pub fixed: bool,
+}
+
+/// TABLE-5: a nested table is laid out with its outermost table's layout, fixed or autofit, whatever its own.
+/// ponytail: copies the nested table when the two differ; keep a converted copy if that shows in profiles.
+pub fn as_nested(t: &Table, cell: Option<CellEnds>) -> std::borrow::Cow<'_, Table> {
+    match cell {
+        Some(c) if c.fixed != t.fixed => std::borrow::Cow::Owned(Table { fixed: c.fixed, ..t.clone() }),
+        _ => std::borrow::Cow::Borrowed(t),
+    }
 }
 
 /// What a story (a cell, header, footer, note, separator or text box), or a cell's content widths (`width` 0:
@@ -175,7 +186,7 @@ fn story_bytes(s: &StoryLayout) -> usize {
 /// [`StoryKey`].
 pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnds>, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
-    let children = child_ids(&blocks, Some(width), env, memos)?;
+    let children = child_ids(&blocks, Some(width), env, cell, memos)?;
     let probe = StoryKey::new(children.clone(), Some(width), cell, env);
     cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, m))
 }
@@ -289,7 +300,7 @@ pub fn layout_with(
                 y += prev_after; // TABLE-48: the space-after before a table applies to its border edge
                 let tl = match resolved.get(bi) {
                     Some(ChildId::Table(tb)) => tb.clone(),
-                    _ => super::table::layout(t, width, env, None, false, memos)?,
+                    _ => super::table::layout(&as_nested(t, cell), width, env, None, false, memos)?,
                 };
                 let (rows, h) = super::table::table_units(&tl);
                 // HDR-11: outside cells, a table right after another of the same style and layout continues it: one

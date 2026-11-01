@@ -65,6 +65,8 @@ Both layouts run the same algorithm ([TABLE-6](#table-6)). `w:tblLayout w:type="
 | `w:tblW` above Σ columns | grow in proportion to max | the same |
 | pct cells | their share of A, beating dxa | the same |
 
+A nested table is laid out with its outermost table's layout, whatever its own `w:tblLayout`: inside a fixed table a nested autofit table's auto cells take their grid widths, and inside an autofit table a nested fixed table is fitted to its content.
+
 ## Autofit
 
 ### TABLE-6. The autofit algorithm and its arithmetic {#table-6}

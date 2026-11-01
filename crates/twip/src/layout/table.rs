@@ -598,10 +598,11 @@ fn gap(s: f64, outer: bool) -> f64 {
 
 /// Content min, max and hard minimum of blocks in twips (TABLE-7), cached and width-free (LayoutNG's
 /// min/max sizes).
-fn content_widths(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result<Rc<(i64, i64, i64)>, Yield> {
+fn content_widths(blocks: &[Block], env: &StoryEnv, fixed: bool, memos: &mut Memos) -> Result<Rc<(i64, i64, i64)>, Yield> {
     let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
-    let probe = StoryKey::new(child_ids(&laid, None, env, memos)?, None, Some(CellEnds::default()), env);
-    cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, m))
+    let cell = Some(CellEnds { fixed, ..CellEnds::default() });
+    let probe = StoryKey::new(child_ids(&laid, None, env, cell, memos)?, None, cell, env);
+    cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, fixed, m))
 }
 
 /// TABLE-33: a vertical cell's content thickness in twips: 6, each paragraph's space before and after, and each of its
@@ -650,7 +651,7 @@ fn twips(x: f64) -> i64 {
 
 /// TABLE-7, TABLE-8: the widest unbreakable piece and the widest unwrapped line, with the paragraph's indents.
 /// A nested table supplies its own autofit's minimum, width with A = MAXW, and hard minimum (TABLE-11).
-fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, memos: &mut Memos) -> Result<(i64, i64, i64), Yield> {
+fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, memos: &mut Memos) -> Result<(i64, i64, i64), Yield> {
     let (mut mn, mut mx, mut hard) = (0i64, 0i64, 0i64);
     let old = env.ctx.env.text.compat == Compat::Legacy;
     for b in blocks {
@@ -707,8 +708,9 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, memos: &mut Mem
             &LaidBlock::Table(t) => {
                 // The text width it takes: its widths less TABLE-17's edge allowances (TABLE-11), or laid out
                 // in a cell that wide its A falls short and its words break.
-                let shown = in_view(t, env.ctx.env.text.review.view);
-                let t = shown.as_ref().map_or(t, |v| &v.table);
+                let t = super::story::as_nested(t, Some(CellEnds { fixed, ..CellEnds::default() }));
+                let shown = in_view(&t, env.ctx.env.text.review.view);
+                let t = shown.as_ref().map_or(&*t, |v| &v.table);
                 let f = fit(t, 0.0, env, Some(autofit::MAXW), memos)?;
                 // TABLE-11: a nested table is never sloppy, so its allowances are compat 15's in every mode.
                 let (al, ar) = edge_add(Compat::Generic, t);
@@ -798,7 +800,7 @@ fn fit_inputs<'k>(
                     let w = vertical_width(&c.blocks, env, memos)?;
                     (w, w, 0)
                 } else {
-                    let w = content_widths(&c.blocks, env, memos)?;
+                    let w = content_widths(&c.blocks, env, t.fixed, memos)?;
                     widths.push(w.clone());
                     *w
                 };
@@ -1060,7 +1062,7 @@ fn layout_shown(
                     ci => style(r.cells[ci - 1].blocks.last(), view),
                 };
                 let after = r.cells.get(g.ci + 1).map_or(mark, |n| style(n.blocks.first(), view));
-                let ends = CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after) };
+                let ends = CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after), fixed: t.fixed };
                 Some(super::story::layout(&blocks, g.cw, env, Some(ends), memos)?)
             });
         }
