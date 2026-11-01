@@ -108,6 +108,21 @@ fn the_first_line_indent_adds_to_a_floats_edge() {
     assert!((l[0].0 - 279.0).abs() < 0.01 && (l[1].0 - 252.0).abs() < 0.01, "{l:?}");
 }
 
+#[test]
+fn a_tight_float_wraps_around_its_polygon_box() {
+    // FLOAT-8: a 180 × 100pt picture behind the text whose tight polygon is one point at its top-left corner pushes
+    // only the first line, by distR; behindDoc doesn't stop it wrapping.
+    let pt = r#"<wp:start x="0" y="0"/><wp:lineTo x="0" y="0"/><wp:lineTo x="0" y="0"/>"#;
+    let float = format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="0" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="2286000" cy="1270000"/><wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0">{pt}</wp:wrapPolygon></wp:wrapTight><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+    );
+    let p = format!(
+        r#"<w:p>{float}<w:r><w:t>Some words that run on for more than one line beside the point at the top of the picture, and then some more words to fill a second line.</w:t></w:r></w:p>"#
+    );
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 81.0).abs() < 0.01 && (l[1].0 - 72.0).abs() < 0.01, "{l:?}");
+}
+
 /// A 360 × 100pt square float 54pt into the column (9pt left and right of it, a 45pt gap each side), anchored after
 /// "Hi" in the first paragraph; then `p` and "After", in Arial 12 (line height 13.8).
 fn beside_float(p: &str) -> Option<Vec<(f64, String, f64, f64)>> {

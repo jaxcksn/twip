@@ -97,6 +97,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         .into(),
         wrap_text: "bothSides".into(),
         dist: [fr.v_space, fr.v_space, fr.h_space, fr.h_space],
+        poly: None,
         behind: false,
         allow_overlap: true,
         layout_in_cell: true,

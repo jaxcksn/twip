@@ -1624,6 +1624,18 @@ impl Reader {
                 wrap: wrap.into(),
                 wrap_text,
                 dist: [dist("distT"), dist("distB"), dist("distL"), dist("distR")],
+                poly: wrap_el.filter(|_| matches!(wrap, "tight" | "through")).and_then(|w| {
+                    let pts: Vec<(f64, f64)> = w
+                        .children()
+                        .filter(|c| is(*c, WP, "wrapPolygon"))
+                        .flat_map(|p| p.children())
+                        .filter(|q| q.is_element())
+                        .filter_map(|q| Some((q.attribute("x")?.parse::<f64>().ok()? / 21600.0, q.attribute("y")?.parse::<f64>().ok()? / 21600.0)))
+                        .collect();
+                    (pts.len() >= 2).then(|| {
+                        pts.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)])
+                    })
+                }),
                 behind: item.attribute("behindDoc").is_some_and(|v| on_off_str(Some(v))),
                 allow_overlap: item.attribute("allowOverlap").map(|v| on_off_str(Some(v))).unwrap_or(true),
                 layout_in_cell: item.attribute("layoutInCell").map(|v| on_off_str(Some(v))).unwrap_or(true),

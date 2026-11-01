@@ -465,6 +465,7 @@ impl Editor {
             wrap: "none".into(),
             wrap_text: "bothSides".into(),
             dist: [3.6, 3.6, 9.0, 9.0],
+            poly: None,
             behind: false,
             allow_overlap: true,
             layout_in_cell: true,

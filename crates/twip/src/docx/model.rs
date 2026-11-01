@@ -220,6 +220,9 @@ pub struct Float {
     /// `bothSides`, `left`, `right`, `largest`.
     pub wrap_text: String,
     pub dist: [f64; 4],
+    /// A tight or through wrap polygon's bounding box, fractions of the extent (x0, y0, x1, y1); None without a
+    /// polygon of at least two points (FLOAT-8).
+    pub poly: Option<[f64; 4]>,
     pub behind: bool,
     pub allow_overlap: bool,
     pub layout_in_cell: bool,

@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::docx::model::Float;
 
 use super::ids::ParaId;
+use super::units::LU_PER_PT;
 
 const EPS: f64 = 1e-6;
 
@@ -70,12 +71,21 @@ impl Placed {
             "largest" => Side::Largest,
             _ => Side::Both,
         };
+        // FLOAT-8: a tight or through float wraps around its polygon's bounding box, at least one layout unit tall.
+        let wrap_box = match f.poly {
+            Some([x0, y0, x1, y1]) => {
+                let top = y + y0 * h;
+                [x + x0 * f.w, top, x + x1 * f.w, (y + y1 * h).max(top + 1.0 / LU_PER_PT)]
+            }
+            None => rect,
+        };
         Placed {
             key,
             anchor,
             rect,
-            excl: [rect[0] - dl, rect[1] - dt, rect[2] + dr, rect[3] + db],
-            wrap: if f.behind { Wrap::None } else { wrap },
+            excl: [wrap_box[0] - dl, wrap_box[1] - dt, wrap_box[2] + dr, wrap_box[3] + db],
+            // FLOAT-8: behindDoc is paint order only.
+            wrap,
             side,
             allow_overlap: f.allow_overlap,
             float: f.clone(),
@@ -246,6 +256,7 @@ mod tests {
             wrap: "square".into(),
             wrap_text: "bothSides".into(),
             dist: [0.0; 4],
+            poly: None,
             behind: false,
             allow_overlap: true,
             layout_in_cell: true,

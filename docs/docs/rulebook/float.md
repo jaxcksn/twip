@@ -71,7 +71,7 @@ Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `
 | `topMargin` | `[0, topMargin)` |
 | `bottomMargin` | `[pageHeight − bottomMargin, pageHeight)` |
 
-`wp:align`: `center` → `y0 + (h − floatH)/2`; `bottom` or `outside` → `y0 + h − floatH`; others → `y0`. Without align, `y0 + posOffset`. Offsets may be negative. In compat 15 a `paragraph`- or `line`-relative float that wraps text (not wrapNone, not behind text) is placed no higher than the top margin: `y = max(y, topMargin)`; compat ≤ 14 keeps the offset's position.
+`wp:align`: `center` → `y0 + (h − floatH)/2`; `bottom` or `outside` → `y0 + h − floatH`; others → `y0`. Without align, `y0 + posOffset`. Offsets may be negative. In compat 15 a `paragraph`- or `line`-relative float that wraps text (not wrapNone) is placed no higher than the top margin: `y = max(y, topMargin)`; compat ≤ 14 keeps the offset's position.
 
 **An anchor after a page or column break in its paragraph**: compat ≤ 14 continues the paragraph after the break at the top of the next page or column, so the anchor is placed there, `paragraph` counting from the continuation's top. Compat 15 ends the paragraph at the break. Not done: compat 15 placing such an anchor on the paragraph's first page (it isn't drawn).
 
@@ -93,8 +93,8 @@ Example: a float's exclusion ending at 255pt beside a paragraph with `w:left="-5
 ### FLOAT-8. Other wrap types {#float-8}
 
 - `wrapTopAndBottom`: a band that overlaps the exclusion takes no text; it moves down to the exclusion bottom, `floatBottom + distB` ([FLOAT-4](float#float-4)).
-- `wrapTight` and `wrapThrough` wrap like `wrapSquare` (the polygon is ignored).
-- `wrapNone`, and any float with `behindDoc="1"`, doesn't affect text.
+- `wrapTight` and `wrapThrough` wrap like `wrapSquare` around the bounding box of their `wp:wrapPolygon` (points in 21600ths of the extent), grown by the wrap distances; the box is at least one layout unit tall, so a polygon whose points all lie on one row still pushes the text beside it on the line at that row. Without a polygon of at least two points they wrap around the box.
+- `wrapNone` doesn't affect text. `behindDoc="1"` is paint order only: a wrapping float behind the text wraps it like one in front.
 
 ### FLOAT-9. Floats past the column bottom {#float-9}
 
