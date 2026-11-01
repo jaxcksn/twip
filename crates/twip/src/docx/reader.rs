@@ -1662,7 +1662,7 @@ impl Reader {
                 borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
                 fixed: tbl.fixed.unwrap_or(false),
                 cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
-                look: tbl.look,
+                look: prev.look,
                 bands: (tbl.row_band.unwrap_or(0), tbl.col_band.unwrap_or(0)),
             })
         });
@@ -1670,7 +1670,8 @@ impl Reader {
             let previous = child(c, "tblGrid").map(widths).unwrap_or_default();
             Rc::new(GridChange { mark: self.mark(c, MarkKind::Format), previous })
         });
-        let look = tbl.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
+        // TABLE-3: the table's own w:tblLook, never its style's (a table without one has the default look).
+        let look = direct.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
         let row_nodes: Vec<(Node, Vec<ControlId>)> = self.rows_of(t, &[]);
         let nrows = row_nodes.len();
         let row_band = tbl.row_band.unwrap_or(0);
@@ -1778,7 +1779,7 @@ impl Reader {
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
-            look: tbl.look,
+            look: direct.look,
             bands: (row_band, col_band),
             floating: tbl.floating,
             grid,
