@@ -1613,7 +1613,12 @@ impl Reader {
             let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
             let blocks = self.read_blocks(t, pkg, None);
             (self.fields, self.wrap) = saved;
-            TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit }
+            let v_anchor = match body.and_then(|b| b.attribute("anchor")) {
+                Some("ctr") => 1,
+                Some("b") => 2,
+                _ => 0,
+            };
+            TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
         });
         self.float_order += 1;
         out.push(Inline::Float(

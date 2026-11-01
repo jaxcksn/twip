@@ -327,6 +327,17 @@ mod floats {
     }
 
     #[test]
+    fn float_10_a_text_box_aligns_its_text_down_by_its_anchor() {
+        // FLOAT-10: in a 100pt box, centred text goes down by half the room below it, bottom text by all of it.
+        let at = |anchor: &str| {
+            let tb = text_box(r#"<wp:wrapNone/>"#, 100.0, "Boxed").replace("<wps:bodyPr ", &format!(r#"<wps:bodyPr anchor="{anchor}" "#));
+            baseline_of(&doc(&tb), "Boxed")
+        };
+        let (Some(t), Some(c), Some(b)) = (at("t"), at("ctr"), at("b")) else { return };
+        assert!(c - t > 30.0 && ((b - t) - 2.0 * (c - t)).abs() < 0.01, "{t} {c} {b}");
+    }
+
+    #[test]
     fn float_14_a_wrapping_float_in_a_cell_is_drawn() {
         let d = doc(&in_cell("top", &text_box(r#"<wp:wrapTight wrapText="bothSides"/>"#, 40.0, "Boxed")));
         assert!(baseline_of(&d, "Boxed").is_some(), "a wrapTight text box in a cell shows its text");

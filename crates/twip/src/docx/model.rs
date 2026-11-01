@@ -250,6 +250,8 @@ pub struct TextBox {
     pub insets: [f64; 4],
     pub outline: f64,
     pub auto_fit: bool,
+    /// `wps:bodyPr/@anchor`: 0 top, 1 centre (`ctr`), 2 bottom (`b`); others are top (FLOAT-10).
+    pub v_anchor: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]

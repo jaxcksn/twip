@@ -455,6 +455,7 @@ impl Editor {
                 insets: [7.2, 3.6, 7.2, 3.6],
                 outline: 0.5,
                 auto_fit: false,
+                v_anchor: 0,
             }),
             h_relative: "column".into(),
             h_align: None,

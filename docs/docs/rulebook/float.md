@@ -117,6 +117,7 @@ Floats positioned relative to the page or margins, and wrapNone floats ([FLOAT-1
 - Lay the content out as an ordinary story ([HDR-3](hdr#hdr-3)) at `width = boxW − lIns − rIns − outline`, starting at `(boxX + lIns + outline/2, boxY + tIns + outline/2)`.
 - `a:spAutoFit`: the box height is `content + tIns + bIns + outline`.
 - Fixed height: the content bottom is `boxBottom − bIns − outline/2`. Draw a line only if its line box starts above the content bottom; draw no later line. The content bottom clips the lines drawn like an exact row's bottom ([TABLE-34](table#table-34)): a glyph whose ink top is at or below it is not drawn (its characters go with it); a line whose glyphs all go shows nothing.
+- Fixed height, `bodyPr/@anchor`: `ctr` moves the content down by half the room below it (whole layout units, rounded down), `b` by all of it, never up; other values are top. In compat ≤ 14 `w:doNotVertAlignInTxbx` keeps it at the top; compat 15 ignores the option. Not done: floats inside the box don't count as its content.
 - Text wraps around the outer box (with its dist values).
 
 ### FLOAT-11. Floats and columns {#float-11}

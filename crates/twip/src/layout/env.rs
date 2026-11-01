@@ -23,6 +23,8 @@ pub struct TextEnv {
     pub do_not_vert_align_cell_with_sp: bool,
     /// `w:doNotBreakWrappedTables` (TABLE-49: in compat ≤ 14 a floating table isn't split).
     pub do_not_break_wrapped_tables: bool,
+    /// `w:doNotVertAlignInTxbx` (FLOAT-10: in compat ≤ 14 a text box's text isn't aligned vertically).
+    pub do_not_vert_align_in_txbx: bool,
     /// The default paragraph style: a table row's end mark has it (PARA-4).
     pub default_style: Option<String>,
     /// `w:growAutofit` (TABLE-17: tables may grow past the text width).
@@ -50,6 +52,7 @@ impl TextEnv {
             align_tables_row_by_row: s.has("alignTablesRowByRow"),
             do_not_vert_align_cell_with_sp: s.has("doNotVertAlignCellWithSp"),
             do_not_break_wrapped_tables: s.has("doNotBreakWrappedTables"),
+            do_not_vert_align_in_txbx: s.has("doNotVertAlignInTxbx"),
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
             grow_autofit: s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),

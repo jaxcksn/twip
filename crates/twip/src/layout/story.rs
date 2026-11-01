@@ -21,6 +21,7 @@ use super::paragraph::{contextual_in, gap, gap_plain, space_after, space_before}
 use super::space::ParaSpace;
 use super::table::TableLayout;
 use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape};
+use super::units::Lu;
 
 const EPS: f64 = 1e-6;
 
@@ -518,8 +519,16 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         // A text box or frame shows its story's fields: a header's PAGE counts in its frames (the page number
         // gallery's framed PAGE); body text boxes get none (page::draw_floats).
         let story = layout(&blocks, w, env, None, memos)?;
-        let (cx, cy) = (x0 + tb.insets[0] + o / 2.0, y0 + tb.insets[1] + o / 2.0);
+        let (cx, mut cy) = (x0 + tb.insets[0] + o / 2.0, y0 + tb.insets[1] + o / 2.0);
         let content_bottom = y1 - tb.insets[3] - o / 2.0;
+        // FLOAT-10: centred or bottom text takes all or half (in whole layout units, down) of the room below it, never
+        // less than none; compat ≤ 14 with doNotVertAlignInTxbx keeps it at the top.
+        // shortcut: floats inside the text box don't count as its content.
+        let text = &env.ctx.env.text;
+        if !tb.auto_fit && tb.v_anchor > 0 && !(text.compat == Compat::Legacy && text.do_not_vert_align_in_txbx) {
+            let free = Lu::round_half_up(content_bottom - cy - story.height).0.max(0);
+            cy += Lu(if tb.v_anchor == 2 { free } else { free / 2 }).to_pt();
+        }
         for u in &story.units {
             // FLOAT-10: a line is drawn if its box starts above the content bottom.
             if !tb.auto_fit && cy + u.top >= content_bottom - EPS {
