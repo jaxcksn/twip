@@ -282,3 +282,23 @@ fn a_float_whose_anchor_its_wrap_pushes_off_the_page_leaves_the_page() {
     let l02 = l.iter().find(|x| x.1 == "L02").map(|x| x.3);
     assert!(l02.is_some_and(|y| y < 120.0) && !l.iter().any(|x| x.1.ends_with("ANCHOR")), "{l:?}");
 }
+
+#[test]
+fn no_column_balance_leaves_a_continuous_sections_columns_unbalanced() {
+    // COL-5: six one-line paragraphs in two columns before a continuous break balance three and three; compat ≤ 14
+    // noColumnBalance keeps them all in the first column.
+    let sect = |cols: &str| {
+        format!(
+            r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>{cols}</w:sectPr>"#
+        )
+    };
+    let paras: String = (1..=6).map(|k| format!("<w:p><w:r><w:t>p{k}</w:t></w:r></w:p>")).collect();
+    let body = format!(
+        r#"{paras}<w:p><w:pPr>{}</w:pPr></w:p><w:p><w:pPr>{}</w:pPr><w:r><w:t>Tail</w:t></w:r></w:p>"#,
+        sect(r#"<w:cols w:num="2" w:space="720"/>"#),
+        sect("")
+    );
+    let right = |settings: &str| lines(settings, ARIAL_12, &body).map(|l| l.iter().filter(|(x, s, _)| s.starts_with('p') && *x > 200.0).count());
+    let Some(balanced) = right("") else { return };
+    assert_eq!((balanced, right("<w:compat><w:noColumnBalance/></w:compat>").unwrap()), (3, 0));
+}

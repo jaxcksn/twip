@@ -247,11 +247,15 @@ pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
 }
 
 /// Whether section `si`'s body from `token` balances its last page (COL-5): before a continuous section, and the last
-/// section's body before its endnotes ([`endnote_split`]).
+/// section's body before its endnotes ([`endnote_split`]). Compat ≤ 14 `w:noColumnBalance` turns the first off.
 pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
     let doc = cx.doc;
     let nsec = doc.sections.len();
-    (doc.sections[si].section_in(doc.review.view).columns.num > 1 && si + 1 < nsec && doc.sections[si + 1].break_kind == SectionBreak::Continuous)
+    let off = doc.settings.compat() == crate::docx::Compat::Legacy && doc.settings.has("noColumnBalance");
+    (!off
+        && doc.sections[si].section_in(doc.review.view).columns.num > 1
+        && si + 1 < nsec
+        && doc.sections[si + 1].break_kind == SectionBreak::Continuous)
         || endnote_split(cx, si).is_some_and(|e| token.flow.block < e)
 }
 

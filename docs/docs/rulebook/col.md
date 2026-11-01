@@ -53,7 +53,7 @@ A note that doesn't fit ([NOTE-6](note#note-6)) continues at the bottom of the *
 
 ### COL-5. Balancing before a continuous break {#col-5}
 
-Balance a section when it has two or more columns, the **next** section starts with a `continuous` break, and the section ends on this page. The document's last section is balanced only when endnotes follow it: its body balances as here, and the endnotes start below its tallest column, in its first column ([NOTE-10](note#note-10)). Only the page where the section ends is balanced.
+Balance a section when it has two or more columns, the **next** section starts with a `continuous` break, and the section ends on this page; in compat ≤ 14 `w:noColumnBalance` turns this off. The document's last section is balanced only when endnotes follow it: its body balances as here, and the endnotes start below its tallest column, in its first column ([NOTE-10](note#note-10)). Only the page where the section ends is balanced.
 
 1. Fill the columns at full height. A height **fits** if the section's remaining content then ends within its n columns with all the normal rules (fit, widow/orphan control, keeps, space-before dropped at column tops), without dropping a keep or widow rule ([PAGE-5](page#page-5)). If even the full height doesn't, leave the section unbalanced: the next section starts at the full column bottom.
 2. While balancing, nothing is suppressed at a column bottom: every line needs its whole pitch, and a paragraph's last line needs its space-after too, unless the paragraph starts the column.

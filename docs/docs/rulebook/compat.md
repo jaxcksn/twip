@@ -42,6 +42,7 @@ Only these options change layout; ignore every other child of `w:compat`.
 | `doNotUseHTMLParagraphAutoSpacing` | all | the gap between paragraphs is space-after + space-before, not the larger of the two ([PARA-1](para#para-1)); automatic spacing is 5pt and ignores lists ([PARA-5](para#para-5)) |
 | `splitPgBreakAndParaMark` | ≤ 14 | the paragraph mark after a page break that ends its paragraph moves to the next page as an empty line |
 | `allowSpaceOfSameStyleInTable` | ≤ 14 | contextual spacing isn't applied to paragraphs in table cells ([PARA-4](para#para-4)) |
+| `noColumnBalance` | ≤ 14 | a section before a continuous break isn't balanced ([COL-5](col#col-5)) |
 | `growAutofit` | all | an autofit table may grow wider than the available width |
 | `balanceSingleByteDoubleByteWidth` | all | runs of two or more spaces widen to the East Asian font's average character width ([FONT-14](font#font-14)) |
 
