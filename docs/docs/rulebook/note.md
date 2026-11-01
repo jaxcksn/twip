@@ -68,6 +68,9 @@ A cut between two paragraphs, or between two notes, is unrestricted. Example: a 
 
 - All the notes referenced on one line go on that page when they fit ([NOTE-5](note#note-5)); if one doesn't, the whole line moves.
 - References in table cells behave like body references: a row fits only if its row height, the table's bottom border and the minimum parts of all the notes referenced in it fit.
+- When a row splits ([TABLE-41](table#table-41)), a cell line stays only if the notes referenced by it and by the lines kept above it, in this cell and the cells before it, can start below it ([NOTE-5](note#note-5), with `lineBottom` the bottom of the row part it would end); otherwise the cell's cut moves above it, and a cell left with nothing moves the row ([TABLE-42](table#table-42)). The kept part's notes then go on the page as one line's. At the top of an empty column the cut stands without its notes ([PAGE-5](page#page-5)).
+
+Example: a 12-line cell whose 4th line references a one-line note, its row starting 137.7pt above the body bottom: 10 lines would fit without the note, but with the separator and note line only 8 stay (compat 12 and 15).
 
 ### NOTE-9. Notes in paragraphs wrapped around floats {#note-9}
 

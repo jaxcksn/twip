@@ -1682,10 +1682,31 @@ impl<'d> PageFill<'d, '_> {
             let mut fitted: Vec<CellPart> = Vec::new();
             let mut left: Vec<Vec<StoryUnit>> = Vec::new();
             if can_split {
+                let compat = self.ctx.env.text.compat;
+                // NOTE-8: the references the cells cut so far keep, and the bottom of their lowest kept line.
+                let (mut kept, mut low) = (Vec::new(), 0.0f64);
                 for (k, cu) in parts.iter().enumerate() {
                     let m = &row.cells[k].margins;
                     let room = avail - m[0] - m[2];
-                    let cut = cell_cut(cu.units, room, rest.is_some(), self.ctx.env.text.compat);
+                    let first = cell_cut(cu.units, room, rest.is_some(), compat);
+                    let mut cut = first;
+                    // NOTE-8: a cell line stays only if its notes and those kept before it can start below it (NOTE-5);
+                    // else the cut moves above it, and a cell left with nothing moves the row (TABLE-42).
+                    while cut > 0 {
+                        let u = &cu.units[cut - 1];
+                        let bottom = (*y + row.top_border + m[0] + u.top + u.height + u.after + m[2] + tb.bottom_border).max(low);
+                        let mut refs = kept.clone();
+                        refs.extend(cu.units[..cut].iter().flat_map(|u| u.notes.iter().copied()));
+                        if refs.is_empty() || self.add_notes(&refs, &mut area.clone(), col, bottom, &mut Vec::new(), memos)? {
+                            (kept, low) = (refs, bottom);
+                            break;
+                        }
+                        cut = cell_cut(cu.units, u.top, rest.is_some(), compat).min(cut - 1);
+                    }
+                    // PAGE-5: at the top of a column the cut stands without its notes.
+                    if cut == 0 && at_top {
+                        cut = first;
+                    }
                     fitted.push(CellPart { units: &cu.units[..cut], base: 0.0, ends: cu.ends && cut == cu.units.len() });
                     let mut rest = rebase(&cu.units[cut..]);
                     // TABLE-41: a continuation that starts a new paragraph keeps what its space-before adds to the
@@ -1709,8 +1730,18 @@ impl<'d> PageFill<'d, '_> {
             // TABLE-42.
             let any = fitted.iter().any(|f| !f.units.is_empty());
             let every = fitted.iter().zip(&parts).all(|(f, u)| u.units.is_empty() || !f.units.is_empty());
-            if can_split && any && every {
-                let h = merged.iter().map(|m| m.bottom - *y).fold(part_height(row, &fitted), f64::max);
+            let h = merged.iter().map(|m| m.bottom - *y).fold(part_height(row, &fitted), f64::max);
+            // NOTE-8: the part's references place their notes below it, as a body line's; at the top of a column the
+            // part stays even if they can't (PAGE-5).
+            let refs: Vec<(NoteKind, i64)> = fitted.iter().flat_map(|f| f.units.iter().flat_map(|u| u.notes.iter().copied())).collect();
+            let (mut a, mut note_rest) = (area.clone(), Vec::new());
+            if can_split
+                && any
+                && every
+                && (refs.is_empty() || self.add_notes(&refs, &mut a, col, *y + h + tb.bottom_border, &mut note_rest, memos)? || at_top)
+            {
+                *area = a;
+                carry.note_rest.extend(note_rest);
                 for m in &merged {
                     let (rs, top, idx) = placed[m.pi];
                     let mut redrawn = draw_merged_part(tb, m, ri, h, col.x, top);
