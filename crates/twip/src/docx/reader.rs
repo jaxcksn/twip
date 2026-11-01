@@ -262,6 +262,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     doc.controls = std::mem::take(&mut r.controls);
     doc.data_parts = data_parts(&mut pkg, &rels);
     doc.settings = r.settings;
+    doc.font_table = Rc::new(read_font_table(part_of("fontTable").and_then(|p| pkg.read_str(&p)).as_deref()));
     doc.people = r.people;
     doc.review_ids = r.ids;
     doc.diagnostics = r.diagnostics;
@@ -288,6 +289,21 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         }));
     }
     Ok(doc)
+}
+
+/// The fonts `word/fontTable.xml` declares: their alternative names and the script family a Hangul charset names
+/// (FONT-19).
+fn read_font_table(xml: Option<&str>) -> Vec<crate::font::FontDecl> {
+    let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return Vec::new() };
+    children(doc.root_element(), "font")
+        .filter_map(|f| {
+            Some(crate::font::FontDecl {
+                name: attr(f, "name")?.to_string(),
+                alt: child(f, "altName").and_then(val).filter(|a| !a.is_empty()).map(str::to_string),
+                script_font: child(f, "charset").and_then(val).filter(|c| c.eq_ignore_ascii_case("81")).map(|_| "Malgun Gothic"),
+            })
+        })
+        .collect()
 }
 
 fn read_settings(xml: Option<&str>) -> Settings {

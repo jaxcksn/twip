@@ -286,14 +286,26 @@ impl std::fmt::Debug for Face {
     }
 }
 
+/// A font the document's font table declares (FONT-19): its `w:altName`, and the family its script falls back to.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FontDecl {
+    pub name: String,
+    pub alt: Option<String>,
+    /// `w:charset` 81 (Hangul): Malgun Gothic.
+    pub script_font: Option<&'static str>,
+}
+
 /// The fonts layout may use, and how document font names map to faces: the substitution rules first, then the
-/// installed families, then the built-in substitutes, then the default family.
+/// installed families, then the built-in substitutes, then the document's alternatives (FONT-19), then the default
+/// family.
 #[derive(Default, Clone)]
 pub struct Fonts {
     entries: Vec<Entry>,
     by_name: HashMap<String, Vec<usize>>,
     rules: Vec<SubstitutionRule>,
     default: Option<String>,
+    /// The font table of the document being laid out ([`Fonts::use_document`]).
+    declared: RefCell<Rc<Vec<FontDecl>>>,
     files: RefCell<HashMap<String, Arc<Vec<u8>>>>,
     faces: RefCell<HashMap<(String, bool, bool), Option<Rc<Face>>>>,
     resolved: RefCell<HashMap<(String, bool, bool), String>>,
@@ -318,9 +330,30 @@ const SUBSTITUTES: &[(&str, &str)] = &[
     ("Aptos", "Calibri"),
     ("Aptos Display", "Calibri"),
     ("Aptos Narrow", "Arial Narrow"),
+    // FONT-19: Windows' FontSubstitutes.
     ("Helvetica", "Arial"),
-    ("Helvetica Neue", "Arial"),
     ("Times", "Times New Roman"),
+    ("Arabic Transparent", "Arial"),
+    ("Arial Baltic", "Arial"),
+    ("Arial CE", "Arial"),
+    ("Arial CYR", "Arial"),
+    ("Arial Greek", "Arial"),
+    ("Arial TUR", "Arial"),
+    ("Courier New Baltic", "Courier New"),
+    ("Courier New CYR", "Courier New"),
+    ("Courier New Greek", "Courier New"),
+    ("Courier New TUR", "Courier New"),
+    ("Times New Roman Baltic", "Times New Roman"),
+    ("Times New Roman CE", "Times New Roman"),
+    ("Times New Roman CYR", "Times New Roman"),
+    ("Times New Roman Greek", "Times New Roman"),
+    ("Times New Roman TUR", "Times New Roman"),
+    ("Helv", "MS Sans Serif"),
+    ("MS Shell Dlg", "Microsoft Sans Serif"),
+    ("MS Shell Dlg 2", "Tahoma"),
+    ("Tahoma Armenian", "Tahoma"),
+    ("Tms Rmn", "MS Serif"),
+    ("Helvetica Neue", "Arial"),
     ("Courier", "Courier New"),
     // As Word draws them without a font table entry.
     ("CourierPS", "Courier New"),
@@ -338,6 +371,30 @@ const SUBSTITUTES: &[(&str, &str)] = &[
     ("Arial", "Liberation Sans"),
     ("Times New Roman", "Liberation Serif"),
     ("Courier New", "Liberation Mono"),
+];
+
+/// FONT-19: the fonts of a script that fall back to its default family, by name.
+const SCRIPT_FONTS: &[(&str, &str)] = &[
+    ("Mangal", "Nirmala UI"),
+    ("Aparajita", "Nirmala UI"),
+    ("Kokila", "Nirmala UI"),
+    ("Utsaah", "Nirmala UI"),
+    ("Gulim", "Malgun Gothic"),
+    ("GulimChe", "Malgun Gothic"),
+    ("Dotum", "Malgun Gothic"),
+    ("DotumChe", "Malgun Gothic"),
+    ("Batang", "Malgun Gothic"),
+    ("BatangChe", "Malgun Gothic"),
+    ("Gungsuh", "Malgun Gothic"),
+    ("GungsuhChe", "Malgun Gothic"),
+    ("\u{AD74}\u{B9BC}", "Malgun Gothic"),
+    ("\u{AD74}\u{B9BC}\u{CCB4}", "Malgun Gothic"),
+    ("\u{B3CB}\u{C6C0}", "Malgun Gothic"),
+    ("\u{B3CB}\u{C6C0}\u{CCB4}", "Malgun Gothic"),
+    ("\u{BC14}\u{D0D5}", "Malgun Gothic"),
+    ("\u{BC14}\u{D0D5}\u{CCB4}", "Malgun Gothic"),
+    ("\u{AD81}\u{C11C}", "Malgun Gothic"),
+    ("\u{AD81}\u{C11C}\u{CCB4}", "Malgun Gothic"),
 ];
 
 const FALLBACK_FAMILIES: &[&str] = &[
@@ -446,6 +503,18 @@ impl Fonts {
     pub fn set_rules(&mut self, rules: Vec<SubstitutionRule>) {
         self.rules = rules;
         self.changed();
+    }
+
+    /// Resolves names against `table`, the font table of the document about to be laid out (FONT-19); a different
+    /// table than the last one empties the name caches.
+    pub fn use_document(&self, table: &Rc<Vec<FontDecl>>) {
+        let mut cur = self.declared.borrow_mut();
+        if Rc::ptr_eq(&cur, table) || **cur == **table {
+            return;
+        }
+        *cur = table.clone();
+        self.faces.borrow_mut().clear();
+        self.resolved.borrow_mut().clear();
     }
 
     /// The family drawn when nothing else resolves a name. Until one is set: Calibri or a metric-compatible family
@@ -577,12 +646,19 @@ impl Fonts {
             return r.clone();
         }
         let target = self.render_family(name, bold, italic);
+        let declared = self.declared.borrow().iter().find(|d| d.name.eq_ignore_ascii_case(name)).cloned();
+        let script = || SCRIPT_FONTS.iter().find(|(f, _)| f.eq_ignore_ascii_case(name)).map(|(_, s)| *s);
         let r = self
             .installed_for(target)
             // A rule's family not added yet: the document's family draws meanwhile.
             .or_else(|| if target != name { self.installed_for(name) } else { None })
+            // FONT-19: the font table's alternative name, then the script's family, then the default.
+            .or_else(|| declared.as_ref()?.alt.as_deref().and_then(|a| self.installed_for(a)))
+            .or_else(|| declared.as_ref().and_then(|d| d.script_font).or_else(script).and_then(|s| self.installed_for(s)))
             .or_else(|| self.default.clone().filter(|d| self.is_installed(d)))
-            .or_else(|| ["Calibri", "Carlito", "Arial", "Liberation Sans"].iter().find(|f| self.is_installed(f)).map(|s| s.to_string()))
+            .or_else(|| {
+                ["Cambria", "Caladea", "Calibri", "Carlito", "Arial", "Liberation Sans"].iter().find(|f| self.is_installed(f)).map(|s| s.to_string())
+            })
             .or_else(|| self.entries.first().map(|e| e.family.clone()))
             .unwrap_or_else(|| name.to_string());
         self.resolved.borrow_mut().insert(key, r.clone());
@@ -1013,6 +1089,19 @@ mod tests {
         assert_eq!(advance("Stand-in Variable", true), (700, false, 680.0, 680.0));
         assert_eq!(advance("Stand-in Variable Thin", false), (100, false, 300.0, 300.0));
         assert_eq!(advance("stand-in variable black", false), (900, false, 800.0, 800.0));
+    }
+
+    #[test]
+    fn a_missing_font_takes_its_declared_alternative() {
+        // FONT-19: the font table's altName draws a font that isn't installed; another table forgets it.
+        let mut f = Fonts::default();
+        f.add_bytes(SERIF.to_vec()).unwrap();
+        f.add_bytes(ZZYZX.to_vec()).unwrap();
+        let decl = FontDecl { name: "Doc MT".into(), alt: Some("Zzyzx Unknown".into()), script_font: None };
+        f.use_document(&Rc::new(vec![decl]));
+        assert_eq!(f.face("doc mt", false, false).unwrap().family, "Zzyzx Unknown");
+        f.use_document(&Rc::new(Vec::new()));
+        assert_eq!(f.face("doc mt", false, false).unwrap().family, "Stand-in Serif");
     }
 
     #[test]

@@ -855,6 +855,8 @@ pub struct Document {
     pub review_ids: IdCounter,
     /// What reading couldn't keep or make sense of.
     pub diagnostics: super::diagnostics::Diagnostics,
+    /// The fonts the font table declares (FONT-19).
+    pub font_table: Rc<Vec<crate::font::FontDecl>>,
 }
 
 impl Document {
