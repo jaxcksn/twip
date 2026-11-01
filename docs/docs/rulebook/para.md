@@ -64,7 +64,7 @@ Example: after 10pt, then 6pt before: 0 when the first is contextual (the 6pt ad
 
 Two consecutive paragraphs are in the same list when both have numbering whose `w:num` uses the same `w:abstractNum`, whatever their `w:numId`s and levels. Between them, a side that comes from autospacing is 0 (the first paragraph's automatic space-after, the second's automatic space-before); an explicit value on the other side stays, and PARA-1 applies. The first item's automatic space-before and the last item's automatic space-after stay. Different abstract lists, or a list paragraph next to a plain one, keep 14pt.
 
-With `w:compat/w:doNotUseHTMLParagraphAutoSpacing` the automatic value is 5pt, the two sides add (PARA-1) and lists make no difference. Compat 12 and 15 are the same.
+With `w:compat/w:doNotUseHTMLParagraphAutoSpacing` the automatic flags are ignored: the explicit `w:before`/`w:after` apply (0 when absent), the two sides add (PARA-1) and lists make no difference. Compat 12 and 15 are the same.
 
 Example: two items with automatic spacing on both sides, numIds 1 and 2 on the same abstractNum: no gap (10pt with `doNotUseHTMLParagraphAutoSpacing`). With an explicit 12pt before on the second: 12pt.
 
