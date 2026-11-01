@@ -636,7 +636,8 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, memos: &mut Mem
                 let shown = in_view(t, env.ctx.env.text.review.view);
                 let t = shown.as_ref().map_or(t, |v| &v.table);
                 let f = fit(t, 0.0, env, Some(autofit::MAXW), memos)?;
-                let (al, ar) = edge_add(env.ctx.env.text.compat, t);
+                // TABLE-11: a nested table is never sloppy, so its allowances are compat 15's in every mode.
+                let (al, ar) = edge_add(Compat::Generic, t);
                 let e = twips(al) + twips(ar) - twips(t.ind);
                 mn = mn.max(f.min_t - e);
                 mx = mx.max(f.width - e);

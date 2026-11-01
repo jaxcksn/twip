@@ -153,7 +153,7 @@ contentMax  = Wt − e
 contentHard = hardT − e
 ```
 
-In compat 15 the allowances are negative, so the cell needs the nested table's widths plus half its outer borders plus its indent.
+A nested table is never sloppy, so `eL` and `eR` are the compat 15 allowances (negative half borders) in every mode: the cell needs the nested table's widths plus half its outer borders plus its indent, in compat ≤ 14 too.
 
 ### TABLE-12. Cell width types {#table-12}
 
