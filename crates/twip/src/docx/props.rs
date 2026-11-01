@@ -736,6 +736,8 @@ pub struct TablePos {
     pub y_spec: Option<Jc>,
     /// `topFromText`, `bottomFromText`, `leftFromText`, `rightFromText` (negatives → 0), points.
     pub dist: [f64; 4],
+    /// `w:tblOverlap="never"`.
+    pub never_overlap: bool,
 }
 
 impl TblProps {
@@ -784,7 +786,14 @@ impl TblProps {
                             None => None,
                         },
                         dist: ["topFromText", "bottomFromText", "leftFromText", "rightFromText"].map(|a| attr_twips(c, a).unwrap_or(0.0).max(0.0)),
+                        never_overlap: false,
                     })
+                }
+                // tblOverlap follows tblpPr in tblPr.
+                "tblOverlap" => {
+                    if let Some(f) = &mut p.floating {
+                        f.never_overlap = val(c) == Some("never");
+                    }
                 }
                 "shd" => p.shading = Some(shading_fill(c)),
                 "tblLook" => {

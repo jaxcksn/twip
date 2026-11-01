@@ -1601,8 +1601,12 @@ impl<'d> PageFill<'d, '_> {
             _ => None,
         };
         let (flow_y, was_empty) = (*y, *empty);
+        let legacy = self.ctx.env.text.compat == Compat::Legacy;
+        // doNotBreakWrappedTables (compat ≤ 14): the table isn't split; one that doesn't fit below its anchor moves
+        // to the next page with it.
+        let unsplit = fp.is_some() && legacy && self.ctx.env.text.do_not_break_wrapped_tables;
         // horzAnchor page: the table's place in the column is moved to the same place in the page.
-        let at_x = match fp {
+        let mut at_x = match fp {
             Some(fp) if fp.h_page => match fp.x_spec {
                 Some(Jc::Center) => (self.page_w - col.width) / 2.0,
                 Some(Jc::Right) => self.page_w - col.width,
@@ -1620,7 +1624,7 @@ impl<'d> PageFill<'d, '_> {
             };
             // Page and margin frames: the stored tblpY is one twip more than the offset; a frame above the page top is
             // placed at the top.
-            let top = match (fp.v_anchor, fp.y_spec) {
+            let mut top = match (fp.v_anchor, fp.y_spec) {
                 (TableAnchor::Text, _) => flow_y + fp.y,
                 (_, Some(Jc::Center)) => (t0 + t1 - h) / 2.0,
                 (_, Some(Jc::Right)) => t1 - h,
@@ -1628,8 +1632,30 @@ impl<'d> PageFill<'d, '_> {
                 (_, None) => t0 + fp.y - 0.05,
             }
             .max(0.0);
+            // w:tblOverlap: compat 15, a "never" table moves right past an earlier floating table's obstacle; compat
+            // ≤ 14, any floating table moves below one it overlaps by 9pt or more (distances included).
+            let (bl, br) = super::table::outer_box(tb);
+            let [dt, db, dl, dr] = fp.dist;
+            for o in self.at.found.iter().filter(|o| o.key.2 == float::TABLE_PIECE) {
+                let (x0, x1) = (at_x + bl - dl.max(0.5), at_x + br + dr.max(0.5));
+                if !legacy && fp.never_overlap && o.excl[0] < x1 - dr.max(0.5) && o.excl[2] > x0 {
+                    at_x += o.excl[2] - x0;
+                } else if legacy && o.excl[0] < x1 && o.excl[2] > x0 && o.excl[3].min(top + h + db) - o.excl[1].max(top - dt) >= 9.0 {
+                    top = o.excl[3] + dt;
+                }
+            }
             *y = self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)).map_or(top, |k| k.rect[1]);
+            if unsplit && !*empty && *y + h > col.bottom + EPS {
+                return Ok(Stop::Full);
+            }
         }
+        let tall;
+        let col = if unsplit {
+            tall = ColumnSpace { bottom: f64::INFINITY, ..*col };
+            &tall
+        } else {
+            col
+        };
         let part_top = *y;
         carry.prev = None;
         carry.prev_after = 0.0;
