@@ -1601,8 +1601,8 @@ impl<'d> PageFill<'d, '_> {
                     x -= (r - frames.page_w).min(l);
                 }
             }
-            // FLOAT-9.
-            if matches!(f.v_relative.as_str(), "paragraph" | "line") && !col.bottom.holds(fy + h) {
+            // FLOAT-9 (compat 15; compat ≤ 14 leaves the float where its position puts it).
+            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") && !col.bottom.holds(fy + h) {
                 let up = col.bottom.to_pt() - h;
                 let anchor_bottom = line_top + bands[b].1[0].pitch;
                 if up >= anchor_bottom - EPS {

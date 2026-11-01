@@ -402,3 +402,16 @@ fn compat_14_word97_line_breaks_size_a_named_east_asian_runs_glyphs_at_a_1000_un
     let opt = "<w:useWord97LineBreakRules/>";
     assert_eq!((plain, words(opt, "Arial").unwrap(), words(opt, "Times New Roman").unwrap()), (10, 11, 10));
 }
+
+#[test]
+fn a_compat_14_float_past_the_column_bottom_stays_with_its_anchor() {
+    // FLOAT-9: a 100 × 60pt square float at the top of a paragraph 41pt above the column bottom runs past it; compat 14
+    // neither moves it up nor pushes the paragraph to the next page, so "ANCHOR" stays on page 1 beside the float.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="762000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body = (0..44).map(|i| p(&format!("L{i:02}"))).collect::<String>()
+        + &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>{float}<w:r><w:t>ANCHOR</w:t></w:r></w:p>"#);
+    let c14 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let Some(l) = lines(c14, ARIAL_12, &body) else { return };
+    assert!(l.iter().any(|x| x.1 == "ANCHOR" && (x.0 - 172.0).abs() < 0.01), "{l:?}");
+}

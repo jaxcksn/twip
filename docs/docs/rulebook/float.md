@@ -103,11 +103,13 @@ Example: a float's exclusion ending at 255pt beside a paragraph with `w:left="-5
 
 ### FLOAT-9. Floats past the column bottom {#float-9}
 
-For a wrapping float positioned relative to `paragraph` or `line` whose bottom is below the column bottom:
+Compat 15, for a wrapping float positioned relative to `paragraph` or `line` whose bottom is below the column bottom:
 
 1. Move it up so its bottom is on the column bottom, if its top then stays at or below the bottom of the anchor's line box.
 2. Otherwise, if the anchor paragraph isn't at the top of an empty column, move the whole anchor paragraph to the next column (or page); the float is placed again from there.
 3. Otherwise (nowhere to move it), leave the float where it was requested, let its own paragraph ignore it (no wrap), and continue the anchor paragraph after the anchor's line in the next column.
+
+Compat ≤ 14 does none of this: the float stays where its position puts it, past the column bottom, and its paragraph stays too.
 
 Floats positioned relative to the page or margins, and wrapNone floats ([FLOAT-13](float#float-13)), are never moved: they may run past the page edge, and text wraps around the part on the page.
 
