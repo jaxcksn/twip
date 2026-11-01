@@ -79,6 +79,8 @@ pub struct Frame {
     pub expand_shift_return: bool,
     /// COMPAT-3 `splitPgBreakAndParaMark` (compat <= 14): the mark after a page break moves on as an empty line.
     pub split_page_break: bool,
+    /// TABLE-51: a fitted cell's paragraph doesn't wrap; its lines end only at breaks and start at the left.
+    pub no_wrap: bool,
 }
 
 impl Frame {
@@ -90,6 +92,7 @@ impl Frame {
             compat: e.compat,
             expand_shift_return: !e.do_not_expand_shift_return,
             split_page_break: e.compat == Compat::Legacy && e.split_pg_break_and_para_mark,
+            no_wrap: space.fit,
         }
     }
 }
@@ -344,7 +347,9 @@ struct Fit {
 pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, frame: &Frame, fonts: &Fonts, continued: bool) -> Vec<Line> {
     let mut lines = Vec::new();
     let right = frame.width - style.ind_right;
-    let justify_smart = matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic;
+    let justify_smart = matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && !frame.no_wrap;
+    // TABLE-51: a fitted cell's lines don't wrap.
+    let wrap_right = if frame.no_wrap { f64::INFINITY } else { right };
     let mut start = 0;
     let n = pieces.len();
     // Precomputed BREAK-6 line ends, per hard-break segment.
@@ -359,12 +364,16 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         let left = style.ind_left + if first { style.ind_first } else { 0.0 };
         let limit_end =
             if with_tabs { justified_tab_end(sp, pieces, start, left, right, style, frame) } else { planned.iter().copied().find(|&e| e > start) };
-        let fit = fit_line(sp, pieces, start, left, right, style, frame, limit_end, false);
+        let fit = fit_line(sp, pieces, start, left, wrap_right, style, frame, limit_end, false);
         let end = fit.end.max(start + 1).min(n.max(start + 1));
         let is_last = end >= n;
         let mut line =
             Line { end: end.min(n), xs: fit.xs, widths: fit.widths, hard: fit.hard, hyphen: fit.hyphen, leaders: fit.leaders, ..Line::empty(start) };
-        align(&mut line, sp, pieces, style, frame, left, right, is_last);
+        if !frame.no_wrap {
+            align(&mut line, sp, pieces, style, frame, left, right, is_last);
+        } else {
+            fit_text(&mut line, pieces, right - 1.0);
+        }
         size(&mut line, sp, pieces, style, mark, fonts, is_last, frame.compat);
         lines.push(line);
         first = false;
@@ -392,6 +401,22 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         lines.push(line);
     }
     lines
+}
+
+/// TABLE-51: a fitted cell's line spreads the difference between its text and the fit width (the line's room less 1pt)
+/// evenly over its pieces, so the text ends at the fit width.
+/// shortcut: spread over pieces in equal steps; how the change is shared among the characters isn't known.
+fn fit_text(line: &mut Line, pieces: &[Piece], fit: f64) {
+    let n = line.xs.len();
+    let content = (0..n).rev().find(|&k| !matches!(pieces[line.start + k].kind, Kind::Space | Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak | Kind::Anchor));
+    let Some(last) = content else { return };
+    if last == 0 {
+        return;
+    }
+    let delta = fit - (line.xs[last] + line.widths[last]);
+    for k in 1..n {
+        line.xs[k] += delta * k.min(last) as f64 / last as f64;
+    }
 }
 
 /// One band of a paragraph wrapped around floats (FLOAT-7): the free `intervals` (column coordinates), filled one after

@@ -1730,6 +1730,7 @@ impl Reader {
                     v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
                     text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
                     no_wrap: tcp.no_wrap.unwrap_or(false),
+                    fit_text: tcp.fit_text.unwrap_or(false),
                     direct: Raw(child(*cn, "tcPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
                     blocks,
                     controls: cell_controls.clone(),

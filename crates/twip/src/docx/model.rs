@@ -558,6 +558,8 @@ pub struct Cell {
     pub v_align: String,
     pub text_direction: String,
     pub no_wrap: bool,
+    /// `w:tcFitText`: each paragraph on one line, fitted to the cell (TABLE-51).
+    pub fit_text: bool,
     /// The cell's `w:tcPr` as read (or as table formatting changed it): what re-resolution merges over the cell's
     /// table-style region when its place in the table changes.
     pub direct: Raw,

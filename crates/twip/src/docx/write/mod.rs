@@ -3826,6 +3826,9 @@ fn tc_pr(w: &str, c: &Cell, people: &People) -> String {
     if c.text_direction != "lrTb" {
         s.push_str(&format!("<{w}textDirection {w}val=\"{}\"/>", c.text_direction));
     }
+    if c.fit_text {
+        s.push_str(&format!("<{w}tcFitText/>"));
+    }
     if c.v_align != "top" {
         s.push_str(&format!("<{w}vAlign {w}val=\"{}\"/>", c.v_align));
     }

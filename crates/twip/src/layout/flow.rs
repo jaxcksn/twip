@@ -180,7 +180,7 @@ pub fn para_space(
             (if from > 0 { border_key(style) } else { p }, n)
         }
     };
-    ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone() }
+    ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone(), fit: false }
 }
 
 /// How many of a note's units fit in `room`, with widow/orphan control (PAGE-3) inside the paragraph the cut falls in;
@@ -1281,7 +1281,7 @@ impl<'d> PageFill<'d, '_> {
         let at_top = *empty;
         let top = *y + self.para_gap(p, pos, carry, *empty);
         let floats = self.at.known.clone();
-        let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env: self.ctx.env.text.clone() };
+        let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env: self.ctx.env.text.clone(), fit: false };
         let frame = Frame::new(&space);
         let sp: &ShapedPara = &pb.shaped;
         let pieces = pb.pieces();

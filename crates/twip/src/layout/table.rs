@@ -144,6 +144,7 @@ fn shell(t: &Table) -> Table {
                         v_align,
                         text_direction,
                         no_wrap,
+                        fit_text,
                         blocks: _,
                         direct: _,
                         controls: _,
@@ -162,6 +163,7 @@ fn shell(t: &Table) -> Table {
                         v_align: v_align.clone(),
                         text_direction: text_direction.clone(),
                         no_wrap: *no_wrap,
+                        fit_text: *fit_text,
                         blocks: Vec::new(),
                         direct: Default::default(),
                         controls: Vec::new(),
@@ -278,6 +280,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         v_align,
                         text_direction,
                         no_wrap,
+                        fit_text,
                         blocks: _,
                         direct: _,
                         controls: _,
@@ -295,6 +298,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         && *v_align == d.v_align
                         && *text_direction == d.text_direction
                         && *no_wrap == d.no_wrap
+                        && *fit_text == d.fit_text
                         && *rev == d.rev
                 })
         })
@@ -695,7 +699,7 @@ fn vertical_width(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result
         let space = laid.shape_space(env.fields, env.notes, &env.ctx.env.text);
         let shaped = shape(p, &space, env.ctx.fonts, memos)?;
         let s = p.para_style_in(view);
-        let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone() };
+        let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false };
         let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
         w += twips(s.space_before + s.space_after);
         let pieces = pb.pieces();
@@ -739,7 +743,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                 let space = laid.shape_space(env.fields, env.notes, &env.ctx.env.text);
                 let shaped = shape(p, &space, env.ctx.fonts, memos)?;
                 let s = p.para_style_in(env.ctx.env.text.review.view);
-                let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone() };
+                let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false };
                 let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
                 let ind = if old { s.ind_left + s.ind_right + s.ind_first.min(0.0) } else { s.ind_left + s.ind_right };
                 let pieces = pb.pieces();
@@ -937,6 +941,10 @@ fn fit_inputs<'k>(
                 let rotated = matches!(c.text_direction.as_str(), "btLr" | "tbRl" | "tbRlV" | "tbLrV");
                 let (mut cmn, mut cmx, chard) = if continuation {
                     (0, 0, 0)
+                } else if let (true, Some(Width::Dxa(w))) = (c.fit_text, &c.width) {
+                    // TABLE-51: a fitted cell with a dxa width is that wide, whatever its content.
+                    let w = (twips(*w) - cell_pad).max(0);
+                    (w, w, w)
                 } else if rotated {
                     // TABLE-33: as thick as its lines (282 twips for one line of Calibri 11).
                     let w = vertical_width(&c.blocks, env, memos)?;
@@ -1205,7 +1213,7 @@ fn layout_shown(
                     ci => style(r.cells[ci - 1].blocks.last(), view),
                 };
                 let after = r.cells.get(g.ci + 1).map_or(mark, |n| style(n.blocks.first(), view));
-                let ends = CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after), fixed: t.fixed };
+                let ends = CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after), fixed: t.fixed, fit: c.fit_text };
                 Some(super::story::layout(&blocks, g.cw, env, Some(ends), memos)?)
             });
         }

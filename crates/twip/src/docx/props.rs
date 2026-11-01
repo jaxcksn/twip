@@ -841,6 +841,7 @@ pub struct TcProps {
     pub v_align: Option<String>,
     pub text_direction: Option<String>,
     pub no_wrap: Option<bool>,
+    pub fit_text: Option<bool>,
 }
 
 impl TcProps {
@@ -859,6 +860,7 @@ impl TcProps {
                 "vAlign" => p.v_align = val(c).map(str::to_string),
                 "textDirection" => p.text_direction = val(c).map(str::to_string),
                 "noWrap" => p.no_wrap = Some(on_off(c)),
+                "tcFitText" => p.fit_text = Some(on_off(c)),
                 _ => {}
             }
         }
@@ -869,7 +871,7 @@ impl TcProps {
         macro_rules! take {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
-        take!(width, grid_span, v_merge, h_merge, shading, v_align, text_direction, no_wrap);
+        take!(width, grid_span, v_merge, h_merge, shading, v_align, text_direction, no_wrap, fit_text);
         self.borders.merge(&o.borders);
         self.margins.merge(&o.margins);
     }

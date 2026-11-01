@@ -43,6 +43,8 @@ pub struct ParaSpace {
     /// this origin, so drawn lines depend on it.
     pub x0: f64,
     pub env: TextEnv,
+    /// A fitted cell's paragraph (TABLE-51): one line, never wrapped.
+    pub fit: bool,
 }
 
 /// One column of a page body (COL-1): where it is and how far content may go.

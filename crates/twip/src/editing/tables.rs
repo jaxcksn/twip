@@ -573,6 +573,7 @@ impl Editor {
             v_align: "top".into(),
             text_direction: "lrTb".into(),
             no_wrap: false,
+            fit_text: false,
             direct: Default::default(),
             blocks: vec![Block::Para(cell_para())],
             controls: Vec::new(),

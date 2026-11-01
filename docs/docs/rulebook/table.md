@@ -694,3 +694,9 @@ A row's `w:tblPrEx` (table property exceptions) can carry its own `w:tblInd`. In
 Example: an autofit table at `tblInd` 513 twips whose third row has `tblInd` 0 draws that row 25.65pt left of the others; the same rows in a fixed table line up.
 
 This applies to left-aligned tables that don't float, whose exceptions also set `w:tblLayout` fixed. Centred, right-aligned and floating tables, and compat 15, keep the table's indent.
+
+### TABLE-51. Fitted cell text {#table-51}
+
+A cell with `w:tcFitText` lays each paragraph out on one line: it wraps only at line, column and page breaks. The line starts at the left of the cell's content box, whatever the paragraph's alignment, and its characters are spaced so the text ends at the **fit width**: the content box width less the paragraph's left, right and first-line indents (a hanging indent widens it) and 1pt. The line keeps its height. The difference is spread evenly over the line's pieces.
+
+In autofit a fitted cell with a `dxa` width is that wide: its minimum, maximum and hard minimum are all its `w:tcW` ([TABLE-7](#table-7)).

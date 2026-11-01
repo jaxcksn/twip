@@ -122,6 +122,8 @@ pub struct CellEnds {
     pub after: bool,
     /// The cell's table is laid out fixed (TABLE-5).
     pub fixed: bool,
+    /// `w:tcFitText`: each paragraph on one line (TABLE-51).
+    pub fit: bool,
 }
 
 /// TABLE-5: a nested table is laid out with its outermost table's layout, fixed or autofit, whatever its own.
@@ -229,7 +231,7 @@ pub fn layout_with(
                     _ => shape(p, &laid.shape_space(env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?,
                 };
                 let style = p.para_style_in(view);
-                let ps = ParaSpace { width, start: 0, borders: neighbour_borders(style, prev, next), x0: 0.0, env: text.clone() };
+                let ps = ParaSpace { width, start: 0, borders: neighbour_borders(style, prev, next), x0: 0.0, env: text.clone(), fit: ends.fit };
                 let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
                 let (mut before, mut after) = (space_before(text, style), space_after(text, style));
                 // PARA-5: a cell's first paragraph takes no automatic space-before, its last no automatic space-after
