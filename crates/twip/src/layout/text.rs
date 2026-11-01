@@ -605,13 +605,21 @@ impl Builder<'_> {
                 p.kind = Kind::ListNumber;
                 p.break_after = false;
             }
-            // LIST-2, LIST-6: the suffix in the number's font: a tab (default), one space, or nothing.
+            // LIST-2, LIST-6: the suffix in the number's font: a tab (default), one space (Arial-wide), or nothing.
             match l.suff.as_str() {
                 "space" => {
                     let s = self.pieces.len();
                     self.text(" ", &l.run)?;
-                    for p in &mut self.pieces[s..] {
+                    // LIST-2: the space is as wide as an Arial space at the number's size, whatever its font.
+                    let arial = self.fonts.face("Arial", l.run.bold, l.run.italic);
+                    let space = arial.as_ref().and_then(|f| Some(f.advance(f.glyph(' ')?) / f.upem));
+                    for i in s..self.pieces.len() {
+                        let size = self.styles[self.pieces[i].style as usize].size;
+                        let p = &mut self.pieces[i];
                         p.break_after = false;
+                        if let Some(em) = space {
+                            p.width = em * size * l.run.scale / 100.0 + l.run.spacing;
+                        }
                     }
                 }
                 "nothing" => {}
