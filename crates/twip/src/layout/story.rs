@@ -5,16 +5,18 @@ use crate::docx::Compat;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::docx::{Block, Float, Inline, NoteKind, ParaStyle, Table};
+use crate::docx::{Block, Float, Inline, NoteKind, ParaStyle, Paragraph, Table};
+use crate::font::Fonts;
 
 use super::LayoutCtx;
 use super::cache::{CacheKey, cached};
 use super::env::TextEnv;
+use super::float::{self, Placed};
 use super::fragment::{BoxFragment, BoxKind, Child, ImageKey, Item, PlacedLine};
 use super::ids::{FloatId, ParaId};
 use super::job::{Memos, Yield};
 use super::join::LaidBlock;
-use super::line::{break_lines, neighbour_borders};
+use super::line::{Frame, Line, ParaLines, band, break_lines, draw_line, neighbour_borders};
 use super::paragraph::{contextual_in, gap, gap_plain, space_after, space_before};
 use super::space::ParaSpace;
 use super::table::TableLayout;
@@ -265,19 +267,58 @@ pub fn layout_with(
                 y += g;
                 let id = para_id(p);
                 let para_top = y;
-                for (i, line) in lines.lines.iter().enumerate() {
-                    let placed = PlacedLine { x: 0.0, y: 0.0, line: lines.fragment(i, p, env.ctx.fonts) };
-                    let mut content = vec![Child::Line { para: Some(id), placed }];
+                let fr = float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width) };
+                // FLOAT-14: the wrapping floats the paragraph lays out in the cell from its column (or character) and
+                // its paragraph (or line) without a vertical alignment, by anchor piece, placed against its top.
+                let mut own: Vec<(usize, Placed)> = Vec::new();
+                if in_cell && !ends.fit {
+                    for (k, q) in lines.pieces().iter().enumerate() {
+                        let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, lines.shaped.object(lines.from + k)) else { continue };
+                        if !f.in_cell(text.compat)
+                            || f.wrap == "none"
+                            || f.v_align.is_some()
+                            || !matches!(f.h_relative.as_str(), "column" | "character")
+                            || !matches!(f.v_relative.as_str(), "paragraph" | "line")
+                        {
+                            continue;
+                        }
+                        let h = float_height(f, env, memos)?;
+                        let (fx, fy) = (float::h_pos(f, &fr), float::v_pos(f, h, &fr, para_top, para_top));
+                        own.push((k, Placed::new((0, bi, k), id, f, fx, fy, h)));
+                    }
+                }
+                let floats: Vec<Placed> = own.iter().map(|(_, a)| a.clone()).collect();
+                let bands =
+                    (!floats.is_empty()).then(|| wrap_bands(&lines, p, style, &floats, &ps, para_top, env.ctx.fonts)).filter(|b| !b.is_empty());
+                let rows = bands.as_ref().map_or(lines.lines.len(), Vec::len);
+                for i in 0..rows {
+                    let ((start, end, pitch, below), mut content) = match &bands {
+                        None => {
+                            let l = &lines.lines[i];
+                            let placed = PlacedLine { x: 0.0, y: 0.0, line: lines.fragment(i, p, env.ctx.fonts) };
+                            ((l.start, l.end, l.pitch, l.below), vec![Child::Line { para: Some(id), placed }])
+                        }
+                        Some(b) => {
+                            let (top, segs) = &b[i];
+                            y = *top;
+                            let o = lines.origin();
+                            let drawn = segs.iter().map(|l| {
+                                let placed = PlacedLine { x: 0.0, y: 0.0, line: Rc::new(draw_line(&o, l, p, env.ctx.fonts)) };
+                                Child::Line { para: Some(id), placed }
+                            });
+                            let (l, last) = (&segs[0], segs.last().map_or(segs[0].end, |l| l.end));
+                            ((l.start, last, l.pitch, l.below), drawn.collect())
+                        }
+                    };
                     if in_cell {
                         // A float anchored in a cell, whatever its wrap: drawn from the anchor line (FLOAT-14:
                         // positioned in the cell, `move_floats` places compat ≤ 14's layoutInCell="0" ones like the
                         // body's). A wrapping one placed from its paragraph or line without an alignment holds the
                         // cell's content height down to its bottom.
-                        // shortcut: the cell's text doesn't wrap a wrapping float, so one that a line of text would
-                        // have to wrap isn't drawn (below); `page` is taken as the cell's content box rather than the
-                        // cell inside its borders.
-                        let fr = super::float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width) };
-                        for k in line.start..line.end.max(line.start + 1) {
+                        // shortcut: only its anchor paragraph wraps a float, and only one placed as `own` says: another
+                        // that a line of text would have to wrap isn't drawn (below); `page` is taken as the cell's
+                        // content box rather than the cell inside its borders.
+                        for k in start..end.max(start + 1) {
                             if lines.pieces().get(k).is_none_or(|q| q.kind != Kind::Anchor) {
                                 continue;
                             }
@@ -285,14 +326,17 @@ pub fn layout_with(
                                 continue;
                             };
                             let h = float_height(f, env, memos)?;
-                            let (fx, fy) = (super::float::h_pos(f, &fr), super::float::v_pos(f, h, &fr, para_top, y) - y);
+                            let (fx, fy) = match own.iter().find(|(o, _)| *o == k) {
+                                Some((_, a)) => (a.rect[0], a.rect[1] - y),
+                                None => (super::float::h_pos(f, &fr), super::float::v_pos(f, h, &fr, para_top, y) - y),
+                            };
                             if f.in_cell(text.compat) {
                                 float_bottom = float_bottom.max(y + fy + h);
                                 if f.wrap != "none" && f.v_align.is_none() && matches!(f.v_relative.as_str(), "paragraph" | "line") {
                                     held = held.max(y + fy + h);
                                 }
                             }
-                            if f.wrap != "none" {
+                            if f.wrap != "none" && own.iter().all(|(o, _)| *o != k) {
                                 wrapping.push((units.len(), content.len(), y + fy - f.dist[0], y + fy + h + f.dist[1]));
                             }
                             let anchor = super::join::piece_para(&lines.shaped, lines.from + k, id);
@@ -301,18 +345,18 @@ pub fn layout_with(
                     }
                     units.push(StoryUnit {
                         top: y,
-                        height: line.pitch,
-                        below: line.below,
-                        after: if i + 1 == lines.lines.len() { after } else { 0.0 },
+                        height: pitch,
+                        below,
+                        after: if i + 1 == rows { after } else { 0.0 },
                         content: content.into(),
                         block: bi,
                         widow: style.widow_control,
                         keep_next: style.keep_next,
                         keep_lines: style.keep_lines,
-                        notes: lines.notes(i).into_boxed_slice(),
+                        notes: (start..end).filter_map(|k| lines.shaped.note(lines.from + k)).collect(),
                         row: None,
                     });
-                    y += line.pitch;
+                    y += pitch;
                 }
                 prev = Some(style);
                 prev_after = after;
@@ -380,6 +424,67 @@ fn unwrapped_floats(units: &mut [StoryUnit], wrapping: &[(usize, usize, f64, f64
         let content: Vec<Child> = units[ui].content.iter().enumerate().filter(|&(k, _)| k != ci).map(|(_, c)| c.clone()).collect();
         units[ui].content = content.into();
     }
+}
+
+/// FLOAT-14: a cell paragraph's lines wrapped around the floats it lays out in the cell (cell coordinates, the
+/// paragraph's first line at `top`): bands of segments as in the body (FLOAT-2 to FLOAT-4), with no column bottom.
+fn wrap_bands(
+    lines: &ParaLines,
+    p: &Paragraph,
+    style: &ParaStyle,
+    floats: &[Placed],
+    ps: &ParaSpace,
+    top: f64,
+    fonts: &Fonts,
+) -> Vec<(f64, Vec<Line>)> {
+    let frame = Frame::new(ps);
+    let pieces = lines.pieces();
+    let n = pieces.len();
+    let mark = p.mark_in(ps.env.review.view);
+    let est = lines.lines.first().map_or(13.0, |l| l.pitch);
+    let mut bands: Vec<(f64, Vec<Line>)> = Vec::new();
+    let (mut yy, mut s) = (top, 0);
+    for _ in 0..4000 {
+        if s >= n && !bands.is_empty() {
+            break;
+        }
+        let (mut h, mut got, mut trial) = (est, None, None);
+        for attempt in 0..2 {
+            got = None;
+            let Some(iv) = float::intervals(floats, 0.0, ps.width, yy, yy + h) else { break };
+            let open = iv.len() == 1 && iv[0].0.abs() < EPS && (iv[0].1 - ps.width).abs() < EPS;
+            match band(&lines.shaped, pieces, s, &iv, bands.is_empty(), style, mark, &frame, fonts, open) {
+                Ok((segs, e)) => {
+                    let ph = segs[0].pitch;
+                    let done = (ph - h).abs() < EPS || attempt == 1;
+                    got = Some((segs, e));
+                    if done {
+                        break;
+                    }
+                    h = ph;
+                }
+                Err(t) => {
+                    trial = Some(t);
+                    break;
+                }
+            }
+        }
+        if let Some((segs, e)) = got {
+            let ph = segs[0].pitch;
+            bands.push((yy, segs));
+            yy += ph;
+            s = e;
+            continue;
+        }
+        // FLOAT-4 (compat <= 14): beside square floats the line retries lower in steps of its trial height; else it
+        // moves down to the next obstacle edge.
+        let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
+        yy = match trial.filter(|&t| ps.env.compat == Compat::Legacy && square && t > EPS) {
+            Some(t) => yy + t,
+            None => float::next_edge(floats, 0.0, ps.width, yy, yy + h).unwrap_or(yy + h),
+        };
+    }
+    bands
 }
 
 /// A float's height: the picture's, or a text box's (spAutoFit: content + insets + outline, FLOAT-10).

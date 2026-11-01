@@ -332,6 +332,25 @@ mod floats {
     }
 
     #[test]
+    fn float_14_cell_text_wraps_a_float_laid_out_in_the_cell() {
+        // The paragraph anchoring a 100pt-wide square-wrapped box puts its text right of the box; wrapNone, at the
+        // cell's left.
+        let x = |wrap: &str| {
+            let b = text_box(wrap, 40.0, "Boxed").replacen("<w:p>", "<w:p><w:r><w:t>Cell</w:t></w:r>", 1);
+            let s = layout(&doc(&in_cell("top", &b)), &fonts());
+            paint_items(&s.pages()[0])
+                .iter()
+                .find_map(|i| match i {
+                    Item::Glyphs(r) if r.chars.iter().map(|c| c.0).collect::<String>().contains("Cell") => Some(r.x),
+                    _ => None,
+                })
+                .expect("the cell text")
+        };
+        let (square, none) = (x(r#"<wp:wrapSquare wrapText="bothSides"/>"#), x("<wp:wrapNone/>"));
+        assert!((square - none - 100.0).abs() < 0.01, "square {square} vs none {none}");
+    }
+
+    #[test]
     fn float_14_a_body_level_float_over_the_first_row_moves_the_table_below_it() {
         // Compat ≤ 14: a 40pt square-wrapped box with layoutInCell="0" over the first row puts the table below it; with
         // layoutInCell="1" the row grows instead and its text stays at the top.
