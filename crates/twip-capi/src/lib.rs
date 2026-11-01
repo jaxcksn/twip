@@ -841,24 +841,24 @@ pub unsafe extern "C" fn twip_frame_webgl(engine: *mut TwipEngine, session: u32,
     }
 }
 
-/// Windows: draws the session's frames into the window `hwnd` with the GPU (Graphite on Dawn). Returns the backend,
-/// 1 D3D12, 2 D3D11 or 3 Vulkan; fails `unavailable` with no usable GPU, or in a build without one: draw with
-/// twip_frame_rgba then.
+/// Windows and macOS: draws the session's frames into `window` with the GPU (Graphite on Dawn): an `HWND` on Windows,
+/// a `CAMetalLayer` on macOS. Returns the backend, 1 D3D12, 2 D3D11, 3 Vulkan or 4 Metal; fails `unavailable` with no
+/// usable GPU, or in a build without one: draw with twip_frame_rgba then.
 ///
 /// # Safety
-/// `engine` is from twip_engine_new; `hwnd` is a live window that outlives the attach (twip_detach_window, or the
-/// session's end).
+/// `engine` is from twip_engine_new; `window` is a live window or layer that outlives the attach (twip_detach_window,
+/// or the session's end).
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn twip_attach_window(engine: *mut TwipEngine, session: u32, hwnd: *mut std::ffi::c_void) -> i32 {
+pub unsafe extern "C" fn twip_attach_window(engine: *mut TwipEngine, session: u32, window: *mut std::ffi::c_void) -> i32 {
     // SAFETY: the caller's promise.
-    match guard(engine, session, |e| Ok(unsafe { e.session(session)?.host().attach_window(hwnd) })) {
+    match guard(engine, session, |e| Ok(unsafe { e.session(session)?.host().attach_window(window) })) {
         Ok(Some(backend)) => backend as i32,
         Ok(None) => status(ErrorCode::Unavailable),
         Err(e) => status(e.code),
     }
 }
 
-/// Windows: stops drawing into the window twip_attach_window gave.
+/// Windows and macOS: stops drawing into the window twip_attach_window gave.
 ///
 /// # Safety
 /// `engine` is from twip_engine_new.
@@ -870,8 +870,8 @@ pub unsafe extern "C" fn twip_detach_window(engine: *mut TwipEngine, session: u3
     });
 }
 
-/// Windows, testing: loses the GPU device as a driver reset would. twip_frame_window fails `unavailable` until the
-/// next twip_attach_window, which makes a new device.
+/// Windows and macOS, testing: loses the GPU device as a driver reset would. twip_frame_window fails `unavailable`
+/// until the next twip_attach_window, which makes a new device.
 ///
 /// # Safety
 /// `engine` is from twip_engine_new.
@@ -884,8 +884,8 @@ pub unsafe extern "C" fn twip_test_lose_gpu(engine: *mut TwipEngine, session: u3
     });
 }
 
-/// Windows: draws the viewport into the attached window, `width` x `height` device pixels, and presents it. Fails
-/// `unavailable` when the GPU can't draw now (the device was lost): draw with twip_frame_rgba then.
+/// Windows and macOS: draws the viewport into the attached window, `width` x `height` device pixels, and presents it.
+/// Fails `unavailable` when the GPU can't draw now (the device was lost): draw with twip_frame_rgba then.
 ///
 /// # Safety
 /// `engine` is from twip_engine_new; `info` is null or valid for a write.

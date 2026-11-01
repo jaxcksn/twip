@@ -1,5 +1,6 @@
-//! Windows GPU target: Graphite on native Dawn, presenting to the host's window through a swap chain. One device and
-//! Graphite context for the process (`cpp/dawn_native.cpp`: D3D12, then D3D11, then Vulkan), a surface per window.
+//! Native GPU target: Graphite on native Dawn, presenting to the host's window through a swap chain. One device and
+//! Graphite context for the process (`cpp/dawn_native.cpp`: D3D12, then D3D11, then Vulkan on Windows; Metal on
+//! macOS), a surface per window.
 //! The engine thread draws and presents; every call here is on it. After a device loss, frames fail until the next
 //! attach, which lets go of the context and every window's surface and makes them again on a new device.
 
@@ -19,7 +20,7 @@ unsafe extern "C" {
     fn twip_dawn_device(instance: *mut *mut c_void, device: *mut *mut c_void, queue: *mut *mut c_void) -> i32;
     fn twip_dawn_lost() -> bool;
     fn twip_dawn_test_lose();
-    fn twip_dawn_surface(hwnd: *mut c_void) -> *mut c_void;
+    fn twip_dawn_surface(window: *mut c_void) -> *mut c_void;
     fn twip_dawn_surface_release(surface: *mut c_void);
     fn twip_dawn_configure(surface: *mut c_void, width: u32, height: u32, bgra: *mut bool) -> bool;
     fn twip_dawn_current(surface: *mut c_void) -> *mut c_void;
@@ -34,6 +35,7 @@ pub enum Backend {
     D3D12 = 1,
     D3D11 = 2,
     Vulkan = 3,
+    Metal = 4,
 }
 
 /// The recorder drops before its context.
@@ -87,6 +89,7 @@ fn graphite(state: &mut State) -> Option<&mut Graphite> {
                 1 => Backend::D3D12,
                 2 => Backend::D3D11,
                 3 => Backend::Vulkan,
+                4 => Backend::Metal,
                 _ => return None,
             };
             // SAFETY: graphite::Context is a repr(transparent) owning pointer to skgpu::graphite::Context (null ->
@@ -107,15 +110,15 @@ pub fn lose_device() {
     unsafe { twip_dawn_test_lose() };
 }
 
-/// Draws `key`'s frames into the window `hwnd` from now on. The backend, or `None` with no usable GPU (draw with the
-/// CPU then).
+/// Draws `key`'s frames into `window` from now on: an `HWND` on Windows, a `CAMetalLayer` on macOS. The backend, or
+/// `None` with no usable GPU (draw with the CPU then).
 /// # Safety
-/// `hwnd` is a live window that outlives the attach ([`detach`], or the session's end).
-pub unsafe fn attach(key: u64, hwnd: *mut c_void) -> Option<Backend> {
+/// `window` is a live window or layer that outlives the attach ([`detach`], or the session's end).
+pub unsafe fn attach(key: u64, window: *mut c_void) -> Option<Backend> {
     STATE.with_borrow_mut(|s| {
         let backend = graphite(s)?.backend;
-        // SAFETY: the host's promise: a live window handle.
-        let surface = unsafe { twip_dawn_surface(hwnd) };
+        // SAFETY: the host's promise: a live window handle or layer.
+        let surface = unsafe { twip_dawn_surface(window) };
         if surface.is_null() {
             return None;
         }

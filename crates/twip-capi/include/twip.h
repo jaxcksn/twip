@@ -213,11 +213,12 @@ int32_t twip_attach_webgpu(uintptr_t instance, uintptr_t device, uintptr_t queue
 int32_t twip_frame_webgpu(TwipEngine* engine, uint32_t session, uintptr_t texture, uint32_t bgra, uint32_t height, TwipFrameInfo* info);
 int32_t twip_attach_webgl(TwipEngine* engine, uint32_t session);
 int32_t twip_frame_webgl(TwipEngine* engine, uint32_t session, uint32_t width, uint32_t height, TwipFrameInfo* info);
-/* Windows GPU frames: Graphite on Dawn into the host's window (D3D12, then D3D11, then Vulkan). twip_attach_window
- * returns the backend (1 D3D12, 2 D3D11, 3 Vulkan) or fails TWIP_E_UNAVAILABLE; twip_frame_rgba is the fallback.
+/* Native GPU frames: Graphite on Dawn into the host's window. On Windows window is an HWND (D3D12, then D3D11, then
+ * Vulkan); on macOS a CAMetalLayer (Metal). twip_attach_window returns the backend (1 D3D12, 2 D3D11, 3 Vulkan,
+ * 4 Metal) or fails TWIP_E_UNAVAILABLE; twip_frame_rgba is the fallback.
  * After a device loss twip_frame_window fails TWIP_E_UNAVAILABLE; the next twip_attach_window makes a new device.
  * twip_test_lose_gpu loses the device as a driver reset would, for tests. */
-int32_t twip_attach_window(TwipEngine* engine, uint32_t session, void* hwnd);
+int32_t twip_attach_window(TwipEngine* engine, uint32_t session, void* window);
 void twip_detach_window(TwipEngine* engine, uint32_t session);
 int32_t twip_frame_window(TwipEngine* engine, uint32_t session, uint32_t width, uint32_t height, TwipFrameInfo* info);
 void twip_test_lose_gpu(TwipEngine* engine, uint32_t session);

@@ -680,17 +680,19 @@ impl HostSurface<'_> {
         Ok(self.frame_info())
     }
 
-    /// Draws this session's frames into the window `hwnd` with the GPU from now on: the backend (1 D3D12, 2 D3D11,
-    /// 3 Vulkan), or `None` when there is no usable GPU or this build has none (draw with [`HostSurface::frame_rgba`]).
+    /// Draws this session's frames into `window` with the GPU from now on (an `HWND` on Windows, a `CAMetalLayer` on
+    /// macOS): the backend (1 D3D12, 2 D3D11, 3 Vulkan, 4 Metal), or `None` when there is no usable GPU or this build
+    /// has none (draw with [`HostSurface::frame_rgba`]).
     /// # Safety
-    /// `hwnd` is a live window that outlives the attach ([`HostSurface::detach_window`], or the session's end).
-    pub unsafe fn attach_window(&mut self, hwnd: *mut std::ffi::c_void) -> Option<u32> {
+    /// `window` is a live window or layer that outlives the attach ([`HostSurface::detach_window`], or the session's
+    /// end).
+    pub unsafe fn attach_window(&mut self, window: *mut std::ffi::c_void) -> Option<u32> {
         // SAFETY: the caller's promise.
         #[cfg(twip_dawn)]
-        return unsafe { crate::render::window::attach(self.session.presentation.serial, hwnd) }.map(|b| b as u32);
+        return unsafe { crate::render::window::attach(self.session.presentation.serial, window) }.map(|b| b as u32);
         #[cfg(not(twip_dawn))]
         {
-            let _ = hwnd;
+            let _ = window;
             None
         }
     }

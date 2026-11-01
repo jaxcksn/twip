@@ -1,11 +1,14 @@
-// Graphite on native Dawn (Windows): the one device the process draws with, and a swap chain surface per window.
-// Backends in order of preference: D3D12, D3D11, Vulkan. cpp/dawn.cpp makes the Graphite context and recorder.
+// Graphite on native Dawn (Windows and macOS): the one device the process draws with, and a swap chain surface per
+// window. Backends in order of preference: D3D12, D3D11, Vulkan on Windows; Metal on macOS. cpp/dawn.cpp makes the
+// Graphite context and recorder.
 
 #include <atomic>
 #include <memory>
 #include <vector>
 
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 #include "dawn/dawn_proc.h"
 #include "dawn/native/DawnNative.h"
@@ -43,10 +46,10 @@ std::vector<wgpu::FeatureName> Features(const wgpu::Adapter& adapter) {
 }  // namespace
 
 // Creates the device on the first call: the first hardware adapter of the preferred backends. Writes borrowed
-// instance, device and queue handles (the process keeps them) and returns the backend: 1 D3D12, 2 D3D11, 3 Vulkan;
-// 0 when there is none (no GPU, or only a software adapter, which the CPU raster beats). After a loss, the next call
-// lets go of the lost device, its adapter and instance (the caller released what it made with them) and starts over,
-// and so does each call while none can be made again.
+// instance, device and queue handles (the process keeps them) and returns the backend: 1 D3D12, 2 D3D11, 3 Vulkan,
+// 4 Metal; 0 when there is none (no GPU, or only a software adapter, which the CPU raster beats). After a loss, the
+// next call lets go of the lost device, its adapter and instance (the caller released what it made with them) and
+// starts over, and so does each call while none can be made again.
 extern "C" int twip_dawn_device(WGPUInstance* instance, WGPUDevice* device, WGPUQueue* queue) {
     static int backend = -1;
     if (gLost || (gEverLost && backend == 0)) {
@@ -71,8 +74,12 @@ extern "C" int twip_dawn_device(WGPUInstance* instance, WGPUDevice* device, WGPU
         static const char* const kAdapter[] = {"skip_validation", "disable_lazy_clear_for_mapped_at_creation_buffer",
                                                "disable_robustness"};
         auto adapterToggles = Toggles(kAdapter, std::size(kAdapter));
+#ifdef _WIN32
         const std::pair<wgpu::BackendType, int> order[] = {
                 {wgpu::BackendType::D3D12, 1}, {wgpu::BackendType::D3D11, 2}, {wgpu::BackendType::Vulkan, 3}};
+#else
+        const std::pair<wgpu::BackendType, int> order[] = {{wgpu::BackendType::Metal, 4}};
+#endif
         for (auto [type, id] : order) {
             wgpu::RequestAdapterOptions options;
             options.backendType = type;
@@ -126,12 +133,18 @@ extern "C" void twip_dawn_test_lose() {
     gLost = true;
 }
 
-// A surface on the window (the caller releases it with twip_dawn_surface_release).
-extern "C" WGPUSurface twip_dawn_surface(HWND hwnd) {
+// A surface on the window: an HWND on Windows, a CAMetalLayer on macOS (the caller releases it with
+// twip_dawn_surface_release).
+extern "C" WGPUSurface twip_dawn_surface(void* window) {
     if (!gDevice) return nullptr;
+#ifdef _WIN32
     wgpu::SurfaceSourceWindowsHWND source;
     source.hinstance = GetModuleHandleW(nullptr);
-    source.hwnd = hwnd;
+    source.hwnd = window;
+#else
+    wgpu::SurfaceSourceMetalLayer source;
+    source.layer = window;
+#endif
     wgpu::SurfaceDescriptor desc;
     desc.nextInChain = &source;
     return wgpu::Instance(gInstance->Get()).CreateSurface(&desc).MoveToCHandle();
