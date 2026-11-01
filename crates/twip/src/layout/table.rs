@@ -751,9 +751,24 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                     let t = text_of(&pieces[i]);
                     tail[i] = tail[i + 1] && (pieces[i].kind == Kind::Space || (!t.is_empty() && t.chars().all(|c| c == '-')));
                 }
+                // TABLE-7: a tab is as wide as it is in the unwrapped lines.
+                let mut laid: Vec<f64> = pieces.iter().map(|q| q.width).collect();
+                for l in &pb.lines {
+                    for (k, &w) in l.widths.iter().enumerate() {
+                        if let Some(x) = laid.get_mut(l.start + k) {
+                            *x = w;
+                        }
+                    }
+                }
                 let mut word = 0.0f64;
                 for (i, pc) in pieces.iter().enumerate() {
                     match pc.kind {
+                        // TABLE-7: a piece ends before a tab; the tab starts the next one (a list number's suffix
+                        // stays with the number).
+                        Kind::Tab if pc.src.is_some() => {
+                            mn = mn.max(up(word + ind));
+                            word = laid[i];
+                        }
                         Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak | Kind::Space => {
                             mn = mn.max(up(word + ind));
                             word = 0.0;
