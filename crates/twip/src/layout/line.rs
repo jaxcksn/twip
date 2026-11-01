@@ -425,7 +425,8 @@ pub fn band(
         let first = if first_line && segs.is_empty() { style.ind_first } else { 0.0 };
         // FLOAT-7: beside a float the interval's edge stands in for the left indent; the first-line indent still adds.
         let left = if a > EPS { a.max(style.ind_left) + first } else { a.max(style.ind_left + first) };
-        let right = b.min(right_edge);
+        // An interval reaching the column's edge keeps the right indent, a negative one too.
+        let right = if b >= frame.width - EPS { right_edge } else { b.min(right_edge) };
         if right - left <= EPS {
             continue;
         }
