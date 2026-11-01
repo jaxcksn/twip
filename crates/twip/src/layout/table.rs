@@ -1300,9 +1300,12 @@ fn assemble(
         // TABLE-39: with cell spacing each cell draws its own box.
         let mut cell_bottom = 0.0;
         if t.cell_spacing > 0.0 {
-            gap_top = 2.0 * t.cell_spacing + if ri == 0 { bw(&t.borders[0]) } else { 0.0 };
+            // TABLE-39: 2s above the first row's boxes (and the table's top border), s above the others; s below every
+            // row's boxes but the last's (the table's bottom adds its 2s).
+            let s = t.cell_spacing;
+            gap_top = if ri == 0 { 2.0 * s + space_h(&t.borders[0]) } else { s };
             top_border += gap_top;
-            cell_bottom = cells.iter().map(|c| bw(&c.edges[2])).fold(0.0, f64::max);
+            cell_bottom = cells.iter().map(|c| bw(&c.edges[2])).fold(0.0, f64::max) + if ri + 1 < t.rows.len() { s } else { 0.0 };
         }
         let content =
             cells.iter().filter(|c| c.v_merge == VMerge::None).map(|c| c.margins[0] + c.content_h + c.margins[2] + cell_bottom).fold(0.0, f64::max);
@@ -1597,7 +1600,8 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             let ncols = tb.cols.len();
             let bx0 = x0 + c.x + gap(tb.spacing, c.col == 0);
             let bx1 = x0 + c.x + c.w - gap(tb.spacing, c.col + c.span >= ncols);
-            let (by0, by1) = (top + row.gap_top, top + height);
+            // TABLE-39: a cell box ends the spacing above its row's bottom, but on the table's last row.
+            let (by0, by1) = (top + row.gap_top, top + height - if tb.is_last(ri) { 0.0 } else { tb.spacing });
             if let Some(fill) = c.shading {
                 background.push(Item::Rect { rect: [bx0, by0, bx1, by1], colour: fill });
             }

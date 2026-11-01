@@ -562,14 +562,14 @@ Example: a cell with a 0.72pt bottom border above a wide cell whose top is `nil`
 With `w:tblCellSpacing` = s > 0 (the table's value, in points):
 
 - **Gaps:** a cell side on the table's outer boundary gets 2s, an interior side s. Neighbouring cells are s + s apart; outer cells are 2s from the table's border centre line.
-- **Each cell draws its own box**, from `cellX + gapL` to `cellX + w − gapR`, and from `rowTop + gapTop` to the row's bottom, where `gapTop = 2s`, plus the table's top border width on the first row. Its four winning edges are drawn **inside** that box (top band from the box top down, bottom band up from the box bottom, left and right bands inside the box's sides). Shading fills the box.
+- **Each cell draws its own box**, from `cellX + gapL` to `cellX + w − gapR`, and from `rowTop + gapTop` to `s` above the row's bottom (to the row's bottom on the table's last row), where `gapTop = 2s` plus the table's top border on the first row, and `s` on the others. Its four winning edges are drawn **inside** that box (top band from the box top down, bottom band up from the box bottom, left and right bands inside the box's sides). Shading fills the box.
 - **Cell text** starts at `cellX + gapL + bL + marginL` and is `w − that − marginR − bR − gapR` wide.
-- **Row pitch:** `topBorder` of [TABLE-27](#table-27) plus `gapTop`; each cell's content counts `topMargin + content + bottomMargin + (the widest bottom edge in the row)`.
+- **Row pitch:** `topBorder` of [TABLE-27](#table-27) plus `gapTop`; each cell's content counts `topMargin + content + bottomMargin + (the widest bottom edge in the row)`, plus `s` on every row but the last.
 - **Table bottom:** `2s + the table's bottom border width`.
 - **The table's own border** (`w:tblBorders` outer sides) is drawn as usual around the cells: its top on the first row from the row's top, its sides on every row centred on the table's left and right border centres, its bottom below the last row, 2s under the last cell box.
 - Autofit counts the spacing as in [TABLE-7](#table-7), [TABLE-17](#table-17) and [TABLE-21](#table-21). The rule of [TABLE-38](#table-38) doesn't apply.
 
-Example: s = 2pt, 0.5pt borders, margins 0 top and bottom, one 13.43pt line: an interior row's pitch is 4 + 0.5 + 13.43 + 0.5 = 18.43pt.
+Example: s = 2pt, 0.5pt borders, margins 0 top and bottom, one 13.43pt line: an interior row's pitch is s + 0.5 + 13.43 + 0.5 + s = 18.43pt.
 
 ## Rows across pages
 
