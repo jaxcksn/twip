@@ -90,8 +90,8 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 - Several floats give several intervals.
 - A text-wrapping break (`w:br`) ends its interval, not the line: the text after it goes on in the next interval of the same band. A break in the band's last interval ends the line. (`w:clear` isn't read: every break is plain.)
 - An interval that starts at a float's edge (not the column's) takes the place of the left indent: its lines start at `max(edge, left indent)`, and the first line adds its first-line indent to that, so a hanging first line starts left of the edge, over the float's distance or the float itself.
-
 - Tabs in an interval that starts at a float's edge: compat ≤ 14 lays the interval out as a line of its own, so default stops are at `edge + k·defaultTabStop` and custom stops shift by the edge. Compat 15 keeps the stops counted from the margin; stops left of the interval start are skipped.
+- Compat ≤ 14: the intervals found at a line's top hold down to the bottom of a float covering that top. When that bottom is inside the line and another float starts inside the line, the line doesn't use them: it moves down to that bottom and is tried again there. A line that only overhangs a float's bottom, or meets a float starting inside it with none covering its top, stays.
 
 Example: a float's exclusion ending at 255pt beside a paragraph with `w:left="-540" w:firstLine="540"`: the first line starts at 282pt, the next ones at 255pt. With `w:hanging="540"` instead the first line starts at 228pt.
 

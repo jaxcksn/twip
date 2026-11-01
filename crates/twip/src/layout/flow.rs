@@ -1456,6 +1456,16 @@ impl<'d> PageFill<'d, '_> {
             let mut trial = None;
             // FLOAT-4: a band at the column bottom ignores the floats.
             let here: &[Placed] = if yy >= col.bottom - EPS { &[] } else { &floats };
+            // FLOAT-7 (compat <= 14): the intervals at a line's top hold down to the bottom of a float covering it; when
+            // that bottom is inside the line and another float starts inside it, the line goes to that bottom instead.
+            if compat == Compat::Legacy {
+                let near = || here.iter().filter(|f| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS);
+                let e = near().filter(|f| f.excl[1] <= yy + EPS).map(|f| f.excl[3]).fold(f64::INFINITY, f64::min);
+                if e < yy + h - EPS && near().any(|f| f.excl[1] > yy + EPS) {
+                    yy = e;
+                    continue;
+                }
+            }
             for attempt in 0..2 {
                 match float::intervals(here, cx0, cx1, yy, yy + h) {
                     None => {

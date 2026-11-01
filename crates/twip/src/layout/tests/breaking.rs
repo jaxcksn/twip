@@ -323,6 +323,28 @@ fn a_compat_14_column_aligned_float_counts_from_the_paragraph_indent() {
 }
 
 #[test]
+fn a_compat_14_line_goes_to_a_floats_bottom_when_another_starts_inside_it() {
+    // FLOAT-7: two floating tables in the flow, the second moved below the first; the paragraph's second line would
+    // cross the first's bottom with the second starting inside it, so it starts at that bottom instead.
+    let table = |x: u32, rows: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="{x}" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl>"#
+        )
+    };
+    let row = |t: &str| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#);
+    let text = "Some words that run on for more than one line beside the two tables, and then some more words to fill the lines.";
+    let body = format!(
+        r#"<w:p><w:r><w:t>Top</w:t></w:r></w:p>{}<w:p/>{}<w:p><w:r><w:t>{text}</w:t></w:r></w:p>"#,
+        table(1000, &format!("{}{}", row("A1"), row("A2"))),
+        table(1500, &row("B1"))
+    );
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    // The lines starting at the margin, left of the tables: "Some", then "the two" below the first table.
+    let y: Vec<f64> = l.iter().filter(|(x, t, _, _)| *x < 73.0 && t.len() > 2 && text.contains(t.as_str())).map(|l| l.3).collect();
+    assert!(y.len() >= 2 && y[1] - y[0] > 13.8 + 0.5, "{l:?}");
+}
+
+#[test]
 fn a_right_aligned_floating_tables_frame_counts_a_missing_border_whole() {
     // TABLE-49: compat 15, a 300pt right-aligned floating table; its frame is 300.75pt wide with no right border at
     // all (the cell's text at 72 + 468 - 300.75 + 5.4), 300pt with a `none` one.
