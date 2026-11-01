@@ -505,10 +505,12 @@ A cell with `w:textDirection` `btLr`, `tbRl`, `tbRlV` or `tbLrV` is as thick as 
 
 ### TABLE-34. Exact rows clip per glyph {#table-34}
 
-In an exact row ([TABLE-28](#table-28)), the clip line is the row's bottom (for a merged region whose first row is exact, the region's bottom). For each line of a cell:
+In an exact row ([TABLE-28](#table-28)), the clip line is the row's bottom less the cells' bottom margin, which the row adds below its exact height (for a merged region whose first row is exact, the region's bottom less that margin). For each line of a cell:
 
 1. Find the line's highest ink top (the top of its glyphs' ink, not the line box). If it is at or below `clipLine + 0.06pt` (about one twip of slack), hide the whole line. A line with no ink (no glyphs) hides if its top is at or below the clip line.
 2. In a line that shows, drop each glyph whose own ink top is at or below `clipLine + 0.06pt`. A glyph whose ink reaches above it is drawn whole.
+
+Example: a 20pt exact row with 3pt top and 6pt bottom margins is 26pt tall and clips 20pt below its top; a second 13.43pt line, whose ink top is 20.9pt down, is hidden.
 
 So text can show in a row a little shorter than its line: capitals whose ink top is 17.03pt down show in a 17.0pt row. A second line starting 2.1pt above the bottom of a 14.4pt exact row shows only the glyphs whose ink reaches above that bottom.
 

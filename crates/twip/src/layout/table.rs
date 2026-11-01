@@ -1609,8 +1609,10 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         };
         let base_y = top + row.top_border + c.margins[0] + off;
         let base_x = x0 + c.x + c.cx;
-        // shortcut: a region is clipped at its rows' total when its own row is exact.
-        let clip = if row.exact { top + height } else { f64::INFINITY };
+        // TABLE-34: an exact row clips at its exact height, above the cells' bottom margin the row adds below it.
+        // shortcut: a region is clipped at its rows' total when its own row is exact, less this row's bottom margin.
+        let below_margin = row.cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
+        let clip = if row.exact { top + height - below_margin } else { f64::INFINITY };
         let mut content = Vec::new();
         let mut hidden = Vec::new();
         for u in part.units {

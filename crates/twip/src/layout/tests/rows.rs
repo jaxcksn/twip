@@ -183,6 +183,24 @@ fn a_merged_region_splits_with_its_last_row() {
     assert_eq!([page('r'), page('s')], [Some(1); 2]);
 }
 
+#[test]
+fn an_exact_row_clips_above_its_bottom_margin() {
+    // TABLE-34, TABLE-28: a 20pt exact row with a 20pt bottom margin is 40pt tall but clips at 20pt: "b", 15pt below
+    // the first line, has its ink below 20pt and is hidden, though it would show above the row's 40pt bottom.
+    let p = |before: u32, c: char| {
+        format!(r#"<w:p><w:pPr><w:spacing w:before="{before}" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:t>{c}</w:t></w:r></w:p>"#)
+    };
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="400" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="400" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>{}{}</w:tc></w:tr></w:tbl><w:p/>"#,
+        p(0, 'a'),
+        p(300, 'b')
+    );
+    let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    let drawn = |ch: char| glyphs(&doc)[0].iter().any(|c| c.0 == ch);
+    assert!(drawn('a'), "the first line shows");
+    assert!(!drawn('b'), "the second line is clipped at the exact height");
+}
+
 /// Each page's drawn characters with their baselines.
 pub(super) fn glyphs(doc: &crate::docx::Document) -> Vec<Vec<(char, f64)>> {
     let s = layout(doc, &fonts());
