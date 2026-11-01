@@ -913,7 +913,9 @@ fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64,
         (lu(x) - lu(right), shrink, stretch)
     };
     let is_end = |e: usize| (pieces[e - 1].break_after || pieces[e - 1].kind == Kind::Tab) && pieces[e].kind != Kind::Space;
-    let longest = (greedy.end + 1..seg_end)
+    // The segment's own end is a candidate too: its last line may fit only with shrinking.
+    let is_end = |e: usize| e == seg_end || is_end(e);
+    let longest = (greedy.end + 1..=seg_end)
         .filter(|&e| is_end(e))
         .take_while(|&e| {
             let (over, shrink, _) = end_at(e);
