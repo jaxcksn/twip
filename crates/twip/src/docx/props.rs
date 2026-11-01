@@ -730,6 +730,10 @@ pub struct TablePos {
     /// `tblpX`, or the `tblpXSpec` alignment (left/center/right) when given.
     pub x: f64,
     pub x_spec: Option<Jc>,
+    /// `tblpYSpec` for page and margin anchors: top/inside → Left, center → Center, bottom/outside → Right.
+    pub y_spec: Option<Jc>,
+    /// `topFromText`, `bottomFromText`, `leftFromText`, `rightFromText` (negatives → 0), points.
+    pub dist: [f64; 4],
 }
 
 impl TblProps {
@@ -756,10 +760,11 @@ impl TblProps {
                 "tblStyleColBandSize" => p.col_band = int(val(c)),
                 "tblpPr" => {
                     p.floating = Some(TablePos {
+                        // TABLE-49: an absent vertAnchor is the margin (the stored anchor's zero value).
                         v_anchor: match attr(c, "vertAnchor") {
                             Some("page") => TableAnchor::Page,
-                            Some("margin") => TableAnchor::Margin,
-                            _ => TableAnchor::Text,
+                            Some("text") => TableAnchor::Text,
+                            _ => TableAnchor::Margin,
                         },
                         y: attr_twips(c, "tblpY").unwrap_or(0.0),
                         x: attr_twips(c, "tblpX").unwrap_or(0.0),
@@ -769,6 +774,13 @@ impl TblProps {
                             Some(_) => Some(Jc::Left),
                             None => None,
                         },
+                        y_spec: match attr(c, "tblpYSpec") {
+                            Some("center") => Some(Jc::Center),
+                            Some("bottom" | "outside") => Some(Jc::Right),
+                            Some(_) => Some(Jc::Left),
+                            None => None,
+                        },
+                        dist: ["topFromText", "bottomFromText", "leftFromText", "rightFromText"].map(|a| attr_twips(c, a).unwrap_or(0.0).max(0.0)),
                     })
                 }
                 "shd" => p.shading = Some(shading_fill(c)),

@@ -9,6 +9,9 @@ use super::ids::ParaId;
 
 const EPS: f64 = 1e-6;
 
+/// TABLE-49: the anchor piece of a floating table's obstacle (it has none); the table draws its own rows.
+pub const TABLE_PIECE: usize = usize::MAX;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Wrap {
     /// square, tight, through (rectangular, FLOAT-8)

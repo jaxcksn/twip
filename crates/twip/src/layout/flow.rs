@@ -7,11 +7,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::*;
-use crate::docx::props::TableAnchor;
+use crate::docx::props::{Jc, TableAnchor};
 
 use super::LayoutCtx;
 use super::float::{self, Frames, Placed, Wrap};
 use super::fragment::{BoxFragment, BoxKind, Child, Item, ParaFragment, PlacedLine, TableFragment};
+use super::ids::ParaId;
 use super::job::{Memos, Yield};
 use super::join::{Joined, LaidPara, laid_para, piece_para};
 use super::line::{Frame, Line, LineOrigin, ParaLines, band, border_key, break_lines, draw_label, draw_line, neighbour_borders};
@@ -1359,6 +1360,15 @@ impl<'d> PageFill<'d, '_> {
                     }
                 }
                 _ => {
+                    // TABLE-49: a paragraph's first line that meets a floating table goes below what it meets plus
+                    // the paragraph's own space before (kept above the line wherever it lands).
+                    let meets = |f: &&Placed| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS;
+                    if first_part && bands.is_empty() && here.iter().filter(meets).any(|f| f.key.2 == float::TABLE_PIECE) {
+                        let below = here.iter().filter(meets).map(|f| f.excl[3]).fold(yy, f64::max);
+                        let before = if style.before_auto && carry.first_para { 0.0 } else { space_before(&self.ctx.env.text, style) };
+                        yy = (below + before).min(col.bottom.max(yy + EPS));
+                        continue;
+                    }
                     // FLOAT-4 (compat <= 14): beside square floats the line retries lower in steps of its trial height.
                     let square = here.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
                     if let Some(t) = trial.filter(|&t| compat == Compat::Legacy && square && t > EPS) {
@@ -1582,22 +1592,36 @@ impl<'d> PageFill<'d, '_> {
         if pos.at.at_start() && !*empty {
             *y += self.after_above_table(pos.block, carry);
         }
-        // TABLE-49: a floating table that starts a column moves up to its anchored top (a page- or
-        // margin-anchored one no higher than the page's top edge); what follows flows below it.
-        // shortcut: only that move up is done: a floating table anchored lower, or narrow enough for text beside
-        // it, is laid out in the flow.
-        if pos.at.at_start()
-            && *empty
-            && let Some(Block::Table(t)) = self.sec.blocks.get(pos.block)
-            && let Some(fp) = t.floating
+        // TABLE-49: a floating table takes no room in the flow. Its rows go from its anchored top, its part on each
+        // page is an obstacle the page's text wraps around (`table_obstacle`), and the text after it goes on from
+        // where it stood (after a split, from the top of the page holding its last part). A page's later fills keep
+        // the top its first fill found: text before the table that re-wraps around it doesn't move it.
+        let fp = match self.sec.blocks.get(pos.block) {
+            Some(Block::Table(t)) => t.floating,
+            _ => None,
+        };
+        let (flow_y, was_empty) = (*y, *empty);
+        if let Some(fp) = fp
+            && pos.at.at_start()
         {
-            let top = match fp.v_anchor {
-                TableAnchor::Page => fp.y.max(0.0),
-                TableAnchor::Margin => (self.margins.2 + fp.y).max(0.0),
-                TableAnchor::Text => *y + fp.y,
+            let h: f64 = tb.rows.iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>() + tb.bottom_border;
+            let (t0, t1) = match fp.v_anchor {
+                TableAnchor::Page => (0.0, self.page_h),
+                _ => (self.margins.2, self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom),
             };
-            *y = y.min(top);
+            // Page and margin frames: the stored tblpY is one twip more than the offset; a frame above the page top is
+            // placed at the top.
+            let top = match (fp.v_anchor, fp.y_spec) {
+                (TableAnchor::Text, _) => flow_y + fp.y,
+                (_, Some(Jc::Center)) => (t0 + t1 - h) / 2.0,
+                (_, Some(Jc::Right)) => t1 - h,
+                (_, Some(_)) => t0,
+                (_, None) => t0 + fp.y - 0.05,
+            }
+            .max(0.0);
+            *y = self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)).map_or(top, |k| k.rect[1]);
         }
+        let part_top = *y;
         carry.prev = None;
         carry.prev_after = 0.0;
         let headers: Vec<usize> = (0..tb.rows.len()).take_while(|&r| tb.rows[r].header).collect();
@@ -1772,6 +1796,7 @@ impl<'d> PageFill<'d, '_> {
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
                 finish(rows, out);
+                self.table_obstacle(pos.block, tb, col.x, part_top, *y, flow_y);
                 return Ok(Stop::Full);
             }
             if at_top {
@@ -1798,11 +1823,62 @@ impl<'d> PageFill<'d, '_> {
                 pos.at = At::Row(kri);
             }
             finish(rows, out);
+            self.table_obstacle(pos.block, tb, col.x, part_top, *y, flow_y);
             return Ok(Stop::Full);
         }
         finish(rows, out);
+        if fp.is_some() {
+            self.table_obstacle(pos.block, tb, col.x, part_top, *y, flow_y);
+            (*y, *empty) = (flow_y, was_empty);
+        }
         pos.next_block();
         carry.first_para = false;
         Ok(Stop::Done)
+    }
+
+    /// TABLE-49: a floating table's part on this page, `top` to `bottom`, as an obstacle the page's text wraps
+    /// around (FLOAT-2, both sides): its outer box grown by the *FromText distances, left and right at least 0.5pt.
+    /// It reaches no higher than where the table stood in the flow unless the table itself does (only then does
+    /// the text before it re-wrap). Compat ≤ 14: a table in the flow (text-anchored, tblpY 0) has no distance above
+    /// and below.
+    fn table_obstacle(&mut self, bi: usize, tb: &TableLayout, at_x: f64, top: f64, bottom: f64, flow_y: f64) {
+        let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return };
+        let Some(fp) = t.floating else { return };
+        if bottom <= top + EPS {
+            return;
+        }
+        let legacy = self.ctx.env.text.compat == Compat::Legacy;
+        let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
+        let [dt, db, dl, dr] = fp.dist;
+        let (bl, br) = super::table::outer_box(tb);
+        let f = Rc::new(Float {
+            id: t.id,
+            w: br - bl,
+            auto_w: false,
+            h: bottom - top,
+            image: None,
+            alt: "".into(),
+            lock_aspect: false,
+            text_box: None,
+            h_relative: "column".into(),
+            h_align: None,
+            h_offset: 0.0,
+            v_relative: "paragraph".into(),
+            v_align: None,
+            v_offset: 0.0,
+            wrap: "square".into(),
+            wrap_text: "bothSides".into(),
+            dist: if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] },
+            behind: false,
+            allow_overlap: true,
+            layout_in_cell: true,
+            order: 0,
+            src: None,
+            locked: false,
+            frame_src: None,
+        });
+        let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
+        o.excl[1] = o.excl[1].max(flow_y.min(top));
+        self.at.found.push(o);
     }
 }

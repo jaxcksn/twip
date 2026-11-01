@@ -597,7 +597,7 @@ pub struct Table {
     pub look: Option<Look>,
     /// `w:tblStyleRowBandSize` and `w:tblStyleColBandSize` (table style banding, STYLE-4).
     pub bands: (i64, i64),
-    /// `w:tblpPr`: placed at its anchor when it starts a column; text doesn't wrap beside it (TABLE-49).
+    /// `w:tblpPr`: placed at its anchor, taking no room in the flow; text wraps around it (TABLE-49).
     pub floating: Option<TablePos>,
     pub grid: Vec<f64>,
     pub rows: Vec<Row>,

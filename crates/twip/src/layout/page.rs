@@ -531,7 +531,11 @@ impl<'d> Paginator<'d, '_> {
     fn draw_floats(fill: &PageFill, placed: &[super::float::Placed], memos: &mut Memos) -> Result<Vec<Child>, Yield> {
         let fields = FieldValues::default();
         let env = StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
-        placed.iter().map(|p| super::story::float_box(&p.float, p.rect, p.anchor, &env, memos)).collect()
+        placed
+            .iter()
+            .filter(|p| p.key.2 != super::float::TABLE_PIECE)
+            .map(|p| super::story::float_box(&p.float, p.rect, p.anchor, &env, memos))
+            .collect()
     }
 }
 

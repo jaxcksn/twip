@@ -14,7 +14,7 @@ These rules lay out a `w:tbl`: first the table's properties and its shared colum
 - `textW` = the width between the page margins, or the column width, or (for a nested table) the width of the cell's content box.
 - Column widths run from border centre to border centre.
 - A table's grid has `n` columns: the larger of the number of `w:gridCol` entries and, over all rows, `w:gridBefore + Σ w:gridSpan + w:gridAfter`. A row's first cell starts at grid column `w:gridBefore`; each cell covers `w:gridSpan` columns (default 1), cut off at the grid's end.
-- A floating table (`w:tblpPr`) is laid out where it stands in the flow, like any other table, except for its position ([TABLE-49](#table-49)).
+- A floating table (`w:tblpPr`) is laid out like any other table against the column width, but it takes no room in the flow: it sits at its anchored position and the text wraps around it ([TABLE-49](#table-49)).
 
 ## Table properties
 
@@ -646,8 +646,18 @@ In compat 15, if a table starts below other content in a column and the first ro
 ### TABLE-49. Floating table position {#table-49}
 
 - Horizontally, `w:tblpX` takes `w:tblInd`'s place ([TABLE-23](#table-23)), from the column. With `w:tblpXSpec`, `left` puts the table where `tblpX` 0 would, `right` as `w:jc` right does, and `center` puts the left border centre at `(textW − total + lm) / 2`, `lm` the first cell's left margin: a centred floating table sits half that margin right of a centred inline one.
-- Vertically, a floating table that starts a column moves up to its anchored top: `w:tblpY` below the page's top edge (`w:vertAnchor="page"`) or the top margin (`margin`), never above the page's top edge (a negative `tblpY` that would put it there puts it at the top edge), or below where the table stands in the flow (`text`). What follows flows below its bottom border edge.
-- Not done: a floating table anchored below where it stands, one that doesn't start a column, `w:horzAnchor` (always the column), and text beside a floating table narrower than the column.
+- A floating table takes no room in the flow: the text after it goes on from where the table stands, and wraps around it.
+- **Vertically** (`w:vertAnchor`, absent = `margin`):
+  - `text`: `tblpY` below where the table stands in the flow.
+  - `page`, `margin` (top margin to bottom margin): `tblpY` less one twip from the reference's top, or `w:tblpYSpec` `top`, `center`, `bottom` of the table's height within it.
+  - Never above the page's top edge.
+  - The position is taken from the page's first layout: when the text before the table re-wraps around it, the table doesn't move again.
+- **The obstacle** on each page is the table's part there: its outer box (half the left border, rounded up to a twip, left of the left border centre; half the right border right of the last edge) grown by `w:leftFromText` / `w:rightFromText` (at least 0.5pt each) and `w:topFromText` / `w:bottomFromText` (negatives → 0). Text wraps on both sides of it, as around a square float ([FLOAT-2](float#float-2)). It reaches above where the table stands only when the table itself does (negative `tblpY`, or anchored above): only then does the text before it re-wrap.
+  - Compat ≤ 14: a table in the flow (`text`, `tblpY` 0) has no top or bottom distance.
+  - A paragraph's first line that meets the obstacle goes to its bottom plus the paragraph's own space before, even at the top of a page: the space before stays above the line wherever it lands.
+- **A split** floating table continues at the top of the next page like an inline table; the text after it starts at the top of the page that holds its last part, beside it.
+- Example: a page-anchored table at the page top, 280pt tall, then a paragraph with 12pt before: the paragraph's first line starts at 292pt.
+- Not done: `w:horzAnchor` (always the column), the 18pt minimum width of a free interval ([FLOAT-7](float#float-7)), floating tables inside table cells, overlapping floating tables, and the device-pixel placement of the frame.
 
 ### TABLE-50. A row's own indent {#table-50}
 

@@ -548,6 +548,14 @@ fn half_border(w: f64) -> f64 {
     ((tw + 1) / 2) as f64 / 20.0
 }
 
+/// TABLE-49: a table's outer box, left and right relative to the column, widest over its rows: from the first cell's
+/// left border outer edge (half rounded up) to the last cell's right border outer edge (half).
+pub fn outer_box(tb: &TableLayout) -> (f64, f64) {
+    tb.rows.iter().filter_map(|r| Some((r.cells.first()?, r.cells.last()?))).fold((f64::INFINITY, f64::NEG_INFINITY), |(l, r), (a, z)| {
+        (l.min(tb.x0 + a.x - half_border(bw(&a.edges[1]))), r.max(tb.x0 + z.x + z.w + bw(&z.edges[3]) / 2.0))
+    })
+}
+
 /// TABLE-25: what a cell story shifts a nested table right by, the difference [`assemble`]'s compat <= 14 position
 /// leaves. Left-aligned tables only.
 pub fn nested_shift(t: &Table) -> f64 {
