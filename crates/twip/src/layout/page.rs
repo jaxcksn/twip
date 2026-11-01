@@ -96,12 +96,18 @@ pub fn columns(c: &Columns, geo: &BodyArea, top: f64) -> Vec<ColumnSpace> {
     if c.equal || c.cols.is_empty() {
         let w = (geo.width - (n as f64 - 1.0) * c.space) / n as f64;
         for k in 0..n {
-            out.push(ColumnSpace { x: geo.left + k as f64 * (w + c.space), width: w, top, bottom: geo.bottom, balance: false });
+            out.push(ColumnSpace {
+                x: geo.left + k as f64 * (w + c.space),
+                width: w,
+                top: Lu::round_half_up(top),
+                bottom: geo.bottom,
+                balance: false,
+            });
         }
     } else {
         let mut x = geo.left;
         for (w, sp) in &c.cols {
-            out.push(ColumnSpace { x, width: *w, top, bottom: geo.bottom, balance: false });
+            out.push(ColumnSpace { x, width: *w, top: Lu::round_half_up(top), bottom: geo.bottom, balance: false });
             x += w + sp;
         }
     }
@@ -381,14 +387,14 @@ impl<'d> Paginator<'d, '_> {
         if s.bottom < 0.0 {
             body_bottom = s.page_h + s.bottom;
         }
-        let area = BodyArea { left, width, top: body_top, bottom: body_bottom };
+        let area = BodyArea { left, width, top: Lu::round_half_up(body_top), bottom: Lu::round_half_up(body_bottom) };
         Ok(BodySpace {
             section: si,
             page_w: s.page_w,
             page_h: s.page_h,
             margins: (left, right, top),
             area,
-            columns: columns(&s.columns, &area, start.unwrap_or(area.top)),
+            columns: columns(&s.columns, &area, start.unwrap_or(area.top.to_pt())),
             mid_page: start.is_some(),
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| n.break_kind == SectionBreak::Continuous),
@@ -412,7 +418,7 @@ impl<'d> Paginator<'d, '_> {
             _ => None,
         };
         let page = self.run.pages.last_mut().expect("a page was started");
-        page.body_area = page.body_area.or(Some((space.area.top, space.area.bottom)));
+        page.body_area = page.body_area.or(Some((space.area.top.to_pt(), space.area.bottom.to_pt())));
         page.effects.merge(&b.effects);
         // A paragraph the body ends in takes the blocks of the paragraphs joined to it (REV-6).
         let last = sec.blocks.chain_end(b.end.flow.block, self.ctx.env.text.review.view).min(sec.blocks.len().saturating_sub(1));
@@ -453,7 +459,7 @@ impl<'d> Paginator<'d, '_> {
         memos: &mut Memos,
     ) -> Result<Option<(f64, Vec<Child>, FlowToken, FlowState, PageEffects)>, Yield> {
         let (p0, c0) = saved;
-        let top = cols[0].top;
+        let top = cols[0].top.to_pt();
         // COL-6: the empty paragraph holding the section break takes no space. In compat 15 one right after a table
         // still takes its line, below the content of the column it ends in, past the balanced height if need be.
         let blocks = &sec.blocks;
@@ -478,7 +484,7 @@ impl<'d> Paginator<'d, '_> {
             let mut end = top;
             fill.at = AttemptState { known: state.known.clone(), ..Default::default() };
             for (k, c) in cols.iter().enumerate() {
-                let col = ColumnSpace { bottom: (top + h).min(c.bottom), balance: true, ..*c };
+                let col = ColumnSpace { bottom: Lu::round_half_up(top + h).min(c.bottom), balance: true, ..*c };
                 let r = fill.fill(&pos, &carry, col, false, memos)?;
                 let s = r.stop;
                 (pos, carry) = (r.token, r.state);
@@ -487,7 +493,7 @@ impl<'d> Paginator<'d, '_> {
                 let mut bottom = r.bottom;
                 let at_mark = skip_last && pos.block + 1 == n && pos.at.at_start();
                 if at_mark && mark_line && !fill.at.forced {
-                    let m = fill.fill(&pos, &carry, ColumnSpace { top: r.bottom, bottom: f64::INFINITY, ..col }, false, memos)?;
+                    let m = fill.fill(&pos, &carry, ColumnSpace { top: Lu::round_half_up(r.bottom), bottom: Lu::MAX, ..col }, false, memos)?;
                     (pos, carry, bottom) = (m.token, m.state, m.bottom);
                     kids.extend(m.children);
                 }
@@ -512,7 +518,7 @@ impl<'d> Paginator<'d, '_> {
             }
             Ok((None, stats))
         };
-        let full = cols[0].bottom - top;
+        let full = cols[0].bottom.to_pt() - top;
         let (first, stats) = try_h(fill, full, memos)?;
         if first.is_none() {
             // Nothing balances: the fill stays as it was, ending at the full column height.
@@ -591,7 +597,7 @@ impl<'d> Paginator<'d, '_> {
         }
         fill.at.notes_drawn = true;
         let Some((parts, _)) = stream_fill(&area.parts, cols.len(), area.height + EPS) else { return Ok(()) };
-        let top = cols[0].bottom - area.sep - area.height + 0.15;
+        let top = cols[0].bottom.to_pt() - area.sep - area.height + 0.15;
         let per_col: Vec<(f64, &[super::token::NotePart])> = cols.iter().zip(&parts).map(|(c, p)| (c.x, &p[..])).collect();
         out.push(fill.notes_box(area, &per_col, cols[0].width, top, memos)?);
         Ok(())
@@ -701,7 +707,7 @@ pub fn layout_body(
     let s = sec.section;
     let nblocks = sec.blocks.len();
     let cols = &space.columns;
-    let page_top = cols[0].top;
+    let page_top = cols[0].top.to_pt();
     let mut pos = token.flow.clone();
     let mut carry = token.state.clone();
     let saved = (pos.clone(), carry.clone());
@@ -816,7 +822,7 @@ pub fn layout_body(
                     // After balancing, which refills the section's content.
                     body = children;
                 }
-                None => e = cols[0].bottom,
+                None => e = cols[0].bottom.to_pt(),
             }
             // The floats are drawn again after balancing. When no height balanced, the unbalanced fill keeps the
             // floats it already had, so they appear twice (a known flaw, kept for now).
@@ -855,14 +861,15 @@ fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: 
         return body;
     }
     let top = starts[0].0;
-    let free = geo.bottom - geo.top - (bottom - top);
+    let (geo_top, geo_bottom) = (geo.top.to_pt(), geo.bottom.to_pt());
+    let free = geo_bottom - geo_top - (bottom - top);
     match va {
         "center" => {
-            let dy = geo.top + free / 2.0 - top;
+            let dy = geo_top + free / 2.0 - top;
             body.iter().map(|c| child_down(c, &|_| dy)).collect()
         }
         "bottom" => {
-            let dy = geo.bottom - bottom;
+            let dy = geo_bottom - bottom;
             body.iter().map(|c| child_down(c, &|_| dy)).collect()
         }
         "both" => {
@@ -871,7 +878,7 @@ fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: 
             if gaps.is_empty() {
                 return body;
             }
-            let each = (geo.bottom - bottom) / gaps.len() as f64;
+            let each = (geo_bottom - bottom) / gaps.len() as f64;
             let shift = |y: f64| each * gaps.iter().filter(|&&g| g < y).count() as f64;
             body.iter().map(|c| child_down(c, &shift)).collect()
         }

@@ -29,7 +29,7 @@ A line occupies a box that starts at the line's top and is as tall as its pitch.
 
 Lay out in floating-point points. Never round a position, width or pitch to twips, half-points or device pixels. Glyph advances, kerning, line heights and spacing all stay unrounded unless a rule says otherwise.
 
-The layout unit (lu) is 1/4096 pt: 204.8 per twip, 294912 per inch. Font ascents and descents are whole layout units ([FONT-1](font#font-1)).
+The layout unit (lu) is 1/4096 pt: 204.8 per twip, 294912 per inch. Font ascents and descents are whole layout units ([FONT-1](font#font-1)). A column's top and bottom are on the layout-unit grid (the nearest unit, halves up), and every fit test against a column bottom compares whole layout units: the content's extent, rounded to the nearest unit, must not pass the bottom. No other tolerance applies.
 
 ### UNIT-5. Rounding to half-points {#unit-5}
 

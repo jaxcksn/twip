@@ -24,6 +24,14 @@ impl Lu {
     pub fn to_pt(self) -> f64 {
         f64::from(self.0) / LU_PER_PT
     }
+
+    /// No limit (a column with no bottom).
+    pub const MAX: Lu = Lu(i32::MAX);
+
+    /// The fit test against this limit (R-21): whether `pt` reaches no further, compared as whole layout units.
+    pub fn holds(self, pt: f64) -> bool {
+        Lu::round_half_up(pt) <= self
+    }
 }
 
 #[cfg(test)]

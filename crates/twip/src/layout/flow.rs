@@ -25,6 +25,7 @@ use super::story::{NestedRow, StoryEnv, StoryLayout, StoryUnit};
 use super::table::{CellPart, DrawnRow, TableLayout, draw_row, draw_whole_row, whole};
 use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape};
 use super::token::{At, FlowState, FlowToken, NotePart};
+use super::units::Lu;
 
 const EPS: f64 = 1e-6;
 
@@ -704,7 +705,7 @@ impl<'d> PageFill<'d, '_> {
     ) -> Result<bool, Yield> {
         // Only footnotes take room on the page: an endnote reference reserves no area (nor its separator).
         if !refs.iter().any(|r| r.0 == NoteKind::Foot) {
-            return Ok(line_bottom + area.total() <= col.bottom + EPS);
+            return Ok(col.bottom.holds(line_bottom + area.total()));
         }
         let mut a = area.clone();
         if a.sep == 0.0 {
@@ -717,9 +718,9 @@ impl<'d> PageFill<'d, '_> {
                 let u = self.note_units(k, id, col.width, memos)?;
                 a.parts.push(NotePart { kind: k, id, units: u.units.clone() });
             }
-            let Some(h) = stream_height(&a.parts, a.cols, col.bottom - line_bottom - a.sep) else { return Ok(false) };
+            let Some(h) = stream_height(&a.parts, a.cols, col.bottom.to_pt() - line_bottom - a.sep) else { return Ok(false) };
             a.height = h;
-            if line_bottom + a.total() > col.bottom + EPS {
+            if !col.bottom.holds(line_bottom + a.total()) {
                 return Ok(false);
             }
             *area = a;
@@ -732,7 +733,7 @@ impl<'d> PageFill<'d, '_> {
             }
             let u = self.note_units(k, id, col.width, memos)?;
             let (units, total) = (&u.units, u.height);
-            let room = col.bottom - line_bottom - a.total();
+            let room = col.bottom.to_pt() - line_bottom - a.total();
             // The note's minimum first part (NOTE-5): its first paragraph's first line, or two with widow control.
             let first_para = units.iter().take_while(|x| x.block == units[0].block).count();
             let min = if units.first().is_some_and(|x| x.widow) { 2.min(first_para) } else { 1.min(first_para) };
@@ -769,7 +770,7 @@ impl<'d> PageFill<'d, '_> {
         area.sep = self.separator(true, col.width, memos)?.height;
         let mut rest = Vec::new();
         for part in std::mem::take(&mut carry.note_rest) {
-            let room = col.bottom - col.top - area.total();
+            let room = col.bottom.to_pt() - col.top.to_pt() - area.total();
             let fit = part.units.iter().position(|x| x.top + x.height > room + EPS).unwrap_or(part.units.len());
             if fit == 0 || !rest.is_empty() {
                 rest.push(part);
@@ -825,7 +826,7 @@ impl<'d> PageFill<'d, '_> {
         }
         self.at.notes_drawn = true;
         // NOTE-2: drawn 0.15pt low; pagination is unaffected.
-        let y = col.bottom - area.total() + 0.15;
+        let y = col.bottom.to_pt() - area.total() + 0.15;
         let parts = area.parts.clone();
         out.push(self.notes_box(area, &[(col.x, &parts)], col.width, y, memos)?);
         Ok(())
@@ -874,7 +875,7 @@ impl<'d> PageFill<'d, '_> {
         memos: &mut Memos,
     ) -> Result<(Stop, f64), Yield> {
         let nblocks = self.sec.blocks.len();
-        let mut y = col.top;
+        let mut y = col.top.to_pt();
         let mut empty = true;
         // The start of a keep-with-next chain (PAGE-6): where to rewind when the chain can't share the column.
         #[derive(Clone)]
@@ -1074,7 +1075,7 @@ impl<'d> PageFill<'d, '_> {
     /// Whether the next block's first part fits below `y` (for keep-with-next).
     fn next_fits(&mut self, bi: usize, carry: &FlowState, col: &ColumnSpace, y: f64, notes: f64, memos: &mut Memos) -> Result<bool, Yield> {
         // The page's footnote area takes its share of the column (PAGE-9).
-        let bottom = col.bottom - notes;
+        let bottom = col.bottom.to_pt() - notes;
         match self.sec.blocks.get(bi) {
             None => Ok(true),
             Some(Block::Para(_)) => {
@@ -1233,7 +1234,7 @@ impl<'d> PageFill<'d, '_> {
             }
             // PAGE-8: above a footnote area nothing is suppressed.
             let tail = if i + 1 == n { after } else { 0.0 };
-            if a.total() > 0.0 && yy + l.pitch + tail + a.total() > col.bottom + EPS {
+            if a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) {
                 break;
             }
             areas.push((a, rest));
@@ -1258,7 +1259,7 @@ impl<'d> PageFill<'d, '_> {
             take = take.min(cap);
         }
         // Balancing: the paragraph's space-after must fit too.
-        if col.balance && take == n && yy + after > col.bottom + EPS && !at_top {
+        if col.balance && take == n && !col.bottom.holds(yy + after) && !at_top {
             take = 0;
         }
         if take == 0 {
@@ -1455,7 +1456,7 @@ impl<'d> PageFill<'d, '_> {
             let mut blocked = false;
             let mut trial = None;
             // FLOAT-4: a band at the column bottom ignores the floats.
-            let here: &[Placed] = if yy >= col.bottom - EPS { &[] } else { &floats };
+            let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS { &[] } else { &floats };
             // FLOAT-7 (compat <= 14): the intervals at a line's top hold down to the bottom of a float covering it; when
             // that bottom is inside the line and another float starts inside it, the line goes to that bottom instead.
             if compat == Compat::Legacy {
@@ -1526,18 +1527,18 @@ impl<'d> PageFill<'d, '_> {
                     if first_part && bands.is_empty() && here.iter().filter(meets).any(|f| f.key.2 == float::TABLE_PIECE) {
                         let below = here.iter().filter(meets).map(|f| f.excl[3]).fold(yy, f64::max);
                         let before = if style.before_auto && carry.first_para { 0.0 } else { space_before(&self.ctx.env.text, style) };
-                        yy = (below + before).min(col.bottom.max(yy + EPS));
+                        yy = (below + before).min(col.bottom.to_pt().max(yy + EPS));
                         continue;
                     }
                     // FLOAT-4 (compat <= 14): beside square floats the line retries lower in steps of its trial height.
                     let square = here.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
                     if let Some(t) = trial.filter(|&t| compat == Compat::Legacy && square && t > EPS) {
-                        yy = (yy + t).min(col.bottom.max(yy + EPS));
+                        yy = (yy + t).min(col.bottom.to_pt().max(yy + EPS));
                         continue;
                     }
                     // FLOAT-4, FLOAT-8: move down to the next obstacle edge and try again.
                     match float::next_edge(here, cx0, cx1, yy, yy + h) {
-                        Some(b) => yy = b.min(col.bottom.max(yy + EPS)),
+                        Some(b) => yy = b.min(col.bottom.to_pt().max(yy + EPS)),
                         None => yy += h,
                     }
                 }
@@ -1601,8 +1602,8 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             // FLOAT-9.
-            if matches!(f.v_relative.as_str(), "paragraph" | "line") && fy + h > col.bottom + EPS {
-                let up = col.bottom - h;
+            if matches!(f.v_relative.as_str(), "paragraph" | "line") && !col.bottom.holds(fy + h) {
+                let up = col.bottom.to_pt() - h;
                 let anchor_bottom = line_top + bands[b].1[0].pitch;
                 if up >= anchor_bottom - EPS {
                     fy = up;
@@ -1633,7 +1634,7 @@ impl<'d> PageFill<'d, '_> {
             }
             // Above a footnote area nothing is suppressed (PAGE-8; see `place_para`).
             let tail = if bi_ + 1 == nb { after } else { 0.0 };
-            if a.total() > 0.0 && bt + l.pitch + tail + a.total() > col.bottom + EPS {
+            if a.total() > 0.0 && !col.bottom.holds(bt + l.pitch + tail + a.total()) {
                 break;
             }
             areas.push((a, rest));
@@ -1660,7 +1661,7 @@ impl<'d> PageFill<'d, '_> {
         for mut a in anchors {
             if a.key.2 - pb.from < placed_end.max(1) {
                 // FLOAT-12: avoid earlier floats on the page that may not be overlapped.
-                if !float::avoid(&mut a, &self.at.found, frames.page_w, col.bottom) {
+                if !float::avoid(&mut a, &self.at.found, frames.page_w, col.bottom.to_pt()) {
                     // Unresolved: the page ends after the anchor's line (FLOAT-12).
                     let b = band_of(a.key.2 - pb.from).unwrap_or(0);
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
@@ -1824,13 +1825,13 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             *y = self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)).map_or(top, |k| k.rect[1]);
-            if unsplit && !*empty && *y + h > col.bottom + EPS {
+            if unsplit && !*empty && !col.bottom.holds(*y + h) {
                 return Ok(Stop::Full);
             }
         }
         let tall;
         let col = if unsplit {
-            tall = ColumnSpace { bottom: f64::INFINITY, ..*col };
+            tall = ColumnSpace { bottom: Lu::MAX, ..*col };
             &tall
         } else {
             col
@@ -1943,7 +1944,7 @@ impl<'d> PageFill<'d, '_> {
             // asks for more than one column; compat 15 lets it run past the column bottom.
             // shortcut: an atLeast row's minimum isn't capped (its content height isn't kept apart from it).
             let height = if row.exact && rest.is_none() && self.ctx.env.text.compat == Compat::Legacy {
-                height.min((col.bottom - col.top - row.top_border - tb.bottom_border).max(0.0))
+                height.min((col.bottom.to_pt() - col.top.to_pt() - row.top_border - tb.bottom_border).max(0.0))
             } else {
                 height
             };
@@ -1966,7 +1967,7 @@ impl<'d> PageFill<'d, '_> {
             let mut note_rest = Vec::new();
             let notes_ok = self.add_notes(&refs, &mut a, col, *y + height + tb.bottom_border, &mut note_rest, memos)?;
             // TABLE-40: the row plus the table's bottom border must fit.
-            if !breaks && notes_ok && *y + height + tb.bottom_border + a.total() <= col.bottom + EPS + a.total().min(0.0) {
+            if !breaks && notes_ok && col.bottom.holds(*y + height + tb.bottom_border + a.total() - a.total().min(0.0)) {
                 if !keeps {
                     keep = None;
                 } else if keep.is_none() && (!*empty || !rows.is_empty()) {
@@ -1996,7 +1997,7 @@ impl<'d> PageFill<'d, '_> {
                 continue;
             }
             // Split the row (TABLE-41) unless it can't be (TABLE-45); a row taller than a page splits anyway.
-            let avail = col.bottom - area.total() - *y - row.top_border - tb.bottom_border;
+            let avail = col.bottom.to_pt() - area.total() - *y - row.top_border - tb.bottom_border;
             // An atLeast row starts splitting only where its minimum height fits.
             // TABLE-45: a cantSplit, header or keep-with-next row doesn't split, except in compat 15 at the top of a column
             // (in compat <= 14 it is placed whole there and runs past the column's bottom, PAGE-5).
@@ -2045,7 +2046,7 @@ impl<'d> PageFill<'d, '_> {
             }
             let fitted: Vec<CellPart> = fitted.iter().map(|(units, ends)| CellPart { units, base: 0.0, ends: *ends }).collect();
             let merged = if can_split && rest.is_none() {
-                merged_splits(tb, ri, &placed, col.bottom - area.total() - tb.bottom_border, self.ctx.env.text.compat)
+                merged_splits(tb, ri, &placed, col.bottom.to_pt() - area.total() - tb.bottom_border, self.ctx.env.text.compat)
             } else {
                 Vec::new()
             };
