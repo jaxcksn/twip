@@ -58,7 +58,7 @@ An inline picture (`wp:inline`) is a glyph whose bottom sits on the baseline: as
 | `rightMargin` | `[pageWidth − rightMargin, pageWidth)` |
 | `column` and everything else (`character`, `insideMargin`, `outsideMargin`) | the column holding the anchor |
 
-Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `wp:align`: `center` → `x0 + (w − floatW)/2`; `right` or `outside` → `x0 + w − floatW`; `left`, `inside` → `x0`. Without align, `x0 + wp:posOffset`. In compat ≤ 14, `left` or `right` of the `page` puts the float in the margin area when it fits there: left at `leftMargin − floatW`, right at `pageWidth − rightMargin` (a 40pt float with 1in margins: 32 and 540; compat 15: 0 and 572).
+Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `wp:align`: `center` → `x0 + (w − floatW)/2`; `right` or `outside` → `x0 + w − floatW`; `left`, `inside` → `x0`. Without align, `x0 + wp:posOffset`. In compat ≤ 14, `left` or `right` of the `page` puts the float in the margin area when it fits there: left at `leftMargin − floatW`, right at `pageWidth − rightMargin` (a 40pt float with 1in margins: 32 and 540; compat 15: 0 and 572). Also in compat ≤ 14, `left` or `right` of the `column` counts from the anchor paragraph's indents: `x0 + leftIndent`, `x0 + w − rightIndent − floatW` (indents 36pt and 72pt: 108 and 428; compat 15: 72 and 500).
 
 **Vertical** (`wp:positionV/@relativeFrom`):
 

@@ -1564,6 +1564,14 @@ impl<'d> PageFill<'d, '_> {
             let line_top = bands[b].0;
             let para_top = if first_part { top } else { bands[0].0 };
             let mut x = float::h_pos(f, &frames);
+            // FLOAT-6 (compat ≤ 14): left or right of the column counts from the anchor paragraph's indents.
+            if compat == Compat::Legacy && f.h_relative == "column" {
+                match f.h_align.as_deref() {
+                    Some("left") => x += style.ind_left,
+                    Some("right") => x -= style.ind_right,
+                    _ => {}
+                }
+            }
             let mut fy = float::v_pos(f, h, &frames, para_top, line_top);
             // FLOAT-13: a wrapNone float stays where it is, and so does its paragraph. Small square or tight floats
             // beside a one-line anchor may stay too (moved up only past the page edge); not separated from FLOAT-9 yet.

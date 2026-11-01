@@ -311,3 +311,13 @@ fn a_line_break_beside_a_float_ends_only_its_interval() {
     let (aa, bb) = (l.iter().find(|x| x.1 == "aa").expect("aa"), l.iter().find(|x| x.1 == "bb").expect("bb"));
     assert!((aa.3 - bb.3).abs() < 0.01 && bb.0 > 400.0, "{l:?}");
 }
+
+#[test]
+fn a_compat_14_column_aligned_float_counts_from_the_paragraph_indent() {
+    // FLOAT-6 (compat 12): a 40pt float aligned left in the column, anchored in a paragraph indented 36pt, sits at
+    // 108 (not 72), so the text beside it starts at 148.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:align>left</wp:align></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="508000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = format!(r#"<w:p><w:pPr><w:ind w:left="720"/></w:pPr>{float}<w:r><w:t>Beside the float.</w:t></w:r></w:p>"#);
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 148.0).abs() < 0.01, "{l:?}");
+}
