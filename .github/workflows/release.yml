@@ -116,8 +116,10 @@ jobs:
       - name: Publish
         env:
           PROVENANCE: ${{ !github.event.repository.private && '--provenance' || '' }}
+        # node and pnpm run from the checkout, where proto finds their versions.
         run: |
-          cd "$RUNNER_TEMP/npm" && tar xzf ./*.tgz && cd package
-          version=$(node -p "require('./package.json').version")
+          tar xzf "$RUNNER_TEMP"/npm/*.tgz -C "$RUNNER_TEMP/npm"
+          pkg=$RUNNER_TEMP/npm/package
+          version=$(node -p "require('$pkg/package.json').version")
           tag=$(echo "$version" | sed -nE 's/^[0-9.]+-([a-z]+).*/\1/p'); tag=${tag:-latest}
-          pnpm publish --access public $PROVENANCE --no-git-checks --tag "$tag"
+          pnpm publish "$pkg" --access public $PROVENANCE --no-git-checks --tag "$tag"

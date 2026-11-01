@@ -62,6 +62,7 @@ jobs:
       - name: Publish
         env:
           PROVENANCE: ${{ !github.event.repository.private && '--provenance' || '' }}
+        # pnpm runs from the checkout, where proto finds its version (package.json's packageManager).
         run: |
-          cd "$RUNNER_TEMP/npm" && tar xzf ./*.tgz && cd package
-          pnpm publish --access public $PROVENANCE --no-git-checks --tag canary
+          tar xzf "$RUNNER_TEMP"/npm/*.tgz -C "$RUNNER_TEMP/npm"
+          pnpm publish "$RUNNER_TEMP/npm/package" --access public $PROVENANCE --no-git-checks --tag canary
