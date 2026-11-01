@@ -431,12 +431,19 @@ pub fn band(
             continue;
         }
         gap.get_or_insert(right - left);
-        // BREAK-6 in the interval too (compat-15 justified), unless its segment has tabs.
+        // BREAK-6 in the interval too (compat-15 justified), unless its segment has tabs; an interval as wide as the
+        // column is a whole line, chosen per line as `break_paragraph` does with tabs.
         let planned = if matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && s < n {
             let seg_end = segment_end(pieces, s);
-            match justified_line(pieces, s, seg_end, right - left) {
-                LineChoice::End(e) if !pieces[s..seg_end].iter().any(|p| p.kind == Kind::Tab) => Some(e),
-                _ => None,
+            if !pieces[s..seg_end].iter().any(|p| p.kind == Kind::Tab) {
+                match justified_line(pieces, s, seg_end, right - left) {
+                    LineChoice::End(e) => Some(e),
+                    _ => None,
+                }
+            } else if a <= EPS && b >= frame.width - EPS {
+                justified_tab_end(sp, pieces, s, left, right, style, frame)
+            } else {
+                None
             }
         } else {
             None
@@ -921,8 +928,10 @@ fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64,
     let is_end = |e: usize| (pieces[e - 1].break_after || pieces[e - 1].kind == Kind::Tab) && pieces[e].kind != Kind::Space;
     // The segment's own end is a candidate too: its last line may fit only with shrinking.
     let is_end = |e: usize| e == seg_end || is_end(e);
+    // A longer end takes on no tab: the greedy line may have ended before one past the edge (TAB-7).
     let longest = (greedy.end + 1..=seg_end)
         .filter(|&e| is_end(e))
+        .take_while(|&e| !pieces[greedy.end..e].iter().any(|p| p.kind == Kind::Tab))
         .take_while(|&e| {
             let (over, shrink, _) = end_at(e);
             over <= shrink as f64 + LU_EPS
