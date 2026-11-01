@@ -463,7 +463,7 @@ A cell must end in a paragraph, so a nested table at the end of a cell is follow
 Vertically, borders take space:
 
 ```
-topBorder   = the widest resolved top edge among the row's cells (TABLE-36), double counted 3× (drawn)
+topBorder   = the widest resolved top edge among the row's cells (TABLE-36), by its h() (TABLE-37)
 above       = max(W, max over the row's cells of (h(top(c)) + topMargin(c)))
                   top(c) = the cell's own top border, else the table's top (row 0) or insideH, before conflicts
                   W      = the previous row's widest own-else-insideH bottom border, h() as in TABLE-37 (0 on row 0)
@@ -597,7 +597,7 @@ With `w:tblCellSpacing` = s > 0 (the table's value, in points):
 - **Gaps:** a cell side on the table's outer boundary gets 2s, an interior side s. Neighbouring cells are s + s apart; outer cells are 2s from the table's border centre line.
 - **Each cell draws its own box**, from `cellX + gapL` to `cellX + w − gapR`, and from `rowTop + gapTop` to `s` above the row's bottom (`2s` above it on the table's last row, whose height holds that gap), where `gapTop = 2s` plus the table's top border on the first row, and `s` on the others. Its four edges are its own candidates ([TABLE-36](#table-36): the cell's border, else the table's), not resolved against the neighbouring cells, and are drawn **inside** that box (top band from the box top down, bottom band up from the box bottom, left and right bands inside the box's sides). Shading fills the box.
 - **Cell text** starts at `cellX + gapL + bL + marginL` and is `w − that − marginR − bR − gapR` wide.
-- **Row pitch:** `topBorder` of [TABLE-27](#table-27) plus `gapTop`; each cell's content counts `topMargin + content + bottomMargin + (the widest bottom edge in the row)`, plus `s` on every row but the last.
+- **Row pitch:** `topBorder` of [TABLE-27](#table-27) plus `gapTop`; each cell's content counts `topMargin + content + bottomMargin + (the widest bottom edge in the row, by its h())`, plus `s` on every row but the last.
 - **Table bottom:** the table's bottom border width (the last row holds the 2s above it).
 - **The table's own border** (`w:tblBorders` outer sides) is drawn as usual around the cells: its top on the first row from the row's top, its sides on every row centred on the table's left and right border centres, its bottom below the last row, 2s under the last cell box.
 - Autofit counts the spacing as in [TABLE-7](#table-7), [TABLE-17](#table-17) and [TABLE-21](#table-21). The rule of [TABLE-38](#table-38) doesn't apply.

@@ -545,3 +545,19 @@ fn a_header_row_after_row_0_joins_the_first_row_run() {
     };
     assert_eq!([size(0), size(1), size(2)], [Some(20.0), Some(20.0), Some(14.0)]);
 }
+
+#[test]
+fn a_rows_top_border_takes_its_width_in_whole_twips() {
+    // TABLE-27, TABLE-37: a w:sz 3 border (0.375pt) takes 0.35pt above each row, so the second row's text is 0.3pt
+    // higher than under w:sz 4 borders (0.5pt), not 0.25pt.
+    let baseline = |sz: u32| {
+        let b = format!(r#"w:val="single" w:sz="{sz}" w:space="0" w:color="000000""#);
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblBorders><w:top {b}/><w:insideH {b}/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        glyphs(&doc)[0].iter().find(|c| c.0 == 'b').map(|c| c.1).expect("b is drawn")
+    };
+    let d = baseline(4) - baseline(3);
+    assert!((d - 0.3).abs() < 0.001, "{d}");
+}

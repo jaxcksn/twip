@@ -1572,7 +1572,7 @@ fn assemble(
                 || r.rev.del.is_some()
                 || r.rev.change.is_some()
                 || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
-        let mut top_border = cells.iter().map(|c| bw(&c.edges[0])).fold(0.0, f64::max);
+        let mut top_border = cells.iter().map(|c| space_h(&c.edges[0])).fold(0.0, f64::max);
         // TABLE-38: a bottom border over part of a wider cell, counted in this row's top border.
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
             Some(above) if t.cell_spacing == 0.0 => above
@@ -1613,7 +1613,7 @@ fn assemble(
             let s = t.cell_spacing;
             gap_top = if ri == 0 { 2.0 * s + space_h(&t.borders[0]) } else { s };
             top_border += gap_top;
-            cell_bottom = cells.iter().map(|c| bw(&c.edges[2])).fold(0.0, f64::max) + gap(s, ri + 1 == t.rows.len());
+            cell_bottom = cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max) + gap(s, ri + 1 == t.rows.len());
         }
         let content =
             cells.iter().filter(|c| c.v_merge == VMerge::None).map(|c| c.margins[0] + c.content_h + c.margins[2] + cell_bottom).fold(0.0, f64::max);
