@@ -1703,10 +1703,11 @@ impl Reader {
         let row_band = tbl.row_band.unwrap_or(0);
         let headers = row_nodes
             .iter()
-            .take_while(|(rn, _)| {
+            .enumerate()
+            .take_while(|(i, (rn, _))| {
                 let mut trp = style_region.tr.clone();
                 trp.merge(&TrProps::parse(child(*rn, "trPr")));
-                trp.header == Some(true)
+                trp.header == Some(true) || *i == 0 && look.first_row
             })
             .count();
         let col_band = tbl.col_band.unwrap_or(0);

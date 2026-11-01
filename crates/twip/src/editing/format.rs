@@ -120,7 +120,7 @@ impl Editor {
                 no_v_band: true,
             });
             let nrows = t.rows.len();
-            let headers = t.rows.iter().take_while(|r| r.header).count();
+            let headers = t.rows.iter().enumerate().take_while(|(i, r)| r.header || *i == 0 && look.first_row).count();
             let mut rows = t.rows.clone();
             for (ri, row) in rows.iter_mut().enumerate() {
                 let ncols = row.cells.len();

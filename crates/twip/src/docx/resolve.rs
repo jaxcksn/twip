@@ -248,7 +248,7 @@ impl Resolver {
     pub fn region_of(&self, t: &Table, row: usize, cell: usize) -> Region {
         let look = t.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
         let ncols = t.rows.get(row).map_or(0, |r| r.cells.len());
-        let headers = t.rows.iter().take_while(|r| r.header).count();
+        let headers = t.rows.iter().enumerate().take_while(|(i, r)| r.header || *i == 0 && look.first_row).count();
         self.cell_region(t.style_id.as_deref(), look, t.bands, (row, cell), (t.rows.len(), ncols), headers)
     }
 
@@ -284,7 +284,8 @@ impl Resolver {
     }
 
     /// The table-style region of cell (`ri`, `ci`) of a table with `size` (rows, cells in its row) whose first `headers`
-    /// rows are header rows: the conditional formats `look` turns on, banding included (TABLE-3, STYLE-4).
+    /// rows are header rows (row 0 counting as one with the look's firstRow bit, so header rows after it extend the
+    /// run): the conditional formats `look` turns on, banding included (TABLE-3, STYLE-4).
     pub fn cell_region(
         &self,
         style_id: Option<&str>,
@@ -301,7 +302,7 @@ impl Resolver {
         let last_row = look.last_row && (defines("lastRow") || look.first_col && corner("swCell") || look.last_col && corner("seCell"));
         let first_col = look.first_col && (defines("firstCol") || look.first_row && corner("nwCell") || look.last_row && corner("swCell"));
         let last_col = look.last_col && (defines("lastCol") || look.first_row && corner("neCell") || look.last_row && corner("seCell"));
-        // The first-row run: the leading header rows, and row 0 with the firstRow bit.
+        // The first-row run: the leading header rows, row 0 with the firstRow bit.
         let run = if first_row || defines("firstRow") { headers.max(usize::from(first_row)) } else { 0 };
         let in_run = ri < run;
         let (last, end) = (ri + 1 == nrows, ci + 1 == ncols);
