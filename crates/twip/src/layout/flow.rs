@@ -1601,6 +1601,15 @@ impl<'d> PageFill<'d, '_> {
             _ => None,
         };
         let (flow_y, was_empty) = (*y, *empty);
+        // horzAnchor page: the table's place in the column is moved to the same place in the page.
+        let at_x = match fp {
+            Some(fp) if fp.h_page => match fp.x_spec {
+                Some(Jc::Center) => (self.page_w - col.width) / 2.0,
+                Some(Jc::Right) => self.page_w - col.width,
+                _ => 0.0,
+            },
+            _ => col.x,
+        };
         if let Some(fp) = fp
             && pos.at.at_start()
         {
@@ -1630,7 +1639,7 @@ impl<'d> PageFill<'d, '_> {
         if *empty && !pos.at.at_start() && !headers.contains(&pos.at.index()) {
             for &h in &headers {
                 let hh = tb.rows[h].height;
-                let mut row = draw_row(tb, h, col.x, *y, hh, None, false);
+                let mut row = draw_row(tb, h, at_x, *y, hh, None, false);
                 row.repeat = true;
                 rows.push(row);
                 *y += hh;
@@ -1699,13 +1708,13 @@ impl<'d> PageFill<'d, '_> {
                 rows.push(match &rest {
                     // A whole row: through the cache.
                     None => {
-                        let (drawn, cached) = draw_whole_row(tb, ri, col.x, *y, height, last, memos);
+                        let (drawn, cached) = draw_whole_row(tb, ri, at_x, *y, height, last, memos);
                         if let Some(d) = &cached {
                             hold(&mut self.pass.held.rows, d);
                         }
                         drawn
                     }
-                    Some(_) => draw_row(tb, ri, col.x, *y, height, Some(&parts), last),
+                    Some(_) => draw_row(tb, ri, at_x, *y, height, Some(&parts), last),
                 });
                 move_floats(rows.last_mut(), &page_floats, &frames, row.top_border);
                 *y += height + if last { tb.bottom_border } else { 0.0 };
@@ -1786,22 +1795,22 @@ impl<'d> PageFill<'d, '_> {
                 carry.note_rest.extend(note_rest);
                 for m in &merged {
                     let (rs, top, idx) = placed[m.pi];
-                    let mut redrawn = draw_merged_part(tb, m, ri, h, col.x, top);
+                    let mut redrawn = draw_merged_part(tb, m, ri, h, at_x, top);
                     move_floats(Some(&mut redrawn), &page_floats, &frames, tb.rows[rs].top_border);
                     rows[idx] = redrawn;
                 }
-                rows.push(draw_row(tb, ri, col.x, *y, h, Some(&fitted), true));
+                rows.push(draw_row(tb, ri, at_x, *y, h, Some(&fitted), true));
                 move_floats(rows.last_mut(), &page_floats, &frames, row.top_border);
                 *y += h;
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
                 finish(rows, out);
-                self.table_obstacle(pos.block, tb, col.x, part_top, *y, flow_y);
+                self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);
                 return Ok(Stop::Full);
             }
             if at_top {
                 // PAGE-5: nothing fits in an empty column; place the row anyway.
-                rows.push(draw_row(tb, ri, col.x, *y, height, Some(&parts), last));
+                rows.push(draw_row(tb, ri, at_x, *y, height, Some(&parts), last));
                 move_floats(rows.last_mut(), &page_floats, &frames, row.top_border);
                 *y += height + if last { tb.bottom_border } else { 0.0 };
                 *empty = false;
@@ -1823,12 +1832,12 @@ impl<'d> PageFill<'d, '_> {
                 pos.at = At::Row(kri);
             }
             finish(rows, out);
-            self.table_obstacle(pos.block, tb, col.x, part_top, *y, flow_y);
+            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);
             return Ok(Stop::Full);
         }
         finish(rows, out);
         if fp.is_some() {
-            self.table_obstacle(pos.block, tb, col.x, part_top, *y, flow_y);
+            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);
             (*y, *empty) = (flow_y, was_empty);
         }
         pos.next_block();
@@ -1840,7 +1849,7 @@ impl<'d> PageFill<'d, '_> {
     /// around (FLOAT-2, both sides): its outer box grown by the *FromText distances, left and right at least 0.5pt.
     /// It reaches no higher than where the table stood in the flow unless the table itself does (only then does
     /// the text before it re-wrap). Compat ≤ 14: a table in the flow (text-anchored, tblpY 0) has no distance above
-    /// and below.
+    /// and below, and with a negative tblInd the obstacle stays at the frame, which starts at tblpX.
     fn table_obstacle(&mut self, bi: usize, tb: &TableLayout, at_x: f64, top: f64, bottom: f64, flow_y: f64) {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return };
         let Some(fp) = t.floating else { return };
@@ -1879,6 +1888,9 @@ impl<'d> PageFill<'d, '_> {
         });
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));
+        if legacy {
+            o.excl[0] -= t.ind.min(0.0);
+        }
         self.at.found.push(o);
     }
 }

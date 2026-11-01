@@ -730,6 +730,8 @@ pub struct TablePos {
     /// `tblpX`, or the `tblpXSpec` alignment (left/center/right) when given.
     pub x: f64,
     pub x_spec: Option<Jc>,
+    /// `horzAnchor="page"`: `tblpX` and `tblpXSpec` measure from the page, not the column (`margin`, `text`).
+    pub h_page: bool,
     /// `tblpYSpec` for page and margin anchors: top/inside → Left, center → Center, bottom/outside → Right.
     pub y_spec: Option<Jc>,
     /// `topFromText`, `bottomFromText`, `leftFromText`, `rightFromText` (negatives → 0), points.
@@ -774,6 +776,7 @@ impl TblProps {
                             Some(_) => Some(Jc::Left),
                             None => None,
                         },
+                        h_page: attr(c, "horzAnchor") == Some("page"),
                         y_spec: match attr(c, "tblpYSpec") {
                             Some("center") => Some(Jc::Center),
                             Some("bottom" | "outside") => Some(Jc::Right),

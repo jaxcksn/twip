@@ -1263,17 +1263,36 @@ fn assemble(
         Jc::Right => x0 = text_w - total - space_h(&t.borders[3]) / 2.0,
         _ => {}
     }
-    // TABLE-49: a floating table's tblpX takes tblInd's place; tblpXSpec aligns it in the column.
-    // shortcut: horzAnchor isn't read (measured from the column); the centred offset is Word's as measured on
-    // compat 12 tables (half the first cell's left margin right of centre).
+    // TABLE-49: a floating table's tblpX takes tblInd's place (compat ≤ 14 adds the tblInd to it); tblpXSpec centres
+    // or right-aligns its frame in the column (horzAnchor page: the flow moves it). The frame of an aligned table:
+    // compat 15, from the outer box's left to the widest row's last edge plus that cell's right border less its
+    // truncated half (no border at all counts 0.75pt), with the box at its left; compat ≤ 14, the tblInd plus the
+    // widest row's last-cell content right from the first edge (borders and padding hang outside), the first edge
+    // tblInd right of its left.
     if let Some(fp) = t.floating {
+        let (e0, ind) = match compat {
+            Compat::Generic => (half_border(lw), 0.0),
+            Compat::Legacy => (-edge_gap(t, lw, lmar), t.ind),
+        };
+        let frame = || {
+            let row_w = |g: &CellGeo| match compat {
+                Compat::Generic => {
+                    let b = match &g.edges[3] {
+                        None => 0.75,
+                        Some(b) if b.visible() => thick(b),
+                        Some(_) => 0.0,
+                    };
+                    g.x + g.w + e0 + b - ((b * 20.0).round() as i64 / 2) as f64 / 20.0
+                }
+                Compat::Legacy => g.x + g.cx + g.cw + e0,
+            };
+            geo.iter().filter_map(|r| r.last()).map(row_w).fold(0.0, f64::max) + ind
+        };
         x0 = match fp.x_spec {
-            Some(Jc::Center) => (text_w - total + lmar) / 2.0,
-            Some(Jc::Right) => text_w - total - space_h(&t.borders[3]) / 2.0,
-            Some(_) if compat == Compat::Generic => lw / 2.0,
-            Some(_) => -edge_gap(t, lw, lmar),
-            None if compat == Compat::Generic => fp.x + lw / 2.0,
-            None => fp.x - edge_gap(t, lw, lmar),
+            Some(Jc::Center) => (text_w - frame()) / 2.0 + e0 + ind,
+            Some(Jc::Right) => text_w - frame() + e0 + ind,
+            Some(_) => e0 + ind,
+            None => fp.x + e0 + ind,
         };
     }
     let mut stories = stories.iter();

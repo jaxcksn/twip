@@ -645,7 +645,11 @@ In compat 15, if a table starts below other content in a column and the first ro
 
 ### TABLE-49. Floating table position {#table-49}
 
-- Horizontally, `w:tblpX` takes `w:tblInd`'s place ([TABLE-23](#table-23)), from the column. With `w:tblpXSpec`, `left` puts the table where `tblpX` 0 would, `right` as `w:jc` right does, and `center` puts the left border centre at `(textW − total + lm) / 2`, `lm` the first cell's left margin: a centred floating table sits half that margin right of a centred inline one.
+- **Horizontally**, `w:tblpX` takes `w:tblInd`'s place ([TABLE-23](#table-23)): compat 15, left border centre = `tblpX + hb(bL)`; compat ≤ 14, `tblpX − max(hb(bL), lm) + tblInd` (`lm` the first cell's left margin, `hb` half a border rounded up to a twip, `tblInd` its `dxa` value). `w:tblpXSpec` `left` (and `inside`) is `tblpX` 0. `center` and `right` (`outside`) place the table's **frame** in the reference: centred, or against its right end. The frame:
+  - compat 15: from the table's outer box left to the widest row's last cell edge, plus that cell's right border width less its half (truncated to a twip); a cell with no right border at all counts 0.75pt. The outer box starts at the frame's left.
+  - compat ≤ 14: `tblInd` plus the widest row's last-cell content right, from the first cell edge: the borders and padding hang outside it. The first edge sits `tblInd` right of the frame's left (the left border centre `max(hb(bL), lm)` left of that edge).
+  - The reference is the column (`w:horzAnchor` `text`, `margin`) or the page (`page`).
+  - Compat ≤ 14 with a negative `tblInd`: the obstacle (below) keeps starting at `tblpX`, not at the table that hangs out left of it.
 - A floating table takes no room in the flow: the text after it goes on from where the table stands, and wraps around it.
 - **Vertically** (`w:vertAnchor`, absent = `margin`):
   - `text`: `tblpY` below where the table stands in the flow.
@@ -657,7 +661,7 @@ In compat 15, if a table starts below other content in a column and the first ro
   - A paragraph's first line that meets the obstacle goes to its bottom plus the paragraph's own space before, even at the top of a page: the space before stays above the line wherever it lands.
 - **A split** floating table continues at the top of the next page like an inline table; the text after it starts at the top of the page that holds its last part, beside it.
 - Example: a page-anchored table at the page top, 280pt tall, then a paragraph with 12pt before: the paragraph's first line starts at 292pt.
-- Not done: `w:horzAnchor` (always the column), the 18pt minimum width of a free interval ([FLOAT-7](float#float-7)), floating tables inside table cells, overlapping floating tables, and the device-pixel placement of the frame.
+- Not done: `inside` / `outside` by page parity, the 18pt minimum width of a free interval ([FLOAT-7](float#float-7)), floating tables inside table cells, overlapping floating tables, and the device-pixel placement of the frame.
 
 ### TABLE-50. A row's own indent {#table-50}
 
