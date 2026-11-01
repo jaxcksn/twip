@@ -510,7 +510,11 @@ fn next_stop(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leade
         Some(t) => (t.pos, t.kind, t.leader),
         None => {
             let inc = frame.default_tab.max(1.0);
-            let s = ((pen / inc).floor() + 1.0) * inc;
+            let q = pen / inc;
+            // TAB-2: in compat 15 a pen exactly on a negative multiple stays there (a zero-width tab); compat <= 14
+            // goes on to the next multiple.
+            let on_negative = pen < -EPS && (q - q.round()).abs() * inc < EPS;
+            let s = if frame.compat == Compat::Generic && on_negative { q.round() * inc } else { (q.floor() + 1.0) * inc };
             (s, TabKind::Left, Leader::None)
         }
     };

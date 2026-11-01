@@ -17,7 +17,7 @@ With no custom stop past the pen, the tab goes to the next multiple of the defau
 stop = (⌊pen / inc⌋ + 1) · inc
 ```
 
-Example: pen at 36pt with a 36pt grid: the stop is 72pt, not 36pt.
+Example: pen at 36pt with a 36pt grid: the stop is 72pt, not 36pt. In compat 15 a pen exactly on a negative multiple stays there, a tab of no width (pen −36pt → −36pt); compat ≤ 14 goes on to the next multiple (→ 0).
 
 ### TAB-3. The left indent acts as a stop {#tab-3}
 
