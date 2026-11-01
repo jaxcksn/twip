@@ -1775,7 +1775,8 @@ impl Reader {
                 .or(row_jc.flatten())
                 .unwrap_or(Jc::Left),
             ind: tbl.ind.unwrap_or(0.0),
-            ind_set: tbl.ind.is_some(),
+            // TABLE-23: a table naming no existing style takes the default one, whose indent counts as set.
+            ind_set: tbl.ind.is_some() || direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
