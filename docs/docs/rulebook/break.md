@@ -7,7 +7,7 @@ These rules decide where each line of a paragraph ends. Shape the paragraph firs
 
 ### BREAK-1. The fit test {#break-1}
 
-A character or object fits when its right edge is at or left of the line's right edge: `pen + width ≤ rightEdge`. Equality fits. Spaces are never tested ([BREAK-2](break#break-2)). Text after a pending right or centre tab is tested where its alignment puts it ([TAB-5](tab#tab-5)). A float's anchor takes no width and is no content: a line holding only anchors so far doesn't end after them, so a word or object too wide for the line still starts on it ([BREAK-4](break#break-4)).
+A character or object fits when its right edge is at or left of the line's right edge: `pen + width ≤ rightEdge`. Equality fits. Spaces are never tested ([BREAK-2](break#break-2)). Text after a pending right or centre tab is tested where its alignment puts it ([TAB-5](tab#tab-5)). A float's anchor takes no width and is no content: a line holding only anchors so far doesn't end after them, so text or an object too wide for the line still starts on it ([BREAK-4](break#break-4)).
 
 ### BREAK-2. Trailing spaces hang {#break-2}
 

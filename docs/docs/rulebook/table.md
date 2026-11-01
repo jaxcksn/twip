@@ -134,8 +134,8 @@ The paragraph's indents (`left`, `right`, `firstLine`, negative when hanging) en
 
 A numbered paragraph (one with a list number, [LIST-1](list#list-1)) differs:
 
-- compat ≤ 14: the first line is laid out starting at `max(left + firstLine, 0)` (so its suffix tab goes to the stop it reaches from there), and its width for the max is taken from the paragraph's left edge, not from the line start. The number, its suffix and the first word are **one** piece for the min, from the left edge to the end of that word; the other words are pieces as usual, and in them a tab only ends a piece. Both widths then get `left + right + min(firstLine, 0)` as in the table.
-- compat 15: the number and its suffix aren't pieces of their own; the first word's piece starts at `left` (whatever the number and suffix cover) and ends at the word's end in the unwrapped line.
+- compat ≤ 14: the first line is laid out starting at `max(left + firstLine, 0)` (so its suffix tab goes to the stop it reaches from there), and its width for the max is taken from the paragraph's left edge, not from the line start. The number, its suffix and the text's first piece are **one** piece for the min, from the left edge to the end of that piece; the others are pieces as usual, and in them a tab only ends a piece. Both widths then get `left + right + min(firstLine, 0)` as in the table.
+- compat 15: the number and its suffix aren't pieces of their own; the text's first piece starts at `left` (whatever the number and suffix cover) and ends where it ends in the unwrapped line.
 
 Example, compat 12: left 720, hanging 360, "1." with a tab suffix, then "786594": the number sits at 360, the tab goes to 720, the text ends at 1390, so min = max = `1390 + 720 − 360 = 1750`. With left 60, hanging 180 and a Symbol bullet: the line starts at 0, the bullet ends past the left indent, so the tab goes to the default stop 720 and the piece is `720 + 670 − 120 = 1270`. The same paragraph in compat 15: `670 + 60 = 730`.
 

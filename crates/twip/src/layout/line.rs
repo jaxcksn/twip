@@ -408,7 +408,9 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
 /// shortcut: spread over pieces in equal steps; how the change is shared among the characters isn't known.
 fn fit_text(line: &mut Line, pieces: &[Piece], fit: f64) {
     let n = line.xs.len();
-    let content = (0..n).rev().find(|&k| !matches!(pieces[line.start + k].kind, Kind::Space | Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak | Kind::Anchor));
+    let content = (0..n)
+        .rev()
+        .find(|&k| !matches!(pieces[line.start + k].kind, Kind::Space | Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak | Kind::Anchor));
     let Some(last) = content else { return };
     if last == 0 {
         return;
