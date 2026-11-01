@@ -348,6 +348,25 @@ mod floats {
     }
 
     #[test]
+    fn float_6_an_anchor_after_a_page_break_is_placed_on_the_next_page() {
+        // Compat ≤ 14: the paragraph goes on after its page break, so the 360pt box anchored after the break sits at the
+        // top of page 2 and the next paragraph's long word, too wide for either side of it, goes below it.
+        let b = text_box(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 60.0, "Boxed")
+            .replace(r#"cx="1270000""#, r#"cx="4572000""#)
+            .replacen("<wp:posOffset>0</wp:posOffset>", "<wp:posOffset>685800</wp:posOffset>", 1)
+            .replacen("<w:p>", r#"<w:p><w:r><w:t>Before</w:t><w:br w:type="page"/></w:r>"#, 1);
+        let d = doc(&format!("{b}<w:p><w:r><w:t>After{}</w:t></w:r></w:p>", "x".repeat(60)));
+        let s = layout(&d, &fonts());
+        let page2: Vec<(f64, String)> = paint_items(&s.pages()[1])
+            .iter()
+            .filter_map(|i| if let Item::Glyphs(r) = i { Some((r.baseline, r.chars.iter().map(|c| c.0).collect())) } else { None })
+            .collect();
+        let at = |t: &str| page2.iter().find(|(_, x)| x.contains(t)).map(|(b, _)| *b);
+        let (boxed, after) = (at("Boxed").expect("the box on page 2"), at("After").expect("the next paragraph on page 2"));
+        assert!(after - boxed > 50.0, "box {boxed} vs after {after}");
+    }
+
+    #[test]
     fn float_14_a_line_relative_float_stays_in_its_cell_whatever_layout_in_cell() {
         // Compat ≤ 14: layoutInCell="0" moves a paragraph-relative box out of the cell, so the centred cell doesn't
         // move it; a line-relative one stays in the cell and moves with the text.

@@ -73,6 +73,8 @@ Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `
 
 `wp:align`: `center` → `y0 + (h − floatH)/2`; `bottom` or `outside` → `y0 + h − floatH`; others → `y0`. Without align, `y0 + posOffset`. Offsets may be negative. In compat 15 a `paragraph`- or `line`-relative float that wraps text (not wrapNone, not behind text) is placed no higher than the top margin: `y = max(y, topMargin)`; compat ≤ 14 keeps the offset's position.
 
+**An anchor after a page or column break in its paragraph**: compat ≤ 14 continues the paragraph after the break at the top of the next page or column, so the anchor is placed there, `paragraph` counting from the continuation's top. Compat 15 ends the paragraph at the break. Not done: compat 15 placing such an anchor on the paragraph's first page (it isn't drawn).
+
 **Offsets are truncated to whole twips**: `twips = trunc(EMU / 635)`, `points = twips / 20`. 170688 EMU = 268.8 twips → 268 → 13.40pt.
 
 Floats anchored in table cells: [FLOAT-14](float#float-14).

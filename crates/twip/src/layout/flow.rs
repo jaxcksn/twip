@@ -1532,11 +1532,14 @@ impl<'d> PageFill<'d, '_> {
         carry.first_para = false;
         carry.prev = Some(p.para_style_in(self.ctx.env.text.review.view).clone());
         carry.prev_after = after;
-        let done = take >= nb;
+        // FLOAT-6 (compat ≤ 14): what follows a page or column break (its anchors and text) continues on the next
+        // page or column, the bands having stopped at the break; compat 15 ends the paragraph there.
+        let after_break = (take == nb && s < n && compat == Compat::Legacy).then_some(s);
+        let done = take >= nb && after_break.is_none();
         if done {
             pos.next_block();
         } else {
-            pos.at = At::Piece(pb.from + bands[take].1[0].start);
+            pos.at = At::Piece(pb.from + after_break.unwrap_or_else(|| bands[take].1[0].start));
         }
         if notes_continue && stop_kind.is_none() {
             carry.keep_top = false;
