@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 # Prebuilt Skia is downloaded for the native feature set (graphite + vulkan + default pdf); the web set (graphite on
-# Dawn + ganesh/gl) is prebuilt by github.com/jaxcksn/skia-wasm-webgpu, so changing the emscripten line below needs a
+# Dawn + ganesh/gl) is prebuilt by github.com/jaxcksn/twip-skia-dawn, so changing the emscripten line below needs a
 # new release there.
 [target.'cfg(not(target_os = "emscripten"))'.dependencies]
 skia-safe = { version = "0.153.3", features = ["graphite", "vulkan"] }

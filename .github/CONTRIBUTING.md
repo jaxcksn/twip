@@ -13,11 +13,11 @@ You need:
   must be on `PATH` (see below). Use exactly 6.0.8: the prebuilt browser Skia was built with it, and linking needs
   the same version.
 
-Skia is never built from source. Native builds use skia-safe's prebuilts, except on Windows:
+Skia is never built from source. Native builds use skia-safe's prebuilts, except on Windows and Apple silicon Macs:
 `node crates/twip-capi/build-native.mjs` downloads the pinned Skia with Graphite on Dawn (a
-[skia-wasm-webgpu](https://github.com/jaxcksn/skia-wasm-webgpu) release), so the native library draws on the GPU.
-It passes other cargo arguments through (`node crates/twip-capi/build-native.mjs test --workspace`); a plain cargo
-build on Windows draws with the CPU only.
+[twip-skia-dawn](https://github.com/jaxcksn/twip-skia-dawn) release), so the native library draws on the GPU
+(D3D12, D3D11 or Vulkan on Windows, Metal on macOS). It passes other cargo arguments through
+(`node crates/twip-capi/build-native.mjs test --workspace`); a plain cargo build there draws with the CPU only.
 
 Then:
 

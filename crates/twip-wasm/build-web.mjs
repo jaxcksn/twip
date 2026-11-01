@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-// The prebuilt Skia (a jaxcksn/skia-wasm-webgpu release, built for skia-safe 0.153.3 with the features in
+// The prebuilt Skia (a jaxcksn/twip-skia-dawn release, built for skia-safe 0.153.3 with the features in
 // crates/twip/Cargo.toml's emscripten skia-safe line), and the emsdk and Dawn releases it was built with: linking
 // needs the same emsdk and emdawnwebgpu port. Change all three together with that repo's workflow pins.
 const SKIA = '0.153.3-d85502f';
@@ -33,7 +33,7 @@ const tarExe = process.platform === 'win32' ? join(process.env.SystemRoot, 'Syst
 const tar = (...args) => execFileSync(tarExe, args, { stdio: 'inherit' });
 
 const skiaArchive = join(deps, `skia-wasm-${SKIA}.tar.gz`);
-await download(`https://github.com/jaxcksn/skia-wasm-webgpu/releases/download/${SKIA}/skia-binaries.tar.gz`, skiaArchive);
+await download(`https://github.com/jaxcksn/twip-skia-dawn/releases/download/${SKIA}/skia-binaries.tar.gz`, skiaArchive);
 // skia-bindings unpacks the archive itself; dawn.cpp needs its headers.
 const skiaHeaders = join(deps, `skia-wasm-${SKIA}`);
 if (!existsSync(join(skiaHeaders, 'skia-binaries', 'include'))) {
