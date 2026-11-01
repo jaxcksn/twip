@@ -57,7 +57,7 @@ pub enum Edges {
 
 /// "No border", written as `nil` so that it overrides the table's and the style's borders.
 fn nil() -> Border {
-    Border { style: "nil".into(), width: 0.0, space: 0.0, color: None }
+    Border { style: "nil".into(), width: 0.0, space: 0.0, shadow: false, color: None }
 }
 
 fn border_xml(w: &str, name: &str, b: &Border) -> String {

@@ -3693,10 +3693,11 @@ fn border(w: &str, name: &str, b: &Option<Border>) -> String {
     let Some(b) = b else { return String::new() };
     let color = b.color.map_or("auto".to_string(), |c| format!("{c:06X}"));
     format!(
-        "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\" {w}color=\"{color}\"/>",
+        "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\" {w}color=\"{color}\"{}/>",
         b.style,
         (b.width * 8.0).round() as i64,
-        b.space.round() as i64
+        b.space.round() as i64,
+        if b.shadow { format!(" {w}shadow=\"1\"") } else { String::new() }
     )
 }
 

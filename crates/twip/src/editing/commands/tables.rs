@@ -101,9 +101,9 @@ impl Editor {
                     AutoOr::Auto => None,
                     AutoOr::Value(c) => Some(c.0),
                 };
-                Border { style: style.into(), width: x.width.0, space: 0.0, color }
+                Border { style: style.into(), width: x.width.0, space: 0.0, shadow: false, color }
             }
-            None => Border { style: "single".into(), width: 0.5, space: 0.0, color: None },
+            None => Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None },
         };
         self.table_format(&TableFormat::CellBorders(edges, border), fonts)
     }

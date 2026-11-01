@@ -474,6 +474,24 @@ fn thick(b: &Border) -> f64 {
     stripes(b).iter().sum()
 }
 
+/// TABLE-37: the space a border takes across a row boundary in layout: `w:space` plus its line (twice with
+/// `w:shadow`), the line's width rounded down to whole twips; wave, doubleWave and dashDotStroked take a fixed height,
+/// threeDEmboss and threeDEngrave 1.5pt more (3pt from 3pt wide).
+/// shortcut: art borders count as their line width.
+fn space_h(b: &Option<Border>) -> f64 {
+    let Some(b) = b.as_ref().filter(|b| b.visible()) else { return 0.0 };
+    let w = (b.width.clamp(0.25, 12.0) * 20.0 + 1e-6).floor() / 20.0;
+    let line = match b.style.as_str() {
+        "wave" if (b.width - 1.5).abs() < EPS => 3.75,
+        "wave" | "dashDotStroked" => 3.0,
+        "doubleWave" => 5.25,
+        "threeDEmboss" | "threeDEngrave" => w + if b.width < 3.0 { 1.5 } else { 3.0 },
+        _ if stripes(b).len() == 1 => w,
+        _ => thick(b),
+    };
+    b.space.clamp(0.0, 31.0) + if b.shadow { 2.0 } else { 1.0 } * line
+}
+
 /// A compound border's lines and gaps across its thickness, top or left first (lines at even indices), as Word lays
 /// them out and draws them: a thinThick border's thick line is on top and on the left on every side.
 /// shortcut: the fixed 0.75 pt and 1.5 pt widths were measured at w:sz 12 and 24 only.
@@ -1265,6 +1283,19 @@ fn assemble(
             _ => Vec::new(),
         };
         top_border = seams.iter().map(|s| thick(&s.2)).fold(top_border, f64::max);
+        // TABLE-27: the space above the row's content is the same for every cell: the previous row's widest own bottom
+        // border (its own, else insideH: the candidate, not the winner), or a cell's own top border plus its top
+        // margin when that is more. Each cell's top margin becomes what that leaves below the drawn top border.
+        // shortcut: a row first on a later page counts as a middle row.
+        if t.cell_spacing == 0.0 {
+            let cand = |own: &Option<Border>, table: &Option<Border>| space_h(if own.is_some() { own } else { table });
+            let top_t = if ri == 0 { &t.borders[0] } else { &t.borders[4] };
+            let w = ri.checked_sub(1).map_or(0.0, |p| t.rows[p].cells.iter().map(|c| cand(&c.bottom, &t.borders[4])).fold(0.0, f64::max));
+            let above = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(w, f64::max);
+            for c in &mut cells {
+                c.margins[0] = (above - top_border).max(0.0);
+            }
+        }
         let mut gap_top = 0.0;
         // TABLE-39: with cell spacing each cell draws its own box.
         let mut cell_bottom = 0.0;
@@ -1319,9 +1350,10 @@ fn assemble(
             rows[ri].cells[ci].below = rows[ri + 1..=last].iter().map(|r| r.height).sum();
         }
     }
-    let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| bw(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
+    // TABLE-37: the table's bottom border takes its layout height.
+    let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
     if t.cell_spacing > 0.0 {
-        bottom_border = 2.0 * t.cell_spacing + bw(&t.borders[2]);
+        bottom_border = 2.0 * t.cell_spacing + space_h(&t.borders[2]);
     }
     let outer = [t.borders[0].clone(), t.borders[1].clone(), t.borders[2].clone(), t.borders[3].clone()];
     TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit }

@@ -434,14 +434,19 @@ A cell must end in a paragraph, so a nested table at the end of a cell is follow
 Vertically, borders take space:
 
 ```
-topBorder   = the widest resolved top edge among the row's cells (TABLE-36), double counted 3×
+topBorder   = the widest resolved top edge among the row's cells (TABLE-36), double counted 3× (drawn)
+above       = max(W, max over the row's cells of (h(top(c)) + topMargin(c)))
+                  top(c) = the cell's own top border, else the table's top (row 0) or insideH, before conflicts
+                  W      = the previous row's widest own-else-insideH bottom border, h() as in TABLE-37 (0 on row 0)
 contentH    = max over the row's cells that are not vertically merged of
-                  (topMargin + cell content height + bottomMargin)
+                  (above − topBorder + cell content height + bottomMargin)
               but at least the largest (topMargin + bottomMargin) of any cell in the row
 rowPitch    = topBorder + contentH                       (auto height; TABLE-28)
-firstLineTop = rowTop + topBorder + topMargin (+ the vAlign offset, TABLE-30)
-tableBottom = last row's bottom + the widest resolved bottom edge among the last row's cells
+firstLineTop = rowTop + above (+ the vAlign offset, TABLE-30), the same for every cell of the row
+tableBottom = last row's bottom + the widest resolved bottom edge among the last row's cells, by its h()
 ```
+
+Example: a 3pt bottom border over a 0.5pt insideH and 2pt top margins gives `above = max(3, 2.5) = 3`.
 
 Cells in a vertical merge (restart or continuation) don't count in `contentH`: see [TABLE-31](#table-31). [TABLE-38](#table-38) can widen `topBorder`, and cell spacing adds to it ([TABLE-39](#table-39)).
 
@@ -533,6 +538,8 @@ Where two cells share an edge, compare this cell's candidate with the neighbour'
 The winning top edges set the row's top-border space ([TABLE-27](#table-27)); the winning left and right edges set the content box ([TABLE-24](#table-24)) and the autofit padding ([TABLE-7](#table-7)).
 
 ### TABLE-37. Border thickness and drawing {#table-37}
+
+In layout ([TABLE-27](#table-27)) a border takes `h(b)` = its `w:space` in points plus its line, the line twice with `w:shadow`. The line is the width rounded down to whole twips (`w:sz × 5 div 2` twips: `sz` 3 is 0.35pt); double and compound styles their stripes as below; `wave` 3.75pt at `sz` 12, else 3pt; `doubleWave` 5.25pt; `dashDotStroked` 3pt; `threeDEmboss` and `threeDEngrave` the width plus 1.5pt (plus 3pt from 3pt wide). Drawing uses the width.
 
 A double border is line + gap + line, each its width `w`: it is `3w` thick in layout (rows grow by `3w`, the padding counts `3w`), and it is drawn as two lines of `w` at the outer sides of that band. Every other style, compound ones included, counts once and is drawn as one solid band of its width.
 

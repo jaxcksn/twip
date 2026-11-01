@@ -307,13 +307,21 @@ pub struct Border {
     /// Line width in points (`w:sz` eighths).
     pub width: f64,
     pub space: f64,
+    /// `w:shadow`: in layout the line counts twice (TABLE-37).
+    pub shadow: bool,
     pub color: Option<u32>,
 }
 
 impl Border {
     pub fn parse(e: Node) -> Border {
         let style = val(e).unwrap_or("none").to_string();
-        Border { width: num(attr(e, "sz")).unwrap_or(4.0) / 8.0, space: num(attr(e, "space")).unwrap_or(0.0), color: color(attr(e, "color")), style }
+        Border {
+            width: num(attr(e, "sz")).unwrap_or(4.0) / 8.0,
+            space: num(attr(e, "space")).unwrap_or(0.0),
+            shadow: matches!(attr(e, "shadow"), Some("1" | "true" | "on")),
+            color: color(attr(e, "color")),
+            style,
+        }
     }
 
     pub fn visible(&self) -> bool {

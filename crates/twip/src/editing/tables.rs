@@ -558,7 +558,7 @@ impl Editor {
             id: crate::docx::next_para_id(),
             controls: Vec::new(),
         };
-        let border = Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, color: None });
+        let border = Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None });
         let grid_style = self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("TableGrid"));
         let cell = |w: f64| Cell {
             width: Some(crate::docx::props::Width::Dxa(w)),
