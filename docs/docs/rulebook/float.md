@@ -88,7 +88,7 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 - Several floats give several intervals.
 - An interval that starts at a float's edge (not the column's) takes the place of the left indent: its lines start at `max(edge, left indent)`, and the first line adds its first-line indent to that, so a hanging first line starts left of the edge, over the float's distance or the float itself.
 
-- Tabs in an interval that starts at a float's edge: compat ≤ 14 lays the interval out as a line of its own, so default stops are at `edge + k·defaultTabStop` and custom stops shift by the edge. Compat 15 keeps the stops measured from the margin; stops left of the interval start are skipped.
+- Tabs in an interval that starts at a float's edge: compat ≤ 14 lays the interval out as a line of its own, so default stops are at `edge + k·defaultTabStop` and custom stops shift by the edge. Compat 15 keeps the stops counted from the margin; stops left of the interval start are skipped.
 
 Example: a float's exclusion ending at 255pt beside a paragraph with `w:left="-540" w:firstLine="540"`: the first line starts at 282pt, the next ones at 255pt. With `w:hanging="540"` instead the first line starts at 228pt.
 
