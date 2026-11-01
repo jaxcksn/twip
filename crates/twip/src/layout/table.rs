@@ -751,25 +751,59 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                     let t = text_of(&pieces[i]);
                     tail[i] = tail[i + 1] && (pieces[i].kind == Kind::Space || (!t.is_empty() && t.chars().all(|c| c == '-')));
                 }
-                // TABLE-7: a tab is as wide as it is in the unwrapped lines.
+                // TABLE-8: the list number and its suffix.
+                let is_num = |q: &super::text::Piece| q.src.is_none() && matches!(q.kind, Kind::ListNumber | Kind::Tab | Kind::Space);
+                let numbered = old && pieces.iter().any(|q| q.kind == Kind::ListNumber);
+                // TABLE-8: compat <= 14, a numbered paragraph's first line is laid out from max(left + firstLine, 0).
+                let start0 = if numbered { (s.ind_left + s.ind_first).max(0.0) } else { s.ind_left + s.ind_first };
+                let relaid;
+                let lines: &[super::line::Line] = if numbered && s.ind_left + s.ind_first < 0.0 {
+                    let mut st = ParaStyle::clone(s);
+                    st.ind_first = -s.ind_left;
+                    let mark = p.mark_in(env.ctx.env.text.review.view);
+                    relaid = super::line::break_paragraph(&shaped, pieces, &st, mark, &super::line::Frame::new(&ps), env.ctx.fonts, false);
+                    &relaid
+                } else {
+                    &pb.lines
+                };
+                // TABLE-7: a tab is as wide as it is in the unwrapped lines; `ends`: where each piece ends there.
                 let mut laid: Vec<f64> = pieces.iter().map(|q| q.width).collect();
-                for l in &pb.lines {
-                    for (k, &w) in l.widths.iter().enumerate() {
-                        if let Some(x) = laid.get_mut(l.start + k) {
-                            *x = w;
+                let mut ends = vec![0.0f64; pieces.len()];
+                for l in lines {
+                    for (k, (&x, &w)) in l.xs.iter().zip(&l.widths).enumerate() {
+                        if let Some(v) = laid.get_mut(l.start + k) {
+                            *v = w;
+                            ends[l.start + k] = x + w;
                         }
                     }
                 }
                 let mut word = 0.0f64;
+                // TABLE-8: compat <= 14, the number, its suffix and the first word are one piece, from the left edge.
+                let mut first = numbered.then_some(start0);
                 for (i, pc) in pieces.iter().enumerate() {
+                    let sep = matches!(pc.kind, Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak | Kind::Space | Kind::Tab);
+                    if let Some(end) = first {
+                        if sep && !is_num(pc) {
+                            mn = mn.max(up(end + ind));
+                            first = None;
+                        } else if pc.kind != Kind::Space {
+                            first = Some(ends[i]);
+                        }
+                        continue;
+                    }
+                    if is_num(pc) {
+                        // TABLE-8: compat 15, the first word's piece starts at the left indent.
+                        word = ends[i] - s.ind_left;
+                        continue;
+                    }
                     match pc.kind {
-                        // TABLE-7: a piece ends before a tab; the tab starts the next one (a list number's suffix
-                        // stays with the number).
-                        Kind::Tab if pc.src.is_some() => {
+                        // TABLE-7: a piece ends before a tab; the tab starts the next one (compat <= 14 numbered:
+                        // a tab only ends it).
+                        Kind::Tab if !numbered => {
                             mn = mn.max(up(word + ind));
                             word = laid[i];
                         }
-                        Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak | Kind::Space => {
+                        Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak | Kind::Space | Kind::Tab => {
                             mn = mn.max(up(word + ind));
                             word = 0.0;
                         }
@@ -783,18 +817,20 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                         }
                     }
                 }
-                mn = mn.max(up(word + ind));
+                mn = mn.max(up(first.unwrap_or(word) + ind));
                 // Each line unwrapped: from its start (the first line's indent included, so a list number in the
-                // hanging indent counts) to its last piece that isn't a space.
-                for (li, l) in pb.lines.iter().enumerate() {
-                    let start_x = s.ind_left + if li == 0 { s.ind_first } else { 0.0 };
+                // hanging indent counts) to its last piece that isn't a space; compat <= 14 numbered, the first line
+                // from the left edge.
+                for (li, l) in lines.iter().enumerate() {
+                    let start_x = if li == 0 { start0 } else { s.ind_left };
                     // (Centred or right-aligned in the 1e9pt measuring width, a line starts far right: take that off.)
                     let shift = l.xs.first().map_or(0.0, |&x| (x - start_x).max(0.0));
                     let end = (0..l.xs.len())
                         .rev()
                         .find(|&k| !matches!(pieces.get(l.start + k).map(|q| q.kind), Some(Kind::Space)))
                         .map_or(start_x, |k| l.xs[k] + l.widths[k] - shift);
-                    let w = if old { (end - start_x).max(0.0) + ind } else { end.max(0.0) + s.ind_right };
+                    let from = if numbered && li == 0 { 0.0 } else { start_x };
+                    let w = if old { (end - from).max(0.0) + ind } else { end.max(0.0) + s.ind_right };
                     mx = mx.max(up(w));
                 }
             }
