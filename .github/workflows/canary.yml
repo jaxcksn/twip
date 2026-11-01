@@ -1,17 +1,18 @@
-# Run by hand from any branch (main included): builds that commit as x.y.z-canary-<short SHA> and publishes it to
-# GitHub Packages, npm.pkg.github.com as @<owner>/twip-web and nuget.pkg.github.com. Installing from there needs a
-# GitHub token, so canaries don't reach anyone by accident. The jobs deploy to the canary environment, so the branch's
-# PR shows the deployment. No id-token here: the real registries trust only release.yml.
+# Every push to main publishes a canary, 0.0.0-canary-<short SHA>: @twip/web on npm under the canary dist-tag
+# (npm install @twip/web@canary), and Twip.Core and Twip.WinForms to GitHub Packages (nuget.pkg.github.com), so
+# nuget.org isn't left with a version per commit. npm trusts this file through its own trusted publisher, tied to the
+# canary environment, which deploys only from main.
 name: Canary
 
 on:
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: Registries to publish to (any of nuget npm)
-        default: nuget npm
+  push:
+    branches: [main]
 
 permissions: {}
+
+# One at a time, never cancelled mid-publish; a newer push replaces a queued one.
+concurrency:
+  group: canary
 
 jobs:
   build:
@@ -20,12 +21,11 @@ jobs:
       contents: read
     with:
       canary: true
-      nuget: ${{ contains(inputs.publish, 'nuget') }}
-      npm: ${{ contains(inputs.publish, 'npm') }}
+      nuget: true
+      npm: true
 
   nuget:
     needs: build
-    if: contains(inputs.publish, 'nuget')
     runs-on: ubuntu-latest
     environment:
       name: canary
@@ -42,19 +42,26 @@ jobs:
 
   npm:
     needs: build
-    if: contains(inputs.publish, 'npm')
     runs-on: ubuntu-latest
     environment:
       name: canary
-      url: https://github.com/${{ github.repository }}/pkgs/npm/twip-web
+      url: https://www.npmjs.com/package/@twip/web?activeTab=versions
     permissions:
-      packages: write
+      contents: read
+      id-token: write
     steps:
+      # The toolchain, for the pinned pnpm.
+      - uses: actions/checkout@v7
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
       - uses: actions/download-artifact@v8
         with:
           name: npm
-      - run: |
-          echo "//npm.pkg.github.com/:_authToken=$GH_TOKEN" > .npmrc
-          npm publish ./*.tgz --registry https://npm.pkg.github.com --tag canary
+          path: ${{ runner.temp }}/npm
+      # Trusted publishing (OIDC), published from the unpacked tarball as release.yml does.
+      - name: Publish
         env:
-          GH_TOKEN: ${{ github.token }}
+          PROVENANCE: ${{ !github.event.repository.private && '--provenance' || '' }}
+        run: |
+          cd "$RUNNER_TEMP/npm" && tar xzf ./*.tgz && cd package
+          pnpm publish --access public $PROVENANCE --no-git-checks --tag canary
