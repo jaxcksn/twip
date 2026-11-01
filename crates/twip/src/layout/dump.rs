@@ -88,6 +88,49 @@ pub(crate) fn rows<'a>(page: &'a PageFragment, out: &mut Vec<(&'a RowFragment, u
     }
 }
 
+/// The text boxes of a page: its floats that hold text, by their placed boxes (page coordinates) and the paragraphs
+/// they hold.
+fn text_boxes(page: &PageFragment, out: &mut Vec<([f64; 4], Vec<u64>)>) {
+    fn paras(children: &[Child], out: &mut Vec<u64>) {
+        for c in children {
+            match c {
+                Child::Para(p) => out.push(p.para.0),
+                Child::Line { para: Some(p), .. } => out.push(p.0),
+                Child::Box(b) => paras(&b.children, out),
+                Child::Group { children, .. } => paras(children, out),
+                Child::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| paras(&c.content, out)),
+                _ => {}
+            }
+        }
+    }
+    fn walk(children: &[Child], out: &mut Vec<([f64; 4], Vec<u64>)>) {
+        for c in children {
+            match c {
+                Child::Box(b) => {
+                    if let super::fragment::BoxKind::Float { rect, .. } = b.kind {
+                        let mut ps = Vec::new();
+                        paras(&b.children, &mut ps);
+                        if !ps.is_empty() {
+                            ps.dedup();
+                            out.push((rect, ps));
+                        }
+                    }
+                    walk(&b.children, out);
+                }
+                Child::Group { children, .. } => walk(children, out),
+                _ => {}
+            }
+        }
+    }
+    for c in page.children.iter() {
+        let b: &BoxFragment = match c {
+            PageChild::Body(b) => b,
+            PageChild::Header(b) | PageChild::Footer(b) => b,
+        };
+        walk(&b.children, out);
+    }
+}
+
 /// The dump text of a snapshot.
 pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
     let ids = ids(doc);
@@ -97,6 +140,12 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
     let f = |v: f64| format!("{:.3}", v + 0.0);
     for (pi, page) in snapshot.pages().iter().enumerate() {
         writeln!(s, "page {pi} {} {} {:?}", f(page.w), f(page.h), page.body_area.map(|(a, b)| (f(a), f(b)))).unwrap();
+        let mut boxes = Vec::new();
+        text_boxes(page, &mut boxes);
+        for (r, ps) in boxes {
+            let ps: Vec<String> = ps.iter().map(|&p| id(p).to_string()).collect();
+            writeln!(s, "X textbox {} {} {} {} paras {}", f(r[0]), f(r[1]), f(r[2]), f(r[3]), ps.join(" ")).unwrap();
+        }
         // Lines are numbered in paint order. A line without ink (a tab alone, the empty line after a break, a line of
         // spaces) gets an empty glyph record at its baseline and the end of what it holds, so it is listed with its x.
         let mut used = Vec::new();
