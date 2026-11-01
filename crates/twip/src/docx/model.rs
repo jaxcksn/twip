@@ -108,6 +108,9 @@ pub struct ParaStyle {
     pub list_fmt: Option<String>,
     /// The `w:abstractNum` its list uses: paragraphs with the same one are in the same list (PARA-5).
     pub list: Option<i64>,
+    /// The size the paragraph mark is laid out at when not its own (STYLE-4: compat ≤ 14 cells); formatting keeps the
+    /// mark's.
+    pub mark_size: Option<f64>,
     /// The `w:pPr` as written (editable reads only), what formatting edits change and saving writes back.
     pub direct: Raw,
     /// A tracked change of the paragraph's properties.

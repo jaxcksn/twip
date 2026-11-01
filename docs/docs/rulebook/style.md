@@ -56,6 +56,8 @@ the cell text takes the table style's size instead: the active conditional regio
 
 Example: compat 12, docDefaults 11pt, Normal 12pt, a table style setting only `w:rFonts`: cell text without `w:pStyle` is 11pt. With a table style `w:sz` 28 it is 14pt; with docDefaults 10pt, or Normal 11pt, it keeps Normal's size.
 
+A second exception, for the paragraph mark, in compat ≤ 14: in a cell of a table without a named table style (no `w:tblStyle`, or the default table style), a mark whose direct `w:sz` is 22 (11pt), in a document whose docDefaults size is 11pt and whose default paragraph style sets 12pt, is laid out at its paragraph's size, so an empty cell paragraph is a 12pt line. Text runs keep their size; any other combination keeps the mark's own, and formatting shows the mark's 11pt.
+
 ### STYLE-5. Paragraph-mark run properties {#style-5}
 
 The paragraph mark's run properties (`w:pPr/w:rPr`, through its `w:rStyle` and the paragraph's cascade) don't change a line that holds text. They are used for:

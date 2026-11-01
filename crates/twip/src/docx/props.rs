@@ -404,6 +404,8 @@ pub struct ParaProps {
     pub frame: Option<FramePr>,
     pub text_alignment: Option<String>,
     pub outline_lvl: Option<i64>,
+    /// The paragraph mark's direct size (`w:pPr/w:rPr/w:sz`, STYLE-4); not merged.
+    pub mark_size: Option<f64>,
 }
 
 impl ParaProps {
@@ -508,6 +510,7 @@ impl ParaProps {
                 }
                 "textAlignment" => p.text_alignment = val(e).map(str::to_string),
                 "outlineLvl" => p.outline_lvl = int(val(e)),
+                "rPr" => p.mark_size = child(e, "sz").and_then(|s| half_points(val(s))),
                 _ => {}
             }
         }

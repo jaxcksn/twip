@@ -1200,6 +1200,8 @@ fn times_line(h: f64, m: f64) -> f64 {
 /// Vertical size of a line: LINE-1 to LINE-5, LIST-7, FLOAT-5, then the line spacing rule (LINE-6 to LINE-13).
 fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, fonts: &Fonts, last: bool, compat: Compat) {
     let (mut asc, mut desc) = (0.0f64, 0.0f64);
+    // STYLE-4: a compat ≤ 14 cell mark laid out at its paragraph's size, not its own.
+    let mark_size = style.mark_size.unwrap_or(mark.size);
     let mut object = false;
     // The same without raised or lowered text's shift (w:position): what a line multiple scales, so the line grows by
     // the shift once (LINE-13).
@@ -1262,7 +1264,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     else if (!has_content || (last && !has_text))
         && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
     {
-        let (a, d, e) = metrics(&f, mark.size);
+        let (a, d, e) = metrics(&f, mark_size);
         asc = asc.max(a + e);
         desc = desc.max(d);
         un_asc = un_asc.max(a + e);
@@ -1275,7 +1277,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         && un_text_asc + un_text_desc + num_asc == 0.0
         && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
     {
-        let (a, d, e) = metrics(&f, mark.size);
+        let (a, d, e) = metrics(&f, mark_size);
         asc = asc.max(a + e + d);
     }
     let asc = asc.max(num_asc); // LIST-7: the number's ascent, not its descent

@@ -159,6 +159,7 @@ impl Resolver {
             num: None,
             list_fmt: None,
             list: None,
+            mark_size: None,
             direct: Raw::default(),
             change: None,
         }
@@ -225,6 +226,10 @@ impl Resolver {
             if sizer.is_some_and(|s| Some(&s.id) == self.styles.default_paragraph.as_ref() && s.base.rpr.size == Some(12.0)) {
                 base.size = Some(size);
             }
+        }
+        // STYLE-4: such a cell's 11pt mark is laid out at the paragraph's size (an empty cell paragraph is a 12pt line).
+        if region.is_some_and(|t| t.mark_at_style) && direct.mark_size == Some(11.0) {
+            style.mark_size = base.size;
         }
         ParaResolved { style, base, level, num_id, ilvl, from_style, style_id }
     }
@@ -439,6 +444,31 @@ mod tests {
         assert_eq!(size(22, 24, fonts, Some("P2"), false), (Some(12.0), Some(12.0)));
         assert_eq!(size(24, 22, fonts, None, false), (Some(11.0), Some(11.0)));
         assert_eq!(size(22, 24, fonts, None, true), (Some(12.0), Some(12.0)));
+    }
+
+    #[test]
+    fn an_11pt_cell_mark_is_laid_out_at_its_paragraphs_size_in_compat_14() {
+        // STYLE-4: (docDefaults, Normal) half-points, the mark's direct size, the table style, compat 15 → the size the
+        // cell paragraph's mark is laid out at (None: its own).
+        let mark = |dd: u32, normal: u32, own: f64, table: Option<&str>, compat15: bool| {
+            let xml = format!(
+                r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="{dd}"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0"><w:rPr><w:sz w:val="{normal}"/></w:rPr></w:style><w:style w:type="table" w:default="1" w:styleId="T0"/><w:style w:type="table" w:styleId="T1"><w:basedOn w:val="T0"/></w:style></w:styles>"#
+            );
+            let mut styles = Styles::parse(Some(&xml));
+            styles.compat = if compat15 { Compat::Generic } else { Compat::Legacy };
+            let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
+            let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
+            let direct = ParaProps { mark_size: Some(own), ..ParaProps::default() };
+            res.paragraph(&direct, Some(&res.cell_region(table, look, (0, 0), (0, 0), (1, 1), 0))).style.mark_size
+        };
+        assert_eq!(mark(22, 24, 11.0, None, false), Some(12.0));
+        assert_eq!(mark(22, 24, 11.0, Some("T0"), false), Some(12.0));
+        // A named table style, compat 15, another mark size, docDefaults or Normal: the mark's own.
+        assert_eq!(mark(22, 24, 11.0, Some("T1"), false), None);
+        assert_eq!(mark(22, 24, 11.0, None, true), None);
+        assert_eq!(mark(22, 24, 10.0, None, false), None);
+        assert_eq!(mark(20, 24, 11.0, None, false), None);
+        assert_eq!(mark(22, 28, 11.0, None, false), None);
     }
 
     #[test]
