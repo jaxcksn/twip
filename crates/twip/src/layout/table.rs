@@ -560,6 +560,33 @@ fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, b: &Border) {
     let colour = b.color.unwrap_or(0);
     let [x0, y0, x1, y1] = rect;
     let st = stripes(b);
+    // TABLE-37: patterned lines are dashes in units of the line width, on and off from the band's start (a
+    // dashSmallGap's unit is the band's thickness, the same for a single line).
+    // shortcut: wave, doubleWave and dashDotStroked are drawn as solid lines.
+    let pattern: &[f64] = match b.style.as_str() {
+        "dotted" => &[1.0, 1.0],
+        "dashed" => &[3.0, 1.0],
+        "dotDash" => &[3.0, 1.0, 1.0, 1.0],
+        "dotDotDash" => &[3.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        "dashSmallGap" => &[4.0, 1.0],
+        _ => &[],
+    };
+    let unit = if horizontal { y1 - y0 } else { x1 - x0 };
+    if st.len() == 1 && !pattern.is_empty() && unit > EPS {
+        let (start, end) = if horizontal { (x0, x1) } else { (y0, y1) };
+        let mut at = start;
+        for (k, len) in pattern.iter().cycle().enumerate() {
+            if at >= end - EPS {
+                break;
+            }
+            let to = (at + len * unit).min(end);
+            if k % 2 == 0 {
+                out.push(Item::Rect { rect: if horizontal { [at, y0, to, y1] } else { [x0, at, x1, to] }, colour });
+            }
+            at = to;
+        }
+        return;
+    }
     if st.len() == 1 {
         out.push(Item::Rect { rect, colour });
         return;
@@ -2236,5 +2263,20 @@ fn line_units(items: &[Item], para: Option<ParaId>, out: &mut Vec<(ParaId, Unit,
                 out.push((para, lo, Unit(hi.0 + 1)));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dotted_border_is_drawn_as_dots() {
+        // TABLE-37: a 1pt dotted line 9pt long: dots of 1pt every 2pt, the last one at 8.
+        let b = Border { style: "dotted".into(), width: 1.0, space: 0.0, shadow: false, color: None };
+        let mut out = Vec::new();
+        edge(&mut out, [0.0, 0.0, 9.0, 1.0], true, &b);
+        let xs: Vec<f64> = out.iter().map(|i| if let Item::Rect { rect, .. } = i { rect[0] } else { -1.0 }).collect();
+        assert_eq!(xs, vec![0.0, 2.0, 4.0, 6.0, 8.0]);
     }
 }
