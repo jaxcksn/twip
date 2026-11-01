@@ -630,7 +630,7 @@ The table's leading rows with `w:tblHeader` are its header rows (stop at the fir
 
 ### TABLE-47. Header rows never end a page alone {#table-47}
 
-If a table starts below other content in a column and the first row after its header rows doesn't start there (neither whole nor as a split part), don't leave the header rows behind: the whole table moves to the next column, as if its first row didn't fit.
+In compat 15, if a table starts below other content in a column and the first row after its header rows doesn't start there (neither whole nor as a split part), don't leave the header rows behind: the whole table moves to the next column, as if its first row didn't fit. Compat ≤ 14 leaves the header rows at the bottom of the column.
 
 ### TABLE-48. Paragraphs around a table {#table-48}
 

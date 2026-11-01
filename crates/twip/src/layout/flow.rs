@@ -1766,8 +1766,9 @@ impl<'d> PageFill<'d, '_> {
                 placed_here += 1;
                 continue;
             }
-            // TABLE-47: header rows never end a page by themselves.
+            // TABLE-47: in compat 15 header rows never end a page by themselves; compat ≤ 14 leaves them.
             if let Some((y0, area0, notes0)) = rewind.clone()
+                && self.ctx.env.text.compat == Compat::Generic
                 && ri > 0
                 && ri <= headers.len()
             {
