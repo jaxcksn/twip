@@ -1693,8 +1693,10 @@ impl<'d> PageFill<'d, '_> {
             // Split the row (TABLE-41) unless it can't be (TABLE-45); a row taller than a page splits anyway.
             let avail = col.bottom - area.total() - *y - row.top_border - tb.bottom_border;
             // An atLeast row starts splitting only where its minimum height fits.
-            // TABLE-45: a cantSplit, header or keep-with-next row doesn't split, except at the top of a column.
-            let can_split = !breaks && !row.exact && (!(row.cant_split || row.header || keeps) || at_top) && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
+            // TABLE-45: a cantSplit, header or keep-with-next row doesn't split, except in compat 15 at the top of a column
+            // (in compat <= 14 it is placed whole there and runs past the column's bottom, PAGE-5).
+            let no_split = row.cant_split || row.header || keeps;
+            let can_split = !breaks && !row.exact && (!no_split || at_top && self.ctx.env.text.compat == Compat::Generic) && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
             let mut fitted: Vec<CellPart> = Vec::new();
             let mut left: Vec<Vec<StoryUnit>> = Vec::new();
             if can_split {
