@@ -713,7 +713,9 @@ fn fit_line(
                 xs.push(pen);
                 ws.push(p.width);
                 pen += p.width;
-                if p.break_after {
+                // BREAK-1: float anchors alone are no content: a line doesn't end after them, so an object too wide for
+                // the line stays on it.
+                if p.break_after && !pieces[start..=i].iter().all(|q| q.kind == Kind::Anchor) {
                     breaks.push((i + 1, false));
                 }
                 i += 1;
@@ -787,8 +789,9 @@ fn fit_line(
             if strict {
                 return Fit { end: start, xs: Vec::new(), widths: Vec::new(), hard: None, hyphen: false, leaders: Vec::new() };
             }
-            // BREAK-4: no break fits; split at the last character that fits (at least one).
-            if i > start && pieces[start..i].iter().any(|q| q.kind != Kind::ListNumber) {
+            // BREAK-4: no break fits; split at the last character that fits (at least one; a list number or float
+            // anchors before it are none).
+            if i > start && pieces[start..i].iter().any(|q| !matches!(q.kind, Kind::ListNumber | Kind::Anchor)) {
                 if let Some(pt) = pending.take() {
                     resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i, right);
                 }
