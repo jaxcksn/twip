@@ -1,5 +1,6 @@
 # A pull request labeled preview gets @twip/web published to pkg.pr.new on every push, and a comment with the install
 # command. Nothing reaches npm. Needs the pkg.pr.new GitHub App on the repository. NuGet previews are nuget-preview.yml.
+# One job, so the PR's checks list one line for it.
 name: Preview
 
 on:
@@ -13,24 +14,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    if: contains(github.event.pull_request.labels.*.name, 'preview')
-    uses: ./.github/workflows/build.yml
-    permissions:
-      contents: read
-    with:
-      canary: true
-      npm: true
-
   npm:
-    needs: build
+    if: contains(github.event.pull_request.labels.*.name, 'preview')
     runs-on: ubuntu-latest
     environment: preview
+    permissions:
+      contents: read
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7
         with:
-          name: npm
-          path: ${{ runner.temp }}/npm
-      - run: |
-          cd "$RUNNER_TEMP/npm" && tar xzf ./*.tgz
-          npx --yes pkg-pr-new publish ./package
+          fetch-depth: 0 # moon compares with the base branch
+      - uses: ./.github/actions/build-web
+        with:
+          canary: true
+      - run: npx --yes pkg-pr-new publish ./bindings/web
