@@ -38,6 +38,9 @@ pub struct StoryUnit {
     /// widow/orphan control (NOTE-7: widow control applies inside each note paragraph).
     pub block: usize,
     pub widow: bool,
+    /// The paragraph's keepNext and keepLines (TABLE-43: a cell split keeps them in compat 15).
+    pub keep_next: bool,
+    pub keep_lines: bool,
     /// Notes referenced on this line (NOTE-8: references in table cells place their notes like body lines).
     pub notes: Box<[(NoteKind, i64)]>,
 }
@@ -270,6 +273,8 @@ pub fn layout_with(
                         content: content.into(),
                         block: bi,
                         widow: style.widow_control,
+                        keep_next: style.keep_next,
+                        keep_lines: style.keep_lines,
                         notes: lines.notes(i).into_boxed_slice(),
                     });
                     y += line.pitch;

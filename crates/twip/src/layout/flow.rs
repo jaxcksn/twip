@@ -204,11 +204,20 @@ pub fn note_cut(units: &[StoryUnit], room: f64) -> usize {
 
 /// How many of a cell's units stay on this page when its row splits (TABLE-41, TABLE-43, TABLE-44). A cell that keeps
 /// nothing fails TABLE-42, so the row moves on whole. `continued`: the units continue a row split on an earlier page.
-fn cell_cut(units: &[StoryUnit], room: f64, continued: bool) -> usize {
+fn cell_cut(units: &[StoryUnit], room: f64, continued: bool, compat: Compat) -> usize {
     // TABLE-44: a cell line stays only if its full pitch fits (none of PAGE-2's allowance below the text), and its
     // paragraph's space-after when it ends it.
     let fit = units.iter().position(|u| u.top + u.height + u.after > room + EPS).unwrap_or(units.len());
-    if fit == 0 || fit >= units.len() || units[fit - 1].block != units[fit].block || !units[fit].widow {
+    // TABLE-43: compat ≤ 14 cells have no widow, orphan or keep control at a row split.
+    if compat == Compat::Legacy || fit == 0 || fit >= units.len() {
+        return fit;
+    }
+    cell_keeps(units, widow_cut(units, fit, continued))
+}
+
+/// TABLE-43: widow and orphan control at a cell cut `fit`, inside the paragraph it falls in.
+fn widow_cut(units: &[StoryUnit], fit: usize, continued: bool) -> usize {
+    if units[fit - 1].block != units[fit].block || !units[fit].widow {
         return fit;
     }
     let para = units[fit].block;
@@ -218,6 +227,48 @@ fn cell_cut(units: &[StoryUnit], room: f64, continued: bool) -> usize {
     // when the earlier split fell between paragraphs; exact only for rows split across more than two pages.
     let first_part = !(continued && start == 0);
     start + lines_to_take(end - start, fit - start, false, first_part, false, true)
+}
+
+/// TABLE-43 (compat 15): the body's keep rules inside a cell (PAGE-6). The cut doesn't fall inside a keepLines
+/// paragraph, and moves back from a paragraph's start over a keepNext paragraph before it, taking that one's last line
+/// (two with widowControl) or, with keepLines, all of it; the step goes on over a whole paragraph moved.
+fn cell_keeps(units: &[StoryUnit], mut keep: usize) -> usize {
+    let lines = |k: usize| {
+        let b = units[k].block;
+        let start = units[..=k].iter().rposition(|u| u.block != b).map_or(0, |i| i + 1);
+        let end = units[k..].iter().position(|u| u.block != b).map_or(units.len(), |i| k + i);
+        (start, end)
+    };
+    if keep == 0 || keep >= units.len() {
+        return keep;
+    }
+    let (start, _) = lines(keep);
+    if units[keep].keep_lines && start < keep {
+        keep = start;
+    }
+    while keep > 0 && keep < units.len() {
+        let (p, i) = (&units[keep - 1], &units[keep]);
+        if p.block == i.block || !p.keep_next {
+            break;
+        }
+        let (start, end) = lines(keep - 1);
+        let n = keep - start;
+        let mut m = n;
+        if !p.keep_lines {
+            m = n.min(if p.widow && end - start > 1 { 2 } else { 1 });
+            if p.widow && n - m == 1 {
+                m = n;
+            }
+        }
+        if m > keep {
+            break;
+        }
+        keep -= m;
+        if m < n {
+            break;
+        }
+    }
+    keep
 }
 
 /// A merged region that splits with its last row (TABLE-32): its continuation cell `k` in that row, its restart cell
@@ -235,7 +286,7 @@ struct MergedSplit {
 /// content runs past `bottom`: each keeps the lines that fit (TABLE-44) and the rest continues in `ri`'s continuation.
 /// shortcut: only a top-aligned region split at its last row; a region split at an earlier row, or that keeps
 /// nothing here, still draws whole from its first row.
-fn merged_splits(tb: &TableLayout, ri: usize, placed: &[(usize, f64, usize)], bottom: f64) -> Vec<MergedSplit> {
+fn merged_splits(tb: &TableLayout, ri: usize, placed: &[(usize, f64, usize)], bottom: f64, compat: Compat) -> Vec<MergedSplit> {
     let continues = |r: usize, col: usize| tb.rows.get(r).is_some_and(|row| row.cells.iter().any(|c| c.col == col && c.v_merge == VMerge::Continue));
     let mut out = Vec::new();
     for (k, c) in tb.rows[ri].cells.iter().enumerate() {
@@ -251,7 +302,7 @@ fn merged_splits(tb: &TableLayout, ri: usize, placed: &[(usize, f64, usize)], bo
         }
         let content_top = top + tb.rows[start].top_border + rc.margins[0];
         let units = &rc.units.units;
-        let cut = cell_cut(units, bottom - rc.margins[2] - content_top, false);
+        let cut = cell_cut(units, bottom - rc.margins[2] - content_top, false, compat);
         if cut == 0 || cut == units.len() {
             continue;
         }
@@ -488,7 +539,18 @@ impl<'d> PageFill<'d, '_> {
                 let rule = Item::Rect { rect: [0.0, h * 0.78 - 2.7, 144.0, h * 0.78 - 2.1], colour: 0 };
                 let content: Rc<[Child]> = Rc::from([Child::Items(Box::new([rule]))]);
                 StoryLayout {
-                    units: vec![StoryUnit { top: 0.0, height: h, below: 0.0, after: 0.0, content, block: 0, widow: false, notes: Box::new([]) }],
+                    units: vec![StoryUnit {
+                        top: 0.0,
+                        height: h,
+                        below: 0.0,
+                        after: 0.0,
+                        content,
+                        block: 0,
+                        widow: false,
+                        keep_next: false,
+                        keep_lines: false,
+                        notes: Box::new([]),
+                    }],
                     height: h,
                     float_bottom: 0.0,
                 }
@@ -1619,7 +1681,7 @@ impl<'d> PageFill<'d, '_> {
                 for (k, cu) in parts.iter().enumerate() {
                     let m = &row.cells[k].margins;
                     let room = avail - m[0] - m[2];
-                    let cut = cell_cut(cu.units, room, rest.is_some());
+                    let cut = cell_cut(cu.units, room, rest.is_some(), self.ctx.env.text.compat);
                     fitted.push(CellPart { units: &cu.units[..cut], base: 0.0, ends: cu.ends && cut == cu.units.len() });
                     let mut rest = rebase(&cu.units[cut..]);
                     // TABLE-41: a continuation that starts a new paragraph keeps what its space-before adds to the
@@ -1632,8 +1694,11 @@ impl<'d> PageFill<'d, '_> {
                     left.push(rest);
                 }
             }
-            let merged =
-                if can_split && rest.is_none() { merged_splits(tb, ri, &placed, col.bottom - area.total() - tb.bottom_border) } else { Vec::new() };
+            let merged = if can_split && rest.is_none() {
+                merged_splits(tb, ri, &placed, col.bottom - area.total() - tb.bottom_border, self.ctx.env.text.compat)
+            } else {
+                Vec::new()
+            };
             for m in &merged {
                 left[m.k] = rebase(&tb.rows[m.start].cells[m.kr].units.units[m.cut..]);
             }

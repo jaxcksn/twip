@@ -604,9 +604,11 @@ A row splits only if every cell that has content keeps at least its first line o
 
 ### TABLE-43. Widow and orphan control at a row split {#table-43}
 
-Where a cell's cut falls inside a paragraph that has widow/orphan control on, apply [PAGE-3](page#page-3) to that paragraph: the cell keeps the number of its lines that rule takes. A paragraph that continues a row already split on an earlier page counts as already begun (no orphan rule for it). If a cell then keeps nothing, [TABLE-42](#table-42) fails and the row moves whole.
+In compat ≤ 14 a cell's cut is where its lines stop fitting: no widow, orphan or keep rule applies inside a table. In compat 15, where a cell's cut falls inside a paragraph that has widow/orphan control on, apply [PAGE-3](page#page-3) to that paragraph: the cell keeps the number of its lines that rule takes. A paragraph that continues a row already split on an earlier page counts as already begun (no orphan rule for it). If a cell then keeps nothing, [TABLE-42](#table-42) fails and the row moves whole.
 
 Example: a five-line cell paragraph, widow control on, four lines of room: three lines stay, two go on.
+
+Then, in compat 15, the body's keeps ([PAGE-6](page#page-6)) apply inside the cell: the cut doesn't fall inside a keepLines paragraph (it moves to that paragraph's start), and a cut at a paragraph's start moves back over a keepNext paragraph before it, taking its last line (two with widow control) or, with keepLines, all of it; the step goes on over a paragraph moved whole.
 
 ### TABLE-44. Space-after at a row split {#table-44}
 

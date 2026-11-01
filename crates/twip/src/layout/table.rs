@@ -1836,6 +1836,8 @@ pub fn table_units(tb: &TableLayout) -> (Vec<StoryUnit>, f64) {
             content: Rc::from([fragment]),
             block: 0,
             widow: false,
+            keep_next: false,
+            keep_lines: false,
             notes: notes.into_boxed_slice(),
         });
         y += h + extra;
