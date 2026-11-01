@@ -21,7 +21,7 @@ A field (`w:fldChar` begin, `w:instrText`, separate, cached result, end; or `w:f
 ### FIELD-2. Field values computed before layout {#field-2}
 
 - **`REF bookmark`**: the text from the bookmark's start to the end of the paragraph it starts in (fields in it as they show).
-- **`bookmark`** alone (a single name, switches allowed, that isn't a field's name): it reads as `REF bookmark`, with the bookmark name in any case. A missing bookmark shows "Error! Bookmark not defined." A name followed by more text (`NUM PAGES`) is not a bookmark: it shows its cached result.
+- **`bookmark`** (a first word that isn't a field's name, shaped like a bookmark name: a letter or `_`, then letters, digits and `_`; anything may follow it, `NUM PAGES` included): it reads as `REF bookmark`, with the bookmark name in any case, but only when its cached result is empty; a cached result that isn't empty stays. A missing bookmark shows "Error! Bookmark not defined." Any other first word that isn't a field's name (one starting with a digit, or holding `@`, `.` or a quote) shows nothing, whatever its cached result.
 - **`SEQ name`**: one counter per name, in document order. Each `SEQ` adds 1 and shows the value; `\r n` sets the value to n; `\c` shows the current value without adding; `\h` adds 1 and shows nothing. Number switches format the value ([FIELD-3](field#field-3)).
 - **`STYLEREF "style"`**: match the style name against style ids, ignoring case and spaces ("Heading 1" finds `Heading1`), and show that paragraph's text.
   - In the body: the nearest paragraph with that style at or before the field's paragraph, else the first one after it.
@@ -54,6 +54,8 @@ Format a numeric value by its switches. With the value 14:
 ### FIELD-4. Result formatting {#field-4}
 
 Draw a computed field's value in the formatting of the field code's first run. With `\* MERGEFORMAT`, use the cached result's first run instead (the code's when the result is empty). When the field has no such run at all, use its end marker's run. A field showing its cached result keeps each result run's own formatting.
+
+An error text ("Error! Reference source not found.", "Error! Bookmark not defined.", also a `PAGEREF`'s) is drawn in the formatting of the run holding the field's separator (`w:fldChar separate`; a `w:fldSimple`: the paragraph's style formatting; no separator: the end marker's run) with bold toggled. Format switches don't change it.
 
 ### FIELD-5. A table of contents {#field-5}
 

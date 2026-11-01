@@ -259,10 +259,17 @@ impl FieldCode {
             "STYLEREF" => FieldKind::StyleRef(arg()),
             "DATE" | "TIME" => FieldKind::Date,
             "IF" => FieldKind::If,
-            n if !n.is_empty() && !n.starts_with(['=', '\\']) && !n.chars().all(|c| c.is_alphanumeric() || c == '_') => FieldKind::Invalid,
-            n if self.args.is_empty()
-                && !n.is_empty()
+            n if !n.is_empty()
+                && !n.starts_with(['=', '\\'])
+                && (!n.chars().all(|c| c.is_alphanumeric() || c == '_') || n.starts_with(|c: char| c.is_numeric())) =>
+            {
+                FieldKind::Invalid
+            }
+            // FIELD-2: an unknown word shaped like a bookmark name (a letter or `_`, then letters, digits, `_`) is a
+            // reference to that bookmark, whatever follows it.
+            n if !n.is_empty()
                 && !FIELD_NAMES.split_whitespace().any(|f| f == n)
+                && n.starts_with(|c: char| c.is_alphabetic() || c == '_')
                 && n.chars().all(|c| c.is_alphanumeric() || c == '_') =>
             {
                 FieldKind::Bookmark(n.into())
@@ -366,7 +373,14 @@ pub fn evaluate(doc: &mut Document, now: i64) {
         paras(&mut s.blocks, &mut |p| {
             for sp in spans(&p.inlines) {
                 let code = code_text(&p.inlines, sp).trim().to_string();
-                let Inline::FieldBegin { kind: Some(kind), value: slot, .. } = &mut p.inlines[sp.begin] else { continue };
+                // FIELD-4: an error text takes the separator run's formatting (no separator: the end run's), bold
+                // toggled.
+                let error_run = sp
+                    .sep
+                    .and_then(|k| if let Inline::FieldSep { run, .. } = &p.inlines[k] { Some(run.clone()) } else { None })
+                    .or_else(|| if let Inline::FieldEnd { run, .. } = &p.inlines[sp.end] { Some(run.clone()) } else { None });
+                let cached_empty = result_text(&p.inlines, sp).is_empty();
+                let Inline::FieldBegin { kind: Some(kind), value: slot, run, .. } = &mut p.inlines[sp.begin] else { continue };
                 let code = &code;
                 let w = words(code);
                 let has = |sw: &str| w.iter().any(|x| x.eq_ignore_ascii_case(sw));
@@ -382,7 +396,9 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     }
                     // Word's result for a bookmark the document doesn't have.
                     FieldKind::Ref(name) => Some(marks.get(name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into())),
-                    // A bookmark named as the whole code (any case): its text, or Word's error.
+                    // A bookmark named by the code's first word (any case): its text, or the error; a cached result
+                    // that isn't empty stays (FIELD-2).
+                    FieldKind::Bookmark(_) if !cached_empty => None,
                     FieldKind::Bookmark(name) => Some(
                         marks
                             .iter()
@@ -404,7 +420,21 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     }
                     _ => None,
                 };
+                // A PAGEREF to a bookmark the document doesn't have shows its error text at layout.
+                let page_error = matches!(&*kind, FieldKind::PageRef(n) if !marks.contains_key(n));
+                if page_error && let Some(e) = &error_run {
+                    let mut r = (**e).clone();
+                    r.bold = !r.bold;
+                    *run = std::rc::Rc::new(r);
+                }
                 if let Some(v) = value {
+                    if v.starts_with("Error! ")
+                        && let Some(e) = &error_run
+                    {
+                        let mut r = (**e).clone();
+                        r.bold = !r.bold;
+                        *run = std::rc::Rc::new(r);
+                    }
                     *slot = Some(v);
                 }
             }
@@ -647,7 +677,8 @@ mod tests {
             ("QUOTE x", None),
             ("umber", Some(FieldKind::Bookmark("UMBER".into()))),
             ("AUTHOR", None),
-            ("NUM PAGES", None),
+            ("NUM PAGES", Some(FieldKind::Bookmark("NUM".into()))),
+            ("1ABC", Some(FieldKind::Invalid)),
         ] {
             assert_eq!(parse(code).kind(), kind, "{code}");
         }

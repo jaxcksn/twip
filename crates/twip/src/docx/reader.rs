@@ -1444,7 +1444,9 @@ impl Reader {
         if !code.is_empty() {
             out.push(Inline::Text(code, run.clone()));
         }
-        out.push(Inline::FieldSep { id, run: run.clone() });
+        // FIELD-4: a simple field has no separator run; its marker takes the paragraph's style formatting, which an
+        // error text is drawn in.
+        out.push(Inline::FieldSep { id, run: self.run_style(&self.run_props(base, None)) });
         self.fields.push(OpenField {
             id,
             in_result: true,
