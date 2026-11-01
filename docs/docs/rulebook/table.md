@@ -139,6 +139,8 @@ A numbered paragraph (one with a list number, [LIST-1](list#list-1)) differs:
 
 Example, compat 12: left 720, hanging 360, "1." with a tab suffix, then "786594": the number sits at 360, the tab goes to 720, the text ends at 1390, so min = max = `1390 + 720 − 360 = 1750`. With left 60, hanging 180 and a Symbol bullet: the line starts at 0, the bullet ends past the left indent, so the tab goes to the default stop 720 and the piece is `720 + 670 − 120 = 1270`. The same paragraph in compat 15: `670 + 60 = 730`.
 
+In compat 15, a paragraph whose last line starts left of 0 (its start includes `firstLine` on the first line): that line's max is the larger of the usual one and its full end plus `right`, the full end taking in its trailing spaces and the mark glyph that ends it. The mark is the end-of-cell mark `¤` (U+00A4) in the cell's last paragraph and the pilcrow `¶` otherwise, in the paragraph mark's font and size (Calibri 11pt: 109.6 twips).
+
 Examples, compat 15: `firstLine` 360 adds 360 to the max and nothing to the min. A hanging 360 under `left` 720 adds 720 to the min, and the first line's max is only `360 + text + right`, so the max may be no wider than the min.
 
 ### TABLE-9. Hyphen runs in the minimum {#table-9}

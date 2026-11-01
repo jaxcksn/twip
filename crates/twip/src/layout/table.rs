@@ -732,7 +732,7 @@ fn twips(x: f64) -> i64 {
 fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, memos: &mut Memos) -> Result<(i64, i64, i64), Yield> {
     let (mut mn, mut mx, mut hard) = (0i64, 0i64, 0i64);
     let old = env.ctx.env.text.compat == Compat::Legacy;
-    for b in blocks {
+    for (bi, b) in blocks.iter().enumerate() {
         match b {
             LaidBlock::Para(laid) => {
                 let p = laid.para();
@@ -830,7 +830,16 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                         .find(|&k| !matches!(pieces.get(l.start + k).map(|q| q.kind), Some(Kind::Space)))
                         .map_or(start_x, |k| l.xs[k] + l.widths[k] - shift);
                     let from = if numbered && li == 0 { 0.0 } else { start_x };
-                    let w = if old { (end - from).max(0.0) + ind } else { end.max(0.0) + s.ind_right };
+                    let mut w = if old { (end - from).max(0.0) + ind } else { end.max(0.0) + s.ind_right };
+                    // TABLE-8: compat 15, a last line starting left of 0 keeps its trailing spaces and the mark that
+                    // ends it (the end-of-cell mark in the cell's last paragraph, else the pilcrow).
+                    if !old && li + 1 == lines.len() && start_x < 0.0 {
+                        let full = l.xs.last().zip(l.widths.last()).map_or(start_x, |(x, w)| x + w - shift);
+                        let mark = p.mark_in(env.ctx.env.text.review.view);
+                        let glyph = if bi + 1 == blocks.len() { '\u{a4}' } else { '\u{b6}' };
+                        let mark_w = env.ctx.fonts.face(&mark.ascii, mark.bold, mark.italic).and_then(|f| Some(f.advance(f.glyph(glyph)?) * f.scale(mark.size)));
+                        w = w.max(full + mark_w.unwrap_or(0.0) + s.ind_right);
+                    }
                     mx = mx.max(up(w));
                 }
             }
