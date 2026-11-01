@@ -1867,7 +1867,8 @@ impl<'d> PageFill<'d, '_> {
                 }
                 rows.push(draw_row(tb, ri, at_x, *y, h, Some(&fitted), true));
                 move_floats(rows.last_mut(), &page_floats, &frames, row.top_border, up(ri));
-                *y += h;
+                // TABLE-41: the part closes with the table's bottom border, which the column holds (COL-5).
+                *y += h + tb.bottom_border;
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
                 finish(rows, out);
@@ -1896,6 +1897,11 @@ impl<'d> PageFill<'d, '_> {
                     return Ok(Stop::Full);
                 }
                 pos.at = At::Row(kri);
+            }
+            // TABLE-41: a part cut between whole rows closes with the table's bottom border, which the column holds
+            // (COL-5 balances on it).
+            if !rows.is_empty() {
+                *y += tb.bottom_border;
             }
             finish(rows, out);
             self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);

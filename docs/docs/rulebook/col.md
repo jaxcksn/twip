@@ -62,7 +62,7 @@ Balance a section when it has two or more columns, the **next** section starts w
    - compat 15: start at `h = Σ (width_i × height_i) / Σ width_i`, rounded down to a multiple of the smallest line or row. If the content doesn't fit, add the smallest line or row of the last fill until it does; if it fits at once, take that step off while it still fits.
    No height goes past the full column height. The result is not always the smallest height that holds the content.
 4. Fill the columns in order at `h`, so the leftover goes to the last columns.
-5. The next section starts below the tallest column: its last line's bottom plus that paragraph's space-after.
+5. The next section starts below the tallest column: its last line's bottom plus that paragraph's space-after, or, for a column that ends in a table part (cut between rows or in a split row), below that part's closing bottom border.
 6. Notes referenced in a balanced section go in per-column areas ([COL-4](col#col-4)), also in compat 15.
 
 Single-line paragraphs, 2 columns: 3 → 2 / 1, 5 → 3 / 2, 7 → 4 / 3. Three columns: 5 → 2 / 2 / 1. Compat 12, eight 13.43pt lines and a 28pt line in 2 columns: `h = 67.7pt` holds five lines and leaves 68.3pt for the second column, so `h` grows by the mean 15.05pt: six lines, then three.
