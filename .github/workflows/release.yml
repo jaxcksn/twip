@@ -1,7 +1,7 @@
 # release-please keeps a release PR open on main for the next stable version.
 # Merging it tags the release; the jobs below then publish what was released.
 # Run by hand with a tag, the same jobs re-publish it. Run by hand without one, they publish a canary of the branch the
-# workflow runs from (x.y.z-canary.<run number>) to GitHub Packages: npm.pkg.github.com as @<owner>/twip-web, and
+# workflow runs from (x.y.z-canary-<short commit SHA>) to GitHub Packages: npm.pkg.github.com as @<owner>/twip-web, and
 # nuget.pkg.github.com. Installing from there needs a GitHub token, so canaries don't reach anyone by accident. They
 # deploy to the canary environment, so the branch's PR shows the deployment. Canaries are never tagged or released.
 name: Release
@@ -30,7 +30,8 @@ jobs:
       tag: ${{ steps.rp.outputs.tag_name }}
       canary: ${{ steps.canary.outputs.version }}
     steps:
-      # A canary: the version without its prerelease part, then -canary.<run number> (0.1.0-alpha.1 -> 0.1.0-canary.42).
+      # A canary: the version without its prerelease part, then -canary-<short SHA> (0.1.0-alpha.1 -> 0.1.0-canary-1a2b3c4).
+      # A hyphen, not a dot: an all-digit SHA after a dot is a numeric identifier, and one with a leading zero isn't semver.
       - id: canary
         if: github.event_name == 'workflow_dispatch' && !inputs.tag
         env:
@@ -38,7 +39,7 @@ jobs:
         run: |
           base=$(gh api "repos/$GITHUB_REPOSITORY/contents/Cargo.toml?ref=$GITHUB_SHA" -H 'Accept: application/vnd.github.raw' \
             | sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+).*"$/\1/p')
-          echo "version=$base-canary.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "version=$base-canary-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       - id: rp
         if: github.event_name == 'push'
         uses: googleapis/release-please-action@v5

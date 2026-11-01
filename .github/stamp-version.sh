@@ -1,9 +1,9 @@
 #!/bin/sh
-# Writes a canary version (0.1.1-canary.42) into the files release-please versions, for a canary publish from
+# Writes a canary version (0.1.1-canary-1a2b3c4) into the files release-please versions, for a canary publish from
 # release.yml. Nothing is committed: the version exists only in that run's checkout.
 set -eu
 new=$1
-echo "$new" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-canary\.[0-9]+$' || { echo "::error::'$new' is not x.y.z-canary.N"; exit 1; }
+echo "$new" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-canary-[0-9a-f]{7}$' || { echo "::error::'$new' is not x.y.z-canary-<short SHA>"; exit 1; }
 old=$(sed -nE 's/^version = "(.+)"$/\1/p' Cargo.toml)
 sed -i "s/^version = \"$old\"$/version = \"$new\"/" Cargo.toml
 sed -i "s/\"version\": \"$old\"/\"version\": \"$new\"/" bindings/web/package.json
