@@ -27,7 +27,7 @@ Nowhere else: not after a no-break space or a no-break hyphen, an em dash or a s
 
 ### BREAK-4. When no break opportunity fits {#break-4}
 
-When the first character that doesn't fit has no break opportunity before it on the line, end the line before that character, splitting the text there. A line always takes at least one character or object, so a single glyph wider than the line still goes on it.
+When the first character that doesn't fit has no break opportunity before it on the line, end the line before that character, splitting the text there. A line always takes at least one character or object, so a single glyph wider than the line still goes on it. In compat ≤ 14, when that character is wider than the line, the spaces after it don't hang ([BREAK-2](break#break-2)): they start the next line. Compat 15 hangs them as usual.
 
 ### BREAK-5. Which breaker runs {#break-5}
 

@@ -684,11 +684,12 @@ fn fit_line(
                 continue;
             }
             Kind::Space | Kind::Anchor => {
-                // BREAK-4: after a character forced onto a line it overflows (wider than the line), a space doesn't
-                // hang (BREAK-2): it starts the next line, where spaces hang again.
+                // BREAK-4 (compat <= 14): after a character forced onto a line it overflows (wider than the line), a
+                // space doesn't hang (BREAK-2): it starts the next line, where spaces hang again. Compat 15 hangs it.
                 // The character ends past the line, not just the spaces hanging after it.
                 let ink = (start..i).rev().find(|&j| pieces[j].kind != Kind::Space);
                 if p.kind == Kind::Space
+                    && frame.compat == Compat::Legacy
                     && ink.is_some_and(|j| pen - pieces[j + 1..i].iter().map(|q| q.width).sum::<f64>() > right + EPS)
                     && squeeze.is_none()
                     && pending.is_none()
