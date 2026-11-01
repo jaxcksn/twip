@@ -152,8 +152,13 @@ change or add a behaviour, update the rule in the same pull request.
 ## Releases
 
 Every release comes from `main`. There are no release branches. Before 1.0, a fix ships in the next release and older
-versions aren't patched. Maintainers can also publish a canary of any branch
-(`x.y.z-canary-<short SHA>`) to GitHub Packages by running the Canary workflow from it.
+versions aren't patched.
+
+Every push to `main` also publishes a canary, `0.0.0-canary-<short SHA>`: `npm install @twip/web@canary`, and
+`Twip.Core` and `Twip.WinForms` on GitHub Packages (`https://nuget.pkg.github.com/jaxcksn/index.json`, which needs a
+GitHub token). A pull request labeled `preview` gets `@twip/web` on pkg.pr.new on every push, with the install command
+in a comment. For NuGet, run the NuGet preview workflow from the branch and use the `nupkg` artifact as a local
+source.
 
 ## License
 

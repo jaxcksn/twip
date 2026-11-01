@@ -1,0 +1,17 @@
+# Run by hand from any branch: builds Twip.Core and Twip.WinForms as 0.0.0-canary-<short SHA> and attaches them to the
+# run as the nupkg artifact, for a local NuGet source. Publishes nothing.
+name: NuGet preview
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+    with:
+      canary: true
+      nuget: true

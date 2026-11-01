@@ -1,4 +1,4 @@
-# Builds the packages release.yml and canary.yml publish, without publishing them: the NuGet packages (artifact nupkg)
+# Builds the packages release.yml, canary.yml and the previews publish, without publishing them: the NuGet packages (artifact nupkg)
 # and the npm package (artifact npm, a pnpm pack tarball). Publishing stays in the calling workflow, so the registries'
 # trusted publishing only ever trusts release.yml.
 name: Build
@@ -11,7 +11,7 @@ on:
         type: string
         default: ''
       canary:
-        description: Build a canary (stamp-canary.sh)
+        description: Version it 0.0.0-canary-<short SHA> (stamp-canary.sh)
         type: boolean
         default: false
       nuget:
