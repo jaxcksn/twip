@@ -501,7 +501,7 @@ Example: a two-row region of 14.52pt lines beside a last row holding "(initial)"
 
 ### TABLE-33. Vertical text {#table-33}
 
-A cell with `w:textDirection` `btLr`, `tbRl`, `tbRlV` or `tbLrV` is one line thick for autofit: `contentMin = contentMax = 284` twips (about 14.2pt), hardMin 0, before the padding of [TABLE-7](#table-7). Its content is not laid out and adds nothing to its row's height: an auto row stays as tall as its other cells need.
+A cell with `w:textDirection` `btLr`, `tbRl`, `tbRlV` or `tbLrV` is as thick as its lines for autofit: `contentMin = contentMax = 6 + Σ paragraphs (spaceBefore + spaceAfter) + Σ lines ⌈h × 1440 / 294912⌉` twips, hardMin 0, before the padding of [TABLE-7](#table-7). `h` is the line's pitch in layout units plus `em/32` (`em` the line's largest font size, rounded half up to a layout unit): a line multiple `m` scales that too (`(em/32 × w:line + 120) div 240`), an exact line adds none. One line of Calibri 11 is 282 twips. Its content is not laid out and adds nothing to its row's height: an auto row stays as tall as its other cells need.
 
 ### TABLE-34. Exact rows clip per glyph {#table-34}
 

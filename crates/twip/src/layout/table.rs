@@ -5,7 +5,7 @@ use crate::docx::Compat;
 use std::rc::Rc;
 
 use crate::docx::model::*;
-use crate::docx::props::{Border, Jc, Width};
+use crate::docx::props::{Border, Jc, LineRule, Width};
 use crate::docx::review::{MarkupView, ReviewView};
 
 use super::autofit;
@@ -19,6 +19,7 @@ use super::line::{break_lines, neighbour_borders};
 use super::space::ParaSpace;
 use super::story::{CellEnds, StoryEnv, StoryKey, StoryLayout, StoryUnit, child_ids};
 use super::text::{Kind, shape};
+use super::units::Lu;
 
 const EPS: f64 = 1e-6;
 
@@ -582,6 +583,40 @@ fn content_widths(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result
     cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, m))
 }
 
+/// TABLE-33: a vertical cell's content thickness in twips: 6, each paragraph's space before and after, and each of its
+/// lines' height rounded up to a twip. A vertical line is `em/32` taller than the horizontal one (`em`: the line's
+/// largest font size); a line multiple scales that too, an exact line doesn't take it.
+fn vertical_width(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result<i64, Yield> {
+    let view = env.ctx.env.text.review.view;
+    let mut w = 6;
+    for b in &super::join::laid(blocks, view) {
+        let LaidBlock::Para(laid) = b else { continue };
+        let p = laid.para();
+        let space = laid.shape_space(env.fields, env.notes, &env.ctx.env.text);
+        let shaped = shape(p, &space, env.ctx.fonts, memos)?;
+        let s = p.para_style_in(view);
+        let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone() };
+        let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
+        w += twips(s.space_before + s.space_after);
+        let pieces = pb.pieces();
+        let m = (s.line * 240.0).round() as i64;
+        for l in &pb.lines {
+            let em = pieces[l.start..l.end.min(pieces.len())].iter().map(|q| shaped.styles[q.style as usize].run.size).fold(0.0, f64::max);
+            let em = if em > 0.0 { em } else { s.mark_size.unwrap_or(p.mark_in(view).size) };
+            let e32 = i64::from(Lu::round_half_up(em / 32.0).0);
+            let h = i64::from(Lu::round_half_up(l.pitch).0)
+                + match s.line_rule {
+                    LineRule::Auto => (e32 * m + 120).div_euclid(240),
+                    LineRule::AtLeast => e32,
+                    LineRule::Exact => 0,
+                };
+            // Layout units to twips, rounded up.
+            w += (h * 1440 + 294_911) / 294_912;
+        }
+    }
+    Ok(w)
+}
+
 /// Points to twips, rounded up (TABLE-6: content widths round up).
 fn up(x: f64) -> i64 {
     (x * 20.0 - 1e-6).ceil().max(0.0) as i64
@@ -738,7 +773,9 @@ fn fit_inputs<'k>(
                 let (mut cmn, mut cmx, chard) = if continuation {
                     (0, 0, 0)
                 } else if rotated {
-                    (284, 284, 0) // TABLE-33: one line thick (≈ 14.2pt for Calibri 11)
+                    // TABLE-33: as thick as its lines (282 twips for one line of Calibri 11).
+                    let w = vertical_width(&c.blocks, env, memos)?;
+                    (w, w, 0)
                 } else {
                     let w = content_widths(&c.blocks, env, memos)?;
                     widths.push(w.clone());
