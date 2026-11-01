@@ -582,10 +582,9 @@ pub fn nested_shift(t: &Table) -> f64 {
         let res = rtl_sides(edges.first().into_iter().flatten().map(|c| &*c.edges));
         return rtl_x0(t, 0.0, 0.0, res, false) - rtl_x0(t, 0.0, 0.0, res, true);
     }
-    // In compat <= 14 a nested table's negative indent counts as 0.
-    let ind = -t.ind.min(0.0);
+    // (A nested table's negative indent already counts as 0: `story::as_nested`.)
     if matches!(t.jc, Jc::Center | Jc::Right) {
-        return ind;
+        return 0.0;
     }
     // The first cell's own left border, nil included, else the table's (TABLE-25).
     let (lw, lmar) = t
@@ -593,7 +592,7 @@ pub fn nested_shift(t: &Table) -> f64 {
         .first()
         .and_then(|r| r.cells.first())
         .map_or((space_h(&t.borders[1]), 0.0), |c| (space_h(candidate(Some(&c.left), &t.borders[1])), c.margins[1]));
-    ind + lw / 2.0 + edge_gap(t, lw, lmar)
+    lw / 2.0 + edge_gap(t, lw, lmar)
 }
 
 /// TABLE-23: whether the table is drawn right to left (`w:bidiVisual`; a floating table isn't).

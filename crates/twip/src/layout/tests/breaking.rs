@@ -197,13 +197,16 @@ fn cell(w: u32, ind: i32, inner: &str) -> String {
 
 #[test]
 fn a_nested_tables_negative_indent_counts_as_0() {
-    // TABLE-25: compat 12; the nested table at -720 sits where one at 0 does.
-    let at = |ind: i32| {
-        let body = cell(6000, 0, &cell(5000, ind, r#"<w:p><w:r><w:t>inner</w:t></w:r></w:p>"#));
-        lines("", ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _)| t == "inner").expect("drawn").0)
-    };
-    let Some(zero) = at(0) else { return };
-    assert_eq!(at(-720), Some(zero));
+    // TABLE-25: in compat 12 and 15, the nested table at -720 sits where one at 0 does.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    for settings in ["", c15] {
+        let at = |ind: i32| {
+            let body = cell(6000, 0, &cell(5000, ind, r#"<w:p><w:r><w:t>inner</w:t></w:r></w:p>"#));
+            lines(settings, ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _)| t == "inner").expect("drawn").0)
+        };
+        let Some(zero) = at(0) else { return };
+        assert_eq!(at(-720), Some(zero), "{settings}");
+    }
 }
 
 #[test]

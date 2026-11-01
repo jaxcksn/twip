@@ -442,7 +442,7 @@ where `lw′` is the first cell's **own** left border width if the cell has a le
 
 Example: compat 12, a nested table whose cells have a `nil` left border and whose table border is single 0.5pt: `lw′ = 0`, so shift = the cell margin.
 
-In compat ≤ 14 a nested table's negative `tblInd` counts as 0: `tblInd = -720` puts it where `0` does. A positive one is used as it is.
+In every compat mode a nested table's negative `tblInd` counts as 0: `tblInd = -720` puts it where `0` does. A positive one is used as it is.
 
 ### TABLE-26. The paragraph after a nested table {#table-26}
 

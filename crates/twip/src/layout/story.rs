@@ -138,11 +138,12 @@ pub struct CellEnds {
     pub fit: bool,
 }
 
-/// TABLE-5: a nested table is laid out with its outermost table's layout, fixed or autofit, whatever its own.
-/// ponytail: copies the nested table when the two differ; keep a converted copy if that shows in profiles.
+/// TABLE-5: a nested table is laid out with its outermost table's layout, fixed or autofit, whatever its own; a
+/// negative indent counts as 0 (TABLE-25).
+/// ponytail: copies the nested table when either differs; keep a converted copy if that shows in profiles.
 pub fn as_nested(t: &Table, cell: Option<CellEnds>) -> std::borrow::Cow<'_, Table> {
     match cell {
-        Some(c) if c.fixed != t.fixed => std::borrow::Cow::Owned(Table { fixed: c.fixed, ..t.clone() }),
+        Some(c) if c.fixed != t.fixed || t.ind < 0.0 => std::borrow::Cow::Owned(Table { fixed: c.fixed, ind: t.ind.max(0.0), ..t.clone() }),
         _ => std::borrow::Cow::Borrowed(t),
     }
 }
