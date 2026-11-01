@@ -90,7 +90,7 @@ pub(crate) fn rows<'a>(page: &'a PageFragment, out: &mut Vec<(&'a RowFragment, u
 
 /// The text boxes of a page: its floats that hold text, and its header and footer, by their boxes (page coordinates)
 /// and the paragraphs they hold.
-fn text_boxes(page: &PageFragment, out: &mut Vec<([f64; 4], Vec<u64>)>) {
+fn text_boxes(page: &PageFragment, out: &mut Vec<(&'static str, [f64; 4], Vec<u64>)>) {
     fn paras(children: &[Child], out: &mut Vec<u64>) {
         for c in children {
             match c {
@@ -103,7 +103,7 @@ fn text_boxes(page: &PageFragment, out: &mut Vec<([f64; 4], Vec<u64>)>) {
             }
         }
     }
-    fn walk(children: &[Child], out: &mut Vec<([f64; 4], Vec<u64>)>) {
+    fn walk(children: &[Child], out: &mut Vec<(&'static str, [f64; 4], Vec<u64>)>) {
         for c in children {
             match c {
                 Child::Box(b) => {
@@ -112,7 +112,7 @@ fn text_boxes(page: &PageFragment, out: &mut Vec<([f64; 4], Vec<u64>)>) {
                         paras(&b.children, &mut ps);
                         if !ps.is_empty() {
                             ps.dedup();
-                            out.push((rect, ps));
+                            out.push(("textbox", rect, ps));
                         }
                     }
                     walk(&b.children, out);
@@ -131,7 +131,7 @@ fn text_boxes(page: &PageFragment, out: &mut Vec<([f64; 4], Vec<u64>)>) {
                 paras(&b.children, &mut ps);
                 if !ps.is_empty() {
                     ps.dedup();
-                    out.push(([b.offset.0, b.offset.1, b.offset.0 + b.size.0, b.offset.1 + b.size.1], ps));
+                    out.push(("story", [b.offset.0, b.offset.1, b.offset.0 + b.size.0, b.offset.1 + b.size.1], ps));
                 }
                 b
             }
@@ -151,9 +151,9 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
         writeln!(s, "page {pi} {} {} {:?}", f(page.w), f(page.h), page.body_area.map(|(a, b)| (f(a), f(b)))).unwrap();
         let mut boxes = Vec::new();
         text_boxes(page, &mut boxes);
-        for (r, ps) in boxes {
+        for (kind, r, ps) in boxes {
             let ps: Vec<String> = ps.iter().map(|&p| id(p).to_string()).collect();
-            writeln!(s, "X textbox {} {} {} {} paras {}", f(r[0]), f(r[1]), f(r[2]), f(r[3]), ps.join(" ")).unwrap();
+            writeln!(s, "X {kind} {} {} {} {} paras {}", f(r[0]), f(r[1]), f(r[2]), f(r[3]), ps.join(" ")).unwrap();
         }
         // Lines are numbered in paint order. A line without ink (a tab alone, the empty line after a break, a line of
         // spaces) gets an empty glyph record at its baseline and the end of what it holds, so it is listed with its x.
