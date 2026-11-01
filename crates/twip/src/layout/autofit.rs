@@ -3,7 +3,8 @@
 
 /// Widths and edges are capped at 22 inches (TABLE-6).
 pub const MAXW: i64 = 31680;
-/// TABLE-16: a spanning cell this close above its columns' maximum takes the maximum.
+/// TABLE-16: a spanning cell this close above its columns' maximum takes the maximum; TABLE-15: the minimum of a
+/// skipped region.
 const KLUGE: i64 = 5;
 
 /// a·b/c rounded half away from zero; 0 when c = 0.
@@ -50,86 +51,132 @@ pub struct Cell {
     pub hard: i64,
     pub kind: Kind,
     pub pref: i64,
-    /// A vertical-merge continuation (skipped, except in the table's first row).
-    pub skip: bool,
-    /// The dxa preference was written as a w:tcW (not a nil tcW or a fixed table's auto cell).
-    pub explicit: bool,
+    /// The cell's row.
+    pub row: usize,
+    /// A vertical-merge continuation (skipped, except as a single-span cell in the table's first row).
+    pub cont: bool,
 }
 
-/// The grid columns a row skips (gridBefore / gridAfter) with their w:wBefore / w:wAfter width: first, span, width.
+/// A region a row skips (gridBefore / gridAfter) as a dxa segment: the grid column it ends in, its span and width.
 pub type Gap = (usize, usize, i64);
 
-/// TABLE-13 to TABLE-16: the grid columns from the cells (rows in order, cells left to right). `sp` = 2 × cell spacing.
-pub fn columns(n: usize, cells: &[Cell], sp: i64, gaps: &[Gap], fixed: bool) -> Vec<Col> {
+/// TABLE-13 to TABLE-16: the grid columns from the cells (rows in order, cells left to right) and each row's skipped
+/// regions (TABLE-15). `sp` = 2 × cell spacing.
+pub fn columns(n: usize, cells: &[Cell], sp: i64, gaps: &[Vec<Gap>], fixed: bool) -> Vec<Col> {
     let mut cols = vec![Col::default(); n];
-    for c in cells.iter().filter(|c| c.span == 1 && !c.skip && c.first < n) {
-        let col = &mut cols[c.first];
-        if c.kind == Kind::Dxa && col.kind() != Kind::Dxa && c.pref < col.max {
-            col.max = c.pref.max(col.min);
-        }
-        let cell_max = if c.kind == Kind::Dxa { if fixed { c.pref } else { c.min.max(c.pref) } } else { c.max };
-        match c.kind {
-            Kind::Pct => {
-                col.pct = if col.kind() == Kind::Pct { col.pct.max(c.pref) } else { c.pref };
-                col.kind = Some(Kind::Pct);
-            }
-            Kind::Dxa if col.kind() != Kind::Pct => {
-                col.dxa = if col.kind() == Kind::Dxa { col.dxa.max(c.pref) } else { c.pref };
-                col.kind = Some(Kind::Dxa);
-            }
-            _ => {}
-        }
-        // Fixed layout: a cell's minimum doesn't raise its column's max until after the spanning cells (TABLE-13).
-        col.max = if fixed { col.max.max(cell_max) } else { col.max.max(c.min).max(cell_max) };
-        col.min = col.min.max(c.min);
-        col.hard = col.hard.max(c.hard);
+    for c in cells.iter().filter(|c| c.span == 1 && !(c.cont && c.row > 0) && c.first < n) {
+        add_single(&mut cols[c.first], c.kind, c.pref, c.min, c.max, c.hard, fixed);
     }
-    // TABLE-14: spanning cells in order of the column they end in; dxa ones take the last-column rule, the others
-    // TABLE-16's proportional spread.
-    let mut single = vec![false; n];
-    for c in cells.iter().filter(|c| c.span == 1 && !c.skip && c.first < n) {
-        single[c.first] = true;
+    // TABLE-15: the helper row. Per grid column, the widest dxa segment ending there (a cell's or a skipped region's);
+    // a spanning one counts what the columns before it (of the same type) leave.
+    let mut seg: Vec<((usize, usize), i64)> = Vec::new();
+    let mut put = |end: usize, span: usize, w: i64| match seg.iter_mut().find(|s| s.0 == (end, span)) {
+        Some(s) => s.1 = s.1.max(w),
+        None => seg.push(((end, span), w)),
+    };
+    let mut htyp: Vec<Option<Kind>> = vec![None; n];
+    for &(end, span, w) in gaps.iter().flatten() {
+        if end >= n || w <= 0 {
+            continue;
+        }
+        put(end, span, w);
+        if span == 1 && htyp[end].is_none() {
+            htyp[end] = Some(Kind::Dxa);
+        }
     }
-    let mut spans: Vec<&Cell> = cells.iter().filter(|c| c.span >= 2 && !c.skip && c.first < n).collect();
-    spans.sort_by_key(|c| ((c.first + c.span).min(n), std::cmp::Reverse(c.first)));
-    let mut later: Vec<&Cell> = Vec::new();
+    for c in cells.iter().filter(|c| !(c.cont && c.row > 0)) {
+        let end = (c.first + c.span).min(n) - 1;
+        if c.kind == Kind::Dxa && c.pref > 0 {
+            put(end, c.span, c.pref);
+        }
+        if c.span == 1 && htyp[end].is_none() {
+            htyp[end] = Some(c.kind);
+        }
+    }
+    for &((end, _), _) in &seg {
+        htyp[end].get_or_insert(Kind::Dxa);
+    }
+    let mut helper = vec![0i64; n];
+    let mut raised = false;
+    for g in 0..n {
+        let w = |k: usize| seg.iter().find(|s| s.0 == (g, k)).map(|s| s.1);
+        let mut best = w(1).unwrap_or(0);
+        for k in 2..g + 2 {
+            let Some(mut v) = w(k) else { continue };
+            for i in 1..k {
+                if htyp[g - i] != htyp[g] {
+                    v = 0;
+                    break;
+                }
+                v -= helper[g - i];
+            }
+            if v != 0 && htyp[g] == Some(Kind::Dxa) {
+                v -= (k - 1) as i64 * sp;
+            }
+            if best < v {
+                best = v;
+                raised = true;
+            }
+        }
+        helper[g] = best;
+    }
+    if raised {
+        for g in (0..n).filter(|&g| htyp[g] == Some(Kind::Dxa) && helper[g] > 0) {
+            add_single(&mut cols[g], Kind::Dxa, helper[g], KLUGE, helper[g], 0, fixed);
+        }
+    }
+    // The last one-column region before the first column, and after the last, count whatever the helper row gave.
+    let mut before = None;
+    let mut after = None;
+    for &(end, _, w) in gaps.iter().flatten().filter(|g| g.1 == 1 && g.2 > 0) {
+        if end == 0 {
+            before = Some(w);
+        } else if end == n - 1 {
+            after = Some(w);
+        }
+    }
+    if let Some(w) = before {
+        add_single(&mut cols[0], Kind::Dxa, w, KLUGE, w, 0, fixed);
+    }
+    if let Some(w) = after {
+        add_single(&mut cols[n - 1], Kind::Dxa, w, KLUGE, w, 0, fixed);
+    }
+    // TABLE-14: every spanning cell, in row order and left to right, by TABLE-16's proportional spread.
+    let mut spans: Vec<&Cell> = cells.iter().filter(|c| c.span >= 2 && !c.cont && c.first < n).collect();
+    spans.sort_by_key(|c| (c.row, c.first));
     for c in spans {
-        let rng = c.first..(c.first + c.span).min(n);
-        if c.kind == Kind::Dxa && c.explicit {
-            // TABLE-15: skipped grid columns under a written span.
-            for &(g0, gs, w) in gaps {
-                let last = g0 + gs - 1;
-                if gs > 0 && rng.contains(&last) && !single[last] {
-                    cols[last].max = cols[last].max.max(w);
-                }
-            }
-        }
-        if c.kind == Kind::Dxa && (rng.start..rng.end - 1).all(|i| cols[i].kind() == Kind::Dxa || !single[i]) {
-            let extra = c.pref - cols[rng.clone()].iter().map(|x| x.max).sum::<i64>();
-            let last = rng.end - 1;
-            if extra > 0 {
-                cols[last].max += extra;
-                if !single[last] {
-                    cols[last].kind = Some(Kind::Dxa);
-                }
-            }
-            // TABLE-14: the cell's minimum short of its columns' goes to the last one, up to that column's max.
-            let short_min = c.min - cols[rng.clone()].iter().map(|x| x.min).sum::<i64>();
-            if short_min > 0 {
-                cols[last].min = (cols[last].min + short_min).min(cols[last].max);
-            }
+        if c.first + 1 == n {
+            add_single(&mut cols[c.first], c.kind, c.pref, c.min, c.max, c.hard, fixed);
         } else {
-            later.push(c);
+            spread(&mut cols, c, sp);
         }
-    }
-    // The proportional spread after all of those, in the same order (TABLE-14).
-    for c in later {
-        spread(&mut cols, c, sp);
     }
     for col in &mut cols {
-        col.max = col.max.max(col.min);
+        col.max = col.max.max(col.min).min(MAXW);
+        col.min = col.min.min(MAXW);
+        col.hard = col.hard.min(MAXW);
     }
     cols
+}
+
+/// TABLE-13: one single-span cell into its column.
+fn add_single(col: &mut Col, kind: Kind, pref: i64, min: i64, max: i64, hard: i64, fixed: bool) {
+    let cell_max = if kind == Kind::Dxa { if fixed { pref } else { min.max(pref) } } else { max };
+    match kind {
+        Kind::Pct => {
+            col.pct = if col.kind() == Kind::Pct { col.pct.max(pref) } else { pref };
+            col.kind = Some(Kind::Pct);
+        }
+        Kind::Dxa if col.kind() != Kind::Pct => {
+            col.dxa = if col.kind() == Kind::Dxa { col.dxa.max(pref) } else { pref };
+            col.kind = Some(Kind::Dxa);
+        }
+        _ => {}
+    }
+    // Fixed layout: a cell's minimum doesn't raise its column's max until after the spanning cells (TABLE-13).
+    col.max = if fixed { col.max.max(cell_max) } else { col.max.max(min).max(cell_max) };
+    col.min = col.min.max(min);
+    col.hard = col.hard.max(hard);
 }
 
 /// TABLE-16: one spanning cell over its columns.
@@ -504,7 +551,7 @@ mod tests {
     #[test]
     fn a_spanning_cell_widens_its_columns_in_proportion() {
         let mut cols = vec![Col { min: 100, max: 200, ..Default::default() }, Col { min: 100, max: 200, ..Default::default() }];
-        spread(&mut cols, &Cell { first: 0, span: 2, min: 1000, max: 1000, hard: 0, kind: Kind::Auto, pref: 0, skip: false, explicit: false }, 0);
+        spread(&mut cols, &Cell { first: 0, span: 2, min: 1000, max: 1000, hard: 0, kind: Kind::Auto, pref: 0, row: 0, cont: false }, 0);
         assert_eq!(cols.iter().map(|c| c.min).sum::<i64>(), 1000);
         assert!(cols.iter().all(|c| c.max >= c.min));
     }

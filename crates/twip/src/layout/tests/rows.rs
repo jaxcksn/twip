@@ -136,6 +136,29 @@ fn a_right_to_left_table_draws_its_first_cell_on_the_right() {
 }
 
 #[test]
+fn a_column_a_row_does_not_reach_keeps_its_grid_width() {
+    // TABLE-15: grid 1000 × 3; the first row skips column 1 and ends after column 2, so column 3 is an after region
+    // of its grid width; the second row skips columns 1-2; the third has three 300-twip cells of text. Column 3 stays
+    // 50pt wide instead of shrinking to its text.
+    let cell = |w: &str, t: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:trPr><w:gridBefore w:val="1"/><w:wBefore w:w="800" w:type="dxa"/></w:trPr>{}</w:tr><w:tr><w:trPr><w:gridBefore w:val="2"/><w:wBefore w:w="2000" w:type="dxa"/></w:trPr><w:tc><w:p><w:r><w:t>T1R2C1</w:t></w:r></w:p></w:tc></w:tr><w:tr>{}{}{}</w:tr></w:tbl><w:p/>"#,
+        cell("2000", "T1R1C1"),
+        cell("300", "T1R3C1"),
+        cell("300", "T1R3C2"),
+        cell("300", "T1R3C3")
+    );
+    let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    let Some(Block::Table(t)) = doc.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))) else { panic!("a table") };
+    let s = layout(&doc, &fonts());
+    let rows = rows_of(&s.pages()[0], TableId(t.id));
+    let last = rows.last().expect("rows");
+    let ex: Vec<f64> = last.edges.iter().map(|e| e.0).collect();
+    let w = ex[ex.len() - 1] - ex[ex.len() - 2];
+    assert!((w - 50.0).abs() < 0.1, "column 3 is 50pt: {w} ({ex:?})");
+}
+
+#[test]
 fn a_right_to_left_paragraph_swaps_left_and_right() {
     // JUST-4: w:bidi with jc absent aligns right; with jc right (end), left.
     let x = |ppr: &str| {

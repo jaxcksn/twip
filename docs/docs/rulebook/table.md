@@ -74,8 +74,8 @@ A nested table is laid out with its outermost table's layout, whatever its own `
 To get a table's column widths:
 
 1. Compute every cell's **min**, **max** and **hardMin** ([TABLE-7](#table-7) to [TABLE-11](#table-11)) and its width type and preference ([TABLE-12](#table-12)).
-2. Add the single-span cells to their columns ([TABLE-13](#table-13)).
-3. Spread the spanning cells over their columns ([TABLE-14](#table-14) to [TABLE-16](#table-16)).
+2. Add the single-span cells to their columns ([TABLE-13](#table-13)), then the skipped regions ([TABLE-15](#table-15)).
+3. Spread the spanning cells over their columns ([TABLE-14](#table-14), [TABLE-16](#table-16)).
 4. Resolve the column widths from the table-wide inputs ([TABLE-17](#table-17) to [TABLE-19](#table-19)).
 5. Hand out the rounding leftovers ([TABLE-20](#table-20)).
 6. Add the cell spacing and build the column edges ([TABLE-21](#table-21)).
@@ -177,7 +177,7 @@ Each cell gets a type and a preference `pref` from its `w:tcW`:
 | `type="pct"`, `w` | pct, `pref = w` in fiftieths of a percent (5000 = 100%; `"50%"` = 2500) | the same |
 | `type="nil"` | dxa, `pref = grid − s2` | the same |
 
-`grid` = the sum of the `w:tblGrid` widths over the cell's columns; `s2` = 2 × cell spacing, and a cell on the table's left or right edge takes `s2 div 2` more off for each such side, so the resolved columns give the grid back ([TABLE-21](#table-21)). Only a dxa preference that comes from an actual dxa `w:tcW` is *written* ([TABLE-15](#table-15) needs it).
+`grid` = the sum of the `w:tblGrid` widths over the cell's columns; `s2` = 2 × cell spacing, and a cell on the table's left or right edge takes `s2 div 2` more off for each such side, so the resolved columns give the grid back ([TABLE-21](#table-21)).
 
 Example: grid 1000 / 3000 / 2000, a cell "x" in each with `type="nil"`: the columns are 50, 150 and 100pt. With no `w:tcW`, an "x" cell is about 15.6pt wide (its content plus 216).
 
@@ -185,13 +185,12 @@ Example: grid 1000 / 3000 / 2000, a cell "x" in each with `type="nil"`: the colu
 
 Each grid column holds `min`, `max`, `hardMin`, a type (initially auto), a dxa preference and a pct, all 0 at first. Take the cells with `gridSpan = 1` row by row, left to right. Skip vertical-merge continuation cells, except in the table's first row. For each cell, in its column:
 
-1. If the cell is dxa, the column isn't dxa yet, and `pref < column.max`: first set `column.max = max(pref, column.min)`.
-2. The cell's own maximum: dxa cell `cellMax = max(cell.min, pref)` (fixed layout: `cellMax = pref`); other cells `cellMax = cell.max`. A dxa cell's content max is ignored.
-3. Type and preference:
+1. The cell's own maximum: dxa cell `cellMax = max(cell.min, pref)` (fixed layout: `cellMax = pref`); other cells `cellMax = cell.max`. A dxa cell's content max is ignored.
+2. Type and preference:
    - pct cell: `column.pct = (column is pct) ? max(column.pct, pref) : pref`; the column becomes pct. A pct column stays pct.
    - dxa cell, column not pct: `column.dxa = (column is dxa) ? max(column.dxa, pref) : pref`; the column becomes dxa.
    - auto cell: no change.
-4. Widths:
+3. Widths:
    ```
    column.max     = max(column.max, cell.min, cellMax)     // fixed layout: max(column.max, cellMax)
    column.min     = max(column.min, cell.min)
@@ -200,29 +199,38 @@ Each grid column holds `min`, `max`, `hardMin`, a type (initially auto), a dxa p
 
 In fixed layout a cell's minimum (`cellPad + 20`) doesn't raise its column's max here; that happens only at the end of [TABLE-16](#table-16), after the spanning cells. (Two columns with dxa cells of 15 and 1 twips under an 864-twip dxa span: the last column gets 1 + 848 = 849 from the span, and only then do both columns rise to their minimum of 20. Raising them first would give the last column 844.)
 
-So a dxa column's max is the largest of its min, its dxa preferences and the content max of any auto cells in it.
+So a dxa column's max is the largest of its min, its dxa preferences and the content max of any auto cells in it: a dxa cell never lowers a column's max.
 
-### TABLE-14. Spanning cells: order, and the last-column rule {#table-14}
+### TABLE-14. Spanning cells: order {#table-14}
 
-After all single-span cells of all rows, take the cells with `gridSpan ≥ 2` (not vertical-merge continuations). Order them by the grid column they **end** in, left to right; among those ending in the same column, the one starting further right first; otherwise in row order.
+After all single-span cells of all rows and the skipped regions ([TABLE-15](#table-15)), take the cells with `gridSpan ≥ 2` (not vertical-merge continuations) in row order, and left to right within a row. Each goes through [TABLE-16](#table-16)'s proportional spread, dxa cells too: there is no rule that gives a dxa span's extra width to its last column. A span that starts in the last grid column is added to it as a single-span cell ([TABLE-13](#table-13)).
 
-For each, in that order, over its span columns:
+Example: a dxa span of 4050 over two columns that later rows give 1005 and 3045 spreads over both in proportion to their min + max; it doesn't leave the first at 1005 and put the rest in the second.
 
-1. If it is a written dxa cell, first apply [TABLE-15](#table-15).
-2. **Last-column rule:** if the cell is dxa (written or not) and every span column before the last is dxa or has no single-span cell of its own:
-   - `extra = pref − Σ column.max`; if `extra > 0`, add it to the last span column's max. That column becomes dxa if it has no single-span cell of its own.
-   - `short = cell.min − Σ column.min`; if `short > 0`, `last.min = min(last.min + short, last.max)`.
-3. Otherwise set the cell aside.
+### TABLE-15. Skipped grid columns {#table-15}
 
-Then spread every cell set aside, in the same order, by [TABLE-16](#table-16). A span narrower than its columns changes nothing.
+A row's skipped regions are `w:gridBefore` (with `w:wBefore`) and `w:gridAfter` (with `w:wAfter`); the grid columns a row doesn't reach at its end count as a gridAfter region too. Each is a dxa segment that ends in the region's last column and spans its columns:
 
-Examples: columns 1000 / 2000 / 3000 (dxa) under a 9000 dxa span: 1000, 2000, 6000. A 6000 span over 1000 / 3000: 1000, 5000.
+- with a dxa width `w`: that width (0 or another type: no segment);
+- with no width element: the sum of its `w:tblGrid` widths.
 
-### TABLE-15. Skipped grid columns under a written span {#table-15}
+A region counts only inside the extent of the table's non-auto cells (on the grid): a before region only if some non-auto cell starts left of the region's end, an after region only if some non-auto cell ends right of its start.
 
-A row that skips grid columns (`w:gridBefore` with `w:wBefore`, `w:gridAfter` with `w:wAfter`, width > 0) offers that width to the **last** column it skips. When a written dxa spanning cell ([TABLE-12](#table-12)) covers such a column, and no single-span cell sits in that column, set `column.max = max(column.max, skipWidth)` before the last-column rule. Auto spans, nil widths and fixed layout's auto cells don't do this.
+**Helper row.** The cells with a dxa `pref > 0` ([TABLE-12](#table-12), not vertical-merge continuations below the first row) are segments as well: ending in their last column, spanning their columns. Keep, per (end column, span), the widest. A column's type is the type of the first single-span segment or cell ending there (regions first, then the cells in row order), else dxa when only spans end there. Then, for columns `g = 0 … n−1` in order:
 
-Example: row 1 has a 5400 cell, then `w:gridAfter` 1 with `w:wAfter` 5508; row 2 has one cell spanning both columns with `w:tcW` 5400. The second column has no cell of its own, so it takes 5508: the table is 5400 + 5508 = 10908 wide.
+```
+helper[g] = the widest one-column segment ending at g (0 if none)
+for each segment ending at g spanning k ≥ 2 columns:
+    v = width − Σ helper[g−k+1 … g−1]     (0 if any of those columns has another type than g)
+    if v ≠ 0 and g is dxa: v −= (k−1)·s2
+    helper[g] = max(helper[g], v)
+```
+
+Only if some spanning segment raised a column this way, every dxa column with `helper[g] > 0` gets a single-span dxa cell ([TABLE-13](#table-13)) with `min = 5`, `max = pref = helper[g]`. Columns of other types get nothing.
+
+Then, whatever the helper row did, the last one-column region before the first column (in row order) and the last one-column region after the last column are added the same way to the first and the last column.
+
+Examples (grid 1000 / 1000 / 1000; row 1 `gridBefore 1, wBefore 800` with one 2000 cell; row 2 `gridBefore 2, wBefore 2000` with one auto cell; row 3 three dxa 300 cells): row 1 doesn't reach column 3, an after region of 1000, so column 3 is 1000 wide even though its text needs less. A 6000 dxa span over auto columns raises no dxa column and is spread proportionally ([TABLE-16](#table-16)).
 
 ### TABLE-16. The proportional spread {#table-16}
 

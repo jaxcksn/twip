@@ -580,9 +580,10 @@ pub struct Row {
     pub header: bool,
     pub grid_before: usize,
     pub grid_after: usize,
-    /// `w:wBefore` / `w:wAfter`: the skipped columns' width, points (0: none). Autofit only (TABLE-15).
-    pub w_before: f64,
-    pub w_after: f64,
+    /// `w:wBefore` / `w:wAfter`: the skipped columns' width, points (0 when not dxa; `None` when absent). Autofit
+    /// only (TABLE-15).
+    pub w_before: Option<f64>,
+    pub w_after: Option<f64>,
     /// `w:tblPrEx/w:tblInd`: the row's own indent (twips as points, like [`Table::ind`]), when it has one (TABLE-50).
     pub ind: Option<f64>,
     /// `w:trPr/w:jc`: the row's own alignment (TABLE-23: compat ≤ 14 aligns each row by it).

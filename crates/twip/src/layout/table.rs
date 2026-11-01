@@ -962,8 +962,7 @@ fn fit_inputs<'k>(
                 let max = (cmx + cell_pad).max(min).min(autofit::MAXW);
                 (min, max, (chard + cell_pad).min(autofit::MAXW))
             };
-            let explicit = matches!(c.width, Some(Width::Dxa(_)));
-            cells.push(autofit::Cell { first: g.col, span: g.span, min, max, hard, kind, pref, skip: continuation && ri > 0, explicit });
+            cells.push(autofit::Cell { first: g.col, span: g.span, min, max, hard, kind, pref, row: ri, cont: continuation });
         }
         rows.push(FitRow { cells, widths });
     }
@@ -980,15 +979,7 @@ fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, input
     let s2 = twips(2.0 * t.cell_spacing.max(0.0));
     let cells: Vec<autofit::Cell> = inputs.iter().flat_map(|r| r.cells.iter().copied()).collect();
     // TABLE-13 to TABLE-19: the columns, then the widths from the table-wide inputs.
-    let gaps: Vec<autofit::Gap> = t
-        .rows
-        .iter()
-        .flat_map(|r| {
-            let after = r.grid_before + r.cells.iter().map(|c| c.span).sum::<usize>();
-            [(0, r.grid_before, twips(r.w_before)), (after, r.grid_after, twips(r.w_after))]
-        })
-        .filter(|&(f, s, w)| s > 0 && w > 0 && f + s <= n)
-        .collect();
+    let gaps = skipped(t, n, &cells);
     let cols = autofit::columns(n, &cells, s2, &gaps, t.fixed);
     let pad_total = s2 * (n as i64 + 1);
     let tbl_w = match t.width {
@@ -1003,6 +994,36 @@ fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, input
     autofit::with_spacing(&mut widths, s2);
     // shortcut: TABLE-21's second pass (an edge reaching MAXW with growAutofit) isn't done; tables 22in wide only.
     Fit { cols: widths.iter().map(|&w| w as f64 / 20.0).collect(), min_t: r.min_t, width: r.width, hard_t: r.hard_t }
+}
+
+/// TABLE-15: each row's skipped regions as dxa segments (end column, span, width), counted only inside the extent of
+/// the table's non-auto cells; a region without a width is as wide as its grid columns, and the columns a row
+/// doesn't reach are an after region.
+fn skipped(t: &Table, n: usize, cells: &[autofit::Cell]) -> Vec<Vec<autofit::Gap>> {
+    let mut xs = vec![0i64];
+    for i in 0..n {
+        xs.push(xs[i] + twips(t.grid.get(i).copied().unwrap_or(0.0)));
+    }
+    let x = |k: usize| xs[k.min(n)];
+    let fixed: Vec<&autofit::Cell> = cells.iter().filter(|c| c.kind != autofit::Kind::Auto).collect();
+    let (Some(lo), Some(hi)) = (fixed.iter().map(|c| x(c.first)).min(), fixed.iter().map(|c| x(c.first + c.span)).max()) else {
+        return Vec::new();
+    };
+    t.rows
+        .iter()
+        .map(|r| {
+            let mut out = Vec::new();
+            let (gb, end) = (r.grid_before, r.grid_before + r.cells.iter().map(|c| c.span).sum::<usize>());
+            if gb > 0 && gb <= n && lo < x(gb) {
+                out.push((gb - 1, gb, r.w_before.map_or(x(gb) - x(0), twips)));
+            }
+            if end < n && x(end) < hi {
+                let w = if r.grid_after > 0 { r.w_after } else { None };
+                out.push((n - 1, n - end, w.map_or(x(n) - x(end), twips)));
+            }
+            out
+        })
+        .collect()
 }
 
 /// A cell's place in its table: grid column and span, box x and width, text x and width, and its four edges after
