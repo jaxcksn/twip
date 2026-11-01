@@ -207,13 +207,12 @@ fn a_nested_tables_negative_indent_counts_as_0() {
 }
 
 #[test]
-fn a_nested_table_is_clipped_to_the_cell_holding_it() {
-    // TABLE-35: a nested table wider than its 150pt cell shows only what lies inside that cell.
+fn a_nested_table_wider_than_its_cell_is_drawn_in_full() {
+    // TABLE-35: a nested table wider than its 150pt cell isn't clipped to that cell: all 40 M (Arial 12, 400pt) show.
     let body = cell(3000, 0, &cell(9000, 0, &format!(r#"<w:p><w:r><w:t>{}</w:t></w:r></w:p>"#, "M".repeat(40))));
     let Some(l) = lines("", ARIAL_12, &body) else { return };
     let ms = l.iter().find(|(_, t, _)| t.starts_with('M')).expect("drawn");
-    // Arial 12 M is 9.996pt: the cell's 150pt box holds 15 of them, the 16th's ink just reaching into it.
-    assert!(ms.1.len() < 18, "{l:?}");
+    assert_eq!(ms.1.len(), 40, "{l:?}");
 }
 
 #[test]

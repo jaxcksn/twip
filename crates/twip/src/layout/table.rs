@@ -1730,7 +1730,7 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
             _ => false,
         })
     };
-    // TABLE-35: a nested table's content is clipped to this cell's box too.
+    // TABLE-35: a nested table isn't clipped to this cell's box, only its exact rows' bottom.
     let nested: Vec<Option<Child>> = children.iter().map(|c| clip_nested(c, lo, hi, bottom)).collect();
     if !children.iter().any(|c| matches!(c, Child::Line { placed, .. } if spills(placed))) && nested.iter().all(Option::is_none) {
         return None;
@@ -1777,8 +1777,8 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
     Some(clipped.collect())
 }
 
-/// TABLE-35: a group's or a nested table's content clipped to an enclosing cell's box `lo..hi` (`clip_x`); None when
-/// nothing is outside.
+/// TABLE-35: a group's content clipped to an enclosing cell's box `lo..hi` (`clip_x`), a nested table's only to the
+/// `bottom` of an exact row; None when nothing is outside.
 fn clip_nested(c: &Child, lo: f64, hi: f64, bottom: f64) -> Option<Child> {
     match c {
         Child::Group { offset, children } => {
@@ -1788,7 +1788,10 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, bottom: f64) -> Option<Child> {
             let mut any = false;
             let rows = t.rows.iter().map(|r| {
                 let cells = r.cells.iter().map(|cell| {
-                    let content = cell.content.iter().map(|c| clip_nested(c, lo, hi, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
+                    let content = cell
+                        .content
+                        .iter()
+                        .map(|c| clip_nested(c, f64::NEG_INFINITY, f64::INFINITY, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
                     CellFragment { content: content.collect(), ..cell.clone() }
                 });
                 RowFragment { cells: cells.collect(), ..r.clone() }

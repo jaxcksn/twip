@@ -540,7 +540,7 @@ Cell content is laid out as written, even when a negative indent makes it run pa
 
 - a glyph whose ink overlaps the box is drawn (whole); one whose ink lies wholly outside is dropped (a glyph without ink is kept if its origin is inside);
 - rectangles drawn with the text (underlines, highlights) are cut at the box edges;
-- a nested table's lines are clipped this way to the box of every cell that holds it, not only their own cell's.
+- a nested table isn't clipped to the cell that holds it: one wider than its cell is drawn in full, over the neighbouring cells, each of its lines clipped only to its own cell. An exact outer row still clips it at its bottom ([TABLE-34](table#table-34)).
 
 Example: in "…FFFF" running past the edge, the last F whose ink still touches the box is drawn; in "…F02-1", a final "1" whose ink starts past the edge is not.
 
