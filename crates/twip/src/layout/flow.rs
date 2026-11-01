@@ -380,8 +380,8 @@ pub fn stream_height(notes: &[NotePart], ncols: usize, room: f64) -> Option<f64>
 
 /// Height of a row drawn with `parts` per cell (a part of a row split across pages, TABLE-41).
 fn part_height(row: &super::table::RowBox, parts: &[CellPart]) -> f64 {
-    // A part that ends its cell includes the cell's last space-after, like a whole row (TABLE-41).
-    let end = |p: &CellPart| if p.ends { p.units.last().map_or(0.0, |u| u.after) } else { 0.0 };
+    // A part that ends a paragraph (its cell's last, or one a split keeps whole) includes its space-after (TABLE-41).
+    let end = |p: &CellPart| p.units.last().map_or(0.0, |u| u.after);
     let content = row.cells.iter().zip(parts).map(|(c, p)| c.margins[0] + p.height() + end(p) + c.margins[2]).fold(0.0, f64::max);
     row.top_border + content
 }
