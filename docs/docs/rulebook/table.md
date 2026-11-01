@@ -257,7 +257,7 @@ padTotal = s2 × (n + 1)
 A        = round(textW − tblInd + eL + eR)          (twips)
 ```
 
-The **edge allowances** `eL`, `eR` come from the first row: its first cell's left border and left margin, its last cell's right border and right margin, each border taken after the cell-versus-table conflict ([TABLE-36](#table-36)). A border's width in horizontal geometry (here and in [TABLE-23](#table-23), [TABLE-24](#table-24), [TABLE-39](#table-39)) is its layout width: `w:space` plus its line, as [TABLE-37](#table-37) gives it. With `halfBorder = (borderTwips + 1) div 2` (rounded up):
+The **edge allowances** `eL`, `eR` come from the first row: its first cell's left border and left margin, its last cell's right border and right margin, each border being that side's candidate ([TABLE-36](#table-36)): the cell's own if the cell writes that side (a `nil` or `none` one counts as 0), else the table's. A border's width in horizontal geometry (here and in [TABLE-23](#table-23), [TABLE-24](#table-24), [TABLE-39](#table-39)) is its layout width: `w:space` plus its line, as [TABLE-37](#table-37) gives it. With `halfBorder = (borderTwips + 1) div 2` (rounded up):
 
 - compat 15: `e = −halfBorder`;
 - compat ≤ 14: `e = +max(halfBorder, cell margin)`; with cell spacing `s`, `e = +max(halfBorder, 2s + border + cell margin)` ([TABLE-39](#table-39)).
@@ -390,7 +390,7 @@ Grid 2000 / 2000 unless stated, compat 15, A = 9350; cell contents short.
 
 Place the table's left border centre `x0`, from the left edge of the text column (or of the cell's content box):
 
-- `lw` = the width of the first row's first cell's left border, resolved: the cell's own if it is a real border, else the table's left border. `lm` = that cell's left margin.
+- `lw` = the width of the first row's first cell's left border candidate, as in [TABLE-17](#table-17): the cell's own if the cell writes it (`nil` or `none` counts as 0), else the table's left border. `lm` = that cell's left margin.
 - compat 15: `x0 = tblInd + lw/2` (the outer border edge sits on the margin).
 - compat ≤ 14: `x0 = tblInd − e`, with `e` the left edge allowance of [TABLE-17](#table-17) (`max(lm, halfBorder(lw))`, or with cell spacing `max(halfBorder(lw), 2s + lw + lm)`), with `halfBorder` as in [TABLE-17](#table-17), in points (so the cell text lines up with the margin). A table whose `w:tblInd` is set neither directly nor by its table style's `w:basedOn` chain isn't pulled left: `x0 = 0`, so its text starts `lm` inside the column. A table without `w:tblStyle` takes the default table style, whose indent counts as set.
 - The alignment is the table's `w:jc`; in compat 15 a table that isn't floating takes its first row's `w:trPr/w:jc` instead when that row has one, for every row.

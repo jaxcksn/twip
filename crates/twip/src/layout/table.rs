@@ -588,7 +588,7 @@ pub fn nested_shift(t: &Table) -> f64 {
         .rows
         .first()
         .and_then(|r| r.cells.first())
-        .map_or((space_h(&t.borders[1]), 0.0), |c| (space_h(if c.left.is_some() { &c.left } else { &t.borders[1] }), c.margins[1]));
+        .map_or((space_h(&t.borders[1]), 0.0), |c| (space_h(candidate(Some(&c.left), &t.borders[1])), c.margins[1]));
     ind + lw / 2.0 + edge_gap(t, lw, lmar)
 }
 
@@ -637,6 +637,15 @@ fn rtl_x0(t: &Table, total: f64, text_w: f64, res: (i64, i64), sloppy: bool) -> 
     left as f64 / 20.0
 }
 
+/// TABLE-36: a cell side's candidate border: the cell's own when it writes that side (`nil` included), else the
+/// table's.
+fn candidate<'b>(own: Option<&'b Option<Border>>, table: &'b Option<Border>) -> &'b Option<Border> {
+    match own {
+        Some(o @ Some(_)) => o,
+        _ => table,
+    }
+}
+
 /// TABLE-17: the per-side edge allowance added to the available width (left, right).
 fn edge_add(compat: Compat, t: &Table) -> (f64, f64) {
     let first = t.rows.first();
@@ -645,8 +654,8 @@ fn edge_add(compat: Compat, t: &Table) -> (f64, f64) {
     if rtl(t) {
         (lc, rc) = (rc, lc);
     }
-    let lw = space_h(&conflict((lc.and_then(|c| c.left.as_ref()), true), (t.borders[1].as_ref(), false)));
-    let rw = space_h(&conflict((rc.and_then(|c| c.right.as_ref()), true), (t.borders[3].as_ref(), false)));
+    let lw = space_h(candidate(lc.map(|c| &c.left), &t.borders[1]));
+    let rw = space_h(candidate(rc.map(|c| &c.right), &t.borders[3]));
     if compat == Compat::Generic {
         (-half_border(lw), -half_border(rw))
     } else {
@@ -1318,10 +1327,7 @@ fn assemble(
     let total: f64 = cols.iter().sum();
     let compat = env.ctx.env.text.compat;
     // TABLE-23: the left border centre.
-    let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| {
-        let own = conflict((c.left.as_ref(), true), (t.borders[1].as_ref(), false));
-        (space_h(&own), c.margins[1])
-    });
+    let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| (space_h(candidate(Some(&c.left), &t.borders[1])), c.margins[1]));
     let (lw, lmar) = first_left.unwrap_or((space_h(&t.borders[1]), 0.0));
     // TABLE-23.
     // TABLE-23: in compat ≤ 14 a table with no tblInd, set directly or by its style, isn't pulled left.
