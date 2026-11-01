@@ -1582,8 +1582,8 @@ impl<'d> PageFill<'d, '_> {
         if pos.at.at_start() && !*empty {
             *y += self.after_above_table(pos.block, carry);
         }
-        // TABLE-49: a floating table that starts a column moves up to its anchored top (a page-anchored one no
-        // higher than the page's top edge); what follows flows below it.
+        // TABLE-49: a floating table that starts a column moves up to its anchored top (a page- or
+        // margin-anchored one no higher than the page's top edge); what follows flows below it.
         // shortcut: only that move up is done: a floating table anchored lower, or narrow enough for text beside
         // it, is laid out in the flow.
         if pos.at.at_start()
@@ -1593,7 +1593,7 @@ impl<'d> PageFill<'d, '_> {
         {
             let top = match fp.v_anchor {
                 TableAnchor::Page => fp.y.max(0.0),
-                TableAnchor::Margin => self.margins.2 + fp.y,
+                TableAnchor::Margin => (self.margins.2 + fp.y).max(0.0),
                 TableAnchor::Text => *y + fp.y,
             };
             *y = y.min(top);

@@ -641,7 +641,7 @@ In compat 15, if a table starts below other content in a column and the first ro
 ### TABLE-49. Floating table position {#table-49}
 
 - Horizontally, `w:tblpX` takes `w:tblInd`'s place ([TABLE-23](#table-23)), from the column. With `w:tblpXSpec`, `left` puts the table where `tblpX` 0 would, `right` as `w:jc` right does, and `center` puts the left border centre at `(textW − total + lm) / 2`, `lm` the first cell's left margin: a centred floating table sits half that margin right of a centred inline one.
-- Vertically, a floating table that starts a column moves up to its anchored top: `w:tblpY` below the page's top edge (`w:vertAnchor="page"`, never above the page), the top margin (`margin`) or where the table stands in the flow (`text`). What follows flows below its bottom border edge.
+- Vertically, a floating table that starts a column moves up to its anchored top: `w:tblpY` below the page's top edge (`w:vertAnchor="page"`) or the top margin (`margin`), never above the page's top edge (a negative `tblpY` that would put it there puts it at the top edge), or below where the table stands in the flow (`text`). What follows flows below its bottom border edge.
 - Not done: a floating table anchored below where it stands, one that doesn't start a column, `w:horzAnchor` (always the column), and text beside a floating table narrower than the column.
 
 ### TABLE-50. A row's own indent {#table-50}
