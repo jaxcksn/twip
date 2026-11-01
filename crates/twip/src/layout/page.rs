@@ -20,6 +20,7 @@ use super::space::{BodyArea, BodyFields, BodySpace, ColumnSpace, HfHeights};
 use super::story::{StoryEnv, hf_limit, stack_limited};
 use super::text::FieldValues;
 use super::token::{FlowState, FlowToken, PageToken};
+use super::units::{LU_PER_PT, Lu};
 
 const EPS: f64 = 1e-6;
 
@@ -439,7 +440,7 @@ impl<'d> Paginator<'d, '_> {
         })
     }
 
-    /// COL-5: refills the section's last page at the smallest column height that holds its content.
+    /// COL-5: refills the section's last page at the balanced column height.
     #[allow(
         clippy::type_complexity,
         reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
@@ -457,14 +458,20 @@ impl<'d> Paginator<'d, '_> {
         let blocks = &sec.blocks;
         let skip_last = matches!(blocks.get(blocks.len().wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && blocks.len() > 1);
         let state = fill.at.clone();
+        // One fill at column height `h`: the result when the content ends in these columns, and each column's
+        // statistics.
         #[allow(
             clippy::type_complexity,
             reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
         )]
-        let try_h = |fill: &mut PageFill, h: f64, memos: &mut Memos| -> Result<Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Yield> {
+        let try_h = |fill: &mut PageFill,
+                     h: f64,
+                     memos: &mut Memos|
+         -> Result<(Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Vec<ColStats>), Yield> {
             let mut pos = p0.clone();
             let mut carry = c0.clone();
             let mut children = Vec::new();
+            let mut stats = Vec::new();
             let mut end = top;
             fill.at = AttemptState { known: state.known.clone(), ..Default::default() };
             for (k, c) in cols.iter().enumerate() {
@@ -472,6 +479,7 @@ impl<'d> Paginator<'d, '_> {
                 let r = fill.fill(&pos, &carry, col, false, memos)?;
                 let s = r.stop;
                 (pos, carry) = (r.token, r.state);
+                stats.push(ColStats::of(&r.children, r.bottom - top));
                 children.push(Child::Box(BoxFragment {
                     kind: BoxKind::Column,
                     id: None,
@@ -479,39 +487,90 @@ impl<'d> Paginator<'d, '_> {
                     size: (0.0, 0.0),
                     children: r.children.into(),
                 }));
-                end = end.max(r.bottom);
+                // A column ends below its last line and that paragraph's space-after.
+                end = end.max(r.bottom + carry.prev_after);
                 if fill.at.forced {
-                    return Ok(None);
+                    return Ok((None, stats));
                 }
                 if s == Stop::Done || (skip_last && pos.block + 1 == blocks.len() && pos.at.at_start()) {
-                    return Ok(Some((pos, carry, children, end, fill.at.effects.clone())));
+                    return Ok((Some((pos, carry, children, end, fill.at.effects.clone())), stats));
                 }
                 if k + 1 < cols.len() {
                     carry.keep_top = s == Stop::Column && carry.keep_top;
                 }
             }
-            Ok(None)
+            Ok((None, stats))
         };
         let full = cols[0].bottom - top;
-        let (mut lo, mut hi) = (0.0, full);
-        if try_h(fill, hi, memos)?.is_none() {
+        let (first, stats) = try_h(fill, full, memos)?;
+        if first.is_none() {
             // Nothing balances: the fill stays as it was, ending at the full column height.
             fill.at = state;
             return Ok(None);
         }
-        for _ in 0..40 {
-            let mid = (lo + hi) / 2.0;
-            if try_h(fill, mid, memos)?.is_some() {
-                hi = mid;
+        // The height comes from an estimate, then grows (or in compat 15 shrinks) by a step: not always the smallest
+        // that holds the content. Layout units.
+        let full_lu = i64::from(Lu::round_half_up(full).0);
+        let widths: Vec<f64> = cols.iter().map(|c| c.width).collect();
+        let wsum: f64 = widths.iter().sum::<f64>().max(1.0);
+        let to_pt = |h: i64| h as f64 / LU_PER_PT;
+        let mean = |st: &[ColStats]| {
+            let (n, total) = st.iter().fold((0i64, 0i64), |(n, t), s| (n + s.lines, t + s.height));
+            if n > 0 { total / n } else { 49152 } // 240 twips without lines
+        };
+        let mut h;
+        let mut r;
+        if fill.ctx.env.text.compat == Compat::Legacy {
+            // compat ≤ 14: the total height over the columns (by width from their used heights when they differ), at
+            // least the mean line height; while the content doesn't fit, grow by the mean line height of what is in
+            // the columns.
+            let n = cols.len() as i64;
+            h = if widths.iter().all(|w| (w - widths[0]).abs() < 0.01) {
+                (stats.iter().map(|s| s.height).sum::<i64>() + n - 1) / n
             } else {
-                lo = mid;
+                let tw = |lu: i64| lu * 1440 / 294912;
+                let a: f64 = widths.iter().zip(&stats).map(|(w, s)| if s.lines > 0 { (tw(s.used) * 20) as f64 * w } else { 0.0 }).sum();
+                (a / wsum) as i64 / 20 * 294912 / 1440
+            };
+            h = h.max(mean(&stats)).min(full_lu);
+            r = try_h(fill, to_pt(h), memos)?;
+            while r.0.is_none() && h < full_lu {
+                h = (h + mean(&r.1)).min(full_lu);
+                r = try_h(fill, to_pt(h), memos)?;
+            }
+        } else {
+            // compat 15: the columns' mean height by width, down to a multiple of the smallest line or row; grow by
+            // that step while the content doesn't fit, or shrink by it while it still does.
+            let step = |st: &[ColStats]| st.iter().filter(|s| s.lines > 0).map(|s| s.min).min().unwrap_or(1).max(1);
+            let m = step(&stats);
+            h = (widths.iter().zip(&stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
+            h = (h - h % m).min(full_lu);
+            r = try_h(fill, to_pt(h), memos)?;
+            if r.0.is_some() {
+                loop {
+                    let m = step(&r.1);
+                    if h - m <= 0 {
+                        break;
+                    }
+                    let r2 = try_h(fill, to_pt(h - m), memos)?;
+                    if r2.0.is_none() {
+                        break;
+                    }
+                    h -= m;
+                    r = r2;
+                }
+            } else {
+                while r.0.is_none() && h < full_lu {
+                    h = (h + step(&r.1)).min(full_lu);
+                    r = try_h(fill, to_pt(h), memos)?;
+                }
             }
         }
-        let Some((p, mut c, children, _, eff)) = try_h(fill, hi, memos)? else { unreachable!("height hi balanced before") };
-        // The section ends at the balanced height, which includes a column's last space-after (COL-5).
+        let Some((p, mut c, children, end, eff)) = r.0.or(first) else { unreachable!("the full height balanced before") };
+        // The section ends below its tallest column, including that column's last space-after (COL-5).
         c.prev = None;
         c.prev_after = 0.0;
-        Ok(Some((top + hi, children, p, c, eff)))
+        Ok(Some((end, children, p, c, eff)))
     }
 
     /// Draws a page's shared note stream (COL-3).
@@ -873,5 +932,38 @@ fn separators(c: &Columns, cols: &[ColumnSpace], top: f64, earlier: &[Rc<BoxFrag
     }
     if !items.is_empty() {
         body.push(Child::Items(items.into()));
+    }
+}
+
+/// COL-5: a balanced column's content: its lines and table rows, their total height and the smallest, and the column's
+/// used height (layout units).
+struct ColStats {
+    lines: i64,
+    height: i64,
+    min: i64,
+    used: i64,
+}
+
+impl ColStats {
+    fn of(children: &[Child], used: f64) -> ColStats {
+        let mut st = ColStats { lines: 0, height: 0, min: i64::MAX, used: i64::from(Lu::round_half_up(used).0) };
+        let mut add = |h: f64| {
+            let h = i64::from(Lu::round_half_up(h).0);
+            st.lines += 1;
+            st.height += h;
+            st.min = st.min.min(h);
+        };
+        for c in children {
+            match c {
+                Child::Para(p) => p.lines.iter().for_each(|l| add(l.line.pitch)),
+                Child::Table(t) => t.rows.iter().for_each(|r| add(r.rect[3] - r.rect[1])),
+                Child::Line { placed, .. } => add(placed.line.pitch),
+                _ => {}
+            }
+        }
+        if st.lines == 0 {
+            st.min = 0;
+        }
+        st
     }
 }
