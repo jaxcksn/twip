@@ -725,10 +725,19 @@ pub fn layout_body(
         at: AttemptState::default(),
     };
     let mut col_children: Vec<Vec<Child>> = Vec::new();
-    for attempt in 0..6 {
+    // FLOAT-11: a float that keeps its place (known) but whose anchor a pass pushes off the page is dropped, and the
+    // page then ends where that pass ended. Each pass fixes one more float: at most one pass per float and drop,
+    // and one more.
+    let mut end: Option<FlowToken> = None;
+    let mut drops = 0;
+    let mut attempts = 6;
+    let mut attempt = 0;
+    while attempt < attempts {
+        attempt += 1;
         let r: Result<bool, Yield> = super::job::unit("page attempt", || {
             fill.at = AttemptState {
                 known: known.clone(),
+                end: end.clone(),
                 stream: shared.then(|| NoteArea { shared: Some(reserve), cols: cols.len(), ..Default::default() }),
                 ..Default::default()
             };
@@ -754,8 +763,13 @@ pub fn layout_body(
             let found = fill.at.found.clone();
             let notes = fill.at.stream.as_ref().map_or(0.0, |a| a.height);
             let stable = found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f)));
-            if (stable && (notes - reserve).abs() < EPS) || attempt == 5 {
+            attempts = attempts.max(2 + found.len() + drops).min(64);
+            if (stable && (notes - reserve).abs() < EPS) || attempt >= attempts {
                 return Ok(true);
+            }
+            if end.is_none() && known.iter().any(|k| !found.iter().any(|f| f.key == k.key)) {
+                end = Some(pos.clone());
+                drops += 1;
             }
             known = found;
             reserve = notes;

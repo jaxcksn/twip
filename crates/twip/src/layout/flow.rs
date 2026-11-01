@@ -144,6 +144,8 @@ pub struct AttemptState {
     /// PAGE-6, compat 15: the keep-with-next paragraph (block) that must end on this page, and the most lines it may
     /// keep here.
     pub keep_cap: Option<(usize, usize)>,
+    /// FLOAT-11: where the page ends, kept from the pass that pushed a float's anchor off it.
+    pub end: Option<FlowToken>,
 }
 
 /// A page being filled: the section, the inputs every column shares, and the attempt's state.
@@ -913,6 +915,11 @@ impl<'d> PageFill<'d, '_> {
             if pos.block >= nblocks {
                 let end = y + if col.balance { carry.prev_after } else { 0.0 };
                 return Ok((Stop::Done, end));
+            }
+            // FLOAT-11: the page ends where the pass that dropped a float ended.
+            // shortcut: only at a block's start; an end inside a paragraph lets the paragraph go on.
+            if self.at.end.as_ref() == Some(&*pos) {
+                return Ok((Stop::Page, y));
             }
             if pos.at.at_start() && self.break_para_after_table(pos.block) && self.ctx.env.text.compat == Compat::Legacy {
                 // COL-6 (compat ≤ 14): the empty paragraph that carries the section break right after a table takes no

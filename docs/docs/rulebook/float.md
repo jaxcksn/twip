@@ -118,7 +118,9 @@ Floats positioned relative to the page or margins, and wrapNone floats ([FLOAT-1
 
 ### FLOAT-11. Floats and columns {#float-11}
 
-A float wraps the text of **every column it overlaps**, including earlier columns of the page: a float anchored in column 2 can re-wrap column 1. Only columns it overlaps horizontally are affected, also for topAndBottom. Fill the page, collect the floats it placed, and fill it again around them; repeat until the floats and their positions are the same as the ones the fill started from.
+A float wraps the text of **every column it overlaps**, including earlier columns of the page: a float anchored in column 2 can re-wrap column 1. Only columns it overlaps horizontally are affected, also for topAndBottom. Fill the page, collect the floats it placed, and fill it again around them; repeat until the floats and their positions are the same as the ones the fill started from. Each fill settles at least one more float, so it takes at most one fill per float on the page, and one more.
+
+When a fill around a float pushes that float's anchor off the page, the float isn't on this page: fill the page again without it, but end it where that fill ended. The page keeps the shorter fill and its text doesn't wrap; the anchor and its float start the next page.
 
 ### FLOAT-12. allowOverlap="0" {#float-12}
 

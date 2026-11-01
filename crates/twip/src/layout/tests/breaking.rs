@@ -266,3 +266,19 @@ fn a_compat_14_exact_row_is_capped_to_the_column() {
     let (Some(c12), Some(c15)) = (count(""), count(c15)) else { return };
     assert!(c12 < 50 && c15 > c12 + 4, "{c12} {c15}");
 }
+
+#[test]
+fn a_float_whose_anchor_its_wrap_pushes_off_the_page_leaves_the_page() {
+    // FLOAT-11: a 60pt topAndBottom float at page y 100, anchored in a line that fits page 1 only without the float:
+    // the float wraps lines 3 on, which pushes its anchor to page 2. Page 1 is laid out again without the float but
+    // ends where that pass did: its lines aren't wrapped and the anchor starts page 2.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>1270000</wp:posOffset></wp:positionV><wp:extent cx="5588000" cy="762000"/><wp:wrapTopAndBottom/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body: String = (0..44).map(|i| p(&format!("L{i:02}"))).collect::<String>()
+        + &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>{float}<w:r><w:t>ANCHOR</w:t></w:r></w:p>"#)
+        + &p("AFTER");
+    // (`baselines` reads page 1.)
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    let l02 = l.iter().find(|x| x.1 == "L02").map(|x| x.3);
+    assert!(l02.is_some_and(|y| y < 120.0) && !l.iter().any(|x| x.1.ends_with("ANCHOR")), "{l:?}");
+}
