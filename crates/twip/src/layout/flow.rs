@@ -1410,6 +1410,10 @@ impl<'d> PageFill<'d, '_> {
                 anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
                 continue;
             }
+            // FLOAT-6 (compat 15): a wrapped paragraph- or line-relative float never rises above the top margin.
+            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
+                fy = fy.max(frames.margin[2]);
+            }
             // FLOAT-9.
             if matches!(f.v_relative.as_str(), "paragraph" | "line") && fy + h > col.bottom + EPS {
                 let up = col.bottom - h;

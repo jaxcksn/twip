@@ -71,7 +71,7 @@ Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `
 | `topMargin` | `[0, topMargin)` |
 | `bottomMargin` | `[pageHeight − bottomMargin, pageHeight)` |
 
-`wp:align`: `center` → `y0 + (h − floatH)/2`; `bottom` or `outside` → `y0 + h − floatH`; others → `y0`. Without align, `y0 + posOffset`. Offsets may be negative.
+`wp:align`: `center` → `y0 + (h − floatH)/2`; `bottom` or `outside` → `y0 + h − floatH`; others → `y0`. Without align, `y0 + posOffset`. Offsets may be negative. In compat 15 a `paragraph`- or `line`-relative float that wraps text (not wrapNone, not behind text) is placed no higher than the top margin: `y = max(y, topMargin)`; compat ≤ 14 keeps the offset's position.
 
 **Offsets are truncated to whole twips**: `twips = trunc(EMU / 635)`, `points = twips / 20`. 170688 EMU = 268.8 twips → 268 → 13.40pt.
 
