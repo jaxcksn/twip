@@ -1522,7 +1522,8 @@ impl Editor {
                 return Outcome::Unchanged("no caret");
             }
         };
-        let (Some((para, at)), Some(run), Some(second)) = (caret.para_offset(), self.run_at(&caret), caret.para_offset().and_then(|(p, _)| self.split_template(p)))
+        let (Some((para, at)), Some(run), Some(second)) =
+            (caret.para_offset(), self.run_at(&caret), caret.para_offset().and_then(|(p, _)| self.split_template(p)))
         else {
             self.abort(tx);
             return Outcome::Unchanged("caret at a row end");
