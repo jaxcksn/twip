@@ -53,3 +53,15 @@ A right-to-left paragraph (`w:bidi`) swaps left and right: `w:jc` absent, `left`
 The expandable spaces of a line are the spaces after its last tab character (all of the line when it has none), skipping the spaces at the start of that stretch, and before its trailing spaces. Text up to and including the last tab keeps its position.
 
 Example: "Name:⇥ Jane Q Public  " justifies only the two spaces between "Jane", "Q" and "Public".
+
+### JUST-7. wpJustification {#just-7}
+
+Compat ≤ 14 with `w:compat/w:wpJustification`, `w:jc="both"` paragraphs only: every line may run past its right edge by
+
+```
+X = round(W × 562 / 14400) twips
+```
+
+`W` is the text width less the left and right indents, in twips, at most 31680; the first-line indent isn't subtracted. Lines are broken against `rightEdge + X` ([BREAK-1](break#break-1)); a line that then overflows and is justified ([JUST-3](#just-3)) is squeezed back to `rightEdge`, the overflow shared equally among its expandable spaces ([JUST-6](#just-6)). Compat 15 ignores the option.
+
+Example: a 6.5in column without indents gives X = 365 twips (18.25pt).

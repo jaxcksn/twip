@@ -371,3 +371,34 @@ fn a_right_aligned_floating_tables_frame_counts_a_missing_border_whole() {
     let none = at(r#"<w:right w:val="none" w:sz="0" w:space="0" w:color="000000"/>"#).unwrap();
     assert!((none - 245.4).abs() < 0.01, "{none}");
 }
+
+#[test]
+fn compat_14_wp_justification_lets_a_justified_line_run_past_its_edge() {
+    // JUST-7: with wpJustification a compat-14 justified line is broken 18.25pt past the 6.5in column (one more "ab"),
+    // then squeezed back into it.
+    let p = format!(r#"<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#, "ab ".repeat(80));
+    let c14 = r#"<w:compat>{}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let first = |opt: &str| lines(&c14.replace("{}", opt), ARIAL_12, &p).map(|l| (l[0].1.matches("ab").count(), l[0].2));
+    let Some(plain) = first("") else { return };
+    let (wide, last_x) = first("<w:wpJustification/>").unwrap();
+    assert_eq!(wide, plain.0 + 1, "{plain:?}");
+    assert!(last_x < 540.0, "{last_x}");
+}
+
+#[test]
+fn compat_14_word97_line_breaks_size_a_named_east_asian_runs_glyphs_at_a_1000_unit_em() {
+    // FONT-18: Courier New 12 glyphs are 600/1000 em, 29491 layout units each instead of the design 29496, so with
+    // useWord97LineBreakRules the 65 characters of eleven "xxxxx" fit the 468pt line; the design widths overflow it.
+    if !fonts().is_installed("Courier New") {
+        return;
+    }
+    let p = format!("<w:p><w:r><w:t>{}</w:t></w:r></w:p>", "xxxxx ".repeat(30));
+    let c14 = r#"<w:compat>{}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let words = |opt: &str, ea: &str| {
+        let rpr = format!(r#"<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="{ea}"/><w:sz w:val="24"/>"#);
+        lines(&c14.replace("{}", opt), &rpr, &p).map(|l| l[0].1.matches("xxxxx").count())
+    };
+    let Some(plain) = words("", "Arial") else { return };
+    let opt = "<w:useWord97LineBreakRules/>";
+    assert_eq!((plain, words(opt, "Arial").unwrap(), words(opt, "Times New Roman").unwrap()), (10, 11, 10));
+}

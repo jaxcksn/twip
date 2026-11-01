@@ -21,6 +21,9 @@ pub struct RunStyle {
     /// STYLE-8): Word treats it as an East Asian font for balanced space runs and compressed punctuation (FONT-14,
     /// BREAK-8, BREAK-9).
     pub east_asia_unset: bool,
+    /// The East Asian font is named and isn't Times New Roman, the font an unset slot stands for: such a run is
+    /// laid out at a 1000-unit em under compat ≤ 14 `useWord97LineBreakRules` (FONT-18).
+    pub east_asia_named: bool,
     pub hint_east_asia: bool,
     pub size: f64,
     pub bold: bool,

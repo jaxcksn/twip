@@ -19,6 +19,8 @@ pub struct ShapeSpace {
     /// [`super::env::TextEnv::balance_spaces`] and [`super::env::TextEnv::compress_punctuation`].
     pub balance: bool,
     pub compress: bool,
+    /// FONT-18: compat ≤ 14 [`super::env::TextEnv::word97_line_breaks`].
+    pub em1000: bool,
     /// The markup view: which revised text shapes at all.
     pub view: MarkupView,
     /// Where a joined paragraph's units come from (REV-6): its pieces name their own paragraphs once drawn.
