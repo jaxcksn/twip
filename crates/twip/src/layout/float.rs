@@ -219,8 +219,15 @@ pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64) -> 
         }
         free = next;
     }
+    // FLOAT-7: once a float cuts the column, an interval narrower than 18pt takes no text.
+    if free.len() != 1 || free[0] != (x0, x1) {
+        free.retain(|&(a, b)| b - a >= MIN_GAP - EPS);
+    }
     Some(free)
 }
+
+/// FLOAT-7: the narrowest interval beside a float that takes text.
+const MIN_GAP: f64 = 18.0;
 
 /// FLOAT-4: the lowest edge a blocked band can move down to: the nearest exclusion bottom below `top` among floats
 /// overlapping the band.
@@ -289,5 +296,8 @@ mod tests {
         // Touching bands don't overlap (FLOAT-1).
         let f = [fl(222.0, 322.0, Side::Both)];
         assert_eq!(intervals(&f, 72.0, 540.0, 100.0, 110.0).unwrap(), vec![(72.0, 540.0)]);
+        // FLOAT-7: a gap under 18pt takes no text; one of exactly 18pt does.
+        let f = [fl(89.0, 522.0, Side::Both)];
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(522.0, 540.0)]);
     }
 }

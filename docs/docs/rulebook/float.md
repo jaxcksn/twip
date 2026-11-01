@@ -84,7 +84,7 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 - The exclusion is the float's box grown by `distT`, `distB`, `distL`, `distR`. A text box's outline width isn't added.
 - A line wraps if its line box overlaps the exclusion ([FLOAT-1](float#float-1)).
 - An interval's edges replace the paragraph's indents, except that an interval reaching the column's right edge keeps the paragraph's right indent, a negative one too.
-- Fill the free intervals of a band one after another, each **independently, one unbreakable piece of text at a time** (up to the next break opportunity). If the next piece doesn't fit the current interval, that interval stays as it is and the text continues in the next interval of the same band. There is no minimum interval width.
+- Fill the free intervals of a band one after another, each **independently, one unbreakable piece of text at a time** (up to the next break opportunity). If the next piece doesn't fit the current interval, that interval stays as it is and the text continues in the next interval of the same band. Once a float cuts the column, an interval narrower than 18pt takes no text; one of exactly 18pt does.
 - Several floats give several intervals.
 - An interval that starts at a float's edge (not the column's) takes the place of the left indent: its lines start at `max(edge, left indent)`, and the first line adds its first-line indent to that, so a hanging first line starts left of the edge, over the float's distance or the float itself.
 
