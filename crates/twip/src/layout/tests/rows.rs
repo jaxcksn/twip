@@ -317,6 +317,21 @@ mod floats {
     }
 
     #[test]
+    fn float_14_a_line_relative_float_stays_in_its_cell_whatever_layout_in_cell() {
+        // Compat ≤ 14: layoutInCell="0" moves a paragraph-relative box out of the cell, so the centred cell doesn't
+        // move it; a line-relative one stays in the cell and moves with the text.
+        let at = |v: &str, rel: &str| {
+            let b = text_box("<wp:wrapNone/>", 40.0, "Boxed").replace(r#"layoutInCell="1""#, r#"layoutInCell="0""#).replace(
+                r#"<wp:positionV relativeFrom="paragraph">"#,
+                &format!(r#"<wp:positionV relativeFrom="{rel}">"#),
+            );
+            baseline_of(&doc(&in_cell(v, &b)), "Boxed").expect("the box text")
+        };
+        assert!((at("center", "paragraph") - at("top", "paragraph")).abs() < 0.01, "outside the cell");
+        assert!(at("center", "line") - at("top", "line") > 20.0, "line-relative: in the cell");
+    }
+
+    #[test]
     fn float_10_a_text_box_drops_glyphs_below_its_content_bottom() {
         // A 4pt-tall box: the letters' ink starts above its bottom, the full stop's below it.
         let d = doc(&text_box("<wp:wrapNone/>", 4.0, "Hk."));

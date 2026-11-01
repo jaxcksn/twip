@@ -1166,7 +1166,7 @@ fn closing_para(c: &Cell) -> Option<(ParaId, f64)> {
 
 /// Whether one of the cell's paragraphs anchors a float laid out in the cell (`layoutInCell`, FLOAT-14).
 fn holds_float(c: &Cell) -> bool {
-    c.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.inlines.iter().any(|i| matches!(i, Inline::Float(f, _) if f.layout_in_cell))))
+    c.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.inlines.iter().any(|i| matches!(i, Inline::Float(f, _) if f.in_cell(Compat::Legacy)))))
 }
 
 /// Each cell's geometry, by row (cells outside the grid are left out).
@@ -1590,13 +1590,13 @@ pub fn whole(row: &RowBox) -> Vec<CellPart<'_>> {
     row.cells.iter().map(|c| CellPart { units: &c.units.units, base: 0.0, ends: true }).collect()
 }
 
-/// The floats anchored in the cell's paragraphs with layoutInCell="0".
+/// The floats anchored in the cell's paragraphs that compat ≤ 14 lays out outside the cell (FLOAT-14).
 fn outside_floats(c: &Cell) -> Box<[u64]> {
     let paras = c.blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None });
     paras
         .flat_map(|p| p.inlines.iter())
         .filter_map(|i| match i {
-            Inline::Float(f, _) if !f.layout_in_cell => Some(f.id),
+            Inline::Float(f, _) if !f.in_cell(Compat::Legacy) => Some(f.id),
             _ => None,
         })
         .collect()

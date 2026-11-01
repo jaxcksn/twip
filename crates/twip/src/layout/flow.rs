@@ -394,8 +394,8 @@ pub fn place_units(units: &[StoryUnit], x: f64, y: f64, out: &mut Vec<Child>) {
     }
 }
 
-/// FLOAT-14: compat ≤ 14 honours layoutInCell="0": a float anchored in one of the table's cells is placed like a body
-/// float, not in the cell.
+/// FLOAT-14: compat ≤ 14 honours layoutInCell="0" (unless the float is character- or line-relative): a float anchored
+/// in one of the table's cells is placed like a body float, not in the cell.
 /// shortcut: the table's own cells only; floats in nested tables stay in their cells.
 fn page_floats(t: &Table) -> HashMap<u64, &Float> {
     let mut out = HashMap::new();
@@ -403,7 +403,7 @@ fn page_floats(t: &Table) -> HashMap<u64, &Float> {
         let Block::Para(p) = b else { continue };
         for i in &p.inlines {
             if let Inline::Float(f, _) = i
-                && !f.layout_in_cell
+                && !f.in_cell(Compat::Legacy)
             {
                 out.insert(f.id, &**f);
             }

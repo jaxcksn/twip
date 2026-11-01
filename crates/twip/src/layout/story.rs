@@ -268,7 +268,7 @@ pub fn layout_with(
                             };
                             let h = float_height(f, env, memos)?;
                             let (fx, fy) = (super::float::h_pos(f, &fr), super::float::v_pos(f, h, &fr, para_top, y) - y);
-                            if text.compat == Compat::Generic || f.layout_in_cell {
+                            if f.in_cell(text.compat) {
                                 float_bottom = float_bottom.max(y + fy + h);
                             }
                             if f.wrap != "none" {

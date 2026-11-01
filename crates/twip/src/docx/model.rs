@@ -233,6 +233,14 @@ pub struct Float {
     pub frame_src: Option<std::ops::Range<usize>>,
 }
 
+impl Float {
+    /// FLOAT-14: whether a float anchored in a table cell is laid out in the cell: in compat 15, with `layoutInCell`,
+    /// or positioned from the anchor character (horizontally) or line (vertically).
+    pub fn in_cell(&self, compat: Compat) -> bool {
+        compat == Compat::Generic || self.layout_in_cell || self.h_relative == "character" || self.v_relative == "line"
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextBox {
     pub blocks: Vec<Block>,
