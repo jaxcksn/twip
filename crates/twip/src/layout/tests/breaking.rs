@@ -415,3 +415,17 @@ fn a_compat_14_float_past_the_column_bottom_stays_with_its_anchor() {
     let Some(l) = lines(c14, ARIAL_12, &body) else { return };
     assert!(l.iter().any(|x| x.1 == "ANCHOR" && (x.0 - 172.0).abs() < 0.01), "{l:?}");
 }
+
+#[test]
+fn a_paragraph_anchoring_a_float_keeps_its_top_border() {
+    // PARA-7: a 3pt top border with 4pt space adds 7pt to the first line whether or not the paragraph anchors a float.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>4572000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>2540000</wp:posOffset></wp:positionV><wp:extent cx="635000" cy="635000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = |f: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="24" w:space="4" w:color="000000"/></w:pBdr></w:pPr>{f}<w:r><w:t>Boxed</w:t></w:r></w:p>"#
+        )
+    };
+    let y = |f: &str| baselines("", ARIAL_12, &p(f)).map(|l| l[0].3);
+    let Some(plain) = y("") else { return };
+    assert!((y(float).unwrap() - plain).abs() < 0.01, "{plain}");
+}

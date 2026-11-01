@@ -115,6 +115,9 @@ pub struct ParaLines {
     /// The x the lines are drawn at ([`ParaSpace::x0`]).
     pub x0: f64,
     pub para: ParaId,
+    /// The neighbours' border keys the lines' borders were drawn against (PARA-7): the previous paragraph's (the
+    /// paragraph's own for a continuation) and the next one's.
+    pub borders: (BorderKey, BorderKey),
     /// Lazily built drawings, one per line. A cache filled behind `&self`: lines are measured far more often than
     /// they are drawn (table autofit, keep-with-next tests), so drawing waits for the first placement.
     drawn: Box<[OnceCell<Rc<LineFragment>>]>,
@@ -242,7 +245,7 @@ pub fn break_lines_uncached(
     let mut lines =
         super::job::unit("line breaking", || crate::prof::time("break", || break_paragraph(shaped, pieces, style, mark, &frame, fonts, from > 0)));
     let prev = if from > 0 { border_key(style) } else { space.borders.0.clone() };
-    apply_borders(&mut lines, style, prev.as_deref(), space.borders.1.as_deref(), space.width);
+    apply_borders(&mut lines, style, prev.as_deref(), space.borders.1.as_deref(), space.width, false);
     // shortcut: line breaking is one unit per paragraph until jobs keep partial lines (JobMemo).
     memos.meter.unit_done();
     let n = lines.len();
@@ -253,6 +256,7 @@ pub fn break_lines_uncached(
         width: space.width,
         x0: space.x0,
         para: para_id(para),
+        borders: (prev, space.borders.1.clone()),
         drawn: (0..n).map(|_| OnceCell::new()).collect(),
         compat: space.env.compat,
         review: space.env.review.clone(),
@@ -274,13 +278,24 @@ pub fn neighbour_borders(style: &ParaStyle, prev: Option<&ParaStyle>, next: Opti
     }
 }
 
-/// PARA-7: the extra space goes into the first and last line; the borders are drawn with them.
-fn apply_borders(
+/// PARA-7: how much a paragraph's top border adds to its first line, after a paragraph with border key `prev`.
+pub fn top_border_extra(s: &ParaStyle, prev: Option<&[Option<crate::docx::props::Border>; 5]>) -> f64 {
+    let key = border_key(s);
+    match &s.border_top {
+        Some(t) if !(key.is_some() && prev == key.as_deref()) => (if t.style == "double" { 3.0 * t.width } else { t.width }) + t.space,
+        _ => 0.0,
+    }
+}
+
+/// PARA-7: the extra space goes into the first and last line; the borders are drawn with them. `top_pitched`: the
+/// first line's pitch and baseline already hold the top border's extra ([`top_border_extra`]).
+pub fn apply_borders(
     lines: &mut [Line],
     s: &ParaStyle,
     prev: Option<&[Option<crate::docx::props::Border>; 5]>,
     next: Option<&[Option<crate::docx::props::Border>; 5]>,
     width: f64,
+    top_pitched: bool,
 ) {
     let key = border_key(s);
     let n = lines.len();
@@ -316,8 +331,10 @@ fn apply_borders(
         let extra = thick(t) + t.space;
         let l = &mut lines[0];
         edge(&mut l.rects, t, true, 0.0, x0, x1);
-        l.pitch += extra;
-        l.baseline += extra;
+        if !top_pitched {
+            l.pitch += extra;
+            l.baseline += extra;
+        }
         shade_top = thick(t);
     }
     if let (Some(b), false) = (&s.border_bottom, same_next) {

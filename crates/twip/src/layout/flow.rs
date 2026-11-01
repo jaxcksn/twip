@@ -16,7 +16,9 @@ use super::fragment::{BoxFragment, BoxKind, Child, Item, ParaFragment, PlacedLin
 use super::ids::ParaId;
 use super::job::{Memos, Yield};
 use super::join::{Joined, LaidPara, laid_para, piece_para};
-use super::line::{Frame, Line, LineOrigin, ParaLines, band, border_key, break_lines, draw_label, draw_line, neighbour_borders};
+use super::line::{
+    Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, break_lines, draw_label, draw_line, neighbour_borders, top_border_extra,
+};
 use super::node::{Notes, SectionNode};
 use super::paragraph::{gap, lines_to_take, space_after, space_before};
 use super::record::PageEffects;
@@ -1167,8 +1169,7 @@ impl<'d> PageFill<'d, '_> {
         memos: &mut Memos,
     ) -> Result<Stop, Yield> {
         let has_anchor = pb.pieces().iter().any(|q| q.kind == Kind::Anchor);
-        // A paragraph that ends above a float's top doesn't wrap it (and keeps its borders and shading: the wrapped
-        // path has none): its gap and every line unwrapped.
+        // A paragraph that ends above a float's top doesn't wrap it: its gap and every line unwrapped.
         let bottom = *y + self.para_gap(p, pos, carry, *empty) + pb.lines.iter().map(|l| l.pitch).sum::<f64>();
         let affected = self.at.known.iter().any(|f| {
             f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < bottom - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
@@ -1438,6 +1439,8 @@ impl<'d> PageFill<'d, '_> {
         let pieces = pb.pieces();
         let n = pieces.len();
         let est = pb.lines.first().map_or(13.0, |l| l.pitch);
+        // PARA-7: the borders sit in the line heights as without floats; the top one in the first band's.
+        let top_extra = top_border_extra(style, pb.borders.0.as_deref());
         let (cx0, cx1) = (col.x, col.x + col.width);
         let compat = self.ctx.env.text.compat;
         // FLOAT-4 (compat <= 14): a paragraph holding only one inline picture is placed in the gap even when it's
@@ -1490,7 +1493,13 @@ impl<'d> PageFill<'d, '_> {
                             open || lone_picture,
                         );
                         match r {
-                            Ok((segs, e)) => {
+                            Ok((mut segs, e)) => {
+                                if first {
+                                    for l in &mut segs {
+                                        l.pitch += top_extra;
+                                        l.baseline += top_extra;
+                                    }
+                                }
                                 let ph = segs[0].pitch;
                                 let done = (ph - h).abs() < EPS || attempt == 1;
                                 got = Some((segs, e));
@@ -1548,6 +1557,16 @@ impl<'d> PageFill<'d, '_> {
         // margins): lay the paragraph out as if no float were there so the flow progresses; its floats aren't placed.
         if bands.is_empty() {
             return self.place_plain(p, pb, pos, carry, col, y, empty, area, out, memos);
+        }
+        // PARA-7: borders and shading on each band's first segment (the box spans the column), the bottom border on the
+        // last band when it ends the paragraph.
+        if border_key(style).is_some() || style.shading.is_some() {
+            let mut firsts: Vec<Line> = bands.iter().map(|(_, segs)| segs[0].clone()).collect();
+            let next = if s >= n { pb.borders.1.clone() } else { border_key(style) };
+            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part);
+            for ((_, segs), l) in bands.iter_mut().zip(firsts) {
+                segs[0] = l;
+            }
         }
         // Anchors: position this paragraph's floats against its bands (FLOAT-6, FLOAT-9).
         let frames = Frames {
