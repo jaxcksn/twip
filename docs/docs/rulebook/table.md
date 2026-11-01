@@ -30,17 +30,18 @@ These rules lay out a `w:tbl`: first the table's properties and its shared colum
 
 A cell's table-style properties (`w:pPr`, `w:rPr`, `w:tcPr`) merge, property by property, the style's whole-table properties and then each **active** conditional region in this order, lowest first (a later one overrides):
 
-`band1Horz, band2Horz, band1Vert, band2Vert, firstCol, lastCol, firstRow, lastRow, nwCell, neCell, swCell, seCell`
+`band1Horz, band2Horz, band1Vert, band2Vert, lastCol, firstCol, lastRow, firstRow, seCell, swCell, neCell, nwCell`
 
 Each region is looked up through the `w:basedOn` chain. Toggle properties don't XOR between regions (bold in both `firstRow` and `firstCol` is bold; see [STYLE-3](style#style-3)). Direct `w:tcPr` beats the merged result; where the table style sits against paragraph styles is [STYLE-4](style#style-4).
 
 Which regions are active:
 
-1. Read `w:tblLook`: the attributes `firstRow`, `lastRow`, `firstColumn`, `lastColumn`, `noHBand`, `noVBand`; an attribute that is absent takes its bit from the hex `w:val` (0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400 in that order). With no `w:tblLook` at all: `firstRow`, `firstColumn` and `noVBand` on, the rest off.
-2. `firstRow` is active for row 0 if `tblLook` enables it **and** the style (chain) defines a `firstRow` region. The same for `lastRow` (last row), `firstCol` (first cell of each row), `lastCol` (last cell).
-3. Corner regions: `nwCell` for row 0's first cell when `firstRow` and `firstColumn` are both enabled in `tblLook`; `neCell` (row 0, last cell; firstRow + lastColumn), `swCell` (last row, first cell; lastRow + firstColumn), `seCell` (last row, last cell; lastRow + lastColumn).
-4. Row banding needs `w:tblStyleRowBandSize` = B > 0 (absent: 0, nothing is banded) and `noHBand` off. A row that is an active first or last row gets no band. Otherwise `r = rowIndex − (1 if firstRow is active, else 0)`; the row is `band1Horz` if `(r div B)` is even, else `band2Horz`.
-5. Column banding is the same with `w:tblStyleColBandSize`, `noVBand`, the cell's index in its row, and `firstCol`/`lastCol`, giving `band1Vert`/`band2Vert`.
+1. Read `w:tblLook`: the attributes `firstRow`, `lastRow`, `firstColumn`, `lastColumn`, `noHBand`, `noVBand`; an attribute that is absent takes its bit from the hex `w:val` (0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400 in that order). With no `w:tblLook` at all: `firstRow`, `firstColumn` and `noVBand` on, the rest off. The style's own `w:tblLook` is never used.
+2. A row or column bit counts only when the style (chain) formats one of its regions: `firstRow` when it defines `firstRow`, or `nwCell` with the `firstColumn` bit, or `neCell` with the `lastColumn` bit; `lastRow` likewise with `lastRow`, `swCell`, `seCell`; `firstColumn` with `firstCol`, `nwCell` (and the `firstRow` bit), `swCell` (and the `lastRow` bit); `lastColumn` with `lastCol`, `neCell`, `seCell`. With `w:useWord2002TableStyleRules` in compat ≤ 14, corner regions don't keep a bit. Below, "bit" means a bit that counts.
+3. The first-row run: when the style defines `firstRow` or the `firstRow` bit counts, the table's leading header rows (`w:tblHeader`), and row 0 when the `firstRow` bit counts.
+4. Each cell gets **one** row region: `firstRow` in the run (with the bit); else `lastRow` in the last row (with the bit); else, with `w:tblStyleRowBandSize` = B > 0 and `noHBand` off, `r = rowIndex − run length` and `band1Horz` when `r ≥ 0` and `(r div B)` is even, else `band2Horz` (so a run row without the bit is `band2Horz`).
+5. **One** column region the same way: `firstCol` for the first cell (with the bit); else `lastCol` for the last cell (with the bit); else column banding with `w:tblStyleColBandSize`, `noVBand` and `c = cellIndex − (1 with the firstColumn bit)`.
+6. At most **one** corner, the first that applies of: `nwCell` (first cell of a run row; firstRow and firstColumn bits), `neCell` (last cell of a run row; firstRow and lastColumn), `swCell` (first cell of the last row; lastRow and firstColumn), `seCell` (last cell of the last row; lastRow and lastColumn). A one-cell table with every bit gets only `nwCell`, even when the style defines no `nwCell`.
 
 Example: B = 2, an active `firstRow`: rows 1–2 are band1, rows 3–4 band2, rows 5–6 band1.
 

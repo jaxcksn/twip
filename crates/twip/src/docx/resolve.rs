@@ -242,7 +242,8 @@ impl Resolver {
     pub fn region_of(&self, t: &Table, row: usize, cell: usize) -> Region {
         let look = t.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
         let ncols = t.rows.get(row).map_or(0, |r| r.cells.len());
-        self.cell_region(t.style_id.as_deref(), look, t.bands, (row, cell), (t.rows.len(), ncols))
+        let headers = t.rows.iter().take_while(|r| r.header).count();
+        self.cell_region(t.style_id.as_deref(), look, t.bands, (row, cell), (t.rows.len(), ncols), headers)
     }
 
     /// A run resolved from its direct `w:rPr` as written (namespaces as `cx` names them) over `base`: what an edit of
@@ -276,8 +277,8 @@ impl Resolver {
         r
     }
 
-    /// The table-style region of cell (`ri`, `ci`) of a table with `size` (rows, cells in its row): the conditional
-    /// formats `look` turns on, banding included (STYLE-4).
+    /// The table-style region of cell (`ri`, `ci`) of a table with `size` (rows, cells in its row) whose first `headers`
+    /// rows are header rows: the conditional formats `look` turns on, banding included (TABLE-3, STYLE-4).
     pub fn cell_region(
         &self,
         style_id: Option<&str>,
@@ -285,49 +286,47 @@ impl Resolver {
         bands: (i64, i64),
         (ri, ci): (usize, usize),
         (nrows, ncols): (usize, usize),
+        headers: usize,
     ) -> Region {
         let defines = |r: &str| self.styles.table_defines(style_id, r);
-        let first_row = look.first_row && defines("firstRow");
-        let last_row = look.last_row && defines("lastRow");
-        let first_col = look.first_col && defines("firstCol");
-        let last_col = look.last_col && defines("lastCol");
+        // A look bit counts only when the style formats one of its regions; with word2002 rules, not a corner.
+        let corner = |r: &str| !self.styles.word2002_rules && defines(r);
+        let first_row = look.first_row && (defines("firstRow") || look.first_col && corner("nwCell") || look.last_col && corner("neCell"));
+        let last_row = look.last_row && (defines("lastRow") || look.first_col && corner("swCell") || look.last_col && corner("seCell"));
+        let first_col = look.first_col && (defines("firstCol") || look.first_row && corner("nwCell") || look.last_row && corner("swCell"));
+        let last_col = look.last_col && (defines("lastCol") || look.first_row && corner("neCell") || look.last_row && corner("seCell"));
+        // The first-row run: the leading header rows, and row 0 with the firstRow bit.
+        let run = if first_row || defines("firstRow") { headers.max(usize::from(first_row)) } else { 0 };
+        let in_run = ri < run;
+        let (last, end) = (ri + 1 == nrows, ci + 1 == ncols);
         let (row_band, col_band) = bands;
-        let is_first_row = ri == 0 && first_row;
-        let is_last_row = ri + 1 == nrows && last_row;
-        let is_first_col = ci == 0 && first_col;
-        let is_last_col = ci + 1 == ncols && last_col;
+        let band = |i: i64, size: i64, one: &'static str, two: &'static str| if i >= 0 && (i / size) % 2 == 0 { one } else { two };
         let mut active: Vec<&str> = Vec::new();
-        if row_band > 0 && !look.no_h_band && !is_first_row && !is_last_row {
-            let r = ri as i64 - first_row as i64;
-            active.push(if (r / row_band) % 2 == 0 { "band1Horz" } else { "band2Horz" });
-        }
-        if col_band > 0 && !look.no_v_band && !is_first_col && !is_last_col {
-            let c = ci as i64 - first_col as i64;
-            active.push(if (c / col_band) % 2 == 0 { "band1Vert" } else { "band2Vert" });
-        }
-        if is_first_col {
-            active.push("firstCol");
-        }
-        if is_last_col {
-            active.push("lastCol");
-        }
-        if is_first_row {
+        // One row region, one column region, at most one corner.
+        if in_run && first_row {
             active.push("firstRow");
-        }
-        if is_last_row {
+        } else if last && last_row {
             active.push("lastRow");
+        } else if row_band > 0 && !look.no_h_band {
+            active.push(band(ri as i64 - run as i64, row_band, "band1Horz", "band2Horz"));
         }
-        if ri == 0 && ci == 0 && look.first_row && look.first_col {
-            active.push("nwCell");
+        if ci == 0 && first_col {
+            active.push("firstCol");
+        } else if end && last_col {
+            active.push("lastCol");
+        } else if col_band > 0 && !look.no_v_band {
+            active.push(band(ci as i64 - i64::from(first_col), col_band, "band1Vert", "band2Vert"));
         }
-        if ri == 0 && ci + 1 == ncols && look.first_row && look.last_col {
-            active.push("neCell");
-        }
-        if ri + 1 == nrows && ci == 0 && look.last_row && look.first_col {
-            active.push("swCell");
-        }
-        if ri + 1 == nrows && ci + 1 == ncols && look.last_row && look.last_col {
-            active.push("seCell");
+        if let Some(c) = [
+            (ci == 0 && in_run && first_row && first_col, "nwCell"),
+            (end && in_run && first_row && last_col, "neCell"),
+            (ci == 0 && last && last_row && first_col, "swCell"),
+            (end && last && last_row && last_col, "seCell"),
+        ]
+        .into_iter()
+        .find_map(|(on, c)| on.then_some(c))
+        {
+            active.push(c);
         }
         self.styles.table_region(style_id, &active)
     }
@@ -424,7 +423,7 @@ mod tests {
             let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
             let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
             let direct = ParaProps { style: p_style.map(str::to_string), ..ParaProps::default() };
-            let in_table = |id| res.paragraph(&direct, Some(&res.cell_region(Some(id), look, (0, 0), (0, 0), (1, 1)))).base.size;
+            let in_table = |id| res.paragraph(&direct, Some(&res.cell_region(Some(id), look, (0, 0), (0, 0), (1, 1), 0))).base.size;
             (in_table("T1"), in_table("T0"))
         };
         let fonts = r#"<w:rPr><w:rFonts w:ascii="Calibri"/></w:rPr>"#;

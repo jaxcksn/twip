@@ -68,7 +68,7 @@ pub struct Style {
 
 /// Table-style conditional regions, lowest precedence first (TABLE-3).
 pub const REGION_ORDER: [&str; 12] =
-    ["band1Horz", "band2Horz", "band1Vert", "band2Vert", "firstCol", "lastCol", "firstRow", "lastRow", "nwCell", "neCell", "swCell", "seCell"];
+    ["band1Horz", "band2Horz", "band1Vert", "band2Vert", "lastCol", "firstCol", "lastRow", "firstRow", "seCell", "swCell", "neCell", "nwCell"];
 
 #[derive(Clone, Debug, Default)]
 pub struct ThemeFonts {
@@ -138,6 +138,8 @@ pub struct Styles {
     pub doc_ppr: ParaProps,
     /// compat 15: no table-style size exception (STYLE-4).
     pub compat: Compat,
+    /// `w:useWord2002TableStyleRules` in compat ≤ 14: corner regions don't keep a look bit (TABLE-3).
+    pub word2002_rules: bool,
 }
 
 impl Styles {

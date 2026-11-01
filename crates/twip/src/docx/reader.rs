@@ -110,6 +110,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let theme = ThemeFonts::parse(part_of("theme").and_then(|p| pkg.read_str(&p)).as_deref());
     let settings = read_settings(part_of("settings").and_then(|p| pkg.read_str(&p)).as_deref());
     styles.compat = settings.compat();
+    styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
     let xml = pkg.read_str(&main).ok_or("no main document part")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
@@ -1673,6 +1674,14 @@ impl Reader {
         let row_nodes: Vec<(Node, Vec<ControlId>)> = self.rows_of(t, &[]);
         let nrows = row_nodes.len();
         let row_band = tbl.row_band.unwrap_or(0);
+        let headers = row_nodes
+            .iter()
+            .take_while(|(rn, _)| {
+                let mut trp = style_region.tr.clone();
+                trp.merge(&TrProps::parse(child(*rn, "trPr")));
+                trp.header == Some(true)
+            })
+            .count();
         let col_band = tbl.col_band.unwrap_or(0);
         let mut rows = Vec::new();
         let mut row_jc: Option<Option<Jc>> = None;
@@ -1685,7 +1694,7 @@ impl Reader {
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
             for (ci, (cn, cell_controls)) in cell_nodes.iter().enumerate() {
-                let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols)));
+                let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols), headers));
                 let mut tcp = region.tc.clone();
                 let tc_pr = child(*cn, "tcPr");
                 tcp.merge(&TcProps::parse(tc_pr));
