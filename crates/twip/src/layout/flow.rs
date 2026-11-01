@@ -877,7 +877,7 @@ impl<'d> PageFill<'d, '_> {
                 }
                 Some(Block::Table(t)) => {
                     // PAGE-6: a page break before the first paragraph of a cell in the table's first row starts the
-                    // table on a new page. shortcut: one in a later row doesn't break the table there.
+                    // table on a new page; one in a later row breaks the table there (TABLE-45).
                     let breaks = t.rows.first().is_some_and(|r| {
                         r.cells.iter().any(
                             |c| matches!(c.blocks.first(), Some(Block::Para(p)) if p.para_style_in(self.ctx.env.text.review.view).page_break_before),
@@ -1643,6 +1643,12 @@ impl<'d> PageFill<'d, '_> {
             let at_top = *empty || placed_here == 0 && rest.is_some();
             // TABLE-45: a keepNext row keeps with the next row; in compat 15 so does a header row (TABLE-47).
             let keeps = row.keep_next || self.ctx.env.text.compat == Compat::Generic && row.header && rest.is_none();
+            // TABLE-45: a row whose first paragraph has pageBreakBefore, below content in the column, starts the next one
+            // (with the keep-with-next rows before it); in compat 15 a keep-with-next row before it cancels that.
+            let breaks = row.break_before
+                && rest.is_none()
+                && !*empty
+                && !(self.ctx.env.text.compat == Compat::Generic && ri > 0 && tb.rows[ri - 1].keep_next);
             // The row's cell contents: borrowed (a row is copied only when it splits).
             let parts: Vec<CellPart> = match &rest {
                 Some(r) => r.iter().map(|v| CellPart { units: &v[..], base: 0.0, ends: true }).collect(),
@@ -1655,7 +1661,7 @@ impl<'d> PageFill<'d, '_> {
             let mut note_rest = Vec::new();
             let notes_ok = self.add_notes(&refs, &mut a, col, *y + height + tb.bottom_border, &mut note_rest, memos)?;
             // TABLE-40: the row plus the table's bottom border must fit.
-            if notes_ok && *y + height + tb.bottom_border + a.total() <= col.bottom + EPS + a.total().min(0.0) {
+            if !breaks && notes_ok && *y + height + tb.bottom_border + a.total() <= col.bottom + EPS + a.total().min(0.0) {
                 if !keeps {
                     keep = None;
                 } else if keep.is_none() && (!*empty || !rows.is_empty()) {
@@ -1688,7 +1694,7 @@ impl<'d> PageFill<'d, '_> {
             let avail = col.bottom - area.total() - *y - row.top_border - tb.bottom_border;
             // An atLeast row starts splitting only where its minimum height fits.
             // TABLE-45: a cantSplit, header or keep-with-next row doesn't split, except at the top of a column.
-            let can_split = !row.exact && (!(row.cant_split || row.header || keeps) || at_top) && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
+            let can_split = !breaks && !row.exact && (!(row.cant_split || row.header || keeps) || at_top) && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
             let mut fitted: Vec<CellPart> = Vec::new();
             let mut left: Vec<Vec<StoryUnit>> = Vec::new();
             if can_split {

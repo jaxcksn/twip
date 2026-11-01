@@ -347,6 +347,8 @@ pub struct RowBox {
     pub cant_split: bool,
     /// TABLE-45: the row's first paragraph has keepNext: the row doesn't split and keeps with the next row.
     pub keep_next: bool,
+    /// TABLE-45: the row's first paragraph has pageBreakBefore: a row after the table's first starts the next column.
+    pub break_before: bool,
     pub header: bool,
     pub exact: bool,
     /// An atLeast row's minimum height (top border included), else 0: the row splits only where it fits.
@@ -958,6 +960,7 @@ impl ViewTable {
                     height: 0.0,
                     cant_split: false,
                     keep_next: false,
+                    break_before: false,
                     header: false,
                     exact: false,
                     min_h: 0.0,
@@ -1366,12 +1369,18 @@ fn assemble(
             Some((h, rule)) if rule != "auto" => (top_border + content.max(*h + min_margins), false, top_border + *h + min_margins),
             _ => (top_border + content, false, 0.0),
         };
+        // The row's first paragraph's style (TABLE-45).
+        let first = match r.cells.first().and_then(|c| c.blocks.first()) {
+            Some(Block::Para(p)) => Some(p.para_style_in(env.ctx.env.text.review.view)),
+            _ => None,
+        };
         rows.push(RowBox {
             cells,
             top_border,
             height,
             cant_split: r.cant_split,
-            keep_next: r.cells.first().and_then(|c| c.blocks.first()).is_some_and(|b| matches!(b, Block::Para(p) if p.para_style_in(env.ctx.env.text.review.view).keep_next)),
+            keep_next: first.is_some_and(|s| s.keep_next),
+            break_before: first.is_some_and(|s| s.page_break_before),
             header: r.header,
             exact,
             min_h,
