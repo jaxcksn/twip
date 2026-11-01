@@ -570,6 +570,8 @@ pub struct Row {
     pub w_after: f64,
     /// `w:tblPrEx/w:tblInd`: the row's own indent (twips as points, like [`Table::ind`]), when it has one (TABLE-50).
     pub ind: Option<f64>,
+    /// `w:trPr/w:jc`: the row's own alignment (TABLE-23: compat ≤ 14 aligns each row by it).
+    pub jc: Option<Jc>,
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
     pub controls: Vec<ControlId>,

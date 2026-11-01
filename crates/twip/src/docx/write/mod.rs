@@ -3772,6 +3772,14 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
     if r.header {
         s.push_str(&format!("<{w}tblHeader/>"));
     }
+    if let Some(jc) = r.jc {
+        let v = match jc {
+            Jc::Center => "center",
+            Jc::Right => "right",
+            _ => "left",
+        };
+        s.push_str(&format!("<{w}jc {w}val=\"{v}\"/>"));
+    }
     for (_, tag) in revisions::row_marks(w, &r.rev, people) {
         s.push_str(&tag);
     }

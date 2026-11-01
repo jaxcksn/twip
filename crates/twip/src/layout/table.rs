@@ -126,7 +126,7 @@ fn shell(t: &Table) -> Table {
     let rows = rows
         .iter()
         .map(|r| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, cells, src: _, controls: _, rev } = r;
+            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, jc, cells, src: _, controls: _, rev } = r;
             let cells = cells
                 .iter()
                 .map(|c| {
@@ -177,6 +177,7 @@ fn shell(t: &Table) -> Table {
                 w_before: *w_before,
                 w_after: *w_after,
                 ind: *ind,
+                jc: *jc,
                 cells,
                 src: None,
                 controls: Vec::new(),
@@ -247,7 +248,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         && *grid_change == t.grid_change
         && rows.len() == t.rows.len()
         && rows.iter().zip(&t.rows).all(|(r, q)| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, cells, src: _, controls: _, rev } = r;
+            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, jc, cells, src: _, controls: _, rev } = r;
             *height == q.height
                 && *cant_split == q.cant_split
                 && *header == q.header
@@ -256,6 +257,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 && *w_before == q.w_before
                 && *w_after == q.w_after
                 && *ind == q.ind
+                && *jc == q.jc
                 && *rev == q.rev
                 && cells.len() == q.cells.len()
                 && cells.iter().zip(&q.cells).all(|(c, d)| {
@@ -1278,6 +1280,24 @@ fn assemble(
             Some(i) if compat == Compat::Legacy && !t.fixed && t.jc == Jc::Left && t.floating.is_none() => i - t.ind,
             _ => 0.0,
         };
+        // TABLE-23: in compat ≤ 14 each row of a table that isn't floating is aligned by its own w:jc, else the table's:
+        // centred, or right-aligned with its first cell's left margin past the column's right edge, by its own cells'
+        // extent with alignTablesRowByRow, else by the whole grid's.
+        // shortcut: a nested table's rows are aligned as a body table's.
+        let shift = shift
+            + match r.jc.unwrap_or(t.jc) {
+                jc @ (Jc::Center | Jc::Right) if compat == Compat::Legacy && t.floating.is_none() => {
+                    let n = cols.len();
+                    let (gb, ga) = if env.ctx.env.text.align_tables_row_by_row { (r.grid_before.min(n), r.grid_after) } else { (0, 0) };
+                    let before: f64 = cols[..gb].iter().sum();
+                    let after: f64 = cols[n - ga.min(n - gb)..].iter().sum();
+                    let width = total - before - after;
+                    let gap = r.cells.first().map_or(0.0, |c| c.margins[1]) + if t.cell_spacing > 0.0 { 2.0 * t.cell_spacing + space_h(&t.borders[1]) } else { 0.0 };
+                    let left = if jc == Jc::Center { (text_w - width) / 2.0 } else { text_w - width + gap };
+                    left - (x0 + before)
+                }
+                _ => 0.0,
+            };
         let mut cells = Vec::new();
         for g in cells_geo {
             let c = &r.cells[g.ci];

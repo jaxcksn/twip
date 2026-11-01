@@ -17,6 +17,8 @@ pub struct TextEnv {
     pub split_pg_break_and_para_mark: bool,
     pub allow_space_of_same_style_in_table: bool,
     pub do_not_use_html_paragraph_auto_spacing: bool,
+    /// `w:alignTablesRowByRow` (TABLE-23: compat ≤ 14 aligns each row by its own cells' extent).
+    pub align_tables_row_by_row: bool,
     /// `w:doNotVertAlignCellWithSp` (TABLE-30: in compat ≤ 14 a cell holding a float isn't aligned).
     pub do_not_vert_align_cell_with_sp: bool,
     /// The default paragraph style: a table row's end mark has it (PARA-4).
@@ -43,6 +45,7 @@ impl TextEnv {
             split_pg_break_and_para_mark: s.has("splitPgBreakAndParaMark"),
             allow_space_of_same_style_in_table: s.has("allowSpaceOfSameStyleInTable"),
             do_not_use_html_paragraph_auto_spacing: s.has("doNotUseHTMLParagraphAutoSpacing"),
+            align_tables_row_by_row: s.has("alignTablesRowByRow"),
             do_not_vert_align_cell_with_sp: s.has("doNotVertAlignCellWithSp"),
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
             grow_autofit: s.has("growAutofit"),

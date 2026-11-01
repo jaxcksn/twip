@@ -1754,6 +1754,7 @@ impl Reader {
                 w_before: trp.w_before.unwrap_or(0.0).max(0.0),
                 w_after: trp.w_after.unwrap_or(0.0).max(0.0),
                 ind: TblProps::parse(child(*rn, "tblPrEx")).ind,
+                jc: trp.jc,
                 cells,
                 controls: row_controls.clone(),
                 src: self.record.then(|| Rc::new(rn.range())),

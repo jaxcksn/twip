@@ -394,6 +394,7 @@ Place the table's left border centre `x0`, from the left edge of the text column
 - The alignment is the table's `w:jc`; in compat 15 a table that isn't floating takes its first row's `w:trPr/w:jc` instead when that row has one, for every row.
 - `w:jc="center"`: `x0 = (textW − Σ columns)/2` (the indent is ignored).
 - `w:jc="right"` (or `end`): `x0 = textW − Σ columns − (table right border width)/2`.
+- compat ≤ 14, a table that isn't floating: each row is aligned on its own, by its `w:trPr/w:jc`, else the table's. Its width is its own cells' extent (without its `w:gridBefore` and `w:gridAfter` columns) when the settings have `w:alignTablesRowByRow`, else the whole grid's. A centred row's left edge is at `(textW − width)/2`; a right-aligned row's at `textW − width + gL`, with `gL` its first cell's left margin (with cell spacing, plus `2s` and the table's left border). A left-aligned row stays at `x0`.
 
 Each cell then spans from `x0 + edge[col]` to `x0 + edge[col + span]` ([TABLE-21](#table-21)). A row with its own indent: [TABLE-50](#table-50).
 
