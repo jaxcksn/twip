@@ -699,13 +699,16 @@ fn fit_inputs<'k>(
             let cell_pad = (pad - 2 * spacing).max(0);
             let continuation = c.v_merge == VMerge::Continue;
             let grid_w: i64 = grid_tw[g.col..g.col + g.span].iter().sum();
+            // TABLE-12: a width from the grid less the cell's spacing, half of it more for each side on the table's
+            // outer edge, so the resolved columns give the grid back (TABLE-21).
+            let from_grid = grid_w - s2 - s2 / 2 * (i64::from(g.col == 0) + i64::from(g.col + g.span >= n));
             let (kind, pref) = match c.width {
                 Some(Width::Dxa(w)) => (autofit::Kind::Dxa, twips(w)),
                 Some(Width::Pct(f)) => (autofit::Kind::Pct, (f * 5000.0).round() as i64),
                 // TABLE-12: w:tcW type="nil": dxa at the cell's grid width less its spacing.
-                Some(Width::Nil) => (autofit::Kind::Dxa, grid_w - s2),
+                Some(Width::Nil) => (autofit::Kind::Dxa, from_grid),
                 // TABLE-12: fixed layout, an auto cell (or one without w:tcW) takes its grid width.
-                Some(Width::Auto) | None if t.fixed => (autofit::Kind::Dxa, grid_w - s2),
+                Some(Width::Auto) | None if t.fixed => (autofit::Kind::Dxa, from_grid),
                 // TABLE-12: no w:tcW reads as auto.
                 Some(Width::Auto) | None => (autofit::Kind::Auto, 0),
             };

@@ -166,7 +166,7 @@ Each cell gets a type and a preference `pref` from its `w:tcW`:
 | `type="pct"`, `w` | pct, `pref = w` in fiftieths of a percent (5000 = 100%; `"50%"` = 2500) | the same |
 | `type="nil"` | dxa, `pref = grid − s2` | the same |
 
-`grid` = the sum of the `w:tblGrid` widths over the cell's columns; `s2` = 2 × cell spacing. Only a dxa preference that comes from an actual dxa `w:tcW` is *written* ([TABLE-15](#table-15) needs it).
+`grid` = the sum of the `w:tblGrid` widths over the cell's columns; `s2` = 2 × cell spacing, and a cell on the table's left or right edge takes `s2 div 2` more off for each such side, so the resolved columns give the grid back ([TABLE-21](#table-21)). Only a dxa preference that comes from an actual dxa `w:tcW` is *written* ([TABLE-15](#table-15) needs it).
 
 Example: grid 1000 / 3000 / 2000, a cell "x" in each with `type="nil"`: the columns are 50, 150 and 100pt. With no `w:tcW`, an "x" cell is about 15.6pt wide (its content plus 216).
 
