@@ -618,10 +618,11 @@ Example: three one-line paragraphs at 1.15 spacing whose last text ends 2pt abov
 
 Example: a cell whose first paragraph is one 13.44pt line with 20pt space-after, 15pt of room: the line doesn't stay, so the row moves whole ([TABLE-42](#table-42)).
 
-### TABLE-45. cantSplit and exact rows {#table-45}
+### TABLE-45. cantSplit, header, keep-with-next and exact rows {#table-45}
 
-- `w:cantSplit`: the row never splits; it moves whole to the next column. At the top of an empty column, or as the first row placed in a column when it continues a split, it may split after all, so a cantSplit row taller than a page moves to a new page and splits there.
+- `w:cantSplit`, a header row (`w:tblHeader`) or a keep-with-next row (below): the row never splits; it moves whole to the next column. At the top of an empty column, or as the first row placed in a column when it continues a split, it may split after all, so a cantSplit row taller than a page moves to a new page and splits there.
 - An exact-height row ([TABLE-28](#table-28)) never splits.
+- A row whose first cell's first paragraph has `w:keepNext` (in its style or directly) keeps with the next row. A run of such consecutive rows that starts below other content in the column (the content above the table, or rows of this table) moves to the next column with the row after it when that row can't start here, neither whole nor as a split part. A run that starts at the top of the column breaks where it must. In compat 15 header rows are keep-with-next rows too ([TABLE-47](#table-47)).
 - A row that can't be placed in an empty column (it doesn't fit and can't split) is placed whole anyway ([PAGE-5](page#page-5)).
 
 ### TABLE-46. Repeated header rows {#table-46}

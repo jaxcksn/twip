@@ -1626,8 +1626,10 @@ impl<'d> PageFill<'d, '_> {
         // Rows placed whole on this page: (row, top, index in `rows`), for a merged region that splits (TABLE-32).
         let mut placed: Vec<(usize, f64, usize)> = Vec::new();
         self.at.starts.push((*y, pos.at.at_start()));
-        // What a table starting below other content rewinds to when only its header rows would stay here.
-        let rewind = (pos.at.at_start() && !*empty).then(|| (*y, area.clone(), carry.note_rest.len()));
+        let below_content = pos.at.at_start() && !*empty;
+        // TABLE-45: the start of the run of keep-with-next rows the last whole row ends, when something is above the
+        // run here: (row, index in `rows`, y, note area, carried note count).
+        let mut keep: Option<(usize, usize, f64, NoteArea, usize)> = None;
         while pos.at.index() < n {
             let ri = pos.at.index();
             let row = &tb.rows[ri];
@@ -1639,6 +1641,8 @@ impl<'d> PageFill<'d, '_> {
             let last = tb.is_last(ri);
             let rest = pos.at.rest().cloned();
             let at_top = *empty || placed_here == 0 && rest.is_some();
+            // TABLE-45: a keepNext row keeps with the next row; in compat 15 so does a header row (TABLE-47).
+            let keeps = row.keep_next || self.ctx.env.text.compat == Compat::Generic && row.header && rest.is_none();
             // The row's cell contents: borrowed (a row is copied only when it splits).
             let parts: Vec<CellPart> = match &rest {
                 Some(r) => r.iter().map(|v| CellPart { units: &v[..], base: 0.0, ends: true }).collect(),
@@ -1652,6 +1656,11 @@ impl<'d> PageFill<'d, '_> {
             let notes_ok = self.add_notes(&refs, &mut a, col, *y + height + tb.bottom_border, &mut note_rest, memos)?;
             // TABLE-40: the row plus the table's bottom border must fit.
             if notes_ok && *y + height + tb.bottom_border + a.total() <= col.bottom + EPS + a.total().min(0.0) {
+                if !keeps {
+                    keep = None;
+                } else if keep.is_none() && (!*empty || !rows.is_empty()) {
+                    keep = Some((ri, rows.len(), *y, area.clone(), carry.note_rest.len()));
+                }
                 *area = a;
                 carry.note_rest.extend(note_rest);
                 if rest.is_none() {
@@ -1678,7 +1687,8 @@ impl<'d> PageFill<'d, '_> {
             // Split the row (TABLE-41) unless it can't be (TABLE-45); a row taller than a page splits anyway.
             let avail = col.bottom - area.total() - *y - row.top_border - tb.bottom_border;
             // An atLeast row starts splitting only where its minimum height fits.
-            let can_split = !row.exact && (!row.cant_split || at_top) && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
+            // TABLE-45: a cantSplit, header or keep-with-next row doesn't split, except at the top of a column.
+            let can_split = !row.exact && (!(row.cant_split || row.header || keeps) || at_top) && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
             let mut fitted: Vec<CellPart> = Vec::new();
             let mut left: Vec<Vec<StoryUnit>> = Vec::new();
             if can_split {
@@ -1766,17 +1776,18 @@ impl<'d> PageFill<'d, '_> {
                 placed_here += 1;
                 continue;
             }
-            // TABLE-47: in compat 15 header rows never end a page by themselves; compat ≤ 14 leaves them.
-            if let Some((y0, area0, notes0)) = rewind.clone()
-                && self.ctx.env.text.compat == Compat::Generic
-                && ri > 0
-                && ri <= headers.len()
-            {
+            // TABLE-45: the run of keep-with-next rows before a row that can't start here moves with it; TABLE-47: so
+            // in compat 15 header rows never end a page by themselves.
+            if let Some((kri, kidx, y0, area0, notes0)) = keep {
                 *y = y0;
                 *area = area0;
                 carry.note_rest.truncate(notes0);
-                pos.at = At::Start;
-                return Ok(Stop::Full);
+                rows.truncate(kidx);
+                if rows.is_empty() && below_content {
+                    pos.at = At::Start;
+                    return Ok(Stop::Full);
+                }
+                pos.at = At::Row(kri);
             }
             finish(rows, out);
             return Ok(Stop::Full);
