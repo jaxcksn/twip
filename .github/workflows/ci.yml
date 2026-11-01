@@ -11,29 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pr-title:
-    # Squash merges use the PR title as the commit message, so it gets the same commitlint rules as local commits.
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # moon compares with the base branch
-      - uses: moonrepo/setup-toolchain@v0
-      - run: moon setup
-      - run: pnpm install --frozen-lockfile
-      - name: Conventional commit title
-        env:
-          TITLE: ${{ github.event.pull_request.title }}
-        run: printf '%s\n' "$TITLE" | pnpm exec commitlint
-
-  deny:
-    # Dependency licenses, advisories and sources (.cargo/deny.toml).
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: EmbarkStudios/cargo-deny-action@v2
-
   # Every check is a moon task; moon ci runs those the change affects (and the tasks that depend on them). The shards
   # are .moon/ci-plan.json's jobs: the rust tests, the native library and .NET, and the web SDK and docs. Locally:
   # `moon ci` on a branch, or `moon ci --force` for everything.

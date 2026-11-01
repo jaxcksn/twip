@@ -1,9 +1,7 @@
 # release-please keeps a release PR open on main for the next stable version.
-# Merging it tags the release; the jobs below then publish what was released.
-# Run by hand with a tag, the same jobs re-publish it. Run by hand without one, they publish a canary of the branch the
-# workflow runs from (x.y.z-canary.<run number>) to GitHub Packages: npm.pkg.github.com as @<owner>/twip-web, and
-# nuget.pkg.github.com. Installing from there needs a GitHub token, so canaries don't reach anyone by accident. They
-# deploy to the canary environment, so the branch's PR shows the deployment. Canaries are never tagged or released.
+# Merging it tags the release; the jobs below then publish what was released. Run by hand with a tag, they re-publish
+# it. Canaries are canary.yml. Only this workflow publishes to crates.io, nuget.org and npm (trusted publishing names
+# this file and the release environment); build.yml builds the packages it publishes.
 name: Release
 
 on:
@@ -12,33 +10,24 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to re-publish (v0.1.0). Empty to publish a canary of the branch this runs from
-        required: false
+        description: Tag to re-publish (v0.1.0)
+        required: true
       publish:
-        description: Registries to publish to (any of crate nuget npm; a canary never publishes the crate)
+        description: Registries to publish to (any of crate nuget npm)
         default: crate nuget npm
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       engine: ${{ steps.rp.outputs.release_created }}
       tag: ${{ steps.rp.outputs.tag_name }}
-      canary: ${{ steps.canary.outputs.version }}
     steps:
-      # A canary: the version without its prerelease part, then -canary.<run number> (0.1.0-alpha.1 -> 0.1.0-canary.42).
-      - id: canary
-        if: github.event_name == 'workflow_dispatch' && !inputs.tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          base=$(gh api "repos/$GITHUB_REPOSITORY/contents/Cargo.toml?ref=$GITHUB_SHA" -H 'Accept: application/vnd.github.raw' \
-            | sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+).*"$/\1/p')
-          echo "version=$base-canary.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
       - id: rp
         if: github.event_name == 'push'
         uses: googleapis/release-please-action@v5
@@ -49,7 +38,7 @@ jobs:
 
   crate:
     needs: release-please
-    if: needs.release-please.outputs.engine == 'true' || (inputs.tag && contains(inputs.publish, 'crate'))
+    if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'crate')
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -68,139 +57,67 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-  native:
-    # One native library per runtime identifier, packed together into the NuGet package. No win-arm64 yet:
-    # skia-safe has no prebuilt Skia for it with these features, and building Skia there fails.
+  build:
     needs: release-please
-    if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'nuget')
-    strategy:
-      matrix:
-        include:
-          - { os: windows-latest, rid: win-x64, lib: twip.dll }
-          - { os: ubuntu-latest, rid: linux-x64, lib: libtwip.so }
-          - { os: ubuntu-24.04-arm, rid: linux-arm64, lib: libtwip.so }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag }}
-      # Skia links FreeType and Fontconfig.
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
-      # On Windows with the prebuilt Skia that draws on the GPU (Graphite on Dawn).
-      - run: node crates/twip-capi/build-native.mjs
-      - uses: actions/upload-artifact@v7
-        with:
-          name: native-${{ matrix.rid }}
-          path: target/release/${{ matrix.lib }}
-
-  nuget:
-    needs: [release-please, native]
-    runs-on: ubuntu-latest
-    environment:
-      name: ${{ needs.release-please.outputs.canary && 'canary' || 'release' }}
-      url: ${{ needs.release-please.outputs.canary && format('https://github.com/{0}/pkgs/nuget/Twip.Core', github.repository) || 'https://www.nuget.org/packages/Twip.Core' }}
+    if: needs.release-please.outputs.engine == 'true' || inputs.tag
+    uses: ./.github/workflows/build.yml
     permissions:
       contents: read
+    with:
+      ref: ${{ inputs.tag }}
+      nuget: ${{ needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'nuget') }}
+      npm: ${{ needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'npm') }}
+
+  nuget:
+    needs: [release-please, build]
+    if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'nuget')
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://www.nuget.org/packages/Twip.Core
+    permissions:
       id-token: write
-      packages: write # canaries
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag }}
-          fetch-depth: 0 # moon compares with the base branch
-      - uses: moonrepo/setup-toolchain@v0
-      - run: moon setup
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '10.0.x'
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
-      - run: node licenses/notices.mjs THIRD-PARTY-NOTICES.md
       - uses: actions/download-artifact@v8
         with:
-          pattern: native-*
-          path: artifacts
-      - name: Lay out runtimes/<rid>/native
-        run: |
-          for d in artifacts/native-*; do
-            rid=${d#artifacts/native-}
-            mkdir -p bindings/dotnet/runtimes/$rid/native && mv $d/* bindings/dotnet/runtimes/$rid/native/
-          done
-      - if: needs.release-please.outputs.canary
-        run: sh .github/stamp-version.sh "$VERSION"
-        env:
-          VERSION: ${{ needs.release-please.outputs.canary }}
-      # Twip.Core carries the native libraries; Twip.WinForms depends on it.
-      - run: |
-          dotnet pack bindings/dotnet/Twip.Core -c Release -o out
-          dotnet pack bindings/dotnet/Twip.WinForms -c Release -o out
+          name: nupkg
       # Trusted publishing (OIDC): a key valid for an hour, so it's requested just before the push.
       - id: login
-        if: ${{ !needs.release-please.outputs.canary }}
         uses: NuGet/login@v1
         with:
           user: ${{ vars.NUGET_USER }} # the nuget.org profile name, not an email
-      - if: ${{ !needs.release-please.outputs.canary }}
-        run: dotnet nuget push 'out/*.nupkg' --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
+      - run: dotnet nuget push '*.nupkg' --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
-      - if: needs.release-please.outputs.canary
-        run: dotnet nuget push 'out/*.nupkg' --source "https://nuget.pkg.github.com/$GITHUB_REPOSITORY_OWNER/index.json" --api-key "$GH_TOKEN"
-        env:
-          GH_TOKEN: ${{ github.token }}
 
   npm:
-    needs: release-please
+    needs: [release-please, build]
     if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'npm')
     runs-on: ubuntu-latest
     environment:
-      name: ${{ needs.release-please.outputs.canary && 'canary' || 'release' }}
-      url: ${{ needs.release-please.outputs.canary && format('https://github.com/{0}/pkgs/npm/twip-web', github.repository) || 'https://www.npmjs.com/package/@twip/web' }}
+      name: release
+      url: https://www.npmjs.com/package/@twip/web
     permissions:
       contents: read
       id-token: write
-      packages: write # canaries
     steps:
+      # The toolchain, for the pinned pnpm.
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag }}
-          fetch-depth: 0 # moon compares with the base branch
       - uses: moonrepo/setup-toolchain@v0
       - run: moon setup
-      - run: pnpm install --frozen-lockfile
-      - uses: mymindstorm/setup-emsdk@v16
+      - uses: actions/download-artifact@v8
         with:
-          version: '6.0.8'
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
-      - run: node licenses/notices.mjs THIRD-PARTY-NOTICES.md
-      - if: needs.release-please.outputs.canary
-        run: sh .github/stamp-version.sh "$VERSION"
-        env:
-          VERSION: ${{ needs.release-please.outputs.canary }}
-      - run: moon run web:test
+          name: npm
+          path: ${{ runner.temp }}/npm
       # Trusted publishing (OIDC); the dist-tag follows the version (0.1.0-alpha.2 -> alpha). npm only accepts
-      # provenance from public repositories, so it's added once the repo is public.
+      # provenance from public repositories. Published from the unpacked tarball, as it was published from bindings/web.
       - name: Publish
-        working-directory: bindings/web
         env:
           PROVENANCE: ${{ !github.event.repository.private && '--provenance' || '' }}
-          CANARY: ${{ needs.release-please.outputs.canary }}
-          GH_TOKEN: ${{ github.token }}
         run: |
-          # The package is dist/: the module, its types, the engine and the worker entry.
-          test -f dist/index.js && test -f dist/index.d.ts && test -f dist/worker.js
-          if [ -n "$CANARY" ]; then
-            # GitHub's npm registry only takes packages scoped to the repository owner.
-            npm pkg set name="@$GITHUB_REPOSITORY_OWNER/twip-web"
-            echo "//npm.pkg.github.com/:_authToken=$GH_TOKEN" > .npmrc
-            pnpm publish --registry https://npm.pkg.github.com --no-git-checks --tag canary
-            exit
-          fi
+          cd "$RUNNER_TEMP/npm" && tar xzf ./*.tgz && cd package
           version=$(node -p "require('./package.json').version")
           tag=$(echo "$version" | sed -nE 's/^[0-9.]+-([a-z]+).*/\1/p'); tag=${tag:-latest}
           pnpm publish --access public $PROVENANCE --no-git-checks --tag "$tag"
