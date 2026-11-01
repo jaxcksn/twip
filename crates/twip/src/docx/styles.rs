@@ -1,5 +1,6 @@
 //! styles.xml and the theme's fonts: style chains and the cascade of STYLE-1–STYLE-4.
 
+use super::model::Compat;
 use std::collections::HashMap;
 
 use roxmltree::Node;
@@ -29,6 +30,9 @@ pub struct Region {
     pub size_over_normal: Option<f64>,
     /// The region's `w:pPr` or `w:rPr` holds a property (STYLE-4).
     pub sets_text: bool,
+    /// compat ≤ 14, no named table style, an 11pt docDefaults size and a 12pt default paragraph style: a mark set
+    /// directly to 11pt is laid out at its paragraph's size (STYLE-4).
+    pub mark_at_style: bool,
 }
 
 impl Region {
@@ -41,6 +45,7 @@ impl Region {
             tr: TrProps::parse(child(n, "trPr")),
             size_over_normal: None,
             sets_text: ["pPr", "rPr"].iter().any(|k| child(n, k).is_some_and(|e| e.children().any(|c| c.is_element()))),
+            mark_at_style: false,
         }
     }
 }
@@ -67,7 +72,7 @@ pub struct Style {
 
 /// Table-style conditional regions, lowest precedence first (TABLE-3).
 pub const REGION_ORDER: [&str; 12] =
-    ["band1Horz", "band2Horz", "band1Vert", "band2Vert", "firstCol", "lastCol", "firstRow", "lastRow", "nwCell", "neCell", "swCell", "seCell"];
+    ["band1Horz", "band2Horz", "band1Vert", "band2Vert", "lastCol", "firstCol", "lastRow", "firstRow", "seCell", "swCell", "neCell", "nwCell"];
 
 #[derive(Clone, Debug, Default)]
 pub struct ThemeFonts {
@@ -136,7 +141,9 @@ pub struct Styles {
     pub doc_rpr: RunProps,
     pub doc_ppr: ParaProps,
     /// compat 15: no table-style size exception (STYLE-4).
-    pub compat15: bool,
+    pub compat: Compat,
+    /// `w:useWord2002TableStyleRules` in compat ≤ 14: corner regions don't keep a look bit (TABLE-3).
+    pub word2002_rules: bool,
 }
 
 impl Styles {
@@ -292,9 +299,14 @@ impl Styles {
         out.rpr = RunProps::fold_chain(rprs.into_iter());
         // STYLE-4's exception (compat ≤ 14): a table style that sets some paragraph, run or region property.
         let sets = chain.iter().any(|s| s.base.sets_text || !s.regions.is_empty());
-        if !self.compat15 && id.is_some() && id != self.default_table.as_deref() && sets {
+        if self.compat == Compat::Legacy && id.is_some() && id != self.default_table.as_deref() && sets {
             out.size_over_normal = out.rpr.size.or(self.doc_rpr.size).filter(|s| *s != 10.0);
         }
+        // STYLE-4: the 11pt mark in a cell of a table without a named style (compat ≤ 14).
+        out.mark_at_style = self.compat == Compat::Legacy
+            && (id.is_none() || id == self.default_table.as_deref())
+            && self.doc_rpr.size == Some(11.0)
+            && self.chain_rpr(self.default_paragraph.as_deref()).size == Some(12.0);
         out
     }
 

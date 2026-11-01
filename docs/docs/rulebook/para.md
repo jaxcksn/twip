@@ -60,11 +60,11 @@ Example: after 10pt, then 6pt before: 0 when the first is contextual (the 6pt ad
 
 ### PARA-5. Automatic spacing {#para-5}
 
-`w:beforeAutospacing` and `w:afterAutospacing` replace the written value with 14pt, and the result collapses like any other spacing ([PARA-1](para#para-1)). The automatic space-before is 0 on the document's first paragraph; on the first paragraph of a table cell, header, footer, note or text box it stays 14pt.
+`w:beforeAutospacing` and `w:afterAutospacing` replace the written value with 14pt, and the result collapses like any other spacing ([PARA-1](para#para-1)). The automatic space-before is 0 on the document's first paragraph; on the first paragraph of a header, footer, note or text box it stays 14pt. In a table cell, the first paragraph's automatic space-before and the last paragraph's automatic space-after are 0, except that a list paragraph ending the cell keeps its automatic space-after.
 
 Two consecutive paragraphs are in the same list when both have numbering whose `w:num` uses the same `w:abstractNum`, whatever their `w:numId`s and levels. Between them, a side that comes from autospacing is 0 (the first paragraph's automatic space-after, the second's automatic space-before); an explicit value on the other side stays, and PARA-1 applies. The first item's automatic space-before and the last item's automatic space-after stay. Different abstract lists, or a list paragraph next to a plain one, keep 14pt.
 
-With `w:compat/w:doNotUseHTMLParagraphAutoSpacing` the automatic value is 5pt, the two sides add (PARA-1) and lists make no difference. Compat 12 and 15 are the same.
+With `w:compat/w:doNotUseHTMLParagraphAutoSpacing` the automatic flags are ignored: the explicit `w:before`/`w:after` apply (0 when absent), the two sides add (PARA-1) and lists make no difference. Compat 12 and 15 are the same.
 
 Example: two items with automatic spacing on both sides, numIds 1 and 2 on the same abstractNum: no gap (10pt with `doNotUseHTMLParagraphAutoSpacing`). With an explicit 12pt before on the second: 12pt.
 
@@ -76,7 +76,7 @@ Example: Calibri 11: lines 13.4277 × 259/240 = 14.4907 apart, and 8pt more betw
 
 ### PARA-7. Paragraph borders {#para-7}
 
-Border widths are `w:sz / 8` points, `w:space` is in points. A `double` border is a line, a gap and a line, each that width: it takes 3× the width.
+Border widths are `w:sz / 8` points, `w:space` is in points. A `double` border is a line, a gap and a line, each that width: it takes 3× the width. A patterned line (`dotted`, `dashed`, `dotDash`, `dotDotDash`, `dashSmallGap`) is drawn as dashes, as table borders are ([TABLE-37](table#table-37)).
 
 - **Vertically**, a bordered paragraph occupies: top border width + top `w:space` + its lines + bottom `w:space` + bottom border width. Add the top part above the first line (it moves the first line's baseline down by the same amount) and the bottom part below the last line. The paragraph spacing ([PARA-1](para#para-1)) stays outside the box.
 - **Consecutive paragraphs with identical border settings** (all of top, left, bottom, right and between) form one box: the first has the top border, the last the bottom border, and nothing is drawn or added between them. Paragraphs whose settings differ in any way are separate boxes. `w:between` borders are never drawn.

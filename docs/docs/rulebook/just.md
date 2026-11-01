@@ -42,6 +42,8 @@ If `free > 0`, shift the whole line right by `free / 2` (centre) or `free` (righ
 
 Example: a 200pt line in a 468pt column with no indents starts 134pt from the left edge centred, 268pt right-aligned.
 
+A right-to-left paragraph (`w:bidi`) swaps left and right: `w:jc` absent, `left` or `start` aligns it right, `right` or `end` left. A justified (`both`) right-to-left paragraph's lines that don't stretch ([JUST-3](#just-3)), its last line among them, align right.
+
 ### JUST-5. Distribute {#just-5}
 
 `w:jc="distribute"`: share `extra = rightEdge − lineEnd` equally among the line's characters (spaces included) and objects other than tabs, excluding the last one: each gains `extra / (n − 1)`. Every line is distributed, the last one too. Spaces don't shrink.

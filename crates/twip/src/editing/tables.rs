@@ -558,7 +558,7 @@ impl Editor {
             id: crate::docx::next_para_id(),
             controls: Vec::new(),
         };
-        let border = Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, color: None });
+        let border = Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None });
         let grid_style = self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("TableGrid"));
         let cell = |w: f64| Cell {
             width: Some(crate::docx::props::Width::Dxa(w)),
@@ -573,6 +573,7 @@ impl Editor {
             v_align: "top".into(),
             text_direction: "lrTb".into(),
             no_wrap: false,
+            fit_text: false,
             direct: Default::default(),
             blocks: vec![Block::Para(cell_para())],
             controls: Vec::new(),
@@ -585,6 +586,7 @@ impl Editor {
             width: crate::docx::props::Width::Auto,
             jc: crate::docx::props::Jc::Left,
             ind: 0.0,
+            ind_set: true,
             borders: if grid_style {
                 Default::default()
             } else {
@@ -595,6 +597,7 @@ impl Editor {
             look: None,
             bands: (0, 0),
             floating: None,
+            bidi_visual: false,
             grid: vec![w; ncols],
             rows: (0..nrows)
                 .map(|_| Row {
@@ -603,9 +606,10 @@ impl Editor {
                     header: false,
                     grid_before: 0,
                     grid_after: 0,
-                    w_before: 0.0,
-                    w_after: 0.0,
+                    w_before: None,
+                    w_after: None,
                     ind: None,
+                    jc: None,
                     cells: (0..ncols).map(|_| cell(w)).collect(),
                     src: None,
                     controls: Vec::new(),

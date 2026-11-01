@@ -26,7 +26,7 @@ Apply mode-15 behaviour to values ≥ 15 and the ≤ 14 behaviour to all lower v
 | Header and footer height | no cap | capped at pageHeight / 2 | [HDR-8](hdr#hdr-8) |
 | Footnotes in several columns | one stream per page, no continuation | per-column areas, continued in the next column | [COL-3](col#col-3), [COL-4](col#col-4) |
 | Continuation separator | 144pt | the column width | [NOTE-3](note#note-3) |
-| Floats anchored in cells | always in the cell | `layoutInCell="0"` places them like body floats | [FLOAT-14](float#float-14) |
+| Floats anchored in cells | always in the cell | `layoutInCell="0"` places them like body floats, unless `character`- or `line`-relative | [FLOAT-14](float#float-14) |
 | Multiple spacing on a line with a picture, paragraph's last line | the paragraph mark's height counts when taller than the text | the text's height (the mark's only on a line without text) | [LINE-13](line#line-13) |
 | `compressPunctuation` with East Asian text: the text crossing the right edge | wraps | stays if the line's spaces can shrink enough | [BREAK-9](break#break-9) |
 | Paragraph indents in a cell's autofit widths | left + right added to the minimum; the maximum as laid out | left + right + min(firstLine, 0) added to both | [TABLE-8](table#table-8) |
@@ -42,6 +42,7 @@ Only these options change layout; ignore every other child of `w:compat`.
 | `doNotUseHTMLParagraphAutoSpacing` | all | the gap between paragraphs is space-after + space-before, not the larger of the two ([PARA-1](para#para-1)); automatic spacing is 5pt and ignores lists ([PARA-5](para#para-5)) |
 | `splitPgBreakAndParaMark` | ≤ 14 | the paragraph mark after a page break that ends its paragraph moves to the next page as an empty line |
 | `allowSpaceOfSameStyleInTable` | ≤ 14 | contextual spacing isn't applied to paragraphs in table cells ([PARA-4](para#para-4)) |
+| `noColumnBalance` | ≤ 14 | a section before a continuous break isn't balanced ([COL-5](col#col-5)) |
 | `growAutofit` | all | an autofit table may grow wider than the available width |
 | `balanceSingleByteDoubleByteWidth` | all | runs of two or more spaces widen to the East Asian font's average character width ([FONT-14](font#font-14)) |
 

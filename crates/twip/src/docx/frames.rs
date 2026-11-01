@@ -81,7 +81,13 @@ fn float(group: Vec<Paragraph>) -> Float {
         alt: "".into(),
         lock_aspect: false,
         // FRAME-1: height = content (with h as a minimum) unless hRule="exact".
-        text_box: Some(TextBox { blocks, insets: [0.0, 0.0, lx + rx, 0.0], outline: 0.0, auto_fit: fr.h_rule.as_deref() != Some("exact") }),
+        text_box: Some(TextBox {
+            blocks,
+            insets: [0.0, 0.0, lx + rx, 0.0],
+            outline: 0.0,
+            auto_fit: fr.h_rule.as_deref() != Some("exact"),
+            v_anchor: 0,
+        }),
         h_relative: if margin_cap { "leftMargin".into() } else { anchor(fr.h_anchor.as_deref(), "column") },
         h_align: if margin_cap { Some("right".into()) } else { fr.x_align.clone() },
         h_offset: fr.x.unwrap_or(0.0),
@@ -97,6 +103,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         .into(),
         wrap_text: "bothSides".into(),
         dist: [fr.v_space, fr.v_space, fr.h_space, fr.h_space],
+        poly: None,
         behind: false,
         allow_overlap: true,
         layout_in_cell: true,

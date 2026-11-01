@@ -73,6 +73,8 @@ impl PartialEq for Raw {
 pub struct ParaStyle {
     pub style_id: Option<String>,
     pub jc: Jc,
+    /// `w:bidi`: a right-to-left paragraph, its left and right alignments swapped (JUST-4).
+    pub bidi: bool,
     pub ind_left: f64,
     pub ind_right: f64,
     /// + first line, − hanging.
@@ -108,6 +110,9 @@ pub struct ParaStyle {
     pub list_fmt: Option<String>,
     /// The `w:abstractNum` its list uses: paragraphs with the same one are in the same list (PARA-5).
     pub list: Option<i64>,
+    /// The size the paragraph mark is laid out at when not its own (STYLE-4: compat ≤ 14 cells); formatting keeps the
+    /// mark's.
+    pub mark_size: Option<f64>,
     /// The `w:pPr` as written (editable reads only), what formatting edits change and saving writes back.
     pub direct: Raw,
     /// A tracked change of the paragraph's properties.
@@ -215,6 +220,9 @@ pub struct Float {
     /// `bothSides`, `left`, `right`, `largest`.
     pub wrap_text: String,
     pub dist: [f64; 4],
+    /// A tight or through wrap polygon's bounding box, fractions of the extent (x0, y0, x1, y1); None without a
+    /// polygon of at least two points (FLOAT-8).
+    pub poly: Option<[f64; 4]>,
     pub behind: bool,
     pub allow_overlap: bool,
     pub layout_in_cell: bool,
@@ -228,12 +236,22 @@ pub struct Float {
     pub frame_src: Option<std::ops::Range<usize>>,
 }
 
+impl Float {
+    /// FLOAT-14: whether a float anchored in a table cell is laid out in the cell: in compat 15, with `layoutInCell`,
+    /// or positioned from the anchor character (horizontally) or line (vertically).
+    pub fn in_cell(&self, compat: Compat) -> bool {
+        compat == Compat::Generic || self.layout_in_cell || self.h_relative == "character" || self.v_relative == "line"
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextBox {
     pub blocks: Vec<Block>,
     pub insets: [f64; 4],
     pub outline: f64,
     pub auto_fit: bool,
+    /// `wps:bodyPr/@anchor`: 0 top, 1 centre (`ctr`), 2 bottom (`b`); others are top (FLOAT-10).
+    pub v_anchor: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -545,6 +563,8 @@ pub struct Cell {
     pub v_align: String,
     pub text_direction: String,
     pub no_wrap: bool,
+    /// `w:tcFitText`: each paragraph on one line, fitted to the cell (TABLE-51).
+    pub fit_text: bool,
     /// The cell's `w:tcPr` as read (or as table formatting changed it): what re-resolution merges over the cell's
     /// table-style region when its place in the table changes.
     pub direct: Raw,
@@ -562,11 +582,14 @@ pub struct Row {
     pub header: bool,
     pub grid_before: usize,
     pub grid_after: usize,
-    /// `w:wBefore` / `w:wAfter`: the skipped columns' width, points (0: none). Autofit only (TABLE-15).
-    pub w_before: f64,
-    pub w_after: f64,
+    /// `w:wBefore` / `w:wAfter`: the skipped columns' width, points (0 when not dxa; `None` when absent). Autofit
+    /// only (TABLE-15).
+    pub w_before: Option<f64>,
+    pub w_after: Option<f64>,
     /// `w:tblPrEx/w:tblInd`: the row's own indent (twips as points, like [`Table::ind`]), when it has one (TABLE-50).
     pub ind: Option<f64>,
+    /// `w:trPr/w:jc`: the row's own alignment (TABLE-23: compat ≤ 14 aligns each row by it).
+    pub jc: Option<Jc>,
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
     pub controls: Vec<ControlId>,
@@ -583,14 +606,19 @@ pub struct Table {
     pub width: Width,
     pub jc: Jc,
     pub ind: f64,
+    /// `w:tblInd` is set, directly or by the table style's chain (TABLE-23: in compat ≤ 14 a table without one isn't
+    /// pulled left by its edge allowance).
+    pub ind_set: bool,
     pub borders: [Option<Border>; 6],
     pub fixed: bool,
     pub cell_spacing: f64,
     pub look: Option<Look>,
     /// `w:tblStyleRowBandSize` and `w:tblStyleColBandSize` (table style banding, STYLE-4).
     pub bands: (i64, i64),
-    /// `w:tblpPr`: placed at its anchor when it starts a column; text doesn't wrap beside it (TABLE-49).
+    /// `w:tblpPr`: placed at its anchor, taking no room in the flow; text wraps around it (TABLE-49).
     pub floating: Option<TablePos>,
+    /// `w:bidiVisual`: laid out in logical order, drawn right to left (TABLE-23).
+    pub bidi_visual: bool,
     pub grid: Vec<f64>,
     pub rows: Vec<Row>,
     /// The `w:tbl` element's byte range in [`Source::xml`] (editable reads only).
@@ -720,8 +748,17 @@ pub struct Section {
     pub change: Option<Rc<SectionChange>>,
 }
 
+/// The layout engine a document gets (COMPAT-1): `Generic` for compat 15, `Legacy` for every older mode.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Compat {
+    #[default]
+    Legacy,
+    Generic,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
+    /// `w:compatSetting compatibilityMode` as written; 12 without one (COMPAT-1).
     pub compat_mode: i64,
     /// `w:compat` child options that are on.
     pub compat: std::collections::HashSet<String>,
@@ -745,6 +782,11 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// COMPAT-1: compat 15 is `compatibilityMode` ≥ 15.
+    pub fn compat(&self) -> Compat {
+        if self.compat_mode >= 15 { Compat::Generic } else { Compat::Legacy }
+    }
+
     pub fn has(&self, flag: &str) -> bool {
         self.compat.contains(flag)
     }

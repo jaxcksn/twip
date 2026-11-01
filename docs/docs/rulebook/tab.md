@@ -17,7 +17,7 @@ With no custom stop past the pen, the tab goes to the next multiple of the defau
 stop = (⌊pen / inc⌋ + 1) · inc
 ```
 
-Example: pen at 36pt with a 36pt grid: the stop is 72pt, not 36pt.
+Example: pen at 36pt with a 36pt grid: the stop is 72pt, not 36pt. In compat 15 a pen exactly on a negative multiple stays there, a tab of no width (pen −36pt → −36pt); compat ≤ 14 goes on to the next multiple (→ 0).
 
 ### TAB-3. The left indent acts as a stop {#tab-3}
 
@@ -53,10 +53,12 @@ When the stop is at or before `rightEdge` but the aligned text would end past it
 tabWidth = rightEdge − (penAtTab + w) + trail
 ```
 
+A decimal tab doesn't narrow: when its aligned text would end past `rightEdge`, its width is 0 and the text starts at `penAtTab`.
+
 ### TAB-7. Stops past the right edge {#tab-7}
 
 - **Compat 15, a right, centre or decimal stop** past `rightEdge` whose text runs to the end of the paragraph (no later tab): the stop moves to `rightEdge`. Right-tab text then ends at `rightEdge`; decimal-tab text too, through [TAB-6](tab#tab-6); centre-tab text also *ends* at `rightEdge` (it works as a right tab there) and doesn't wrap.
-- **Compat 15, any other custom stop past `rightEdge`** (a left stop, or a right, centre or decimal one whose text another tab follows): the tab ends the line before it and starts the next line. A tab first on its line stays, but the text after it can't fit and starts the next line at the left edge, so each such tab costs a line.
+- **Compat 15, any other custom stop past `rightEdge`** (a left stop, or a right, centre or decimal one whose text another tab follows): the tab ends the line before it and starts the next line. A tab first on its line stays and fills the line to `rightEdge`; the text after it starts the next line at the left edge, so each such tab costs a line.
 - **Compat ≤ 14**: custom stops are used where they are. Text after a right or decimal stop past `rightEdge` aligns at the stop and may run past the margin, even off the page; after a right stop the fit test uses the stop as the line's limit. Once a tab has gone to a custom stop past `rightEdge` (left, centre or right), the rest of the line doesn't wrap: text after a left stop starts at it, text after a centre stop is centred on it, and later default stops are used where they are, on the same line, even off the page.
 - Text after a centre stop at the line's limit can't fit: half of it would pass the limit ([TAB-5](tab#tab-5)'s fit test), so the line ends after the tab and the text wraps to the next line. A centre stop past `rightEdge` follows the bullets above instead.
 - **Default stops, every mode**: a tab whose stop is a default stop past `rightEdge` ends the line before it, and starts the next line, where it goes to the next stop from the line's start ([TAB-1](tab#tab-1), [TAB-2](tab#tab-2)). This also holds when trailing spaces have already carried the pen past the edge ([BREAK-2](break#break-2)), but not in compat ≤ 14 on a line where an earlier tab went to a custom stop past `rightEdge` (above). A tab first on its line always stays.

@@ -193,7 +193,7 @@ impl<'d> PassCx<'d> {
                         blocks.append(doc.endnotes.get(id).into_iter().flatten());
                     }
                 }
-                SectionNode { index: si, section: s, blocks }
+                SectionNode { index: si, section: s, blocks, breaks: si + 1 < nsec }
             })
             .collect();
         let mut wanted: Vec<String> = Vec::new();
@@ -247,11 +247,15 @@ pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
 }
 
 /// Whether section `si`'s body from `token` balances its last page (COL-5): before a continuous section, and the last
-/// section's body before its endnotes ([`endnote_split`]).
+/// section's body before its endnotes ([`endnote_split`]). Compat ≤ 14 `w:noColumnBalance` turns the first off.
 pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
     let doc = cx.doc;
     let nsec = doc.sections.len();
-    (doc.sections[si].section_in(doc.review.view).columns.num > 1 && si + 1 < nsec && doc.sections[si + 1].break_kind == SectionBreak::Continuous)
+    let off = doc.settings.compat() == crate::docx::Compat::Legacy && doc.settings.has("noColumnBalance");
+    (!off
+        && doc.sections[si].section_in(doc.review.view).columns.num > 1
+        && si + 1 < nsec
+        && doc.sections[si + 1].break_kind == SectionBreak::Continuous)
         || endnote_split(cx, si).is_some_and(|e| token.flow.block < e)
 }
 
@@ -323,6 +327,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
                         index: n.index,
                         section: n.section,
                         blocks: Blocks { blocks: n.blocks.blocks[..e].to_vec(), stories: Vec::new() },
+                        breaks: n.breaks,
                     };
                     &body_only
                 }
@@ -417,7 +422,13 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
     let (left, right, top) = margins(sec, &ctx, num);
     let s = sec.section_in(ctx.env.text.review.view);
     let width = s.page_w - left - right;
-    let frames = super::float::Frames { page_w: s.page_w, page_h: s.page_h, margin: [left, right, top, s.bottom], column: (left, width) };
+    let frames = super::float::Frames {
+        page_w: s.page_w,
+        page_h: s.page_h,
+        margin: [left, right, top, s.bottom],
+        column: (left, width),
+        compat: ctx.env.text.compat,
+    };
     let fields = hf_fields(run, cx, i);
     let parts = hf_parts(run, cx, i);
     let env = StoryEnv { ctx, fields: &fields, notes: &cx.notes.numbers };

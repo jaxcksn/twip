@@ -1,6 +1,7 @@
 //! Document-wide inputs to layout: the settings text layout reads, and the ones page layout adds. Both are
 //! compared by equality wherever results are reused; a change sets `Accumulated.full`.
 
+use crate::docx::Compat;
 use crate::docx::review::ReviewView;
 use crate::docx::{Document, Run};
 
@@ -9,15 +10,21 @@ use crate::docx::{Document, Run};
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextEnv {
     /// `w:compatSetting compatibilityMode` (COMPAT-1 to COMPAT-3).
-    pub compat: i64,
+    pub compat: Compat,
     /// `w:defaultTabStop`, points (TAB-2).
     pub default_tab: f64,
     pub do_not_expand_shift_return: bool,
     pub split_pg_break_and_para_mark: bool,
     pub allow_space_of_same_style_in_table: bool,
     pub do_not_use_html_paragraph_auto_spacing: bool,
+    /// `w:alignTablesRowByRow` (TABLE-23: compat ≤ 14 aligns each row by its own cells' extent).
+    pub align_tables_row_by_row: bool,
     /// `w:doNotVertAlignCellWithSp` (TABLE-30: in compat ≤ 14 a cell holding a float isn't aligned).
     pub do_not_vert_align_cell_with_sp: bool,
+    /// `w:doNotBreakWrappedTables` (TABLE-49: in compat ≤ 14 a floating table isn't split).
+    pub do_not_break_wrapped_tables: bool,
+    /// `w:doNotVertAlignInTxbx` (FLOAT-10: in compat ≤ 14 a text box's text isn't aligned vertically).
+    pub do_not_vert_align_in_txbx: bool,
     /// The default paragraph style: a table row's end mark has it (PARA-4).
     pub default_style: Option<String>,
     /// `w:growAutofit` (TABLE-17: tables may grow past the text width).
@@ -36,13 +43,16 @@ impl TextEnv {
     pub fn new(doc: &Document) -> TextEnv {
         let s = &doc.settings;
         TextEnv {
-            compat: s.compat_mode,
+            compat: s.compat(),
             default_tab: s.default_tab,
             do_not_expand_shift_return: s.has("doNotExpandShiftReturn"),
             split_pg_break_and_para_mark: s.has("splitPgBreakAndParaMark"),
             allow_space_of_same_style_in_table: s.has("allowSpaceOfSameStyleInTable"),
             do_not_use_html_paragraph_auto_spacing: s.has("doNotUseHTMLParagraphAutoSpacing"),
+            align_tables_row_by_row: s.has("alignTablesRowByRow"),
             do_not_vert_align_cell_with_sp: s.has("doNotVertAlignCellWithSp"),
+            do_not_break_wrapped_tables: s.has("doNotBreakWrappedTables"),
+            do_not_vert_align_in_txbx: s.has("doNotVertAlignInTxbx"),
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
             grow_autofit: s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),

@@ -22,7 +22,7 @@ Example: `w:left="720" w:hanging="360"`, a right-aligned "iii." 12.5pt wide: it 
 `w:suff`:
 
 - `tab` (the default): a tab character after the number, resolved like any tab ([TAB-1](tab#tab-1) to [TAB-3](tab#tab-3)): the next custom stop past the number's end, else the next default stop; but when the number ends left of `left` and that stop lies beyond `left`, or there is no custom stop past it, the left indent itself (default stops before `left` don't count). A number wider than the hanging indent therefore goes to the next stop after its end.
-- `space`: one space in the number's font and size.
+- `space`: one space at the number's size, as wide as an **Arial** space whatever the number's font (569/2048 em: 61.1 twips at 11pt, not the 49.7 of a Calibri space); its height is the number's.
 - `nothing`: the text starts right after the number.
 
 ### LIST-3. Wrapped lines {#list-3}
@@ -39,7 +39,7 @@ In a table cell, the indents count from the cell's content box ([TABLE-24](table
 
 ### LIST-6. The number's formatting {#list-6}
 
-Format the number with the paragraph mark's run properties ([STYLE-5](style#style-5)), with the level's `w:rPr` applied on top. The suffix (tab or space) uses the same font and size.
+Format the number with the paragraph mark's run properties ([STYLE-5](style#style-5)), with the level's `w:rPr` applied on top. The suffix (tab or space) uses the same font and size, except for a space suffix's width ([LIST-2](#list-2)).
 
 ### LIST-7. The number's height {#list-7}
 
@@ -50,6 +50,8 @@ lineHeight = max(textAscent, numberAscent) + textDescent
 ```
 
 This holds for large numbers, other fonts and symbol-font bullets alike. The suffix tab adds nothing ([LINE-5](line#line-5)).
+
+A line multiple ([LINE-7](line#line-7)) scales the text's height, not the number's. A line holding only the number (an empty list paragraph) takes the paragraph mark's ascent and descent, its ascent raised to the number's, and the multiple scales all of that: `pitch = (max(markAscent, numberAscent) + markDescent) × m`.
 
 Example: a 20pt Calibri number (A 19.043) before 11pt Calibri text: height 19.043 + 2.954 = 21.997.
 

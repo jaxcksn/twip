@@ -14,7 +14,7 @@ These rules lay out a `w:tbl`: first the table's properties and its shared colum
 - `textW` = the width between the page margins, or the column width, or (for a nested table) the width of the cell's content box.
 - Column widths run from border centre to border centre.
 - A table's grid has `n` columns: the larger of the number of `w:gridCol` entries and, over all rows, `w:gridBefore + Σ w:gridSpan + w:gridAfter`. A row's first cell starts at grid column `w:gridBefore`; each cell covers `w:gridSpan` columns (default 1), cut off at the grid's end.
-- A floating table (`w:tblpPr`) is laid out where it stands in the flow, like any other table, except for its position ([TABLE-49](#table-49)).
+- A floating table (`w:tblpPr`) is laid out like any other table against the column width, but it takes no room in the flow: it sits at its anchored position and the text wraps around it ([TABLE-49](#table-49)).
 
 ## Table properties
 
@@ -30,17 +30,18 @@ These rules lay out a `w:tbl`: first the table's properties and its shared colum
 
 A cell's table-style properties (`w:pPr`, `w:rPr`, `w:tcPr`) merge, property by property, the style's whole-table properties and then each **active** conditional region in this order, lowest first (a later one overrides):
 
-`band1Horz, band2Horz, band1Vert, band2Vert, firstCol, lastCol, firstRow, lastRow, nwCell, neCell, swCell, seCell`
+`band1Horz, band2Horz, band1Vert, band2Vert, lastCol, firstCol, lastRow, firstRow, seCell, swCell, neCell, nwCell`
 
 Each region is looked up through the `w:basedOn` chain. Toggle properties don't XOR between regions (bold in both `firstRow` and `firstCol` is bold; see [STYLE-3](style#style-3)). Direct `w:tcPr` beats the merged result; where the table style sits against paragraph styles is [STYLE-4](style#style-4).
 
 Which regions are active:
 
-1. Read `w:tblLook`: the attributes `firstRow`, `lastRow`, `firstColumn`, `lastColumn`, `noHBand`, `noVBand`; an attribute that is absent takes its bit from the hex `w:val` (0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400 in that order). With no `w:tblLook` at all: `firstRow`, `firstColumn` and `noVBand` on, the rest off.
-2. `firstRow` is active for row 0 if `tblLook` enables it **and** the style (chain) defines a `firstRow` region. The same for `lastRow` (last row), `firstCol` (first cell of each row), `lastCol` (last cell).
-3. Corner regions: `nwCell` for row 0's first cell when `firstRow` and `firstColumn` are both enabled in `tblLook`; `neCell` (row 0, last cell; firstRow + lastColumn), `swCell` (last row, first cell; lastRow + firstColumn), `seCell` (last row, last cell; lastRow + lastColumn).
-4. Row banding needs `w:tblStyleRowBandSize` = B > 0 (absent: 0, nothing is banded) and `noHBand` off. A row that is an active first or last row gets no band. Otherwise `r = rowIndex − (1 if firstRow is active, else 0)`; the row is `band1Horz` if `(r div B)` is even, else `band2Horz`.
-5. Column banding is the same with `w:tblStyleColBandSize`, `noVBand`, the cell's index in its row, and `firstCol`/`lastCol`, giving `band1Vert`/`band2Vert`.
+1. Read `w:tblLook`: the attributes `firstRow`, `lastRow`, `firstColumn`, `lastColumn`, `noHBand`, `noVBand`; an attribute that is absent takes its bit from the hex `w:val` (0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400 in that order). With no `w:tblLook` at all: `firstRow`, `firstColumn` and `noVBand` on, the rest off. The style's own `w:tblLook` is never used.
+2. A row or column bit counts only when the style (chain) formats one of its regions: `firstRow` when it defines `firstRow`, or `nwCell` with the `firstColumn` bit, or `neCell` with the `lastColumn` bit; `lastRow` likewise with `lastRow`, `swCell`, `seCell`; `firstColumn` with `firstCol`, `nwCell` (and the `firstRow` bit), `swCell` (and the `lastRow` bit); `lastColumn` with `lastCol`, `neCell`, `seCell`. With `w:useWord2002TableStyleRules` in compat ≤ 14, corner regions don't keep a bit. Below, "bit" means a bit that counts.
+3. The first-row run: when the style defines `firstRow` or the `firstRow` bit counts, the table's leading rows that are header rows (`w:tblHeader`) or row 0 with the `firstRow` bit, so header rows right after such a row 0 join the run too.
+4. Each cell gets **one** row region: `firstRow` in the run (with the bit); else `lastRow` in the last row (with the bit); else, with `w:tblStyleRowBandSize` = B > 0 and `noHBand` off, `r = rowIndex − run length` and `band1Horz` when `r ≥ 0` and `(r div B)` is even, else `band2Horz` (so a run row without the bit is `band2Horz`).
+5. **One** column region the same way: `firstCol` for the first cell (with the bit); else `lastCol` for the last cell (with the bit); else column banding with `w:tblStyleColBandSize`, `noVBand` and `c = cellIndex − (1 with the firstColumn bit)`.
+6. At most **one** corner, the first that applies of: `nwCell` (first cell of a run row; firstRow and firstColumn bits), `neCell` (last cell of a run row; firstRow and lastColumn), `swCell` (first cell of the last row; lastRow and firstColumn), `seCell` (last cell of the last row; lastRow and lastColumn). A one-cell table with every bit gets only `nwCell`, even when the style defines no `nwCell`.
 
 Example: B = 2, an active `firstRow`: rows 1–2 are band1, rows 3–4 band2, rows 5–6 band1.
 
@@ -64,6 +65,8 @@ Both layouts run the same algorithm ([TABLE-6](#table-6)). `w:tblLayout w:type="
 | `w:tblW` above Σ columns | grow in proportion to max | the same |
 | pct cells | their share of A, beating dxa | the same |
 
+A nested table is laid out with its outermost table's layout, whatever its own `w:tblLayout`: inside a fixed table a nested autofit table's auto cells take their grid widths, and inside an autofit table a nested fixed table is fitted to its content.
+
 ## Autofit
 
 ### TABLE-6. The autofit algorithm and its arithmetic {#table-6}
@@ -71,8 +74,8 @@ Both layouts run the same algorithm ([TABLE-6](#table-6)). `w:tblLayout w:type="
 To get a table's column widths:
 
 1. Compute every cell's **min**, **max** and **hardMin** ([TABLE-7](#table-7) to [TABLE-11](#table-11)) and its width type and preference ([TABLE-12](#table-12)).
-2. Add the single-span cells to their columns ([TABLE-13](#table-13)).
-3. Spread the spanning cells over their columns ([TABLE-14](#table-14) to [TABLE-16](#table-16)).
+2. Add the single-span cells to their columns ([TABLE-13](#table-13)), then the skipped regions ([TABLE-15](#table-15)).
+3. Spread the spanning cells over their columns ([TABLE-14](#table-14), [TABLE-16](#table-16)).
 4. Resolve the column widths from the table-wide inputs ([TABLE-17](#table-17) to [TABLE-19](#table-19)).
 5. Hand out the rounding leftovers ([TABLE-20](#table-20)).
 6. Add the cell spacing and build the column edges ([TABLE-21](#table-21)).
@@ -105,7 +108,7 @@ So without cell spacing `pad` is the margins, unless half the borders are wider;
 
 Content widths, from the cell's blocks in order:
 
-- **Paragraph, contentMin**: split the paragraph into unbreakable pieces at its break opportunities ([BREAK-3](break#break-3)): a space, a line, page or column break ends a piece, and so does each break opportunity after a character (as after a hyphen, but see [TABLE-9](#table-9)). Each piece's width is the sum of its shaped advances ([FONT-5](font#font-5)) plus the indents of [TABLE-8](#table-8); round it **up** to whole twips. contentMin is the widest.
+- **Paragraph, contentMin**: split the paragraph into unbreakable pieces at its break opportunities ([BREAK-3](break#break-3)): a space, a line, page or column break ends a piece, and so does each break opportunity after a character (as after a hyphen, but see [TABLE-9](#table-9)). A piece also ends **before** a tab: the tab belongs to the text after it and is as wide as it is in the unwrapped lines of contentMax (a tab to a stop at 2714 after text 452 wide makes a piece of 2262 for the tab alone, plus whatever follows it up to the next break). A list number's suffix tab is not such a tab. Each piece's width is the sum of its shaped advances ([FONT-5](font#font-5)) plus the indents of [TABLE-8](#table-8); round it **up** to whole twips. contentMin is the widest.
 - **Paragraph, contentMax**: lay the paragraph out at unlimited width (its lines then end only at forced breaks). For each line take its width as laid out, up to the end of its last piece that isn't a space (trailing spaces don't count), plus the indents of [TABLE-8](#table-8); round up. A centred or right-aligned line is taken from its line start, not from where alignment would put it. contentMax is the widest line.
 - **Nested table**: [TABLE-11](#table-11).
 - The cell's contentMin, contentMax and contentHard are the maximum over its blocks (a paragraph's contentHard is 0). If contentMin and contentMax are both 0, the cell is empty: both become 6.
@@ -128,6 +131,15 @@ The paragraph's indents (`left`, `right`, `firstLine`, negative when hanging) en
 |---|---|---|
 | each piece (min) | `+ left + right + min(firstLine, 0)` | `+ left + right` |
 | each line (max) | `(lineEnd − lineStart) + left + right + min(firstLine, 0)` | `lineEnd + right`, with `lineEnd` taken from the paragraph's left edge, so it includes `left + firstLine` (first line) or `left` (other lines) |
+
+A numbered paragraph (one with a list number, [LIST-1](list#list-1)) differs:
+
+- compat ≤ 14: the first line is laid out starting at `max(left + firstLine, 0)` (so its suffix tab goes to the stop it reaches from there), and its width for the max is taken from the paragraph's left edge, not from the line start. The number, its suffix and the text's first piece are **one** piece for the min, from the left edge to the end of that piece; the others are pieces as usual, and in them a tab only ends a piece. Both widths then get `left + right + min(firstLine, 0)` as in the table.
+- compat 15: the number and its suffix aren't pieces of their own; the text's first piece starts at `left` (whatever the number and suffix cover) and ends where it ends in the unwrapped line.
+
+Example, compat 12: left 720, hanging 360, "1." with a tab suffix, then "786594": the number sits at 360, the tab goes to 720, the text ends at 1390, so min = max = `1390 + 720 − 360 = 1750`. With left 60, hanging 180 and a Symbol bullet: the line starts at 0, the bullet ends past the left indent, so the tab goes to the default stop 720 and the piece is `720 + 670 − 120 = 1270`. The same paragraph in compat 15: `670 + 60 = 730`.
+
+In compat 15, a paragraph whose last line starts left of 0 (its start includes `firstLine` on the first line): that line's max is the larger of the usual one and its full end plus `right`, the full end taking in its trailing spaces and the mark glyph that ends it. The mark is the end-of-cell mark `¤` (U+00A4) in the cell's last paragraph and the pilcrow `¶` otherwise, in the paragraph mark's font and size (Calibri 11pt: 109.6 twips).
 
 Examples, compat 15: `firstLine` 360 adds 360 to the max and nothing to the min. A hanging 360 under `left` 720 adds 720 to the min, and the first line's max is only `360 + text + right`, so the max may be no wider than the min.
 
@@ -152,7 +164,7 @@ contentMax  = Wt − e
 contentHard = hardT − e
 ```
 
-In compat 15 the allowances are negative, so the cell needs the nested table's widths plus half its outer borders plus its indent.
+A nested table is never sloppy, so `eL` and `eR` are the compat 15 allowances (negative half borders) in every mode: the cell needs the nested table's widths plus half its outer borders plus its indent, in compat ≤ 14 too.
 
 ### TABLE-12. Cell width types {#table-12}
 
@@ -165,7 +177,7 @@ Each cell gets a type and a preference `pref` from its `w:tcW`:
 | `type="pct"`, `w` | pct, `pref = w` in fiftieths of a percent (5000 = 100%; `"50%"` = 2500) | the same |
 | `type="nil"` | dxa, `pref = grid − s2` | the same |
 
-`grid` = the sum of the `w:tblGrid` widths over the cell's columns; `s2` = 2 × cell spacing. Only a dxa preference that comes from an actual dxa `w:tcW` is *written* ([TABLE-15](#table-15) needs it).
+`grid` = the sum of the `w:tblGrid` widths over the cell's columns; `s2` = 2 × cell spacing, and a cell on the table's left or right edge takes `s2 div 2` more off for each such side, so the resolved columns give the grid back ([TABLE-21](#table-21)).
 
 Example: grid 1000 / 3000 / 2000, a cell "x" in each with `type="nil"`: the columns are 50, 150 and 100pt. With no `w:tcW`, an "x" cell is about 15.6pt wide (its content plus 216).
 
@@ -173,13 +185,12 @@ Example: grid 1000 / 3000 / 2000, a cell "x" in each with `type="nil"`: the colu
 
 Each grid column holds `min`, `max`, `hardMin`, a type (initially auto), a dxa preference and a pct, all 0 at first. Take the cells with `gridSpan = 1` row by row, left to right. Skip vertical-merge continuation cells, except in the table's first row. For each cell, in its column:
 
-1. If the cell is dxa, the column isn't dxa yet, and `pref < column.max`: first set `column.max = max(pref, column.min)`.
-2. The cell's own maximum: dxa cell `cellMax = max(cell.min, pref)` (fixed layout: `cellMax = pref`); other cells `cellMax = cell.max`. A dxa cell's content max is ignored.
-3. Type and preference:
+1. The cell's own maximum: dxa cell `cellMax = max(cell.min, pref)` (fixed layout: `cellMax = pref`); other cells `cellMax = cell.max`. A dxa cell's content max is ignored.
+2. Type and preference:
    - pct cell: `column.pct = (column is pct) ? max(column.pct, pref) : pref`; the column becomes pct. A pct column stays pct.
    - dxa cell, column not pct: `column.dxa = (column is dxa) ? max(column.dxa, pref) : pref`; the column becomes dxa.
    - auto cell: no change.
-4. Widths:
+3. Widths:
    ```
    column.max     = max(column.max, cell.min, cellMax)     // fixed layout: max(column.max, cellMax)
    column.min     = max(column.min, cell.min)
@@ -188,29 +199,38 @@ Each grid column holds `min`, `max`, `hardMin`, a type (initially auto), a dxa p
 
 In fixed layout a cell's minimum (`cellPad + 20`) doesn't raise its column's max here; that happens only at the end of [TABLE-16](#table-16), after the spanning cells. (Two columns with dxa cells of 15 and 1 twips under an 864-twip dxa span: the last column gets 1 + 848 = 849 from the span, and only then do both columns rise to their minimum of 20. Raising them first would give the last column 844.)
 
-So a dxa column's max is the largest of its min, its dxa preferences and the content max of any auto cells in it.
+So a dxa column's max is the largest of its min, its dxa preferences and the content max of any auto cells in it: a dxa cell never lowers a column's max.
 
-### TABLE-14. Spanning cells: order, and the last-column rule {#table-14}
+### TABLE-14. Spanning cells: order {#table-14}
 
-After all single-span cells of all rows, take the cells with `gridSpan ≥ 2` (not vertical-merge continuations). Order them by the grid column they **end** in, left to right; among those ending in the same column, the one starting further right first; otherwise in row order.
+After all single-span cells of all rows and the skipped regions ([TABLE-15](#table-15)), take the cells with `gridSpan ≥ 2` (not vertical-merge continuations) in row order, and left to right within a row. Each goes through [TABLE-16](#table-16)'s proportional spread, dxa cells too: there is no rule that gives a dxa span's extra width to its last column. A span that starts in the last grid column is added to it as a single-span cell ([TABLE-13](#table-13)).
 
-For each, in that order, over its span columns:
+Example: a dxa span of 4050 over two columns that later rows give 1005 and 3045 spreads over both in proportion to their min + max; it doesn't leave the first at 1005 and put the rest in the second.
 
-1. If it is a written dxa cell, first apply [TABLE-15](#table-15).
-2. **Last-column rule:** if the cell is dxa (written or not) and every span column before the last is dxa or has no single-span cell of its own:
-   - `extra = pref − Σ column.max`; if `extra > 0`, add it to the last span column's max. That column becomes dxa if it has no single-span cell of its own.
-   - `short = cell.min − Σ column.min`; if `short > 0`, `last.min = min(last.min + short, last.max)`.
-3. Otherwise set the cell aside.
+### TABLE-15. Skipped grid columns {#table-15}
 
-Then spread every cell set aside, in the same order, by [TABLE-16](#table-16). A span narrower than its columns changes nothing.
+A row's skipped regions are `w:gridBefore` (with `w:wBefore`) and `w:gridAfter` (with `w:wAfter`); the grid columns a row doesn't reach at its end count as a gridAfter region too. Each is a dxa segment that ends in the region's last column and spans its columns:
 
-Examples: columns 1000 / 2000 / 3000 (dxa) under a 9000 dxa span: 1000, 2000, 6000. A 6000 span over 1000 / 3000: 1000, 5000.
+- with a dxa width `w`: that width (0 or another type: no segment);
+- with no width element: the sum of its `w:tblGrid` widths.
 
-### TABLE-15. Skipped grid columns under a written span {#table-15}
+A region counts only inside the extent of the table's non-auto cells (on the grid): a before region only if some non-auto cell starts left of the region's end, an after region only if some non-auto cell ends right of its start.
 
-A row that skips grid columns (`w:gridBefore` with `w:wBefore`, `w:gridAfter` with `w:wAfter`, width > 0) offers that width to the **last** column it skips. When a written dxa spanning cell ([TABLE-12](#table-12)) covers such a column, and no single-span cell sits in that column, set `column.max = max(column.max, skipWidth)` before the last-column rule. Auto spans, nil widths and fixed layout's auto cells don't do this.
+**Helper row.** The cells with a dxa `pref > 0` ([TABLE-12](#table-12), not vertical-merge continuations below the first row) are segments as well: ending in their last column, spanning their columns. Keep, per (end column, span), the widest. A column's type is the type of the first single-span segment or cell ending there (regions first, then the cells in row order), else dxa when only spans end there. Then, for columns `g = 0 … n−1` in order:
 
-Example: row 1 has a 5400 cell, then `w:gridAfter` 1 with `w:wAfter` 5508; row 2 has one cell spanning both columns with `w:tcW` 5400. The second column has no cell of its own, so it takes 5508: the table is 5400 + 5508 = 10908 wide.
+```
+helper[g] = the widest one-column segment ending at g (0 if none)
+for each segment ending at g spanning k ≥ 2 columns:
+    v = width − Σ helper[g−k+1 … g−1]     (0 if any of those columns has another type than g)
+    if v ≠ 0 and g is dxa: v −= (k−1)·s2
+    helper[g] = max(helper[g], v)
+```
+
+Only if some spanning segment raised a column this way, every dxa column with `helper[g] > 0` gets a single-span dxa cell ([TABLE-13](#table-13)) with `min = 5`, `max = pref = helper[g]`. Columns of other types get nothing.
+
+Then, whatever the helper row did, the last one-column region before the first column (in row order) and the last one-column region after the last column are added the same way to the first and the last column.
+
+Examples (grid 1000 / 1000 / 1000; row 1 `gridBefore 1, wBefore 800` with one 2000 cell; row 2 `gridBefore 2, wBefore 2000` with one auto cell; row 3 three dxa 300 cells): row 1 doesn't reach column 3, an after region of 1000, so column 3 is 1000 wide even though its text needs less. A 6000 dxa span over auto columns raises no dxa column and is spread proportionally ([TABLE-16](#table-16)).
 
 ### TABLE-16. The proportional spread {#table-16}
 
@@ -254,10 +274,10 @@ padTotal = s2 × (n + 1)
 A        = round(textW − tblInd + eL + eR)          (twips)
 ```
 
-The **edge allowances** `eL`, `eR` come from the first row: its first cell's left border and left margin, its last cell's right border and right margin, each border taken after the cell-versus-table conflict ([TABLE-36](#table-36)). With `halfBorder = (borderTwips + 1) div 2` (rounded up):
+The **edge allowances** `eL`, `eR` come from the first row: its first cell's left border and left margin, its last cell's right border and right margin, each border being that side's candidate ([TABLE-36](#table-36)): the cell's own if the cell writes that side (a `nil` or `none` one counts as 0), else the table's. A border's width in horizontal geometry (here and in [TABLE-23](#table-23), [TABLE-24](#table-24), [TABLE-39](#table-39)) is its layout width: `w:space` plus its line, as [TABLE-37](#table-37) gives it. With `halfBorder = (borderTwips + 1) div 2` (rounded up):
 
 - compat 15: `e = −halfBorder`;
-- compat ≤ 14: `e = +max(halfBorder, cell margin)`.
+- compat ≤ 14: `e = +max(halfBorder, cell margin)`; with cell spacing `s`, `e = +max(halfBorder, 2s + border + cell margin)` ([TABLE-39](#table-39)).
 
 Example: compat 15, 0.5pt borders, 6.5in of text: `A = 9360 − 5 − 5 = 9350`. Compat 12, 108-twip margins: `A = 9360 + 108 + 108 = 9576`.
 
@@ -387,15 +407,25 @@ Grid 2000 / 2000 unless stated, compat 15, A = 9350; cell contents short.
 
 Place the table's left border centre `x0`, from the left edge of the text column (or of the cell's content box):
 
-- `lw` = the width of the first row's first cell's left border, resolved: the cell's own if it is a real border, else the table's left border. `lm` = that cell's left margin.
+- `lw` = the width of the first row's first cell's left border candidate, as in [TABLE-17](#table-17): the cell's own if the cell writes it (`nil` or `none` counts as 0), else the table's left border. `lm` = that cell's left margin.
 - compat 15: `x0 = tblInd + lw/2` (the outer border edge sits on the margin).
-- compat ≤ 14: `x0 = tblInd − max(lm, halfBorder(lw))` with `halfBorder` as in [TABLE-17](#table-17), in points (so the cell text lines up with the margin).
+- compat ≤ 14: `x0 = tblInd − e`, with `e` the left edge allowance of [TABLE-17](#table-17) (`max(lm, halfBorder(lw))`, or with cell spacing `max(halfBorder(lw), 2s + lw + lm)`), with `halfBorder` as in [TABLE-17](#table-17), in points (so the cell text lines up with the margin). A table whose `w:tblInd` is set neither directly nor by its table style's `w:basedOn` chain isn't pulled left: `x0 = 0`, so its text starts `lm` inside the column. A table without `w:tblStyle` (or naming a style that doesn't exist) takes the default table style, whose indent counts as set even when that style writes no `w:tblInd`; only a table naming an existing style can be left unpulled.
+- The alignment is the table's `w:jc`; in compat 15 a table that isn't floating takes its first row's `w:trPr/w:jc` instead when that row has one, for every row.
 - `w:jc="center"`: `x0 = (textW − Σ columns)/2` (the indent is ignored).
 - `w:jc="right"` (or `end`): `x0 = textW − Σ columns − (table right border width)/2`.
+- compat ≤ 14, a table that isn't floating: each row is aligned on its own, by its `w:trPr/w:jc`, else the table's. Its width is its own cells' extent (without its `w:gridBefore` and `w:gridAfter` columns) when the settings have `w:alignTablesRowByRow`, else the whole grid's. A centred row's left edge is at `(textW − width)/2`; a right-aligned row's at `textW − width + gL`, with `gL` its first cell's left margin (with cell spacing, plus `2s` and the table's left border). A left-aligned row stays at `x0`; in a centred or right-aligned table it is at `−e` (the indent is ignored).
 
 Each cell then spans from `x0 + edge[col]` to `x0 + edge[col + span]` ([TABLE-21](#table-21)). A row with its own indent: [TABLE-50](#table-50).
 
 Example: compat 15, 0.5pt borders: `x0 = 0.25pt`. Compat 12, 5.4pt margins, 0.5pt borders: `x0 = −5.4pt`.
+
+**Right-to-left tables** (`w:bidiVisual`, not floating). The grid is resolved in logical order (column 0 first) and drawn mirrored: column 0 is on the right. The table's `left`/`right` borders are logical (left = start, drawn on the right), and so are cell borders and cell spacing; cell margins are visual (`w:left` is on each cell's left as drawn, in the content box of [TABLE-24](#table-24) and [TABLE-39](#table-39), whose border and spacing sides swap). The edge allowances of [TABLE-17](#table-17) take the first row's last cell for the left side and its first cell for the right, each against the table's own left and right border. In twips, with `width = Σ columns`, `bS` the first cell's left border against the table's left (the start border), `bE` the last cell's right border against the table's right, `bLL` the last cell's left border against the inside vertical border (the table's left when it is the row's only cell), `gS` the first cell's left margin (with cell spacing plus `s`, or `2s` when it is the row's only cell, and its resolved right border), `gE` likewise for the last cell, and `x0` here the table's left edge as drawn:
+
+- `w:jc` absent, `left`, `start` or `both`: right-aligned, the indent counted from the right. Compat ≤ 14: `x0 = textW − tblInd + max(halfBorder(bS), gS) − width`; compat 15: `x0 = textW − tblInd − (bS + bLL) div 2 − width`.
+- `w:jc="right"` or `end`: left-aligned, the indent ignored. Compat ≤ 14: `x0 = −max(halfBorder(bE), gE)`; compat 15: `x0 = 0`.
+- `w:jc="center"`: compat ≤ 14: `x0 = (textW − width) div 2`; compat 15: `x0 = (textW − width − (bS + bLL) div 2) div 2`.
+
+Every row takes the table's placement: the compat ≤ 14 row alignment above and a row's own indent ([TABLE-50](#table-50)) don't apply. A nested right-to-left table takes the compat 15 placement in every mode ([TABLE-25](#table-25)). A floating table with `w:bidiVisual` is placed and drawn left to right.
 
 ### TABLE-24. The cell's content box {#table-24}
 
@@ -406,7 +436,7 @@ left  = cellX + max(marginL, bL/2)
 width = max(0, w − max(marginL, bL/2) − max(marginR, bR/2))
 ```
 
-where `bL`, `bR` are its resolved left and right borders ([TABLE-36](#table-36)). Lay the cell's content out at that width. With cell spacing see [TABLE-39](#table-39).
+where `bL`, `bR` are its resolved left and right borders ([TABLE-36](#table-36)), an art border counting as a single line of its `w:sz` ([TABLE-37](#table-37)). Lay the cell's content out at that width. With cell spacing see [TABLE-39](#table-39).
 
 ### TABLE-25. Nested table placement {#table-25}
 
@@ -420,7 +450,7 @@ where `lw′` is the first cell's **own** left border width if the cell has a le
 
 Example: compat 12, a nested table whose cells have a `nil` left border and whose table border is single 0.5pt: `lw′ = 0`, so shift = the cell margin.
 
-In compat ≤ 14 a nested table's negative `tblInd` counts as 0: `tblInd = -720` puts it where `0` does. A positive one is used as it is.
+In every compat mode a nested table's negative `tblInd` counts as 0: `tblInd = -720` puts it where `0` does. A positive one is used as it is.
 
 ### TABLE-26. The paragraph after a nested table {#table-26}
 
@@ -433,14 +463,19 @@ A cell must end in a paragraph, so a nested table at the end of a cell is follow
 Vertically, borders take space:
 
 ```
-topBorder   = the widest resolved top edge among the row's cells (TABLE-36), double counted 3×
+topBorder   = the widest resolved top edge among the row's cells (TABLE-36), by its h() (TABLE-37)
+above       = max(W, max over the row's cells of (h(top(c)) + topMargin(c)))
+                  top(c) = the cell's own top border, else the table's top (row 0) or insideH, before conflicts
+                  W      = the previous row's widest own-else-insideH bottom border, h() as in TABLE-37 (0 on row 0)
 contentH    = max over the row's cells that are not vertically merged of
-                  (topMargin + cell content height + bottomMargin)
+                  (above − topBorder + cell content height + bottomMargin)
               but at least the largest (topMargin + bottomMargin) of any cell in the row
 rowPitch    = topBorder + contentH                       (auto height; TABLE-28)
-firstLineTop = rowTop + topBorder + topMargin (+ the vAlign offset, TABLE-30)
-tableBottom = last row's bottom + the widest resolved bottom edge among the last row's cells
+firstLineTop = rowTop + above (+ the vAlign offset, TABLE-30), the same for every cell of the row
+tableBottom = last row's bottom + the widest resolved bottom edge among the last row's cells, by its h()
 ```
+
+Example: a 3pt bottom border over a 0.5pt insideH and 2pt top margins gives `above = max(3, 2.5) = 3`.
 
 Cells in a vertical merge (restart or continuation) don't count in `contentH`: see [TABLE-31](#table-31). [TABLE-38](#table-38) can widen `topBorder`, and cell spacing adds to it ([TABLE-39](#table-39)).
 
@@ -454,6 +489,8 @@ Example: one 13.44pt line, top and bottom margins 0: a 0.5pt top border gives a 
 - `atLeast`: `rowPitch = topBorder + max(contentH, X)`;
 - `exact` with X > 0: `rowPitch = X`, the top border **included**; content that doesn't fit is clipped ([TABLE-34](#table-34)). An exact row of 0 is an auto row.
 
+In compat ≤ 14 a body row's exact height is capped to the whole column (the column's full height, not the space left) less the row's top border and the table's bottom border, so an exact row never asks for more than one column; its content is clipped at the capped height. Compat 15 keeps the height: an exact row taller than the column runs past the column bottom.
+
 ### TABLE-29. Cell content {#table-29}
 
 Lay out a cell's blocks top-down at its content width with the normal paragraph rules. Its content height includes its first paragraph's space-before and its last paragraph's space-after, except where contextual spacing drops them against the neighbouring cells or the row's end mark ([PARA-4](para#para-4)). A paragraph's space-after before a nested table applies at that table's top border edge. Floats anchored in a cell: see [FLOAT-14](float#float-14).
@@ -465,9 +502,9 @@ With `free = rowPitch − topBorder − topMargin − bottomMargin − contentHe
 A cell that anchors a float laid out in it (`layoutInCell="1"`, [FLOAT-14](float#float-14)), any wrap, picture or text box:
 
 - with `w:compat/w:doNotVertAlignCellWithSp` in compat ≤ 14, its offset is 0, for `center` and `bottom` alike (compat 15 ignores the flag);
-- otherwise the float counts in `contentHeight`: `contentHeight = max(contentHeight, bottom of each float in the cell − cell content top)`, the float where a top-aligned cell puts it (for a `paragraph`-relative one, anchor paragraph top + `posOffset` + its height). The float still doesn't make the row taller.
+- otherwise the float counts in `contentHeight`: `contentHeight = max(contentHeight, bottom of each float in the cell − cell content top)`, the float where a top-aligned cell puts it (for a `paragraph`-relative one, anchor paragraph top + `posOffset` + its height). It makes the row taller only as [FLOAT-14](float#float-14) says (a wrapping `paragraph`- or `line`-relative float).
 
-A `layoutInCell="0"` float in compat ≤ 14 is outside the cell and doesn't count; an inline picture counts only as its line.
+A compat ≤ 14 float that [FLOAT-14](float#float-14) places outside the cell (`layoutInCell="0"`, not `character`- or `line`-relative) doesn't count; an inline picture counts only as its line.
 
 Example: a 60pt row, a 13.43pt line and a 20pt float 10pt below the paragraph top, without the flag: a `center` cell's offset is `(60 − 30)/2 = 15`, a `bottom` cell's 30.
 
@@ -494,14 +531,16 @@ Example: a two-row region of 14.52pt lines beside a last row holding "(initial)"
 
 ### TABLE-33. Vertical text {#table-33}
 
-A cell with `w:textDirection` `btLr`, `tbRl`, `tbRlV` or `tbLrV` is one line thick for autofit: `contentMin = contentMax = 284` twips (about 14.2pt), hardMin 0, before the padding of [TABLE-7](#table-7). Its content is not laid out and adds nothing to its row's height: an auto row stays as tall as its other cells need.
+A cell with `w:textDirection` `btLr`, `tbRl`, `tbRlV` or `tbLrV` is as thick as its lines for autofit: `contentMin = contentMax = 6 + Σ paragraphs (spaceBefore + spaceAfter) + Σ lines ⌈h × 1440 / 294912⌉` twips, hardMin 0, before the padding of [TABLE-7](#table-7). `h` is the line's pitch in layout units plus `em/32` (`em` the line's largest font size, rounded half up to a layout unit): a line multiple `m` scales that too (`(em/32 × w:line + 120) div 240`), an exact line adds none. One line of Calibri 11 is 282 twips. Its content is not laid out and adds nothing to its row's height: an auto row stays as tall as its other cells need.
 
 ### TABLE-34. Exact rows clip per glyph {#table-34}
 
-In an exact row ([TABLE-28](#table-28)), the clip line is the row's bottom (for a merged region whose first row is exact, the region's bottom). For each line of a cell:
+In an exact row ([TABLE-28](#table-28)), the clip line is the row's bottom less the cells' bottom margin, which the row adds below its exact height (for a merged region whose first row is exact, the region's bottom less that margin). For each line of a cell:
 
 1. Find the line's highest ink top (the top of its glyphs' ink, not the line box). If it is at or below `clipLine + 0.06pt` (about one twip of slack), hide the whole line. A line with no ink (no glyphs) hides if its top is at or below the clip line.
 2. In a line that shows, drop each glyph whose own ink top is at or below `clipLine + 0.06pt`. A glyph whose ink reaches above it is drawn whole.
+
+Example: a 20pt exact row with 3pt top and 6pt bottom margins is 26pt tall and clips 20pt below its top; a second 13.43pt line, whose ink top is 20.9pt down, is hidden.
 
 So text can show in a row a little shorter than its line: capitals whose ink top is 17.03pt down show in a 17.0pt row. A second line starting 2.1pt above the bottom of a 14.4pt exact row shows only the glyphs whose ink reaches above that bottom.
 
@@ -511,7 +550,7 @@ Cell content is laid out as written, even when a negative indent makes it run pa
 
 - a glyph whose ink overlaps the box is drawn (whole); one whose ink lies wholly outside is dropped (a glyph without ink is kept if its origin is inside);
 - rectangles drawn with the text (underlines, highlights) are cut at the box edges;
-- a nested table's lines are clipped this way to the box of every cell that holds it, not only their own cell's.
+- a nested table isn't clipped to the cell that holds it: one wider than its cell is drawn in full, over the neighbouring cells, each of its lines clipped only to its own cell. An exact outer row still clips it at its bottom ([TABLE-34](table#table-34)).
 
 Example: in "…FFFF" running past the edge, the last F whose ink still touches the box is drawn; in "…F02-1", a final "1" whose ink starts past the edge is not.
 
@@ -533,7 +572,11 @@ The winning top edges set the row's top-border space ([TABLE-27](#table-27)); th
 
 ### TABLE-37. Border thickness and drawing {#table-37}
 
-A double border is line + gap + line, each its width `w`: it is `3w` thick in layout (rows grow by `3w`, the padding counts `3w`), and it is drawn as two lines of `w` at the outer sides of that band. Every other style, compound ones included, counts once and is drawn as one solid band of its width.
+In layout ([TABLE-27](#table-27)) a border takes `h(b)` = its `w:space` in points plus its line, the line twice with `w:shadow`. The line is the width rounded down to whole twips (`w:sz × 5 div 2` twips: `sz` 3 is 0.35pt); double and compound styles their stripes as below; `wave` 3.75pt at `sz` 12, else 3pt; `doubleWave` 5.25pt; `dashDotStroked` 3pt; `threeDEmboss` and `threeDEngrave` the width plus 1.5pt (plus 3pt from 3pt wide). An art border (any `w:val` that isn't a line style) is `w:sz` points wide (at most 255), in row heights and in horizontal geometry alike, except the cell's content box ([TABLE-24](#table-24)); it is drawn as a line of its width (`w:sz / 8` pt) at the top or left of that band, the rest left empty. Drawing uses the width.
+
+A double border is line + gap + line, each its width `w`: it is `3w` thick in layout (rows grow by `3w`, the padding counts `3w`), and it is drawn as two lines of `w` at the outer sides of that band. Every other style, compound ones included, counts once and is drawn as one band of its width: solid, or for a patterned line dashes along the band, on and off in units of the line width from the band's start: `dotted` 1, 1; `dashed` 3, 1; `dotDash` 3, 1, 1, 1; `dotDotDash` 3, 1, 1, 1, 1, 1; `dashSmallGap` 4, 1 (of the band's thickness). Not done: `wave`, `doubleWave` and `dashDotStroked` are drawn solid.
+
+`threeDEmboss` and `threeDEngrave` are three lines across the band with no gap: `o`, the width, `o` (`o` 0.75pt, 1.5pt from 3pt wide), top or left first light, middle, dark when embossed and dark, middle, light when engraved. The colours come from the border's colour (`auto` as A0A0A0) on the 0–240 hue/lightness/saturation scale, in integers: black gives C0C0C0, 808080, 000000 and white FFFFFF, C0C0C0, 808080; any other colour takes `L' = L + 40` if `L < 60`, `L` if `L < 120`, else `L − 40`, and its lines are at lightness `L' + 40`, `L'`, `L' − 40`; the middle line is drawn in the average of its colour and that colour at `L' − 60`.
 
 With no cell spacing, draw each cell's winning edges as filled bands of their thickness `t`:
 
@@ -554,14 +597,14 @@ Example: a cell with a 0.72pt bottom border above a wide cell whose top is `nil`
 With `w:tblCellSpacing` = s > 0 (the table's value, in points):
 
 - **Gaps:** a cell side on the table's outer boundary gets 2s, an interior side s. Neighbouring cells are s + s apart; outer cells are 2s from the table's border centre line.
-- **Each cell draws its own box**, from `cellX + gapL` to `cellX + w − gapR`, and from `rowTop + gapTop` to the row's bottom, where `gapTop = 2s`, plus the table's top border width on the first row. Its four winning edges are drawn **inside** that box (top band from the box top down, bottom band up from the box bottom, left and right bands inside the box's sides). Shading fills the box.
+- **Each cell draws its own box**, from `cellX + gapL` to `cellX + w − gapR`, and from `rowTop + gapTop` to `s` above the row's bottom (`2s` above it on the table's last row, whose height holds that gap), where `gapTop = 2s` plus the table's top border on the first row, and `s` on the others. Its four edges are its own candidates ([TABLE-36](#table-36): the cell's border, else the table's), not resolved against the neighbouring cells, and are drawn **inside** that box (top band from the box top down, bottom band up from the box bottom, left and right bands inside the box's sides). Shading fills the box.
 - **Cell text** starts at `cellX + gapL + bL + marginL` and is `w − that − marginR − bR − gapR` wide.
-- **Row pitch:** `topBorder` of [TABLE-27](#table-27) plus `gapTop`; each cell's content counts `topMargin + content + bottomMargin + (the widest bottom edge in the row)`.
-- **Table bottom:** `2s + the table's bottom border width`.
+- **Row pitch:** `topBorder` of [TABLE-27](#table-27) plus `gapTop`; each cell's content counts `topMargin + content + bottomMargin + (the widest bottom edge in the row, by its h())`, plus `s` on every row but the last.
+- **Table bottom:** the table's bottom border width (the last row holds the 2s above it).
 - **The table's own border** (`w:tblBorders` outer sides) is drawn as usual around the cells: its top on the first row from the row's top, its sides on every row centred on the table's left and right border centres, its bottom below the last row, 2s under the last cell box.
 - Autofit counts the spacing as in [TABLE-7](#table-7), [TABLE-17](#table-17) and [TABLE-21](#table-21). The rule of [TABLE-38](#table-38) doesn't apply.
 
-Example: s = 2pt, 0.5pt borders, margins 0 top and bottom, one 13.43pt line: an interior row's pitch is 4 + 0.5 + 13.43 + 0.5 = 18.43pt.
+Example: s = 2pt, 0.5pt borders, margins 0 top and bottom, one 13.43pt line: an interior row's pitch is s + 0.5 + 13.43 + 0.5 + s = 18.43pt.
 
 ## Rows across pages
 
@@ -580,8 +623,8 @@ where `tableBottomBorder` is the table's bottom border space ([TABLE-27](#table-
 A row that doesn't fit splits by default ([TABLE-45](#table-45) for the exceptions):
 
 1. `room = columnBottom − noteArea − rowTop − topBorder − tableBottomBorder`.
-2. Each cell keeps, from its content, the lines (and nested-table rows) that fit in `room − topMargin − bottomMargin` ([TABLE-43](#table-43), [TABLE-44](#table-44) say which); the rest goes on.
-3. If the split is allowed ([TABLE-42](#table-42)), draw the part on this page with height `topBorder + max over cells of (topMargin + kept height + bottomMargin)`, where a cell whose part ends its content also counts its last space-after. Give it a closing bottom border (each cell's bottom edge, [TABLE-37](#table-37)). The page is then full.
+2. Each cell keeps, from its content, the lines (and nested-table rows, below) that fit in `room − topMargin − bottomMargin` ([TABLE-43](#table-43), [TABLE-44](#table-44) say which), a line that references footnotes only with its notes ([NOTE-8](note#note-8)); the rest goes on.
+3. If the split is allowed ([TABLE-42](#table-42)), draw the part on this page with height `topBorder + max over cells of (topMargin + kept height + bottomMargin)`, where a cell whose part ends with a whole paragraph (the end of its content, or a paragraph the cut kept whole) also counts that paragraph's space-after. Give it a closing bottom border (each cell's bottom edge, [TABLE-37](#table-37)). The page is then full.
 4. The continuation starts the next column with the row's top border and top margin again, and its height is worked out the same way (a part that ends its cell includes that cell's last space-after, like a whole row). It may split again.
 5. A cell whose continuation starts with a new paragraph (the cut fell between paragraphs) keeps at its top what the gap to the previous paragraph ([PARA-1](para#para-1)) leaves after that paragraph's space-after, which stayed on the page before, as after a next-page section break ([PAGE-7](page#page-7)). A cut inside a paragraph keeps nothing.
 
@@ -589,15 +632,21 @@ Example: a cell cut after an empty paragraph with no space-after; the next parag
 
 Each cell breaks at its own line boundary.
 
+A nested table is cut by the same rules inside its cell's room. Its rows stay while they fit, as the cell's lines do; a nested row that doesn't fit splits like a table's row (steps 2 to 5 against the room left below its top, [TABLE-42](#table-42)), so each nested cell keeps its leading lines that fit. It moves on whole only when that fails or the row may not split: a cantSplit, exact or atLeast row as in [TABLE-45](#table-45), and in compat ≤ 14 a header row. A nested table cut on a page, between its rows or inside one, ends its part there with its bottom border, which counts in the cell's kept height. In compat 15 that border must fit below the last row kept; in compat ≤ 14 the fit test leaves it out. The continuation starts with the next row, or the split row's rest, with its top border. Nested rows have no keep-with-next, `pageBreakBefore` or repeated header rows ([TABLE-45](#table-45), [TABLE-46](#table-46)).
+
+Example: a cell whose nested table's last row on the page holds two lines in its first cell and one in its second, with room for one line: the first line of the first cell and the one line of the second stay, closed by the nested table's bottom border, and the second line continues on the next page at the top of that row's rest.
+
 ### TABLE-42. When a row may split {#table-42}
 
 A row splits only if every cell that has content keeps at least its first line on this page, that line's paragraph's space-before included (an empty cell's empty paragraph is a line like any other), and at least one cell keeps something. Otherwise the whole row moves to the next column.
 
 ### TABLE-43. Widow and orphan control at a row split {#table-43}
 
-Where a cell's cut falls inside a paragraph that has widow/orphan control on, apply [PAGE-3](page#page-3) to that paragraph: the cell keeps the number of its lines that rule takes. A paragraph that continues a row already split on an earlier page counts as already begun (no orphan rule for it). If a cell then keeps nothing, [TABLE-42](#table-42) fails and the row moves whole.
+In compat ≤ 14 a cell's cut is where its lines stop fitting: no widow, orphan or keep rule applies inside a table. In compat 15, where a cell's cut falls inside a paragraph that has widow/orphan control on, apply [PAGE-3](page#page-3) to that paragraph: the cell keeps the number of its lines that rule takes. A paragraph that continues a row already split on an earlier page counts as already begun (no orphan rule for it). If a cell then keeps nothing, [TABLE-42](#table-42) fails and the row moves whole.
 
 Example: a five-line cell paragraph, widow control on, four lines of room: three lines stay, two go on.
+
+Then, in compat 15, the body's keeps ([PAGE-6](page#page-6)) apply inside the cell: the cut doesn't fall inside a keepLines paragraph (it moves to that paragraph's start), and a cut at a paragraph's start moves back over a keepNext paragraph before it, taking its last line (two with widow control) or, with keepLines, all of it; the step goes on over a paragraph moved whole.
 
 ### TABLE-44. Space-after at a row split {#table-44}
 
@@ -607,10 +656,12 @@ Example: three one-line paragraphs at 1.15 spacing whose last text ends 2pt abov
 
 Example: a cell whose first paragraph is one 13.44pt line with 20pt space-after, 15pt of room: the line doesn't stay, so the row moves whole ([TABLE-42](#table-42)).
 
-### TABLE-45. cantSplit and exact rows {#table-45}
+### TABLE-45. cantSplit, header, keep-with-next and exact rows {#table-45}
 
-- `w:cantSplit`: the row never splits; it moves whole to the next column. At the top of an empty column, or as the first row placed in a column when it continues a split, it may split after all, so a cantSplit row taller than a page moves to a new page and splits there.
+- `w:cantSplit`, a header row (`w:tblHeader`) or a keep-with-next row (below): the row never splits; it moves whole to the next column. In compat 15, at the top of an empty column, or as the first row placed in a column when it continues a split, it may split after all, so a cantSplit row taller than a page moves to a new page and splits there. In compat ≤ 14 it never splits: at the top of an empty column it is placed whole and runs past the column's bottom, cut off by the page edge ([PAGE-5](page#page-5)).
 - An exact-height row ([TABLE-28](#table-28)) never splits.
+- A row whose first cell's first paragraph has `w:keepNext` (in its style or directly) keeps with the next row. A run of such consecutive rows that starts below other content in the column (the content above the table, or rows of this table) moves to the next column with the row after it when that row can't start here, neither whole nor as a split part. A run that starts at the top of the column breaks where it must. In compat 15 header rows are keep-with-next rows too ([TABLE-47](#table-47)).
+- A row after the table's first whose first cell's first paragraph has `w:pageBreakBefore` starts the next column, unless it is the first thing in its column; the run of keep-with-next rows before it moves with it. In compat 15 a keep-with-next row right before it cancels the break.
 - A row that can't be placed in an empty column (it doesn't fit and can't split) is placed whole anyway ([PAGE-5](page#page-5)).
 
 ### TABLE-46. Repeated header rows {#table-46}
@@ -619,19 +670,36 @@ The table's leading rows with `w:tblHeader` are its header rows (stop at the fir
 
 ### TABLE-47. Header rows never end a page alone {#table-47}
 
-If a table starts below other content in a column and the first row after its header rows doesn't start there (neither whole nor as a split part), don't leave the header rows behind: the whole table moves to the next column, as if its first row didn't fit.
+In compat 15, if a table starts below other content in a column and the first row after its header rows doesn't start there (neither whole nor as a split part), don't leave the header rows behind: the whole table moves to the next column, as if its first row didn't fit. Compat ≤ 14 leaves the header rows at the bottom of the column.
 
 ### TABLE-48. Paragraphs around a table {#table-48}
 
 - The space-after of the paragraph before a table applies, in full, above the table's top border edge (not if the table starts at the top of an empty column), unless contextual spacing drops it ([PARA-4](para#para-4)).
 - The paragraph after a table takes its full space-before, from the table's bottom border edge, unless contextual spacing drops it ([PARA-4](para#para-4)); nothing collapses against the table.
-- A `w:keepNext` paragraph before a table keeps with its first row: if the table can't place its first row (or a first part of it) in this column, the keepNext chain moves on with it ([PAGE-6](page#page-6)).
+- A `w:keepNext` paragraph before a table keeps with its first row: if the table can't place its first row (or a first part of it) in this column, the keepNext chain gives way as [PAGE-6](page#page-6) says (compat 15: only the last line, or two with widow control, of the paragraph next to the table moves).
 
 ### TABLE-49. Floating table position {#table-49}
 
-- Horizontally, `w:tblpX` takes `w:tblInd`'s place ([TABLE-23](#table-23)), from the column. With `w:tblpXSpec`, `left` puts the table where `tblpX` 0 would, `right` as `w:jc` right does, and `center` puts the left border centre at `(textW − total + lm) / 2`, `lm` the first cell's left margin: a centred floating table sits half that margin right of a centred inline one.
-- Vertically, a floating table that starts a column moves up to its anchored top: `w:tblpY` below the page's top edge (`w:vertAnchor="page"`, never above the page), the top margin (`margin`) or where the table stands in the flow (`text`). What follows flows below its bottom border edge.
-- Not done: a floating table anchored below where it stands, one that doesn't start a column, `w:horzAnchor` (always the column), and text beside a floating table narrower than the column.
+- **Horizontally**, `w:tblpX` takes `w:tblInd`'s place ([TABLE-23](#table-23)): compat 15, left border centre = `tblpX + hb(bL)`; compat ≤ 14, `tblpX − max(hb(bL), lm) + tblInd` (`lm` the first cell's left margin, `hb` half a border rounded up to a twip, `tblInd` its `dxa` value). `w:tblpXSpec` `left` (and `inside`) is `tblpX` 0. `center` and `right` (`outside`) place the table's **frame** in the reference: centred, or against its right end. The frame:
+  - compat 15: from the table's outer box left to the widest row's last cell edge, plus that cell's right border width less its half (truncated to a twip); a cell with no right border at all counts a whole 0.75pt, no half taken off (a `none` one counts 0). The outer box starts at the frame's left.
+  - compat ≤ 14: `tblInd` plus the widest row's last-cell content right, from the first cell edge: the borders and padding hang outside it. The first edge sits `tblInd` right of the frame's left (the left border centre `max(hb(bL), lm)` left of that edge).
+  - The reference is the column (`w:horzAnchor` `text`, `margin`) or the page (`page`).
+  - Compat ≤ 14 with a negative `tblInd`: the obstacle (below) keeps starting at `tblpX`, not at the table that hangs out left of it.
+- A floating table takes no room in the flow: the text after it goes on from where the table stands, and wraps around it.
+- **Vertically** (`w:vertAnchor`, absent = `margin`):
+  - `text`: `tblpY` below where the table stands in the flow.
+  - `page`, `margin` (top margin to bottom margin): `tblpY` less one twip from the reference's top, or `w:tblpYSpec` `top`, `center`, `bottom` of the table's height within it.
+  - Never above the page's top edge.
+  - The position is taken from the page's first layout: when the text before the table re-wraps around it, the table doesn't move again.
+- **The obstacle** on each page is the table's part there: its outer box (half the left border, rounded up to a twip, left of the left border centre; half the right border right of the last edge) grown by `w:leftFromText` / `w:rightFromText` (at least 0.5pt each) and `w:topFromText` / `w:bottomFromText` (negatives → 0). Text wraps on both sides of it, as around a square float ([FLOAT-2](float#float-2)). It reaches above where the table stands only when the table itself does (negative `tblpY`, or anchored above): only then does the text before it re-wrap.
+  - Compat ≤ 14: a table in the flow (`text`, `tblpY` 0) has no top or bottom distance.
+  - The obstacle moves with the frame onto whole 0.12pt device pixels from the page's left edge: the pixel nearest the outer box's left, or, for a numeric `tblpX` against the `margin` or `page`, nearest one twip left of it. Example: an outer box at 116.35pt gives a frame at 116.28pt; the text right of the table moves 0.07pt left with it.
+  - A paragraph's first line that meets the obstacle goes to its bottom plus the paragraph's own space before, even at the top of a page: the space before stays above the line wherever it lands.
+- **A split** floating table continues at the top of the next page like an inline table; the text after it starts at the top of the page that holds its last part, beside it.
+  - Compat ≤ 14 with `w:doNotBreakWrappedTables`: the table isn't split; one that doesn't fit below its anchor moves to the next page (its rows may run past the bottom margin).
+- **`w:tblOverlap`**: compat 15, a `never` table that overlaps an earlier floating table's obstacle on the page moves right to its edge (its own left distance included). Compat ≤ 14, every floating table that overlaps an earlier one by 9pt or more, distances included, moves down to the other's obstacle bottom plus its own top distance.
+- Example: a page-anchored table at the page top, 280pt tall, then a paragraph with 12pt before: the paragraph's first line starts at 292pt.
+- Not done: `inside` / `outside` by page parity, an aligned (`tblpYSpec`) frame kept whole, the 18pt minimum width of a free interval ([FLOAT-7](float#float-7)), floating tables inside table cells, and drawing the table itself at its frame's device pixel.
 
 ### TABLE-50. A row's own indent {#table-50}
 
@@ -643,3 +711,9 @@ A row's `w:tblPrEx` (table property exceptions) can carry its own `w:tblInd`. In
 Example: an autofit table at `tblInd` 513 twips whose third row has `tblInd` 0 draws that row 25.65pt left of the others; the same rows in a fixed table line up.
 
 This applies to left-aligned tables that don't float, whose exceptions also set `w:tblLayout` fixed. Centred, right-aligned and floating tables, and compat 15, keep the table's indent.
+
+### TABLE-51. Fitted cell text {#table-51}
+
+A cell with `w:tcFitText` lays each paragraph out on one line: it wraps only at line, column and page breaks. The line starts at the left of the cell's content box, whatever the paragraph's alignment, and its characters are spaced so the text ends at the **fit width**: the content box width less the paragraph's left, right and first-line indents (a hanging indent widens it) and 1pt. The line keeps its height. The difference is spread evenly over the line's pieces.
+
+In autofit a fitted cell with a `dxa` width is that wide: its minimum, maximum and hard minimum are all its `w:tcW` ([TABLE-7](#table-7)).

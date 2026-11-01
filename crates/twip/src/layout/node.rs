@@ -61,6 +61,8 @@ pub struct SectionNode<'a> {
     pub index: usize,
     pub section: &'a Section,
     pub blocks: Blocks<'a>,
+    /// The section ends with a section break (its last paragraph carries it): it isn't the document's last.
+    pub breaks: bool,
 }
 
 /// Note content and separators, by id.

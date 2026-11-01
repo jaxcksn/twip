@@ -120,12 +120,13 @@ impl Editor {
                 no_v_band: true,
             });
             let nrows = t.rows.len();
+            let headers = t.rows.iter().enumerate().take_while(|(i, r)| r.header || *i == 0 && look.first_row).count();
             let mut rows = t.rows.clone();
             for (ri, row) in rows.iter_mut().enumerate() {
                 let ncols = row.cells.len();
                 for (ci, c) in row.cells.iter_mut().enumerate() {
                     let Some(raw) = c.direct.0.clone() else { continue };
-                    let region = res.cell_region(t.style_id.as_deref(), look, t.bands, (ri, ci), (nrows, ncols));
+                    let region = res.cell_region(t.style_id.as_deref(), look, t.bands, (ri, ci), (nrows, ncols), headers);
                     let mut tcp = region.tc.clone();
                     tcp.merge(&cx.parse(&raw, |_, n| crate::docx::props::TcProps::parse(Some(n))).unwrap_or_default());
                     c.shading = tcp.shading.flatten();

@@ -17,7 +17,9 @@ For each run, take ascent **A**, descent **D** and external leading **E** from t
 
 A font without an OS/2 table uses `hhea.ascender`, `−hhea.descender` and `max(0, hhea.lineGap)`. An East Asian font replaces these values ([LINE-14](line#line-14)).
 
-Example: Arial (upem 2048, win 1854/434, hhea 1854/−434/67) at 12pt: A = 10.8633, D = 2.5430, E = 67 × 12/2048 = 0.3926.
+Each run converts its own values to layout units ([UNIT-4](unit#unit-4)), the ascent with the leading as one value: with `hp` the size in half-points, `A + E` and `D` each become `(v × hp × 2048 + upem div 2) div upem` lu, in integer arithmetic.
+
+Example: Arial (upem 2048, win 1854/434, hhea 1854/−434/67) at 12pt (hp 24): A + E = 1921 × 24 = 46104 lu = 11.2559pt, D = 434 × 24 = 10416 lu = 2.5430pt.
 
 ### FONT-2. Glyph advances {#font-2}
 
@@ -43,9 +45,9 @@ Example: a Calibri 11 space is 2.4868pt; with `w:spacing w:val="20"` it is 3.486
 
 With `w:smallCaps` on (and `w:caps` off), split the run's text:
 
-- lower-case letters (accented ones too) are drawn as capitals at the small size `hp(0.8 × size) / 2` ([UNIT-5](unit#unit-5)): 11pt → 9pt, 12pt → 9.5pt, 13pt → 10.5pt;
-- a space that follows a lower-case letter (or another such space) goes with it at the small size;
-- capitals, digits, punctuation, and spaces after them stay at the full size.
+- lower-case letters (accented ones too) are drawn as capitals at the small size: with `hp` the run's size in half-points, `(hp × 4 + 2) div 5` half-points, at least 2 and at most 3276: 11pt → 9pt, 12pt → 9.5pt, 13pt → 10.5pt;
+- every space (U+0020, U+3000, U+2005) and the Vietnamese tone marks (U+0300, U+0301, U+0303, U+0309, U+0323) are at the small size too, between capitals as well;
+- capitals, digits and punctuation stay at the full size.
 
 Each piece is shaped and sized at its own size ([LINE-1](line#line-1)). `w:caps` simply draws every letter as a capital at the run's size.
 
@@ -64,7 +66,7 @@ Example: Calibri 11 with `w:position w:val="6"`: raise 3pt, ascent 10.4736 + 3 =
 
 ### FONT-8. Superscript and subscript size {#font-8}
 
-`w:vertAlign="superscript"` draws at `hp(size × OS/2.ySuperscriptYSize / upem) / 2` points; `subscript` uses `ySubscriptYSize`. Without an OS/2 table, both sizes are 0.65 em. Kerning and widths use this size.
+`w:vertAlign="superscript"` draws at `max(2, hp(size × OS/2.ySuperscriptYSize / upem)) / 2` points; `subscript` uses `ySubscriptYSize`. Without an OS/2 table, both sizes are 0.65 em. Kerning and widths use this size; the line height doesn't ([LINE-2](line#line-2)).
 
 Example: Calibri (ySuperscriptYSize 1331) at 11pt: 11 × 1331/2048 = 7.149 → 14 half-points, 7pt.
 
@@ -79,7 +81,7 @@ limit = max(a div 3, a − asup)
 raise = min(hp(size × OS/2.ySuperscriptYOffset / upem), limit)
 ```
 
-The run is raised by `raise / 2` points. Its ascent is the superscript font's `Asup` (no external leading) plus the raise, but never more than the base size's `A + E`; its descent is the superscript size's `D` less the raise, never below 0. Without an OS/2 table, the offset is 0.35 em.
+The run's glyphs are drawn `raise / 2` points up. The raise only places the glyphs: the run's ascent and descent are its base size's ([LINE-2](line#line-2)). Without an OS/2 table, the offset is 0.35 em.
 
 Example: Calibri 11: a = hp(10.4736) = 21, asup = hp(1950 × 7/2048 = 6.665) = 13, limit = max(7, 8) = 8; the OS/2 offset (5.24pt) gives 10, so raise = 8 half-points, 4pt.
 
@@ -93,7 +95,7 @@ limit = hp(D) − hp(Dsub)
 drop  = limit > 0 ? clamp(off, 0, limit) : max(off, 0)
 ```
 
-The run is lowered by `drop / 2` points. Its ascent is the subscript size's `A` (no external leading) less the drop, never below 0; its descent is `Dsub` plus the drop, but never more than the base size's `D`. A font with offset 0 doesn't drop. Without an OS/2 table, the offset is 0.14 em.
+The run's glyphs are drawn `drop / 2` points down; like a raise, the drop doesn't change the run's ascent or descent ([LINE-2](line#line-2)). A font with offset 0 doesn't drop. Without an OS/2 table, the offset is 0.14 em.
 
 ### FONT-11. Reference metrics {#font-11}
 

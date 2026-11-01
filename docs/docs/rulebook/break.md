@@ -7,7 +7,7 @@ These rules decide where each line of a paragraph ends. Shape the paragraph firs
 
 ### BREAK-1. The fit test {#break-1}
 
-A character or object fits when its right edge is at or left of the line's right edge: `pen + width ≤ rightEdge`. Equality fits. Spaces are never tested ([BREAK-2](break#break-2)). Text after a pending right or centre tab is tested where its alignment puts it ([TAB-5](tab#tab-5)).
+A character or object fits when its right edge is at or left of the line's right edge: `pen + width ≤ rightEdge`. Equality fits. Spaces are never tested ([BREAK-2](break#break-2)). Text after a pending right or centre tab is tested where its alignment puts it ([TAB-5](tab#tab-5)). A float's anchor takes no width and is no content: a line holding only anchors so far doesn't end after them, so text or an object too wide for the line still starts on it ([BREAK-4](break#break-4)).
 
 ### BREAK-2. Trailing spaces hang {#break-2}
 
@@ -27,40 +27,46 @@ Nowhere else: not after a no-break space or a no-break hyphen, an em dash or a s
 
 ### BREAK-4. When no break opportunity fits {#break-4}
 
-When the first character that doesn't fit has no break opportunity before it on the line, end the line before that character, splitting the text there. A line always takes at least one character or object, so a single glyph wider than the line still goes on it.
+When the first character that doesn't fit has no break opportunity before it on the line, end the line before that character, splitting the text there. A line always takes at least one character or object, so a single glyph wider than the line still goes on it. In compat ≤ 14, when that character is wider than the line, the spaces after it don't hang ([BREAK-2](break#break-2)): they start the next line. Compat 15 hangs them as usual.
 
 ### BREAK-5. Which breaker runs {#break-5}
 
 | Alignment | Compat | Breaker |
 |---|---|---|
-| left, centre, right, distribute | any | greedy: fill to the last break opportunity that fits; spaces never shrink |
-| justified (`both`) | ≤ 14 | greedy; spaces only expand ([JUST-1](just#just-1)) |
-| justified (`both`) | 15 | [BREAK-6](break#break-6) |
+| left, centre, right | any | greedy: fill to the last break opportunity that fits; spaces never shrink |
+| justified (`both`), distributed | ≤ 14 | greedy; spaces only expand ([JUST-1](just#just-1), [JUST-5](just#just-5)) |
+| justified (`both`), distributed | 15 | [BREAK-6](break#break-6) |
 
 ### BREAK-6. Compat-15 justified breaking {#break-6}
 
-Break each stretch between hard line breaks separately. Split it into items (the text between spaces, also ended by a break opportunity inside it: after a hyphen, [BREAK-3](break#break-3), but not a soft hyphen; the next item then follows with no gap) with their widths, and the width of each gap of spaces before an item. `column` is the line's available width (first-line indent on the first line). Then, for each line starting at item `i`:
+Break each stretch between hard line breaks separately. Split it into items (the text between spaces, also ended by a break opportunity inside it: after a hyphen, [BREAK-3](break#break-3), but not a soft hyphen; the next item then follows with no gap) with their widths, and the width of each gap of spaces before an item. `column` is the line's available width (first-line indent on the first line). In layout units ([UNIT-4](unit#unit-4)), a space of width `w` may shrink by `(w + 2) >> 2` and stretch by `(w + 1) >> 1`; `C(e)` and `E(e)` sum these over the gaps inside items `i … e − 1` (the spaces before the first item and after the last don't count; the spaces before the first item still take their width in the natural width). Then, for each line starting at item `i`:
 
 ```
-jmax = the most items that fit with every gap shrunk by 25%:
-       Σ item widths + 0.75 · Σ gaps ≤ column                (hard limit)
 if the rest of the stretch fits unshrunk: it is the last line, stop
-for each end e in i+1 … jmax  (g = Σ gaps inside the line, excess = natural width − column):
-    r(e) = excess / (0.25 · g)       if excess > 0     (compression)
-    r(e) = −excess / (0.50 · g)      otherwise         (expansion)
-    a one-item line is a candidate only when nothing longer fits
-end the line at the e with the smallest r; on a tie take more items
+longest = the most items whose overflow (natural width − column) is at most C(e)
+greedy  = the most items that fit unshrunk
+if longest = greedy: end the line there
+cost each end e from longest down to greedy (an end of at least one item):
+    used, cap = overflow, C(e)            if the end overflows
+                column − width, E(e)      otherwise
+    l = floor(1000 · used / cap)          (integers)
+    infeasible when cap = 0 or l > 4700
+    demerits = (1000 + floor(l³ / 100000))²
+keep the longest end unless a later one has strictly smaller demerits; a feasible end beats an infeasible one
 ```
+
+Every `l` below 47 costs the same, so small adjustments tie and the longer line wins.
 
 - The line ends after the chosen item, with its following spaces hanging ([BREAK-2](break#break-2)).
-- A line that can only expand stays expanded however loose; no line is ever compressed past 25% ([JUST-2](just#just-2)).
+- A line that can only expand stays expanded however loose; no line shrinks by more than its spaces' capacity ([JUST-2](just#just-2)).
 - The last line is taken as it is when it fits without shrinking; otherwise it goes through the same choice, so it can end up compressed, or split leaving a short last line. A last line is never expanded ([JUST-3](just#just-3)).
 - Use each gap's own width, so mixed fonts work.
-- Fall back to greedy breaking ([BREAK-5](break#break-5)) for the whole paragraph when it contains a tab, or when a single item is wider than a line.
+- A line with tabs: only the spaces after the last tab before an end shrink or stretch for that end (the spaces before a tab move only the tab's text, which the tab takes back); a list number's tab counts as a tab. An end's natural width is the line laid out to it ([TAB-1](tab#tab-1) to [TAB-8](tab#tab-8)), so text after a right, centre or decimal tab that runs past what its stop can hold shrinks like any other; the longest end and the cost are as above. An end past the greedy one never takes on a tab (the greedy line may have ended before a tab past the edge, [TAB-7](tab#tab-7)). A paragraph with a positional tab breaks greedily. Beside floats ([FLOAT-7](float#float-7)) a line as wide as the column chooses its end this way too; a narrower interval with tabs breaks greedily.
+- Fall back to greedy breaking ([BREAK-5](break#break-5)) when a single item is wider than a line.
 - The choice is per line, never a paragraph-wide optimisation. Only the spaces change width; the spacing inside items never changes.
 - Being per line, it applies to a free interval beside a float too ([FLOAT-7](float#float-7)): `column` is the interval's width. An interval whose stretch holds a tab is filled greedily.
 
-Example: with `column` 468, items of natural line width 470.2 at e = jmax (8 gaps of 2.4868, g = 19.894) and 455.1 at e = jmax − 1 (7 gaps, g = 17.408): r(jmax) = 2.2 / 4.974 = 0.44, r(jmax − 1) = 12.9 / 8.704 = 1.48; end at jmax and compress.
+Example: Calibri 11pt spaces (10186 lu: shrink 2547, stretch 5093), `column` 468pt. The longest end overflows by 2.2pt = 9011 lu over 8 gaps, `C` = 20376: `l` = 442, demerits (1000 + 863)² = 3470769. The greedy end is 12.9pt = 52838 lu short over 7 gaps, `E` = 35651: `l` = 1482, demerits (1000 + 32549)². The longest end is kept and compressed.
 
 ### BREAK-7. Hyphens {#break-7}
 

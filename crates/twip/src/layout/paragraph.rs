@@ -1,21 +1,23 @@
 //! Paragraph spacing (PARA-1 to PARA-5) and how many of a paragraph's lines a column takes (PAGE-3 widow/orphan
 //! control, PAGE-6 keepLines), separate from the column fill so they can be tested alone.
 
+use crate::docx::Compat;
 use crate::docx::ParaStyle;
 
 use super::env::TextEnv;
 
-/// PARA-5: automatic spacing is 14pt, 5pt with doNotUseHTMLParagraphAutoSpacing.
-fn auto_space(env: &TextEnv) -> f64 {
-    if env.do_not_use_html_paragraph_auto_spacing { 5.0 } else { 14.0 }
+/// PARA-5: automatic spacing is 14pt; with doNotUseHTMLParagraphAutoSpacing it is ignored and the explicit space
+/// applies.
+fn auto(env: &TextEnv, on: bool) -> bool {
+    on && !env.do_not_use_html_paragraph_auto_spacing
 }
 
 pub fn space_before(env: &TextEnv, s: &ParaStyle) -> f64 {
-    if s.before_auto { auto_space(env) } else { s.space_before }
+    if auto(env, s.before_auto) { 14.0 } else { s.space_before }
 }
 
 pub fn space_after(env: &TextEnv, s: &ParaStyle) -> f64 {
-    if s.after_auto { auto_space(env) } else { s.space_after }
+    if auto(env, s.after_auto) { 14.0 } else { s.space_after }
 }
 
 /// PARA-1 without contextual spacing.
@@ -45,7 +47,7 @@ pub fn drops_at_edge(p: &ParaStyle, other: Option<&Option<String>>) -> bool {
 
 /// Whether contextual spacing applies here (PARA-4).
 pub fn contextual_in(env: &TextEnv, in_cell: bool) -> bool {
-    !(in_cell && env.compat <= 14 && env.allow_space_of_same_style_in_table)
+    !(in_cell && env.compat == Compat::Legacy && env.allow_space_of_same_style_in_table)
 }
 
 /// How many of a paragraph's `n` lines to place when `fit` of them fit in the column (`hard`: one of the fitting
@@ -139,14 +141,15 @@ mod tests {
     }
 
     #[test]
-    fn para_5_without_html_spacing_automatic_spacing_is_5pt_and_adds_in_lists_too() {
+    fn para_5_without_html_spacing_the_explicit_spacing_applies_and_adds_in_lists_too() {
         let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
         let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
         let env = super::TextEnv { do_not_use_html_paragraph_auto_spacing: true, ..super::TextEnv::new(&doc) };
-        let item = crate::docx::ParaStyle { before_auto: true, after_auto: true, list: Some(0), ..(*p.style).clone() };
+        let item =
+            crate::docx::ParaStyle { before_auto: true, after_auto: true, space_before: 3.0, space_after: 2.0, list: Some(0), ..(*p.style).clone() };
         let (after, before) = (super::space_after(&env, &item), super::space_before(&env, &item));
-        assert_eq!((after, before), (5.0, 5.0));
-        assert_eq!(super::gap(&env, &item, after, &item, before), 10.0);
+        assert_eq!((after, before), (2.0, 3.0));
+        assert_eq!(super::gap(&env, &item, after, &item, before), 5.0);
     }
 
     #[test]

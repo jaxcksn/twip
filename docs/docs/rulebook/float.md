@@ -58,7 +58,7 @@ An inline picture (`wp:inline`) is a glyph whose bottom sits on the baseline: as
 | `rightMargin` | `[pageWidth − rightMargin, pageWidth)` |
 | `column` and everything else (`character`, `insideMargin`, `outsideMargin`) | the column holding the anchor |
 
-Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `wp:align`: `center` → `x0 + (w − floatW)/2`; `right` or `outside` → `x0 + w − floatW`; `left`, `inside` → `x0`. Without align, `x0 + wp:posOffset`.
+Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `wp:align`: `center` → `x0 + (w − floatW)/2`; `right` or `outside` → `x0 + w − floatW`; `left`, `inside` → `x0`. Without align, `x0 + wp:posOffset`. In compat ≤ 14, `left` or `right` of the `page` puts the float in the margin area when it fits there: left at `leftMargin − floatW`, right at `pageWidth − rightMargin` (a 40pt float with 1in margins: 32 and 540; compat 15: 0 and 572). Also in compat ≤ 14, `left` or `right` of the `column` counts from the anchor paragraph's indents: `x0 + leftIndent`, `x0 + w − rightIndent − floatW` (indents 36pt and 72pt: 108 and 428; compat 15: 72 and 500).
 
 **Vertical** (`wp:positionV/@relativeFrom`):
 
@@ -71,7 +71,11 @@ Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `
 | `topMargin` | `[0, topMargin)` |
 | `bottomMargin` | `[pageHeight − bottomMargin, pageHeight)` |
 
-`wp:align`: `center` → `y0 + (h − floatH)/2`; `bottom` or `outside` → `y0 + h − floatH`; others → `y0`. Without align, `y0 + posOffset`. Offsets may be negative.
+`wp:align`: `center` → `y0 + (h − floatH)/2`; `bottom` or `outside` → `y0 + h − floatH`; others → `y0`; any alignment against the `paragraph` → its top. Without align, `y0 + posOffset`. Offsets may be negative. In compat 15 a `paragraph`- or `line`-relative float that wraps text (not wrapNone) is placed no higher than the top margin: `y = max(y, topMargin)`, and its wrap box (the float grown by `distL` and `distR`) is moved onto the page: right if it starts left of 0, else left if it ends past the page's right edge (no further than its left edge allows); compat ≤ 14 keeps the offset's position.
+
+**`simplePos="1"`**: an axis without an alignment is at `wp:simplePos` on the page; an axis with an alignment keeps it and its `relativeFrom`.
+
+**An anchor after a page or column break in its paragraph**: compat ≤ 14 continues the paragraph after the break at the top of the next page or column, so the anchor is placed there, `paragraph` counting from the continuation's top. Compat 15 ends the paragraph at the break. Not done: compat 15 placing such an anchor on the paragraph's first page (it isn't drawn).
 
 **Offsets are truncated to whole twips**: `twips = trunc(EMU / 635)`, `points = twips / 20`. 170688 EMU = 268.8 twips → 268 → 13.40pt.
 
@@ -81,17 +85,21 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 
 - The exclusion is the float's box grown by `distT`, `distB`, `distL`, `distR`. A text box's outline width isn't added.
 - A line wraps if its line box overlaps the exclusion ([FLOAT-1](float#float-1)).
-- Fill the free intervals of a band one after another, each **independently, one unbreakable piece of text at a time** (up to the next break opportunity). If the next piece doesn't fit the current interval, that interval stays as it is and the text continues in the next interval of the same band. There is no minimum interval width.
+- An interval's edges replace the paragraph's indents, except that an interval reaching the column's right edge keeps the paragraph's right indent, a negative one too.
+- Fill the free intervals of a band one after another, each **independently, one unbreakable piece of text at a time** (up to the next break opportunity). If the next piece doesn't fit the current interval, that interval stays as it is and the text continues in the next interval of the same band. Once a float cuts the column, an interval narrower than 18pt takes no text; one of exactly 18pt does.
 - Several floats give several intervals.
+- A text-wrapping break (`w:br`) ends its interval, not the line: the text after it goes on in the next interval of the same band. A break in the band's last interval ends the line. (`w:clear` isn't read: every break is plain.)
 - An interval that starts at a float's edge (not the column's) takes the place of the left indent: its lines start at `max(edge, left indent)`, and the first line adds its first-line indent to that, so a hanging first line starts left of the edge, over the float's distance or the float itself.
+- Tabs in an interval that starts at a float's edge: compat ≤ 14 lays the interval out as a line of its own, so default stops are at `edge + k·defaultTabStop` and custom stops shift by the edge. Compat 15 keeps the stops counted from the margin; stops left of the interval start are skipped.
+- Compat ≤ 14: the intervals found at a line's top hold down to the bottom of a float covering that top. When that bottom is inside the line and another float starts inside the line, the line doesn't use them: it moves down to that bottom and is tried again there. A line that only overhangs a float's bottom, or meets a float starting inside it with none covering its top, stays.
 
 Example: a float's exclusion ending at 255pt beside a paragraph with `w:left="-540" w:firstLine="540"`: the first line starts at 282pt, the next ones at 255pt. With `w:hanging="540"` instead the first line starts at 228pt.
 
 ### FLOAT-8. Other wrap types {#float-8}
 
 - `wrapTopAndBottom`: a band that overlaps the exclusion takes no text; it moves down to the exclusion bottom, `floatBottom + distB` ([FLOAT-4](float#float-4)).
-- `wrapTight` and `wrapThrough` wrap like `wrapSquare` (the polygon is ignored).
-- `wrapNone`, and any float with `behindDoc="1"`, doesn't affect text.
+- `wrapTight` and `wrapThrough` wrap like `wrapSquare` around the bounding box of their `wp:wrapPolygon` (points in 21600ths of the extent), grown by the wrap distances; the box is at least one layout unit tall, so a polygon whose points all lie on one row still pushes the text beside it on the line at that row. Without a polygon of at least two points they wrap around the box.
+- `wrapNone` doesn't affect text. `behindDoc="1"` is paint order only: a wrapping float behind the text wraps it like one in front.
 
 ### FLOAT-9. Floats past the column bottom {#float-9}
 
@@ -109,11 +117,14 @@ Floats positioned relative to the page or margins, and wrapNone floats ([FLOAT-1
 - Lay the content out as an ordinary story ([HDR-3](hdr#hdr-3)) at `width = boxW − lIns − rIns − outline`, starting at `(boxX + lIns + outline/2, boxY + tIns + outline/2)`.
 - `a:spAutoFit`: the box height is `content + tIns + bIns + outline`.
 - Fixed height: the content bottom is `boxBottom − bIns − outline/2`. Draw a line only if its line box starts above the content bottom; draw no later line. The content bottom clips the lines drawn like an exact row's bottom ([TABLE-34](table#table-34)): a glyph whose ink top is at or below it is not drawn (its characters go with it); a line whose glyphs all go shows nothing.
+- Fixed height, `bodyPr/@anchor`: `ctr` moves the content down by half the room below it (whole layout units, rounded down), `b` by all of it, never up; other values are top. In compat ≤ 14 `w:doNotVertAlignInTxbx` keeps it at the top; compat 15 ignores the option. Not done: floats inside the box don't count as its content.
 - Text wraps around the outer box (with its dist values).
 
 ### FLOAT-11. Floats and columns {#float-11}
 
-A float wraps the text of **every column it overlaps**, including earlier columns of the page: a float anchored in column 2 can re-wrap column 1. Only columns it overlaps horizontally are affected, also for topAndBottom. Fill the page, collect the floats it placed, and fill it again around them; repeat until the floats and their positions are the same as the ones the fill started from.
+A float wraps the text of **every column it overlaps**, including earlier columns of the page: a float anchored in column 2 can re-wrap column 1. Only columns it overlaps horizontally are affected, also for topAndBottom. Fill the page, collect the floats it placed, and fill it again around them; repeat until the floats and their positions are the same as the ones the fill started from. Each fill settles at least one more float, so it takes at most one fill per float on the page, and one more.
+
+When a fill around a float pushes that float's anchor off the page, the float isn't on this page: fill the page again without it, but end it where that fill ended. The page keeps the shorter fill and its text doesn't wrap; the anchor and its float start the next page.
 
 ### FLOAT-12. allowOverlap="0" {#float-12}
 
@@ -134,7 +145,10 @@ A wrapNone float (in front of or behind the text) is never moved by [FLOAT-9](fl
 ### FLOAT-14. Floats anchored in table cells {#float-14}
 
 - Floats anchored in a cell are drawn whatever their wrap.
-- The cell's vertical alignment offset ([TABLE-30](table#table-30)) moves the floats laid out in the cell with its text: `paragraph` and `line` count from the anchor where the aligned cell puts it. Their bottoms count in the content height that offset aligns, but they don't make the row taller. A compat ≤ 14 `layoutInCell="0"` float isn't moved by the offset: it is placed as in a top-aligned cell (below).
+- The cell's vertical alignment offset ([TABLE-30](table#table-30)) moves the floats laid out in the cell with its text: `paragraph` and `line` count from the anchor where the aligned cell puts it. Their bottoms count in the content height that offset aligns. A compat ≤ 14 `layoutInCell="0"` float isn't moved by the offset: it is placed as in a top-aligned cell (below).
 - Position them inside the cell: every horizontal box (`column`, `margin`, `page`, …) is the cell's content box; `paragraph` and `line` count from the anchor paragraph's and line's tops in the cell; `page` and `margin` vertically count from the top of the cell's content.
-- Compat 15 ignores `layoutInCell`: the float stays in the cell.
-- Compat ≤ 14 with `layoutInCell="0"` (in a cell of a body table, not a nested one): place the float like a body float horizontally and for `page`/`margin` vertically. For `paragraph`/`line` keep its position in the cell, moved up by the row's top border height (the offsets count from the row top, not from the cell's content).
+- A wrapping float (any wrap but `wrapNone`) laid out in the cell and placed from its `paragraph` or `line` without an alignment holds the cell's content height down to its bottom (its `distB` not added): `contentH = max(contentH, float bottom)`, so an auto or at-least row grows to hold it. Example: a 40pt square-wrapped float 10pt below its line in a one-line cell makes the row 50pt plus its borders.
+- Such a float placed from the `column` or the `character` horizontally (any alignment) is wrapped by its anchor paragraph's lines as in the body ([FLOAT-2](float#float-2) to [FLOAT-4](float#float-4)), with the cell's content width as the column and no column bottom: place it against the paragraph's first line top (a `line`-relative one too), then fill each band's free intervals. Example: a 40pt square-wrapped float 10pt from the cell's left leaves a 10pt interval too narrow for the first line's text, so the text starts at the float's right edge, 50pt in. The cell's other paragraphs don't wrap it.
+- Compat 15 ignores `layoutInCell`: the float stays in the cell. Compat ≤ 14 also keeps a float positioned from the `character` (horizontally) or the `line` (vertically) in the cell, whatever its `layoutInCell`.
+- Compat ≤ 14 with `layoutInCell="0"` otherwise (in a cell of a body table, not a nested one): place the float like a body float horizontally and for `page`/`margin` vertically. For `paragraph` keep its position in the cell, moved up by the row's top border height (the offsets count from the row top, not from the cell's content). It doesn't make the row taller. If it is square or top-and-bottom wrapped, is placed from the `column` and the `paragraph` without alignments, is in the first row and overlaps that row (vertically, from its top distance; horizontally, the table's grid), the whole table starts below it: at the float's bottom plus its bottom distance. If it overlaps only a later row on that page, the rows before that row stay, the part they form closes with the table's bottom border, and the rows from that one on start at the float's bottom plus its bottom distance. The float stays where the row's first place put it.
+- Not done: a tight or through float moving the table, around its wrap polygon's bounding box (an empty polygon takes no room); and the cell's text wrapping a float placed from other boxes or anchored in an earlier paragraph.

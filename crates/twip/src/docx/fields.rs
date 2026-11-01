@@ -259,10 +259,17 @@ impl FieldCode {
             "STYLEREF" => FieldKind::StyleRef(arg()),
             "DATE" | "TIME" => FieldKind::Date,
             "IF" => FieldKind::If,
-            n if !n.is_empty() && !n.starts_with(['=', '\\']) && !n.chars().all(|c| c.is_alphanumeric() || c == '_') => FieldKind::Invalid,
-            n if self.args.is_empty()
-                && !n.is_empty()
+            n if !n.is_empty()
+                && !n.starts_with(['=', '\\'])
+                && (!n.chars().all(|c| c.is_alphanumeric() || c == '_') || n.starts_with(|c: char| c.is_numeric())) =>
+            {
+                FieldKind::Invalid
+            }
+            // FIELD-2: an unknown word shaped like a bookmark name (a letter or `_`, then letters, digits, `_`) is a
+            // reference to that bookmark, whatever follows it.
+            n if !n.is_empty()
                 && !FIELD_NAMES.split_whitespace().any(|f| f == n)
+                && n.starts_with(|c: char| c.is_alphabetic() || c == '_')
                 && n.chars().all(|c| c.is_alphanumeric() || c == '_') =>
             {
                 FieldKind::Bookmark(n.into())
@@ -344,7 +351,8 @@ pub fn words(code: &str) -> Vec<String> {
     out
 }
 
-pub fn evaluate(doc: &mut Document) {
+/// FIELD-2: computes the fields that don't depend on pagination; `DATE`/`TIME` show `now` (seconds since 1970, UTC).
+pub fn evaluate(doc: &mut Document, now: i64) {
     // Bookmark texts (to the end of the bookmark's paragraph) and every paragraph's style and text, in order.
     let mut marks: HashMap<String, String> = HashMap::new();
     let mut order: Vec<(String, String)> = Vec::new();
@@ -365,7 +373,14 @@ pub fn evaluate(doc: &mut Document) {
         paras(&mut s.blocks, &mut |p| {
             for sp in spans(&p.inlines) {
                 let code = code_text(&p.inlines, sp).trim().to_string();
-                let Inline::FieldBegin { kind: Some(kind), value: slot, .. } = &mut p.inlines[sp.begin] else { continue };
+                // FIELD-4: an error text takes the separator run's formatting (no separator: the end run's), bold
+                // toggled.
+                let error_run = sp
+                    .sep
+                    .and_then(|k| if let Inline::FieldSep { run, .. } = &p.inlines[k] { Some(run.clone()) } else { None })
+                    .or_else(|| if let Inline::FieldEnd { run, .. } = &p.inlines[sp.end] { Some(run.clone()) } else { None });
+                let cached_empty = result_text(&p.inlines, sp).is_empty();
+                let Inline::FieldBegin { kind: Some(kind), value: slot, run, .. } = &mut p.inlines[sp.begin] else { continue };
                 let code = &code;
                 let w = words(code);
                 let has = |sw: &str| w.iter().any(|x| x.eq_ignore_ascii_case(sw));
@@ -381,7 +396,9 @@ pub fn evaluate(doc: &mut Document) {
                     }
                     // Word's result for a bookmark the document doesn't have.
                     FieldKind::Ref(name) => Some(marks.get(name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into())),
-                    // A bookmark named as the whole code (any case): its text, or Word's error.
+                    // A bookmark named by the code's first word (any case): its text, or the error; a cached result
+                    // that isn't empty stays (FIELD-2).
+                    FieldKind::Bookmark(_) if !cached_empty => None,
                     FieldKind::Bookmark(name) => Some(
                         marks
                             .iter()
@@ -390,7 +407,7 @@ pub fn evaluate(doc: &mut Document) {
                     ),
                     FieldKind::If => if_field(&w),
                     FieldKind::Invalid => Some(String::new()),
-                    FieldKind::Date => Some(date(code)),
+                    FieldKind::Date => Some(date(code, now)),
                     // In the body: the nearest paragraph with the style before the field, else the next one.
                     FieldKind::StyleRef(st) => {
                         let key = style_key(st);
@@ -403,7 +420,21 @@ pub fn evaluate(doc: &mut Document) {
                     }
                     _ => None,
                 };
+                // A PAGEREF to a bookmark the document doesn't have shows its error text at layout.
+                let page_error = matches!(&*kind, FieldKind::PageRef(n) if !marks.contains_key(n));
+                if page_error && let Some(e) = &error_run {
+                    let mut r = (**e).clone();
+                    r.bold = !r.bold;
+                    *run = std::rc::Rc::new(r);
+                }
                 if let Some(v) = value {
+                    if v.starts_with("Error! ")
+                        && let Some(e) = &error_run
+                    {
+                        let mut r = (**e).clone();
+                        r.bold = !r.bold;
+                        *run = std::rc::Rc::new(r);
+                    }
                     *slot = Some(v);
                 }
             }
@@ -450,10 +481,9 @@ fn if_field(w: &[String]) -> Option<String> {
     Some(if hit { yes.clone() } else { no })
 }
 
-/// `DATE`/`TIME` with a `\@` picture (default M/d/yyyy), from the system clock in UTC.
+/// `DATE`/`TIME` with a `\@` picture (default M/d/yyyy) at `secs` since 1970, UTC.
 // shortcut: UTC, no time zone; English month/day names.
-fn date(code: &str) -> String {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()) as i64;
+fn date(code: &str, secs: i64) -> String {
     let (days, sod) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     // Civil date from days since 1970-01-01 (H. Hinnant).
     let z = days + 719468;
@@ -611,9 +641,11 @@ mod tests {
         assert_eq!(words(r#"IF 1 = 1 "yes" "no""#), ["IF", "1", "=", "1", "yes", "no"]);
         assert_eq!(if_field(&words(r#"IF 1 = 1 "yes" "no""#)).as_deref(), Some("yes"));
         assert_eq!(if_field(&words(r#"IF 2 < 1 "yes" "no""#)).as_deref(), Some("no"));
-        assert_eq!(date(r#"DATE \@ "yyyy""#).len(), 4);
-        let d = date(r#"DATE \@ "'x 'yyyy am/pm""#);
-        assert!(d.starts_with("x ") && (d.ends_with(" AM") || d.ends_with(" PM")) && d.len() == 9, "{d}");
+        // 2026-10-30T15:04:05Z, a Friday.
+        let now = 1_793_372_645;
+        assert_eq!(date(r#"DATE \@ "yyyy""#, now), "2026");
+        assert_eq!(date(r#"DATE \@ "'x 'yyyy am/pm""#, now), "x 2026 PM");
+        assert_eq!(date(r#"DATE \@ "dddd d MMMM HH:mm""#, now), "Friday 30 October 15:04");
     }
 
     #[test]
@@ -645,7 +677,8 @@ mod tests {
             ("QUOTE x", None),
             ("umber", Some(FieldKind::Bookmark("UMBER".into()))),
             ("AUTHOR", None),
-            ("NUM PAGES", None),
+            ("NUM PAGES", Some(FieldKind::Bookmark("NUM".into()))),
+            ("1ABC", Some(FieldKind::Invalid)),
         ] {
             assert_eq!(parse(code).kind(), kind, "{code}");
         }

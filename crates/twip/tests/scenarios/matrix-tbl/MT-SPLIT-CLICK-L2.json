@@ -1,6 +1,6 @@
 {
   "id": "MT-SPLIT-CLICK-L2",
-  "title": "Table across pages: a click in a cell at the next page's top places the caret there (nesting level 2)",
+  "title": "Table across pages: a click in a cell at the next page's top places the caret there, as does one in a split row's part there (nesting level 2)",
   "fixture": "FX-TBL-PAGES-L2.docx",
   "methods": [
     "M",
@@ -11,14 +11,30 @@
   "steps": [
     {
       "click": {
-        "para": 47,
+        "para": 53,
         "offset": 0
       }
     },
     {
       "expect": {
         "caret": {
-          "para": 47,
+          "para": 53,
+          "offset": 0,
+          "page": 1,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 51,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 51,
           "offset": 0,
           "page": 1,
           "depth": 2

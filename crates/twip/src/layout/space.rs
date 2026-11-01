@@ -5,6 +5,8 @@ use crate::docx::props::Border;
 
 use crate::docx::review::MarkupView;
 
+use super::units::Lu;
+
 use super::env::TextEnv;
 
 /// What shaping a paragraph depends on besides its content: the resolved text of its page-dependent fields, in
@@ -43,6 +45,8 @@ pub struct ParaSpace {
     /// this origin, so drawn lines depend on it.
     pub x0: f64,
     pub env: TextEnv,
+    /// A fitted cell's paragraph (TABLE-51): one line, never wrapped.
+    pub fit: bool,
 }
 
 /// One column of a page body (COL-1): where it is and how far content may go.
@@ -50,8 +54,9 @@ pub struct ParaSpace {
 pub struct ColumnSpace {
     pub x: f64,
     pub width: f64,
-    pub top: f64,
-    pub bottom: f64,
+    /// UNIT-4: the column's top and bottom on the layout-unit grid; fit tests compare against them in whole units.
+    pub top: Lu,
+    pub bottom: Lu,
     /// Balancing (COL-5): a column's last space-after counts toward its height.
     pub balance: bool,
 }
@@ -62,8 +67,9 @@ pub struct ColumnSpace {
 pub struct BodyArea {
     pub left: f64,
     pub width: f64,
-    pub top: f64,
-    pub bottom: f64,
+    /// UNIT-4: on the layout-unit grid.
+    pub top: Lu,
+    pub bottom: Lu,
 }
 
 /// What a page body depends on besides its section and token. No page number: parity and number enter only through

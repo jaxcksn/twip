@@ -11,7 +11,7 @@
   "steps": [
     {
       "click": {
-        "para": 21,
+        "para": 19,
         "offset": "end"
       }
     },
@@ -23,7 +23,7 @@
         "caret": {
           "row_end": {
             "table": 3,
-            "row": 1
+            "row": 0
           },
           "depth": 2
         }
@@ -35,7 +35,7 @@
     {
       "expect": {
         "caret": {
-          "para": 22,
+          "para": 20,
           "offset": 0,
           "page": 1,
           "depth": 2
@@ -50,7 +50,7 @@
         "caret": {
           "row_end": {
             "table": 3,
-            "row": 1
+            "row": 0
           },
           "depth": 2
         }
@@ -62,8 +62,8 @@
     {
       "expect": {
         "caret": {
-          "para": 21,
-          "offset": 25,
+          "para": 19,
+          "offset": 21,
           "page": 0,
           "depth": 2
         }

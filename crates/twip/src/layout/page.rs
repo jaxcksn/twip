@@ -2,6 +2,7 @@
 //! note stream (FLOAT-11, COL-3), vertical alignment (SETUP-1), balancing (COL-5) and column separators. Each
 //! attempt owns its state.
 
+use crate::docx::Compat;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -19,6 +20,7 @@ use super::space::{BodyArea, BodyFields, BodySpace, ColumnSpace, HfHeights};
 use super::story::{StoryEnv, hf_limit, stack_limited};
 use super::text::FieldValues;
 use super::token::{FlowState, FlowToken, PageToken};
+use super::units::{LU_PER_PT, Lu};
 
 const EPS: f64 = 1e-6;
 
@@ -94,12 +96,18 @@ pub fn columns(c: &Columns, geo: &BodyArea, top: f64) -> Vec<ColumnSpace> {
     if c.equal || c.cols.is_empty() {
         let w = (geo.width - (n as f64 - 1.0) * c.space) / n as f64;
         for k in 0..n {
-            out.push(ColumnSpace { x: geo.left + k as f64 * (w + c.space), width: w, top, bottom: geo.bottom, balance: false });
+            out.push(ColumnSpace {
+                x: geo.left + k as f64 * (w + c.space),
+                width: w,
+                top: Lu::round_half_up(top),
+                bottom: geo.bottom,
+                balance: false,
+            });
         }
     } else {
         let mut x = geo.left;
         for (w, sp) in &c.cols {
-            out.push(ColumnSpace { x, width: *w, top, bottom: geo.bottom, balance: false });
+            out.push(ColumnSpace { x, width: *w, top: Lu::round_half_up(top), bottom: geo.bottom, balance: false });
             x += w + sp;
         }
     }
@@ -379,14 +387,14 @@ impl<'d> Paginator<'d, '_> {
         if s.bottom < 0.0 {
             body_bottom = s.page_h + s.bottom;
         }
-        let area = BodyArea { left, width, top: body_top, bottom: body_bottom };
+        let area = BodyArea { left, width, top: Lu::round_half_up(body_top), bottom: Lu::round_half_up(body_bottom) };
         Ok(BodySpace {
             section: si,
             page_w: s.page_w,
             page_h: s.page_h,
             margins: (left, right, top),
             area,
-            columns: columns(&s.columns, &area, start.unwrap_or(area.top)),
+            columns: columns(&s.columns, &area, start.unwrap_or(area.top.to_pt())),
             mid_page: start.is_some(),
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| n.break_kind == SectionBreak::Continuous),
@@ -410,7 +418,7 @@ impl<'d> Paginator<'d, '_> {
             _ => None,
         };
         let page = self.run.pages.last_mut().expect("a page was started");
-        page.body_area = page.body_area.or(Some((space.area.top, space.area.bottom)));
+        page.body_area = page.body_area.or(Some((space.area.top.to_pt(), space.area.bottom.to_pt())));
         page.effects.merge(&b.effects);
         // A paragraph the body ends in takes the blocks of the paragraphs joined to it (REV-6).
         let last = sec.blocks.chain_end(b.end.flow.block, self.ctx.env.text.review.view).min(sec.blocks.len().saturating_sub(1));
@@ -438,7 +446,7 @@ impl<'d> Paginator<'d, '_> {
         })
     }
 
-    /// COL-5: refills the section's last page at the smallest column height that holds its content.
+    /// COL-5: refills the section's last page at the balanced column height.
     #[allow(
         clippy::type_complexity,
         reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
@@ -451,66 +459,135 @@ impl<'d> Paginator<'d, '_> {
         memos: &mut Memos,
     ) -> Result<Option<(f64, Vec<Child>, FlowToken, FlowState, PageEffects)>, Yield> {
         let (p0, c0) = saved;
-        let top = cols[0].top;
-        // COL-6: the empty paragraph holding the section break takes no space.
+        let top = cols[0].top.to_pt();
+        // COL-6: the empty paragraph holding the section break takes no space. In compat 15 one right after a table
+        // still takes its line, below the content of the column it ends in, past the balanced height if need be.
         let blocks = &sec.blocks;
-        let skip_last = matches!(blocks.get(blocks.len().wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && blocks.len() > 1);
+        let n = blocks.len();
+        let skip_last = matches!(blocks.get(n.wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && n > 1);
+        let mark_line = skip_last && fill.ctx.env.text.compat == Compat::Generic && matches!(blocks.get(n.wrapping_sub(2)), Some(Block::Table(_)));
         let state = fill.at.clone();
+        // One fill at column height `h`: the result when the content ends in these columns, and each column's
+        // statistics.
         #[allow(
             clippy::type_complexity,
             reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
         )]
-        let try_h = |fill: &mut PageFill, h: f64, memos: &mut Memos| -> Result<Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Yield> {
+        let try_h = |fill: &mut PageFill,
+                     h: f64,
+                     memos: &mut Memos|
+         -> Result<(Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Vec<ColStats>), Yield> {
             let mut pos = p0.clone();
             let mut carry = c0.clone();
             let mut children = Vec::new();
+            let mut stats = Vec::new();
             let mut end = top;
             fill.at = AttemptState { known: state.known.clone(), ..Default::default() };
             for (k, c) in cols.iter().enumerate() {
-                let col = ColumnSpace { bottom: (top + h).min(c.bottom), balance: true, ..*c };
+                let col = ColumnSpace { bottom: Lu::round_half_up(top + h).min(c.bottom), balance: true, ..*c };
                 let r = fill.fill(&pos, &carry, col, false, memos)?;
                 let s = r.stop;
                 (pos, carry) = (r.token, r.state);
+                stats.push(ColStats::of(&r.children, r.bottom - top));
+                let mut kids = r.children;
+                let mut bottom = r.bottom;
+                let at_mark = skip_last && pos.block + 1 == n && pos.at.at_start();
+                if at_mark && mark_line && !fill.at.forced {
+                    let m = fill.fill(&pos, &carry, ColumnSpace { top: Lu::round_half_up(r.bottom), bottom: Lu::MAX, ..col }, false, memos)?;
+                    (pos, carry, bottom) = (m.token, m.state, m.bottom);
+                    kids.extend(m.children);
+                }
                 children.push(Child::Box(BoxFragment {
                     kind: BoxKind::Column,
                     id: None,
                     offset: (0.0, 0.0),
                     size: (0.0, 0.0),
-                    children: r.children.into(),
+                    children: kids.into(),
                 }));
-                end = end.max(r.bottom);
+                // A column ends below its last line and that paragraph's space-after.
+                end = end.max(bottom + carry.prev_after);
                 if fill.at.forced {
-                    return Ok(None);
+                    return Ok((None, stats));
                 }
-                if s == Stop::Done || (skip_last && pos.block + 1 == blocks.len() && pos.at.at_start()) {
-                    return Ok(Some((pos, carry, children, end, fill.at.effects.clone())));
+                if s == Stop::Done || at_mark {
+                    return Ok((Some((pos, carry, children, end, fill.at.effects.clone())), stats));
                 }
                 if k + 1 < cols.len() {
                     carry.keep_top = s == Stop::Column && carry.keep_top;
                 }
             }
-            Ok(None)
+            Ok((None, stats))
         };
-        let full = cols[0].bottom - top;
-        let (mut lo, mut hi) = (0.0, full);
-        if try_h(fill, hi, memos)?.is_none() {
+        let full = cols[0].bottom.to_pt() - top;
+        let (first, stats) = try_h(fill, full, memos)?;
+        if first.is_none() {
             // Nothing balances: the fill stays as it was, ending at the full column height.
             fill.at = state;
             return Ok(None);
         }
-        for _ in 0..40 {
-            let mid = (lo + hi) / 2.0;
-            if try_h(fill, mid, memos)?.is_some() {
-                hi = mid;
+        // The height comes from an estimate, then grows (or in compat 15 shrinks) by a step: not always the smallest
+        // that holds the content. Layout units.
+        let full_lu = i64::from(Lu::round_half_up(full).0);
+        let widths: Vec<f64> = cols.iter().map(|c| c.width).collect();
+        let wsum: f64 = widths.iter().sum::<f64>().max(1.0);
+        let to_pt = |h: i64| h as f64 / LU_PER_PT;
+        let mean = |st: &[ColStats]| {
+            let (n, total) = st.iter().fold((0i64, 0i64), |(n, t), s| (n + s.lines, t + s.height));
+            if n > 0 { total / n } else { 49152 } // 240 twips without lines
+        };
+        let mut h;
+        let mut r;
+        if fill.ctx.env.text.compat == Compat::Legacy {
+            // compat ≤ 14: the total height over the columns (by width from their used heights when they differ), at
+            // least the mean line height; while the content doesn't fit, grow by the mean line height of what is in
+            // the columns.
+            let n = cols.len() as i64;
+            h = if widths.iter().all(|w| (w - widths[0]).abs() < 0.01) {
+                (stats.iter().map(|s| s.height).sum::<i64>() + n - 1) / n
             } else {
-                lo = mid;
+                let tw = |lu: i64| lu * 1440 / 294912;
+                let a: f64 = widths.iter().zip(&stats).map(|(w, s)| if s.lines > 0 { (tw(s.used) * 20) as f64 * w } else { 0.0 }).sum();
+                (a / wsum) as i64 / 20 * 294912 / 1440
+            };
+            h = h.max(mean(&stats)).min(full_lu);
+            r = try_h(fill, to_pt(h), memos)?;
+            while r.0.is_none() && h < full_lu {
+                h = (h + mean(&r.1)).min(full_lu);
+                r = try_h(fill, to_pt(h), memos)?;
+            }
+        } else {
+            // compat 15: the columns' mean height by width, down to a multiple of the smallest line or row; grow by
+            // that step while the content doesn't fit, or shrink by it while it still does.
+            let step = |st: &[ColStats]| st.iter().filter(|s| s.lines > 0).map(|s| s.min).min().unwrap_or(1).max(1);
+            let m = step(&stats);
+            h = (widths.iter().zip(&stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
+            h = (h - h % m).min(full_lu);
+            r = try_h(fill, to_pt(h), memos)?;
+            if r.0.is_some() {
+                loop {
+                    let m = step(&r.1);
+                    if h - m <= 0 {
+                        break;
+                    }
+                    let r2 = try_h(fill, to_pt(h - m), memos)?;
+                    if r2.0.is_none() {
+                        break;
+                    }
+                    h -= m;
+                    r = r2;
+                }
+            } else {
+                while r.0.is_none() && h < full_lu {
+                    h = (h + step(&r.1)).min(full_lu);
+                    r = try_h(fill, to_pt(h), memos)?;
+                }
             }
         }
-        let Some((p, mut c, children, _, eff)) = try_h(fill, hi, memos)? else { unreachable!("height hi balanced before") };
-        // The section ends at the balanced height, which includes a column's last space-after (COL-5).
+        let Some((p, mut c, children, end, eff)) = r.0.or(first) else { unreachable!("the full height balanced before") };
+        // The section ends below its tallest column, including that column's last space-after (COL-5).
         c.prev = None;
         c.prev_after = 0.0;
-        Ok(Some((top + hi, children, p, c, eff)))
+        Ok(Some((end, children, p, c, eff)))
     }
 
     /// Draws a page's shared note stream (COL-3).
@@ -520,7 +597,7 @@ impl<'d> Paginator<'d, '_> {
         }
         fill.at.notes_drawn = true;
         let Some((parts, _)) = stream_fill(&area.parts, cols.len(), area.height + EPS) else { return Ok(()) };
-        let top = cols[0].bottom - area.sep - area.height + 0.15;
+        let top = cols[0].bottom.to_pt() - area.sep - area.height + 0.15;
         let per_col: Vec<(f64, &[super::token::NotePart])> = cols.iter().zip(&parts).map(|(c, p)| (c.x, &p[..])).collect();
         out.push(fill.notes_box(area, &per_col, cols[0].width, top, memos)?);
         Ok(())
@@ -530,7 +607,11 @@ impl<'d> Paginator<'d, '_> {
     fn draw_floats(fill: &PageFill, placed: &[super::float::Placed], memos: &mut Memos) -> Result<Vec<Child>, Yield> {
         let fields = FieldValues::default();
         let env = StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
-        placed.iter().map(|p| super::story::float_box(&p.float, p.rect, p.anchor, &env, memos)).collect()
+        placed
+            .iter()
+            .filter(|p| p.key.2 != super::float::TABLE_PIECE)
+            .map(|p| super::story::float_box(&p.float, p.rect, p.anchor, &env, memos))
+            .collect()
     }
 }
 
@@ -626,7 +707,7 @@ pub fn layout_body(
     let s = sec.section;
     let nblocks = sec.blocks.len();
     let cols = &space.columns;
-    let page_top = cols[0].top;
+    let page_top = cols[0].top.to_pt();
     let mut pos = token.flow.clone();
     let mut carry = token.state.clone();
     let saved = (pos.clone(), carry.clone());
@@ -635,7 +716,7 @@ pub fn layout_body(
     // FLOAT-11: fill the page again until the floats met agree with the ones the text wrapped around.
     let mut known = Vec::new();
     // COL-3: compat 15's one note stream across the columns.
-    let shared = cols.len() > 1 && env.ctx.env.text.compat >= 15;
+    let shared = cols.len() > 1 && env.ctx.env.text.compat == Compat::Generic;
     let mut reserve = 0.0;
     let mut fill = PageFill {
         ctx: env.ctx,
@@ -650,10 +731,19 @@ pub fn layout_body(
         at: AttemptState::default(),
     };
     let mut col_children: Vec<Vec<Child>> = Vec::new();
-    for attempt in 0..6 {
+    // FLOAT-11: a float that keeps its place (known) but whose anchor a pass pushes off the page is dropped, and the
+    // page then ends where that pass ended. Each pass fixes one more float: at most one pass per float and drop,
+    // and one more.
+    let mut end: Option<FlowToken> = None;
+    let mut drops = 0;
+    let mut attempts = 6;
+    let mut attempt = 0;
+    while attempt < attempts {
+        attempt += 1;
         let r: Result<bool, Yield> = super::job::unit("page attempt", || {
             fill.at = AttemptState {
                 known: known.clone(),
+                end: end.clone(),
                 stream: shared.then(|| NoteArea { shared: Some(reserve), cols: cols.len(), ..Default::default() }),
                 ..Default::default()
             };
@@ -679,8 +769,13 @@ pub fn layout_body(
             let found = fill.at.found.clone();
             let notes = fill.at.stream.as_ref().map_or(0.0, |a| a.height);
             let stable = found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f)));
-            if (stable && (notes - reserve).abs() < EPS) || attempt == 5 {
+            attempts = attempts.max(2 + found.len() + drops).min(64);
+            if (stable && (notes - reserve).abs() < EPS) || attempt >= attempts {
                 return Ok(true);
+            }
+            if end.is_none() && known.iter().any(|k| !found.iter().any(|f| f.key == k.key)) {
+                end = Some(pos.clone());
+                drops += 1;
             }
             known = found;
             reserve = notes;
@@ -727,7 +822,7 @@ pub fn layout_body(
                     // After balancing, which refills the section's content.
                     body = children;
                 }
-                None => e = cols[0].bottom,
+                None => e = cols[0].bottom.to_pt(),
             }
             // The floats are drawn again after balancing. When no height balanced, the unbalanced fill keeps the
             // floats it already had, so they appear twice (a known flaw, kept for now).
@@ -766,14 +861,15 @@ fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: 
         return body;
     }
     let top = starts[0].0;
-    let free = geo.bottom - geo.top - (bottom - top);
+    let (geo_top, geo_bottom) = (geo.top.to_pt(), geo.bottom.to_pt());
+    let free = geo_bottom - geo_top - (bottom - top);
     match va {
         "center" => {
-            let dy = geo.top + free / 2.0 - top;
+            let dy = geo_top + free / 2.0 - top;
             body.iter().map(|c| child_down(c, &|_| dy)).collect()
         }
         "bottom" => {
-            let dy = geo.bottom - bottom;
+            let dy = geo_bottom - bottom;
             body.iter().map(|c| child_down(c, &|_| dy)).collect()
         }
         "both" => {
@@ -782,7 +878,7 @@ fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: 
             if gaps.is_empty() {
                 return body;
             }
-            let each = (geo.bottom - bottom) / gaps.len() as f64;
+            let each = (geo_bottom - bottom) / gaps.len() as f64;
             let shift = |y: f64| each * gaps.iter().filter(|&&g| g < y).count() as f64;
             body.iter().map(|c| child_down(c, &shift)).collect()
         }
@@ -868,5 +964,38 @@ fn separators(c: &Columns, cols: &[ColumnSpace], top: f64, earlier: &[Rc<BoxFrag
     }
     if !items.is_empty() {
         body.push(Child::Items(items.into()));
+    }
+}
+
+/// COL-5: a balanced column's content: its lines and table rows, their total height and the smallest, and the column's
+/// used height (layout units).
+struct ColStats {
+    lines: i64,
+    height: i64,
+    min: i64,
+    used: i64,
+}
+
+impl ColStats {
+    fn of(children: &[Child], used: f64) -> ColStats {
+        let mut st = ColStats { lines: 0, height: 0, min: i64::MAX, used: i64::from(Lu::round_half_up(used).0) };
+        let mut add = |h: f64| {
+            let h = i64::from(Lu::round_half_up(h).0);
+            st.lines += 1;
+            st.height += h;
+            st.min = st.min.min(h);
+        };
+        for c in children {
+            match c {
+                Child::Para(p) => p.lines.iter().for_each(|l| add(l.line.pitch)),
+                Child::Table(t) => t.rows.iter().for_each(|r| add(r.rect[3] - r.rect[1])),
+                Child::Line { placed, .. } => add(placed.line.pitch),
+                _ => {}
+            }
+        }
+        if st.lines == 0 {
+            st.min = 0;
+        }
+        st
     }
 }

@@ -57,12 +57,14 @@ Example: a header taller than the page leaves no text area; each page then still
 
 ### PAGE-6. Keeps {#page-6}
 
-- **`w:keepNext`**: after placing a keepNext paragraph, test whether the next block's first part fits below it: for a paragraph, its gap ([PARA-1](para#para-1)) plus its first line (2 lines with widow control, all lines with keepLines), tested as in [PAGE-2](page#page-2); for a table, the preceding space-after plus its first row plus the table's bottom border. If not, move the whole chain of consecutive keepNext paragraphs, from its first member, to the next column.
+- **`w:keepNext`**: after placing a keepNext paragraph, test whether the next block's first part fits below it: for a paragraph, its gap ([PARA-1](para#para-1)) plus its first line (2 lines with widow control, all lines with keepLines), tested as in [PAGE-2](page#page-2); for a table, the preceding space-after plus its first row plus the table's bottom border. If not, the chain of consecutive keepNext paragraphs gives way:
+  - compat 15: step back from the chain's last paragraph. A paragraph with keepLines moves whole and the step goes on to the one before it. Any other paragraph ends this column without its last line (its last two with widow control), and the step stops; when fewer than one line (two with widow control) would stay, it moves whole and the step goes on. The moved lines start the next column. A step that reaches the chain's first paragraph and moves it moves the whole chain;
+  - compat ≤ 14: move the whole chain, from its first member, to the next column.
 - A chain whose first member is at the top of an empty column is never moved: it breaks normally. So a chain longer than a column breaks where it must.
-- A keepNext paragraph before a table keeps with the table's first row: if the table can't start in this column, the chain moves with it.
+- A keepNext paragraph before a table keeps with the table's first row: if the table can't start in this column, the chain gives way as above.
 - **`w:keepLines`**: a paragraph's first part that doesn't fit whole moves whole. Its continuation (when even an empty column couldn't hold it) splits normally.
 - **`w:pageBreakBefore`**: the paragraph starts a new page, unless it already starts the first column of an empty page. Its space-before then follows [PARA-2](para#para-2).
-- A table starts a new page the same way when the first paragraph of a cell in its first row has `w:pageBreakBefore`. In later rows it is ignored.
+- A table starts a new page the same way when the first paragraph of a cell in its first row has `w:pageBreakBefore`. In a later row it starts a new page at that row ([TABLE-45](table#table-45)).
 - A keep or widow rule that can't be met in an empty column is dropped ([PAGE-5](page#page-5)).
 
 ### PAGE-7. Space-before after a next-page section break {#page-7}

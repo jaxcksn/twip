@@ -3693,10 +3693,11 @@ fn border(w: &str, name: &str, b: &Option<Border>) -> String {
     let Some(b) = b else { return String::new() };
     let color = b.color.map_or("auto".to_string(), |c| format!("{c:06X}"));
     format!(
-        "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\" {w}color=\"{color}\"/>",
+        "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\" {w}color=\"{color}\"{}/>",
         b.style,
         (b.width * 8.0).round() as i64,
-        b.space.round() as i64
+        b.space.round() as i64,
+        if b.shadow { format!(" {w}shadow=\"1\"") } else { String::new() }
     )
 }
 
@@ -3710,6 +3711,9 @@ fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
     let mut s = format!("<{w}tblPr>");
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
+    }
+    if t.bidi_visual {
+        s.push_str(&format!("<{w}bidiVisual/>"));
     }
     s.push_str(&width(w, "tblW", &t.width));
     match t.jc {
@@ -3771,6 +3775,14 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
     if r.header {
         s.push_str(&format!("<{w}tblHeader/>"));
     }
+    if let Some(jc) = r.jc {
+        let v = match jc {
+            Jc::Center => "center",
+            Jc::Right => "right",
+            _ => "left",
+        };
+        s.push_str(&format!("<{w}jc {w}val=\"{v}\"/>"));
+    }
     for (_, tag) in revisions::row_marks(w, &r.rev, people) {
         s.push_str(&tag);
     }
@@ -3813,6 +3825,9 @@ fn tc_pr(w: &str, c: &Cell, people: &People) -> String {
     ));
     if c.text_direction != "lrTb" {
         s.push_str(&format!("<{w}textDirection {w}val=\"{}\"/>", c.text_direction));
+    }
+    if c.fit_text {
+        s.push_str(&format!("<{w}tcFitText/>"));
     }
     if c.v_align != "top" {
         s.push_str(&format!("<{w}vAlign {w}val=\"{}\"/>", c.v_align));

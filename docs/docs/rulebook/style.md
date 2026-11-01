@@ -56,12 +56,14 @@ the cell text takes the table style's size instead: the active conditional regio
 
 Example: compat 12, docDefaults 11pt, Normal 12pt, a table style setting only `w:rFonts`: cell text without `w:pStyle` is 11pt. With a table style `w:sz` 28 it is 14pt; with docDefaults 10pt, or Normal 11pt, it keeps Normal's size.
 
+A second exception, for the paragraph mark, in compat ≤ 14: in a cell of a table without a named table style (no `w:tblStyle`, or the default table style), a mark whose direct `w:sz` is 22 (11pt), in a document whose docDefaults size is 11pt and whose default paragraph style sets 12pt, is laid out at its paragraph's size, so an empty cell paragraph is a 12pt line. Text runs keep their size; any other combination keeps the mark's own, and formatting shows the mark's 11pt.
+
 ### STYLE-5. Paragraph-mark run properties {#style-5}
 
 The paragraph mark's run properties (`w:pPr/w:rPr`, through its `w:rStyle` and the paragraph's cascade) don't change a line that holds text. They are used for:
 
 - the height of an empty paragraph's line, and of any line holding nothing but spaces and tabs ([LINE-4](line#line-4));
-- the paragraph's last line when it holds only superscript or subscript text ([LINE-2](line#line-2));
+- the paragraph's last line when it holds only the list number ([LINE-4](line#line-4));
 - the text height on a picture line under multiple spacing ([LINE-13](line#line-13));
 - the list number's formatting ([LIST-6](list#list-6)).
 

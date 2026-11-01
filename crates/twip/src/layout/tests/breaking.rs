@@ -24,7 +24,12 @@ fn lines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64)
 fn baselines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64, f64)>> {
     let fonts = fonts();
     fonts.face("Arial", false, false)?;
-    let compat = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
+    // Compat 12 unless the settings give a mode.
+    let compat = if settings.contains("compatibilityMode") {
+        ""
+    } else {
+        r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#
+    };
     let parts = [
         (
             "word/document.xml",
@@ -108,6 +113,31 @@ fn the_first_line_indent_adds_to_a_floats_edge() {
     assert!((l[0].0 - 279.0).abs() < 0.01 && (l[1].0 - 252.0).abs() < 0.01, "{l:?}");
 }
 
+#[test]
+fn a_tight_float_wraps_around_its_polygon_box() {
+    // FLOAT-8: a 180 × 100pt picture behind the text whose tight polygon is one point at its top-left corner pushes
+    // only the first line, by distR; behindDoc doesn't stop it wrapping.
+    let pt = r#"<wp:start x="0" y="0"/><wp:lineTo x="0" y="0"/><wp:lineTo x="0" y="0"/>"#;
+    let float = format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="0" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="2286000" cy="1270000"/><wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0">{pt}</wp:wrapPolygon></wp:wrapTight><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+    );
+    let p = format!(
+        r#"<w:p>{float}<w:r><w:t>Some words that run on for more than one line beside the point at the top of the picture, and then some more words to fill a second line.</w:t></w:r></w:p>"#
+    );
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 81.0).abs() < 0.01 && (l[1].0 - 72.0).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn compat_14_tabs_beside_a_float_count_from_the_interval() {
+    // FLOAT-7: beside a float ending at 261pt (180pt + distR 9pt), the default stop is 36pt past the interval start
+    // (297pt), not the next 36pt multiple from the margin (288pt).
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="114300" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="2286000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = format!(r#"<w:p>{float}<w:r><w:tab/><w:t>x</w:t></w:r></w:p>"#);
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 297.0).abs() < 0.01, "{l:?}");
+}
+
 /// A 360 × 100pt square float 54pt into the column (9pt left and right of it, a 45pt gap each side), anchored after
 /// "Hi" in the first paragraph; then `p` and "After", in Arial 12 (line height 13.8).
 fn beside_float(p: &str) -> Option<Vec<(f64, String, f64, f64)>> {
@@ -167,23 +197,25 @@ fn cell(w: u32, ind: i32, inner: &str) -> String {
 
 #[test]
 fn a_nested_tables_negative_indent_counts_as_0() {
-    // TABLE-25: compat 12; the nested table at -720 sits where one at 0 does.
-    let at = |ind: i32| {
-        let body = cell(6000, 0, &cell(5000, ind, r#"<w:p><w:r><w:t>inner</w:t></w:r></w:p>"#));
-        lines("", ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _)| t == "inner").expect("drawn").0)
-    };
-    let Some(zero) = at(0) else { return };
-    assert_eq!(at(-720), Some(zero));
+    // TABLE-25: in compat 12 and 15, the nested table at -720 sits where one at 0 does.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    for settings in ["", c15] {
+        let at = |ind: i32| {
+            let body = cell(6000, 0, &cell(5000, ind, r#"<w:p><w:r><w:t>inner</w:t></w:r></w:p>"#));
+            lines(settings, ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _)| t == "inner").expect("drawn").0)
+        };
+        let Some(zero) = at(0) else { return };
+        assert_eq!(at(-720), Some(zero), "{settings}");
+    }
 }
 
 #[test]
-fn a_nested_table_is_clipped_to_the_cell_holding_it() {
-    // TABLE-35: a nested table wider than its 150pt cell shows only what lies inside that cell.
+fn a_nested_table_wider_than_its_cell_is_drawn_in_full() {
+    // TABLE-35: a nested table wider than its 150pt cell isn't clipped to that cell: all 40 M (Arial 12, 400pt) show.
     let body = cell(3000, 0, &cell(9000, 0, &format!(r#"<w:p><w:r><w:t>{}</w:t></w:r></w:p>"#, "M".repeat(40))));
     let Some(l) = lines("", ARIAL_12, &body) else { return };
     let ms = l.iter().find(|(_, t, _)| t.starts_with('M')).expect("drawn");
-    // Arial 12 M is 9.996pt: the cell's 150pt box holds 15 of them, the 16th's ink just reaching into it.
-    assert!(ms.1.len() < 18, "{l:?}");
+    assert_eq!(ms.1.len(), 40, "{l:?}");
 }
 
 #[test]
@@ -205,4 +237,137 @@ fn a_rows_own_indent_moves_it_in_an_autofit_table_only() {
     let Some(first) = x("autofit", "first") else { return };
     assert!((first - x("autofit", "second").unwrap() - 36.0).abs() < 0.01);
     assert!((x("fixed", "first").unwrap() - x("fixed", "second").unwrap()).abs() < 0.01);
+}
+
+#[test]
+fn a_compat_15_section_break_after_a_table_takes_a_line_in_balanced_columns() {
+    // COL-6: two continuous columns end with a one-row table; in compat 15 the empty paragraph holding the section
+    // break still takes a line below it, so the next section starts a line lower than in compat 12.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let row = r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let body = format!(
+        r#"<w:p><w:r><w:t>One</w:t></w:r></w:p>{row}<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr></w:p>"#
+    );
+    let after = |settings: &str| baselines(settings, ARIAL_12, &body).and_then(|l| l.into_iter().find(|l| l.1 == "After")).map(|l| l.3);
+    let (Some(a12), Some(a15)) = (after(""), after(c15)) else { return };
+    assert!((a15 - a12 - 13.8).abs() < 0.05, "{a12} {a15}");
+}
+
+#[test]
+fn a_compat_14_exact_row_is_capped_to_the_column() {
+    // TABLE-28: an exact row of 1000pt holding 60 lines: compat 12 caps it to the 648pt column and clips the lines
+    // past it; compat 15 keeps 1000pt, past the page bottom, and shows the lines down to the page edge.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let lines_in = (0..60).map(|i| format!("<w:p><w:r><w:t>Line {i}</w:t></w:r></w:p>")).collect::<String>();
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="20000" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>{lines_in}</w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let count = |settings: &str| lines(settings, ARIAL_12, &body).map(|l| l.iter().filter(|(_, t, _)| t.starts_with("Line")).count());
+    let (Some(c12), Some(c15)) = (count(""), count(c15)) else { return };
+    assert!(c12 < 50 && c15 > c12 + 4, "{c12} {c15}");
+}
+
+#[test]
+fn a_float_whose_anchor_its_wrap_pushes_off_the_page_leaves_the_page() {
+    // FLOAT-11: a 60pt topAndBottom float at page y 100, anchored in a line that fits page 1 only without the float:
+    // the float wraps lines 3 on, which pushes its anchor to page 2. Page 1 is laid out again without the float but
+    // ends where that pass did: its lines aren't wrapped and the anchor starts page 2.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>1270000</wp:posOffset></wp:positionV><wp:extent cx="5588000" cy="762000"/><wp:wrapTopAndBottom/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body: String = (0..44).map(|i| p(&format!("L{i:02}"))).collect::<String>()
+        + &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>{float}<w:r><w:t>ANCHOR</w:t></w:r></w:p>"#)
+        + &p("AFTER");
+    // (`baselines` reads page 1.)
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    let l02 = l.iter().find(|x| x.1 == "L02").map(|x| x.3);
+    assert!(l02.is_some_and(|y| y < 120.0) && !l.iter().any(|x| x.1.ends_with("ANCHOR")), "{l:?}");
+}
+
+#[test]
+fn no_column_balance_leaves_a_continuous_sections_columns_unbalanced() {
+    // COL-5: six one-line paragraphs in two columns before a continuous break balance three and three; compat ≤ 14
+    // noColumnBalance keeps them all in the first column.
+    let sect = |cols: &str| {
+        format!(
+            r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>{cols}</w:sectPr>"#
+        )
+    };
+    let paras: String = (1..=6).map(|k| format!("<w:p><w:r><w:t>p{k}</w:t></w:r></w:p>")).collect();
+    let body = format!(
+        r#"{paras}<w:p><w:pPr>{}</w:pPr></w:p><w:p><w:pPr>{}</w:pPr><w:r><w:t>Tail</w:t></w:r></w:p>"#,
+        sect(r#"<w:cols w:num="2" w:space="720"/>"#),
+        sect("")
+    );
+    let right = |settings: &str| lines(settings, ARIAL_12, &body).map(|l| l.iter().filter(|(x, s, _)| s.starts_with('p') && *x > 200.0).count());
+    let Some(balanced) = right("") else { return };
+    assert_eq!((balanced, right("<w:compat><w:noColumnBalance/></w:compat>").unwrap()), (3, 0));
+}
+
+#[test]
+fn a_line_break_beside_a_float_ends_only_its_interval() {
+    // FLOAT-7: "aa", a text-wrapping break, then "bb", beside a float in mid-column: "aa" fills the left gap and "bb"
+    // goes on in the right gap of the same line.
+    let Some(l) = beside_float(r#"<w:p><w:r><w:t>aa</w:t><w:br/><w:t>bb</w:t></w:r></w:p>"#) else { return };
+    let (aa, bb) = (l.iter().find(|x| x.1 == "aa").expect("aa"), l.iter().find(|x| x.1 == "bb").expect("bb"));
+    assert!((aa.3 - bb.3).abs() < 0.01 && bb.0 > 400.0, "{l:?}");
+}
+
+#[test]
+fn a_compat_14_column_aligned_float_counts_from_the_paragraph_indent() {
+    // FLOAT-6 (compat 12): a 40pt float aligned left in the column, anchored in a paragraph indented 36pt, sits at
+    // 108 (not 72), so the text beside it starts at 148.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:align>left</wp:align></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="508000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = format!(r#"<w:p><w:pPr><w:ind w:left="720"/></w:pPr>{float}<w:r><w:t>Beside the float.</w:t></w:r></w:p>"#);
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 148.0).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn a_compat_14_line_goes_to_a_floats_bottom_when_another_starts_inside_it() {
+    // FLOAT-7: two floating tables in the flow, the second moved below the first; the paragraph's second line would
+    // cross the first's bottom with the second starting inside it, so it starts at that bottom instead.
+    let table = |x: u32, rows: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="{x}" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl>"#
+        )
+    };
+    let row = |t: &str| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#);
+    let text = "Some words that run on for more than one line beside the two tables, and then some more words to fill the lines.";
+    let body = format!(
+        r#"<w:p><w:r><w:t>Top</w:t></w:r></w:p>{}<w:p/>{}<w:p><w:r><w:t>{text}</w:t></w:r></w:p>"#,
+        table(1000, &format!("{}{}", row("A1"), row("A2"))),
+        table(1500, &row("B1"))
+    );
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    // The lines starting at the margin, left of the tables: "Some", then "the two" below the first table.
+    let y: Vec<f64> = l.iter().filter(|(x, t, _, _)| *x < 73.0 && t.len() > 2 && text.contains(t.as_str())).map(|l| l.3).collect();
+    assert!(y.len() >= 2 && y[1] - y[0] > 13.8 + 0.5, "{l:?}");
+}
+
+#[test]
+fn a_floating_tables_obstacle_sits_on_device_pixels() {
+    // TABLE-49: compat 12, a table at tblpX 1000 from the margin: its outer box starts at 116.35pt, the frame on the
+    // 0.12pt pixel rounded from one twip left of that (116.28pt), so the text right of it starts 0.07pt left of where
+    // the box's right edge and its 0.5pt distance put it (272.27pt).
+    let body = r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="1000" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Left words beside the table on the right side.</w:t></w:r></w:p>"#;
+    let Some(l) = lines("", ARIAL_12, body) else { return };
+    let right = l.iter().find(|(x, t, _)| *x > 200.0 && t != "cell").expect("text right of the table");
+    assert!((right.0 - 272.2).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn a_right_aligned_floating_tables_frame_counts_a_missing_border_whole() {
+    // TABLE-49: compat 15, a 300pt right-aligned floating table; its frame is 300.75pt wide with no right border at
+    // all (the cell's text at 72 + 468 - 300.75 + 5.4), 300pt with a `none` one.
+    let at = |borders: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="page" w:tblpXSpec="right" w:tblpY="2000"/><w:tblW w:w="6000" w:type="dxa"/><w:tblBorders>{borders}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+        lines(c15, ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _)| t == "cell").expect("drawn").0)
+    };
+    let Some(missing) = at("") else { return };
+    assert!((missing - 244.65).abs() < 0.01, "{missing}");
+    let none = at(r#"<w:right w:val="none" w:sz="0" w:space="0" w:color="000000"/>"#).unwrap();
+    assert!((none - 245.4).abs() < 0.01, "{none}");
 }

@@ -73,13 +73,23 @@ fn resolve_path(dir: &str, target: &str) -> String {
 }
 
 pub fn read(bytes: &[u8]) -> Result<Document, String> {
-    read_with(bytes, false)
+    read_with(bytes, false, now_utc())
+}
+
+/// As [`read`], with `DATE`/`TIME` fields computed at `now` (seconds since 1970, UTC) instead of the system clock, so
+/// the layout is the same on every run.
+pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
+    read_with(bytes, false, now)
+}
+
+fn now_utc() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
 /// As [`read`], keeping what saving needs: the package, the main part's XML, where each body paragraph and table came
 /// from ([`Paragraph::src`], [`Table::src`]) and each run's direct formatting ([`RunStyle::direct`]).
 pub fn read_editable(bytes: &[u8]) -> Result<Document, String> {
-    read_with(bytes, true)
+    read_with(bytes, true, now_utc())
 }
 
 /// The XML text of an element as written.
@@ -87,7 +97,7 @@ fn raw(n: Node) -> Rc<str> {
     n.document().input_text()[n.range()].into()
 }
 
-fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
+fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
     let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(|e| e.to_string())?;
     let mut pkg = Package { zip };
     let root_rels = pkg.rels("");
@@ -99,7 +109,8 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
     let numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref());
     let theme = ThemeFonts::parse(part_of("theme").and_then(|p| pkg.read_str(&p)).as_deref());
     let settings = read_settings(part_of("settings").and_then(|p| pkg.read_str(&p)).as_deref());
-    styles.compat15 = settings.compat_mode >= 15;
+    styles.compat = settings.compat();
+    styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
     let xml = pkg.read_str(&main).ok_or("no main document part")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
@@ -255,7 +266,7 @@ fn read_with(bytes: &[u8], editable: bool) -> Result<Document, String> {
     doc.review_ids = r.ids;
     doc.diagnostics = r.diagnostics;
     doc.resolver = Some(Rc::new(r.res));
-    super::fields::evaluate(&mut doc);
+    super::fields::evaluate(&mut doc, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
     if editable {
@@ -1433,7 +1444,9 @@ impl Reader {
         if !code.is_empty() {
             out.push(Inline::Text(code, run.clone()));
         }
-        out.push(Inline::FieldSep { id, run: run.clone() });
+        // FIELD-4: a simple field has no separator run; its marker takes the paragraph's style formatting, which an
+        // error text is drawn in.
+        out.push(Inline::FieldSep { id, run: self.run_style(&self.run_props(base, None)) });
         self.fields.push(OpenField {
             id,
             in_result: true,
@@ -1563,8 +1576,19 @@ impl Reader {
             return;
         }
         let pos = |name: &str| item.children().find(|c| is(*c, WP, name));
-        let (h_rel, h_align, h_off) = position(pos("positionH"));
-        let (v_rel, v_align, v_off) = position(pos("positionV"));
+        let (mut h_rel, h_align, mut h_off) = position(pos("positionH"));
+        let (mut v_rel, v_align, mut v_off) = position(pos("positionV"));
+        // FLOAT-6: with simplePos, an axis without an alignment is at wp:simplePos on the page.
+        if item.attribute("simplePos").is_some_and(|v| on_off_str(Some(v))) {
+            let sp = pos("simplePos");
+            let at = |n: &str| sp.and_then(|p| emu(p.attribute(n))).unwrap_or(0.0);
+            if h_align.is_none() {
+                (h_rel, h_off) = ("page".into(), at("x"));
+            }
+            if v_align.is_none() {
+                (v_rel, v_off) = ("page".into(), at("y"));
+            }
+        }
         let wrap_el = item.children().find(|c| {
             c.tag_name().namespace() == Some(WP)
                 && matches!(c.tag_name().name(), "wrapSquare" | "wrapTight" | "wrapThrough" | "wrapTopAndBottom" | "wrapNone")
@@ -1589,7 +1613,12 @@ impl Reader {
             let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
             let blocks = self.read_blocks(t, pkg, None);
             (self.fields, self.wrap) = saved;
-            TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit }
+            let v_anchor = match body.and_then(|b| b.attribute("anchor")) {
+                Some("ctr") => 1,
+                Some("b") => 2,
+                _ => 0,
+            };
+            TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
         });
         self.float_order += 1;
         out.push(Inline::Float(
@@ -1611,6 +1640,18 @@ impl Reader {
                 wrap: wrap.into(),
                 wrap_text,
                 dist: [dist("distT"), dist("distB"), dist("distL"), dist("distR")],
+                poly: wrap_el.filter(|_| matches!(wrap, "tight" | "through")).and_then(|w| {
+                    let pts: Vec<(f64, f64)> = w
+                        .children()
+                        .filter(|c| is(*c, WP, "wrapPolygon"))
+                        .flat_map(|p| p.children())
+                        .filter(|q| q.is_element())
+                        .filter_map(|q| Some((q.attribute("x")?.parse::<f64>().ok()? / 21600.0, q.attribute("y")?.parse::<f64>().ok()? / 21600.0)))
+                        .collect();
+                    (pts.len() >= 2).then(|| {
+                        pts.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)])
+                    })
+                }),
                 behind: item.attribute("behindDoc").is_some_and(|v| on_off_str(Some(v))),
                 allow_overlap: item.attribute("allowOverlap").map(|v| on_off_str(Some(v))).unwrap_or(true),
                 layout_in_cell: item.attribute("layoutInCell").map(|v| on_off_str(Some(v))).unwrap_or(true),
@@ -1651,7 +1692,7 @@ impl Reader {
                 borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
                 fixed: tbl.fixed.unwrap_or(false),
                 cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
-                look: tbl.look,
+                look: prev.look,
                 bands: (tbl.row_band.unwrap_or(0), tbl.col_band.unwrap_or(0)),
             })
         });
@@ -1659,23 +1700,38 @@ impl Reader {
             let previous = child(c, "tblGrid").map(widths).unwrap_or_default();
             Rc::new(GridChange { mark: self.mark(c, MarkKind::Format), previous })
         });
-        let look = tbl.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
+        // TABLE-3: the table's own w:tblLook, never its style's (a table without one has the default look).
+        let look =
+            direct.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
         let row_nodes: Vec<(Node, Vec<ControlId>)> = self.rows_of(t, &[]);
         let nrows = row_nodes.len();
         let row_band = tbl.row_band.unwrap_or(0);
+        let headers = row_nodes
+            .iter()
+            .enumerate()
+            .take_while(|(i, (rn, _))| {
+                let mut trp = style_region.tr.clone();
+                trp.merge(&TrProps::parse(child(*rn, "trPr")));
+                trp.header == Some(true) || *i == 0 && look.first_row
+            })
+            .count();
         let col_band = tbl.col_band.unwrap_or(0);
         let mut rows = Vec::new();
         let mut row_jc: Option<Option<Jc>> = None;
+        let mut first_row_jc: Option<Jc> = None;
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
             // Every row's alignment, or none when they differ.
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
+            if ri == 0 {
+                first_row_jc = trp.jc;
+            }
             let cell_nodes: Vec<(Node, Vec<ControlId>)> = self.cells_of(*rn, &[]);
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
             for (ci, (cn, cell_controls)) in cell_nodes.iter().enumerate() {
-                let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols)));
+                let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols), headers));
                 let mut tcp = region.tc.clone();
                 let tc_pr = child(*cn, "tcPr");
                 tcp.merge(&TcProps::parse(tc_pr));
@@ -1705,6 +1761,7 @@ impl Reader {
                     v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
                     text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
                     no_wrap: tcp.no_wrap.unwrap_or(false),
+                    fit_text: tcp.fit_text.unwrap_or(false),
                     direct: Raw(child(*cn, "tcPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
                     blocks,
                     controls: cell_controls.clone(),
@@ -1728,9 +1785,10 @@ impl Reader {
                 header: trp.header.unwrap_or(false),
                 grid_before: trp.grid_before.unwrap_or(0).max(0) as usize,
                 grid_after: trp.grid_after.unwrap_or(0).max(0) as usize,
-                w_before: trp.w_before.unwrap_or(0.0).max(0.0),
-                w_after: trp.w_after.unwrap_or(0.0).max(0.0),
+                w_before: trp.w_before.map(|w| w.max(0.0)),
+                w_after: trp.w_after.map(|w| w.max(0.0)),
                 ind: TblProps::parse(child(*rn, "tblPrEx")).ind,
+                jc: trp.jc,
                 cells,
                 controls: row_controls.clone(),
                 src: self.record.then(|| Rc::new(rn.range())),
@@ -1743,14 +1801,22 @@ impl Reader {
             width: tbl.width.unwrap_or(Width::Auto),
             // TABLE-3: a row's `w:jc` aligns the table when its `w:tblPr` has none.
             // shortcut: only when every row has the same one; rows aligned differently aren't placed apart.
-            jc: tbl.jc.or(row_jc.flatten()).unwrap_or(Jc::Left),
+            // TABLE-23 (compat 15): a table that isn't floating is aligned by its first row's w:jc when it has one.
+            jc: first_row_jc
+                .filter(|_| self.res.styles.compat == Compat::Generic && tbl.floating.is_none())
+                .or(tbl.jc)
+                .or(row_jc.flatten())
+                .unwrap_or(Jc::Left),
             ind: tbl.ind.unwrap_or(0.0),
+            // TABLE-23: a table naming no existing style takes the default one, whose indent counts as set.
+            ind_set: tbl.ind.is_some() || direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
-            look: tbl.look,
+            look: direct.look,
             bands: (row_band, col_band),
             floating: tbl.floating,
+            bidi_visual: tbl.bidi_visual.unwrap_or(false),
             grid,
             rows,
             src: self.record.then(|| Rc::new(t.range())),

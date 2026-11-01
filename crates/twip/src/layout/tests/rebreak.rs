@@ -22,7 +22,7 @@ fn rebreak_does_not_reshape() {
     crate::prof::take();
     let shaped = shape(p, &ShapeSpace::default(), &fonts, &mut memos).expect("unlimited");
     for width in [468.0, 300.0] {
-        let space = ParaSpace { width, start: 0, borders: neighbour_borders(&p.style, None, None), x0: 0.0, env: env.text.clone() };
+        let space = ParaSpace { width, start: 0, borders: neighbour_borders(&p.style, None, None), x0: 0.0, env: env.text.clone(), fit: false };
         let lines = break_lines(&shaped, p, &space, &fonts, &mut memos).expect("unlimited");
         let fresh = break_lines_uncached(&shaped, p, &space, &fonts, &mut memos).expect("unlimited");
         assert_eq!(*lines, fresh, "lines at width {width}");

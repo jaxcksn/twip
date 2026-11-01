@@ -19,6 +19,7 @@ use super::env::TextEnv;
 use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
 use super::space::ShapeSpace;
+use super::units::Lu;
 
 /// The height an emphasis mark adds, per point of the text's size (LINE-15).
 pub(crate) const EM_MARK: f64 = 3.4 / 11.0;
@@ -172,10 +173,13 @@ impl ShapedPara {
     }
 }
 
-/// Font metrics in points for one face at one size.
+/// Font metrics in points for one face at one size: ascent, descent and line gap, on the layout-unit grid. The ascent
+/// with the gap and the descent are each rounded once (UNIT-4, LINE-1); the gap is split off the rounded sum.
 pub fn metrics(face: &Face, size: f64) -> (f64, f64, f64) {
-    let s = face.scale(size);
-    (face.ascent * s, face.descent * s, face.leading * s)
+    let above = Lu::from_font(face.ascent + face.leading, size, face.upem);
+    let gap = Lu::from_font(face.leading, size, face.upem);
+    let below = Lu::from_font(face.descent, size, face.upem);
+    (Lu(above.0 - gap.0).to_pt(), below.to_pt(), gap.to_pt())
 }
 
 /// Half-points, rounded half away from zero (UNIT-5).
@@ -332,7 +336,7 @@ impl Builder<'_> {
         let (size, mut raise) = match run.vert_align {
             VertAlign::Baseline => (base, 0.0),
             VertAlign::Superscript => {
-                let size = hp(base * face.sup_size / face.upem) as f64 / 2.0;
+                let size = hp(base * face.sup_size / face.upem).max(2) as f64 / 2.0;
                 let (a, _, e) = metrics(face, base);
                 let (asup, _, _) = metrics(face, size);
                 let (a_hp, asup_hp) = (hp(a + e), hp(asup));
@@ -341,7 +345,7 @@ impl Builder<'_> {
                 (size, r as f64 / 2.0)
             }
             VertAlign::Subscript => {
-                let size = hp(base * face.sub_size / face.upem) as f64 / 2.0;
+                let size = hp(base * face.sub_size / face.upem).max(2) as f64 / 2.0;
                 let (_, d, _) = metrics(face, base);
                 let (_, dsub, _) = metrics(face, size);
                 let off = hp(base * face.sub_offset / face.upem);
@@ -357,17 +361,19 @@ impl Builder<'_> {
 
     /// A piece's vertical metrics (LINE-2, FONT-7) for a face at a size.
     fn new_piece(&self, kind: Kind, run: &Run, face: Option<Rc<Face>>, size: f64, raise: f64) -> NewPiece {
+        // LINE-2: a superscript or subscript run counts its unreduced size's ascent and descent; its smaller size and
+        // its raise or drop only place the glyphs (FONT-9, FONT-10).
+        let (metric_size, shift) = if run.vert_align == VertAlign::Baseline { (size, raise) } else { (run.size, run.position) };
         let (mut ascent, mut descent) = match &face {
             Some(f) => {
-                let (a, d, e) = metrics(f, size);
-                // LINE-2: a superscript/subscript run's ascent has no external leading.
-                (a + if run.vert_align == VertAlign::Baseline { e } else { 0.0 }, d)
+                let (a, d, e) = metrics(f, metric_size);
+                (a + e, d)
             }
             None => (0.0, 0.0),
         };
         // FONT-7: raised text grows the line above, lowered text below.
-        ascent = (ascent + raise).max(0.0);
-        descent = (descent - raise).max(0.0);
+        ascent = (ascent + shift).max(0.0);
+        descent = (descent - shift).max(0.0);
         NewPiece {
             kind,
             style: PieceStyle { run: run.clone(), face, size, raise, squeeze_avg: 0.0 },
@@ -428,7 +434,7 @@ impl Builder<'_> {
             let mut small = (**run).clone();
             small.small_caps = false;
             small.caps = true;
-            small.size = hp(run.size * 0.8) as f64 / 2.0;
+            small.size = ((hp(run.size) * 4 + 2) / 5).clamp(2, 3276) as f64 / 2.0;
             let small = Rc::new(small);
             let mut plain = (**run).clone();
             plain.small_caps = false;
@@ -436,7 +442,9 @@ impl Builder<'_> {
             let mut seg = String::new();
             let mut seg_small = false;
             for c in text.chars() {
-                let is_small = c.is_lowercase() || (c.is_whitespace() && seg_small);
+                // Lower-case letters, every space and the Vietnamese tone marks are small; the rest keeps its size.
+                let is_small =
+                    c.is_lowercase() || matches!(c, ' ' | '\u{3000}' | '\u{2005}' | '\u{300}' | '\u{301}' | '\u{303}' | '\u{309}' | '\u{323}');
                 if is_small != seg_small && !seg.is_empty() {
                     self.text(&seg, if seg_small { &small } else { &plain })?;
                     seg.clear();
@@ -560,14 +568,6 @@ impl Builder<'_> {
             let kind = if first == ' ' || first == '\u{3000}' || first == '\u{2002}' || first == '\u{2003}' { Kind::Space } else { Kind::Text };
             let n_chars = c1 - c0;
             let mut p = self.new_piece(kind, run, Some(face.clone()), size, raise);
-            // FONT-9, FONT-10: a superscript stays within its base size's ascent, a subscript within its descent.
-            if run.vert_align != VertAlign::Baseline {
-                let (ba, bd, be) = metrics(&face, run.size);
-                match run.vert_align {
-                    VertAlign::Superscript => p.ascent = p.ascent.min(ba + be),
-                    _ => p.descent = p.descent.min(bd),
-                }
-            }
             p.width = cluster_glyphs.iter().map(|g| g.advance).sum::<f64>() * scale + run.spacing * n_chars as f64;
             // BREAK-3: a break after an en dash too.
             p.break_after = kind == Kind::Space || first == '-' || first == '\u{2010}' || first == '\u{2013}';
@@ -605,13 +605,21 @@ impl Builder<'_> {
                 p.kind = Kind::ListNumber;
                 p.break_after = false;
             }
-            // LIST-2, LIST-6: the suffix in the number's font: a tab (default), one space, or nothing.
+            // LIST-2, LIST-6: the suffix in the number's font: a tab (default), one space (Arial-wide), or nothing.
             match l.suff.as_str() {
                 "space" => {
                     let s = self.pieces.len();
                     self.text(" ", &l.run)?;
-                    for p in &mut self.pieces[s..] {
+                    // LIST-2: the space is as wide as an Arial space at the number's size, whatever its font.
+                    let arial = self.fonts.face("Arial", l.run.bold, l.run.italic);
+                    let space = arial.as_ref().and_then(|f| Some(f.advance(f.glyph(' ')?) / f.upem));
+                    for i in s..self.pieces.len() {
+                        let size = self.styles[self.pieces[i].style as usize].size;
+                        let p = &mut self.pieces[i];
                         p.break_after = false;
+                        if let Some(em) = space {
+                            p.width = em * size * l.run.scale / 100.0 + l.run.spacing;
+                        }
                     }
                 }
                 "nothing" => {}
@@ -1035,7 +1043,11 @@ impl FieldValues {
             FieldKind::NumPages => self.num_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::SectionPages => self.section_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::Section => self.section.clone().map(|p| format_field(&p, code, None)),
-            FieldKind::PageRef(name) => self.page_refs.as_ref().and_then(|m| m.get(name)).map(|p| format_field(p, code, None)),
+            // FIELD-2: a PAGEREF to a bookmark the document doesn't have shows the error text, once pages are known.
+            FieldKind::PageRef(name) => self
+                .page_refs
+                .as_ref()
+                .map(|m| m.get(name).map_or_else(|| "Error! Bookmark not defined.".to_string(), |p| format_field(p, code, None))),
             FieldKind::StyleRef(st) => {
                 let key = crate::docx::fields::style_key(st);
                 self.style_refs.iter().find(|(k, _)| *k == key).map(|(_, t)| t.clone())

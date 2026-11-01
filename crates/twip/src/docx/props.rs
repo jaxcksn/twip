@@ -307,13 +307,21 @@ pub struct Border {
     /// Line width in points (`w:sz` eighths).
     pub width: f64,
     pub space: f64,
+    /// `w:shadow`: in layout the line counts twice (TABLE-37).
+    pub shadow: bool,
     pub color: Option<u32>,
 }
 
 impl Border {
     pub fn parse(e: Node) -> Border {
         let style = val(e).unwrap_or("none").to_string();
-        Border { width: num(attr(e, "sz")).unwrap_or(4.0) / 8.0, space: num(attr(e, "space")).unwrap_or(0.0), color: color(attr(e, "color")), style }
+        Border {
+            width: num(attr(e, "sz")).unwrap_or(4.0) / 8.0,
+            space: num(attr(e, "space")).unwrap_or(0.0),
+            shadow: matches!(attr(e, "shadow"), Some("1" | "true" | "on")),
+            color: color(attr(e, "color")),
+            style,
+        }
     }
 
     pub fn visible(&self) -> bool {
@@ -404,6 +412,8 @@ pub struct ParaProps {
     pub frame: Option<FramePr>,
     pub text_alignment: Option<String>,
     pub outline_lvl: Option<i64>,
+    /// The paragraph mark's direct size (`w:pPr/w:rPr/w:sz`, STYLE-4); not merged.
+    pub mark_size: Option<f64>,
 }
 
 impl ParaProps {
@@ -508,6 +518,7 @@ impl ParaProps {
                 }
                 "textAlignment" => p.text_alignment = val(e).map(str::to_string),
                 "outlineLvl" => p.outline_lvl = int(val(e)),
+                "rPr" => p.mark_size = child(e, "sz").and_then(|s| half_points(val(s))),
                 _ => {}
             }
         }
@@ -701,6 +712,7 @@ pub struct TblProps {
     pub col_band: Option<i64>,
     pub floating: Option<TablePos>,
     pub shading: Option<Option<u32>>,
+    pub bidi_visual: Option<bool>,
 }
 
 /// What `w:tblpVertAnchor` measures a floating table's `tblpY` from.
@@ -719,6 +731,16 @@ pub struct TablePos {
     /// `tblpX`, or the `tblpXSpec` alignment (left/center/right) when given.
     pub x: f64,
     pub x_spec: Option<Jc>,
+    /// `horzAnchor="page"`: `tblpX` and `tblpXSpec` measure from the page, not the column (`margin`, `text`).
+    pub h_page: bool,
+    /// `horzAnchor` `text` or absent (not `margin` or `page`).
+    pub h_text: bool,
+    /// `tblpYSpec` for page and margin anchors: top/inside → Left, center → Center, bottom/outside → Right.
+    pub y_spec: Option<Jc>,
+    /// `topFromText`, `bottomFromText`, `leftFromText`, `rightFromText` (negatives → 0), points.
+    pub dist: [f64; 4],
+    /// `w:tblOverlap="never"`.
+    pub never_overlap: bool,
 }
 
 impl TblProps {
@@ -729,6 +751,7 @@ impl TblProps {
             match c.tag_name().name() {
                 "tblStyle" => p.style = val(c).map(str::to_string),
                 "tblW" => p.width = Some(Width::parse(c)),
+                "bidiVisual" => p.bidi_visual = Some(on_off(c)),
                 "jc" => {
                     p.jc = Some(match val(c) {
                         Some("center") => Jc::Center,
@@ -745,10 +768,11 @@ impl TblProps {
                 "tblStyleColBandSize" => p.col_band = int(val(c)),
                 "tblpPr" => {
                     p.floating = Some(TablePos {
+                        // TABLE-49: an absent vertAnchor is the margin (the stored anchor's zero value).
                         v_anchor: match attr(c, "vertAnchor") {
                             Some("page") => TableAnchor::Page,
-                            Some("margin") => TableAnchor::Margin,
-                            _ => TableAnchor::Text,
+                            Some("text") => TableAnchor::Text,
+                            _ => TableAnchor::Margin,
                         },
                         y: attr_twips(c, "tblpY").unwrap_or(0.0),
                         x: attr_twips(c, "tblpX").unwrap_or(0.0),
@@ -758,7 +782,23 @@ impl TblProps {
                             Some(_) => Some(Jc::Left),
                             None => None,
                         },
+                        h_page: attr(c, "horzAnchor") == Some("page"),
+                        h_text: !matches!(attr(c, "horzAnchor"), Some("margin" | "page")),
+                        y_spec: match attr(c, "tblpYSpec") {
+                            Some("center") => Some(Jc::Center),
+                            Some("bottom" | "outside") => Some(Jc::Right),
+                            Some(_) => Some(Jc::Left),
+                            None => None,
+                        },
+                        dist: ["topFromText", "bottomFromText", "leftFromText", "rightFromText"].map(|a| attr_twips(c, a).unwrap_or(0.0).max(0.0)),
+                        never_overlap: false,
                     })
+                }
+                // tblOverlap follows tblpPr in tblPr.
+                "tblOverlap" => {
+                    if let Some(f) = &mut p.floating {
+                        f.never_overlap = val(c) == Some("never");
+                    }
                 }
                 "shd" => p.shading = Some(shading_fill(c)),
                 "tblLook" => {
@@ -785,7 +825,7 @@ impl TblProps {
         macro_rules! take {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
-        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, floating, shading);
+        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, floating, shading, bidi_visual);
         self.borders.merge(&o.borders);
         self.margins.merge(&o.margins);
     }
@@ -804,6 +844,7 @@ pub struct TcProps {
     pub v_align: Option<String>,
     pub text_direction: Option<String>,
     pub no_wrap: Option<bool>,
+    pub fit_text: Option<bool>,
 }
 
 impl TcProps {
@@ -822,6 +863,7 @@ impl TcProps {
                 "vAlign" => p.v_align = val(c).map(str::to_string),
                 "textDirection" => p.text_direction = val(c).map(str::to_string),
                 "noWrap" => p.no_wrap = Some(on_off(c)),
+                "tcFitText" => p.fit_text = Some(on_off(c)),
                 _ => {}
             }
         }
@@ -832,7 +874,7 @@ impl TcProps {
         macro_rules! take {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
-        take!(width, grid_span, v_merge, h_merge, shading, v_align, text_direction, no_wrap);
+        take!(width, grid_span, v_merge, h_merge, shading, v_align, text_direction, no_wrap, fit_text);
         self.borders.merge(&o.borders);
         self.margins.merge(&o.margins);
     }
