@@ -2169,6 +2169,13 @@ impl<'d> PageFill<'d, '_> {
         });
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));
+        // TABLE-49: the frame sits on whole 0.12pt device pixels from the page's left edge, rounded from its outer box's left
+        // (a numeric tblpX against the margin or page: from one twip left of it); the obstacle moves with it.
+        // ponytail: the table itself is drawn where it is, not on the pixel.
+        let l = at_x + bl - if fp.x_spec.is_none() && !fp.h_text { 0.05 } else { 0.0 };
+        let shift = ((l / 0.12 + 0.5).floor() * 0.12) - (at_x + bl);
+        o.excl[0] += shift;
+        o.excl[2] += shift;
         if legacy {
             o.excl[0] -= t.ind.min(0.0);
         }

@@ -691,12 +691,13 @@ In compat 15, if a table starts below other content in a column and the first ro
   - The position is taken from the page's first layout: when the text before the table re-wraps around it, the table doesn't move again.
 - **The obstacle** on each page is the table's part there: its outer box (half the left border, rounded up to a twip, left of the left border centre; half the right border right of the last edge) grown by `w:leftFromText` / `w:rightFromText` (at least 0.5pt each) and `w:topFromText` / `w:bottomFromText` (negatives → 0). Text wraps on both sides of it, as around a square float ([FLOAT-2](float#float-2)). It reaches above where the table stands only when the table itself does (negative `tblpY`, or anchored above): only then does the text before it re-wrap.
   - Compat ≤ 14: a table in the flow (`text`, `tblpY` 0) has no top or bottom distance.
+  - The obstacle moves with the frame onto whole 0.12pt device pixels from the page's left edge: the pixel nearest the outer box's left, or, for a numeric `tblpX` against the `margin` or `page`, nearest one twip left of it. Example: an outer box at 116.35pt gives a frame at 116.28pt; the text right of the table moves 0.07pt left with it.
   - A paragraph's first line that meets the obstacle goes to its bottom plus the paragraph's own space before, even at the top of a page: the space before stays above the line wherever it lands.
 - **A split** floating table continues at the top of the next page like an inline table; the text after it starts at the top of the page that holds its last part, beside it.
   - Compat ≤ 14 with `w:doNotBreakWrappedTables`: the table isn't split; one that doesn't fit below its anchor moves to the next page (its rows may run past the bottom margin).
 - **`w:tblOverlap`**: compat 15, a `never` table that overlaps an earlier floating table's obstacle on the page moves right to its edge (its own left distance included). Compat ≤ 14, every floating table that overlaps an earlier one by 9pt or more, distances included, moves down to the other's obstacle bottom plus its own top distance.
 - Example: a page-anchored table at the page top, 280pt tall, then a paragraph with 12pt before: the paragraph's first line starts at 292pt.
-- Not done: `inside` / `outside` by page parity, an aligned (`tblpYSpec`) frame kept whole, the 18pt minimum width of a free interval ([FLOAT-7](float#float-7)), floating tables inside table cells, and the device-pixel placement of the frame.
+- Not done: `inside` / `outside` by page parity, an aligned (`tblpYSpec`) frame kept whole, the 18pt minimum width of a free interval ([FLOAT-7](float#float-7)), floating tables inside table cells, and drawing the table itself at its frame's device pixel.
 
 ### TABLE-50. A row's own indent {#table-50}
 

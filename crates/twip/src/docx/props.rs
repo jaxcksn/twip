@@ -733,6 +733,8 @@ pub struct TablePos {
     pub x_spec: Option<Jc>,
     /// `horzAnchor="page"`: `tblpX` and `tblpXSpec` measure from the page, not the column (`margin`, `text`).
     pub h_page: bool,
+    /// `horzAnchor` `text` or absent (not `margin` or `page`).
+    pub h_text: bool,
     /// `tblpYSpec` for page and margin anchors: top/inside → Left, center → Center, bottom/outside → Right.
     pub y_spec: Option<Jc>,
     /// `topFromText`, `bottomFromText`, `leftFromText`, `rightFromText` (negatives → 0), points.
@@ -781,6 +783,7 @@ impl TblProps {
                             None => None,
                         },
                         h_page: attr(c, "horzAnchor") == Some("page"),
+                        h_text: !matches!(attr(c, "horzAnchor"), Some("margin" | "page")),
                         y_spec: match attr(c, "tblpYSpec") {
                             Some("center") => Some(Jc::Center),
                             Some("bottom" | "outside") => Some(Jc::Right),
