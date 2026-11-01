@@ -1,0 +1,60 @@
+# Run by hand from any branch (main included): builds that commit as x.y.z-canary-<short SHA> and publishes it to
+# GitHub Packages, npm.pkg.github.com as @<owner>/twip-web and nuget.pkg.github.com. Installing from there needs a
+# GitHub token, so canaries don't reach anyone by accident. The jobs deploy to the canary environment, so the branch's
+# PR shows the deployment. No id-token here: the real registries trust only release.yml.
+name: Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Registries to publish to (any of nuget npm)
+        default: nuget npm
+
+permissions: {}
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+    with:
+      canary: true
+      nuget: ${{ contains(inputs.publish, 'nuget') }}
+      npm: ${{ contains(inputs.publish, 'npm') }}
+
+  nuget:
+    needs: build
+    if: contains(inputs.publish, 'nuget')
+    runs-on: ubuntu-latest
+    environment:
+      name: canary
+      url: https://github.com/${{ github.repository }}/pkgs/nuget/Twip.Core
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: nupkg
+      - run: dotnet nuget push '*.nupkg' --source "https://nuget.pkg.github.com/$GITHUB_REPOSITORY_OWNER/index.json" --api-key "$GH_TOKEN"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  npm:
+    needs: build
+    if: contains(inputs.publish, 'npm')
+    runs-on: ubuntu-latest
+    environment:
+      name: canary
+      url: https://github.com/${{ github.repository }}/pkgs/npm/twip-web
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm
+      - run: |
+          echo "//npm.pkg.github.com/:_authToken=$GH_TOKEN" > .npmrc
+          npm publish ./*.tgz --registry https://npm.pkg.github.com --tag canary
+        env:
+          GH_TOKEN: ${{ github.token }}

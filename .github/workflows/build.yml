@@ -1,0 +1,121 @@
+# Builds the packages release.yml and canary.yml publish, without publishing them: the NuGet packages (artifact nupkg)
+# and the npm package (artifact npm, a pnpm pack tarball). Publishing stays in the calling workflow, so the registries'
+# trusted publishing only ever trusts release.yml.
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit, branch or tag to build. Empty for the caller's commit
+        type: string
+        default: ''
+      canary:
+        description: Build a canary (stamp-canary.sh)
+        type: boolean
+        default: false
+      nuget:
+        type: boolean
+        default: false
+      npm:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    # One native library per runtime identifier, packed together into the NuGet package. No win-arm64 yet:
+    # skia-safe has no prebuilt Skia for it with these features, and building Skia there fails.
+    if: inputs.nuget
+    strategy:
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64, lib: twip.dll }
+          - { os: ubuntu-latest, rid: linux-x64, lib: libtwip.so }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64, lib: libtwip.so }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      # Skia links FreeType and Fontconfig.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+      # On Windows with the prebuilt Skia that draws on the GPU (Graphite on Dawn).
+      - run: node crates/twip-capi/build-native.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.rid }}
+          path: target/release/${{ matrix.lib }}
+
+  nuget:
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0 # moon compares with the base branch
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: node licenses/notices.mjs THIRD-PARTY-NOTICES.md
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: artifacts
+      - name: Lay out runtimes/<rid>/native
+        run: |
+          for d in artifacts/native-*; do
+            rid=${d#artifacts/native-}
+            mkdir -p bindings/dotnet/runtimes/$rid/native && mv $d/* bindings/dotnet/runtimes/$rid/native/
+          done
+      - if: inputs.canary
+        run: sh .github/stamp-canary.sh
+      # Twip.Core carries the native libraries; Twip.WinForms depends on it.
+      - run: |
+          dotnet pack bindings/dotnet/Twip.Core -c Release -o out
+          dotnet pack bindings/dotnet/Twip.WinForms -c Release -o out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nupkg
+          path: out/*.nupkg
+
+  npm:
+    if: inputs.npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0 # moon compares with the base branch
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - uses: mymindstorm/setup-emsdk@v16
+        with:
+          version: '6.0.8'
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: node licenses/notices.mjs THIRD-PARTY-NOTICES.md
+      - if: inputs.canary
+        run: sh .github/stamp-canary.sh
+      - run: moon run web:test
+      # The package is dist/: the module, its types, the engine and the worker entry.
+      - working-directory: bindings/web
+        run: |
+          test -f dist/index.js && test -f dist/index.d.ts && test -f dist/worker.js
+          pnpm pack --pack-destination "$RUNNER_TEMP/npm"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm
+          path: ${{ runner.temp }}/npm/*.tgz
