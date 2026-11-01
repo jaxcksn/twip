@@ -546,6 +546,10 @@ fn stripes(b: &Border) -> Vec<f64> {
         return vec![w, (a - w).max(0.0)];
     }
     match s {
+        "threeDEmboss" | "threeDEngrave" => {
+            let o = if w < 3.0 { 0.75 } else { 1.5 };
+            vec![o, w, o]
+        }
         "double" => vec![w, w, w],
         "triple" => vec![w; 5],
         _ if s.starts_with("thinThickThin") => vec![thin, gap, thick, gap, thin],
@@ -560,6 +564,16 @@ fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, b: &Border) {
     let colour = b.color.unwrap_or(0);
     let [x0, y0, x1, y1] = rect;
     let st = stripes(b);
+    // TABLE-37: a 3D line is three lines across its band, top or left first: light, middle, dark when embossed, dark,
+    // middle, light when engraved.
+    if let Some(cs) = three_d(b) {
+        let mut at = if horizontal { y0 } else { x0 };
+        for (w, colour) in st.iter().zip(cs) {
+            out.push(Item::Rect { rect: if horizontal { [x0, at, x1, at + w] } else { [at, y0, at + w, y1] }, colour });
+            at += w;
+        }
+        return;
+    }
     if st.len() == 1 && !dash_pattern(&b.style).is_empty() {
         out.extend(dashes(&b.style, rect, horizontal).into_iter().map(|rect| Item::Rect { rect, colour }));
         return;
@@ -612,6 +626,87 @@ pub(super) fn dashes(style: &str, rect: [f64; 4], horizontal: bool) -> Vec<[f64;
         at = to;
     }
     out
+}
+
+/// TABLE-37: a threeDEmboss or threeDEngrave border's three colours, top or left first, from its colour (auto as
+/// A0A0A0) on the 0–240 HLS scale: black gives C0C0C0, 808080, 000000 and white FFFFFF, C0C0C0, 808080; other colours
+/// take L' = L + 40 below 60, L below 120, else L − 40, and lines at L' + 40, L', L' − 40. The middle line is drawn
+/// in the average of its colour and that colour 60 darker (white's C0C0C0 and black as they are).
+fn three_d(b: &Border) -> Option<[u32; 3]> {
+    let engrave = match b.style.as_str() {
+        "threeDEmboss" => false,
+        "threeDEngrave" => true,
+        _ => return None,
+    };
+    let c = b.color.unwrap_or(0xA0A0A0);
+    let (light, middle, dark) = match c {
+        0x000000 => (0xC0C0C0, 0x808080, 0x000000),
+        0xFFFFFF => (0xFFFFFF, 0xC0C0C0, 0x808080),
+        _ => {
+            let (h, l, s) = to_hls(c);
+            let l2 = if l < 60 {
+                l + 40
+            } else if l < 120 {
+                l
+            } else {
+                l - 40
+            }
+            .clamp(0, 255);
+            let mid = from_hls(h, l2, s);
+            let shade = from_hls(h, (l2 - 60).max(0), s);
+            let avg = (0..3).fold(0, |acc, k| {
+                let (a, b) = ((mid >> (8 * k)) & 0xFF, (shade >> (8 * k)) & 0xFF);
+                acc | (((a * 8 + b * 8 + 8) >> 4) << (8 * k))
+            });
+            (from_hls(h, (l2 + 40).min(240), s), avg, from_hls(h, (l2 - 40).max(0), s))
+        }
+    };
+    Some(if engrave { [dark, middle, light] } else { [light, middle, dark] })
+}
+
+/// RGB (0xRRGGBB) to hue, lightness and saturation on the 0–240 scale, in integers (TABLE-37).
+fn to_hls(c: u32) -> (i64, i64, i64) {
+    let (r, g, b) = (i64::from((c >> 16) & 0xFF), i64::from((c >> 8) & 0xFF), i64::from(c & 0xFF));
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let l = ((max + min) * 240 + 255) / 510;
+    if max == min {
+        return (160, l, 0);
+    }
+    let d = max - min;
+    let s = if l < 121 { ((max + min) / 2 + d * 240) / (max + min) } else { ((510 - max - min) / 2 + d * 240) / (510 - max - min) };
+    let part = |v: i64| (d / 2 + (max - v) * 40) / d;
+    let h = if r == max {
+        part(b) - part(g)
+    } else if g == max {
+        part(r) - part(b) + 80
+    } else {
+        part(g) - part(r) + 160
+    };
+    (h.rem_euclid(240), l, s)
+}
+
+/// Hue, lightness and saturation (0–240) to RGB (TABLE-37).
+fn from_hls(h: i64, l: i64, s: i64) -> u32 {
+    let scale = |v: i64| ((v * 255 + 120) / 240).clamp(0, 255) as u32;
+    if s == 0 {
+        let v = scale(l);
+        return (v << 16) | (v << 8) | v;
+    }
+    let m2 = if l < 121 { ((s + 240) * l + 120) / 240 } else { l - (l * s + 120) / 240 + s };
+    let m1 = 2 * l - m2;
+    let channel = |h: i64| {
+        let h = h.rem_euclid(240);
+        if h < 40 {
+            m1 + ((m2 - m1) * h + 20) / 40
+        } else if h < 120 {
+            m2
+        } else if h < 160 {
+            m1 + ((m2 - m1) * (160 - h) + 20) / 40
+        } else {
+            m1
+        }
+    };
+    (scale(channel(h + 80)) << 16) | (scale(channel(h)) << 8) | scale(channel(h - 80))
 }
 
 /// TABLE-17: half a border in whole twips, rounded up.
@@ -2292,5 +2387,20 @@ mod tests {
         edge(&mut out, [0.0, 0.0, 9.0, 1.0], true, &b);
         let xs: Vec<f64> = out.iter().map(|i| if let Item::Rect { rect, .. } = i { rect[0] } else { -1.0 }).collect();
         assert_eq!(xs, vec![0.0, 2.0, 4.0, 6.0, 8.0]);
+    }
+
+    #[test]
+    fn a_3d_border_is_three_lines_in_light_middle_and_dark() {
+        // TABLE-37: a 1pt black threeDEmboss: 0.75 light, 1 middle, 0.75 dark from the top; engraved the other way.
+        let b = |style: &str| Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0) };
+        let drawn = |style: &str| {
+            let mut out = Vec::new();
+            edge(&mut out, [0.0, 0.0, 10.0, 2.5], true, &b(style));
+            out.iter().map(|i| if let Item::Rect { rect, colour } = i { (rect[3] - rect[1], *colour) } else { (0.0, 0) }).collect::<Vec<_>>()
+        };
+        assert_eq!(drawn("threeDEmboss"), vec![(0.75, 0xC0C0C0), (1.0, 0x808080), (0.75, 0x000000)]);
+        assert_eq!(drawn("threeDEngrave"), vec![(0.75, 0x000000), (1.0, 0x808080), (0.75, 0xC0C0C0)]);
+        // A grey's lines: HLS round trip of 808080 is exact.
+        assert_eq!(from_hls(to_hls(0x808080).0, to_hls(0x808080).1, to_hls(0x808080).2), 0x808080);
     }
 }

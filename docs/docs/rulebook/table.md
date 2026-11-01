@@ -576,6 +576,8 @@ In layout ([TABLE-27](#table-27)) a border takes `h(b)` = its `w:space` in point
 
 A double border is line + gap + line, each its width `w`: it is `3w` thick in layout (rows grow by `3w`, the padding counts `3w`), and it is drawn as two lines of `w` at the outer sides of that band. Every other style, compound ones included, counts once and is drawn as one band of its width: solid, or for a patterned line dashes along the band, on and off in units of the line width from the band's start: `dotted` 1, 1; `dashed` 3, 1; `dotDash` 3, 1, 1, 1; `dotDotDash` 3, 1, 1, 1, 1, 1; `dashSmallGap` 4, 1 (of the band's thickness). Not done: `wave`, `doubleWave` and `dashDotStroked` are drawn solid.
 
+`threeDEmboss` and `threeDEngrave` are three lines across the band with no gap: `o`, the width, `o` (`o` 0.75pt, 1.5pt from 3pt wide), top or left first light, middle, dark when embossed and dark, middle, light when engraved. The colours come from the border's colour (`auto` as A0A0A0) on the 0–240 hue/lightness/saturation scale, in integers: black gives C0C0C0, 808080, 000000 and white FFFFFF, C0C0C0, 808080; any other colour takes `L' = L + 40` if `L < 60`, `L` if `L < 120`, else `L − 40`, and its lines are at lightness `L' + 40`, `L'`, `L' − 40`; the middle line is drawn in the average of its colour and that colour at `L' − 60`.
+
 With no cell spacing, draw each cell's winning edges as filled bands of their thickness `t`:
 
 - **top**: from the row's top down by `t`, horizontally from the cell's left border centre minus half the left edge's thickness to its right border centre plus half the right edge's; not for vertical-merge continuation cells;
