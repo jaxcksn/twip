@@ -419,38 +419,44 @@ fn style_factor(style: &str) -> f64 {
     }
 }
 
-/// ST_Border enumeration order (ties: the later style wins, TABLE-36).
+/// ST_Border's line styles in enumeration order (ties: the later style wins, TABLE-36).
+const ORDER: [&str; 27] = [
+    "nil",
+    "none",
+    "single",
+    "thick",
+    "double",
+    "dotted",
+    "dashed",
+    "dotDash",
+    "dotDotDash",
+    "triple",
+    "thinThickSmallGap",
+    "thickThinSmallGap",
+    "thinThickThinSmallGap",
+    "thinThickMediumGap",
+    "thickThinMediumGap",
+    "thinThickThinMediumGap",
+    "thinThickLargeGap",
+    "thickThinLargeGap",
+    "thinThickThinLargeGap",
+    "wave",
+    "doubleWave",
+    "dashSmallGap",
+    "dashDotStroked",
+    "threeDEmboss",
+    "threeDEngrave",
+    "outset",
+    "inset",
+];
+
 fn style_rank(style: &str) -> usize {
-    const ORDER: [&str; 27] = [
-        "nil",
-        "none",
-        "single",
-        "thick",
-        "double",
-        "dotted",
-        "dashed",
-        "dotDash",
-        "dotDotDash",
-        "triple",
-        "thinThickSmallGap",
-        "thickThinSmallGap",
-        "thinThickThinSmallGap",
-        "thinThickMediumGap",
-        "thickThinMediumGap",
-        "thinThickThinMediumGap",
-        "thinThickLargeGap",
-        "thickThinLargeGap",
-        "thinThickThinLargeGap",
-        "wave",
-        "doubleWave",
-        "dashSmallGap",
-        "dashDotStroked",
-        "threeDEmboss",
-        "threeDEngrave",
-        "outset",
-        "inset",
-    ];
     ORDER.iter().position(|s| *s == style).unwrap_or(2)
+}
+
+/// TABLE-37: an art border (any style that isn't a line style) is `w:sz` points wide in layout.
+fn art(b: &Border) -> Option<f64> {
+    (!ORDER.contains(&b.style.as_str())).then(|| (b.width * 8.0).min(255.0))
 }
 
 /// TABLE-36: which of two borders meeting on an edge is drawn. `(border, cell_level)`.
@@ -496,9 +502,12 @@ fn thick(b: &Border) -> f64 {
 /// in horizontal geometry (cell boxes, edge allowances, x0): `w:space` plus its line (twice with
 /// `w:shadow`), the line's width rounded down to whole twips; wave, doubleWave and dashDotStroked take a fixed height,
 /// threeDEmboss and threeDEngrave 1.5pt more (3pt from 3pt wide).
-/// shortcut: art borders count as their line width.
+/// Art borders count their art width.
 fn space_h(b: &Option<Border>) -> f64 {
     let Some(b) = b.as_ref().filter(|b| b.visible()) else { return 0.0 };
+    if let Some(a) = art(b) {
+        return b.space.clamp(0.0, 31.0) + if b.shadow { 2.0 } else { 1.0 } * a;
+    }
     let w = (b.width.clamp(0.25, 12.0) * 20.0 + 1e-6).floor() / 20.0;
     let line = match b.style.as_str() {
         "wave" if (b.width - 1.5).abs() < EPS => 3.75,
@@ -509,6 +518,14 @@ fn space_h(b: &Option<Border>) -> f64 {
         _ => thick(b),
     };
     b.space.clamp(0.0, 31.0) + if b.shadow { 2.0 } else { 1.0 } * line
+}
+
+/// TABLE-24: a border's width for the cell content box: its layout width, an art border's as a single line.
+fn box_h(b: &Option<Border>) -> f64 {
+    match b.as_ref().filter(|b| b.visible() && art(b).is_some()) {
+        Some(b) => b.space.clamp(0.0, 31.0) + if b.shadow { 2.0 } else { 1.0 } * ((b.width * 20.0 + 1e-6).floor() / 20.0).max(0.05),
+        None => space_h(b),
+    }
 }
 
 /// A compound border's lines and gaps across its thickness, top or left first (lines at even indices), as Word lays
@@ -525,6 +542,9 @@ fn stripes(b: &Border) -> Vec<f64> {
     } else {
         (w, w, w)
     };
+    if let Some(a) = art(b) {
+        return vec![w, (a - w).max(0.0)];
+    }
     match s {
         "double" => vec![w, w, w],
         "triple" => vec![w; 5],
@@ -1397,8 +1417,8 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
                         let cx = gl + space_h(left_e) + c.margins[1];
                         (cx, (w - cx - c.margins[3] - space_h(right_e) - gr).max(0.0))
                     } else {
-                        let cx = c.margins[1].max(space_h(left_e) / 2.0);
-                        (cx, (w - cx - c.margins[3].max(space_h(right_e) / 2.0)).max(0.0))
+                        let cx = c.margins[1].max(box_h(left_e) / 2.0);
+                        (cx, (w - cx - c.margins[3].max(box_h(right_e) / 2.0)).max(0.0))
                     };
                     CellGeo { ci: e.ci, col, span, x, w, cx, cw, edges: e.edges.clone() }
                 })

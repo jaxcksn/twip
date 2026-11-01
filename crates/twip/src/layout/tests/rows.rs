@@ -488,3 +488,19 @@ fn a_nested_row_splits_inside_its_cell() {
     let page = |ch: char| glyphs(&doc).iter().position(|p| p.iter().any(|c| c.0 == ch));
     assert_eq!([page('a'), page('b'), page('c'), page('d')], [Some(0), Some(1), Some(0), Some(1)]);
 }
+
+#[test]
+fn an_art_border_takes_its_art_width_across_rows() {
+    // TABLE-37: an art border of w:sz 12 is 12pt in layout, a single one 1.5pt: the second row's text is the table's
+    // top border and its insideH lower, 2 × 10.5pt.
+    let baseline = |val: &str| {
+        let b = format!(r#"w:val="{val}" w:sz="12" w:space="0" w:color="000000""#);
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblBorders><w:top {b}/><w:insideH {b}/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        glyphs(&doc)[0].iter().find(|c| c.0 == 'b').map(|c| c.1).expect("b is drawn")
+    };
+    let d = baseline("apples") - baseline("single");
+    assert!((d - 21.0).abs() < 0.01, "{d}");
+}

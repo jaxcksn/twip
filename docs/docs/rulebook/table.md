@@ -436,7 +436,7 @@ left  = cellX + max(marginL, bL/2)
 width = max(0, w − max(marginL, bL/2) − max(marginR, bR/2))
 ```
 
-where `bL`, `bR` are its resolved left and right borders ([TABLE-36](#table-36)). Lay the cell's content out at that width. With cell spacing see [TABLE-39](#table-39).
+where `bL`, `bR` are its resolved left and right borders ([TABLE-36](#table-36)), an art border counting as a single line of its `w:sz` ([TABLE-37](#table-37)). Lay the cell's content out at that width. With cell spacing see [TABLE-39](#table-39).
 
 ### TABLE-25. Nested table placement {#table-25}
 
@@ -572,7 +572,7 @@ The winning top edges set the row's top-border space ([TABLE-27](#table-27)); th
 
 ### TABLE-37. Border thickness and drawing {#table-37}
 
-In layout ([TABLE-27](#table-27)) a border takes `h(b)` = its `w:space` in points plus its line, the line twice with `w:shadow`. The line is the width rounded down to whole twips (`w:sz × 5 div 2` twips: `sz` 3 is 0.35pt); double and compound styles their stripes as below; `wave` 3.75pt at `sz` 12, else 3pt; `doubleWave` 5.25pt; `dashDotStroked` 3pt; `threeDEmboss` and `threeDEngrave` the width plus 1.5pt (plus 3pt from 3pt wide). Drawing uses the width.
+In layout ([TABLE-27](#table-27)) a border takes `h(b)` = its `w:space` in points plus its line, the line twice with `w:shadow`. The line is the width rounded down to whole twips (`w:sz × 5 div 2` twips: `sz` 3 is 0.35pt); double and compound styles their stripes as below; `wave` 3.75pt at `sz` 12, else 3pt; `doubleWave` 5.25pt; `dashDotStroked` 3pt; `threeDEmboss` and `threeDEngrave` the width plus 1.5pt (plus 3pt from 3pt wide). An art border (any `w:val` that isn't a line style) is `w:sz` points wide (at most 255), in row heights and in horizontal geometry alike, except the cell's content box ([TABLE-24](#table-24)); it is drawn as a line of its width (`w:sz / 8` pt) at the top or left of that band, the rest left empty. Drawing uses the width.
 
 A double border is line + gap + line, each its width `w`: it is `3w` thick in layout (rows grow by `3w`, the padding counts `3w`), and it is drawn as two lines of `w` at the outer sides of that band. Every other style, compound ones included, counts once and is drawn as one solid band of its width.
 
