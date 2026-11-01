@@ -11,7 +11,7 @@
   "steps": [
     {
       "click": {
-        "para": 46,
+        "para": 52,
         "offset": "end"
       }
     },
@@ -24,10 +24,10 @@
     {
       "expect": {
         "text": {
-          "47": "Z14"
+          "53": "Z15"
         },
         "caret": {
-          "para": 47,
+          "para": 53,
           "offset": 1,
           "page": 1,
           "depth": 2
