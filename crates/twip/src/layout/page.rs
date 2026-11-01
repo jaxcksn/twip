@@ -456,6 +456,8 @@ impl<'d> Paginator<'d, '_> {
         let top = cols[0].top;
         // COL-6: the empty paragraph holding the section break takes no space.
         let blocks = &sec.blocks;
+        // shortcut: in compat 15 one right after a table is an ordinary line that may run below the column bottom; it is
+        // left out here too.
         let skip_last = matches!(blocks.get(blocks.len().wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && blocks.len() > 1);
         let state = fill.at.clone();
         // One fill at column height `h`: the result when the content ends in these columns, and each column's

@@ -72,3 +72,5 @@ Single-line paragraphs, 2 columns: 3 → 2 / 1, 5 → 3 / 2, 7 → 4 / 3. Three 
 When balancing ([COL-5](col#col-5)), if the section's last paragraph is empty and the section has other content, it doesn't count: the section is complete once everything before it is placed.
 
 Example: six one-line paragraphs followed by the empty paragraph holding `w:sectPr` balance 3 / 3.
+
+In compat ≤ 14 the empty paragraph holding a section break right after a table takes no space in any section, balanced or not: the next section starts at the table's end.

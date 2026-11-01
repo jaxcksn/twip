@@ -193,7 +193,7 @@ impl<'d> PassCx<'d> {
                         blocks.append(doc.endnotes.get(id).into_iter().flatten());
                     }
                 }
-                SectionNode { index: si, section: s, blocks }
+                SectionNode { index: si, section: s, blocks, breaks: si + 1 < nsec }
             })
             .collect();
         let mut wanted: Vec<String> = Vec::new();
@@ -323,6 +323,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
                         index: n.index,
                         section: n.section,
                         blocks: Blocks { blocks: n.blocks.blocks[..e].to_vec(), stories: Vec::new() },
+                        breaks: n.breaks,
                     };
                     &body_only
                 }

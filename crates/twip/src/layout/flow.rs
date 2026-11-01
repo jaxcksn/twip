@@ -914,6 +914,12 @@ impl<'d> PageFill<'d, '_> {
                 let end = y + if col.balance { carry.prev_after } else { 0.0 };
                 return Ok((Stop::Done, end));
             }
+            if pos.at.at_start() && self.break_para_after_table(pos.block) && self.ctx.env.text.compat == Compat::Legacy {
+                // COL-6 (compat ≤ 14): the empty paragraph that carries the section break right after a table takes no
+                // space.
+                pos.next_block();
+                continue;
+            }
             let bi = pos.block;
             let start_state = Breakpoint {
                 pos: pos.clone(),
@@ -1348,6 +1354,15 @@ impl<'d> PageFill<'d, '_> {
                 None => self.edge_before(pos.block, style, before),
             }
         }
+    }
+
+    /// COL-6: whether block `bi` is the empty paragraph carrying the section's break, right after a table.
+    pub fn break_para_after_table(&self, bi: usize) -> bool {
+        self.sec.breaks
+            && bi + 1 == self.sec.blocks.len()
+            && bi > 0
+            && matches!(self.sec.blocks.get(bi - 1), Some(Block::Table(_)))
+            && matches!(self.sec.blocks.get(bi), Some(Block::Para(p)) if p.inlines.is_empty())
     }
 
     /// PARA-4: block `bi`'s space-before with no paragraph before it in the column. After a table its previous
