@@ -128,6 +128,7 @@ impl Resolver {
         ParaStyle {
             style_id: p.style.clone(),
             jc: p.jc.unwrap_or(Jc::Left),
+            bidi: p.bidi.unwrap_or(false),
             ind_left: p.ind_left.unwrap_or(0.0),
             ind_right: p.ind_right.unwrap_or(0.0),
             ind_first: p.ind_first.unwrap_or(0.0),

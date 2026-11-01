@@ -135,6 +135,26 @@ fn a_right_to_left_table_draws_its_first_cell_on_the_right() {
     assert!(page_w - x('a') < 100.0, "the first cell ends at the right margin: a {} margin {page_w}", x('a'));
 }
 
+#[test]
+fn a_right_to_left_paragraph_swaps_left_and_right() {
+    // JUST-4: w:bidi with jc absent aligns right; with jc right (end), left.
+    let x = |ppr: &str| {
+        let body = format!(r#"<w:p><w:pPr>{ppr}</w:pPr><w:r><w:t>a</w:t></w:r></w:p>"#);
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        let s = layout(&doc, &fonts());
+        let mut x = None;
+        crate::layout::traverse::paint(&s.pages()[0], &mut |p| {
+            if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
+                x = x.or(r.chars.iter().find(|g| g.0 == 'a').map(|g| g.1));
+            }
+        });
+        (x.expect("drawn"), doc.sections[0].page_w - doc.sections[0].right)
+    };
+    let (rtl, margin) = x("<w:bidi/>");
+    assert!(margin - rtl < 10.0, "right-aligned: a {rtl} margin {margin}");
+    assert_eq!(x(r#"<w:bidi/><w:jc w:val="right"/>"#).0, x("").0, "jc right is left-aligned");
+}
+
 /// `src` with its body's first empty paragraph replaced by `body`.
 pub(super) fn with_body(src: &[u8], body: &str) -> Vec<u8> {
     use std::io::{Read, Write};

@@ -73,6 +73,8 @@ impl PartialEq for Raw {
 pub struct ParaStyle {
     pub style_id: Option<String>,
     pub jc: Jc,
+    /// `w:bidi`: a right-to-left paragraph, its left and right alignments swapped (JUST-4).
+    pub bidi: bool,
     pub ind_left: f64,
     pub ind_right: f64,
     /// + first line, − hanging.

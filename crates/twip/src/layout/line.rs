@@ -1087,13 +1087,31 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
     let line_end_x = if content_end == 0 { left } else { line.xs[content_end - 1] + line.widths[content_end - 1] }
         + if line.hyphen { hyphen_width(sp, &pieces[idx(n - 1)]) } else { 0.0 };
     let ends_with_line_break = line.end > 0 && pieces.get(line.end - 1).is_some_and(|p| p.kind == Kind::LineBreak);
-    match style.jc {
+    // JUST-4: a right-to-left paragraph (w:bidi) swaps left and right alignment; the lines of its justified paragraph
+    // that don't stretch align right.
+    let jc = match style.jc {
+        Jc::Left if style.bidi => Jc::Right,
+        Jc::Right if style.bidi => Jc::Left,
+        jc => jc,
+    };
+    let to_right = |line: &mut Line| {
+        let free = right - line_end_x;
+        if free > 0.0 {
+            for x in &mut line.xs {
+                *x += free;
+            }
+        }
+    };
+    match jc {
         Jc::Both => {
             let justify = !is_last && (line.hard.is_none() || line.hard == Some(Kind::LineBreak));
             let justify = justify && !(ends_with_line_break && (frame.compat == Compat::Legacy || !frame.expand_shift_return));
             // BREAK-6 may leave the last line compressed.
             let overflow = line_end_x - right;
             if !(justify || (frame.compat == Compat::Generic && overflow > EPS)) {
+                if style.bidi {
+                    to_right(line);
+                }
                 return;
             }
             // JUST-6: after the last tab, skipping leading spaces.
@@ -1104,6 +1122,9 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             }
             let spaces: Vec<usize> = (first..content_end).filter(|&k| pieces[idx(k)].kind == Kind::Space).collect();
             if spaces.is_empty() {
+                if style.bidi {
+                    to_right(line);
+                }
                 return;
             }
             let extra = right - line_end_x;
@@ -1123,6 +1144,9 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                     line.widths[k] -= caps[j] - q;
                 }
             } else {
+                if style.bidi {
+                    to_right(line);
+                }
                 return;
             }
             let mut x = line.xs[0];
@@ -1137,7 +1161,7 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             // JUST-4.
             let free = right - line_end_x;
             if free > 0.0 {
-                let off = if style.jc == Jc::Center { free / 2.0 } else { free };
+                let off = if jc == Jc::Center { free / 2.0 } else { free };
                 for x in &mut line.xs {
                     *x += off;
                 }
@@ -1541,9 +1565,10 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 let s = src.para_style_in(o.review.view);
                 let left = s.ind_left + if o.from == 0 { s.ind_first } else { 0.0 };
                 let right = o.width - s.ind_right;
-                x0 + match s.jc {
-                    Jc::Center => (left + right) / 2.0,
-                    Jc::Right => right,
+                // JUST-4: a right-to-left paragraph's left and right swap.
+                x0 + match (s.jc, s.bidi) {
+                    (Jc::Center, _) => (left + right) / 2.0,
+                    (Jc::Right, false) | (Jc::Left | Jc::Both, true) => right,
                     _ => left,
                 }
             }
