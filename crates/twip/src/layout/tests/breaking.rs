@@ -252,3 +252,17 @@ fn a_compat_15_section_break_after_a_table_takes_a_line_in_balanced_columns() {
     let (Some(a12), Some(a15)) = (after(""), after(c15)) else { return };
     assert!((a15 - a12 - 13.8).abs() < 0.05, "{a12} {a15}");
 }
+
+#[test]
+fn a_compat_14_exact_row_is_capped_to_the_column() {
+    // TABLE-28: an exact row of 1000pt holding 60 lines: compat 12 caps it to the 648pt column and clips the lines
+    // past it; compat 15 keeps 1000pt, past the page bottom, and shows the lines down to the page edge.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let lines_in = (0..60).map(|i| format!("<w:p><w:r><w:t>Line {i}</w:t></w:r></w:p>")).collect::<String>();
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="20000" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>{lines_in}</w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let count = |settings: &str| lines(settings, ARIAL_12, &body).map(|l| l.iter().filter(|(_, t, _)| t.starts_with("Line")).count());
+    let (Some(c12), Some(c15)) = (count(""), count(c15)) else { return };
+    assert!(c12 < 50 && c15 > c12 + 4, "{c12} {c15}");
+}

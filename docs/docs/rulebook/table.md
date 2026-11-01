@@ -481,6 +481,8 @@ Example: one 13.44pt line, top and bottom margins 0: a 0.5pt top border gives a 
 - `atLeast`: `rowPitch = topBorder + max(contentH, X)`;
 - `exact` with X > 0: `rowPitch = X`, the top border **included**; content that doesn't fit is clipped ([TABLE-34](#table-34)). An exact row of 0 is an auto row.
 
+In compat ≤ 14 a body row's exact height is capped to the whole column (the column's full height, not the space left) less the row's top border and the table's bottom border, so an exact row never asks for more than one column; its content is clipped at the capped height. Compat 15 keeps the height: an exact row taller than the column runs past the column bottom.
+
 ### TABLE-29. Cell content {#table-29}
 
 Lay out a cell's blocks top-down at its content width with the normal paragraph rules. Its content height includes its first paragraph's space-before and its last paragraph's space-after, except where contextual spacing drops them against the neighbouring cells or the row's end mark ([PARA-4](para#para-4)). A paragraph's space-after before a nested table applies at that table's top border edge. Floats anchored in a cell: see [FLOAT-14](float#float-14).

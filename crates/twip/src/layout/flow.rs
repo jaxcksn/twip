@@ -1894,6 +1894,14 @@ impl<'d> PageFill<'d, '_> {
                 None => whole(row),
             };
             let height = if rest.is_some() { part_height(row, &parts) } else { row.height };
+            // TABLE-28: compat ≤ 14 caps an exact row to the whole column less its top and bottom borders, so it never
+            // asks for more than one column; compat 15 lets it run past the column bottom.
+            // shortcut: an atLeast row's minimum isn't capped (its content height isn't kept apart from it).
+            let height = if row.exact && rest.is_none() && self.ctx.env.text.compat == Compat::Legacy {
+                height.min((col.bottom - col.top - row.top_border - tb.bottom_border).max(0.0))
+            } else {
+                height
+            };
             // NOTE-8: a row's references place their notes like a body line's.
             let refs: Vec<(NoteKind, i64)> = parts.iter().flat_map(|cu| cu.units.iter().flat_map(|u| u.notes.iter().copied())).collect();
             let mut a = area.clone();
