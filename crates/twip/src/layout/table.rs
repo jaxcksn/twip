@@ -838,7 +838,7 @@ fn gap(s: f64, outer: bool) -> f64 {
 fn content_widths(blocks: &[Block], env: &StoryEnv, fixed: bool, memos: &mut Memos) -> Result<Rc<(i64, i64, i64)>, Yield> {
     let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
     let cell = Some(CellEnds { fixed, ..CellEnds::default() });
-    let probe = StoryKey::new(child_ids(&laid, None, env, cell, memos)?, None, cell, env);
+    let probe = StoryKey::new(child_ids(&laid, None, env, cell, memos)?, None, cell, env, &laid);
     cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, fixed, m))
 }
 

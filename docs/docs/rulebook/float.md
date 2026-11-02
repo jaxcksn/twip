@@ -154,3 +154,11 @@ A wrapNone float (in front of or behind the text) is never moved by [FLOAT-9](fl
 - Compat 15 ignores `layoutInCell`: the float stays in the cell. Compat ≤ 14 also keeps a float positioned from the `character` (horizontally) or the `line` (vertically) in the cell, whatever its `layoutInCell`.
 - Compat ≤ 14 with `layoutInCell="0"` otherwise (in a cell of a body table, not a nested one): place the float like a body float horizontally and for `page`/`margin` vertically. For `paragraph` keep its position in the cell, moved up by the row's top border height (the offsets count from the row top, not from the cell's content). It doesn't make the row taller. If it is square or top-and-bottom wrapped, is placed from the `column` and the `paragraph` without alignments, is in the first row and overlaps that row (vertically, from its top distance; horizontally, the table's grid), the whole table starts below it: at the float's bottom plus its bottom distance. If it overlaps only a later row on that page, the rows before that row stay, the part they form closes with the table's bottom border, and the rows from that one on start at the float's bottom plus its bottom distance. The float stays where the row's first place put it.
 - Not done: a tight or through float moving the table, around its wrap polygon's bounding box (an empty polygon takes no room); and the cell's text wrapping a float placed from other boxes or anchored in an earlier paragraph.
+
+### FLOAT-15. Group shapes {#float-15}
+
+A group shape (`wpg:wgp`) is one float: its extent is the box that is positioned and wrapped. Each of its pictures and text boxes ([FLOAT-10](float#float-10)) is drawn in its own box. A group maps its children's `a:xfrm` boxes from its child frame (`a:chOff`, `a:chExt`) onto its own box (`a:off`, `a:ext`; the outermost group's box is the float's extent); a group inside it (`wpg:grpSp`) is a child placed the same way, its own children mapped through its own child frame, at every level. Shapes without text aren't drawn.
+
+Example: a 100pt group whose child frame is 200pt wide halves its children; a nested group at child x 100 starts 50pt in, and a text box at x 50 in its 100pt-for-100pt child frame starts 25pt further.
+
+A text box's fields take the values of the page it is drawn on, in a header or footer cell too ([FIELD-1](field#field-1)).

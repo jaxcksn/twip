@@ -237,6 +237,17 @@ pub struct Float {
     pub locked: bool,
     /// A frame's paragraphs in the source (frames.rs): saving drops them when the frame is deleted.
     pub frame_src: Option<std::ops::Range<usize>>,
+    /// A group shape's pictures and text boxes (FLOAT-15), in drawing order; the float's own image and text box are
+    /// then none.
+    pub parts: Vec<GroupPart>,
+}
+
+/// A picture or text box of a group shape: its box from the group's top left, points (FLOAT-15).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupPart {
+    pub rect: [f64; 4],
+    pub image: Option<usize>,
+    pub text_box: Option<TextBox>,
 }
 
 impl Float {

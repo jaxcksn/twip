@@ -306,6 +306,66 @@ fn read_font_table(xml: Option<&str>) -> Vec<crate::font::FontDecl> {
         .collect()
 }
 
+/// A DrawingML `a:xfrm`, EMU: offset, extent, and a group's child offset and extent.
+struct Xfrm {
+    off: (f64, f64),
+    ext: (f64, f64),
+    ch_off: (f64, f64),
+    ch_ext: (f64, f64),
+}
+
+/// The `a:xfrm` in `n`'s `props` child (`spPr`, `grpSpPr`).
+fn child_xfrm(n: Node, props: &str) -> Option<Xfrm> {
+    let x = n.children().find(|c| c.tag_name().name() == props)?.children().find(|c| is(*c, A, "xfrm"))?;
+    let pair = |name: &str, a: &str, b: &str| {
+        let e = x.children().find(|c| is(*c, A, name));
+        let v = |k: &str| e.and_then(|e| e.attribute(k)).and_then(|v| v.parse::<f64>().ok());
+        (v(a), v(b))
+    };
+    let (ox, oy) = pair("off", "x", "y");
+    let (ex, ey) = pair("ext", "cx", "cy");
+    let (cx, cy) = pair("chOff", "x", "y");
+    let (cex, cey) = pair("chExt", "cx", "cy");
+    let (ex, ey) = (ex.unwrap_or(0.0), ey.unwrap_or(0.0));
+    Some(Xfrm {
+        off: (ox.unwrap_or(0.0), oy.unwrap_or(0.0)),
+        ext: (ex, ey),
+        ch_off: (cx.unwrap_or(0.0), cy.unwrap_or(0.0)),
+        ch_ext: (cex.unwrap_or(ex), cey.unwrap_or(ey)),
+    })
+}
+
+/// FLOAT-15: child coordinates (EMU) to points from the outer group's top left: `p = origin + (c − from) × scale`.
+struct Map {
+    origin: (f64, f64),
+    from: (f64, f64),
+    scale: (f64, f64),
+}
+
+impl Map {
+    /// EMU as points, for a group without a frame.
+    const EMU: Map = Map { origin: (0.0, 0.0), from: (0.0, 0.0), scale: (1.0 / 12700.0, 1.0 / 12700.0) };
+
+    /// A shape's box in points.
+    fn rect(&self, f: &Xfrm) -> [f64; 4] {
+        let p = |x: f64, y: f64| (self.origin.0 + (x - self.from.0) * self.scale.0, self.origin.1 + (y - self.from.1) * self.scale.1);
+        let (a, b) = p(f.off.0, f.off.1);
+        let (c, d) = p(f.off.0 + f.ext.0, f.off.1 + f.ext.1);
+        [a, b, c, d]
+    }
+
+    /// The map of a group's children, the group `w` × `h` points at the origin: its child frame fills its box.
+    fn of(f: &Xfrm, w: f64, h: f64) -> Map {
+        let s = |len: f64, ext: f64| if ext > 0.0 { len / ext } else { 0.0 };
+        Map { origin: (0.0, 0.0), from: f.ch_off, scale: (s(w, f.ch_ext.0), s(h, f.ch_ext.1)) }
+    }
+
+    /// This map moved to start at (`x`, `y`) points.
+    fn at(self, x: f64, y: f64) -> Map {
+        Map { origin: (x, y), ..self }
+    }
+}
+
 fn read_settings(xml: Option<&str>) -> Settings {
     let mut s = Settings { compat_mode: 12, default_tab: 36.0, hyphenation_zone: 18.0, ..Default::default() };
     let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return s };
@@ -1618,24 +1678,15 @@ impl Reader {
         };
         let wrap_text = wrap_el.and_then(|w| w.attribute("wrapText")).unwrap_or("bothSides").to_string();
         let dist = |n: &str| emu(item.attribute(n)).unwrap_or(0.0);
-        let text_box = txbx.map(|t| {
-            let body = item.descendants().find(|n| n.tag_name().name() == "bodyPr");
-            let ins = |n: &str, dflt: f64| body.and_then(|b| emu(b.attribute(n))).unwrap_or(dflt);
-            let ln = item.descendants().find(|n| is(*n, A, "ln"));
-            let has_line = ln.is_some_and(|l| !l.children().any(|c| is(c, A, "noFill")));
-            let outline = if has_line { ln.and_then(|l| emu(l.attribute("w"))).unwrap_or(0.75) } else { 0.0 };
-            let auto_fit = body.is_some_and(|b| b.children().any(|c| is(c, A, "spAutoFit")));
-            // A text box is its own content: the anchor's fields and revision wrappers don't reach into it.
-            let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
-            let blocks = self.read_blocks(t, pkg, None);
-            (self.fields, self.wrap) = saved;
-            let v_anchor = match body.and_then(|b| b.attribute("anchor")) {
-                Some("ctr") => 1,
-                Some("b") => 2,
-                _ => 0,
-            };
-            TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
-        });
+        // FLOAT-15: a group shape draws each of its pictures and text boxes in its own box.
+        let group = item.descendants().find(|n| n.tag_name().name() == "wgp");
+        let mut parts = Vec::new();
+        if let Some(g) = group {
+            let map = child_xfrm(g, "grpSpPr").map_or(Map::EMU, |f| Map::of(&f, w, h));
+            self.group_parts(g, &map, pkg, &mut parts);
+        }
+        let text_box = txbx.filter(|_| group.is_none()).map(|t| self.text_box(item, t, pkg));
+        let image = if group.is_some() { None } else { image };
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
@@ -1675,9 +1726,58 @@ impl Reader {
                 src: Some(d.range()),
                 locked: item.attribute("locked").is_some_and(|v| on_off_str(Some(v))),
                 frame_src: None,
+                parts,
             }),
             run.clone(),
         ));
+    }
+
+    /// A text box's content and box settings: `shape` holds its `bodyPr` and outline, `t` its `w:txbxContent`.
+    fn text_box(&mut self, shape: Node, t: Node, pkg: &mut Package) -> TextBox {
+        let body = shape.descendants().find(|n| n.tag_name().name() == "bodyPr");
+        let ins = |n: &str, dflt: f64| body.and_then(|b| emu(b.attribute(n))).unwrap_or(dflt);
+        let ln = shape.descendants().find(|n| is(*n, A, "ln"));
+        let has_line = ln.is_some_and(|l| !l.children().any(|c| is(c, A, "noFill")));
+        let outline = if has_line { ln.and_then(|l| emu(l.attribute("w"))).unwrap_or(0.75) } else { 0.0 };
+        let auto_fit = body.is_some_and(|b| b.children().any(|c| is(c, A, "spAutoFit")));
+        // A text box is its own content: the anchor's fields and revision wrappers don't reach into it.
+        let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
+        let blocks = self.read_blocks(t, pkg, None);
+        (self.fields, self.wrap) = saved;
+        let v_anchor = match body.and_then(|b| b.attribute("anchor")) {
+            Some("ctr") => 1,
+            Some("b") => 2,
+            _ => 0,
+        };
+        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
+    }
+
+    /// FLOAT-15: the pictures and text boxes of group `g` (or of a group inside it), `map` taking its child
+    /// coordinates to points from the outer group's top left; nested groups map through their own offsets.
+    fn group_parts(&mut self, g: Node, map: &Map, pkg: &mut Package, out: &mut Vec<GroupPart>) {
+        for c in g.children().filter(|c| c.is_element()) {
+            match c.tag_name().name() {
+                "grpSp" => {
+                    if let Some(f) = child_xfrm(c, "grpSpPr") {
+                        let r = map.rect(&f);
+                        self.group_parts(c, &Map::of(&f, r[2] - r[0], r[3] - r[1]).at(r[0], r[1]), pkg, out);
+                    }
+                }
+                "wsp" => {
+                    let Some(t) = c.descendants().find(|n| is_w(*n, "txbxContent")) else { continue };
+                    let Some(f) = child_xfrm(c, "spPr") else { continue };
+                    let text_box = Some(self.text_box(c, t, pkg));
+                    out.push(GroupPart { rect: map.rect(&f), image: None, text_box });
+                }
+                "pic" => {
+                    let Some(f) = child_xfrm(c, "spPr") else { continue };
+                    let rid = c.descendants().find(|n| is(*n, A, "blip")).and_then(|b| b.attribute((R, "embed"))).map(str::to_string);
+                    let image = rid.and_then(|r| self.image(&r, pkg));
+                    out.push(GroupPart { rect: map.rect(&f), image, text_box: None });
+                }
+                _ => {}
+            }
+        }
     }
 
     // ---------------- tables ----------------

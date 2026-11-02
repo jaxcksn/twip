@@ -2186,6 +2186,7 @@ impl<'d> PageFill<'d, '_> {
             src: None,
             locked: false,
             frame_src: None,
+            parts: Vec::new(),
         });
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));

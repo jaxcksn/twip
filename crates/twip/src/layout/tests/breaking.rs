@@ -429,3 +429,43 @@ fn a_paragraph_anchoring_a_float_keeps_its_top_border() {
     let Some(plain) = y("") else { return };
     assert!((y(float).unwrap() - plain).abs() < 0.01, "{plain}");
 }
+
+#[test]
+fn a_nested_groups_text_boxes_each_draw_in_their_own_box() {
+    // FLOAT-15: a 100pt group at page x 100 whose child frame is 200pt wide (scale 0.5) holds a text box at its left
+    // and a nested group from child x 100 (50pt in) whose own children are at scale 0.5 again: its text box, at child
+    // x 50, starts 25pt further in.
+    let emu = |pt: u32| pt * 12700;
+    let xfrm = |x: u32, w: u32, cw: u32| {
+        format!(
+            r#"<a:xfrm><a:off x="{}" y="0"/><a:ext cx="{}" cy="{}"/><a:chOff x="0" y="0"/><a:chExt cx="{}" cy="{}"/></a:xfrm>"#,
+            emu(x),
+            emu(w),
+            emu(50),
+            emu(cw),
+            emu(50)
+        )
+    };
+    let wsp = |x: u32, t: &str| {
+        format!(
+            r#"<wps:wsp><wps:spPr><a:xfrm><a:off x="{}" y="0"/><a:ext cx="{}" cy="{}"/></a:xfrm></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp>"#,
+            emu(x),
+            emu(80),
+            emu(50)
+        )
+    };
+    let group = format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapNone/><a:graphic><a:graphicData><wpg:wgp xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wpg:grpSpPr>{}</wpg:grpSpPr>{}<wpg:grpSp><wpg:grpSpPr>{}</wpg:grpSpPr>{}</wpg:grpSp></wpg:wgp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        emu(100),
+        emu(400),
+        emu(100),
+        emu(25),
+        xfrm(0, 100, 200),
+        wsp(0, "Outer"),
+        xfrm(100, 100, 100),
+        wsp(50, "Inner")
+    );
+    let Some(l) = lines("", ARIAL_12, &format!("<w:p>{group}<w:r><w:t>Body</w:t></w:r></w:p>")) else { return };
+    let x = |t: &str| l.iter().find(|x| x.1 == t).map(|x| x.0);
+    assert_eq!((x("Outer"), x("Inner")), (Some(100.0), Some(175.0)), "{l:?}");
+}

@@ -625,10 +625,10 @@ pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields 
                 Block::Para(p) => {
                     for i in &p.inlines {
                         // A header's text boxes and frames show its fields (story::float_box).
-                        if let Inline::Float(f, _) = i
-                            && let Some(tb) = &f.text_box
-                        {
-                            walk(&mut tb.blocks.iter(), out, all);
+                        if let Inline::Float(f, _) = i {
+                            for tb in f.text_box.iter().chain(f.parts.iter().filter_map(|p| p.text_box.as_ref())) {
+                                walk(&mut tb.blocks.iter(), out, all);
+                            }
                         }
                         let Inline::FieldBegin { kind: Some(kind), .. } = i else { continue };
                         match kind {

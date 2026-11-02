@@ -475,6 +475,7 @@ impl Editor {
             src: None,
             locked: false,
             frame_src: None,
+            parts: Vec::new(),
         };
         let mut inlines = p.inlines.clone();
         inlines.insert(0, Inline::Float(Box::new(float), run));
