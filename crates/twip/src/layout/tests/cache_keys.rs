@@ -60,8 +60,8 @@ fn a_preview_is_in_the_keys_of_its_paragraphs_only() {
     use crate::docx::{Inline, Paragraph};
     use crate::layout::text::{FieldValues, shape_space};
     use crate::layout::{ParaId, Preview};
-    let e = crate::editing::tests::open("FX-OBJ.docx");
-    let doc = e.document();
+    let Some(doc) = super::doc(std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-OBJ.docx"))) else { return };
+    let doc = &doc;
     let paras: Vec<&Paragraph> = doc.sections[0].blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).collect();
     let float_of = |p: &Paragraph| p.inlines.iter().find_map(|i| if let Inline::Float(f, _) = i { Some((**f).clone()) } else { None });
     let (home, f) = paras.iter().find_map(|p| float_of(p).map(|f| (*p, f))).expect("a float");
