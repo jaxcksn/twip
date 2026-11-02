@@ -81,6 +81,8 @@ pub trait CacheKey: Debug + Sized {
     fn matches(&self, probe: &Self::Probe<'_>) -> bool;
     /// The owned key for a probe (on insertion).
     fn from_probe(probe: &Self::Probe<'_>) -> Self;
+    /// The piece the reuse report counts a lookup as (a hit moved, a miss laid out), if any.
+    const PIECE: Option<crate::prof::Piece> = None;
 }
 
 struct Entry<K, V> {
@@ -268,9 +270,19 @@ pub fn cached<K: CacheKey, V: PartialEq + Debug>(
                 );
             }
         }
+        if !VERIFYING.get()
+            && let Some(piece) = K::PIECE
+        {
+            crate::prof::count(piece, crate::prof::Outcome::Moved);
+        }
         return Ok(found);
     }
     let value = compute(memos)?;
+    if !VERIFYING.get()
+        && let Some(piece) = K::PIECE
+    {
+        crate::prof::count(piece, crate::prof::Outcome::Laid);
+    }
     let size = bytes(&value);
     let value = Rc::new(value);
     select(memos.cache).insert(&probe, value.clone(), size);

@@ -367,6 +367,10 @@ impl Session {
             e.pointer_input(kind, x, y, clicks, mods, fonts);
             Outcome::Unchanged("pointer input")
         });
+        // A border or object drag moves its guide with no new state: a frame shows it.
+        if kind == K::Move && self.editor.dragging() {
+            self.presentation.want_frame();
+        }
     }
 
     /// A secondary press. By default the selection goes under the pointer, unless the press is inside it, and

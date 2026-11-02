@@ -461,7 +461,12 @@ fn art(b: &Border) -> Option<f64> {
 
 /// TABLE-36: which of two borders meeting on an edge is drawn. `(border, cell_level)`.
 fn conflict(a: (Option<&Border>, bool), b: (Option<&Border>, bool)) -> Option<Border> {
-    let real = |x: Option<&Border>| x.filter(|b| b.visible()).cloned();
+    winner(a, b).cloned()
+}
+
+/// [`conflict`]'s winner, borrowed: only the border drawn is copied.
+fn winner<'a>(a: (Option<&'a Border>, bool), b: (Option<&'a Border>, bool)) -> Option<&'a Border> {
+    let real = |x: Option<&'a Border>| x.filter(|b| b.visible());
     let (ra, rb) = (real(a.0), real(b.0));
     match (ra, rb) {
         (None, None) => None,
@@ -1347,10 +1352,11 @@ fn layout_shown(
     let n = grid_columns(t);
     // A row's edges depend on its neighbours: those of rows at least one away from the edited ones are as they were.
     let near = |ri: usize| reuse.as_ref().is_some_and(|(_, rows)| ri + 1 >= *rows.start() && ri <= rows.end() + 1);
-    let edges = cell_edges(t, n, &|ri| reuse.as_ref().filter(|_| !near(ri)).map(|(o, _)| &o.rows[ri]));
-    let inputs = fit_inputs(t, env, memos, &edges, &|ri| kept(ri).map(|o| &o.fit[ri]))?;
+    let edges = crate::prof::time("table:edges", || cell_edges(t, n, &|ri| reuse.as_ref().filter(|_| !near(ri)).map(|(o, _)| &o.rows[ri])));
+    let inputs = crate::prof::time("table:fit", || fit_inputs(t, env, memos, &edges, &|ri| kept(ri).map(|o| &o.fit[ri])))?;
     let Fit { cols, min_t, width, hard_t } = resolve_fit(t, text_w, env, None, &inputs);
     let geo = if cols.len() == n { place(t, &cols, &edges) } else { cell_geometry(t, &cols) };
+
     let mut stories = Vec::new();
     let mut closings = Vec::new();
     // PARA-4: a cell's neighbours in document order are the previous cell's last paragraph and the next cell's
@@ -1368,34 +1374,37 @@ fn layout_shown(
     let drops = |b: Option<&Block>, other: Option<&Option<String>>| {
         contextual && matches!(b, Some(Block::Para(p)) if super::paragraph::drops_at_edge(p.para_style_in(view), other))
     };
-    for (ri, (r, cells)) in t.rows.iter().zip(&geo).enumerate() {
-        let old_row = kept(ri).map(|o| &o.rows[ri]).filter(|o| o.cells.len() == cells.len());
-        for (gi, g) in cells.iter().enumerate() {
-            let c = &r.cells[g.ci];
-            closings.push(closing_para(c));
-            let rotated = matches!(c.text_direction.as_str(), "btLr" | "tbRl" | "tbRlV" | "tbLrV");
-            let same = old_row.map(|o| &o.cells[gi]).filter(|o| o.index == g.ci && o.cw == g.cw);
-            stories.push(if measure || c.v_merge == VMerge::Continue || rotated {
-                None
-            } else if let Some(o) = same {
-                Some(o.units.clone())
-            } else {
-                // TABLE-26: a cell's closing empty paragraph after a nested table takes no space.
-                let n = c.blocks.len();
-                let skip = closing_para(c).is_some();
-                let blocks: Vec<&Block> = c.blocks[..if skip { n - 1 } else { n }].iter().collect();
-                let before = match g.ci {
-                    0 if ri == 0 => prev.map(|p| &p.style_id),
-                    0 => mark,
-                    ci => style(r.cells[ci - 1].blocks.last(), view),
-                };
-                let after = r.cells.get(g.ci + 1).map_or(mark, |n| style(n.blocks.first(), view));
-                let ends =
-                    CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after), fixed: t.fixed, fit: c.fit_text };
-                Some(super::story::layout(&blocks, g.cw, env, Some(ends), memos)?)
-            });
+    crate::prof::time("table:cells", || -> Result<(), Yield> {
+        for (ri, (r, cells)) in t.rows.iter().zip(&geo).enumerate() {
+            let old_row = kept(ri).map(|o| &o.rows[ri]).filter(|o| o.cells.len() == cells.len());
+            for (gi, g) in cells.iter().enumerate() {
+                let c = &r.cells[g.ci];
+                closings.push(closing_para(c));
+                let rotated = matches!(c.text_direction.as_str(), "btLr" | "tbRl" | "tbRlV" | "tbLrV");
+                let same = old_row.map(|o| &o.cells[gi]).filter(|o| o.index == g.ci && o.cw == g.cw);
+                stories.push(if measure || c.v_merge == VMerge::Continue || rotated {
+                    None
+                } else if let Some(o) = same {
+                    Some(o.units.clone())
+                } else {
+                    // TABLE-26: a cell's closing empty paragraph after a nested table takes no space.
+                    let n = c.blocks.len();
+                    let skip = closing_para(c).is_some();
+                    let blocks: Vec<&Block> = c.blocks[..if skip { n - 1 } else { n }].iter().collect();
+                    let before = match g.ci {
+                        0 if ri == 0 => prev.map(|p| &p.style_id),
+                        0 => mark,
+                        ci => style(r.cells[ci - 1].blocks.last(), view),
+                    };
+                    let after = r.cells.get(g.ci + 1).map_or(mark, |n| style(n.blocks.first(), view));
+                    let ends =
+                        CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after), fixed: t.fixed, fit: c.fit_text };
+                    Some(super::story::layout(&blocks, g.cw, env, Some(ends), memos)?)
+                });
+            }
         }
-    }
+        Ok(())
+    })?;
     let probe = TableProbe {
         table: t,
         text_w: text_w.to_bits(),
@@ -1445,17 +1454,17 @@ struct CellEdges {
 /// its neighbours didn't change (resolving every cell's borders is most of a long table's keystroke).
 fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k RowBox>) -> Vec<Vec<CellEdges>> {
     let nrows = t.rows.len();
-    // Each cell's side borders (cell level beats table level, TABLE-36).
-    struct Side {
-        b: Option<Border>,
+    // Each cell's side borders (cell level beats table level, TABLE-36), borrowed: only an edge's winner is copied.
+    struct Side<'a> {
+        b: Option<&'a Border>,
         cell: bool,
     }
-    let side = |own: &Option<Border>, table: &Option<Border>| -> Side {
+    fn side<'a>(own: &'a Option<Border>, table: &'a Option<Border>) -> Side<'a> {
         match own {
-            Some(b) => Side { b: Some(b.clone()), cell: true },
-            None => Side { b: table.clone(), cell: false },
+            Some(b) => Side { b: Some(b), cell: true },
+            None => Side { b: table.as_ref(), cell: false },
         }
-    };
+    }
     let mut grid_cells: Vec<Vec<(usize, usize)>> = Vec::new(); // per row: (col, span) of each cell
     for r in &t.rows {
         let mut col = r.grid_before;
@@ -1491,32 +1500,32 @@ fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k Ro
                 t.rows.get(rr).and_then(|row| grid_cells[rr].iter().position(|&(c0, s)| cc >= c0 && cc < c0 + s).map(|i| &row.cells[i]))
             };
             let top_e = if ri == 0 || alone {
-                conflict((top.b.as_ref(), top.cell), (None, false))
+                conflict((top.b, top.cell), (None, false))
             } else {
                 let above = neighbour(ri - 1, col);
                 let ab = above.map(|a| side(&a.bottom, &t.borders[4]));
-                conflict((top.b.as_ref(), top.cell), ab.as_ref().map_or((None, false), |s| (s.b.as_ref(), s.cell)))
+                conflict((top.b, top.cell), ab.map_or((None, false), |s| (s.b, s.cell)))
             };
             let bot_e = if ri + 1 == nrows || alone {
-                conflict((bottom.b.as_ref(), bottom.cell), (None, false))
+                conflict((bottom.b, bottom.cell), (None, false))
             } else {
                 let below = neighbour(ri + 1, col);
                 let bl = below.map(|a| side(&a.top, &t.borders[4]));
-                conflict((bottom.b.as_ref(), bottom.cell), bl.as_ref().map_or((None, false), |s| (s.b.as_ref(), s.cell)))
+                conflict((bottom.b, bottom.cell), bl.map_or((None, false), |s| (s.b, s.cell)))
             };
             let left_e = if ci == 0 || alone {
-                conflict((left.b.as_ref(), left.cell), (None, false))
+                conflict((left.b, left.cell), (None, false))
             } else {
                 let lc = &r.cells[ci - 1];
                 let ls = side(&lc.right, &t.borders[5]);
-                conflict((left.b.as_ref(), left.cell), (ls.b.as_ref(), ls.cell))
+                conflict((left.b, left.cell), (ls.b, ls.cell))
             };
             let right_e = if ci + 1 == r.cells.len() || alone {
-                conflict((right.b.as_ref(), right.cell), (None, false))
+                conflict((right.b, right.cell), (None, false))
             } else {
                 let rc = &r.cells[ci + 1];
                 let rs = side(&rc.left, &t.borders[5]);
-                conflict((right.b.as_ref(), right.cell), (rs.b.as_ref(), rs.cell))
+                conflict((right.b, right.cell), (rs.b, rs.cell))
             };
             cells.push(CellEdges { ci, col, span, edges: Rc::new([top_e, left_e, bot_e, right_e]) });
         }
@@ -2231,6 +2240,7 @@ fn same_row(a: &RowBox, b: &RowBox) -> bool {
 
 impl CacheKey for RowKey {
     type Probe<'a> = RowProbe<'a>;
+    const PIECE: Option<crate::prof::Piece> = Some(crate::prof::Piece::Row);
 
     fn bucket(p: &RowProbe) -> u64 {
         use std::hash::{Hash, Hasher};

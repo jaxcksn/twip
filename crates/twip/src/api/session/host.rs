@@ -326,6 +326,11 @@ impl Default for Presentation {
 }
 
 impl Presentation {
+    /// Asks the host for a frame: something visible changed with no new state.
+    pub(super) fn want_frame(&mut self) {
+        self.frame_wanted = true;
+    }
+
     /// Arms the blink timer and asks for a frame, as a blink step says.
     fn blinked(&mut self, step: super::blink::Step) {
         if let Some(ms) = step.arm {
@@ -605,6 +610,10 @@ impl HostSurface<'_> {
     /// Draws the viewport into `pixels`: `width` x `height` device pixels, RGBA, 8 bits each, premultiplied, rows
     /// packed. Fails `invalid-argument` when the buffer is too small.
     pub fn frame_rgba(&mut self, pixels: &mut [u8], width: u32, height: u32) -> Result<FrameInfo, Error> {
+        crate::prof::time("frame", || self.draw_rgba(pixels, width, height))
+    }
+
+    fn draw_rgba(&mut self, pixels: &mut [u8], width: u32, height: u32) -> Result<FrameInfo, Error> {
         let row = width as usize * 4;
         if width == 0 || height == 0 || pixels.len() < row * height as usize {
             return Err(Error::invalid("the pixel buffer is smaller than width x height x 4"));

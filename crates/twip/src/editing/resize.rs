@@ -150,7 +150,10 @@ impl Editor {
         if d.now == d.start {
             return Some(Outcome::Unchanged("no drag"));
         }
-        let t = self.index.table(&self.doc, d.table)?.clone();
+        // Borrowed: only its rows are copied, as the step's new rows.
+        let t = self.index.table(&self.doc, d.table)?;
+        let old_sum: f64 = t.grid.iter().sum();
+        let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
         let mut rows = t.rows.clone();
         // The columns as drawn on the dragged page (autofit can make them differ from the file's gridCols): what the
         // drag moves, so the cells it doesn't touch keep the widths they show. Boundaries no drawn row has keep the
@@ -183,7 +186,7 @@ impl Editor {
             // With a cell block selected, a drag starting on one of its rows moves the border in those rows only.
             Border::Column(k) if k < grid.len() && selected.as_ref().is_some_and(|s| s.contains(&d.row)) => {
                 let sel = selected.unwrap_or(0..=0);
-                let g = Grid::of(&t);
+                let g = Grid::of(t);
                 let x: f64 = grid[..k].iter().sum();
                 let total: f64 = grid.iter().sum();
                 let dx = d.now.0 - d.start.0;
@@ -227,7 +230,7 @@ impl Editor {
                 if k == 0 || k > n {
                     return Some(Outcome::Unchanged("not a column border"));
                 }
-                let grid_of = Grid::of(&t);
+                let grid_of = Grid::of(t);
                 let g = &grid_of;
                 // A column is at least its cells' left and right margins plus 4.5 pt.
                 let min = |c: usize| {
@@ -275,7 +278,7 @@ impl Editor {
                 // Columns scale with the width (each still at least its margins plus 4.5 pt); the rows on the
                 // dragged page scale with the height, as "at least" heights (exact ones stay exact).
                 let total: f64 = grid.iter().sum();
-                let grid_of = Grid::of(&t);
+                let grid_of = Grid::of(t);
                 let g = &grid_of;
                 let floor = grid
                     .iter()
@@ -342,22 +345,23 @@ impl Editor {
                 row.height = Some((h, rule.to_string()));
             }
         }
-        let old_sum: f64 = t.grid.iter().sum();
         let new_sum: f64 = grid.iter().sum();
         let mut tx = self.begin(match d.border {
             Border::Row(_) => "Row Height",
             Border::Handle => "Resize Table",
             Border::Column(_) => "Column Width",
         });
-        let n = t.rows.len();
-        if self.step(&mut tx, Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }).is_err() {
+        let stepped =
+            crate::prof::time("edit:rows-step", || self.step(&mut tx, Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }));
+        if stepped.is_err() {
             self.abort(tx);
             return Some(Outcome::Unchanged("stale table"));
         }
-        if (new_sum - old_sum).abs() > 1e-9 && !matches!(t.width, Width::Auto | Width::Nil) {
+        if (new_sum - old_sum).abs() > 1e-9 && sized {
             let _ = self.step(&mut tx, Step::TableWidth { table: d.table, width: Width::Dxa(new_sum) });
         }
-        tx.stale_tables.push(d.table);
+        // Widths and heights only: every cell keeps its row and column, so its style region (banding, first and
+        // last rows and columns) and its resolved properties stay; the table isn't resolved again.
         // A nested table grown past its containing cell widens that column in an auto-fit outer table, the
         // next column giving up the same (the outer width stays); a fixed-width outer table keeps its columns.
         if new_sum > old_sum + 1e-9
@@ -389,9 +393,7 @@ impl Editor {
                         }
                     }
                     let n = orows.len();
-                    if self.step(&mut tx, Step::Rows { table: outer, range: 0..n, with: orows, grid: Some(og) }).is_ok() {
-                        tx.stale_tables.push(outer);
-                    }
+                    let _ = self.step(&mut tx, Step::Rows { table: outer, range: 0..n, with: orows, grid: Some(og) });
                 }
             }
         }

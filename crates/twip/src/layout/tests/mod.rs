@@ -16,6 +16,7 @@ mod notes;
 mod pending;
 mod random_edits;
 mod rebreak;
+mod reuse;
 mod robustness;
 mod rows;
 mod rule_ids;

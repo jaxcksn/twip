@@ -28,9 +28,9 @@ tasks:
     options:
       runInCI: false
   # A mounted editor in a real browser (the installed Edge; PW_CHANNEL=chromium in CI).
-  # Everything but the latency budgets (latency below).
+  # Everything but the latency budgets and the performance scenarios (latency and perf below).
   browser-test:
-    command: pnpm exec playwright test --grep-invert "within a refresh"
+    command: pnpm exec playwright test --grep-invert "within a refresh|@perf"
     deps: [build]
     inputs: ['browser/**/*', 'playwright.config.mjs']
     options:
@@ -38,6 +38,16 @@ tasks:
   # The latency budgets (browser/latency.spec.ts) hold on a quiet machine with a GPU, not beside other tasks: run alone.
   latency:
     command: pnpm exec playwright test browser/latency.spec.ts
+    deps: [build]
+    inputs: ['browser/**/*', 'playwright.config.mjs']
+    options:
+      cache: false
+      runInCI: false
+  # The performance scenarios (browser/perf.spec.ts, tagged @perf), JSON to target/perf: run alone, last, on a quiet
+  # machine with a GPU.
+  perf:
+    # `[@]perf`: moon reads an argument starting with @ as its own token.
+    command: pnpm exec playwright test --grep "[@]perf"
     deps: [build]
     inputs: ['browser/**/*', 'playwright.config.mjs']
     options:

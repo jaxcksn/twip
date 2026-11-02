@@ -736,6 +736,25 @@ def fx_header_background(d):
     return "".join(body), sect(refs, title_page=True)
 
 
+def fx_long(d, pages):
+    # A long document for reflow and open timing: about six body paragraphs a page, a heading every second page, a
+    # four-row table every fifth page, a footnote on every page, and "Page N of M" in the footer.
+    field = lambda code: f'<w:fldSimple w:instr=" {code} "><w:r><w:t>1</w:t></w:r></w:fldSimple>'  # noqa: E731
+    refs = d.story("footer", "default", p(r("Page ") + field("PAGE") + r(" of ") + field("NUMPAGES"), '<w:pStyle w:val="Footer"/>'))
+    body = [P(f"FX-LONG-{pages}", HEADING)]
+    for page in range(pages):
+        if page % 2 == 0:
+            body.append(P(f"Part {page // 2 + 1}", HEADING))
+        for n in range(6):
+            content = r(filler(100, page * 6 + n))
+            if n == 2:
+                content += d.footnote(f"Footnote {len(d.footnotes) + 1}: " + filler(12, page))
+            body.append(p(content))
+        if page % 5 == 4:
+            body.append(grid([[f"R{k} C{c}" for c in range(4)] for k in range(4)], [2340] * 4) + p())
+    return "".join(body), sect(refs)
+
+
 def large(d, nested):
     widths = [2360] + [1000] * 7
     l2 = [1444, 700]
@@ -1891,6 +1910,8 @@ FIXTURES = {
     "FX-HEADER-BACKGROUND": fx_header_background,
     "FX-TBL-LARGE": lambda d: large(d, False),
     "FX-TBL-LARGE-NESTED": lambda d: large(d, True),
+    "FX-LONG-50": lambda d: fx_long(d, 50),
+    "FX-LONG-100": lambda d: fx_long(d, 100),
     "FX-EMPTY": fx_empty,
     "FX-EMPTY-TABLE": fx_empty_table,
     "FX-END-TABLE": fx_end_table,

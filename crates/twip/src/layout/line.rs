@@ -200,6 +200,8 @@ pub struct LinesProbe<'a> {
 
 impl CacheKey for LinesKey {
     type Probe<'a> = LinesProbe<'a>;
+    // A paragraph's lines are cached as one: the paragraph is the piece.
+    const PIECE: Option<crate::prof::Piece> = Some(crate::prof::Piece::Para);
 
     fn bucket(p: &LinesProbe) -> u64 {
         use std::hash::{Hash, Hasher};

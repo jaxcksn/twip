@@ -863,7 +863,7 @@ impl Editor {
     /// nothing. In a batch, an edit joins the batch's transaction instead, committed when the batch ends.
     fn commit(&mut self, mut tx: Tx, typing: Option<TypingRun>, fonts: &Fonts) -> Outcome {
         if tx.replayed.is_none()
-            && let Err(why) = self.settle(&mut tx)
+            && let Err(why) = crate::prof::time("edit:settle", || self.settle(&mut tx))
         {
             self.selection = tx.before.selection;
             self.abort(tx);
@@ -872,7 +872,7 @@ impl Editor {
         if tx.undo.is_empty() {
             return Outcome::Unchanged("no change");
         }
-        self.effects(&mut tx);
+        crate::prof::time("edit:effects", || self.effects(&mut tx));
         if tx.replayed.is_none()
             && let Some(b) = &mut self.batch
         {
@@ -883,7 +883,7 @@ impl Editor {
             return Outcome::Changed(self.revision + 1);
         }
         let label = tx.replayed.as_ref().map_or(Cow::Borrowed(tx.label), |done| done.label.clone());
-        self.finish(tx, label, typing, fonts)
+        crate::prof::time("edit:finish", || self.finish(tx, label, typing, fonts))
     }
 
     /// What a forward edit leaves to do, as steps of its transaction: the controls and images it made, field kinds,
@@ -911,7 +911,7 @@ impl Editor {
         self.drop_orphan_controls(tx);
         self.drop_orphan_comments(tx);
         tx.tracked = tracked;
-        self.reresolve_stale(tx);
+        crate::prof::time("edit:reresolve", || self.reresolve_stale(tx));
         // An edit that would delete an undeletable picture control ("Content control cannot be deleted") does
         // nothing.
         if tx.kept < 0 {
@@ -919,7 +919,7 @@ impl Editor {
         }
         // Paragraphs came, went or changed their properties: list labels follow (invariant 9).
         if tx.undo.iter().any(|s| !matches!(s, Step::Text { .. } | Step::Restyle { .. } | Step::AddImage { .. })) {
-            self.renumber(tx);
+            crate::prof::time("edit:renumber", || self.renumber(tx));
         }
         Ok(())
     }
@@ -928,7 +928,7 @@ impl Editor {
     /// and the picture controls' image sets.
     fn effects(&mut self, tx: &mut Tx) {
         let hints: Vec<Option<Change>> = tx.hints.iter().zip(&tx.undo).filter(|(_, s)| s.lays_out()).map(|(h, _)| *h).collect();
-        self.relayout(hints);
+        crate::prof::time("edit:relayout", || self.relayout(hints));
         let maps = std::mem::take(&mut tx.maps);
         self.map_marks(&maps);
         // Undo and redo go back to edits already marked.
@@ -936,8 +936,8 @@ impl Editor {
             self.mark_edit();
             self.last_maps = maps;
         }
-        self.track_elements(&tx.undo);
-        self.refresh_labels(Some(&tx.undo));
+        crate::prof::time("edit:elements", || self.track_elements(&tx.undo));
+        crate::prof::time("edit:labels", || self.refresh_labels(Some(&tx.undo)));
         if tx.pictures {
             self.doc.derive_image_sets();
         }
