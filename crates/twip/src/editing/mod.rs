@@ -1126,6 +1126,37 @@ impl Editor {
         if a.same_place(&b) {
             return Ok(Some(a));
         }
+        // Across sections: the breaks between go, and the range is then in one section. With tracking each section's
+        // part goes as a range of its own, the last first.
+        // shortcut: tracked, the section breaks stay (a deleted break isn't recorded as a revision), so each section
+        // keeps an empty paragraph.
+        let section_of = |e: &Editor, p: &Position| {
+            let s = match p.place {
+                Place::Text { para, .. } => e.index.para_slot(para)?,
+                Place::RowEnd { table, .. } => e.index.table_slot(table)?,
+            };
+            e.index.top_block(s.container, s.block).map(|t| t.0)
+        };
+        if let (Some(i), Some(j)) = (section_of(self, &a), section_of(self, &b))
+            && i < j
+        {
+            if !tx.tracked {
+                for _ in i..j {
+                    self.step(tx, Step::SectionBreak { section: i, back: None })?;
+                }
+                return self.delete_range_untracked(tx, join);
+            }
+            let mut caret = None;
+            for k in (i..=j).rev() {
+                let blocks = &self.doc.sections.get(k).ok_or(StepError::Missing)?.blocks;
+                let start = blocks.first().and_then(first_para_of).map(|p| Position::text(a.story, p, Unit(0)));
+                let end = blocks.last().and_then(last_para_of).map(|(p, u)| Position::text(a.story, p, u));
+                let (from, to) = (if k == i { Some(a) } else { start }, if k == j { Some(b) } else { end });
+                self.selection = Selection::range(from.ok_or(StepError::Missing)?, to.ok_or(StepError::Missing)?, Granularity::Char);
+                caret = self.delete_range_untracked(tx, join)?;
+            }
+            return Ok(caret);
+        }
         // Across a table's rows (also from a drag into or out of a table, which ends at a row's end mark).
         if let Some(p) = self.delete_across_tables(tx, a, b)? {
             return Ok(Some(p));
@@ -1156,6 +1187,11 @@ impl Editor {
                 self.step(tx, Step::Blocks { container: sa.container, range: sa.block + 1..sb.block, with: Vec::new() })?;
             }
             if table_between && !join {
+                // From the first paragraph's start its mark goes too: no empty paragraph is left before the second.
+                if oa == Unit(0) {
+                    self.step(tx, Step::Blocks { container: sa.container, range: sa.block..sa.block + 1, with: Vec::new() })?;
+                    return Ok(Some(Position::text(a.story, pb, Unit(0))));
+                }
                 return Ok(Some(Position::text(a.story, pa, oa)));
             }
             // A block-level control's edge: the text goes, the paragraphs stay apart.
@@ -1778,6 +1814,27 @@ impl Editor {
             let at = end.para_offset().map_or(off, |(_, u)| u);
             self.selection = Selection::Caret(end);
             return self.commit(tx, Some(typing(at)), fonts);
+        }
+        // At a section's start (Backspace) or end (Delete): the section break, on the paragraph mark between, goes with
+        // it: the sections merge, and the paragraphs join below.
+        // shortcut: tracked, the break stays (a deleted break isn't recorded as a revision).
+        if !tx.tracked
+            && let Some(slot) = self.index.para_slot(para)
+            && let Container::Section(k) = slot.container
+        {
+            let at_edge = match dir {
+                Dir::Back if slot.block == 0 && k > 0 => Some((k - 1, self.doc.sections[k - 1].blocks.last())),
+                Dir::Forward if slot.block + 1 == self.doc.sections[k].blocks.len() => self.doc.sections.get(k + 1).map(|s| (k, s.blocks.first())),
+                _ => None,
+            };
+            let controls = self.index.para(&self.doc, para).map(|x| &x.controls);
+            if let Some((section, Some(Block::Para(q)))) = at_edge
+                && Some(&q.controls) == controls
+                && self.step(&mut tx, Step::SectionBreak { section, back: None }).is_err()
+            {
+                self.abort(tx);
+                return Outcome::Unchanged("section break");
+            }
         }
         // At a paragraph boundary: join with the sibling paragraph; cells and tables never merge.
         let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };

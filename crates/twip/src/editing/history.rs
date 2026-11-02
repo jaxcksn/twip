@@ -180,7 +180,8 @@ pub fn step_bytes(s: &Step) -> usize {
         | Step::TableProps { .. }
         | Step::SectionPage { .. }
         | Step::Numbering { .. }
-        | Step::DefaultTab(_) => 32,
+        | Step::DefaultTab(_)
+        | Step::SectionBreak { .. } => 32,
         Step::ImageData { data, .. } => 32 + data.len(),
         Step::AddImage { data, .. } => 32 + data.as_ref().map_or(0, Vec::len),
         Step::FieldViews { views, .. } => 32 + 16 * views.len(),

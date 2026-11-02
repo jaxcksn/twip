@@ -846,6 +846,9 @@ pub struct Document {
     pub fixed: std::collections::HashSet<usize>,
     /// Sections whose page ([`SectionPage`]) was edited: saving writes their `w:sectPr` page properties.
     pub edited_sections: std::collections::HashSet<usize>,
+    /// How many sections as read each section holds: more than one once section breaks were deleted. Empty: one
+    /// each (nothing deleted).
+    pub section_sources: Vec<usize>,
     /// Pictures that can't be deleted, by image index: those in picture controls that can't be deleted (`w:lock`
     /// `sdtLocked` or `sdtContentLocked`).
     pub undeletable: std::collections::HashSet<usize>,

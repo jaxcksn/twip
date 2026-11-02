@@ -74,6 +74,22 @@ pub enum Step {
     Numbering { resolver: Option<Rc<crate::docx::resolve::Resolver>>, added: Vec<crate::docx::AddedList> },
     /// The document's default tab spacing (`w:defaultTabStop`), points.
     DefaultTab(f64),
+    /// The section break ending section `section` taken out (`back` none): its blocks go to the start of the next
+    /// section, whose properties they take, as in Word. With `back`, the inverse: the break put back.
+    SectionBreak { section: usize, back: Option<Box<SectionBack>> },
+}
+
+/// What [`Step::SectionBreak`] puts back: section `section` again before the one it went into, from that one's first
+/// `blocks` blocks.
+#[derive(Clone, Debug)]
+pub struct SectionBack {
+    pub blocks: usize,
+    /// Its properties (its blocks empty).
+    pub section: crate::docx::Section,
+    /// The sections as read it held ([`Document::section_sources`]).
+    pub sources: usize,
+    /// Whether its page was edited ([`Document::edited_sections`]).
+    pub edited: bool,
 }
 
 /// What [`Step::TableProps`] replaces: the table's style and look, width, alignment and indent, and its borders as
@@ -808,6 +824,48 @@ impl Step {
             Step::DefaultTab(v) => {
                 let old = std::mem::replace(&mut doc.settings.default_tab, v);
                 Ok(Applied { inverse: Step::DefaultTab(old), map: Map::Same, hint: None })
+            }
+            Step::SectionBreak { section, back } => {
+                let n = doc.sections.len();
+                if doc.section_sources.len() != n {
+                    doc.section_sources = vec![1; n];
+                }
+                let inverse = match back {
+                    None => {
+                        if section + 1 >= n {
+                            return Err(StepError::OutOfRange);
+                        }
+                        let mut gone = doc.sections.remove(section);
+                        let blocks = std::mem::take(&mut gone.blocks);
+                        let back = SectionBack { blocks: blocks.len(), section: gone, sources: doc.section_sources.remove(section), edited: false };
+                        doc.sections[section].blocks.splice(0..0, blocks);
+                        doc.section_sources[section] += back.sources;
+                        let edited = doc.edited_sections.remove(&section);
+                        doc.edited_sections = doc.edited_sections.iter().map(|&k| if k > section { k - 1 } else { k }).collect();
+                        Step::SectionBreak { section, back: Some(Box::new(SectionBack { edited, ..back })) }
+                    }
+                    Some(back) => {
+                        let SectionBack { blocks, section: mut s, sources, edited } = *back;
+                        let next = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
+                        if blocks > next.blocks.len() || doc.section_sources[section] <= sources {
+                            return Err(StepError::OutOfRange);
+                        }
+                        s.blocks = next.blocks.drain(..blocks).collect();
+                        doc.section_sources[section] -= sources;
+                        doc.section_sources.insert(section, sources);
+                        doc.sections.insert(section, s);
+                        doc.edited_sections = doc.edited_sections.iter().map(|&k| if k >= section { k + 1 } else { k }).collect();
+                        if edited {
+                            doc.edited_sections.insert(section);
+                        }
+                        Step::SectionBreak { section, back: None }
+                    }
+                };
+                // Every section after it is renumbered: the index is built again. Positions name paragraphs, so they
+                // don't move; layout compares (the sections differ in number).
+                let parts = idx.parts().to_vec();
+                *idx = DocIndex::build_with_parts(doc, &parts);
+                Ok(Applied { inverse, map: Map::Same, hint: None })
             }
             Step::SectionPage { section, page, change } => {
                 let s = doc.sections.get_mut(section).ok_or(StepError::Missing)?;

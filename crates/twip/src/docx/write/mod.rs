@@ -928,7 +928,7 @@ fn notes_xml(
         }
     }
     // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes aren't in `lists`).
-    part_xml_with(xml, inner, lists, false, &splices, controls, gone, people)
+    part_xml_with(xml, inner, lists, false, &splices, &[], controls, gone, people)
 }
 
 /// The controls read that the document no longer has (removed, or emptied of every member).
@@ -956,6 +956,7 @@ fn new_blocks_xml(xml: &str, blocks: &[Block], people: &People) -> Result<String
         controls: HashMap::new(),
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
+        dropped: &[],
     };
     s.blocks_xml(None, blocks)
 }
@@ -989,12 +990,38 @@ fn boxes<'d>(orig: &[&'d [Block]], now: &[&'d [Block]]) -> Vec<(&'d [Block], &'d
 /// (tests: the rewrite of an unedited paragraph must be the paragraph).
 pub fn main_xml(doc: &Document, force: bool) -> Result<Option<String>, String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    if doc.sections.len() != src.blocks.len() {
-        return Err("sections were added or removed (not supported yet)".into());
+    let sources = if doc.section_sources.is_empty() { vec![1; doc.sections.len()] } else { doc.section_sources.clone() };
+    if sources.len() != doc.sections.len() || sources.iter().sum::<usize>() != src.blocks.len() {
+        return Err("sections were added (not supported yet)".into());
     }
-    let lists: Vec<(&[Block], &[Block])> = src.blocks.iter().zip(&doc.sections).map(|(a, s)| (a.as_slice(), s.blocks.as_slice())).collect();
+    // A section holding several as read (their breaks deleted) is compared with their blocks together, and the
+    // `w:sectPr`s of the breaks deleted go.
+    let mut orig: Vec<std::borrow::Cow<[Block]>> = Vec::new();
+    let mut gone: Vec<usize> = Vec::new();
+    let mut at = 0;
+    for &n in &sources {
+        orig.push(match n {
+            1 => std::borrow::Cow::Borrowed(src.blocks[at].as_slice()),
+            _ => std::borrow::Cow::Owned(src.blocks[at..at + n].concat()),
+        });
+        gone.extend(at..at + n - 1);
+        at += n;
+    }
+    let dropped: Vec<Range<usize>> = match gone.is_empty() {
+        true => Vec::new(),
+        false => {
+            let dom = roxmltree::Document::parse(&src.xml).map_err(|e| e.to_string())?;
+            let sects: Vec<Range<usize>> = dom
+                .descendants()
+                .filter(|n| is_w(*n, "sectPr") && n.parent().is_some_and(|p| is_w(p, "body") || is_w(p, "pPr")))
+                .map(|n| n.range())
+                .collect();
+            gone.iter().map(|&k| sects.get(k).cloned().ok_or("a section without its sectPr")).collect::<Result<_, _>>()?
+        }
+    };
+    let lists: Vec<(&[Block], &[Block])> = orig.iter().zip(&doc.sections).map(|(a, s)| (a.as_ref(), s.blocks.as_slice())).collect();
     let (o, n): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml(&src.xml, &boxes(&o, &n), &lists, force, &doc.controls, &gone_controls(doc), &doc.people)
+    part_xml_with(&src.xml, &boxes(&o, &n), &lists, force, &[], &dropped, &doc.controls, &gone_controls(doc), &doc.people)
 }
 
 /// A part's XML with its block lists (as read, now) written back; `None` when none changed.
@@ -1007,10 +1034,11 @@ fn part_xml(
     gone: &[Control],
     people: &People,
 ) -> Result<Option<String>, String> {
-    part_xml_with(xml, inner, lists, force, &[], controls, gone, people)
+    part_xml_with(xml, inner, lists, force, &[], &[], controls, gone, people)
 }
 
-/// [`part_xml`] with `extra` splices of the original part added (whole notes in and out).
+/// [`part_xml`] with `extra` splices of the original part added (whole notes in and out), and the section breaks
+/// `dropped` (their `w:sectPr`s) taken out.
 #[allow(clippy::too_many_arguments, reason = "the part, its block lists and the document state its rewrite reads")]
 fn part_xml_with<'a>(
     xml: &'a str,
@@ -1018,6 +1046,7 @@ fn part_xml_with<'a>(
     lists: &[(&[Block], &[Block])],
     force: bool,
     extra: &[Splice],
+    dropped: &'a [Range<usize>],
     controls: &HashMap<ControlId, Control>,
     gone: &[Control],
     people: &'a People,
@@ -1063,6 +1092,7 @@ fn part_xml_with<'a>(
         controls: controls.clone(),
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
+        dropped,
     };
     for (orig, now) in inner {
         s.container(orig, now)?;
@@ -1080,6 +1110,10 @@ fn part_xml_with<'a>(
     let top: Vec<Splice> = free.iter().filter(|(r, _)| !free.iter().any(|(o, _)| o != r && o.start <= r.start && r.end <= o.end)).cloned().collect();
     s.splices.extend(top);
     s.splices.extend(s.changed_controls(gone));
+    // A dropped break in a paragraph written again went with it; else it goes from the paragraph as read.
+    let rewritten = |r: &Range<usize>| s.splices.iter().any(|(o, _)| o.start <= r.start && r.end <= o.end);
+    let unwritten: Vec<Splice> = dropped.iter().filter(|r| !rewritten(r)).map(|r| (r.clone(), String::new())).collect();
+    s.splices.extend(unwritten);
     s.splices.extend(extra.iter().cloned());
     if s.splices.is_empty() {
         return Ok(None);
@@ -1159,6 +1193,8 @@ struct Saver<'a, 'i> {
     ids: std::cell::Cell<u32>,
     /// Who made the revisions written (their names as `w:author`).
     people: &'a People,
+    /// The `w:sectPr`s of section breaks deleted: a paragraph written again doesn't keep one.
+    dropped: &'a [Range<usize>],
 }
 
 fn block_src(b: &Block) -> Option<*const ()> {
@@ -2479,6 +2515,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             .iter()
             .flat_map(|x| x.ranges.iter())
             .filter_map(|r| s.paras.get(&r.start).and_then(|n| child(*n, "pPr")).and_then(|p| child(p, "sectPr")))
+            .filter(|n| !s.dropped.contains(&n.range()))
             .last()
             .map(|n| &s.xml[n.range()]);
         let mut used = vec![false; qs.len()];
