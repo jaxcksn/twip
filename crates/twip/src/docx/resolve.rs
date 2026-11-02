@@ -141,6 +141,7 @@ impl Resolver {
             line,
             line_rule: if p.line.is_some() { line_rule } else { LineRule::Auto },
             contextual: p.contextual.unwrap_or(false),
+            snap_to_grid: p.snap_to_grid.unwrap_or(true),
             keep_next: p.keep_next.unwrap_or(false),
             keep_lines: p.keep_lines.unwrap_or(false),
             page_break_before: p.page_break_before.unwrap_or(false),

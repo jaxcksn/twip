@@ -162,3 +162,21 @@ mark = 3.4 / 11 · size        (0.3091 pt per point of the marked text's size)
 - The mark's height is added once, after [LINE-1](line#line-1) to [LINE-4](line#line-4): multiple spacing doesn't scale it (`pitch = h + (m − 1) · Ht` with `h` including it, [LINE-13](line#line-13)); at-least spacing compares `X` with the height including it; exact spacing keeps its pitch ([LINE-12](line#line-12)).
 
 Example: 11pt Calibri with `w:em="dot"`, single spaced: 10.4736 + 3.4 = 13.8736 above the baseline, a 16.8277pt line.
+
+### LINE-16. The document line grid {#line-16}
+
+A section whose `w:docGrid w:type` is `lines`, `linesAndChars` or `snapToChars` has a line pitch `P = trunc(linePitch × 204.8)` layout units (at least one twip; `default` or no type: no grid, whatever `w:linePitch` says). A line snaps when its paragraph's `w:snapToGrid` is on (the default; the run property doesn't matter), its spacing is `auto` or `atLeast` with a value above 0 (`exact` never snaps), and it is main text: header, footer, note and text-box lines never snap, and cell lines only with `w:adjustLineHeightInTable`. Compat 14 and 15 alike.
+
+```
+h      = the line's single-spacing height (A + D, LINE-1 to LINE-4), in lu
+m      = w:line for auto, 240 for atLeast
+Hg     = max(ceil(h / P) × P, trunc(P × m / 240))
+X      = the atLeast value in lu (0 for auto)
+pitch  = max(Hg, X)
+below  = floor((Hg − h) / 2)
+baseline = pitch − below − D
+```
+
+The multiple scales the pitch, not the line. `below` doesn't have to fit at the bottom of a page ([PAGE-2](page#page-2)). Lines don't align to a page-wide grid: each starts where the previous one ended, and space before and after stay outside the snapped lines.
+
+Example: Times New Roman 11 (h = 12.65) on an 18pt pitch: an 18pt line with 2.68pt below the text; 16pt text at 1.5 lines: max(36, 27) = 36.

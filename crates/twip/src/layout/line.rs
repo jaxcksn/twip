@@ -86,6 +86,8 @@ pub struct Frame {
     pub tab_origin: f64,
     /// JUST-7: compat ≤ 14 `w:wpJustification`.
     pub wp_justification: bool,
+    /// LINE-16: the line grid pitch, layout units.
+    pub line_grid: Option<i32>,
 }
 
 impl Frame {
@@ -100,6 +102,7 @@ impl Frame {
             no_wrap: space.fit,
             tab_origin: 0.0,
             wp_justification: e.compat == Compat::Legacy && e.wp_justification,
+            line_grid: e.line_grid,
         }
     }
 }
@@ -416,7 +419,7 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         } else {
             fit_text(&mut line, pieces, right - 1.0);
         }
-        size(&mut line, sp, pieces, style, mark, fonts, is_last, frame.compat);
+        size(&mut line, sp, pieces, style, mark, fonts, is_last, frame);
         lines.push(line);
         first = false;
         if end >= n {
@@ -431,7 +434,7 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
             || last.end == n && matches!(last.hard, Some(Kind::PageBreak)) && frame.split_page_break;
         if trailing {
             let mut line = Line::empty(n);
-            size(&mut line, sp, pieces, style, mark, fonts, true, frame.compat);
+            size(&mut line, sp, pieces, style, mark, fonts, true, frame);
             lines.push(line);
         }
     }
@@ -439,7 +442,7 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         // An empty paragraph: one line from the mark (LINE-4, STYLE-5).
         lines.clear();
         let mut line = Line::empty(0);
-        size(&mut line, sp, pieces, style, mark, fonts, true, frame.compat);
+        size(&mut line, sp, pieces, style, mark, fonts, true, frame);
         lines.push(line);
     }
     lines
@@ -573,7 +576,7 @@ pub fn band(
     // The band's height covers every segment (LINE-1 over the band's pieces).
     let mut merged = segs[0].clone();
     merged.end = s;
-    size(&mut merged, sp, pieces, style, mark, fonts, s >= n, frame.compat);
+    size(&mut merged, sp, pieces, style, mark, fonts, s >= n, frame);
     for l in &mut segs {
         l.ascent = merged.ascent;
         l.descent = merged.descent;
@@ -1349,7 +1352,8 @@ fn times_line(h: f64, m: f64) -> f64 {
 }
 
 /// Vertical size of a line: LINE-1 to LINE-5, LIST-7, FLOAT-5, then the line spacing rule (LINE-6 to LINE-13).
-fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, fonts: &Fonts, last: bool, compat: Compat) {
+fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, fonts: &Fonts, last: bool, frame: &Frame) {
+    let compat = frame.compat;
     let (mut asc, mut desc) = (0.0f64, 0.0f64);
     // STYLE-4: a compat ≤ 14 cell mark laid out at its paragraph's size, not its own.
     let mark_size = style.mark_size.unwrap_or(mark.size);
@@ -1476,6 +1480,25 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                     _ => 0.0,
                 };
         }
+    }
+    // LINE-16: a line on the document grid takes max(ceil(h / P) P, trunc(P m / 240)); the extra's floor half goes
+    // below the text (and needn't fit at a page bottom, PAGE-2), the rest above, with an at-least value's excess.
+    if let Some(p) = frame.line_grid
+        && style.snap_to_grid
+        && style.line_rule != LineRule::Exact
+        && style.line > 0.0
+    {
+        let p = i64::from(p);
+        let h = i64::from(Lu::round_half_up(h).0);
+        let m = if style.line_rule == LineRule::Auto { (style.line * 240.0).round() as i64 } else { 240 };
+        let hg = ((h + p - 1) / p * p).max(p * m / 240);
+        let below = (hg - h) / 2;
+        let x = if style.line_rule == LineRule::AtLeast { i64::from(Lu::round_half_up(style.line).0) } else { 0 };
+        let pitch = hg.max(x);
+        let lu = |v: i64| Lu(v as i32).to_pt();
+        line.pitch = lu(pitch);
+        line.below = lu(below);
+        line.baseline = lu(pitch - below) - desc;
     }
 }
 

@@ -41,6 +41,11 @@ pub struct TextEnv {
     pub compress_punctuation: bool,
     /// The markup view and author colours: which revisions show, and how.
     pub review: ReviewView,
+    /// LINE-16: the section's line grid pitch (layout units) where its lines snap: main text, and cells with
+    /// `w:adjustLineHeightInTable`. `None` in headers, footers, notes and text boxes.
+    pub line_grid: Option<i32>,
+    /// `w:adjustLineHeightInTable` (LINE-16: cell lines snap to the grid).
+    pub adjust_line_height_in_table: bool,
 }
 
 impl TextEnv {
@@ -65,6 +70,8 @@ impl TextEnv {
             ul_trail_space: s.has("ulTrailSpace"),
             compress_punctuation: s.compress_punctuation,
             review: doc.review.clone(),
+            line_grid: None,
+            adjust_line_height_in_table: s.has("adjustLineHeightInTable"),
         }
     }
 }

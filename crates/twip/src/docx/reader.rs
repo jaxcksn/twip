@@ -884,6 +884,7 @@ impl Reader {
             line_numbers: None,
             v_align: "top".into(),
             page_borders: None,
+            line_grid: None,
             blocks: Vec::new(),
             change: None,
         }
@@ -958,6 +959,10 @@ impl Reader {
         }
         if let Some(v) = child(s, "vAlign").and_then(val) {
             sec.v_align = v.to_string();
+        }
+        // LINE-16: the pitch is the twips x 204.8, truncated, at least one twip.
+        if let Some(g) = child(s, "docGrid").filter(|g| matches!(attr(*g, "type"), Some("lines" | "linesAndChars" | "snapToChars"))) {
+            sec.line_grid = Some((int(attr(g, "linePitch")).unwrap_or(0).max(1) * 2048 / 10) as i32);
         }
         if let Some(b) = child(s, "pgBorders") {
             let side = |n| child(b, n).map(Border::parse);

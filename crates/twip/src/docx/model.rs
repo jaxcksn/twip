@@ -90,6 +90,8 @@ pub struct ParaStyle {
     pub line: f64,
     pub line_rule: LineRule,
     pub contextual: bool,
+    /// LINE-16: `w:snapToGrid` (default on).
+    pub snap_to_grid: bool,
     pub keep_next: bool,
     pub keep_lines: bool,
     pub page_break_before: bool,
@@ -759,6 +761,8 @@ pub struct Section {
     pub line_numbers: Option<LineNumbering>,
     pub v_align: String,
     pub page_borders: Option<PageBorders>,
+    /// LINE-16: `w:docGrid` line pitch in layout units, for a grid of type `lines`, `linesAndChars` or `snapToChars`.
+    pub line_grid: Option<i32>,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,

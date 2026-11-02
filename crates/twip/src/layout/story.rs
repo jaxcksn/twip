@@ -264,7 +264,16 @@ pub fn layout_with(
                     _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some()), env.ctx.fonts, memos)?,
                 };
                 let style = p.para_style_in(view);
-                let ps = ParaSpace { width, start: 0, borders: neighbour_borders(style, prev, next), x0: 0.0, env: text.clone(), fit: ends.fit };
+                // LINE-16: headers, footers, notes and text boxes don't snap to the grid; cells only with the option.
+                let line_grid = text.line_grid.filter(|_| in_cell && text.adjust_line_height_in_table);
+                let ps = ParaSpace {
+                    width,
+                    start: 0,
+                    borders: neighbour_borders(style, prev, next),
+                    x0: 0.0,
+                    env: TextEnv { line_grid, ..text.clone() },
+                    fit: ends.fit,
+                };
                 let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
                 let (mut before, mut after) = (space_before(text, style), space_after(text, style));
                 // PARA-5: a cell's first paragraph takes no automatic space-before, its last no automatic space-after

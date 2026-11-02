@@ -391,6 +391,7 @@ pub struct ParaProps {
     pub line: Option<f64>,
     pub line_rule: Option<LineRule>,
     pub contextual: Option<bool>,
+    pub snap_to_grid: Option<bool>,
     pub keep_next: Option<bool>,
     pub keep_lines: Option<bool>,
     pub page_break_before: Option<bool>,
@@ -449,6 +450,7 @@ impl ParaProps {
                     });
                 }
                 "contextualSpacing" => p.contextual = Some(on_off(e)),
+                "snapToGrid" => p.snap_to_grid = Some(on_off(e)),
                 "keepNext" => p.keep_next = Some(on_off(e)),
                 "keepLines" => p.keep_lines = Some(on_off(e)),
                 "pageBreakBefore" => p.page_break_before = Some(on_off(e)),
@@ -542,6 +544,7 @@ impl ParaProps {
             line,
             line_rule,
             contextual,
+            snap_to_grid,
             keep_next,
             keep_lines,
             page_break_before,
