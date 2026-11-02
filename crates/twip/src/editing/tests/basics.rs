@@ -1152,6 +1152,23 @@ fn live_layout_lays_the_dragged_float_out_where_the_pointer_is() {
 }
 
 #[test]
+fn a_live_drags_outline_stays_on_the_float_where_layout_keeps_it() {
+    // Dragged far above the top margin, a wrapped paragraph-relative float is laid out no higher than the margin
+    // (FLOAT-6): the outline is where it is laid out, not where the pointer is.
+    use serde_json::json;
+    let mut r = super::scenarios::Run::open("FX-OBJ.docx", "live-clamp");
+    let f = crate::layout::FloatId(body_floats(&r.e)[1].id);
+    r.step(&json!({ "click": { "float": 1 } }));
+    let start = object_box(&mut r.e);
+    r.step(&json!({ "press": { "float": 1 } }));
+    r.step(&json!({ "move_to": { "float": 1, "dy": -1000 } }));
+    let outline = object_box(&mut r.e);
+    let laid = r.e.page_geometries().into_iter().find_map(|(_, g)| g.stories.iter().find(|s| s.float == Some(f)).map(|s| s.rect)).expect("drawn");
+    assert!(laid[1] > start[1] - 1000.0 + 100.0, "layout keeps it on the page: {laid:?}");
+    assert!(outline.iter().zip(&laid).all(|(a, b)| (a - b).abs() < 0.01), "the outline is on the float: {outline:?} vs {laid:?}");
+}
+
+#[test]
 fn position_commands_place_the_float_and_the_state_reports_it() {
     // Align right of the margin; re-measured from the page vertically it stays put; wrap options; each one undo step
     // and read back after saving.

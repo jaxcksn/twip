@@ -2727,8 +2727,9 @@ impl Editor {
             for page in pages {
                 let Some(geo) = self.pages.page(page, &self.index) else { continue };
                 match o {
-                    // While dragged, where the drag puts it (the preview).
-                    _ if let Some(d) = self.object_drag.filter(|d| d.obj == o) => {
+                    // While dragged with its ghost, where the drag puts it; with live layout, where it is laid out (layout may
+                    // keep it from where the pointer is, as above the top margin).
+                    _ if let Some(d) = self.object_drag.filter(|d| d.obj == o && !d.live) => {
                         if page == d.page {
                             out.push((page, d.rect(self.object_locked(o))));
                         }
