@@ -2099,3 +2099,70 @@ fn tab_in_a_cells_list_item_changes_its_level() {
     let tab = e.key_command("Tab", Mods::default()).unwrap();
     assert!(matches!(tab, Command::SetListLevel(_)), "{tab:?}");
 }
+
+#[test]
+fn select_all_delete_across_sections() {
+    // Select All, Delete over sections with tables: everything goes, the section breaks too, as in Word: one empty
+    // paragraph in one section with the last section's page. It saves with that one `w:sectPr`, and Undo puts it all
+    // back.
+    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-feature-showcase.docx")).unwrap();
+    let mut e = super::super::Editor::open(&bytes, fonts()).unwrap();
+    let before = texts(&e);
+    let pages = |e: &super::super::Editor| e.document().sections.iter().map(|s| s.page()).collect::<Vec<_>>();
+    let was = pages(&e);
+    assert!(was.len() > 1);
+    e.execute(Command::SelectAll, fonts());
+    e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());
+    assert_eq!(texts(&e), vec![String::new()]);
+    assert_eq!(pages(&e), vec![was.last().unwrap().clone()]);
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = super::super::Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(texts(&again), vec![String::new()]);
+    assert_eq!(pages(&again), pages(&e));
+    let xml = crate::docx::write::main_xml(e.document(), false).unwrap().unwrap();
+    assert_eq!(xml.matches("<w:sectPr").count(), 1, "{xml}");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(texts(&e), before);
+    assert_eq!(pages(&e), was);
+    assert!(crate::docx::write::main_xml(e.document(), false).unwrap().is_none(), "undone, nothing to save");
+}
+
+#[test]
+fn backspace_and_delete_take_a_section_break() {
+    // Backspace at a section's start, Delete at its end: the break goes, the paragraphs either side join, and the
+    // text before takes the section after's page, as in Word. Saving writes one `w:sectPr` fewer; Undo puts it back.
+    use crate::docx::Block;
+    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-feature-showcase.docx")).unwrap();
+    let mut e = super::super::Editor::open(&bytes, fonts()).unwrap();
+    let pages = |e: &super::super::Editor| e.document().sections.iter().map(|s| s.page()).collect::<Vec<_>>();
+    let para = |e: &super::super::Editor, k: usize, last: bool| {
+        let bl = &e.document().sections[k].blocks;
+        match if last { bl.last() } else { bl.first() } {
+            Some(Block::Para(p)) => (crate::layout::ParaId(p.id), super::super::step::para_len(p)),
+            _ => panic!("a paragraph"),
+        }
+    };
+    let (was, before) = (pages(&e), texts(&e));
+    let n = was.len();
+    let sects = |e: &super::super::Editor| crate::docx::write::main_xml(e.document(), false).unwrap().unwrap().matches("<w:sectPr").count();
+    for (back, k) in [(true, 1), (false, 1)] {
+        let (p, len) = para(&e, k, !back);
+        e.selection = Selection::Caret(super::super::position::Position::text(StoryId::Body, p, if back { Unit(0) } else { len }));
+        let paras = texts(&e).len();
+        e.execute(crate::editing::tests::del(if back { Dir::Back } else { Dir::Forward }, false), fonts());
+        assert_eq!(texts(&e).len() + 1, paras, "joined");
+        assert_eq!(sects(&e), pages(&e).len());
+        let again = super::super::Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+        assert_eq!((pages(&again), texts(&again)), (pages(&e), texts(&e)), "reopened");
+    }
+    // Sections 0 and 1 merged with section 1's page, then sections 2 and 3 with section 3's.
+    assert_eq!(pages(&e), vec![was[1].clone(), was[3].clone()]);
+    // A last section has no break after it.
+    let (p, len) = para(&e, n - 3, true);
+    e.selection = Selection::Caret(super::super::position::Position::text(StoryId::Body, p, len));
+    e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());
+    assert_eq!(pages(&e).len(), n - 2);
+    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo, fonts());
+    assert_eq!((pages(&e), texts(&e)), (was, before));
+}
