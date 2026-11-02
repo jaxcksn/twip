@@ -103,6 +103,27 @@ impl Editor {
         }
     }
 
+    /// The caret at bookmark `name` (Word's names ignore case), shown.
+    pub(in crate::editing) fn go_to_bookmark(&mut self, name: &str, fonts: &Fonts) -> Outcome {
+        let found = self.index.para_ids().find_map(|pid| {
+            let p = self.index.para(&self.doc, pid)?;
+            let mut at = 0u32;
+            for i in &p.inlines {
+                if matches!(i, crate::docx::Inline::Bookmark(n) if n.eq_ignore_ascii_case(name)) {
+                    let story = self.index.para_slot(pid).map_or(StoryId::Body, |s| self.index.story(s.container));
+                    return Some(Position::text(story, pid, Unit(at)));
+                }
+                at += i.units() as u32;
+            }
+            None
+        });
+        let Some(at) = found else { return Outcome::Unchanged("no such bookmark") };
+        self.set_selection(Selection::Caret(at));
+        self.ensure(&at, fonts);
+        self.scroll_to_caret(fonts);
+        Outcome::Moved
+    }
+
     /// The caret at the start of page `page` (from 1).
     pub(in crate::editing) fn go_to_page(&mut self, page: u32, fonts: &Fonts) -> Outcome {
         let Some(k) = (page as usize).checked_sub(1) else { return Outcome::invalid("pages count from 1") };

@@ -371,6 +371,18 @@ mod tests {
     }
 
     #[test]
+    fn a_bookmark_link_goes_to_its_bookmark() {
+        let mut f = Fixture::open("objects.docx");
+        let link = f.at("jump to Notes and symbols");
+        f.take();
+        f.click(link, 1, CTRL);
+        assert!(!f.take().iter().any(|e| matches!(e, Event::LinkActivated { .. })));
+        // The caret is at the bookmark: typing there starts its paragraph.
+        f.s().text("X");
+        assert!(f.has("XNotes and symbols"));
+    }
+
+    #[test]
     fn links_activate_and_a_right_click_opens_the_menu_there() {
         let mut f = Fixture::open("editor/FX-bad-image.docx");
         let link = f.at("the example site");
