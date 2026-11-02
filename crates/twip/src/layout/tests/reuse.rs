@@ -97,3 +97,75 @@ fn consecutive_keystrokes_stay_incremental() {
         }
     }
 }
+
+/// Typing that keeps a paragraph's height, in body text and in a table cell: only that paragraph and the page it is on
+/// are laid out again; no other paragraph, no row drawn again, no other page.
+#[test]
+fn same_height_edit_lays_out_one_paragraph() {
+    let Some(d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-LONG-50.docx"))) else { return };
+    let fonts = fonts();
+    // The first body paragraph after the headings (on page 1, not split by a page break: a split paragraph is cached,
+    // and counted, once per part), and the first cell paragraph.
+    let blocks = &d.sections[0].blocks;
+    let body = blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| matches!(b, Block::Para(p) if p.inlines.iter().any(|x| matches!(x, Inline::Text(..)))))
+        .nth(2)
+        .map(|(i, _)| i);
+    let table = blocks.iter().position(|b| matches!(b, Block::Table(_)));
+    for (what, bi, row) in [("body", body, None), ("cell", table, Some(0))] {
+        let Some(bi) = bi else { continue };
+        let mut d = d.clone();
+        let mut dl = DocumentLayout::new();
+        dl.edit(Revision(1), None);
+        dl.complete(&d, &fonts);
+        let text = match &mut d.sections[0].blocks[bi] {
+            Block::Para(p) => p.inlines.iter_mut().find_map(|x| if let Inline::Text(t, _) = x { Some(t) } else { None }),
+            Block::Table(t) => t.rows[0].cells[0].blocks.iter_mut().find_map(|b| match b {
+                Block::Para(p) => p.inlines.iter_mut().find_map(|x| if let Inline::Text(t, _) = x { Some(t) } else { None }),
+                _ => None,
+            }),
+        };
+        // A character for one: the line keeps its length class (the paragraph keeps its lines).
+        text.expect("text").insert(0, 'x');
+        crate::prof::take_reuse();
+        dl.edit(Revision(2), Some(Change { section: 0, first: bi, old_end: bi + 1, new_end: bi + 1, row }));
+        dl.complete(&d, &fonts);
+        let r = crate::prof::take_reuse();
+        assert_eq!(at(&r, Piece::Para, Outcome::Laid), 1, "{what}: only the edited paragraph: {r:?}");
+        assert_eq!(at(&r, Piece::Page, Outcome::Laid), 1, "{what}: only its page: {r:?}");
+        assert!(at(&r, Piece::Row, Outcome::Laid) <= 1, "{what}: at most the edited row: {r:?}");
+        assert_eq!(dump::page_text(&dl.snapshot(), &d), dump::page_text(&layout(&d, &fonts), &d), "{what}");
+    }
+}
+
+/// Enter near the start of a 50-page document: of the paragraphs and rows after it, at most 5% are laid out again
+/// (the rest move with the text, or sit on reused pages, which the report counts as pages), and the result equals a
+/// full layout. Those laid out again are the paragraphs a page break now splits elsewhere.
+#[test]
+fn reflow_moves_later_paragraphs() {
+    let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-LONG-50.docx"))) else { return };
+    let fonts = fonts();
+    let mut dl = DocumentLayout::new();
+    dl.edit(Revision(1), None);
+    dl.complete(&d, &fonts);
+    let Block::Para(mut copy) = d.sections[0].blocks[2].clone() else { return };
+    copy.id = crate::docx::model::next_para_id();
+    copy.src = None;
+    d.sections[0].blocks.insert(3, Block::Para(copy));
+    crate::prof::take_reuse();
+    dl.edit(Revision(2), Some(Change { section: 0, first: 2, old_end: 3, new_end: 4, row: None }));
+    dl.complete(&d, &fonts);
+    let r = crate::prof::take_reuse();
+    let laid = at(&r, Piece::Para, Outcome::Laid) + at(&r, Piece::Row, Outcome::Laid);
+    let after: u64 = d.sections[0].blocks[4..]
+        .iter()
+        .map(|b| match b {
+            Block::Para(_) => 1,
+            Block::Table(t) => t.rows.len() as u64,
+        })
+        .sum();
+    assert!(laid * 100 <= after * 5, "{laid} of the {after} paragraphs and rows after the edit laid out again: {r:?}");
+    assert_eq!(dump::page_text(&dl.snapshot(), &d), dump::page_text(&layout(&d, &fonts), &d));
+}
