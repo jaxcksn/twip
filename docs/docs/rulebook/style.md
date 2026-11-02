@@ -34,10 +34,10 @@ A list level's `w:pPr` slots into the paragraph cascade as [STYLE-6](style#style
 
 `b`, `i`, `caps`, `smallCaps`, `strike`, `vanish`, `bCs`, `iCs`, `emboss`, `imprint`, `outline` and `shadow` are toggles:
 
-- **Within one style chain** (a style and its `basedOn` ancestors) a toggle is on if any style in the chain turns it on: bold based on bold is bold.
+- **Within one style chain** (a style and its `basedOn` ancestors) a toggle is inherited like any other property: the nearest style that sets it decides, `w:val="0"` included. A style with `b w:val="0"` based on a bold style isn't bold, nor is one based on it that sets nothing; bold based on bold is bold.
 - **Across levels** (docDefaults, the table style, the paragraph style chain, the character style chain) each level that turns a toggle on flips it: a bold paragraph style plus a bold character style is not bold; table style, paragraph style and character style all bold is bold.
 - The table style's base and conditional regions count as one chain: no flipping between regions.
-- `w:val="0"` in a style does nothing; it doesn't turn the toggle off.
+- A level whose chain resolves a toggle off (`w:val="0"` nearest) doesn't flip it.
 - **Direct formatting is absolute**: `<w:b/>` is bold, `<w:b w:val="0"/>` is not bold, whatever the styles say.
 
 `dstrike` and `u` are not toggles; they override like any other property.
