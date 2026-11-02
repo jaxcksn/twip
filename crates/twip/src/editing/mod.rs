@@ -2738,7 +2738,7 @@ impl Editor {
                 }
             }
             // No handles while dragged: the outline goes with the ghost.
-            return SelectionView::Object(out, !self.object_fixed(o) && self.object_drag.is_none());
+            return SelectionView::Object(out, !self.object_fixed(o) && !self.object_drag.is_some_and(|d| d.now != d.start));
         }
         if let Selection::Block { .. } = self.selection {
             return SelectionView::Text(

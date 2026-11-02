@@ -1080,7 +1080,10 @@ fn an_object_drag_shows_a_ghost_and_the_anchor_it_would_take() {
     r.step(&json!({ "click": { "float": 1 } }));
     let was = object_box(&mut r.e);
     let anchor = r.e.view(0..3).anchor.expect("an anchor shows");
+    assert!(matches!(r.e.view(0..3).selection, super::super::view::SelectionView::Object(_, true)), "handles after a click");
     r.step(&json!({ "press": { "float": 1 } }));
+    // A press that hasn't moved is no drag yet: the handles stay.
+    assert!(matches!(r.e.view(0..3).selection, super::super::view::SelectionView::Object(_, true)), "handles on a press");
     r.step(&json!({ "move_to": { "float": 1, "dy": -150 } }));
     let v = r.e.view(0..3);
     let g = v.ghost.expect("a ghost");
