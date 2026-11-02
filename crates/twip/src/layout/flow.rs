@@ -924,9 +924,11 @@ impl<'d> PageFill<'d, '_> {
             if self.at.end.as_ref() == Some(&*pos) {
                 return Ok((Stop::Page, y));
             }
-            if pos.at.at_start() && self.break_para_after_table(pos.block) && self.ctx.env.text.compat == Compat::Legacy {
-                // COL-6 (compat ≤ 14): the empty paragraph that carries the section break right after a table takes no
-                // space.
+            if pos.at.at_start()
+                && (self.break_para_after_table(pos.block) && self.ctx.env.text.compat == Compat::Legacy || self.break_para_after_para(pos.block))
+            {
+                // COL-6: the empty paragraph that carries the section break right after a table (compat ≤ 14) or a
+                // paragraph takes no space; the paragraph before keeps its space after for the next section.
                 pos.next_block();
                 continue;
             }
@@ -1372,6 +1374,21 @@ impl<'d> PageFill<'d, '_> {
             && bi > 0
             && matches!(self.sec.blocks.get(bi - 1), Some(Block::Table(_)))
             && matches!(self.sec.blocks.get(bi), Some(Block::Para(p)) if p.inlines.is_empty())
+    }
+
+    /// COL-6: whether block `bi` is an empty paragraph carrying the section's break right after a paragraph (bookmarks,
+    /// ranges and empty runs don't count as content).
+    pub fn break_para_after_para(&self, bi: usize) -> bool {
+        let bare = |i: &Inline| match i {
+            Inline::Text(t, _) => t.is_empty(),
+            Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => true,
+            _ => false,
+        };
+        self.sec.breaks
+            && bi + 1 == self.sec.blocks.len()
+            && bi > 0
+            && matches!(self.sec.blocks.get(bi - 1), Some(Block::Para(_)))
+            && matches!(self.sec.blocks.get(bi), Some(Block::Para(p)) if p.inlines.iter().all(bare))
     }
 
     /// PARA-4: block `bi`'s space-before with no paragraph before it in the column. After a table its previous

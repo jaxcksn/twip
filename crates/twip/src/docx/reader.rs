@@ -142,6 +142,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         para_count: 0,
         float_order: 0,
         pending_hidden: None,
+        uncounted: false,
         part: main.clone(),
         rels: rels.clone(),
         note_id: 0,
@@ -306,6 +307,21 @@ fn read_font_table(xml: Option<&str>) -> Vec<crate::font::FontDecl> {
         .collect()
 }
 
+/// COL-6: whether paragraph `p` holds anything that is laid out: text, a tab or break, a symbol, an object, a note
+/// reference or a field (empty runs and bookmarks aren't).
+fn has_content(p: Node) -> bool {
+    p.descendants().any(|d| {
+        d.tag_name().namespace() == Some(W)
+            && match d.tag_name().name() {
+                "t" | "delText" => d.text().is_some_and(|t| !t.is_empty()),
+                "tab" => !d.ancestors().any(|a| is_w(a, "tabs")),
+                "br" | "cr" | "ptab" | "sym" | "drawing" | "pict" | "object" | "footnoteReference" | "endnoteReference" | "fldChar" | "fldSimple"
+                | "noBreakHyphen" | "softHyphen" => true,
+                _ => false,
+            }
+    })
+}
+
 /// A DrawingML `a:xfrm`, EMU: offset, extent, and a group's child offset and extent.
 struct Xfrm {
     off: (f64, f64),
@@ -451,6 +467,8 @@ struct Reader {
     float_order: usize,
     /// A paragraph whose mark is hidden, waiting to join the next one (STYLE-7).
     pending_hidden: Option<Paragraph>,
+    /// COL-6: the paragraph being read is an empty section-break paragraph after a paragraph: its number isn't counted.
+    uncounted: bool,
     part: String,
     rels: HashMap<String, (String, String)>,
     /// The note being read (for its `w:footnoteRef` mark).
@@ -812,7 +830,10 @@ impl Reader {
         for n in container.children().filter(|c| c.is_element()) {
             if is_w(n, "p") {
                 let sect = child(n, "pPr").and_then(|p| child(p, "sectPr"));
+                // COL-6: an empty section-break paragraph after a paragraph of its section isn't numbered.
+                self.uncounted = sect.is_some() && matches!(out.last(), Some((Some(Block::Para(_)), None))) && !has_content(n);
                 let para = self.read_paragraph(n, pkg, table);
+                self.uncounted = false;
                 out.push((para.map(Block::Para), sect));
             } else if is_w(n, "tbl") {
                 if let Some(p) = self.pending_hidden.take() {
@@ -1025,7 +1046,7 @@ impl Reader {
         // List label (LIST-6): mark formatting, then the level's rPr.
         let list = match (&level, num_id) {
             (Some(l), Some(id)) => {
-                if self.res.label_shows(id, ilvl, from_style, style_id.as_deref()) {
+                if !self.uncounted && self.res.label_shows(id, ilvl, from_style, style_id.as_deref()) {
                     self.counters.next(&self.res.numbering, &self.res.styles, id, ilvl).map(|text| {
                         let mut lp = mark_props.clone();
                         lp.merge(&l.rpr);

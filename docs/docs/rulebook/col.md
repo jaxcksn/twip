@@ -76,3 +76,5 @@ Example: six one-line paragraphs followed by the empty paragraph holding `w:sect
 In compat 15 an empty section-break paragraph right after a table still takes its line: the balanced height is found without it, then it goes below the content of the column the table ends in, past that height if need be, and the section ends below it.
 
 In compat ≤ 14 the empty paragraph holding a section break right after a table takes no space in any section, balanced or not: the next section starts at the table's end.
+
+In both modes an empty paragraph holding a section break right after a paragraph of its section takes no line, no height and no spacing, and its list number is neither drawn nor counted; the paragraph before keeps its space after against the next section's first block. Bookmarks and empty runs aren't content; a tab or text is. One that is its section's first paragraph keeps its line.

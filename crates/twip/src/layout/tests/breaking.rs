@@ -469,3 +469,19 @@ fn a_nested_groups_text_boxes_each_draw_in_their_own_box() {
     let x = |t: &str| l.iter().find(|x| x.1 == t).map(|x| x.0);
     assert_eq!((x("Outer"), x("Inner")), (Some(100.0), Some(175.0)), "{l:?}");
 }
+
+#[test]
+fn an_empty_section_break_paragraph_after_a_paragraph_takes_no_line() {
+    // COL-6: the empty paragraph holding the first section's break after "A" takes no line: "B", whose section starts
+    // continuous, follows one line below "A", in both modes.
+    let sect = r#"<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p>"#;
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body = format!("{}{}{}{sect}", p("A"), sect.replace(r#"<w:type w:val="continuous"/>"#, ""), p("B"));
+    for mode in [14, 15] {
+        let c = format!(
+            r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#
+        );
+        let Some(l) = baselines(&c, ARIAL_12, &body) else { return };
+        assert!((l[1].3 - l[0].3 - 13.8).abs() < 0.01, "{l:?}");
+    }
+}
