@@ -2228,13 +2228,17 @@ impl Editor {
                 if !mods.shift && self.checkbox_press(x, y, fonts) {
                     return;
                 }
-                // A link: Ctrl+click (a click when read only) activates it, for the application to open.
+                // A link: Ctrl+click (a click when read only) activates it: a bookmark's goes there, others are for the
+                // application to open.
                 if clicks == 1
                     && !mods.shift
                     && (mods.ctrl || mods.meta || self.mode == Mode::ReadOnly)
                     && let Some(address) = self.link_under(x, y, fonts)
                 {
-                    self.events.push(input::Notice::Link { address, ctrl: mods.ctrl || mods.meta });
+                    match address.strip_prefix('#') {
+                        Some(name) => _ = self.go_to_bookmark(name, fonts),
+                        None => self.events.push(input::Notice::Link { address, ctrl: mods.ctrl || mods.meta }),
+                    }
                     return;
                 }
                 // A double-click on a column border auto-fits the column to its left.

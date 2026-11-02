@@ -74,7 +74,11 @@ impl Editor {
                     return None;
                 }
                 let Inline::FieldBegin { id, .. } = &p.inlines[s.begin] else { return None };
-                let address = code.args.first().cloned().unwrap_or_default();
+                // `\l "name"` links to a bookmark: `#name`, after the address if there is one.
+                let mut address = code.args.first().cloned().unwrap_or_default();
+                if let Some(a) = code.switches.iter().find(|s| s.flag == 'l').and_then(|s| s.arg.as_deref()) {
+                    address = format!("{address}#{a}");
+                }
                 Some((s.end - s.begin, LinkHere { field: *id, address, text: crate::docx::fields::result_text(&p.inlines, s) }))
             })
             .min_by_key(|(n, _)| *n)
