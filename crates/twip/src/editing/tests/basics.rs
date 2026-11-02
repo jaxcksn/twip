@@ -2046,3 +2046,56 @@ fn a_page_break_with_split_pg_break_and_para_mark_keeps_its_paragraph() {
     }
     assert_eq!(pages, [1, 0, 1, 1, 1], "the mark's line on the next page");
 }
+
+#[test]
+fn tab_changes_the_level_of_list_items() {
+    // Tab at a numbered list's first item nests it; Tab over a selection of items nests them all (it doesn't replace
+    // them with a tab); Shift+Tab brings them back.
+    use super::super::position::Position;
+    use crate::editing::keymap::Mods;
+    let mut e = open("FX-LISTS.docx");
+    let level = |e: &super::super::Editor, i: usize| match &e.document().sections[0].blocks[i] {
+        crate::docx::Block::Para(p) => p.style.num.map(|(_, l)| l),
+        _ => None,
+    };
+    let at = |e: &super::super::Editor, i: usize| Position::text(StoryId::Body, super::super::tests::para_id(e, i), Unit(0));
+    assert_eq!((level(&e, 2), level(&e, 3)), (Some(0), Some(0)), "1. and 2.");
+    e.set_caret_for_benchmark(Selection::Caret(at(&e, 2)));
+    let tab = e.key_command("Tab", Mods::default()).unwrap();
+    assert!(matches!(e.execute(tab, fonts()), super::super::Outcome::Changed(_)), "the first item");
+    assert_eq!(level(&e, 2), Some(1));
+    e.execute(Command::Undo, fonts());
+    let before = texts(&e);
+    e.set_caret_for_benchmark(Selection::Text {
+        anchor: at(&e, 3),
+        focus: Position::text(StoryId::Body, super::super::tests::para_id(&e, 4), Unit(2)),
+        unit: Default::default(),
+    });
+    let tab = e.key_command("Tab", Mods::default()).unwrap();
+    e.execute(tab, fonts());
+    assert_eq!((level(&e, 3), level(&e, 4)), (Some(1), Some(2)), "both items");
+    assert_eq!(texts(&e), before, "the text stays");
+    let back = e.key_command("Tab", Mods { shift: true, ..Mods::default() }).unwrap();
+    e.execute(back, fonts());
+    assert_eq!((level(&e, 3), level(&e, 4)), (Some(0), Some(1)));
+}
+
+#[test]
+fn tab_in_a_cells_list_item_changes_its_level() {
+    // A list in a table cell: Tab at an item's start nests it rather than going to the next cell.
+    use crate::editing::keymap::Mods;
+    let mut e = open("FX-LISTS.docx");
+    let found = (0..e.document().sections.len()).find_map(|si| {
+        e.document().sections[si].blocks.iter().find_map(|b| match b {
+            crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).find_map(|b| match b {
+                crate::docx::Block::Para(p) if p.style.num.is_some_and(|(_, l)| l == 1) => Some(crate::layout::ParaId(p.id)),
+                _ => None,
+            }),
+            _ => None,
+        })
+    });
+    let para = found.expect("a level-two item in a cell");
+    e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(0))));
+    let tab = e.key_command("Tab", Mods::default()).unwrap();
+    assert!(matches!(tab, Command::SetListLevel(_)), "{tab:?}");
+}
