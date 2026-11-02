@@ -485,3 +485,11 @@ fn an_empty_section_break_paragraph_after_a_paragraph_takes_no_line() {
         assert!((l[1].3 - l[0].3 - 13.8).abs() < 0.01, "{l:?}");
     }
 }
+
+#[test]
+fn a_page_break_in_a_table_cell_is_nothing() {
+    // BREAK-10: "Before", a page break, "After" in a cell set as one line "BeforeAfter".
+    let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Before</w:t><w:br w:type="page"/><w:t>After</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let Some(l) = lines("", ARIAL_12, body) else { return };
+    assert_eq!(l[0].1, "BeforeAfter", "{l:?}");
+}

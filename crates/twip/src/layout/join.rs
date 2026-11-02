@@ -132,6 +132,11 @@ impl LaidPara<'_> {
     }
 
     /// Its [`ShapeSpace`]: the values of its fields and note numbers, and where its units come from.
+    /// [`Self::shape_space`] for a paragraph in a table cell (BREAK-10) or not.
+    pub fn shape_space_in(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, text: &TextEnv, in_cell: bool) -> ShapeSpace {
+        ShapeSpace { in_cell, ..self.shape_space(fields, notes, text) }
+    }
+
     pub fn shape_space(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, text: &TextEnv) -> ShapeSpace {
         let mut space = shape_space(self.para(), fields, notes, text);
         if let LaidPara::Joined(j) = self {

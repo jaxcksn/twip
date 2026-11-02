@@ -93,3 +93,7 @@ In compat ≤ 14 with `compressPunctuation`, a line whose runs are East Asian as
 Example: Arial spaces can lose about 20% of their width this way, Courier New spaces 50%.
 
 Example: Arial 12 "⇥You are ordered … at 10:00 am with", 3.7pt wider than the 504pt after the tab, keeps "with": its 17 spaces after the tab can give 0.686pt each.
+
+### BREAK-10. Page and column breaks in table cells {#break-10}
+
+Inside a table cell, at any nesting level, a page or column break (`w:br w:type="page"`, `"column"`) is nothing: no break, no line end, no height. `Before`, a page break, `After` is the one line `BeforeAfter`. A text-wrapping break (`w:br` without a type) in a cell ends its line as anywhere else. Both modes.

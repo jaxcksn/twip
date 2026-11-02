@@ -751,6 +751,8 @@ impl Builder<'_> {
                     p.object = Some(Object::PTab(*t));
                     self.atom(p, "\t");
                 }
+                // BREAK-10: a page or column break in a table cell is nothing.
+                (Inline::Break(BreakKind::Page | BreakKind::Column, _), Some(_)) if space.in_cell => {}
                 (Inline::Break(k, _), Some(run)) => {
                     let kind = match k {
                         BreakKind::Line => Kind::LineBreak,

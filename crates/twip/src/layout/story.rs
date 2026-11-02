@@ -119,7 +119,9 @@ pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, cell:
     let mut out = Vec::with_capacity(blocks.len());
     for b in blocks {
         out.push(match b {
-            LaidBlock::Para(p) => ChildId::Para(shape(p.para(), &p.shape_space(env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?),
+            LaidBlock::Para(p) => {
+                ChildId::Para(shape(p.para(), &p.shape_space_in(env.fields, env.notes, &env.ctx.env.text, cell.is_some()), env.ctx.fonts, memos)?)
+            }
             LaidBlock::Table(t) => ChildId::Table(match width {
                 Some(w) => super::table::layout(&as_nested(t, cell), w, env, None, false, memos)?,
                 None => super::table::layout(&as_nested(t, cell), 1e9, env, None, true, memos)?,
@@ -257,7 +259,7 @@ pub fn layout_with(
                 };
                 let shaped = match resolved.get(bi) {
                     Some(ChildId::Para(s)) => s.clone(),
-                    _ => shape(p, &laid.shape_space(env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?,
+                    _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx.env.text, cell.is_some()), env.ctx.fonts, memos)?,
                 };
                 let style = p.para_style_in(view);
                 let ps = ParaSpace { width, start: 0, borders: neighbour_borders(style, prev, next), x0: 0.0, env: text.clone(), fit: ends.fit };

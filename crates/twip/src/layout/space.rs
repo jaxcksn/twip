@@ -21,6 +21,8 @@ pub struct ShapeSpace {
     pub compress: bool,
     /// FONT-18: compat ≤ 14 [`super::env::TextEnv::word97_line_breaks`].
     pub em1000: bool,
+    /// BREAK-10: the paragraph is in a table cell, where page and column breaks are dropped.
+    pub in_cell: bool,
     /// The markup view: which revised text shapes at all.
     pub view: MarkupView,
     /// Where a joined paragraph's units come from (REV-6): its pieces name their own paragraphs once drawn.
