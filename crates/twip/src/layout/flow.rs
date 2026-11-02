@@ -453,15 +453,74 @@ fn merged_splits(tb: &TableLayout, ri: usize, placed: &[(usize, f64, usize)], bo
     out
 }
 
+/// TABLE-32: the top-aligned merged regions a page ends inside, between whole rows: row `next` (on the next page)
+/// continues them and their first row is placed on this page (`placed`, ending at row `last`). Each keeps the lines
+/// that fit down to `last`'s bottom; the rest goes on in `next` ([`merged_rest`]).
+fn merged_page_cuts(tb: &TableLayout, next: usize, placed: &[(usize, f64, usize)], compat: Compat) -> Vec<MergedSplit> {
+    let Some(&(last, last_top, _)) = placed.last() else { return Vec::new() };
+    let continues = |r: usize, col: usize| tb.rows.get(r).is_some_and(|row| row.cells.iter().any(|c| c.col == col && c.v_merge == VMerge::Continue));
+    let mut out = Vec::new();
+    for (k, c) in tb.rows.get(next).map_or(&[][..], |r| &r.cells[..]).iter().enumerate() {
+        if c.v_merge != VMerge::Continue {
+            continue;
+        }
+        let Some(pi) = placed.iter().rposition(|p| !continues(p.0, c.col)) else { continue };
+        let (start, top, _) = placed[pi];
+        let Some(kr) = tb.rows[start].cells.iter().position(|x| x.col == c.col && x.v_merge == VMerge::Restart) else { continue };
+        let rc = &tb.rows[start].cells[kr];
+        if rc.v_align != "top" || tb.rows[start].exact || !(start + 1..=last).all(|r| continues(r, c.col)) {
+            continue;
+        }
+        let content_top = top + tb.rows[start].top_border + rc.margins[0];
+        let units = &rc.units.units;
+        let bottom = last_top + tb.rows[last].height;
+        let cut = cell_cut(units, bottom - rc.margins[2] - content_top, false, compat);
+        if cut == units.len() {
+            continue;
+        }
+        out.push(MergedSplit { k, start, kr, pi, cut, bottom });
+    }
+    out
+}
+
+/// TABLE-32: the content of merged region cells that continue from an earlier page in row `ri`, the first row on
+/// this page: per cell, the region's units that didn't fit the rows before `ri` (rebased), or none.
+fn merged_rest(tb: &TableLayout, ri: usize, compat: Compat) -> Vec<Option<Vec<StoryUnit>>> {
+    tb.rows[ri]
+        .cells
+        .iter()
+        .map(|c| {
+            if c.v_merge != VMerge::Continue {
+                return None;
+            }
+            let start = (0..ri).rev().find(|&r| tb.rows[r].cells.iter().any(|x| x.col == c.col && x.v_merge == VMerge::Restart))?;
+            let rc = tb.rows[start].cells.iter().find(|x| x.col == c.col && x.v_merge == VMerge::Restart)?;
+            if rc.v_align != "top" || tb.rows[start].exact {
+                return None;
+            }
+            let room = tb.rows[start..ri].iter().map(|r| r.height).sum::<f64>() - tb.rows[start].top_border - rc.margins[0] - rc.margins[2];
+            let units = &rc.units.units;
+            let cut = cell_cut(units, room, false, compat);
+            (cut > 0 && cut < units.len()).then(|| rebase(&units[cut..]))
+        })
+        .collect()
+}
+
 /// The first row of merged region `m` drawn again with only the content that stays on this page, the region ending
 /// with row `ri`'s part of height `h` (TABLE-32).
-fn draw_merged_part(tb: &TableLayout, m: &MergedSplit, ri: usize, h: f64, left: f64, top: f64) -> super::fragment::RowFragment {
+/// All of `ms` share their first row.
+fn draw_merged_part(tb: &TableLayout, ms: &[&MergedSplit], ri: usize, h: f64, left: f64, top: f64) -> super::fragment::RowFragment {
+    let start = ms[0].start;
     let mut rows = tb.rows.clone();
-    rows[m.start].cells[m.kr].below = tb.rows[m.start + 1..ri].iter().map(|r| r.height).sum::<f64>() + h;
+    for m in ms {
+        rows[start].cells[m.kr].below = tb.rows[start + 1..ri].iter().map(|r| r.height).sum::<f64>() + h;
+    }
     let t = TableLayout { rows, cols: tb.cols.clone(), outer: tb.outer.clone(), fit: tb.fit.clone(), ..*tb };
-    let mut parts = whole(&t.rows[m.start]);
-    parts[m.kr] = CellPart { units: &tb.rows[m.start].cells[m.kr].units.units[..m.cut], base: 0.0, ends: false };
-    draw_row(&t, m.start, left, top, tb.rows[m.start].height, Some(&parts), false)
+    let mut parts = whole(&t.rows[start]);
+    for m in ms {
+        parts[m.kr] = CellPart { units: &tb.rows[start].cells[m.kr].units.units[..m.cut], base: 0.0, ends: false };
+    }
+    draw_row(&t, start, left, top, tb.rows[start].height, Some(&parts), false)
 }
 
 /// Units moved up so the first starts at 0.
@@ -1996,11 +2055,20 @@ impl<'d> PageFill<'d, '_> {
                 && rest.is_none()
                 && !*empty
                 && !(self.ctx.env.text.compat == Compat::Generic && ri > 0 && tb.rows[ri - 1].keep_next);
+            // TABLE-32: the first row on a page goes on with the merged regions an earlier page cut.
+            let carried =
+                if rest.is_none() && placed_here == 0 && !pos.at.at_start() { merged_rest(tb, ri, self.ctx.env.text.compat) } else { Vec::new() };
             // The row's cell contents: borrowed (a row is copied only when it splits).
-            let parts: Vec<CellPart> = match &rest {
+            let mut parts: Vec<CellPart> = match &rest {
                 Some(r) => r.iter().map(|v| CellPart { units: &v[..], base: 0.0, ends: true }).collect(),
                 None => whole(row),
             };
+            for (k, c) in carried.iter().enumerate() {
+                if let Some(u) = c {
+                    parts[k] = CellPart { units: &u[..], base: 0.0, ends: true };
+                }
+            }
+            let carries = carried.iter().any(Option::is_some);
             let height = if rest.is_some() { part_height(row, &parts) } else { row.height };
             // TABLE-28: compat ≤ 14 caps an exact row to the whole column less its top and bottom borders, so it never
             // asks for more than one column; compat 15 lets it run past the column bottom.
@@ -2041,6 +2109,7 @@ impl<'d> PageFill<'d, '_> {
                     placed.push((ri, *y, rows.len()));
                 }
                 rows.push(match &rest {
+                    None if carries => draw_row(tb, ri, at_x, *y, height, Some(&parts), last),
                     // A whole row: through the cache.
                     None => {
                         let (drawn, cached) = draw_whole_row(tb, ri, at_x, *y, height, last, memos);
@@ -2130,9 +2199,10 @@ impl<'d> PageFill<'d, '_> {
             {
                 *area = a;
                 carry.note_rest.extend(note_rest);
-                for m in &merged {
+                for m in merged.iter().filter(|m| merged.iter().find(|o| o.start == m.start).is_some_and(|o| std::ptr::eq(o, *m))) {
                     let (rs, top, idx) = placed[m.pi];
-                    let mut redrawn = draw_merged_part(tb, m, ri, h, at_x, top);
+                    let same: Vec<&MergedSplit> = merged.iter().filter(|o| o.start == m.start).collect();
+                    let mut redrawn = draw_merged_part(tb, &same, ri, h, at_x, top);
                     move_floats(Some(&mut redrawn), &page_floats, &frames, tb.rows[rs].top_border, up(rs));
                     rows[idx] = redrawn;
                 }
@@ -2168,6 +2238,19 @@ impl<'d> PageFill<'d, '_> {
                     return Ok(Stop::Full);
                 }
                 pos.at = At::Row(kri);
+            }
+            // TABLE-32: a merged region the page ends inside keeps what fits down to the last whole row.
+            if let At::Row(next) = pos.at {
+                let kept: Vec<(usize, f64, usize)> = placed.iter().copied().filter(|p| p.2 < rows.len()).collect();
+                let cuts = merged_page_cuts(tb, next, &kept, self.ctx.env.text.compat);
+                for m in cuts.iter().filter(|m| cuts.iter().find(|o| o.start == m.start).is_some_and(|o| std::ptr::eq(o, *m))) {
+                    let (rs, top, idx) = kept[m.pi];
+                    let last = kept.last().map_or(rs, |p| p.0);
+                    let same: Vec<&MergedSplit> = cuts.iter().filter(|o| o.start == m.start).collect();
+                    let mut redrawn = draw_merged_part(tb, &same, last + 1, 0.0, at_x, top);
+                    move_floats(Some(&mut redrawn), &page_floats, &frames, tb.rows[rs].top_border, up(rs));
+                    rows[idx] = redrawn;
+                }
             }
             // TABLE-41: a part cut between whole rows closes with the table's bottom border, which the column holds
             // (COL-5 balances on it).
