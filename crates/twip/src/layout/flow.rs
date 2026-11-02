@@ -924,8 +924,11 @@ impl<'d> PageFill<'d, '_> {
             if self.at.end.as_ref() == Some(&*pos) {
                 return Ok((Stop::Page, y));
             }
+            let vanished = matches!(self.sec.blocks.get(pos.block), Some(Block::Para(p)) if super::paragraph::vanished(p));
             if pos.at.at_start()
-                && (self.break_para_after_table(pos.block) && self.ctx.env.text.compat == Compat::Legacy || self.break_para_after_para(pos.block))
+                && (self.break_para_after_table(pos.block) && self.ctx.env.text.compat == Compat::Legacy
+                    || self.break_para_after_para(pos.block)
+                    || vanished)
             {
                 // COL-6: the empty paragraph that carries the section break right after a table (compat ≤ 14) or a
                 // paragraph takes no space; the paragraph before keeps its space after for the next section.

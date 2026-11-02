@@ -251,6 +251,8 @@ pub fn layout_with(
     let mut prev_table: Option<(&Table, f64)> = None;
     for (bi, b) in blocks.iter().enumerate() {
         match b {
+            // STYLE-7: a hidden paragraph isn't laid out, except as a cell's last.
+            LaidBlock::Para(laid) if super::paragraph::vanished(laid.para()) && !(cell.is_some() && bi + 1 == blocks.len()) => {}
             LaidBlock::Para(laid) => {
                 let p = laid.para();
                 let next = match blocks.get(bi + 1) {

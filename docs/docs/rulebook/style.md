@@ -79,6 +79,7 @@ The paragraph mark's run properties (`w:pPr/w:rPr`, through its `w:rStyle` and t
 - A run with `w:vanish` takes no space and draws nothing.
 - A paragraph whose runs are all hidden but whose mark isn't is an empty paragraph: one line from the mark ([LINE-4](line#line-4)).
 - A hidden paragraph mark joins its paragraph to the next one; lay them out as one paragraph. It keeps the second paragraph's properties and mark, and the first one's list number.
+- A paragraph whose mark is hidden and that shows nothing (no unhidden text, tab or break, no object) where there is nothing to join it to (before a table, at the end of a story) isn't laid out: no line, no spacing. In a table cell the same, unless it is the cell's last paragraph.
 
 ### STYLE-8. An empty East Asian theme slot {#style-8}
 

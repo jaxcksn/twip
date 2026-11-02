@@ -530,3 +530,19 @@ fn an_inline_pictures_box_takes_its_effect_extents_and_run_position() {
     let grown = y(r#"<wp:effectExtent l="0" t="25400" r="0" b="25400"/>"#).unwrap();
     assert!((grown - plain - 4.0).abs() < 0.01, "{plain} {grown}");
 }
+
+#[test]
+fn a_hidden_empty_paragraph_before_a_table_takes_no_line() {
+    // STYLE-7: an empty paragraph with a hidden mark right before a table isn't laid out: the table's text follows
+    // "A" one line below.
+    let tbl = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let body = |hidden: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>A</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:after="0"/>{hidden}</w:pPr></w:p>{tbl}"#
+        )
+    };
+    let gap = |hidden: &str| baselines("", ARIAL_12, &body(hidden)).map(|l| l.iter().find(|x| x.1 == "Cell").unwrap().3 - l[0].3);
+    let Some(shown) = gap("") else { return };
+    let hidden = gap("<w:rPr><w:vanish/></w:rPr>").unwrap();
+    assert!((shown - hidden - 13.8).abs() < 0.01, "{shown} {hidden}");
+}
