@@ -1637,7 +1637,8 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             out.extend(caret(end, q));
         }
         let changed = o.review.view.change_bars() && line_changed(o, line, src);
-        LineFragment { items: out.into_boxed_slice(), pitch: line.pitch, baseline: line.baseline, atoms: atoms.into_boxed_slice(), changed }
+        let mark = (line.start == line.end && o.shaped.join.is_none()).then(|| Unit(src.inlines.iter().map(Inline::units).sum::<usize>() as u32));
+        LineFragment { items: out.into_boxed_slice(), pitch: line.pitch, baseline: line.baseline, atoms: atoms.into_boxed_slice(), changed, mark }
     }
 }
 

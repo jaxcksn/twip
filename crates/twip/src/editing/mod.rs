@@ -1509,6 +1509,43 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
+    /// Ctrl+Enter: a page break that ends its paragraph, the caret in a new paragraph after it (on the next page).
+    /// With splitPgBreakAndParaMark in compat 14 or below (COMPAT-3) the mark after a break already goes to the next
+    /// page, so only the break.
+    fn page_break(&mut self, fonts: &Fonts) -> Outcome {
+        let s = &self.doc.settings;
+        if s.compat() == crate::docx::Compat::Legacy && s.has("splitPgBreakAndParaMark") {
+            return self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts);
+        }
+        if self.refuse_locked() {
+            return Outcome::Unchanged("locked");
+        }
+        let mut tx = self.begin("Page Break");
+        let caret = match self.delete_range(&mut tx) {
+            Ok(Some(p)) => self.past_row_end(p),
+            _ => {
+                self.abort(tx);
+                return Outcome::Unchanged("no caret");
+            }
+        };
+        let (Some((para, at)), Some(run), Some(second)) =
+            (caret.para_offset(), self.run_at(&caret), caret.para_offset().and_then(|(p, _)| self.split_template(p)))
+        else {
+            self.abort(tx);
+            return Outcome::Unchanged("caret at a row end");
+        };
+        let id = ParaId(second.id);
+        let with = vec![Inline::Break(BreakKind::Page, run)];
+        if self.step(&mut tx, Step::Text { para, range: at..at, with, edges: Default::default() }).is_err()
+            || self.step(&mut tx, Step::Split { para, at: Unit(at.0 + 1), second }).is_err()
+        {
+            self.abort(tx);
+            return Outcome::Unchanged("break failed");
+        }
+        self.selection = Selection::Caret(Position::text(caret.story, id, Unit(0)));
+        self.commit(tx, None, fonts)
+    }
+
     /// A new paragraph after `para` with its properties (Enter).
     fn split_template(&self, para: ParaId) -> Option<Paragraph> {
         let p = self.index.para(&self.doc, para)?;

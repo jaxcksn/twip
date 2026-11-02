@@ -2006,3 +2006,43 @@ fn the_caret_shows_after_the_document_gets_shorter_than_its_last_page() {
     assert_eq!(e.snapshot().pages().len(), 1);
     assert!(e.caret_view().is_some(), "the caret shows");
 }
+
+#[test]
+fn after_a_page_break_the_caret_shows_on_the_next_page() {
+    let mut e = crate::editing::Editor::open(&blank_with("Conversation"), fonts()).unwrap();
+    e.execute(super::mv(MoveBy::Story, Dir::Forward, false), fonts());
+    let p0 = e.caret_view().expect("caret").page;
+    e.execute(Command::InsertPageBreak, fonts());
+    assert_eq!(e.caret_view().expect("caret").page, p0 + 1, "the caret follows the break");
+    assert_eq!(texts(&e), ["Conversation\u{c}", ""], "the break ends its paragraph");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(texts(&e), ["Conversation"], "one undo step");
+    e.execute(Command::Redo, fonts());
+    e.execute(Command::InsertText("abc".into()), fonts());
+    let typed = e.caret_view().expect("caret");
+    assert_eq!(typed.page, p0 + 1);
+    assert!(typed.x > 40.0, "the caret is after the typed text: {typed:?}");
+    // Up from the next paragraph returns to the typed line, not the line before the break.
+    e.execute(Command::InsertParagraph, fonts());
+    e.execute(super::mv(MoveBy::Line, Dir::Back, false), fonts());
+    assert_eq!(e.caret_view().expect("caret").page, p0 + 1);
+}
+
+#[test]
+fn a_page_break_with_split_pg_break_and_para_mark_keeps_its_paragraph() {
+    // COMPAT-3: in compat 14 or below with splitPgBreakAndParaMark the mark after a break is on the next page already;
+    // Ctrl+Enter only inserts the break, and the caret, Down and Up reach the mark's line there.
+    let mut doc = crate::docx::read_editable(&blank_with("Conversation\nB")).unwrap();
+    doc.settings.compat_mode = 11;
+    doc.settings.compat.insert("splitPgBreakAndParaMark".into());
+    let mut e = crate::editing::Editor::with_document(doc, fonts());
+    e.execute(super::mv(MoveBy::LineEdge, Dir::Forward, false), fonts());
+    e.execute(Command::InsertPageBreak, fonts());
+    assert_eq!(texts(&e), ["Conversation\u{c}", "B"], "only the break");
+    let mut pages = vec![e.caret_view().expect("caret").page];
+    for d in [Dir::Back, Dir::Forward, Dir::Forward, Dir::Back] {
+        e.execute(super::mv(MoveBy::Line, d, false), fonts());
+        pages.push(e.caret_view().expect("caret").page);
+    }
+    assert_eq!(pages, [1, 0, 1, 1, 1], "the mark's line on the next page");
+}

@@ -81,6 +81,9 @@ pub struct LineFragment {
     pub atoms: Box<[Atom]>,
     /// The line shows a revision: its page draws a change bar beside it (REV-4).
     pub changed: bool,
+    /// A line without pieces (an empty paragraph, or the mark's line after a trailing break): its paragraph's end unit,
+    /// the caret's place there. Editing can't find it from the page alone when the break is on an earlier page.
+    pub mark: Option<Unit>,
 }
 
 /// A unit drawn without characters on a line: x from and to (the items' coordinates), its paragraph and unit, and
