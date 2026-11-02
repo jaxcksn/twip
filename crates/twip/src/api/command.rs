@@ -12,8 +12,8 @@ use super::review::{Body, MarkupView};
 use super::state::Mode;
 use super::value::{
     Alignment, AutoOr, Bytes, CellAlignment, Color, CommentId, ControlKind, ControlLock, ControlOptions, DataBinding, Direction, ElementId,
-    HighlightColor, HorizontalAlignment, LineSpacing, ObjectWrap, Order, Orientation, Points, RevisionId, RowHeight, StyleId, TabAlignment,
-    TabLeader, TableWidth, UnderlineStyle,
+    HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, ObjectWrap, Order, Orientation, Points, RevisionId, RowHeight, StyleId,
+    TabAlignment, TabLeader, TableWidth, UnderlineStyle, VerticalPosition, WrapSide,
 };
 use super::wire::value;
 
@@ -309,6 +309,10 @@ commands! {
     SetObjectWrap(#[serde(with = "value")] ObjectWrap),
     /// Locks a floating object's anchor. Undo: one step.
     SetAnchorLocked(#[serde(with = "value")] bool),
+    /// Where the selected floating object is, and what it is measured from. Undo: one step.
+    SetObjectPosition(ObjectPosition),
+    /// The sides text wraps on around the selected floating object, and its distance from the text. Undo: one step.
+    SetObjectWrapOptions(ObjectWrapOptions),
     /// The selected object's alternative text. Undo: one step.
     SetAltText(AltText),
     /// Deletes the selected object. Undo: one step.
@@ -1044,6 +1048,45 @@ pub struct ObjectSize {
     pub lock_aspect: Option<bool>,
 }
 
+/// `setObjectPosition`'s options; what isn't given is kept.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ObjectPosition {
+    /// The horizontal place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horizontal: Option<HorizontalPosition>,
+    /// The vertical place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertical: Option<VerticalPosition>,
+    /// Other floating objects may overlap it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_overlap: Option<bool>,
+    /// In a table cell, it is placed and kept within the cell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_in_cell: Option<bool>,
+}
+
+/// `setObjectWrapOptions`'s options; what isn't given is kept. Distances are 0…1584 pt.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ObjectWrapOptions {
+    /// The sides text wraps on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<WrapSide>,
+    /// The distance from the text above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<Points>,
+    /// The distance from the text below.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<Points>,
+    /// The distance from the text on the left.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<Points>,
+    /// The distance from the text on the right.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right: Option<Points>,
+}
+
 /// `setAltText`'s options.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1509,6 +1552,9 @@ pub struct ViewOptions {
     /// Shows text boundaries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_boundaries: Option<bool>,
+    /// Text wraps around an object again as it is dragged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_layout: Option<bool>,
 }
 
 /// What a command returns besides its commit, for the commands that create something.

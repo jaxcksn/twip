@@ -202,6 +202,25 @@
         "decorative": false,
         "height": 72.5,
         "kind": "textBox",
+        "placement": {
+          "allowOverlap": true,
+          "distance": {
+            "bottom": 3.5,
+            "left": 9.5,
+            "right": 9.5,
+            "top": 3.5
+          },
+          "horizontal": {
+            "offset": 36.5,
+            "relativeTo": "column"
+          },
+          "layoutInCell": true,
+          "vertical": {
+            "align": "top",
+            "relativeTo": "page"
+          },
+          "wrapSide": "bothSides"
+        },
         "width": 144.5,
         "wrap": "inFrontOfText"
       },
@@ -253,6 +272,7 @@
       "fieldCodes": false,
       "formattingMarks": false,
       "gridlines": false,
+      "liveLayout": true,
       "markupPaneWidth": 0.0,
       "rulerUnit": "inches",
       "rulers": {
@@ -325,6 +345,25 @@
       "decorative": false,
       "height": 72.5,
       "kind": "textBox",
+      "placement": {
+        "allowOverlap": true,
+        "distance": {
+          "bottom": 3.5,
+          "left": 9.5,
+          "right": 9.5,
+          "top": 3.5
+        },
+        "horizontal": {
+          "offset": 36.5,
+          "relativeTo": "column"
+        },
+        "layoutInCell": true,
+        "vertical": {
+          "align": "top",
+          "relativeTo": "page"
+        },
+        "wrapSide": "bothSides"
+      },
       "width": 144.5,
       "wrap": "inFrontOfText"
     },

@@ -4,6 +4,7 @@
     "fieldCodes": false,
     "formattingMarks": false,
     "gridlines": false,
+    "liveLayout": true,
     "markupPaneWidth": 0.0,
     "rulerUnit": "inches",
     "rulers": {

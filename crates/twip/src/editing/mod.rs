@@ -158,6 +158,9 @@ pub struct Editor {
     tab_stop: Option<(Selection, TableId, (usize, usize))>,
     /// Editing, template design or read-only.
     mode: Mode,
+    /// Object drags lay the text out again as they move (Word's live layout); otherwise a ghost shows where the object
+    /// goes until the release.
+    pub live_layout: bool,
     /// Every field and content control as the host last saw it: what change lists compare.
     elems: std::collections::HashMap<crate::docx::ElementId, elements::Element>,
     /// The elements added, removed and changed since the last reply.
@@ -329,6 +332,7 @@ impl Editor {
             text_drag: None,
             tab_stop: None,
             mode: Mode::Editing,
+            live_layout: true,
             elems: std::collections::HashMap::new(),
             changes: elements::Changes::default(),
             refused: None,
@@ -422,6 +426,19 @@ impl Editor {
 
     fn relayout_review(&mut self) {
         self.relayout([None]);
+    }
+
+    /// Live layout: float `f` laid out as `preview` has it instead of as the document does (`None`: as the document
+    /// does), as a new generation when that changes what is laid out; `before`: the anchor the last preview gave it.
+    /// Not an edit: nothing is recorded.
+    fn preview_layout(&mut self, f: crate::layout::FloatId, preview: Option<crate::layout::Preview>, before: Option<ParaId>) {
+        // The paragraphs it concerns: its anchor in the document, and in the previews before and now.
+        let mut paras: Vec<ParaId> = [self.index.float_anchor(f), before, preview.as_ref().map(|p| p.anchor)].into_iter().flatten().collect();
+        paras.dedup();
+        let hints: Vec<Option<Change>> = paras.into_iter().map(|p| step::para_hint(&self.index, p, 0)).collect();
+        if self.layout.preview(Revision(self.generation + 1), preview, &hints) {
+            self.generation += 1;
+        }
     }
 
     /// Lays out again what `hints` say changed (`None`: layout compares), as a new generation: a view change, or a
@@ -2433,8 +2450,8 @@ impl Editor {
                     self.text_drag_move(x, y, mods.ctrl, fonts);
                     return;
                 }
-                if let Some(d) = self.object_drag.as_mut() {
-                    d.now = (x, y);
+                if self.object_drag.is_some() {
+                    self.object_move(x, y, mods.shift);
                     return;
                 }
                 if let Some(d) = self.border_drag.as_mut() {
@@ -2505,9 +2522,8 @@ impl Editor {
                 self.selection = self.normalize(s);
                 self.pending = None;
             }
-            PointerKind::Cancel if self.object_drag.take().is_some() || self.border_drag.take().is_some() => {
-                self.requests.push(Request::ReleasePointer)
-            }
+            PointerKind::Cancel if self.object_cancel() => {}
+            PointerKind::Cancel if self.border_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
             PointerKind::Up if self.border_drag.is_some() => {
                 self.border_release(fonts);
             }
@@ -2711,8 +2727,9 @@ impl Editor {
             for page in pages {
                 let Some(geo) = self.pages.page(page, &self.index) else { continue };
                 match o {
-                    // While dragged, where the drag puts it (the preview).
-                    _ if let Some(d) = self.object_drag.filter(|d| d.obj == o) => {
+                    // While dragged with its ghost, where the drag puts it; with live layout, where it is laid out (layout may
+                    // keep it from where the pointer is, as above the top margin).
+                    _ if let Some(d) = self.object_drag.filter(|d| d.obj == o && !d.live) => {
                         if page == d.page {
                             out.push((page, d.rect(self.object_locked(o))));
                         }
@@ -2721,7 +2738,8 @@ impl Editor {
                     selection::ObjectRef::Inline { para, offset } => out.extend(self.inline_box(&geo, para, offset).map(|r| (page, r))),
                 }
             }
-            return SelectionView::Object(out, !self.object_fixed(o));
+            // No handles while dragged: the outline goes with the ghost.
+            return SelectionView::Object(out, !self.object_fixed(o) && !self.object_drag.is_some_and(|d| d.now != d.start));
         }
         if let Selection::Block { .. } = self.selection {
             return SelectionView::Text(
@@ -2789,14 +2807,38 @@ impl Editor {
         let selection = self.selection_view(visible.clone());
         let story = self.editing();
         let anchor = match self.selection {
-            Selection::Object(selection::ObjectRef::Floating(f)) => self.index.float_anchor(f).and_then(|para| {
-                (0..self.pages.len()).find_map(|page| {
-                    let geo = self.pages.page(page, &self.index)?;
-                    geo.lines.iter().find_map(|l| l.span_of(para).map(|(x0, _)| (page, [x0, l.top])))
-                })
-            }),
+            Selection::Object(selection::ObjectRef::Floating(f)) => {
+                // While moved (its anchor not locked): the paragraph the release anchors it to.
+                let locked = self.selected_object().and_then(|o| o.locked) == Some(true);
+                let moving = self.object_drag.filter(|d| d.handle.is_none() && d.now != d.start && !locked);
+                let to = moving.and_then(|d| {
+                    let (para, _) = self.anchor_at(d.page, self.index.float_anchor(f)?, d.rect(false)[1])?;
+                    Some((d.page, para))
+                });
+                // Its first line's top, at the paragraph's leftmost line (a line wrapped around a float starts further in).
+                let at = |e: &mut Self, page: usize, para: ParaId| {
+                    let geo = e.pages.page(page, &e.index)?;
+                    let top = geo.lines.iter().find(|l| l.span_of(para).is_some())?.top;
+                    let x = geo.lines.iter().filter_map(|l| l.span_of(para).map(|(x0, _)| x0)).fold(f64::MAX, f64::min);
+                    Some((page, [x, top]))
+                };
+                match to {
+                    Some((page, para)) => at(self, page, para),
+                    None => self.index.float_anchor(f).and_then(|para| (0..self.pages.len()).find_map(|page| at(self, page, para))),
+                }
+            }
             _ => None,
         };
+        // Live layout moves the object itself: no ghost.
+        let ghost = self.object_drag.filter(|d| d.now != d.start && !d.live).map(|d| view::Ghost {
+            page: d.page,
+            float: match d.obj {
+                selection::ObjectRef::Floating(f) => Some(f),
+                selection::ObjectRef::Inline { .. } => None,
+            },
+            from: d.rect,
+            to: d.rect(self.object_locked(d.obj)),
+        });
         let visible_pages = visible.clone();
         let (marks, tooltip) = self.mark_views(visible.clone());
         let (comments, comment_anchors) = self.comment_views(visible.clone());
@@ -2822,6 +2864,7 @@ impl Editor {
             fade,
             guide: self.border_drag.map(|d| (d.page, d.guide())),
             anchor,
+            ghost,
             placeholders: self.placeholder_views(&visible_pages),
             marks,
             tooltip,

@@ -120,7 +120,7 @@ pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, cell:
     for b in blocks {
         out.push(match b {
             LaidBlock::Para(p) => {
-                ChildId::Para(shape(p.para(), &p.shape_space_in(env.fields, env.notes, &env.ctx.env.text, cell.is_some()), env.ctx.fonts, memos)?)
+                ChildId::Para(shape(p.para(), &p.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some()), env.ctx.fonts, memos)?)
             }
             LaidBlock::Table(t) => ChildId::Table(match width {
                 Some(w) => super::table::layout(&as_nested(t, cell), w, env, None, false, memos)?,
@@ -261,7 +261,7 @@ pub fn layout_with(
                 };
                 let shaped = match resolved.get(bi) {
                     Some(ChildId::Para(s)) => s.clone(),
-                    _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx.env.text, cell.is_some()), env.ctx.fonts, memos)?,
+                    _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some()), env.ctx.fonts, memos)?,
                 };
                 let style = p.para_style_in(view);
                 let ps = ParaSpace { width, start: 0, borders: neighbour_borders(style, prev, next), x0: 0.0, env: text.clone(), fit: ends.fit };
@@ -613,8 +613,7 @@ pub fn hf_floats(
         // The story's first paragraph is measured from above its space-before (as Word places footer stamps).
         // shortcut: later paragraphs from their first line; not checked against Word.
         let para_top = top + u.top - if bi == 0 { space_before(&env.ctx.env.text, p.para_style_in(env.ctx.env.text.review.view)) } else { 0.0 };
-        for i in &p.inlines {
-            let Inline::Float(f, _) = i else { continue };
+        for f in env.ctx.floats_of(p) {
             let fitted = fit_frame(f, fr.column.1, env, memos)?;
             let f = fitted.as_ref().unwrap_or(f);
             let h = float_height(f, env, memos)?;
@@ -634,7 +633,7 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
     for b in super::join::laid(&tb.blocks, view) {
         let LaidBlock::Para(laid) = b else { continue };
         let p = laid.para();
-        let space = laid.shape_space(env.fields, env.notes, &env.ctx.env.text);
+        let space = laid.shape_space(env.fields, env.notes, &env.ctx);
         let shaped = shape(p, &space, env.ctx.fonts, memos)?;
         let ps = super::flow::para_space(p.para_style_in(view), None, None, width, 0, 0.0, &env.ctx);
         let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;

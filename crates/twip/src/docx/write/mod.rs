@@ -577,7 +577,7 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
                     if let (Some(d0), Some((w, h))) = (xml[..k].rfind(":drawing>"), size) {
                         let d0 = xml[..d0].rfind('<').unwrap_or(d0);
                         if let Some(d1) = xml[k..].find(":drawing>").map(|e| k + e + ":drawing>".len()) {
-                            let patched = Placement { h: None, v: None, size: Some((w, h)), wrap: None, locked: None, alt: None }.apply(&xml[d0..d1]);
+                            let patched = Placement { size: Some((w, h)), ..Placement::default() }.apply(&xml[d0..d1]);
                             xml.replace_range(d0..d1, &patched);
                         }
                     }
@@ -2891,7 +2891,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                         // A resized inline picture: its drawing with the new extents.
                         self.add(to, None, None);
                         self.flush_text();
-                        let p = Placement { h: None, v: None, size: Some((size.0, size.1)), wrap: None, locked: None, alt: Some(size.2.to_string()) };
+                        let p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
                         self.pend.push_str(&p.apply(&self.s.src_text(range.clone())));
                     } else {
                         self.add(to, None, Some(range.clone()))
@@ -3553,41 +3553,59 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
     }
 }
 
-/// A float's new offsets and size, each only when changed: patched into its `w:drawing` in place.
-#[derive(Clone, Debug)]
+/// A float's new position, size and options, each only when changed: patched into its `w:drawing` in place.
+#[derive(Clone, Debug, Default)]
 struct Placement {
-    h: Option<f64>,
-    v: Option<f64>,
+    /// A position's reference, alignment (or else offset), when any of them changed.
+    h: Option<(String, Option<String>, f64)>,
+    v: Option<(String, Option<String>, f64)>,
     size: Option<(f64, f64)>,
     /// Wrapping (`wrap`, `wrap_text`, behind the text) and the anchor lock, when changed.
     wrap: Option<(String, String, bool)>,
     locked: Option<bool>,
     /// The alternative text (`wp:docPr/@descr`).
     alt: Option<String>,
+    /// The distance from the text (`distT`, `distB`, `distL`, `distR`), `allowOverlap` and `layoutInCell`.
+    dist: Option<[f64; 4]>,
+    overlap: Option<bool>,
+    in_cell: Option<bool>,
 }
 
 impl Placement {
     fn changed(a: &Float, b: &Float) -> Option<Placement> {
         let ne = |x: f64, y: f64| (x - y).abs() > 1e-6;
+        // An aligned position that became an offset is written as one.
+        let pos = |(ra, aa, oa): (&String, &Option<String>, f64), (rb, ab, ob): (&String, &Option<String>, f64)| {
+            (ra != rb || aa != ab || ab.is_none() && ne(oa, ob)).then(|| (rb.clone(), ab.clone(), ob))
+        };
         let p = Placement {
-            // An aligned position that became an offset is written as one.
-            h: (b.h_align.is_none() && (ne(a.h_offset, b.h_offset) || a.h_align.is_some())).then_some(b.h_offset),
-            v: (b.v_align.is_none() && (ne(a.v_offset, b.v_offset) || a.v_align.is_some())).then_some(b.v_offset),
+            h: pos((&a.h_relative, &a.h_align, a.h_offset), (&b.h_relative, &b.h_align, b.h_offset)),
+            v: pos((&a.v_relative, &a.v_align, a.v_offset), (&b.v_relative, &b.v_align, b.v_offset)),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
             wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind).then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind)),
             locked: (a.locked != b.locked).then_some(b.locked),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
+            dist: a.dist.iter().zip(&b.dist).any(|(x, y)| ne(*x, *y)).then_some(b.dist),
+            overlap: (a.allow_overlap != b.allow_overlap).then_some(b.allow_overlap),
+            in_cell: (a.layout_in_cell != b.layout_in_cell).then_some(b.layout_in_cell),
         };
-        (p.h.is_some() || p.v.is_some() || p.size.is_some() || p.wrap.is_some() || p.locked.is_some() || p.alt.is_some()).then_some(p)
+        let any = p.h.is_some() || p.v.is_some() || p.size.is_some() || p.wrap.is_some() || p.locked.is_some() || p.alt.is_some();
+        (any || p.dist.is_some() || p.overlap.is_some() || p.in_cell.is_some()).then_some(p)
     }
 
     fn apply(&self, d: &str) -> String {
         let emu = |pt: f64| ((pt * 12700.0).round() as i64).to_string();
         let mut s = d.to_string();
-        for (name, v) in [("positionH", self.h), ("positionV", self.v)] {
-            if let Some(v) = v {
-                set_content(&mut s, name, |p| format!("<{p}posOffset>{}</{p}posOffset>", emu(v)));
+        for (name, pos) in [("positionH", &self.h), ("positionV", &self.v)] {
+            let Some((rel, align, off)) = pos else { continue };
+            if let Some((start, end)) = find_tag(&s, name, 0) {
+                let tag = set_attr(&s[start..end], "relativeFrom", &props::esc(rel));
+                s.replace_range(start..end, &tag);
             }
+            set_content(&mut s, name, |p| match align {
+                Some(a) => format!("<{p}align>{}</{p}align>", props::esc(a)),
+                None => format!("<{p}posOffset>{}</{p}posOffset>", emu(*off)),
+            });
         }
         if let Some((start, end)) = find_tag(&s, "anchor", 0) {
             let mut tag = s[start..end].to_string();
@@ -3596,6 +3614,18 @@ impl Placement {
             }
             if let Some(l) = self.locked {
                 tag = set_attr(&tag, "locked", if l { "1" } else { "0" });
+            }
+            let on = |b: bool| if b { "1" } else { "0" };
+            if let Some(o) = self.overlap {
+                tag = set_attr(&tag, "allowOverlap", on(o));
+            }
+            if let Some(c) = self.in_cell {
+                tag = set_attr(&tag, "layoutInCell", on(c));
+            }
+            if let Some(dist) = self.dist {
+                for (name, v) in ["distT", "distB", "distL", "distR"].into_iter().zip(dist) {
+                    tag = set_attr(&tag, name, &emu(v));
+                }
             }
             let p = tag[1..]
                 .split(|c: char| c.is_whitespace() || c == '>')

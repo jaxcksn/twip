@@ -982,8 +982,266 @@ fn reset_size_gives_a_picture_its_own_size() {
     let (w, h, dx, dy) = crate::docx::image::image_info(&e.document().images[image.expect("an image")]).expect("decodes");
     let want = ((w * 72.0 / dx * 20.0).round() / 20.0, (h * 72.0 / dy * 20.0).round() / 20.0);
     assert_eq!((pic(&e).0, pic(&e).1), want);
-    // Wrapping an inline picture isn't done: it says so and changes nothing.
-    assert!(matches!(e.execute(Command::SetObjectWrap(crate::api::value::ObjectWrap::Square), fonts()), super::super::Outcome::Refused(_)));
+}
+
+/// The selected object's outline on the first pages, as the view draws it (laid out first, as a frame is).
+fn object_box(e: &mut super::super::Editor) -> [f64; 4] {
+    while e.idle(fonts()) {}
+    match e.view(0..3).selection {
+        super::super::view::SelectionView::Object(r, _) => r[0].1,
+        s => panic!("no object outline: {s:?}"),
+    }
+}
+
+#[test]
+fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
+    // Wrap Text on an inline picture makes it a float anchored in its paragraph, drawn where it was; In Line with
+    // Text puts it back in the text. Each is one undo step, and the float saves and reads back.
+    use crate::api::value::ObjectWrap;
+    use crate::editing::selection::ObjectRef;
+    use serde_json::json;
+    let mut r = super::scenarios::Run::open("FX-OBJ-LOCK.docx", "inline-to-float");
+    let (pictures, floats) = (body_pictures(&r.e).len(), body_floats(&r.e).len());
+    r.step(&json!({ "click": { "picture": 0 } }));
+    let was = object_box(&mut r.e);
+    let out = r.e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts());
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    assert!(matches!(r.e.selection(), Selection::Object(ObjectRef::Floating(_))), "{:?}", r.e.selection());
+    assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures - 1, floats + 1));
+    let now = object_box(&mut r.e);
+    assert!(was.iter().zip(&now).all(|(a, b)| (a - b).abs() < 0.1), "stays where it was: {was:?} -> {now:?}");
+    let f = body_floats(&r.e).into_iter().find(|f| f.src.is_none()).expect("the new float");
+    assert_eq!((f.wrap.as_str(), f.h_relative.as_str(), f.v_relative.as_str(), f.image.is_some()), ("square", "column", "paragraph", true));
+    // Saved as an anchor and read back.
+    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    if let Some(d) = std::env::var_os("RT_KEEP") {
+        std::fs::write(std::path::Path::new(&d).join("FX-OBJ.inline-to-float.docx"), &bytes).expect("writes");
+    }
+    let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
+    assert_eq!((body_pictures(&again).len(), body_floats(&again).len()), (pictures - 1, floats + 1));
+    assert_eq!(texts(&again), texts(&r.e));
+    // One step: undone, the picture is in line again; redone, floating.
+    r.e.execute(Command::Undo, fonts());
+    assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures, floats));
+    r.e.execute(Command::Redo, fonts());
+    assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures - 1, floats + 1));
+    // Back in line: an inline picture again, selected, the same size.
+    r.e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(f.id))));
+    assert!(matches!(r.e.execute(Command::SetObjectWrap(ObjectWrap::Inline), fonts()), super::super::Outcome::Changed(_)));
+    assert!(matches!(r.e.selection(), Selection::Object(ObjectRef::Inline { .. })), "{:?}", r.e.selection());
+    assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures, floats));
+    let back = object_box(&mut r.e);
+    assert!(((back[2] - back[0]) - (was[2] - was[0])).abs() < 0.01 && ((back[3] - back[1]) - (was[3] - was[1])).abs() < 0.01);
+    // A text box can't go in line.
+    r.e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(body_floats(&r.e)[0].id))));
+    let fl = body_floats(&r.e)[0].clone();
+    if fl.text_box.is_some() {
+        assert!(matches!(r.e.execute(Command::SetObjectWrap(ObjectWrap::Inline), fonts()), super::super::Outcome::Refused(_)));
+    }
+}
+
+#[test]
+fn an_inline_picture_drags_to_a_new_place_in_the_text() {
+    // Like selected text: dropped elsewhere it moves there (one step), selected; Ctrl+drag copies it.
+    use crate::editing::selection::ObjectRef;
+    use serde_json::json;
+    let mut r = super::scenarios::Run::open("FX-OBJ-LOCK.docx", "inline-drag");
+    let pictures = body_pictures(&r.e).len();
+    r.step(&json!({ "click": { "picture": 0 } }));
+    let Selection::Object(ObjectRef::Inline { para, offset }) = r.e.selection() else { panic!("{:?}", r.e.selection()) };
+    assert_eq!(offset, Unit(0));
+    let text = |e: &super::super::Editor| texts(e);
+    let before = text(&r.e);
+    r.step(&json!({ "drag": { "from": { "picture": 0 }, "to": { "para": 1, "offset": 20 } } }));
+    let Selection::Object(ObjectRef::Inline { para: p2, offset: o2 }) = r.e.selection() else { panic!("{:?}", r.e.selection()) };
+    assert_eq!(p2, para);
+    assert!(o2.0 > 10, "moved along the line: {o2:?}");
+    let at = |e: &super::super::Editor, u: Unit| {
+        matches!(e.index().para(e.document(), para).and_then(|p| super::super::stories::inline_at(p, u)), Some(crate::docx::Inline::Picture(..)))
+    };
+    assert!(at(&r.e, o2) && !at(&r.e, Unit(0)));
+    assert_eq!(body_pictures(&r.e).len(), pictures);
+    r.e.execute(Command::Undo, fonts());
+    assert!(at(&r.e, Unit(0)));
+    assert_eq!(text(&r.e), before);
+    // Ctrl: a copy.
+    r.step(&json!({ "click": { "picture": 0 } }));
+    r.step(&json!({ "drag": { "from": { "picture": 0 }, "to": { "para": 1, "offset": 20 } }, "mods": { "ctrl": true } }));
+    assert_eq!(body_pictures(&r.e).len(), pictures + 1);
+}
+
+#[test]
+fn an_object_drag_shows_a_ghost_and_the_anchor_it_would_take() {
+    // While a float is dragged its ghost goes where the drag puts it (the float itself stays) and the anchor shows
+    // the paragraph the release anchors it to; the outline has no handles until the release.
+    use serde_json::json;
+    let mut r = super::scenarios::Run::open("FX-OBJ.docx", "ghost");
+    r.e.live_layout = false;
+    r.step(&json!({ "click": { "float": 1 } }));
+    let was = object_box(&mut r.e);
+    let anchor = r.e.view(0..3).anchor.expect("an anchor shows");
+    assert!(matches!(r.e.view(0..3).selection, super::super::view::SelectionView::Object(_, true)), "handles after a click");
+    r.step(&json!({ "press": { "float": 1 } }));
+    // A press that hasn't moved is no drag yet: the handles stay.
+    assert!(matches!(r.e.view(0..3).selection, super::super::view::SelectionView::Object(_, true)), "handles on a press");
+    r.step(&json!({ "move_to": { "float": 1, "dy": -150 } }));
+    let v = r.e.view(0..3);
+    let g = v.ghost.expect("a ghost");
+    assert!(g.from.iter().zip(&was).all(|(a, b)| (a - b).abs() < 0.01), "{g:?}");
+    assert!((g.to[1] - (was[1] - 150.0)).abs() < 0.5 && (g.to[0] - was[0]).abs() < 0.5, "{g:?}");
+    assert!(g.float.is_some());
+    assert!(matches!(v.selection, super::super::view::SelectionView::Object(_, false)), "no handles mid-drag");
+    assert!(v.anchor.expect("an anchor shows").1[1] < anchor.1[1] - 50.0, "the anchor follows: {:?} -> {:?}", anchor, v.anchor);
+    // Shift: along one axis only.
+    r.e.pointer_input(
+        super::super::input::PointerKind::Move,
+        (g.to[0] + g.to[2]) / 2.0 + 40.0,
+        (g.from[1] + g.from[3]) / 2.0 - 150.0 + 10.0,
+        0,
+        super::super::keymap::Mods { shift: true, ..Default::default() },
+        fonts(),
+    );
+    let g = r.e.view(0..3).ghost.expect("a ghost");
+    assert!((g.to[1] - g.from[1]).abs() > 100.0 && (g.to[0] - g.from[0]).abs() < 0.01, "kept vertical: {g:?}");
+}
+
+#[test]
+fn live_layout_lays_the_dragged_float_out_where_the_pointer_is() {
+    // While dragged, layout draws the float where the pointer is and the text wraps around it there (no ghost), the
+    // document unchanged; the release is the one step the drag makes, and Esc mid-drag lays it out where it was.
+    use serde_json::json;
+    let mut r = super::scenarios::Run::open("FX-OBJ.docx", "live");
+    let was = body_floats(&r.e);
+    let id = was[1].id;
+    // The dragged float's drawn top and the lines, laid out as a frame would (found by its id: re-anchoring changes its
+    // place in document order, which the geometry numbers floats by).
+    let drawn = |e: &mut super::super::Editor| {
+        while e.idle(fonts()) {}
+        let n = body_floats(e).iter().position(|f| f.id == id);
+        let g = crate::editing::inspect::inspect(e, "geometry", true)["geometry"].clone();
+        let f = g["floats"].as_array().unwrap().iter().find(|f| f["float"] == json!(n)).unwrap()["rect"].clone();
+        (f[1].as_f64().unwrap(), g["lines"].clone())
+    };
+    let undo = |e: &mut super::super::Editor| crate::editing::inspect::inspect(e, "undo", true)["undo"]["undo_depth"].clone();
+    r.step(&json!({ "click": { "float": 1 } }));
+    let (top, lines) = drawn(&mut r.e);
+    let depth = undo(&mut r.e);
+    r.step(&json!({ "press": { "float": 1 } }));
+    r.step(&json!({ "move_to": { "float": 1, "dy": -150 } }));
+    let (mid, mid_lines) = drawn(&mut r.e);
+    assert!((mid - (top - 150.0)).abs() < 0.5, "laid out where the pointer is: {top} -> {mid}");
+    assert_ne!(mid_lines, lines, "the text wraps around it there");
+    assert!(r.e.view(0..3).ghost.is_none());
+    assert_eq!(body_floats(&r.e), was, "the document is unchanged until the release");
+    assert_eq!(undo(&mut r.e), depth);
+    r.step(&json!({ "release": { "float": 1 } }));
+    assert_ne!(body_floats(&r.e), was);
+    let (after, after_lines) = drawn(&mut r.e);
+    let differ: Vec<_> = after_lines.as_array().unwrap().iter().zip(mid_lines.as_array().unwrap()).filter(|(a, b)| a != b).take(2).collect();
+    assert!((after - mid).abs() < 0.5 && after_lines == mid_lines, "the release lays out as the preview did: {after} vs {mid}, {differ:?}");
+    r.e.execute(Command::Undo, fonts());
+    assert_eq!(body_floats(&r.e), was, "one undo step");
+    // Esc mid-drag: laid out where it was, nothing recorded.
+    r.step(&json!({ "click": { "float": 1 } }));
+    r.step(&json!({ "press": { "float": 1 } }));
+    r.step(&json!({ "move_to": { "float": 1, "dy": -150 } }));
+    r.e.execute(Command::Escape, fonts());
+    assert_eq!(body_floats(&r.e), was);
+    let (back, back_lines) = drawn(&mut r.e);
+    assert!((back - top).abs() < 0.01 && back_lines == lines, "laid out as before the drag");
+}
+
+#[test]
+fn a_live_drags_outline_stays_on_the_float_where_layout_keeps_it() {
+    // Dragged far above the top margin, a wrapped paragraph-relative float is laid out no higher than the margin
+    // (FLOAT-6): the outline is where it is laid out, not where the pointer is.
+    use serde_json::json;
+    let mut r = super::scenarios::Run::open("FX-OBJ.docx", "live-clamp");
+    let f = crate::layout::FloatId(body_floats(&r.e)[1].id);
+    r.step(&json!({ "click": { "float": 1 } }));
+    let start = object_box(&mut r.e);
+    r.step(&json!({ "press": { "float": 1 } }));
+    r.step(&json!({ "move_to": { "float": 1, "dy": -1000 } }));
+    let outline = object_box(&mut r.e);
+    let laid = r.e.page_geometries().into_iter().find_map(|(_, g)| g.stories.iter().find(|s| s.float == Some(f)).map(|s| s.rect)).expect("drawn");
+    assert!(laid[1] > start[1] - 1000.0 + 100.0, "layout keeps it on the page: {laid:?}");
+    assert!(outline.iter().zip(&laid).all(|(a, b)| (a - b).abs() < 0.01), "the outline is on the float: {outline:?} vs {laid:?}");
+}
+
+#[test]
+fn position_commands_place_the_float_and_the_state_reports_it() {
+    // Align right of the margin; re-measured from the page vertically it stays put; wrap options; each one undo step
+    // and read back after saving.
+    use crate::api::command::{ObjectPosition, ObjectWrapOptions};
+    use crate::api::value::*;
+    use crate::editing::selection::ObjectRef;
+    let mut e = open("FX-OBJ.docx");
+    let f = crate::layout::FloatId(body_floats(&e)[1].id);
+    e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(f)));
+    let before = object_box(&mut e);
+    let out = e.execute(
+        Command::SetObjectPosition(ObjectPosition {
+            horizontal: Some(HorizontalPosition {
+                relative_to: HorizontalReference::Margin,
+                align: Some(ObjectHorizontalAlignment::Right),
+                offset: None,
+            }),
+            ..Default::default()
+        }),
+        fonts(),
+    );
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    let now = object_box(&mut e);
+    let sec = &e.document().sections[0];
+    assert!((now[2] - (sec.page_w - sec.right)).abs() < 0.1, "right of the margin: {now:?}");
+    assert!((now[1] - before[1]).abs() < 0.1, "vertically where it was");
+    // Fixed on the page: vertically relative to the page, staying where it is.
+    e.execute(
+        Command::SetObjectPosition(ObjectPosition {
+            vertical: Some(VerticalPosition { relative_to: VerticalReference::Page, align: None, offset: None }),
+            ..Default::default()
+        }),
+        fonts(),
+    );
+    let fixed = object_box(&mut e);
+    assert!(fixed.iter().zip(&now).all(|(a, b)| (a - b).abs() < 0.1), "stays put: {now:?} -> {fixed:?}");
+    let p = e.object_selection().and_then(|o| o.placement).expect("a placement");
+    assert_eq!((p.horizontal.relative_to, p.horizontal.align), (HorizontalReference::Margin, Some(ObjectHorizontalAlignment::Right)));
+    assert_eq!(p.vertical.relative_to, VerticalReference::Page);
+    assert!((p.vertical.offset.expect("an offset").0 - fixed[1]).abs() < 0.1, "{p:?} at {fixed:?}");
+    e.execute(
+        Command::SetObjectWrapOptions(ObjectWrapOptions { side: Some(WrapSide::Largest), left: Some(Points(18.0)), ..Default::default() }),
+        fonts(),
+    );
+    let p = e.object_selection().and_then(|o| o.placement).expect("a placement");
+    assert_eq!((p.wrap_side, p.distance.left), (WrapSide::Largest, Points(18.0)));
+    // Saved and read back.
+    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
+    let (a, b) = (&body_floats(&again)[1], &body_floats(&e)[1]);
+    assert_eq!(
+        (&a.h_relative, &a.h_align, &a.v_relative, &a.wrap_text, a.dist[2]),
+        (&b.h_relative, &b.h_align, &b.v_relative, &b.wrap_text, b.dist[2])
+    );
+    assert!((a.v_offset - b.v_offset).abs() < 0.06);
+    // One step each.
+    for _ in 0..3 {
+        e.execute(Command::Undo, fonts());
+    }
+    let back = object_box(&mut e);
+    assert!(back.iter().zip(&before).all(|(a, b)| (a - b).abs() < 0.1), "{before:?} -> {back:?}");
+    // An inline picture has no position.
+    let (para, offset) = e
+        .index()
+        .para_ids()
+        .find_map(|id| {
+            let p = e.index().para(e.document(), id)?;
+            matches!(p.inlines.first(), Some(crate::docx::Inline::Picture(..))).then_some((id, Unit(0)))
+        })
+        .expect("an inline picture");
+    e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para, offset }));
+    assert!(e.object_selection().is_some_and(|o| o.placement.is_none()));
+    assert!(!matches!(e.execute(Command::SetObjectPosition(ObjectPosition::default()), fonts()), super::super::Outcome::Changed(_)));
 }
 
 #[test]

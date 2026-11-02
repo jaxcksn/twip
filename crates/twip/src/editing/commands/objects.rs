@@ -7,7 +7,7 @@ use crate::font::Fonts;
 use super::{Dir, Outcome};
 use crate::editing::Editor;
 use crate::editing::objects::ObjectCmd;
-use crate::editing::selection::{ObjectRef, Selection};
+use crate::editing::selection::Selection;
 
 impl Editor {
     /// The selected object's size; a dimension not given keeps its own, or follows the other with `lockAspect`.
@@ -24,13 +24,13 @@ impl Editor {
         self.object_cmd(ObjectCmd::Size(w, h), fonts)
     }
 
-    // shortcut: turning a float inline, or an inline picture floating, isn't built yet.
+    /// Wrap Text: an inline picture floats, a floating picture goes in line, a float's wrapping changes.
     pub(in crate::editing) fn set_object_wrap(&mut self, w: ObjectWrap, fonts: &Fonts) -> Outcome {
-        let inline = matches!(self.selection, Selection::Object(ObjectRef::Inline { .. }));
+        if !matches!(self.selection, Selection::Object(_)) {
+            return Outcome::unavailable("no object selected");
+        }
         let name = match w {
-            ObjectWrap::Inline if inline => return Outcome::Unchanged("already inline"),
-            ObjectWrap::Inline => return Outcome::unsupported("turning a floating object inline"),
-            _ if inline => return Outcome::unsupported("floating an inline picture"),
+            ObjectWrap::Inline => "inline",
             ObjectWrap::Square => "square",
             ObjectWrap::Tight => "tight",
             ObjectWrap::Through => "through",

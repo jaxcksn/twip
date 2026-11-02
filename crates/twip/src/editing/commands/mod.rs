@@ -353,6 +353,8 @@ impl Editor {
             Command::ResetObjectSize => self.object_cmd(super::objects::ObjectCmd::ResetSize, fonts),
             Command::SetObjectWrap(w) => self.set_object_wrap(w, fonts),
             Command::SetAnchorLocked(on) => self.set_anchor_locked(on, fonts),
+            Command::SetObjectPosition(p) => self.set_object_position(p, fonts),
+            Command::SetObjectWrapOptions(w) => self.set_object_wrap_options(w, fonts),
             Command::SetAltText(a) => self.alt_text(a, fonts),
             Command::DeleteObject => self.delete_selected_object(fonts),
             // Fields

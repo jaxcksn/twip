@@ -486,6 +486,27 @@
     "value": true
   },
   {
+    "allowOverlap": false,
+    "horizontal": {
+      "align": "right",
+      "relativeTo": "margin"
+    },
+    "layoutInCell": true,
+    "type": "setObjectPosition",
+    "vertical": {
+      "offset": 12.5,
+      "relativeTo": "paragraph"
+    }
+  },
+  {
+    "bottom": 0.5,
+    "left": 9.5,
+    "right": 9.5,
+    "side": "largest",
+    "top": 0.5,
+    "type": "setObjectWrapOptions"
+  },
+  {
     "decorative": false,
     "text": "A chart",
     "type": "setAltText"
@@ -758,6 +779,7 @@
   {
     "formattingMarks": true,
     "gridlines": false,
+    "liveLayout": false,
     "textBoundaries": true,
     "type": "setViewOptions"
   },

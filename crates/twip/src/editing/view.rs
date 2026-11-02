@@ -70,6 +70,18 @@ pub enum SelectionView {
     Object(Vec<(usize, [f64; 4])>, bool),
 }
 
+/// An object being moved or resized, as Word shows it: its own drawing, translucent, mapped from where it is to where
+/// the drag puts it; the object itself stays until the release.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ghost {
+    pub page: usize,
+    /// A float's own content; `None`, an inline picture's (the image drawn in `from`).
+    pub float: Option<crate::layout::FloatId>,
+    /// Its box now and the box it is dragged to, page coordinates.
+    pub from: [f64; 4],
+    pub to: [f64; 4],
+}
+
 /// Everything a renderer needs for one frame besides the snapshot's own content.
 #[derive(Clone, Debug)]
 pub struct View {
@@ -88,8 +100,10 @@ pub struct View {
     /// A border drag's guide line: its page and its two ends, page coordinates.
     pub guide: Option<(usize, [f64; 4])>,
     /// The selected float's anchor: its page and the anchor paragraph's first line's top left, page
-    /// coordinates, for display when formatting marks are shown.
+    /// coordinates; while the float is dragged, the paragraph it would anchor to.
     pub anchor: Option<(usize, [f64; 2])>,
+    /// An object move or resize in progress.
+    pub ghost: Option<Ghost>,
     pub cursor: super::input::Cursor,
     /// Unfilled placeholders on the visible pages drawn the host's way: page coordinates.
     pub placeholders: Vec<PlaceholderView>,

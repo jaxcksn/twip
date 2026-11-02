@@ -455,7 +455,7 @@ impl Editor {
                 ) => (editable && in_table, (None, None)),
                 (C::SetObjectSize | C::SetObjectWrap | C::SetAltText | C::DeleteObject, _) => (editable && object.is_some(), (None, None)),
                 (C::ResetObjectSize, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
-                (C::SetAnchorLocked, _) => (editable && floating, (None, None)),
+                (C::SetAnchorLocked | C::SetObjectPosition | C::SetObjectWrapOptions, _) => (editable && floating, (None, None)),
                 (C::SetTrackChanges, _) => (editable && !(locked && tracking), (Some(tracking), None)),
                 (C::SetMarkupView, _) => (true, (None, Some(CommandValue::MarkupView(self.doc.review.view)))),
                 (C::SetActiveComment | C::SelectComment, _) => (comments, (None, None)),
@@ -562,6 +562,7 @@ impl Editor {
             alt_text: o.alt.to_string(),
             decorative: false,
             anchor_locked: o.locked,
+            placement: self.object_placement(),
         })
     }
 

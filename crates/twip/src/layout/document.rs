@@ -45,7 +45,7 @@ pub fn layout_with(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> Sn
 /// [`layout_with`], and the records of the committed pages (tests read them).
 pub(crate) fn layout_records(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> (Snapshot, Vec<PageRecord>) {
     let env = LayoutEnv::new(doc);
-    let ctx = LayoutCtx { fonts, env: &env };
+    let ctx = LayoutCtx { fonts, env: &env, preview: None };
     let mut job = LayoutJob::new(doc, Revision(0));
     // Full layouts never yield (no budget).
     job.run(doc, &ctx, cache, None, Budget::Unlimited);

@@ -115,7 +115,10 @@ impl Editor {
             return Outcome::Moved;
         }
         // Esc during an object drag cancels it: nothing changes.
-        if self.object_drag.take().is_some() || self.border_drag.take().is_some() {
+        if self.object_cancel() {
+            return Outcome::Moved;
+        }
+        if self.border_drag.take().is_some() {
             self.requests.push(super::input::Request::ReleasePointer);
             return Outcome::Moved;
         }

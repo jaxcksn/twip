@@ -116,6 +116,8 @@
   "resetObjectSize",
   "setObjectWrap",
   "setAnchorLocked",
+  "setObjectPosition",
+  "setObjectWrapOptions",
   "setAltText",
   "deleteObject",
   "setField",

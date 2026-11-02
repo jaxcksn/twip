@@ -6,10 +6,11 @@ use skia_safe::{Canvas, Color, Data, Font, Image, Paint, Point, Rect};
 
 use super::{Frame, Renderer};
 use crate::editing::view::{MarkKind, SelectionView, View};
+use crate::layout::fragment::Item;
 
 impl Renderer {
     /// Draws page `i`'s overlays; the canvas is in that page's points.
-    pub(super) fn overlays(&mut self, canvas: &Canvas, view: &View, i: usize, f: &Frame) {
+    pub(super) fn overlays(&mut self, canvas: &Canvas, view: &View, images: &[Vec<u8>], i: usize, f: &Frame) {
         let k = f.px_per_pt;
         let mut white = Paint::default();
         white.set_color(Color::WHITE);
@@ -143,6 +144,43 @@ impl Renderer {
         if let Some((_, [x0, y0, x1, y1])) = view.guide.filter(|(pg, _)| *pg == i) {
             canvas.draw_line((x0 as f32, y0 as f32), (x1 as f32, y1 as f32), &outline);
         }
+        // An object drag's ghost: the object's own drawing at half opacity, mapped into the box the drag puts it in.
+        if let Some(g) = view.ghost.filter(|g| g.page == i)
+            && let Some(page) = view.snapshot.pages().get(i)
+        {
+            let ([a0, b0, a1, b1], [c0, d0, c1, d1]) = (g.from, g.to);
+            let items = match g.float {
+                Some(fl) => crate::layout::traverse::paint_float(page, fl),
+                None => crate::layout::traverse::paint_items(page)
+                    .into_iter()
+                    .filter(|it| {
+                        matches!(it, Item::Image { rect: [x0, y0, x1, y1], .. }
+                            if *x0 >= a0 - 0.5 && *y0 >= b0 - 0.5 && *x1 <= a1 + 0.5 && *y1 <= b1 + 0.5)
+                    })
+                    .collect(),
+            };
+            canvas.save_layer_alpha_f(None, 0.5);
+            canvas.translate((c0 as f32, d0 as f32));
+            canvas.scale((((c1 - c0) / (a1 - a0).max(0.01)) as f32, ((d1 - d0) / (b1 - b0).max(0.01)) as f32));
+            canvas.translate((-a0 as f32, -b0 as f32));
+            for it in &items {
+                self.item(canvas, it, images);
+            }
+            canvas.restore();
+        }
+        // The selected float's anchor: Word's anchor symbol in the margin beside its paragraph's first line.
+        if let Some((_, [x, y])) = view.anchor.filter(|(pg, _)| *pg == i)
+            && let Some(path) = skia_safe::Path::from_svg("M5 3V10M3 5H7M1.5 7.5C2 9.5 3.5 10.2 5 10.2S8 9.5 8.5 7.5")
+        {
+            let mut ink = outline.clone();
+            ink.set_anti_alias(true);
+            ink.set_stroke_width(0.9);
+            canvas.save();
+            canvas.translate((x as f32 - 13.0, y as f32 + 1.0));
+            canvas.draw_path(&path, &ink);
+            canvas.draw_circle((5.0, 2.0), 1.0, &ink);
+            canvas.restore();
+        }
         match &view.selection {
             SelectionView::Text(rects) | SelectionView::Cells(rects) => {
                 for (_, [x0, y0, x1, y1]) in rects.iter().filter(|(pg, _)| *pg == i) {
@@ -230,5 +268,55 @@ impl Renderer {
         for (_, [x0, y0, x1, y1]) in view.boundaries.iter().filter(|(pg, _)| *pg == i) {
             canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &edge);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use crate::editing::tests::scenarios::Run;
+    use crate::render::{Frame, Renderer};
+
+    #[test]
+    fn a_dragged_float_draws_its_ghost_where_the_drag_puts_it() {
+        // The frame with the drag's ghost differs from the one without only inside the box the drag puts it in.
+        let mut r = Run::open("FX-OBJ.docx", "ghost-pixels");
+        r.e.live_layout = false;
+        r.step(&json!({ "click": { "float": 1 } }));
+        r.step(&json!({ "press": { "float": 1 } }));
+        r.step(&json!({ "move_to": { "float": 1, "dy": -150 } }));
+        let f = Frame { origin_x: 0.0, origin_y: 0.0, width: 640.0, height: 820.0, dpr: 1.0, px_per_pt: 1.0, caret: false };
+        let mut view = r.e.view(0..1);
+        let g = view.ghost.expect("a ghost");
+        let images = r.e.document().images.clone();
+        let pixels = |view: &crate::editing::view::View| {
+            let mut s = skia_safe::surfaces::raster_n32_premul((640, 820)).expect("a raster surface");
+            Renderer::default().draw(s.canvas(), view, &images, &f);
+            let info = s.image_info();
+            let mut px = vec![0u8; 640 * 820 * 4];
+            assert!(s.read_pixels(&info, &mut px, 640 * 4, (0, 0)));
+            px
+        };
+        let with = pixels(&view);
+        view.ghost = None;
+        let without = pixels(&view);
+        let [ox, oy, ..] = view.stack.pages[0];
+        let [x0, y0, x1, y1] = g.to;
+        let (mut inside, mut outside) = (0, 0);
+        for y in 0..820usize {
+            for x in 0..640usize {
+                let k = (y * 640 + x) * 4;
+                if with[k..k + 4] != without[k..k + 4] {
+                    let (px, py) = (x as f64 - ox, y as f64 - oy);
+                    if px >= x0 - 2.0 && px <= x1 + 2.0 && py >= y0 - 2.0 && py <= y1 + 2.0 {
+                        inside += 1;
+                    } else {
+                        outside += 1;
+                    }
+                }
+            }
+        }
+        assert!(inside > 100 && outside == 0, "ghost pixels: {inside} inside {:?}, {outside} outside", g.to);
     }
 }

@@ -144,7 +144,7 @@ export interface CommandValues {
   /** The zoom, in percent. */
   setZoom: number;
   /** The view options. */
-  setViewOptions: { formattingMarks: boolean; gridlines: boolean; textBoundaries: boolean };
+  setViewOptions: { formattingMarks: boolean; gridlines: boolean; textBoundaries: boolean; liveLayout: boolean };
   /** The mode. */
   setMode: EditorState['mode'];
 }
@@ -273,10 +273,97 @@ export interface ObjectSelection {
   decorative: boolean;
   /** Whether a floating object's anchor is locked; `null` when inline. */
   anchorLocked: boolean | null;
+  /** Where a floating object is and how text keeps from it; `null` when inline. */
+  placement: ObjectPlacement | null;
 }
 
 /** How text wraps around an object. */
 export type ObjectWrap = 'inline' | 'square' | 'tight' | 'through' | 'topAndBottom' | 'behindText' | 'inFrontOfText';
+
+/** What a floating object's horizontal position is measured from. */
+export type HorizontalReference =
+  | 'column'
+  | 'margin'
+  | 'page'
+  | 'character'
+  | 'leftMargin'
+  | 'rightMargin'
+  | 'insideMargin'
+  | 'outsideMargin';
+
+/** What a floating object's vertical position is measured from: `paragraph` and `line` move it with the text. */
+export type VerticalReference =
+  | 'paragraph'
+  | 'line'
+  | 'margin'
+  | 'page'
+  | 'topMargin'
+  | 'bottomMargin'
+  | 'insideMargin'
+  | 'outsideMargin';
+
+/** A floating object aligned across its horizontal reference. */
+export type ObjectHorizontalAlignment = 'left' | 'center' | 'right' | 'inside' | 'outside';
+
+/** A floating object aligned across its vertical reference. */
+export type ObjectVerticalAlignment = 'top' | 'center' | 'bottom' | 'inside' | 'outside';
+
+/** Which sides of a floating object text wraps on. */
+export type WrapSide = 'bothSides' | 'left' | 'right' | 'largest';
+
+/**
+ * A floating object's horizontal place: aligned across its reference, or an offset from the reference's left edge.
+ * Set with neither, the object stays where it is, measured from the new reference.
+ */
+export interface HorizontalPosition {
+  /** What it is measured from. */
+  relativeTo: HorizontalReference;
+  /** Aligned across the reference. */
+  align?: ObjectHorizontalAlignment;
+  /** Right of the reference's left edge, −1584 to 1584. */
+  offset?: Points;
+}
+
+/**
+ * A floating object's vertical place: aligned across its reference, or an offset below the reference's top. Set with
+ * neither, the object stays where it is, measured from the new reference.
+ */
+export interface VerticalPosition {
+  /** What it is measured from. */
+  relativeTo: VerticalReference;
+  /** Aligned across the reference. */
+  align?: ObjectVerticalAlignment;
+  /** Below the reference's top, −1584 to 1584. */
+  offset?: Points;
+}
+
+/** How far text keeps from a floating object. */
+export interface TextDistance {
+  /** Above it. */
+  top: Points;
+  /** Below it. */
+  bottom: Points;
+  /** On its left. */
+  left: Points;
+  /** On its right. */
+  right: Points;
+}
+
+/** A floating object's place and its wrapping options. */
+export interface ObjectPlacement {
+  /** The horizontal place: an alignment or an offset. */
+  horizontal: HorizontalPosition;
+  /** The vertical place: an alignment or an offset. */
+  vertical: VerticalPosition;
+  /** Other floating objects may overlap it. */
+  allowOverlap: boolean;
+  /** In a table cell, it is kept within the cell. */
+  layoutInCell: boolean;
+  /** The sides text wraps on. */
+  wrapSide: WrapSide;
+  /** The distance from the text. */
+  distance: TextDistance;
+}
 
 /** An element the selection is in or covers. */
 export interface ElementContext {
@@ -386,6 +473,8 @@ export interface ViewState {
   gridlines: boolean;
   /** Text boundaries are shown. */
   textBoundaries: boolean;
+  /** Text wraps around an object again as it is dragged; otherwise a preview shows until the release. */
+  liveLayout: boolean;
   /** Field codes are shown. */
   fieldCodes: boolean;
   /** Which built-in rulers are shown. */

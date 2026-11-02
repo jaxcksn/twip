@@ -138,6 +138,22 @@ impl Session {
             C::SetTableWidth(TableWidth::Points { value }) => within("the width", value.0, 0.0, MAX),
             C::SetTableWidth(TableWidth::Percent { value }) => within("the width", *value, 1.0, 600.0),
             C::SetObjectSize(s) => length("the width", s.width, 1.0, MAX).and(length("the height", s.height, 1.0, MAX)),
+            C::SetObjectPosition(p) => {
+                let axes = [p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))];
+                for (aligned, offset) in axes.into_iter().flatten() {
+                    if aligned && offset.is_some() {
+                        return Err(Error::invalid("align and offset exclude each other"));
+                    }
+                    length("the offset", offset, -MAX, MAX)?;
+                }
+                Ok(())
+            }
+            C::SetObjectWrapOptions(w) => {
+                for v in [w.top, w.bottom, w.left, w.right] {
+                    length("the distance", v, 0.0, MAX)?;
+                }
+                Ok(())
+            }
             C::SetField(f) => self.known_element(&f.id),
             C::SetFieldResults(r) => r.results.iter().try_for_each(|r| self.known_element(&r.id)),
             C::UpdateFields(i) | C::UnlinkFields(i) => self.known_elements(i.ids.as_deref()),
@@ -221,6 +237,9 @@ impl Session {
                 }
                 if let Some(b) = v.text_boundaries {
                     self.text_boundaries = b;
+                }
+                if let Some(l) = v.live_layout {
+                    self.editor.live_layout = l;
                 }
             }
             Command::SetMode(m) => self.set_mode(*m),

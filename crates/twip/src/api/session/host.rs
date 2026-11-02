@@ -393,6 +393,7 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
     state.view.tab_selector = p.tab_selector;
     state.view.formatting_marks = s.formatting_marks;
     state.view.text_boundaries = s.text_boundaries;
+    state.view.live_layout = s.editor.live_layout;
 }
 
 impl Session {

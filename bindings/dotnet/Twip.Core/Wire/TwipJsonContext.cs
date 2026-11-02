@@ -53,6 +53,11 @@ namespace Twip.Wire;
         typeof(CamelEnum<NavigationDirection>),
         typeof(CamelEnum<ObjectKind>),
         typeof(CamelEnum<ObjectWrap>),
+        typeof(CamelEnum<HorizontalReference>),
+        typeof(CamelEnum<VerticalReference>),
+        typeof(CamelEnum<ObjectHorizontalAlignment>),
+        typeof(CamelEnum<ObjectVerticalAlignment>),
+        typeof(CamelEnum<WrapSide>),
         typeof(CamelEnum<Origin>),
         typeof(CamelEnum<PageNumberAlignment>),
         typeof(CamelEnum<PageNumberFormat>),
@@ -312,6 +317,15 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(ObjectKind))]
 [JsonSerializable(typeof(ObjectSelection))]
 [JsonSerializable(typeof(ObjectWrap))]
+[JsonSerializable(typeof(ObjectPlacement))]
+[JsonSerializable(typeof(TextDistance))]
+[JsonSerializable(typeof(HorizontalPosition))]
+[JsonSerializable(typeof(VerticalPosition))]
+[JsonSerializable(typeof(HorizontalReference))]
+[JsonSerializable(typeof(VerticalReference))]
+[JsonSerializable(typeof(ObjectHorizontalAlignment))]
+[JsonSerializable(typeof(ObjectVerticalAlignment))]
+[JsonSerializable(typeof(WrapSide))]
 [JsonSerializable(typeof(Origin))]
 [JsonSerializable(typeof(OutlineLevel))]
 [JsonSerializable(typeof(PageColumns))]
