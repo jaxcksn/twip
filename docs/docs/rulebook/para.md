@@ -22,14 +22,15 @@ When a paragraph starts at the top of an empty page or column:
 | How it got there | Compat 15 | Compat ≤ 14 |
 |---|---|---|
 | it is the first paragraph of the document | kept | kept |
-| the previous page or column overflowed | dropped | dropped |
+| the previous page or column overflowed, to a column top that is the page's body top | dropped | dropped |
+| the previous column overflowed, to a column top below the page's body top (a continuous section's columns on the page it starts) | kept | kept |
 | the previous paragraph ended with a page-break character | dropped | dropped |
-| it has `w:pageBreakBefore` | dropped | kept |
+| it has `w:pageBreakBefore` | dropped; kept when it is the first paragraph of a continuous section | kept |
 | it is the first paragraph of a next-page section ([PAGE-7](page#page-7)) | kept | kept |
 
 A kept space-before is what the gap to the previous paragraph ([PARA-1](para#para-1)) leaves after that paragraph's space-after, which stayed on the page before ([PAGE-7](page#page-7)); the document's first paragraph keeps all of it.
 
-When a paragraph's **first character** is a column break, the rest of that paragraph starts the next column with its space-before again ([COL-2](col#col-2)). When its first character is a page break, the rest starts the next page with what the previous paragraph's space-after left of its space-before, as after a next-page section break ([PAGE-7](page#page-7)): all of it with `doNotUseHTMLParagraphAutoSpacing`, else `max(0, spaceBefore − spaceAfter(previous))`. A page or column break that follows text in the same paragraph drops the space-before, and so does any other paragraph at a column top reached by flow. Compat 12 and 15, one column or two, are the same.
+When a paragraph's **first character** is a column break, the rest of that paragraph starts the next column with its space-before again ([COL-2](col#col-2)). When its first character is a page break, the rest starts the next page with what the previous paragraph's space-after left of its space-before, as after a next-page section break ([PAGE-7](page#page-7)): all of it with `doNotUseHTMLParagraphAutoSpacing`, else `max(0, spaceBefore − spaceAfter(previous))`. A page or column break that follows text in the same paragraph drops the space-before, and so does any other paragraph at a column top reached by flow that is the page's body top. Compat 12 and 15, one column or two, are the same.
 
 Example: a paragraph with 6pt before that starts with a page break starts the next page 6pt down after a paragraph with no space-after, and at the top after one with 6pt after. With text before the break, it starts at the top.
 
@@ -82,5 +83,6 @@ Border widths are `w:sz / 8` points, `w:space` is in points. A `double` border i
 - **Consecutive paragraphs with identical border settings** (all of top, left, bottom, right and between) form one box: the first has the top border, the last the bottom border, and nothing is drawn or added between them. Paragraphs whose settings differ in any way are separate boxes. `w:between` borders are never drawn.
 - **Horizontally**, the box runs from `left − (left space + left width)` to `rightEdge + right space + right width`, where `left = leftIndent + min(0, firstLineIndent)` is the paragraph's leftmost indent (a hanging first line, like a heading's number, is inside the box) and `rightEdge` is the text width less the right indent. Draw the left and right borders down the full pitch of every line of the box.
 - **Shading** (`w:shd`) fills the box inside its borders: from the inner edge of the left border to the inner edge of the right one, and from below the top border to above the bottom one, so the `w:space` between the borders and the text is shaded too. Without a left or right border it runs from `left` to `rightEdge`. It covers the lines (and the border space added to them), not the paragraph spacing.
+- **Beside floats** a paragraph keeps all of this: the top part goes into its first line beside the floats, the bottom part below its last, and the side borders and shading run down every line, across the column whatever gaps the floats leave ([FLOAT-2](float#float-2)).
 
 Example: one Calibri 11 line with 0.5pt top and bottom borders (`w:sz="4"`) and `w:space="1"`: pitch 13.4277 + 1.5 + 1.5 = 16.4277, baseline 1.5 + 10.4736 = 11.9736 below the line's top.

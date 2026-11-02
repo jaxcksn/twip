@@ -838,7 +838,7 @@ fn gap(s: f64, outer: bool) -> f64 {
 fn content_widths(blocks: &[Block], env: &StoryEnv, fixed: bool, memos: &mut Memos) -> Result<Rc<(i64, i64, i64)>, Yield> {
     let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
     let cell = Some(CellEnds { fixed, ..CellEnds::default() });
-    let probe = StoryKey::new(child_ids(&laid, None, env, cell, memos)?, None, cell, env);
+    let probe = StoryKey::new(child_ids(&laid, None, env, cell, memos)?, None, cell, env, &laid);
     cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, fixed, m))
 }
 
@@ -851,7 +851,7 @@ fn vertical_width(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result
     for b in &super::join::laid(blocks, view) {
         let LaidBlock::Para(laid) = b else { continue };
         let p = laid.para();
-        let space = laid.shape_space(env.fields, env.notes, &env.ctx.env.text);
+        let space = laid.shape_space_in(env.fields, env.notes, &env.ctx.env.text, true);
         let shaped = shape(p, &space, env.ctx.fonts, memos)?;
         let s = p.para_style_in(view);
         let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false };
@@ -895,7 +895,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
         match b {
             LaidBlock::Para(laid) => {
                 let p = laid.para();
-                let space = laid.shape_space(env.fields, env.notes, &env.ctx.env.text);
+                let space = laid.shape_space_in(env.fields, env.notes, &env.ctx.env.text, true);
                 let shaped = shape(p, &space, env.ctx.fonts, memos)?;
                 let s = p.para_style_in(env.ctx.env.text.review.view);
                 let ps =
@@ -1752,8 +1752,10 @@ fn assemble(
             top_border += gap_top;
             cell_bottom = cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max) + gap(s, ri + 1 == t.rows.len());
         }
-        let content =
-            cells.iter().filter(|c| c.v_merge == VMerge::None).map(|c| c.margins[0] + c.content_h + c.margins[2] + cell_bottom).fold(0.0, f64::max);
+        // TABLE-27: one bottom margin for the whole row, its cells' largest, below the tallest content.
+        let below = cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
+        let content = cells.iter().filter(|c| c.v_merge == VMerge::None).map(|c| c.margins[0] + c.content_h).fold(f64::NEG_INFINITY, f64::max);
+        let content = if content.is_finite() { content + below + cell_bottom } else { 0.0 };
         let min_margins = cells.iter().map(|c| c.margins[0] + c.margins[2]).fold(0.0, f64::max);
         let content = content.max(min_margins);
         // TABLE-8: the cells' bottom margin is outside the row height Word was given, and an atLeast row's top margin

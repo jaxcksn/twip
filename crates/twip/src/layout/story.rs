@@ -119,7 +119,9 @@ pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, cell:
     let mut out = Vec::with_capacity(blocks.len());
     for b in blocks {
         out.push(match b {
-            LaidBlock::Para(p) => ChildId::Para(shape(p.para(), &p.shape_space(env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?),
+            LaidBlock::Para(p) => {
+                ChildId::Para(shape(p.para(), &p.shape_space_in(env.fields, env.notes, &env.ctx.env.text, cell.is_some()), env.ctx.fonts, memos)?)
+            }
             LaidBlock::Table(t) => ChildId::Table(match width {
                 Some(w) => super::table::layout(&as_nested(t, cell), w, env, None, false, memos)?,
                 None => super::table::layout(&as_nested(t, cell), 1e9, env, None, true, memos)?,
@@ -153,7 +155,8 @@ pub fn as_nested(t: &Table, cell: Option<CellEnds>) -> std::borrow::Cow<'_, Tabl
 
 /// What a story (a cell, header, footer, note, separator or text box), or a cell's content widths (`width` 0:
 /// width-free), depends on: its children, the width, whether it is a cell and its ends (PARA-4), the
-/// `TextEnv` and the font revision. Field values and note numbers are in the children's keys.
+/// `TextEnv` and the font revision. Field values and note numbers are in the children's keys, except those of its
+/// floats' text boxes: a story with one keys the field values too (HDR-3: a footer cell's text box PAGE).
 #[derive(Clone, Debug, PartialEq)]
 pub struct StoryKey {
     children: Vec<ChildId>,
@@ -161,11 +164,23 @@ pub struct StoryKey {
     cell: Option<CellEnds>,
     text: TextEnv,
     fonts: u64,
+    boxed_fields: Option<FieldValues>,
 }
 
 impl StoryKey {
-    pub fn new(children: Vec<ChildId>, width: Option<f64>, cell: Option<CellEnds>, env: &StoryEnv) -> StoryKey {
-        StoryKey { children, width: width.map_or(0, f64::to_bits), cell, text: env.ctx.env.text.clone(), fonts: env.ctx.fonts.revision() }
+    pub fn new(children: Vec<ChildId>, width: Option<f64>, cell: Option<CellEnds>, env: &StoryEnv, blocks: &[LaidBlock]) -> StoryKey {
+        let boxed = blocks.iter().any(|b| match b {
+            LaidBlock::Para(l) => l.para().inlines.iter().any(|i| matches!(i, Inline::Float(f, _) if f.text_box.is_some() || !f.parts.is_empty())),
+            _ => false,
+        });
+        StoryKey {
+            children,
+            width: width.map_or(0, f64::to_bits),
+            cell,
+            text: env.ctx.env.text.clone(),
+            fonts: env.ctx.fonts.revision(),
+            boxed_fields: boxed.then(|| env.fields.clone()),
+        }
     }
 }
 
@@ -205,7 +220,7 @@ fn story_bytes(s: &StoryLayout) -> usize {
 pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnds>, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
-    let probe = StoryKey::new(children.clone(), Some(width), cell, env);
+    let probe = StoryKey::new(children.clone(), Some(width), cell, env, &blocks);
     cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, m))
 }
 
@@ -236,6 +251,8 @@ pub fn layout_with(
     let mut prev_table: Option<(&Table, f64)> = None;
     for (bi, b) in blocks.iter().enumerate() {
         match b {
+            // STYLE-7: a hidden paragraph isn't laid out, except as a cell's last.
+            LaidBlock::Para(laid) if super::paragraph::vanished(laid.para()) && !(cell.is_some() && bi + 1 == blocks.len()) => {}
             LaidBlock::Para(laid) => {
                 let p = laid.para();
                 let next = match blocks.get(bi + 1) {
@@ -244,7 +261,7 @@ pub fn layout_with(
                 };
                 let shaped = match resolved.get(bi) {
                     Some(ChildId::Para(s)) => s.clone(),
-                    _ => shape(p, &laid.shape_space(env.fields, env.notes, &env.ctx.env.text), env.ctx.fonts, memos)?,
+                    _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx.env.text, cell.is_some()), env.ctx.fonts, memos)?,
                 };
                 let style = p.para_style_in(view);
                 let ps = ParaSpace { width, start: 0, borders: neighbour_borders(style, prev, next), x0: 0.0, env: text.clone(), fit: ends.fit };
@@ -513,8 +530,38 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         items.push(Item::Image { rect, key: ImageKey { index: Some(img), generation: 0 } });
     }
     if let Some(tb) = &f.text_box {
+        text_box(tb, rect, env, &mut groups, memos)?;
+    }
+    // FLOAT-15: a group's pictures and text boxes, each in its own box.
+    for part in &f.parts {
+        let r = [x0 + part.rect[0], y0 + part.rect[1], x0 + part.rect[2], y0 + part.rect[3]];
+        if let Some(img) = part.image {
+            items.push(Item::Image { rect: r, key: ImageKey { index: Some(img), generation: 0 } });
+        }
+        if let Some(tb) = &part.text_box {
+            text_box(tb, r, env, &mut groups, memos)?;
+        }
+    }
+    let mut children = Vec::new();
+    if !items.is_empty() {
+        children.push(Child::Items(items.into()));
+    }
+    children.extend(groups);
+    Ok(Child::Box(BoxFragment {
+        kind: BoxKind::Float { anchor, float: FloatId(f.id), rect },
+        id: None,
+        offset: (0.0, 0.0),
+        size: (x1 - x0, y1 - y0),
+        children: children.into(),
+    }))
+}
+
+/// A text box's content and outline in `rect` (FLOAT-10), appended to `groups`.
+fn text_box(tb: &crate::docx::TextBox, rect: [f64; 4], env: &StoryEnv, groups: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
+    let [x0, y0, x1, y1] = rect;
+    {
         let o = tb.outline;
-        let w = (f.w - tb.insets[0] - tb.insets[2] - o).max(1.0);
+        let w = (x1 - x0 - tb.insets[0] - tb.insets[2] - o).max(1.0);
         let blocks: Vec<&Block> = tb.blocks.iter().collect();
         // A text box or frame shows its story's fields: a header's PAGE counts in its frames (the page number
         // gallery's framed PAGE); body text boxes get none (page::draw_floats).
@@ -545,18 +592,7 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
             groups.push(Child::Items(outline.iter().map(|r| Item::Rect { rect: *r, colour: 0 }).collect()));
         }
     }
-    let mut children = Vec::new();
-    if !items.is_empty() {
-        children.push(Child::Items(items.into()));
-    }
-    children.extend(groups);
-    Ok(Child::Box(BoxFragment {
-        kind: BoxKind::Float { anchor, float: FloatId(f.id), rect },
-        id: None,
-        offset: (0.0, 0.0),
-        size: (x1 - x0, y1 - y0),
-        children: children.into(),
-    }))
+    Ok(())
 }
 
 /// A header or footer story's anchored floats, drawn in page coordinates (FLOAT-6): `top` is where the story's first

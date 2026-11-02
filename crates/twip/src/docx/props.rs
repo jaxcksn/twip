@@ -218,15 +218,14 @@ impl RunProps {
         self.toggles_set |= on;
     }
 
-    /// One style chain folded into a level: ordinary inheritance, except a toggle is on when any style in the chain
-    /// turns it on (no XOR within a chain; `w:val="0"` in a style does nothing).
+    /// One style chain (base first) folded into a level: ordinary inheritance, toggles too: the nearest style that
+    /// sets one decides, `w:val="0"` included (STYLE-3). The level then turns on the toggles it resolves on.
     pub fn fold_chain<'a>(chain: impl Iterator<Item = &'a RunProps>) -> RunProps {
         let mut acc = RunProps::default();
-        let mut on = 0;
         for s in chain {
-            on |= s.toggles & s.toggles_set;
             acc.merge(s);
         }
+        let on = acc.toggles & acc.toggles_set;
         acc.toggles = on;
         acc.toggles_set = on;
         acc
@@ -927,5 +926,27 @@ impl TrProps {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
         take!(height, cant_split, header, jc, grid_before, grid_after, w_before, w_after, cell_spacing);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RunProps, toggle};
+
+    #[test]
+    fn the_nearest_style_in_a_chain_decides_a_toggle() {
+        // STYLE-3: b=0 based on bold isn't bold, bold again above it is; levels then XOR the toggles they turn on.
+        let rpr = |x: &str| {
+            let xml = format!(r#"<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{x}</w:rPr>"#);
+            RunProps::parse(Some(roxmltree::Document::parse(&xml).unwrap().root_element()))
+        };
+        let (on, off, none) = (rpr("<w:b/>"), rpr(r#"<w:b w:val="0"/>"#), rpr(""));
+        let bold = |chain: &[&RunProps]| RunProps::fold_chain(chain.iter().copied()).toggle(toggle::B);
+        assert_eq!((bold(&[&on, &off]), bold(&[&on, &off, &none]), bold(&[&on, &off, &on])), (false, false, true));
+        let mut para = RunProps::fold_chain([&on].into_iter());
+        para.merge_level(&RunProps::fold_chain([&on, &off].into_iter()));
+        assert!(para.toggle(toggle::B));
+        para.merge_level(&RunProps::fold_chain([&on].into_iter()));
+        assert!(!para.toggle(toggle::B));
     }
 }

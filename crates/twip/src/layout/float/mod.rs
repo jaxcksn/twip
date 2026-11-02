@@ -182,6 +182,7 @@ mod tests {
             src: None,
             locked: false,
             frame_src: None,
+            parts: Vec::new(),
         });
         Placed {
             key: (0, 0, 0),

@@ -19,6 +19,10 @@ pub struct ShapeSpace {
     /// [`super::env::TextEnv::balance_spaces`] and [`super::env::TextEnv::compress_punctuation`].
     pub balance: bool,
     pub compress: bool,
+    /// FONT-18: compat ≤ 14 [`super::env::TextEnv::word97_line_breaks`].
+    pub em1000: bool,
+    /// BREAK-10: the paragraph is in a table cell, where page and column breaks are dropped.
+    pub in_cell: bool,
     /// The markup view: which revised text shapes at all.
     pub view: MarkupView,
     /// Where a joined paragraph's units come from (REV-6): its pieces name their own paragraphs once drawn.
@@ -90,6 +94,9 @@ pub struct BodySpace {
     pub balance: bool,
     /// The next section starts on the same page (continuous): the body isn't vertically aligned (SETUP-1).
     pub next_continuous: bool,
+    /// COL-3 (compat 15): the text width, when the section in effect at the page's top has one column and references a
+    /// footnote: the page's note stream is then one column that wide.
+    pub note_width: Option<f64>,
     /// The header and footer heights the area was computed from (`None`: the page shows no such story), as HDR-8 caps
     /// them: what convergence compares with the composed ones.
     pub hf: HfHeights,

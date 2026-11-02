@@ -9,6 +9,8 @@ A document's tracked changes (`w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, the `w
 
 ### REV-1. Shown and hidden content {#rev-1}
 
+A PDF export, and the comparison dump, lay out the No markup view whatever view the editor shows.
+
 | Content | All markup | Simple markup | No markup | Original |
 |---|---|---|---|---|
 | Inserted or moved-to text (`w:ins`, `w:moveTo`) | shown | shown | shown | hidden |

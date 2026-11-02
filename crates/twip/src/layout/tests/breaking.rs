@@ -37,7 +37,7 @@ fn baselines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, 
                 r#"<w:document xmlns:w="{W}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
             ),
         ),
-        ("word/styles.xml", format!(r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{rpr}</w:rPr></w:rPrDefault></w:docDefaults></w:styles>"#)),
+        ("word/styles.xml", format!(r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{rpr}</w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults></w:styles>"#)),
         ("word/settings.xml", format!(r#"<w:settings xmlns:w="{W}">{settings}<w:characterSpacingControl w:val="compressPunctuation"/>{compat}</w:settings>"#)),
         (
             "word/_rels/document.xml.rels",
@@ -370,4 +370,217 @@ fn a_right_aligned_floating_tables_frame_counts_a_missing_border_whole() {
     assert!((missing - 244.65).abs() < 0.01, "{missing}");
     let none = at(r#"<w:right w:val="none" w:sz="0" w:space="0" w:color="000000"/>"#).unwrap();
     assert!((none - 245.4).abs() < 0.01, "{none}");
+}
+
+#[test]
+fn compat_14_wp_justification_lets_a_justified_line_run_past_its_edge() {
+    // JUST-7: with wpJustification a compat-14 justified line is broken 18.25pt past the 6.5in column (one more "ab"),
+    // then squeezed back into it.
+    let p = format!(r#"<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#, "ab ".repeat(80));
+    let c14 = r#"<w:compat>{}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let first = |opt: &str| lines(&c14.replace("{}", opt), ARIAL_12, &p).map(|l| (l[0].1.matches("ab").count(), l[0].2));
+    let Some(plain) = first("") else { return };
+    let (wide, last_x) = first("<w:wpJustification/>").unwrap();
+    assert_eq!(wide, plain.0 + 1, "{plain:?}");
+    assert!(last_x < 540.0, "{last_x}");
+}
+
+#[test]
+fn compat_14_word97_line_breaks_size_a_named_east_asian_runs_glyphs_at_a_1000_unit_em() {
+    // FONT-18: Courier New 12 glyphs are 600/1000 em, 29491 layout units each instead of the design 29496, so with
+    // useWord97LineBreakRules the 65 characters of eleven "xxxxx" fit the 468pt line; the design widths overflow it.
+    if !fonts().is_installed("Courier New") {
+        return;
+    }
+    let p = format!("<w:p><w:r><w:t>{}</w:t></w:r></w:p>", "xxxxx ".repeat(30));
+    let c14 = r#"<w:compat>{}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let words = |opt: &str, ea: &str| {
+        let rpr = format!(r#"<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="{ea}"/><w:sz w:val="24"/>"#);
+        lines(&c14.replace("{}", opt), &rpr, &p).map(|l| l[0].1.matches("xxxxx").count())
+    };
+    let Some(plain) = words("", "Arial") else { return };
+    let opt = "<w:useWord97LineBreakRules/>";
+    assert_eq!((plain, words(opt, "Arial").unwrap(), words(opt, "Times New Roman").unwrap()), (10, 11, 10));
+}
+
+#[test]
+fn a_compat_14_float_past_the_column_bottom_stays_with_its_anchor() {
+    // FLOAT-9: a 100 × 60pt square float at the top of a paragraph 41pt above the column bottom runs past it; compat 14
+    // neither moves it up nor pushes the paragraph to the next page, so "ANCHOR" stays on page 1 beside the float.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="762000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body = (0..44).map(|i| p(&format!("L{i:02}"))).collect::<String>()
+        + &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>{float}<w:r><w:t>ANCHOR</w:t></w:r></w:p>"#);
+    let c14 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let Some(l) = lines(c14, ARIAL_12, &body) else { return };
+    assert!(l.iter().any(|x| x.1 == "ANCHOR" && (x.0 - 172.0).abs() < 0.01), "{l:?}");
+}
+
+#[test]
+fn a_paragraph_anchoring_a_float_keeps_its_top_border() {
+    // PARA-7: a 3pt top border with 4pt space adds 7pt to the first line whether or not the paragraph anchors a float.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>4572000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>2540000</wp:posOffset></wp:positionV><wp:extent cx="635000" cy="635000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = |f: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="24" w:space="4" w:color="000000"/></w:pBdr></w:pPr>{f}<w:r><w:t>Boxed</w:t></w:r></w:p>"#
+        )
+    };
+    let y = |f: &str| baselines("", ARIAL_12, &p(f)).map(|l| l[0].3);
+    let Some(plain) = y("") else { return };
+    assert!((y(float).unwrap() - plain).abs() < 0.01, "{plain}");
+}
+
+#[test]
+fn a_nested_groups_text_boxes_each_draw_in_their_own_box() {
+    // FLOAT-15: a 100pt group at page x 100 whose child frame is 200pt wide (scale 0.5) holds a text box at its left
+    // and a nested group from child x 100 (50pt in) whose own children are at scale 0.5 again: its text box, at child
+    // x 50, starts 25pt further in.
+    let emu = |pt: u32| pt * 12700;
+    let xfrm = |x: u32, w: u32, cw: u32| {
+        format!(
+            r#"<a:xfrm><a:off x="{}" y="0"/><a:ext cx="{}" cy="{}"/><a:chOff x="0" y="0"/><a:chExt cx="{}" cy="{}"/></a:xfrm>"#,
+            emu(x),
+            emu(w),
+            emu(50),
+            emu(cw),
+            emu(50)
+        )
+    };
+    let wsp = |x: u32, t: &str| {
+        format!(
+            r#"<wps:wsp><wps:spPr><a:xfrm><a:off x="{}" y="0"/><a:ext cx="{}" cy="{}"/></a:xfrm></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp>"#,
+            emu(x),
+            emu(80),
+            emu(50)
+        )
+    };
+    let group = format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapNone/><a:graphic><a:graphicData><wpg:wgp xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wpg:grpSpPr>{}</wpg:grpSpPr>{}<wpg:grpSp><wpg:grpSpPr>{}</wpg:grpSpPr>{}</wpg:grpSp></wpg:wgp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        emu(100),
+        emu(400),
+        emu(100),
+        emu(25),
+        xfrm(0, 100, 200),
+        wsp(0, "Outer"),
+        xfrm(100, 100, 100),
+        wsp(50, "Inner")
+    );
+    let Some(l) = lines("", ARIAL_12, &format!("<w:p>{group}<w:r><w:t>Body</w:t></w:r></w:p>")) else { return };
+    let x = |t: &str| l.iter().find(|x| x.1 == t).map(|x| x.0);
+    assert_eq!((x("Outer"), x("Inner")), (Some(100.0), Some(175.0)), "{l:?}");
+}
+
+#[test]
+fn an_empty_section_break_paragraph_after_a_paragraph_takes_no_line() {
+    // COL-6: the empty paragraph holding the first section's break after "A" takes no line: "B", whose section starts
+    // continuous, follows one line below "A", in both modes.
+    let sect = r#"<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p>"#;
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body = format!("{}{}{}{sect}", p("A"), sect.replace(r#"<w:type w:val="continuous"/>"#, ""), p("B"));
+    for mode in [14, 15] {
+        let c = format!(
+            r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#
+        );
+        let Some(l) = baselines(&c, ARIAL_12, &body) else { return };
+        assert!((l[1].3 - l[0].3 - 13.8).abs() < 0.01, "{l:?}");
+    }
+}
+
+#[test]
+fn a_page_break_in_a_table_cell_is_nothing() {
+    // BREAK-10: "Before", a page break, "After" in a cell set as one line "BeforeAfter".
+    let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Before</w:t><w:br w:type="page"/><w:t>After</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let Some(l) = lines("", ARIAL_12, body) else { return };
+    assert_eq!(l[0].1, "BeforeAfter", "{l:?}");
+}
+
+#[test]
+fn spaces_next_to_a_no_break_space_dont_break() {
+    // BREAK-3: "carbon.", a no-break space and a space, then "Risks": the line breaks before "carbon." rather than at
+    // the space.
+    let fill = "word ".repeat(14);
+    let p = |gap: &str| format!("<w:p><w:r><w:t xml:space=\"preserve\">{fill}carbon.{gap}Risks and more words after them</w:t></w:r></w:p>");
+    let first = |gap: &str| lines("", ARIAL_12, &p(gap)).map(|l| l[0].1.clone());
+    let Some(plain) = first(" ") else { return };
+    assert!(plain.ends_with("carbon."), "{plain}");
+    assert!(!first("\u{a0} ").unwrap().ends_with("carbon.\u{a0}"));
+}
+
+#[test]
+fn a_runs_rpr_after_its_first_text_formats_the_text_after_it() {
+    // STYLE-10: a second w:rPr between two w:t makes the second bold (wider); a trailing one does nothing.
+    let width = |run: &str| lines("", ARIAL_12, &format!("<w:p>{run}<w:r><w:t>|</w:t></w:r></w:p>")).map(|l| l[0].2);
+    let Some(plain) = width("<w:r><w:t>aaaa</w:t><w:t>aaaa</w:t></w:r>") else { return };
+    let bold = width("<w:r><w:t>aaaa</w:t><w:rPr><w:b/></w:rPr><w:t>aaaa</w:t></w:r>").unwrap();
+    let trailing = width("<w:r><w:t>aaaa</w:t><w:t>aaaa</w:t><w:rPr><w:b/></w:rPr></w:r>").unwrap();
+    assert!(bold > plain + 0.1 && (trailing - plain).abs() < 1e-9, "{plain} {bold} {trailing}");
+}
+
+#[test]
+fn an_inline_pictures_box_takes_its_effect_extents_and_run_position() {
+    // FLOAT-5: a 20pt picture with 2pt top and bottom effect extents, lowered 3pt, makes a 24pt box: ascent 21,
+    // descent 3; the next line moves down with it.
+    let pic = |extra: &str| {
+        format!(
+            r#"<w:p><w:r><w:rPr><w:position w:val="-6"/></w:rPr><w:drawing><wp:inline><wp:extent cx="254000" cy="254000"/>{extra}<a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p><w:p><w:r><w:t>Next</w:t></w:r></w:p>"#
+        )
+    };
+    let y = |extra: &str| baselines("", ARIAL_12, &pic(extra)).map(|l| l.iter().find(|x| x.1 == "Next").unwrap().3);
+    let Some(plain) = y("") else { return };
+    let grown = y(r#"<wp:effectExtent l="0" t="25400" r="0" b="25400"/>"#).unwrap();
+    assert!((grown - plain - 4.0).abs() < 0.01, "{plain} {grown}");
+}
+
+#[test]
+fn a_hidden_empty_paragraph_before_a_table_takes_no_line() {
+    // STYLE-7: an empty paragraph with a hidden mark right before a table isn't laid out: the table's text follows
+    // "A" one line below.
+    let tbl = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let body = |hidden: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>A</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:after="0"/>{hidden}</w:pPr></w:p>{tbl}"#
+        )
+    };
+    let gap = |hidden: &str| baselines("", ARIAL_12, &body(hidden)).map(|l| l.iter().find(|x| x.1 == "Cell").unwrap().3 - l[0].3);
+    let Some(shown) = gap("") else { return };
+    let hidden = gap("<w:rPr><w:vanish/></w:rPr>").unwrap();
+    assert!((shown - hidden - 13.8).abs() < 0.01, "{shown} {hidden}");
+}
+
+#[test]
+fn a_missing_paragraph_default_is_words_own() {
+    // STYLE-2: docDefaults without a pPrDefault take 8pt after and 1.16 lines; an empty one is single, no space.
+    let p = |t: &str| format!("<w:p><w:r><w:t>{t}</w:t></w:r></w:p>");
+    let body = p("A") + &p("B");
+    let gap = |styles: &str| {
+        let parts = [
+            (
+                "word/document.xml",
+                format!(
+                    r#"<w:document xmlns:w="{W}"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+                ),
+            ),
+            (
+                "word/styles.xml",
+                format!(
+                    r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{ARIAL_12}</w:rPr></w:rPrDefault>{styles}</w:docDefaults></w:styles>"#
+                ),
+            ),
+        ];
+        let parts: Vec<(String, Vec<u8>)> = parts.into_iter().map(|(n, x)| (n.to_string(), x.into_bytes())).collect();
+        let doc = crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads");
+        let snap = layout(&doc, &fonts());
+        let mut ys = Vec::new();
+        paint(&snap.pages()[0], &mut |q| {
+            if let Item::Glyphs(r) = q.absolute() {
+                ys.push(r.baseline);
+            }
+        });
+        ys[1] - ys[0]
+    };
+    if fonts().face("Arial", false, false).is_none() {
+        return;
+    }
+    assert!((gap("<w:pPrDefault/>") - 13.8).abs() < 0.01);
+    assert!(gap("") > 13.8 + 8.0);
 }

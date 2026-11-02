@@ -398,6 +398,13 @@ impl<'d> Paginator<'d, '_> {
             mid_page: start.is_some(),
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| n.break_kind == SectionBreak::Continuous),
+            note_width: start.and_then(|_| {
+                let ts = self.run.pages.last()?.section;
+                let top = self.sections.get(ts)?;
+                let c = &top.section_in(self.ctx.env.text.review.view).columns;
+                let one = c.num <= 1 && c.cols.len() <= 1;
+                (one && references_footnote(&top.blocks)).then_some(width)
+            }),
             hf,
         })
     }
@@ -456,6 +463,9 @@ impl<'d> Paginator<'d, '_> {
         sec: &SectionNode,
         cols: &[ColumnSpace],
         saved: &(FlowToken, FlowState),
+        mid: bool,
+        stream: Option<f64>,
+        note_width: Option<f64>,
         memos: &mut Memos,
     ) -> Result<Option<(f64, Vec<Child>, FlowToken, FlowState, PageEffects)>, Yield> {
         let (p0, c0) = saved;
@@ -482,7 +492,9 @@ impl<'d> Paginator<'d, '_> {
             let mut children = Vec::new();
             let mut stats = Vec::new();
             let mut end = top;
-            fill.at = AttemptState { known: state.known.clone(), ..Default::default() };
+            // COL-3 (compat 15): the notes go to the page's stream at the bottom, not under each column.
+            let stream = stream.map(|r| NoteArea { below: true, ..stream_area(r, cols.len(), note_width) });
+            fill.at = AttemptState { known: state.known.clone(), stream, ..Default::default() };
             for (k, c) in cols.iter().enumerate() {
                 let col = ColumnSpace { bottom: Lu::round_half_up(top + h).min(c.bottom), balance: true, ..*c };
                 let r = fill.fill(&pos, &carry, col, false, memos)?;
@@ -504,8 +516,9 @@ impl<'d> Paginator<'d, '_> {
                     size: (0.0, 0.0),
                     children: kids.into(),
                 }));
-                // A column ends below its last line and that paragraph's space-after.
-                end = end.max(bottom + carry.prev_after);
+                // A column ends below its last line and that paragraph's space-after, which a paragraph continued past a
+                // column break keeps for its last part (COL-5).
+                end = end.max(bottom + if s == Stop::Column && !pos.at.at_start() { 0.0 } else { carry.prev_after });
                 if fill.at.forced {
                     return Ok((None, stats));
                 }
@@ -513,7 +526,8 @@ impl<'d> Paginator<'d, '_> {
                     return Ok((Some((pos, carry, children, end, fill.at.effects.clone())), stats));
                 }
                 if k + 1 < cols.len() {
-                    carry.keep_top = s == Stop::Column && carry.keep_top;
+                    // COL-2: a column top below the page's body top keeps a paragraph's space-before.
+                    carry.keep_top = s == Stop::Column && carry.keep_top || s == Stop::Full && mid;
                 }
             }
             Ok((None, stats))
@@ -586,6 +600,7 @@ impl<'d> Paginator<'d, '_> {
         let Some((p, mut c, children, end, eff)) = r.0.or(first) else { unreachable!("the full height balanced before") };
         // The section ends below its tallest column, including that column's last space-after (COL-5).
         c.prev = None;
+        c.balanced_after = c.prev_after;
         c.prev_after = 0.0;
         Ok(Some((end, children, p, c, eff)))
     }
@@ -596,8 +611,13 @@ impl<'d> Paginator<'d, '_> {
             return Ok(());
         }
         fill.at.notes_drawn = true;
-        let Some((parts, _)) = stream_fill(&area.parts, cols.len(), area.height + EPS) else { return Ok(()) };
         let top = cols[0].bottom.to_pt() - area.sep - area.height + 0.15;
+        if let Some(w) = area.width {
+            // COL-3: one full-width column from the first column's left.
+            out.push(fill.notes_box(area, &[(cols[0].x, &area.parts)], w, top, memos)?);
+            return Ok(());
+        }
+        let Some((parts, _)) = stream_fill(&area.parts, cols.len(), area.height + EPS) else { return Ok(()) };
         let per_col: Vec<(f64, &[super::token::NotePart])> = cols.iter().zip(&parts).map(|(c, p)| (c.x, &p[..])).collect();
         out.push(fill.notes_box(area, &per_col, cols[0].width, top, memos)?);
         Ok(())
@@ -625,10 +645,10 @@ pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields 
                 Block::Para(p) => {
                     for i in &p.inlines {
                         // A header's text boxes and frames show its fields (story::float_box).
-                        if let Inline::Float(f, _) = i
-                            && let Some(tb) = &f.text_box
-                        {
-                            walk(&mut tb.blocks.iter(), out, all);
+                        if let Inline::Float(f, _) = i {
+                            for tb in f.text_box.iter().chain(f.parts.iter().filter_map(|p| p.text_box.as_ref())) {
+                                walk(&mut tb.blocks.iter(), out, all);
+                            }
                         }
                         let Inline::FieldBegin { kind: Some(kind), .. } = i else { continue };
                         match kind {
@@ -744,7 +764,7 @@ pub fn layout_body(
             fill.at = AttemptState {
                 known: known.clone(),
                 end: end.clone(),
-                stream: shared.then(|| NoteArea { shared: Some(reserve), cols: cols.len(), ..Default::default() }),
+                stream: shared.then(|| stream_area(reserve, cols.len(), space.note_width)),
                 ..Default::default()
             };
             pos = saved.0.clone();
@@ -763,7 +783,8 @@ pub fn layout_body(
                     break;
                 }
                 if k + 1 < cols.len() {
-                    carry.keep_top = st == Stop::Column && carry.keep_top;
+                    // COL-2: a column top below the page's body top keeps a paragraph's space-before.
+                    carry.keep_top = st == Stop::Column && carry.keep_top || st == Stop::Full && space.mid_page;
                 }
             }
             let found = fill.at.found.clone();
@@ -791,8 +812,8 @@ pub fn layout_body(
         .drain(..)
         .map(|c| Child::Box(BoxFragment { kind: BoxKind::Column, id: None, offset: (0.0, 0.0), size: (0.0, 0.0), children: c.into() }))
         .collect();
-    if let Some(a) = stream.filter(|_| !(stop == Stop::Done && space.balance && cols.len() > 1)) {
-        Paginator::draw_stream(&mut fill, &a, cols, &mut body, memos)?;
+    if let Some(a) = &stream {
+        Paginator::draw_stream(&mut fill, a, cols, &mut body, memos)?;
     }
     let next_shares = stop == Stop::Done && space.next_continuous;
     let floats = Paginator::draw_floats(&fill, &placed, memos)?;
@@ -813,7 +834,7 @@ pub fn layout_body(
         // ordinary gap to it (PARA-1). A balanced end already includes it (COL-5).
         let mut e = bottoms.iter().copied().fold(page_top, f64::max) + carry.prev_after;
         if space.balance && cols.len() > 1 {
-            match Paginator::balance(&mut fill, sec, cols, &saved, memos)? {
+            match Paginator::balance(&mut fill, sec, cols, &saved, space.mid_page, shared.then_some(reserve), space.note_width, memos)? {
                 Some((h, children, p, c, eff)) => {
                     e = h;
                     pos = p;
@@ -827,6 +848,10 @@ pub fn layout_body(
             // The floats are drawn again after balancing. When no height balanced, the unbalanced fill keeps the
             // floats it already had, so they appear twice (a known flaw, kept for now).
             body.extend(floats.iter().cloned());
+            // COL-3 (compat 15): and the page's note stream.
+            if let Some(a) = &stream {
+                Paginator::draw_stream(&mut fill, a, cols, &mut body, memos)?;
+            }
         }
         section_end = Some(e);
     } else if pos.block >= nblocks {
@@ -998,4 +1023,18 @@ impl ColStats {
         }
         st
     }
+}
+
+/// COL-3: a page's empty shared note stream, `reserve` high from the previous fill: over the `cols` columns, or one
+/// column `width` wide.
+fn stream_area(reserve: f64, cols: usize, width: Option<f64>) -> NoteArea {
+    NoteArea { shared: Some(reserve), cols: if width.is_some() { 1 } else { cols }, width, ..Default::default() }
+}
+
+/// COL-3: whether `blocks` reference a footnote anywhere (in tables too).
+fn references_footnote(blocks: &[Block]) -> bool {
+    blocks.iter().any(|b| match b {
+        Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind: crate::docx::NoteKind::Foot, .. })),
+        Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| references_footnote(&c.blocks))),
+    })
 }

@@ -111,5 +111,6 @@ fn float(group: Vec<Paragraph>) -> Float {
         src: None,
         locked: false,
         frame_src,
+        parts: Vec::new(),
     }
 }

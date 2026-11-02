@@ -25,6 +25,10 @@ pub struct TextEnv {
     pub do_not_break_wrapped_tables: bool,
     /// `w:doNotVertAlignInTxbx` (FLOAT-10: in compat ≤ 14 a text box's text isn't aligned vertically).
     pub do_not_vert_align_in_txbx: bool,
+    /// `w:wpJustification` (JUST-7: in compat ≤ 14 a justified line may run past its right edge).
+    pub wp_justification: bool,
+    /// `w:useWord97LineBreakRules` (FONT-18: in compat ≤ 14 some runs are laid out at a 1000-unit em).
+    pub word97_line_breaks: bool,
     /// The default paragraph style: a table row's end mark has it (PARA-4).
     pub default_style: Option<String>,
     /// `w:growAutofit` (TABLE-17: tables may grow past the text width).
@@ -53,6 +57,8 @@ impl TextEnv {
             do_not_vert_align_cell_with_sp: s.has("doNotVertAlignCellWithSp"),
             do_not_break_wrapped_tables: s.has("doNotBreakWrappedTables"),
             do_not_vert_align_in_txbx: s.has("doNotVertAlignInTxbx"),
+            wp_justification: s.has("wpJustification"),
+            word97_line_breaks: s.has("useWord97LineBreakRules"),
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
             grow_autofit: s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),

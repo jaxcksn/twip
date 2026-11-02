@@ -467,15 +467,18 @@ topBorder   = the widest resolved top edge among the row's cells (TABLE-36), by 
 above       = max(W, max over the row's cells of (h(top(c)) + topMargin(c)))
                   top(c) = the cell's own top border, else the table's top (row 0) or insideH, before conflicts
                   W      = the previous row's widest own-else-insideH bottom border, h() as in TABLE-37 (0 on row 0)
-contentH    = max over the row's cells that are not vertically merged of
-                  (above − topBorder + cell content height + bottomMargin)
+contentH    = max over the row's cells that are not vertically merged of (above − topBorder + cell content height)
+              + below
               but at least the largest (topMargin + bottomMargin) of any cell in the row
+below       = the largest bottomMargin of any cell in the row: one bottom margin for the whole row
 rowPitch    = topBorder + contentH                       (auto height; TABLE-28)
 firstLineTop = rowTop + above (+ the vAlign offset, TABLE-30), the same for every cell of the row
 tableBottom = last row's bottom + the widest resolved bottom edge among the last row's cells, by its h()
 ```
 
 Example: a 3pt bottom border over a 0.5pt insideH and 2pt top margins gives `above = max(3, 2.5) = 3`.
+
+Example: a three-line cell with no bottom margin beside a one-line cell with a 10pt bottom margin: the row is the three lines plus 10pt.
 
 Cells in a vertical merge (restart or continuation) don't count in `contentH`: see [TABLE-31](#table-31). [TABLE-38](#table-38) can widen `topBorder`, and cell spacing adds to it ([TABLE-39](#table-39)).
 
@@ -524,8 +527,9 @@ A merged region is a cell with `w:vMerge w:val="restart"` and, in the rows below
 - `w:vAlign` ([TABLE-30](#table-30)), shading and the side borders act over the whole region (from the restart row's top to the region's bottom).
 - There is no border inside the region: continuation cells draw no top border. The border between the region's rows still takes its row's top-border space ([TABLE-27](#table-27)), and the region's bottom border is the last row's.
 - If the restart cell's row is exact, the whole region clips at the region's bottom ([TABLE-34](#table-34)).
-- Across pages the region's rows split and move like any rows; its content isn't repeated on the next page.
+- Across pages the region's rows split and move like any rows; its content isn't repeated on the next page, it continues there (below).
 - When the region's last row splits ([TABLE-41](#table-41)) and its first row is on the same page, the region's content splits with it: it keeps the lines that fit above the room's bottom, tested as a cell's ([TABLE-44](#table-44)), from the region's content top. The rest continues in the region's column of that row's continuation, at its top like any continued cell. The part on this page is as tall as the taller of the row's own kept content and the region's.
+- When a page ends between whole rows inside a top-aligned region whose first row is on that page, the region keeps the lines that fit down to the last whole row's bottom (tested as a cell's, from the region's content top), and the rest continues at the top of the region's column in the next page's first row. Every region of a row is cut this way at once.
 
 Example: a two-row region of 14.52pt lines beside a last row holding "(initial)", near the body bottom: three lines stay, with "(initial)" beside the third. The fourth line's text would end 1.8pt above the body bottom but its pitch ends 0.5pt past it, so it starts the next page's continuation with the rest.
 

@@ -46,6 +46,8 @@ Example: a tab, then a 64pt-wide 30pt-high picture, 14.65 below the top of a 112
 
 An inline picture (`wp:inline`) is a glyph whose bottom sits on the baseline: ascent = picture height, descent 0. The line height follows [LINE-1](line#line-1): `max(pictureHeight, textAscent) + textDescent`. With exact line spacing the line keeps its height ([LINE-12](line#line-12)) and the picture overflows upward, unclipped.
 
+Its box is `wp:extent` grown by `wp:effectExtent` on each side: width + l + r, height + t + b; the picture is drawn inside. A run's `w:position` moves it like text ([FONT-7](font#font-7)): raised by p, ascent = box height + p and descent 0; lowered by p, ascent = box height − p and descent p.
+
 ### FLOAT-6. Anchor position {#float-6}
 
 **Horizontal** (`wp:positionH/@relativeFrom`), giving a box `[x0, x0 + w)`:
@@ -92,6 +94,7 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 - An interval that starts at a float's edge (not the column's) takes the place of the left indent: its lines start at `max(edge, left indent)`, and the first line adds its first-line indent to that, so a hanging first line starts left of the edge, over the float's distance or the float itself.
 - Tabs in an interval that starts at a float's edge: compat ≤ 14 lays the interval out as a line of its own, so default stops are at `edge + k·defaultTabStop` and custom stops shift by the edge. Compat 15 keeps the stops counted from the margin; stops left of the interval start are skipped.
 - Compat ≤ 14: the intervals found at a line's top hold down to the bottom of a float covering that top. When that bottom is inside the line and another float starts inside the line, the line doesn't use them: it moves down to that bottom and is tried again there. A line that only overhangs a float's bottom, or meets a float starting inside it with none covering its top, stays.
+- Compat ≤ 14: a line of a `keepLines` paragraph whose band (its top to its top plus its height) holds the top of a wrapping float (with its top distance) starts at that top, beside the float. Without keepLines, and in compat 15, the line stays where the flow puts it.
 
 Example: a float's exclusion ending at 255pt beside a paragraph with `w:left="-540" w:firstLine="540"`: the first line starts at 282pt, the next ones at 255pt. With `w:hanging="540"` instead the first line starts at 228pt.
 
@@ -103,11 +106,13 @@ Example: a float's exclusion ending at 255pt beside a paragraph with `w:left="-5
 
 ### FLOAT-9. Floats past the column bottom {#float-9}
 
-For a wrapping float positioned relative to `paragraph` or `line` whose bottom is below the column bottom:
+Compat 15, for a wrapping float positioned relative to `paragraph` or `line` whose bottom is below the column bottom:
 
 1. Move it up so its bottom is on the column bottom, if its top then stays at or below the bottom of the anchor's line box.
 2. Otherwise, if the anchor paragraph isn't at the top of an empty column, move the whole anchor paragraph to the next column (or page); the float is placed again from there.
 3. Otherwise (nowhere to move it), leave the float where it was requested, let its own paragraph ignore it (no wrap), and continue the anchor paragraph after the anchor's line in the next column.
+
+Compat ≤ 14 does none of this: the float stays where its position puts it, past the column bottom, and its paragraph stays too.
 
 Floats positioned relative to the page or margins, and wrapNone floats ([FLOAT-13](float#float-13)), are never moved: they may run past the page edge, and text wraps around the part on the page.
 
@@ -152,3 +157,11 @@ A wrapNone float (in front of or behind the text) is never moved by [FLOAT-9](fl
 - Compat 15 ignores `layoutInCell`: the float stays in the cell. Compat ≤ 14 also keeps a float positioned from the `character` (horizontally) or the `line` (vertically) in the cell, whatever its `layoutInCell`.
 - Compat ≤ 14 with `layoutInCell="0"` otherwise (in a cell of a body table, not a nested one): place the float like a body float horizontally and for `page`/`margin` vertically. For `paragraph` keep its position in the cell, moved up by the row's top border height (the offsets count from the row top, not from the cell's content). It doesn't make the row taller. If it is square or top-and-bottom wrapped, is placed from the `column` and the `paragraph` without alignments, is in the first row and overlaps that row (vertically, from its top distance; horizontally, the table's grid), the whole table starts below it: at the float's bottom plus its bottom distance. If it overlaps only a later row on that page, the rows before that row stay, the part they form closes with the table's bottom border, and the rows from that one on start at the float's bottom plus its bottom distance. The float stays where the row's first place put it.
 - Not done: a tight or through float moving the table, around its wrap polygon's bounding box (an empty polygon takes no room); and the cell's text wrapping a float placed from other boxes or anchored in an earlier paragraph.
+
+### FLOAT-15. Group shapes {#float-15}
+
+A group shape (`wpg:wgp`) is one float: its extent is the box that is positioned and wrapped. Each of its pictures and text boxes ([FLOAT-10](float#float-10)) is drawn in its own box. A group maps its children's `a:xfrm` boxes from its child frame (`a:chOff`, `a:chExt`) onto its own box (`a:off`, `a:ext`; the outermost group's box is the float's extent); a group inside it (`wpg:grpSp`) is a child placed the same way, its own children mapped through its own child frame, at every level. Shapes without text aren't drawn.
+
+Example: a 100pt group whose child frame is 200pt wide halves its children; a nested group at child x 100 starts 50pt in, and a text box at x 50 in its 100pt-for-100pt child frame starts 25pt further.
+
+A text box's fields take the values of the page it is drawn on, in a header or footer cell too ([FIELD-1](field#field-1)).

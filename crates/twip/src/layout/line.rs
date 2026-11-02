@@ -19,7 +19,7 @@ use super::fragment::{Atom, GlyphRun, ImageKey, Item, LineFragment};
 use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
 use super::space::{BorderKey, ParaSpace};
-use super::text::{Kind, Object, Piece, ShapedPara, metrics, para_id, symbol_unicode};
+use super::text::{Kind, Object, Piece, ShapedPara, para_id, symbol_unicode};
 use super::units::{LU_PER_PT, Lu};
 
 const EPS: f64 = 1e-6;
@@ -84,6 +84,8 @@ pub struct Frame {
     pub no_wrap: bool,
     /// Where tab stops are measured from: 0, or a compat <= 14 piece's interval start beside a float (FLOAT-7).
     pub tab_origin: f64,
+    /// JUST-7: compat ≤ 14 `w:wpJustification`.
+    pub wp_justification: bool,
 }
 
 impl Frame {
@@ -97,6 +99,7 @@ impl Frame {
             split_page_break: e.compat == Compat::Legacy && e.split_pg_break_and_para_mark,
             no_wrap: space.fit,
             tab_origin: 0.0,
+            wp_justification: e.compat == Compat::Legacy && e.wp_justification,
         }
     }
 }
@@ -112,6 +115,9 @@ pub struct ParaLines {
     /// The x the lines are drawn at ([`ParaSpace::x0`]).
     pub x0: f64,
     pub para: ParaId,
+    /// The neighbours' border keys the lines' borders were drawn against (PARA-7): the previous paragraph's (the
+    /// paragraph's own for a continuation) and the next one's.
+    pub borders: (BorderKey, BorderKey),
     /// Lazily built drawings, one per line. A cache filled behind `&self`: lines are measured far more often than
     /// they are drawn (table autofit, keep-with-next tests), so drawing waits for the first placement.
     drawn: Box<[OnceCell<Rc<LineFragment>>]>,
@@ -239,7 +245,7 @@ pub fn break_lines_uncached(
     let mut lines =
         super::job::unit("line breaking", || crate::prof::time("break", || break_paragraph(shaped, pieces, style, mark, &frame, fonts, from > 0)));
     let prev = if from > 0 { border_key(style) } else { space.borders.0.clone() };
-    apply_borders(&mut lines, style, prev.as_deref(), space.borders.1.as_deref(), space.width);
+    apply_borders(&mut lines, style, prev.as_deref(), space.borders.1.as_deref(), space.width, false);
     // shortcut: line breaking is one unit per paragraph until jobs keep partial lines (JobMemo).
     memos.meter.unit_done();
     let n = lines.len();
@@ -250,6 +256,7 @@ pub fn break_lines_uncached(
         width: space.width,
         x0: space.x0,
         para: para_id(para),
+        borders: (prev, space.borders.1.clone()),
         drawn: (0..n).map(|_| OnceCell::new()).collect(),
         compat: space.env.compat,
         review: space.env.review.clone(),
@@ -271,13 +278,24 @@ pub fn neighbour_borders(style: &ParaStyle, prev: Option<&ParaStyle>, next: Opti
     }
 }
 
-/// PARA-7: the extra space goes into the first and last line; the borders are drawn with them.
-fn apply_borders(
+/// PARA-7: how much a paragraph's top border adds to its first line, after a paragraph with border key `prev`.
+pub fn top_border_extra(s: &ParaStyle, prev: Option<&[Option<crate::docx::props::Border>; 5]>) -> f64 {
+    let key = border_key(s);
+    match &s.border_top {
+        Some(t) if !(key.is_some() && prev == key.as_deref()) => (if t.style == "double" { 3.0 * t.width } else { t.width }) + t.space,
+        _ => 0.0,
+    }
+}
+
+/// PARA-7: the extra space goes into the first and last line; the borders are drawn with them. `top_pitched`: the
+/// first line's pitch and baseline already hold the top border's extra ([`top_border_extra`]).
+pub fn apply_borders(
     lines: &mut [Line],
     s: &ParaStyle,
     prev: Option<&[Option<crate::docx::props::Border>; 5]>,
     next: Option<&[Option<crate::docx::props::Border>; 5]>,
     width: f64,
+    top_pitched: bool,
 ) {
     let key = border_key(s);
     let n = lines.len();
@@ -313,8 +331,10 @@ fn apply_borders(
         let extra = thick(t) + t.space;
         let l = &mut lines[0];
         edge(&mut l.rects, t, true, 0.0, x0, x1);
-        l.pitch += extra;
-        l.baseline += extra;
+        if !top_pitched {
+            l.pitch += extra;
+            l.baseline += extra;
+        }
         shade_top = thick(t);
     }
     if let (Some(b), false) = (&s.border_bottom, same_next) {
@@ -359,7 +379,7 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
     let right = frame.width - style.ind_right;
     let justify_smart = matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && !frame.no_wrap;
     // TABLE-51: a fitted cell's lines don't wrap.
-    let wrap_right = if frame.no_wrap { f64::INFINITY } else { right };
+    let wrap_right = if frame.no_wrap { f64::INFINITY } else { right + wp_extension(style, frame) };
     let mut start = 0;
     let n = pieces.len();
     // Precomputed BREAK-6 line ends, per hard-break segment.
@@ -411,6 +431,16 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         lines.push(line);
     }
     lines
+}
+
+/// JUST-7: how far past its right edge a compat ≤ 14 `wpJustification` justified line may run: 562/14400 of the
+/// text width (indents out, the first-line indent kept, at most 31680 twips), in whole twips.
+fn wp_extension(style: &ParaStyle, frame: &Frame) -> f64 {
+    if !frame.wp_justification || style.jc != Jc::Both {
+        return 0.0;
+    }
+    let w = ((frame.width - style.ind_left - style.ind_right) * 20.0).round().min(31680.0);
+    (w * 562.0 / 14400.0).round() / 20.0
 }
 
 /// TABLE-51: a fitted cell's line spreads the difference between its text and the fit width (the line's room less 1pt)
@@ -1057,6 +1087,8 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
     let mut gaps: Vec<Gap> = Vec::new();
     let mut k = from;
     let mut gap = Gap::default();
+    // BREAK-3: spaces next to a no-break space join the words around them.
+    let mut joined = false;
     while k < seg_end {
         let p = &pieces[k];
         if matches!(p.kind, Kind::Space) {
@@ -1064,6 +1096,7 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
             gap.width += p.width;
             gap.shrink += (w + 2) >> 2;
             gap.stretch += (w + 1) >> 1;
+            joined |= !p.break_after;
             k += 1;
             continue;
         }
@@ -1082,9 +1115,19 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
             }
         }
         // Leading spaces take their width but never shrink or stretch (BREAK-6).
-        gaps.push(if words.is_empty() { Gap { width: gap.width, ..Gap::default() } } else { gap });
+        if joined && let (Some(last), Some(g)) = (words.last_mut(), gaps.last_mut()) {
+            // ponytail: the joined gap's shrink and stretch count with the gap before the joined word (lost when
+            // that word starts the line).
+            last.1 = k;
+            last.2 += gap.width + w;
+            g.shrink += gap.shrink;
+            g.stretch += gap.stretch;
+        } else {
+            gaps.push(if words.is_empty() { Gap { width: gap.width, ..Gap::default() } } else { gap });
+            words.push((ws, k, w));
+        }
         gap = Gap::default();
-        words.push((ws, k, w));
+        joined = false;
     }
     if words.is_empty() {
         return LineChoice::Empty;
@@ -1194,6 +1237,12 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 for &k in &spaces {
                     line.widths[k] += q;
                 }
+            } else if extra < 0.0 && justify && frame.wp_justification {
+                // JUST-7: the line squeezes back into the column, its spaces sharing the overflow equally.
+                let q = extra / spaces.len() as f64;
+                for &k in &spaces {
+                    line.widths[k] += q;
+                }
             } else if extra < 0.0 && frame.compat == Compat::Generic {
                 // JUST-2: each space shrinks by at most a quarter; the unused capacity is shared equally.
                 let caps: Vec<f64> = spaces.iter().map(|&k| line.widths[k] / 4.0).collect();
@@ -1256,7 +1305,7 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
 fn picture_line_height(sp: &ShapedPara, line: &[Piece], mark: &Run, fonts: &Fonts, last: bool, compat: Compat, run_h: f64) -> f64 {
     let height = |run: &Run| {
         fonts.face(&run.ascii, run.bold, run.italic).map_or(0.0, |f| {
-            let (a, d, e) = metrics(&f, run.size);
+            let (a, d, e) = sp.metrics(&f, run, run.size);
             a + e + d
         })
     };
@@ -1354,7 +1403,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     else if (!has_content || (last && !has_text))
         && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
     {
-        let (a, d, e) = metrics(&f, mark_size);
+        let (a, d, e) = sp.metrics(&f, mark, mark_size);
         asc = asc.max(a + e);
         desc = desc.max(d);
         un_asc = un_asc.max(a + e);
@@ -1367,7 +1416,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         && un_text_asc + un_text_desc + num_asc == 0.0
         && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
     {
-        let (a, d, e) = metrics(&f, mark_size);
+        let (a, d, e) = sp.metrics(&f, mark, mark_size);
         asc = asc.max(a + e + d);
     }
     let asc = asc.max(num_asc); // LIST-7: the number's ascent, not its descent
@@ -1556,7 +1605,10 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 // FLOAT-5: an inline picture's bottom sits on the baseline.
                 if let Some(Object::Picture(pic)) = p.object.map(|o| &sp.objects[o as usize]) {
                     flush(&mut run, &mut out);
-                    out.push(Item::Image { rect: [x, base - pic.h, x + pic.w, base], key: ImageKey { index: pic.image, generation: 0 } });
+                    // FLOAT-5: inside its effect extents, raised or lowered with its run.
+                    let bottom = base - sp.styles[p.style as usize].run.position - pic.effect[3];
+                    let x0 = x + pic.effect[0];
+                    out.push(Item::Image { rect: [x0, bottom - pic.h, x0 + pic.w, bottom], key: ImageKey { index: pic.image, generation: 0 } });
                     if let Some(unit) = first {
                         atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + pic.w), para: q, unit, brk: false });
                     }

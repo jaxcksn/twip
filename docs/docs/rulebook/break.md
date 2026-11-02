@@ -17,13 +17,13 @@ After a break at a space, every space that follows stays on the line. These trai
 
 A line may end after:
 
-- a space;
+- a space, unless its run of spaces is directly before or after a no-break space U+00A0 (`carbon.&nbsp; Risks` and `carbon. &nbsp;Risks` don't break; the no-break space may be in another run). Such spaces still stretch, shrink and hang as usual;
 - a hyphen-minus `-`, a hyphen U+2010 or an en dash U+2013, also before digits and also in table cells (except as [BREAK-8](break#break-8) says);
 - a soft hyphen ([BREAK-7](break#break-7));
 - a tab character;
 - before and after an inline picture, even with no space next to it.
 
-Nowhere else: not after a no-break space or a no-break hyphen, an em dash or a slash, and not between ideographs. Line breaks (`w:br`, `w:cr`) always end the line; page and column breaks end it too and move on to the next page or column ([COL-2](col#col-2)).
+Nowhere else: not after a no-break space or a no-break hyphen, an em dash or a slash, and not between ideographs. Line breaks (`w:br`, `w:cr`, also directly in `w:p` outside any run, where they take the paragraph's run defaults) always end the line; page and column breaks end it too and move on to the next page or column ([COL-2](col#col-2)).
 
 ### BREAK-4. When no break opportunity fits {#break-4}
 
@@ -93,3 +93,7 @@ In compat ≤ 14 with `compressPunctuation`, a line whose runs are East Asian as
 Example: Arial spaces can lose about 20% of their width this way, Courier New spaces 50%.
 
 Example: Arial 12 "⇥You are ordered … at 10:00 am with", 3.7pt wider than the 504pt after the tab, keeps "with": its 17 spaces after the tab can give 0.686pt each.
+
+### BREAK-10. Page and column breaks in table cells {#break-10}
+
+Inside a table cell, at any nesting level, a page or column break (`w:br w:type="page"`, `"column"`) is nothing: no break, no line end, no height. `Before`, a page break, `After` is the one line `BeforeAfter`. A text-wrapping break (`w:br` without a type) in a cell ends its line as anywhere else. Both modes.

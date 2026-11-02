@@ -21,6 +21,9 @@ pub struct RunStyle {
     /// STYLE-8): Word treats it as an East Asian font for balanced space runs and compressed punctuation (FONT-14,
     /// BREAK-8, BREAK-9).
     pub east_asia_unset: bool,
+    /// The East Asian font is named and isn't Times New Roman, the font an unset slot stands for: such a run is
+    /// laid out at a 1000-unit em under compat ≤ 14 `useWord97LineBreakRules` (FONT-18).
+    pub east_asia_named: bool,
     pub hint_east_asia: bool,
     pub size: f64,
     pub bold: bool,
@@ -191,6 +194,8 @@ pub struct Picture {
     /// Lock aspect ratio (`a:graphicFrameLocks/@noChangeAspect` or `a:picLocks/@noChangeAspect`): corner handles keep
     /// the ratio.
     pub lock_aspect: bool,
+    /// `wp:effectExtent` (left, top, right, bottom), points: the layout box grows by it (FLOAT-5).
+    pub effect: [f64; 4],
 }
 
 /// An anchored (floating) picture or text box (the FLOAT rules).
@@ -234,6 +239,17 @@ pub struct Float {
     pub locked: bool,
     /// A frame's paragraphs in the source (frames.rs): saving drops them when the frame is deleted.
     pub frame_src: Option<std::ops::Range<usize>>,
+    /// A group shape's pictures and text boxes (FLOAT-15), in drawing order; the float's own image and text box are
+    /// then none.
+    pub parts: Vec<GroupPart>,
+}
+
+/// A picture or text box of a group shape: its box from the group's top left, points (FLOAT-15).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupPart {
+    pub rect: [f64; 4],
+    pub image: Option<usize>,
+    pub text_box: Option<TextBox>,
 }
 
 impl Float {

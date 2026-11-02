@@ -76,19 +76,21 @@ impl Resolver {
         let ascii = self.font(&p.ascii);
         let h_ansi = self.font(&p.h_ansi);
         let fallback = || ascii.clone().or_else(|| h_ansi.clone()).unwrap_or_else(|| self.theme.minor.clone());
+        let east_asia = match (&p.east_asia, &p.east_asia_below) {
+            (Some(FontRef::Theme(t)), Some(below)) if self.theme.ea_unset(t) => self.font(&Some(below.clone())),
+            (e, _) => self.font(e),
+        };
+        // STYLE-8: a named font over an inherited empty slot still leaves the slot empty.
+        let east_asia_unset = p.east_asia_below.is_none()
+            && matches!(p.east_asia.as_ref().filter(|e| matches!(e, FontRef::Theme(_))).or(p.east_asia_theme.as_ref()),
+                Some(FontRef::Theme(t)) if self.theme.ea_unset(t));
         Rc::new(RunStyle {
             ascii: ascii.clone().or_else(|| h_ansi.clone()).unwrap_or_else(fallback),
             h_ansi: h_ansi.clone().or_else(|| ascii.clone()).unwrap_or_else(fallback),
-            east_asia: match (&p.east_asia, &p.east_asia_below) {
-                (Some(FontRef::Theme(t)), Some(below)) if self.theme.ea_unset(t) => self.font(&Some(below.clone())),
-                (e, _) => self.font(e),
-            }
-            .unwrap_or_else(fallback),
+            east_asia_named: !east_asia_unset && east_asia.as_deref().is_some_and(|n| !n.is_empty() && !n.eq_ignore_ascii_case("Times New Roman")),
+            east_asia: east_asia.unwrap_or_else(fallback),
             cs: self.font(&p.cs).unwrap_or_else(fallback),
-            // STYLE-8: a named font over an inherited empty slot still leaves the slot empty.
-            east_asia_unset: p.east_asia_below.is_none()
-                && matches!(p.east_asia.as_ref().filter(|e| matches!(e, FontRef::Theme(_))).or(p.east_asia_theme.as_ref()),
-                    Some(FontRef::Theme(t)) if self.theme.ea_unset(t)),
+            east_asia_unset,
             hint_east_asia: p.hint.as_deref() == Some("eastAsia"),
             size: p.size.unwrap_or(10.0),
             bold: p.toggle(toggle::B),
@@ -240,7 +242,11 @@ impl Resolver {
     pub fn label_shows(&self, num_id: i64, ilvl: i64, from_style: bool, style_id: Option<&str>) -> bool {
         !from_style || {
             let a = self.numbering.abstract_of(num_id, &self.styles).unwrap_or(-1);
-            self.style_links.get(&(a, ilvl)).map(|s| Some(s.as_str()) == style_id).unwrap_or(true)
+            self.style_links.get(&(a, ilvl)).is_none_or(|linked| {
+                // A style based on the linked one that doesn't set numbering itself inherits the linked style's list.
+                let chain = self.styles.chain(style_id);
+                chain.iter().rposition(|s| s.id == *linked).is_some_and(|i| chain[i + 1..].iter().all(|s| s.base.ppr.num_id.is_none()))
+            })
         }
     }
 

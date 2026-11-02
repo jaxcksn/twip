@@ -115,9 +115,16 @@ pub struct ShapedPara {
     pub objects: Box<[Object]>,
     /// A joined paragraph's sources ([`ShapeSpace::join`], REV-6): piece sources are its units.
     pub join: Option<Rc<super::join::JoinMap>>,
+    /// FONT-18: [`ShapeSpace::em1000`].
+    pub em1000: bool,
 }
 
 impl ShapedPara {
+    /// A run's font metrics ([`metrics_at`]): at a 1000-unit em for the runs FONT-18 picks.
+    pub fn metrics(&self, face: &Face, run: &RunStyle, size: f64) -> (f64, f64, f64) {
+        metrics_at(face, size, self.em1000 && run.east_asia_named)
+    }
+
     pub fn style(&self, i: usize) -> &PieceStyle {
         &self.styles[self.pieces[i].style as usize]
     }
@@ -176,10 +183,27 @@ impl ShapedPara {
 /// Font metrics in points for one face at one size: ascent, descent and line gap, on the layout-unit grid. The ascent
 /// with the gap and the descent are each rounded once (UNIT-4, LINE-1); the gap is split off the rounded sum.
 pub fn metrics(face: &Face, size: f64) -> (f64, f64, f64) {
-    let above = Lu::from_font(face.ascent + face.leading, size, face.upem);
-    let gap = Lu::from_font(face.leading, size, face.upem);
-    let below = Lu::from_font(face.descent, size, face.upem);
+    metrics_at(face, size, false)
+}
+
+/// [`metrics`], or with `em1000` (FONT-18) from the metrics at a 1000-unit em, each rounded to a whole unit first.
+pub fn metrics_at(face: &Face, size: f64, em1000: bool) -> (f64, f64, f64) {
+    let (a, d, g, upem) = if em1000 {
+        let r = |v: f64| (v * 1000.0 / face.upem).round();
+        (r(face.ascent), r(face.descent), r(face.leading), 1000.0)
+    } else {
+        (face.ascent, face.descent, face.leading, face.upem)
+    };
+    let above = Lu::from_font(a + g, size, upem);
+    let gap = Lu::from_font(g, size, upem);
+    let below = Lu::from_font(d, size, upem);
     (Lu(above.0 - gap.0).to_pt(), below.to_pt(), gap.to_pt())
+}
+
+/// FONT-18: a glyph's width at a 1000-unit em: its advance rounded to 1/1000 em, then down to layout units, in points.
+fn width_at_em1000(advance: f64, upem: f64, size: f64) -> f64 {
+    let w = (advance * 1000.0 / upem).round();
+    (w * 2.0 * size * 2048.0 / 1000.0).floor() / super::units::LU_PER_PT
 }
 
 /// Half-points, rounded half away from zero (UNIT-5).
@@ -271,6 +295,8 @@ struct Builder<'a> {
     glyph_dx: Vec<f64>,
     text: String,
     objects: Vec<Object>,
+    /// FONT-18: [`ShapeSpace::em1000`].
+    em1000: bool,
 }
 
 /// A piece being made, before its glyphs and text are appended to the builder's arrays.
@@ -366,7 +392,7 @@ impl Builder<'_> {
         let (metric_size, shift) = if run.vert_align == VertAlign::Baseline { (size, raise) } else { (run.size, run.position) };
         let (mut ascent, mut descent) = match &face {
             Some(f) => {
-                let (a, d, e) = metrics(f, metric_size);
+                let (a, d, e) = metrics_at(f, metric_size, self.em1000 && run.east_asia_named);
                 (a + e, d)
             }
             None => (0.0, 0.0),
@@ -568,7 +594,13 @@ impl Builder<'_> {
             let kind = if first == ' ' || first == '\u{3000}' || first == '\u{2002}' || first == '\u{2003}' { Kind::Space } else { Kind::Text };
             let n_chars = c1 - c0;
             let mut p = self.new_piece(kind, run, Some(face.clone()), size, raise);
-            p.width = cluster_glyphs.iter().map(|g| g.advance).sum::<f64>() * scale + run.spacing * n_chars as f64;
+            p.width = if self.em1000 && run.east_asia_named {
+                // FONT-18: each glyph at a 1000-unit em, its kerning added in design units.
+                let at = |g: &Glyph| width_at_em1000(face.advance(g.id), face.upem, size) + (g.advance - face.advance(g.id)) * face.scale(size);
+                cluster_glyphs.iter().map(at).sum::<f64>() * run.scale / 100.0
+            } else {
+                cluster_glyphs.iter().map(|g| g.advance).sum::<f64>() * scale
+            } + run.spacing * n_chars as f64;
             // BREAK-3: a break after an en dash too.
             p.break_after = kind == Kind::Space || first == '-' || first == '\u{2010}' || first == '\u{2013}';
             if first == '\u{AD}' {
@@ -719,6 +751,8 @@ impl Builder<'_> {
                     p.object = Some(Object::PTab(*t));
                     self.atom(p, "\t");
                 }
+                // BREAK-10: a page or column break in a table cell is nothing.
+                (Inline::Break(BreakKind::Page | BreakKind::Column, _), Some(_)) if space.in_cell => {}
                 (Inline::Break(k, _), Some(run)) => {
                     let kind = match k {
                         BreakKind::Line => Kind::LineBreak,
@@ -742,9 +776,11 @@ impl Builder<'_> {
                 }
                 (Inline::Picture(pic, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Object, run, None, run.size, 0.0);
-                    p.width = pic.w;
-                    p.ascent = pic.h;
-                    p.descent = 0.0;
+                    // FLOAT-5: the box is the extent and its effect extents, raised or lowered like text (FONT-7).
+                    let [l, t, r, b] = pic.effect;
+                    p.width = pic.w + l + r;
+                    p.ascent = (pic.h + t + b + run.position).max(0.0);
+                    p.descent = (-run.position).max(0.0);
                     p.object = Some(Object::Picture(pic.clone()));
                     // BREAK-3: a line may end before and after an inline picture.
                     p.break_after = true;
@@ -841,7 +877,28 @@ impl Builder<'_> {
         }
     }
 
-    fn finish(self) -> ShapedPara {
+    fn finish(mut self) -> ShapedPara {
+        // BREAK-3: a run of spaces directly before or after a no-break space is no break opportunity.
+        let text = |p: &Piece| &self.text[p.text.0 as usize..p.text.1 as usize];
+        let n = self.pieces.len();
+        let mut a = 0;
+        while a < n {
+            if text(&self.pieces[a]) != " " {
+                a += 1;
+                continue;
+            }
+            let mut b = a;
+            while b < n && text(&self.pieces[b]) == " " {
+                b += 1;
+            }
+            let nbsp = |k: usize| self.pieces.get(k).is_some_and(|p| text(p) == "\u{a0}");
+            if (a > 0 && nbsp(a - 1)) || nbsp(b) {
+                for p in &mut self.pieces[a..b] {
+                    p.break_after = false;
+                }
+            }
+            a = b;
+        }
         ShapedPara {
             pieces: self.pieces.into_boxed_slice(),
             styles: self.styles.into_boxed_slice(),
@@ -851,6 +908,7 @@ impl Builder<'_> {
             text: self.text.into_boxed_str(),
             objects: self.objects.into_boxed_slice(),
             join: None,
+            em1000: self.em1000,
         }
     }
 }
@@ -863,6 +921,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         east_asia,
         cs,
         east_asia_unset,
+        east_asia_named,
         hint_east_asia,
         size,
         bold,
@@ -895,6 +954,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *east_asia == b.east_asia
             && *cs == b.cs
             && *east_asia_unset == b.east_asia_unset
+            && *east_asia_named == b.east_asia_named
             && *hint_east_asia == b.hint_east_asia
             && *size == b.size
             && *bold == b.bold
@@ -993,6 +1053,7 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
         glyph_dx: Vec::new(),
         text: String::new(),
         objects: Vec::new(),
+        em1000: space.em1000,
     };
     // shortcut: shaping is one unit per paragraph until jobs keep partial pieces (JobMemo).
     super::job::unit("shaping call", || crate::prof::time("itemize", || b.paragraph(para, space)))?;
@@ -1002,7 +1063,13 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
 
 /// The field values and note numbers a paragraph's [`ShapeSpace`] holds, from the values the page or story gives.
 pub fn shape_space(para: &Paragraph, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, text: &TextEnv) -> ShapeSpace {
-    let mut space = ShapeSpace { balance: text.balance_spaces, compress: text.compress_punctuation, view: text.review.view, ..ShapeSpace::default() };
+    let mut space = ShapeSpace {
+        balance: text.balance_spaces,
+        compress: text.compress_punctuation,
+        em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
+        view: text.review.view,
+        ..ShapeSpace::default()
+    };
     let spans = crate::docx::fields::spans(&para.inlines);
     for (k, inl) in para.inlines.iter().enumerate() {
         match inl {
@@ -1074,6 +1141,7 @@ pub fn shape_run(text: &str, run: &Run, fonts: &Fonts) -> ShapedPara {
         glyph_dx: Vec::new(),
         text: String::new(),
         objects: Vec::new(),
+        em1000: false,
     };
     // Shaping a run never yields (no budget is consulted).
     let _ = b.text(text, run);

@@ -161,3 +161,16 @@ Shape consecutive text of equal formatting as one stretch, even across `w:r` bou
 A variable font's named instances (`fvar`) are its faces; the font's default location is not one unless an instance names it. Name each instance as Windows' GDI does, the name documents carry in `w:rFonts`: the typographic family (`name` 16, else 1), then the names of the instance's `STAT` axis values in `STAT`'s axis order, leaving out elidable values and Regular, Bold, Italic and Oblique, cut at 31 characters ("Bahnschrift Light Condensed", "Segoe UI Variable Display Semib"; Bahnschrift's Bold instance is "Bahnschrift", bold). Without `STAT`, the instance's subfamily words, less those four, stand for the axis values. The face's weight is its `wght` value, its width class its `wdth` value (50, 62.5, 75, 87.5, 100, 112.5, 125, 150 and 200 % are classes 1–9), and it is italic when its file is, its `ital` value is 1 or its `slnt` value isn't 0. Each instance also answers to its typographic family, so bold in "Bahnschrift" is the Bold instance (matched as any face is), not synthesized.
 
 Shape, lay out and draw a face at its instance's axis values: advances and glyph outlines vary (`HVAR`, else `gvar`'s phantom points). Vertical metrics stay the default location's ([FONT-1](font#font-1)).
+
+### FONT-18. useWord97LineBreakRules {#font-18}
+
+Compat ≤ 14 with `w:compat/w:useWord97LineBreakRules`: a run whose East Asian font is named and isn't Times New Roman (an unset or empty-theme East Asian font stands for Times New Roman) is laid out at an em of 1000 units. Each glyph's width, in layout units ([UNIT-4](unit#unit-4)), is
+
+```
+w1000 = round(advance × 1000 / upem)
+width = floor(w1000 × hp × 2048 / 1000)
+```
+
+with `hp` the size in half-points: every glyph is rounded on its own and the line sums them. Kerning ([FONT-3](font#font-3)) and character spacing are added as usual. The run's ascent, descent and line gap ([FONT-1](font#font-1)) are each first rounded to the 1000-unit em, then scaled as usual. Every other run keeps its design metrics; compat 15 ignores the option.
+
+Example: Courier New 12pt (1229/2048 em) is 600/1000 em, 29491 layout units a glyph instead of 29496: 65 characters fill a 468pt line instead of 64.
