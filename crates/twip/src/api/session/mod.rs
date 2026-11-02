@@ -135,7 +135,7 @@ impl Session {
     fn changed(&mut self, events: Vec<Event>) {
         let revisions = self.state.review.revisions;
         let selection = std::mem::take(&mut self.state.selection);
-        self.state = self.build_state();
+        self.state = crate::prof::time("session:state", || self.build_state());
         self.emit(Event::StateChanged(self.state.clone()));
         for e in events {
             let review = match &e {

@@ -350,14 +350,17 @@ impl Editor {
             Border::Column(_) => "Column Width",
         });
         let n = t.rows.len();
-        if self.step(&mut tx, Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }).is_err() {
+        let stepped =
+            crate::prof::time("edit:rows-step", || self.step(&mut tx, Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }));
+        if stepped.is_err() {
             self.abort(tx);
             return Some(Outcome::Unchanged("stale table"));
         }
         if (new_sum - old_sum).abs() > 1e-9 && !matches!(t.width, Width::Auto | Width::Nil) {
             let _ = self.step(&mut tx, Step::TableWidth { table: d.table, width: Width::Dxa(new_sum) });
         }
-        tx.stale_tables.push(d.table);
+        // Widths and heights only: every cell keeps its row and column, so its style region (banding, first and
+        // last rows and columns) and its resolved properties stay; the table isn't resolved again.
         // A nested table grown past its containing cell widens that column in an auto-fit outer table, the
         // next column giving up the same (the outer width stays); a fixed-width outer table keeps its columns.
         if new_sum > old_sum + 1e-9
@@ -389,9 +392,7 @@ impl Editor {
                         }
                     }
                     let n = orows.len();
-                    if self.step(&mut tx, Step::Rows { table: outer, range: 0..n, with: orows, grid: Some(og) }).is_ok() {
-                        tx.stale_tables.push(outer);
-                    }
+                    let _ = self.step(&mut tx, Step::Rows { table: outer, range: 0..n, with: orows, grid: Some(og) });
                 }
             }
         }

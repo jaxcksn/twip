@@ -36,6 +36,8 @@ wuff = "0.2.9"
 [features]
 # Test inspection surface: the editor's semantic state as JSON. Never in production builds.
 inspect = []
+# Stage timers and the reuse report (`prof.rs`) for diagnostic benchmark runs. Never in production builds.
+prof = []
 
 # Style lints the codebase doesn't follow on purpose: index loops over parallel arrays, long parameter lists in the
 # layout passes (each step's state stays explicit), and nested tuple types in caches.

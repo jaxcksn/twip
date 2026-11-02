@@ -62,7 +62,7 @@ fn at_random_places(bencher: Bencher, input: Input, tracking: bool) {
     let mut e = open("big.docx", &fonts);
     assert!(e.set_tracking(tracking), "tracking can be switched in big.docx");
     let paras = text_paras(&e);
-    let e = RefCell::new(e);
+    let (e, prof) = (RefCell::new(e), RefCell::new(super::Prof::default()));
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
     bencher
         .with_inputs(|| {
@@ -73,9 +73,15 @@ fn at_random_places(bencher: Bencher, input: Input, tracking: bool) {
                 e.execute(Command::InsertText("x".into()), &fonts);
             }
             while e.idle(&fonts) {}
+            super::Prof::skip();
             input.command()
         })
-        .bench_local_values(|command| e.borrow_mut().execute(command, &fonts));
+        .bench_local_values(|command| {
+            let out = e.borrow_mut().execute(command, &fonts);
+            prof.borrow_mut().add();
+            out
+        });
+    prof.borrow_mut().print(&format!("input {input:?} tracking {tracking}"));
 }
 
 #[divan::bench(args = [Input::Typing, Input::Backspace, Input::Enter, Input::Down, Input::Right, Input::Undo], sample_size = 1)]
@@ -111,6 +117,71 @@ fn typing_nested(bencher: Bencher, which: &str) {
             while e.idle(&fonts) {}
         })
         .bench_local_values(|()| e.borrow_mut().execute(Command::InsertText("x".into()), &fonts));
+}
+
+/// Body paragraphs with text where `place` says: `body` (mid-document, top level), `cell` (in a table), `float` (one
+/// anchoring a floating object, which its text wraps around) or `columns` (in a section with several columns).
+fn places(doc: &twip::internal::docx::Document, place: &str) -> Vec<(ParaId, u32)> {
+    use twip::internal::docx::{Block, Inline};
+    fn walk(blocks: &[Block], depth: usize, columns: bool, place: &str, out: &mut Vec<(ParaId, u32)>) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => {
+                    let len: u32 = p.inlines.iter().map(|i| i.units() as u32).sum();
+                    let float = p.inlines.iter().any(|i| matches!(i, Inline::Float(..)));
+                    let wanted = match place {
+                        "body" => depth == 0,
+                        "cell" => depth > 0,
+                        "float" => float,
+                        _ => columns,
+                    };
+                    if wanted && len > 0 {
+                        out.push((ParaId(p.id), len));
+                    }
+                }
+                Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, depth + 1, columns, place, out)),
+            }
+        }
+    }
+    let mut out = Vec::new();
+    doc.sections.iter().for_each(|s| walk(&s.blocks, 0, s.columns.num > 1, place, &mut out));
+    out
+}
+
+/// Typing at the end of a paragraph where the fidelity rules do the most work (`places`): the middle one of its kind,
+/// the keystroke undone between samples so the paragraph keeps its length. Budget: p95 at most 1 ms, max at most
+/// 3 ms (spec SC-002).
+#[divan::bench(
+    args = ["showcase/body", "showcase/cell", "showcase/float", "showcase/columns", "FX-OBJ/float", "FX-LONG-50/body", "FX-LONG-50/cell"],
+    sample_size = 1
+)]
+fn typing_in(bencher: Bencher, at: &str) {
+    let (name, place) = at.split_once('/').expect("document/place");
+    let file = match name {
+        "showcase" => "docx-feature-showcase.docx".to_string(),
+        n => format!("editor/{n}.docx"),
+    };
+    let fonts = Fonts::system();
+    let e = open(&file, &fonts);
+    let found = places(e.document(), place);
+    let &(para, len) = found.get(found.len() / 2).unwrap_or_else(|| panic!("{at}: no such paragraph"));
+    let (e, mut typed, prof) = (RefCell::new(e), false, RefCell::new(super::Prof::default()));
+    bencher
+        .with_inputs(|| {
+            let mut e = e.borrow_mut();
+            if std::mem::replace(&mut typed, true) {
+                e.execute(Command::Undo, &fonts);
+            }
+            caret(&mut e, para, len);
+            while e.idle(&fonts) {}
+            super::Prof::skip();
+        })
+        .bench_local_values(|()| {
+            let out = e.borrow_mut().execute(Command::InsertText("x".into()), &fonts);
+            prof.borrow_mut().add();
+            out
+        });
+    prof.borrow_mut().print(&format!("typing_in {at}"));
 }
 
 /// Typing through `api::Session` as the SDKs drive it (the state rebuilt and every event encoded as JSON, as the C

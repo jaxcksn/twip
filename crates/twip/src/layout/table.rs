@@ -1347,10 +1347,11 @@ fn layout_shown(
     let n = grid_columns(t);
     // A row's edges depend on its neighbours: those of rows at least one away from the edited ones are as they were.
     let near = |ri: usize| reuse.as_ref().is_some_and(|(_, rows)| ri + 1 >= *rows.start() && ri <= rows.end() + 1);
-    let edges = cell_edges(t, n, &|ri| reuse.as_ref().filter(|_| !near(ri)).map(|(o, _)| &o.rows[ri]));
-    let inputs = fit_inputs(t, env, memos, &edges, &|ri| kept(ri).map(|o| &o.fit[ri]))?;
+    let edges = crate::prof::time("table:edges", || cell_edges(t, n, &|ri| reuse.as_ref().filter(|_| !near(ri)).map(|(o, _)| &o.rows[ri])));
+    let inputs = crate::prof::time("table:fit", || fit_inputs(t, env, memos, &edges, &|ri| kept(ri).map(|o| &o.fit[ri])))?;
     let Fit { cols, min_t, width, hard_t } = resolve_fit(t, text_w, env, None, &inputs);
     let geo = if cols.len() == n { place(t, &cols, &edges) } else { cell_geometry(t, &cols) };
+
     let mut stories = Vec::new();
     let mut closings = Vec::new();
     // PARA-4: a cell's neighbours in document order are the previous cell's last paragraph and the next cell's
@@ -1368,34 +1369,37 @@ fn layout_shown(
     let drops = |b: Option<&Block>, other: Option<&Option<String>>| {
         contextual && matches!(b, Some(Block::Para(p)) if super::paragraph::drops_at_edge(p.para_style_in(view), other))
     };
-    for (ri, (r, cells)) in t.rows.iter().zip(&geo).enumerate() {
-        let old_row = kept(ri).map(|o| &o.rows[ri]).filter(|o| o.cells.len() == cells.len());
-        for (gi, g) in cells.iter().enumerate() {
-            let c = &r.cells[g.ci];
-            closings.push(closing_para(c));
-            let rotated = matches!(c.text_direction.as_str(), "btLr" | "tbRl" | "tbRlV" | "tbLrV");
-            let same = old_row.map(|o| &o.cells[gi]).filter(|o| o.index == g.ci && o.cw == g.cw);
-            stories.push(if measure || c.v_merge == VMerge::Continue || rotated {
-                None
-            } else if let Some(o) = same {
-                Some(o.units.clone())
-            } else {
-                // TABLE-26: a cell's closing empty paragraph after a nested table takes no space.
-                let n = c.blocks.len();
-                let skip = closing_para(c).is_some();
-                let blocks: Vec<&Block> = c.blocks[..if skip { n - 1 } else { n }].iter().collect();
-                let before = match g.ci {
-                    0 if ri == 0 => prev.map(|p| &p.style_id),
-                    0 => mark,
-                    ci => style(r.cells[ci - 1].blocks.last(), view),
-                };
-                let after = r.cells.get(g.ci + 1).map_or(mark, |n| style(n.blocks.first(), view));
-                let ends =
-                    CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after), fixed: t.fixed, fit: c.fit_text };
-                Some(super::story::layout(&blocks, g.cw, env, Some(ends), memos)?)
-            });
+    crate::prof::time("table:cells", || -> Result<(), Yield> {
+        for (ri, (r, cells)) in t.rows.iter().zip(&geo).enumerate() {
+            let old_row = kept(ri).map(|o| &o.rows[ri]).filter(|o| o.cells.len() == cells.len());
+            for (gi, g) in cells.iter().enumerate() {
+                let c = &r.cells[g.ci];
+                closings.push(closing_para(c));
+                let rotated = matches!(c.text_direction.as_str(), "btLr" | "tbRl" | "tbRlV" | "tbLrV");
+                let same = old_row.map(|o| &o.cells[gi]).filter(|o| o.index == g.ci && o.cw == g.cw);
+                stories.push(if measure || c.v_merge == VMerge::Continue || rotated {
+                    None
+                } else if let Some(o) = same {
+                    Some(o.units.clone())
+                } else {
+                    // TABLE-26: a cell's closing empty paragraph after a nested table takes no space.
+                    let n = c.blocks.len();
+                    let skip = closing_para(c).is_some();
+                    let blocks: Vec<&Block> = c.blocks[..if skip { n - 1 } else { n }].iter().collect();
+                    let before = match g.ci {
+                        0 if ri == 0 => prev.map(|p| &p.style_id),
+                        0 => mark,
+                        ci => style(r.cells[ci - 1].blocks.last(), view),
+                    };
+                    let after = r.cells.get(g.ci + 1).map_or(mark, |n| style(n.blocks.first(), view));
+                    let ends =
+                        CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after), fixed: t.fixed, fit: c.fit_text };
+                    Some(super::story::layout(&blocks, g.cw, env, Some(ends), memos)?)
+                });
+            }
         }
-    }
+        Ok(())
+    })?;
     let probe = TableProbe {
         table: t,
         text_w: text_w.to_bits(),
@@ -2231,6 +2235,7 @@ fn same_row(a: &RowBox, b: &RowBox) -> bool {
 
 impl CacheKey for RowKey {
     type Probe<'a> = RowProbe<'a>;
+    const PIECE: Option<crate::prof::Piece> = Some(crate::prof::Piece::Row);
 
     fn bucket(p: &RowProbe) -> u64 {
         use std::hash::{Hash, Hasher};

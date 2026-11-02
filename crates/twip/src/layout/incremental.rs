@@ -24,7 +24,7 @@ use super::ids::{FragmentId, LayoutRevision, ParaId, Revision, Unit};
 use super::job::{Budget, Memos, Step, Yield};
 use super::join::{chain_end, chain_start};
 use super::line::border_key;
-use super::page::{Cursor, PassRun, fields_used};
+use super::page::{Cursor, PassInfo, PassRun, fields_used};
 use super::record::{HfRecord, PageRecord};
 use super::snapshot::{LayoutStatus, PageMeta, Snapshot};
 use super::space::BodyFields;
@@ -643,6 +643,8 @@ struct Running {
     incremental: bool,
     /// The table its edit's rows were laid out again in ([`Baseline::table`]).
     relaid: Option<LatestTable>,
+    /// Whether its first pass started from the baseline's pass values ([`LayoutJob::seed`]).
+    seeded: bool,
 }
 
 /// The layout state of one document: the published snapshot, the baseline, the changes since
@@ -742,19 +744,24 @@ impl DocumentLayout {
     fn start(&mut self, doc: &Document, fonts: &Fonts) -> Running {
         let rev = self.revision;
         let new_job = || LayoutJob::new(doc, rev);
-        let full = |job| {
+        // `why` names the reason in the stage timers (`--features prof`).
+        let full = |job, why: &'static str| {
+            crate::prof::time(why, || ());
             #[cfg(test)]
             FULL_JOBS.set(FULL_JOBS.get() + 1);
-            Running { job, reuse: None, span: None, incremental: false, relaid: None }
+            Running { job, reuse: None, span: None, incremental: false, relaid: None, seeded: false }
         };
-        let Some(b) = &self.baseline else { return full(new_job()) };
-        if self.acc.full || b.finished.passes != 1 || !b.extras.same(doc, fonts) {
-            return full(new_job());
+        let Some(b) = &self.baseline else { return full(new_job(), "full:no-baseline") };
+        if self.acc.full {
+            return full(new_job(), "full:asked");
+        }
+        if !b.extras.same(doc, fonts) {
+            return full(new_job(), "full:extras");
         }
         let span = if self.acc.unknown {
             match compare(doc, &b.shadow) {
                 Ok(s) => s,
-                Err(()) => return full(new_job()),
+                Err(()) => return full(new_job(), "full:compare"),
             }
         } else {
             match self.acc.span {
@@ -765,15 +772,18 @@ impl DocumentLayout {
                 {
                     Some(s)
                 }
-                Some(_) => return full(new_job()),
+                Some(_) => return full(new_job(), "full:span"),
                 None => None,
             }
         };
-        // Body fields that take the previous pass's value mean a full layout.
-        if b.extras.body_fields
-            || span.is_some_and(|s| crate::docx::fields::blocks_page_dependent(&doc.sections[s.section].blocks[s.first..s.new_end]))
-        {
-            return full(new_job());
+        // Body fields that take the previous pass's value (NUMPAGES, PAGEREF): the job starts from the baseline's values
+        // (below), which a baseline that converged in one pass doesn't have.
+        let fields = b.extras.body_fields
+            || span.is_some_and(|s| crate::docx::fields::blocks_page_dependent(&doc.sections[s.section].blocks[s.first..s.new_end]));
+        // A baseline whose last pass started from values (a later pass, or a seed) is a fixed point the job can start from.
+        let seeded = b.finished.passes > 1 || *b.finished.known != PassInfo::default();
+        if fields && !seeded {
+            return full(new_job(), "full:body-fields");
         }
         // The baseline's note numbers and no page-dependent field, unless an edited block held or holds a note
         // reference (a block the shadow doesn't keep counts as one): the whole-document scans are skipped.
@@ -782,9 +792,15 @@ impl DocumentLayout {
             old.iter().all(|o| o.as_ref().is_some_and(|x| !super::document::has_note_refs(x)))
                 && !doc.sections[s.section].blocks[s.first..s.new_end].iter().any(super::document::has_note_refs)
         });
-        let mut job = if same_notes { LayoutJob::with_notes(rev, b.notes.clone(), false) } else { new_job() };
+        let mut job = if same_notes { LayoutJob::with_notes(rev, b.notes.clone(), fields) } else { new_job() };
         if b.extras.endnote_order != job.endnotes() {
-            return full(job);
+            return full(job, "full:endnotes");
+        }
+        // A baseline that took several passes (header and footer heights, body fields, fields in text boxes) is a fixed point: the
+        // first pass starts from its values, and is the last when the edit leaves them as they were. Otherwise the job
+        // is replaced by a full one (`step_job`), so the result never depends on where the passes started.
+        if seeded {
+            job.seed((*b.finished.known).clone(), b.finished.records.iter().map(|p| p.hf_full).collect());
         }
         let closed = span.map(|s| close(s, &doc.sections[s.section].blocks, doc.review.view));
         let base = &b.finished.records;
@@ -842,7 +858,7 @@ impl DocumentLayout {
         }
         let renumbered = job.note_numbers().iter().filter(|(k, n)| b.note_numbers.get(*k) != Some(*n)).map(|(k, _)| *k).collect();
         let reuse = Reuse { base: b.finished.clone(), span: closed, restart: r, stories_same: true, keys, renumbered };
-        Running { job, reuse: Some(reuse), span, incremental: true, relaid }
+        Running { job, reuse: Some(reuse), span, incremental: true, relaid, seeded }
     }
 
     /// Runs the job (starting one for the latest revision if needed) until it finishes or `budget` is used up, then
@@ -870,6 +886,15 @@ impl DocumentLayout {
         self.cache.store_tables = !running.incremental;
         let step = crate::prof::time("layout:run", || running.job.run(doc, &ctx, &mut self.cache, running.reuse.as_mut(), budget));
         self.cache.store_tables = true;
+        // A seeded first pass that didn't agree with the baseline's values: lay out from scratch instead.
+        if step == Step::Done && running.seeded && running.job.finished().is_some_and(|f| f.passes != 1) {
+            crate::prof::time("full:seed-missed", || ());
+            #[cfg(test)]
+            FULL_JOBS.set(FULL_JOBS.get() + 1);
+            self.job =
+                Some(Running { job: LayoutJob::new(doc, self.revision), reuse: None, span: None, incremental: false, relaid: None, seeded: false });
+            return (Step::Yielded, false);
+        }
         (step, running.job.committed().len() > before)
     }
 

@@ -27,6 +27,11 @@ fn area(kind: AreaKind) -> GestureTarget {
 const TEXT: GestureTarget = GestureTarget::Menu(MenuTarget::Text);
 
 impl Editor {
+    /// Whether a table border or an object is being dragged: its guide or box follows the pointer.
+    pub fn dragging(&self) -> bool {
+        self.object_drag.is_some() || self.border_drag.is_some()
+    }
+
     /// Pointer input at a document point, every gesture running its default. In design mode a double-click on a
     /// field or control also reports it, the one under the pointer; the selection is the usual double-click's.
     pub fn pointer_input(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {
@@ -486,6 +491,14 @@ mod tests {
         assert_eq!(f.s().state().revision, revision, "nothing moved");
         // The defaults: a drag moves the border, a double-click fits the column.
         f.s().gestures().reset(None);
+        // Each move during the drag asks for a frame, so the guide follows the pointer.
+        let s = f.s();
+        s.pointer(PointerKind::Down, border, PointerButton::Primary, 1, NONE);
+        s.host().take_frame_request();
+        s.pointer(PointerKind::Move, Point { x: border.x + 20.0, ..border }, PointerButton::Primary, 0, NONE);
+        assert!(s.host().take_frame_request(), "a border drag's move asks for a frame");
+        s.pointer(PointerKind::Cancel, border, PointerButton::Primary, 0, NONE);
+        assert_eq!(f.s().state().revision, revision, "a cancelled drag changes nothing");
         f.drag(border, Point { x: border.x + 40.0, ..border });
         assert_eq!(f.s().state().revision, revision + 1);
         let moved = Point { x: border.x + 40.0, ..border };

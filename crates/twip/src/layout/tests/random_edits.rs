@@ -282,7 +282,11 @@ pub(super) fn run_edits_with(name: &str, mut d: Document, fonts: &Fonts, seed: u
 
 pub(super) fn documents() -> Vec<(String, Document)> {
     let mut out = Vec::new();
-    for p in [concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tables.docx")] {
+    // The showcase takes several passes (header and footer heights): its edits start from the baseline's values.
+    for p in [
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tables.docx"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx"),
+    ] {
         if let Some(d) = doc(Path::new(p)) {
             out.push((p.to_string(), d));
         }

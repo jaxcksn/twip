@@ -313,6 +313,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
                 && let Some(r) = reuse
                 && let Some(next) = r.reuse_page(run, cx, si, &token, memos)?
             {
+                crate::prof::count(crate::prof::Piece::Page, crate::prof::Outcome::Reused);
                 run.cursor = next;
                 return memos.meter.page_done();
             }
@@ -335,6 +336,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             };
             let mut p = cx.paginator(run);
             let next = p.body(node, token, top, balance, memos)?;
+            crate::prof::count(crate::prof::Piece::Page, crate::prof::Outcome::Laid);
             run.cursor = match next {
                 Next::Page(token) => Cursor::Body { si, token, top: None },
                 // The endnotes continue on the page, below the balanced body (as a continuous section starts).
@@ -349,11 +351,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
         }
         Cursor::Compose(i) => {
             if run.info.is_none() {
-                run.info = Some(PassInfo {
-                    num_pages: Some(run.pages.len().to_string()),
-                    section_pages: (0..nsec).map(|si| run.pages.iter().filter(|pg| pg.section == si && !pg.blank).count().to_string()).collect(),
-                    page_refs: Rc::new(bookmark_pages(&run.pages)),
-                });
+                run.info = Some(pass_info(&run.pages, nsec));
             }
             if i >= run.pages.len() {
                 run.cursor = Cursor::Done;
@@ -495,6 +493,9 @@ pub struct Finished {
     pub status: LayoutStatus,
     /// The number of passes that ran.
     pub passes: usize,
+    /// The field values the last pass started from: the previous pass's, or a seed's ([`LayoutJob::seed`]); empty for
+    /// a layout done in one pass from nothing.
+    pub known: Rc<PassInfo>,
 }
 
 impl Finished {
@@ -537,6 +538,12 @@ impl LayoutJob {
 
     pub fn finished(&self) -> Option<&Finished> {
         self.finished.as_ref()
+    }
+
+    /// Starts the first pass from a converged layout's values (`known`: its fields; `hf_in`: its composed header and
+    /// footer heights) instead of none: when the edit changes neither, that pass agrees with them and is the last.
+    pub fn seed(&mut self, known: PassInfo, hf_in: Vec<HfHeights>) {
+        self.run = PassRun::new(1, Rc::new(known), Rc::new(hf_in), false);
     }
 
     pub fn into_finished(self) -> Option<Finished> {
@@ -682,6 +689,7 @@ impl LayoutJob {
     fn finish(&mut self, status: LayoutStatus) {
         let run = std::mem::replace(&mut self.run, PassRun::new(0, Rc::new(PassInfo::default()), Rc::new(Vec::new()), false));
         let passes = run.k;
+        let known = run.known.clone();
         let records = run.pages;
         let pages = records
             .iter()
@@ -690,7 +698,7 @@ impl LayoutJob {
                 Some(finish_page(pg, section_page))
             })
             .collect();
-        self.finished = Some(Finished { records, pages, status, passes });
+        self.finished = Some(Finished { records, pages, status, passes, known });
     }
 }
 
@@ -730,6 +738,16 @@ pub(crate) fn excluded(records: &[PageRecord]) -> Vec<(usize, ParaId, std::ops::
 }
 
 /// PAGEREF: each bookmark's page number, from the page where its paragraph starts (the last one placed wins).
+/// What a pass's pages give its page-dependent fields: the page count, each section's page count and the pages
+/// bookmarks are on.
+fn pass_info(pages: &[PageRecord], nsec: usize) -> PassInfo {
+    PassInfo {
+        num_pages: Some(pages.len().to_string()),
+        section_pages: (0..nsec).map(|si| pages.iter().filter(|pg| pg.section == si && !pg.blank).count().to_string()).collect(),
+        page_refs: Rc::new(bookmark_pages(pages)),
+    }
+}
+
 fn bookmark_pages(pages: &[PageRecord]) -> HashMap<String, String> {
     let mut out = HashMap::new();
     for pg in pages {
