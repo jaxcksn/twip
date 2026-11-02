@@ -33,7 +33,7 @@ Example: `w:kern w:val="2"` (1pt) kerns every run of 1pt or more, which in pract
 
 ### FONT-4. Ligatures {#font-4}
 
-`w14:ligatures` selects OpenType features: `standard` turns on `liga` and `clig`, `contextual` turns on `calt`, `historical` turns on `hlig`, `discretional` turns on `dlig`; the combined values (`standardContextual`, `all`, …) turn on each of their parts. With no `w14:ligatures` anywhere in the cascade, shape with all four groups off.
+`w14:ligatures` selects OpenType features: `standard` turns on `liga`, `contextual` turns on `clig`, `historical` turns on `hlig`, `discretional` turns on `dlig`; the combined values (`standardContextual`, `all`, …) turn on each of their parts. `calt` comes only from `w14:cntxtAlts`. Any non-zero character spacing (`w:spacing`) turns the four ligature features off, not `calt`. With no `w14:ligatures` anywhere in the cascade, shape with all four off.
 
 ### FONT-5. Run width {#font-5}
 

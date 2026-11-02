@@ -46,6 +46,7 @@ pub struct RunStyle {
     pub scale: f64,
     /// Kern at or above this size; 0 = off.
     pub kern: f64,
+    /// `w14:ligatures` bits (1 standard, 2 contextual, 4 historical, 8 discretional) and 16 for `w14:cntxtAlts` (FONT-4).
     pub ligatures: u8,
     /// `w:em`, when it marks the text ("dot", "comma", "circle", "underDot").
     pub em: Option<String>,

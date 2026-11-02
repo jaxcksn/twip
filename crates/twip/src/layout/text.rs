@@ -564,7 +564,9 @@ impl Builder<'_> {
         let kern = run.kern > 0.0 && size >= run.kern - 1e-9;
         // A non-breaking hyphen draws as a hyphen; soft hyphens draw only at a line end.
         let shaped_text: String = s.chars().map(|c| if c == '\u{2011}' { '-' } else { c }).collect();
-        let glyphs = face.shape(&shaped_text, kern, run.ligatures);
+        // FONT-4: character spacing turns the ligatures off, not contextual alternates.
+        let ligatures = if run.spacing != 0.0 { run.ligatures & 16 } else { run.ligatures };
+        let glyphs = face.shape(&shaped_text, kern, ligatures);
         let scale = face.scale(size) * run.scale / 100.0;
         // Group glyphs by cluster; clusters are byte offsets into `shaped_text` (same offsets as `s` for 1:1 maps).
         let mut starts: Vec<u32> = glyphs.iter().map(|g| g.cluster).collect();

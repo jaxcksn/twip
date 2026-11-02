@@ -111,7 +111,8 @@ impl Resolver {
             spacing: p.spacing.unwrap_or(0.0),
             scale: p.scale.unwrap_or(100.0),
             kern: p.kern.unwrap_or(0.0),
-            ligatures: p.ligatures.unwrap_or(0),
+            // FONT-4: bit 16 for contextual alternates.
+            ligatures: p.ligatures.unwrap_or(0) | if p.cntxt_alts == Some(true) { 16 } else { 0 },
             lang: p.lang.clone().unwrap_or_default(),
             style_id: p.style.clone(),
             direct: Raw::default(),

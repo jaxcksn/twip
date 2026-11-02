@@ -80,6 +80,8 @@ pub struct RunProps {
     pub kern: Option<f64>,
     /// `w14:ligatures` bits: 1 standard, 2 contextual, 4 historical, 8 discretionary.
     pub ligatures: Option<u8>,
+    /// `w14:cntxtAlts`: contextual alternates (FONT-4).
+    pub cntxt_alts: Option<bool>,
     /// `w:em`: the emphasis mark ("dot", "comma", "circle", "underDot"; "none").
     pub em: Option<String>,
     pub lang: Option<String>,
@@ -121,6 +123,8 @@ impl RunProps {
                         Some("all") => 15,
                         _ => 0,
                     });
+                } else if name == "cntxtAlts" {
+                    p.cntxt_alts = Some(!matches!(val_any(e), Some("0" | "false" | "off")));
                 }
                 continue;
             }
@@ -202,7 +206,7 @@ impl RunProps {
         }
         take!(
             ascii, h_ansi, east_asia, cs, hint, size, dstrike, underline, color, highlight, shading, vert_align, position, spacing, scale, kern,
-            ligatures, lang, style, rtl, em
+            ligatures, cntxt_alts, lang, style, rtl, em
         );
         self.toggles = (self.toggles & !o.toggles_set) | (o.toggles & o.toggles_set);
         self.toggles_set |= o.toggles_set;
