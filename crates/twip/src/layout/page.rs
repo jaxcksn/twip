@@ -743,7 +743,7 @@ pub fn layout_body(
     let ctx = match s.line_grid {
         Some(g) => {
             grid_env = super::LayoutEnv { text: super::env::TextEnv { line_grid: Some(g), ..env.ctx.env.text.clone() }, ..env.ctx.env.clone() };
-            LayoutCtx { fonts: env.ctx.fonts, env: &grid_env }
+            LayoutCtx { env: &grid_env, ..env.ctx }
         }
         None => env.ctx,
     };
