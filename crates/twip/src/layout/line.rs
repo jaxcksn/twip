@@ -736,7 +736,17 @@ fn fit_line(
                 if let Some((w, cap)) = squeeze {
                     shrink_spaces(sp, pieces, start, w, cap, right, &mut xs, &mut ws);
                 }
-                return Fit { end: i + 1, xs, widths: ws, hard: Some(p.kind), hyphen: false, leaders };
+                // FLOAT-6: when only anchors follow a page break, the break's line holds them (their floats stay on
+                // this page), unless the mark moves on with them (COMPAT-3).
+                let mut end = i + 1;
+                if p.kind == Kind::PageBreak && !frame.split_page_break && end < n && pieces[end..].iter().all(|q| q.kind == Kind::Anchor) {
+                    for _ in end..n {
+                        xs.push(pen);
+                        ws.push(0.0);
+                    }
+                    end = n;
+                }
+                return Fit { end, xs, widths: ws, hard: Some(p.kind), hyphen: false, leaders };
             }
             Kind::Tab => {
                 if let Some(pt) = pending.take() {

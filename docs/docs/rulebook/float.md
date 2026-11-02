@@ -77,7 +77,7 @@ Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `
 
 **`simplePos="1"`**: an axis without an alignment is at `wp:simplePos` on the page; an axis with an alignment keeps it and its `relativeFrom`.
 
-**An anchor after a page or column break in its paragraph**: compat ≤ 14 continues the paragraph after the break at the top of the next page or column, so the anchor is placed there, `paragraph` counting from the continuation's top. Compat 15 ends the paragraph at the break. Not done: compat 15 placing such an anchor on the paragraph's first page (it isn't drawn).
+**An anchor after a page or column break in its paragraph**: the paragraph continues after the break at the top of the next page or column (nothing after a break is dropped), so the anchor is placed there, `paragraph` counting from the continuation's top, both modes. When only anchors and the paragraph mark follow a page break, the break's line holds the anchors: their floats stay on the old page, `paragraph` counting from the paragraph's top there. With `w:splitPgBreakAndParaMark` (compat ≤ 14, [COMPAT-3](compat#compat-3)) the mark gets its own line on the next page and the anchors go with it. Not done: a page-relative float that would cover text laid out before its anchor on the old page (the break line then moves to the next page with the float).
 
 **Offsets are truncated to whole twips**: `twips = trunc(EMU / 635)`, `points = twips / 20`. 170688 EMU = 268.8 twips → 268 → 13.40pt.
 

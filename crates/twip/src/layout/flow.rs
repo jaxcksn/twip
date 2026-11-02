@@ -1830,9 +1830,9 @@ impl<'d> PageFill<'d, '_> {
         carry.prev = Some(p.para_style_in(self.ctx.env.text.review.view).clone());
         carry.balanced_after = 0.0;
         carry.prev_after = after;
-        // FLOAT-6 (compat ≤ 14): what follows a page or column break (its anchors and text) continues on the next
-        // page or column, the bands having stopped at the break; compat 15 ends the paragraph there.
-        let after_break = (take == nb && s < n && compat == Compat::Legacy).then_some(s);
+        // FLOAT-6: what follows a page or column break (its anchors and text) continues on the next page or column,
+        // the bands having stopped at the break; its floats are positioned from that part's top.
+        let after_break = (take == nb && s < n).then_some(s);
         let done = take >= nb && after_break.is_none();
         if done {
             pos.next_block();
