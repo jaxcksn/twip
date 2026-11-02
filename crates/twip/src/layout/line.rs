@@ -1087,6 +1087,8 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
     let mut gaps: Vec<Gap> = Vec::new();
     let mut k = from;
     let mut gap = Gap::default();
+    // BREAK-3: spaces next to a no-break space join the words around them.
+    let mut joined = false;
     while k < seg_end {
         let p = &pieces[k];
         if matches!(p.kind, Kind::Space) {
@@ -1094,6 +1096,7 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
             gap.width += p.width;
             gap.shrink += (w + 2) >> 2;
             gap.stretch += (w + 1) >> 1;
+            joined |= !p.break_after;
             k += 1;
             continue;
         }
@@ -1112,9 +1115,19 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
             }
         }
         // Leading spaces take their width but never shrink or stretch (BREAK-6).
-        gaps.push(if words.is_empty() { Gap { width: gap.width, ..Gap::default() } } else { gap });
+        if joined && let (Some(last), Some(g)) = (words.last_mut(), gaps.last_mut()) {
+            // ponytail: the joined gap's shrink and stretch count with the gap before the joined word (lost when
+            // that word starts the line).
+            last.1 = k;
+            last.2 += gap.width + w;
+            g.shrink += gap.shrink;
+            g.stretch += gap.stretch;
+        } else {
+            gaps.push(if words.is_empty() { Gap { width: gap.width, ..Gap::default() } } else { gap });
+            words.push((ws, k, w));
+        }
         gap = Gap::default();
-        words.push((ws, k, w));
+        joined = false;
     }
     if words.is_empty() {
         return LineChoice::Empty;

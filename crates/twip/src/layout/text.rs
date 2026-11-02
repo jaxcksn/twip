@@ -875,7 +875,28 @@ impl Builder<'_> {
         }
     }
 
-    fn finish(self) -> ShapedPara {
+    fn finish(mut self) -> ShapedPara {
+        // BREAK-3: a run of spaces directly before or after a no-break space is no break opportunity.
+        let text = |p: &Piece| &self.text[p.text.0 as usize..p.text.1 as usize];
+        let n = self.pieces.len();
+        let mut a = 0;
+        while a < n {
+            if text(&self.pieces[a]) != " " {
+                a += 1;
+                continue;
+            }
+            let mut b = a;
+            while b < n && text(&self.pieces[b]) == " " {
+                b += 1;
+            }
+            let nbsp = |k: usize| self.pieces.get(k).is_some_and(|p| text(p) == "\u{a0}");
+            if (a > 0 && nbsp(a - 1)) || nbsp(b) {
+                for p in &mut self.pieces[a..b] {
+                    p.break_after = false;
+                }
+            }
+            a = b;
+        }
         ShapedPara {
             pieces: self.pieces.into_boxed_slice(),
             styles: self.styles.into_boxed_slice(),

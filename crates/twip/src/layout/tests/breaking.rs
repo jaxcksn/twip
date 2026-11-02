@@ -493,3 +493,15 @@ fn a_page_break_in_a_table_cell_is_nothing() {
     let Some(l) = lines("", ARIAL_12, body) else { return };
     assert_eq!(l[0].1, "BeforeAfter", "{l:?}");
 }
+
+#[test]
+fn spaces_next_to_a_no_break_space_dont_break() {
+    // BREAK-3: "carbon.", a no-break space and a space, then "Risks": the line breaks before "carbon." rather than at
+    // the space.
+    let fill = "word ".repeat(14);
+    let p = |gap: &str| format!("<w:p><w:r><w:t xml:space=\"preserve\">{fill}carbon.{gap}Risks and more words after them</w:t></w:r></w:p>");
+    let first = |gap: &str| lines("", ARIAL_12, &p(gap)).map(|l| l[0].1.clone());
+    let Some(plain) = first(" ") else { return };
+    assert!(plain.ends_with("carbon."), "{plain}");
+    assert!(!first("\u{a0} ").unwrap().ends_with("carbon.\u{a0}"));
+}

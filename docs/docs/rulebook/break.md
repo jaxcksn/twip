@@ -17,7 +17,7 @@ After a break at a space, every space that follows stays on the line. These trai
 
 A line may end after:
 
-- a space;
+- a space, unless its run of spaces is directly before or after a no-break space U+00A0 (`carbon.&nbsp; Risks` and `carbon. &nbsp;Risks` don't break; the no-break space may be in another run). Such spaces still stretch, shrink and hang as usual;
 - a hyphen-minus `-`, a hyphen U+2010 or an en dash U+2013, also before digits and also in table cells (except as [BREAK-8](break#break-8) says);
 - a soft hyphen ([BREAK-7](break#break-7));
 - a tab character;
