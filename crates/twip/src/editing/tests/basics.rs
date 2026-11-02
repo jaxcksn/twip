@@ -2051,8 +2051,8 @@ fn a_page_break_with_split_pg_break_and_para_mark_keeps_its_paragraph() {
 fn tab_changes_the_level_of_list_items() {
     // Tab at a numbered list's first item nests it; Tab over a selection of items nests them all (it doesn't replace
     // them with a tab); Shift+Tab brings them back.
-    use crate::editing::keymap::Mods;
     use super::super::position::Position;
+    use crate::editing::keymap::Mods;
     let mut e = open("FX-LISTS.docx");
     let level = |e: &super::super::Editor, i: usize| match &e.document().sections[0].blocks[i] {
         crate::docx::Block::Para(p) => p.style.num.map(|(_, l)| l),
@@ -2066,7 +2066,11 @@ fn tab_changes_the_level_of_list_items() {
     assert_eq!(level(&e, 2), Some(1));
     e.execute(Command::Undo, fonts());
     let before = texts(&e);
-    e.set_caret_for_benchmark(Selection::Text { anchor: at(&e, 3), focus: Position::text(StoryId::Body, super::super::tests::para_id(&e, 4), Unit(2)), unit: Default::default() });
+    e.set_caret_for_benchmark(Selection::Text {
+        anchor: at(&e, 3),
+        focus: Position::text(StoryId::Body, super::super::tests::para_id(&e, 4), Unit(2)),
+        unit: Default::default(),
+    });
     let tab = e.key_command("Tab", Mods::default()).unwrap();
     e.execute(tab, fonts());
     assert_eq!((level(&e, 3), level(&e, 4)), (Some(1), Some(2)), "both items");
@@ -2080,7 +2084,9 @@ fn tab_changes_the_level_of_list_items() {
 fn tab_in_a_cells_list_item_changes_its_level() {
     // The showcase's lists sit in a layout table: Tab at an item's start nests it rather than going to the next cell.
     use crate::editing::keymap::Mods;
-    let mut e = super::super::Editor::open(&std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Twip-Feature-Showcase.docx")).unwrap(), fonts()).unwrap();
+    let mut e =
+        super::super::Editor::open(&std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Twip-Feature-Showcase.docx")).unwrap(), fonts())
+            .unwrap();
     let found = (0..e.document().sections.len()).find_map(|si| {
         e.document().sections[si].blocks.iter().find_map(|b| match b {
             crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).find_map(|b| match b {

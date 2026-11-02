@@ -132,7 +132,9 @@ impl Editor {
             if !(0..=8).contains(&to) {
                 continue;
             }
-            if !self.repara(&mut tx, para, &|p, w| p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{to}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"))) {
+            if !self
+                .repara(&mut tx, para, &|p, w| p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{to}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>")))
+            {
                 self.abort(tx);
                 return Outcome::Unchanged("numbering failed");
             }
