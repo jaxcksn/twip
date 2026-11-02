@@ -1510,7 +1510,13 @@ impl Editor {
     }
 
     /// Ctrl+Enter: a page break that ends its paragraph, the caret in a new paragraph after it (on the next page).
+    /// With splitPgBreakAndParaMark in compat 14 or below (COMPAT-3) the mark after a break already goes to the next
+    /// page, so only the break.
     fn page_break(&mut self, fonts: &Fonts) -> Outcome {
+        let s = &self.doc.settings;
+        if s.compat() == crate::docx::Compat::Legacy && s.has("splitPgBreakAndParaMark") {
+            return self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts);
+        }
         if self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }

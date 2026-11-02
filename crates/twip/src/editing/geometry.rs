@@ -407,10 +407,11 @@ impl PageGeometry {
                 None => match p.empty_at.or(p.label_end) {
                     // An empty line: the paragraph's start, or after a trailing break its end (the units before it).
                     Some(x) => {
-                        let unit = self
-                            .after_break
-                            .get(&p.para)
-                            .copied()
+                        let unit = l
+                            .line
+                            .mark
+                            .filter(|_| Some(p.para) == l.para)
+                            .or_else(|| self.after_break.get(&p.para).copied())
                             .unwrap_or_else(|| self.lines.iter().filter_map(|m| m.last_of(p.para)).max().unwrap_or(Unit(0)));
                         own.push(Stop { x, para: p.para, unit, end: true })
                     }

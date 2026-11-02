@@ -1948,6 +1948,7 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
                 baseline: placed.line.baseline,
                 atoms,
                 changed: placed.line.changed,
+                mark: placed.line.mark,
             });
             Child::Line { para: *para, placed: PlacedLine { line, ..placed.clone() } }
         }

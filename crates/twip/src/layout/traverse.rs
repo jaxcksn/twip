@@ -635,7 +635,14 @@ mod tests {
         PlacedLine {
             x: 5.0,
             y: 0.0,
-            line: Rc::new(LineFragment { items: Box::new([rect(0.0, colour)]), pitch: 12.0, baseline: 9.0, atoms: Box::new([]), changed: false }),
+            line: Rc::new(LineFragment {
+                items: Box::new([rect(0.0, colour)]),
+                pitch: 12.0,
+                baseline: 9.0,
+                atoms: Box::new([]),
+                changed: false,
+                mark: None,
+            }),
         }
     }
 
@@ -751,6 +758,7 @@ mod tests {
                 baseline: 9.0,
                 atoms: Box::new([]),
                 changed: false,
+                mark: None,
             }),
         };
         let mut body = BoxBuilder::new();
