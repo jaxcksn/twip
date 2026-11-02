@@ -540,6 +540,7 @@ impl Editor {
             text_box: Some(crate::docx::TextBox {
                 blocks: vec![crate::docx::Block::Para(inner)],
                 insets: [7.2, 3.6, 7.2, 3.6],
+                geometry: Default::default(),
                 outline: 0.5,
                 auto_fit: false,
                 v_anchor: 0,

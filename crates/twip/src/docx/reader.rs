@@ -1799,7 +1799,20 @@ impl Reader {
             Some("b") => 2,
             _ => 0,
         };
-        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
+        // FLOAT-10: the preset geometry's text rectangle.
+        let prst = shape.descendants().find(|n| is(*n, A, "prstGeom"));
+        let adj = |dflt: f64| {
+            prst.and_then(|p| p.descendants().find(|g| is(*g, A, "gd") && g.attribute("name") == Some("adj")))
+                .and_then(|g| g.attribute("fmla")?.strip_prefix("val ")?.trim().parse::<f64>().ok())
+                .unwrap_or(dflt)
+        };
+        let geometry = match prst.and_then(|p| p.attribute("prst")) {
+            Some("roundRect") => Geometry::RoundRect(adj(16667.0)),
+            Some("ellipse") => Geometry::Ellipse,
+            Some("triangle") => Geometry::Triangle(adj(50000.0)),
+            _ => Geometry::Rect,
+        };
+        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], geometry, outline, auto_fit, v_anchor }
     }
 
     /// FLOAT-15: the pictures and text boxes of group `g` (or of a group inside it), `map` taking its child

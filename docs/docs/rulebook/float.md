@@ -120,7 +120,8 @@ Floats positioned relative to the page or margins, and wrapNone floats ([FLOAT-1
 ### FLOAT-10. Text boxes {#float-10}
 
 - Insets `bodyPr/@lIns`, `tIns`, `rIns`, `bIns` default to 7.2, 3.6, 7.2, 3.6pt. The outline (`a:ln/@w`, 0.75pt when `a:ln` has no `w`; none without `a:ln` or with `a:noFill`) is centred on the box edge.
-- Lay the content out as an ordinary story ([HDR-3](hdr#hdr-3)) at `width = boxW − lIns − rIns − outline`, starting at `(boxX + lIns + outline/2, boxY + tIns + outline/2)`.
+- The text frame starts inside the preset geometry's text rectangle, computed on the shape's size on the page (after a group's scale): `rect` the whole shape; `roundRect` `min(w, h) × adj / 100000 × 0.29289` in on every side (`adj` 16667 by default); `ellipse` `0.14645 w` left and right, `0.14645 h` top and bottom; `triangle` `l = w × adj / 200000` (`adj` 50000 by default), top `h / 2`, right `w − l − w / 2`, bottom 0. Other presets: the whole shape. The outline stays on the shape edge.
+- Lay the content out as an ordinary story ([HDR-3](hdr#hdr-3)) at `width = frameW − lIns − rIns − outline`, starting at `(frameX + lIns + outline/2, frameY + tIns + outline/2)`.
 - `a:spAutoFit`: the box height is `content + tIns + bIns + outline`.
 - Fixed height: the content bottom is `boxBottom − bIns − outline/2`. Draw a line only if its line box starts above the content bottom; draw no later line. The content bottom clips the lines drawn like an exact row's bottom ([TABLE-34](table#table-34)): a glyph whose ink top is at or below it is not drawn (its characters go with it); a line whose glyphs all go shows nothing.
 - Fixed height, `bodyPr/@anchor`: `ctr` moves the content down by half the room below it (whole layout units, rounded down), `b` by all of it, never up; other values are top. In compat ≤ 14 `w:doNotVertAlignInTxbx` keeps it at the top; compat 15 ignores the option. Not done: floats inside the box don't count as its content.

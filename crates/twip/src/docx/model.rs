@@ -264,10 +264,39 @@ impl Float {
     }
 }
 
+/// FLOAT-10: a shape's preset geometry, as far as it moves the text in from the shape's edge.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Geometry {
+    #[default]
+    Rect,
+    /// `roundRect` with its `adj` (corner radius, 100000ths of the shorter side).
+    RoundRect(f64),
+    Ellipse,
+    /// `triangle` with its `adj` (apex position, 100000ths of the width).
+    Triangle(f64),
+}
+
+impl Geometry {
+    /// FLOAT-10: how far the geometry's text rectangle lies inside a `w` × `h` shape: (left, top, right, bottom).
+    pub fn text_inset(self, w: f64, h: f64) -> [f64; 4] {
+        match self {
+            Geometry::Rect => [0.0; 4],
+            Geometry::RoundRect(adj) => [w.min(h) * adj / 100000.0 * 0.29289; 4],
+            Geometry::Ellipse => [0.14645 * w, 0.14645 * h, 0.14645 * w, 0.14645 * h],
+            Geometry::Triangle(adj) => {
+                let l = w * adj / 200000.0;
+                [l, h / 2.0, w - l - w / 2.0, 0.0]
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextBox {
     pub blocks: Vec<Block>,
     pub insets: [f64; 4],
+    /// The shape's preset geometry (FLOAT-10).
+    pub geometry: Geometry,
     pub outline: f64,
     pub auto_fit: bool,
     /// `wps:bodyPr/@anchor`: 0 top, 1 centre (`ctr`), 2 bottom (`b`); others are top (FLOAT-10).

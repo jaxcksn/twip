@@ -518,7 +518,8 @@ fn wrap_bands(
 pub fn float_height(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<f64, Yield> {
     Ok(match &f.text_box {
         Some(tb) if tb.auto_fit => {
-            let w = (f.w - tb.insets[0] - tb.insets[2] - tb.outline).max(1.0);
+            let g = tb.geometry.text_inset(f.w, f.h);
+            let w = (f.w - g[0] - g[2] - tb.insets[0] - tb.insets[2] - tb.outline).max(1.0);
             let blocks: Vec<&Block> = tb.blocks.iter().collect();
             let fields = FieldValues::default();
             let h = layout(&blocks, w, &StoryEnv { fields: &fields, ..*env }, None, memos)?.height;
@@ -567,7 +568,9 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
 
 /// A text box's content and outline in `rect` (FLOAT-10), appended to `groups`.
 fn text_box(tb: &crate::docx::TextBox, rect: [f64; 4], env: &StoryEnv, groups: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
-    let [x0, y0, x1, y1] = rect;
+    // FLOAT-10: the text frame starts inside the geometry's text rectangle, computed on the shape's size on the page.
+    let g = tb.geometry.text_inset(rect[2] - rect[0], rect[3] - rect[1]);
+    let [x0, y0, x1, y1] = [rect[0] + g[0], rect[1] + g[1], rect[2] - g[2], rect[3] - g[3]];
     {
         let o = tb.outline;
         let w = (x1 - x0 - tb.insets[0] - tb.insets[2] - o).max(1.0);
@@ -596,6 +599,8 @@ fn text_box(tb: &crate::docx::TextBox, rect: [f64; 4], env: &StoryEnv, groups: &
             groups.push(Child::Group { offset: (cx, cy + u.top), children });
         }
         if o > 0.0 {
+            // The outline is centred on the shape edge, not the text frame.
+            let [x0, y0, x1, y1] = rect;
             let h = o / 2.0;
             let outline = [[x0 - h, y0 - h, x1 + h, y0 + h], [x0 - h, y1 - h, x1 + h, y1 + h], [x0 - h, y0, x0 + h, y1], [x1 - h, y0, x1 + h, y1]];
             groups.push(Child::Items(outline.iter().map(|r| Item::Rect { rect: *r, colour: 0 }).collect()));
