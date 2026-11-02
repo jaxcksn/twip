@@ -838,7 +838,10 @@ impl Builder<'_> {
             at += units;
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
-        if space.balance {
+        // FONT-14: only when the document default East Asian font is one (or the theme's empty slot).
+        if let Some(dd) = &space.balance
+            && (dd.is_empty() || self.fonts.face(dd, false, false).is_some_and(|f| f.east_asian))
+        {
             self.balance_spaces();
         }
         if space.compress {
@@ -868,22 +871,42 @@ impl Builder<'_> {
         named().or_else(|| if st.run.east_asia_unset { st.face.clone() } else { None })
     }
 
-    /// Widens runs of two or more spaces (FONT-14).
+    /// Widens the spaces next to a space, the paragraph's start or end, or a character in the East Asian font slot
+    /// (FONT-14).
     fn balance_spaces(&mut self) {
-        let space = |b: &Self, p: &Piece| matches!(&b.text[p.text.0 as usize..p.text.1 as usize], " " | "\u{a0}");
-        let mut i = 0;
-        while i < self.pieces.len() {
-            let mut j = i;
-            while j < self.pieces.len() && space(self, &self.pieces[j]) {
-                j += 1;
+        fn text<'b>(b: &'b Builder, k: usize) -> &'b str {
+            &b.text[b.pieces[k].text.0 as usize..b.pieces[k].text.1 as usize]
+        }
+        let space = |b: &Self, k: usize| matches!(text(b, k), " " | "\u{a0}");
+        // The neighbour's character next to the space: none (the paragraph's edge), a space, or in the East Asian slot.
+        let east = |b: &Self, k: Option<usize>, before: bool| {
+            let Some(k) = k else { return true };
+            let t = text(b, k);
+            let c = if before { t.chars().last() } else { t.chars().next() };
+            let run = &b.styles[b.pieces[k].style as usize].run;
+            space(b, k)
+                || b.pieces[k].kind == Kind::Text
+                    && c.is_some_and(|c| is_east_asian(c as u32) || run.hint_east_asia && shared_with_east_asia(c as u32))
+        };
+        let n = self.pieces.len();
+        for k in 0..n {
+            if !space(self, k) || !(east(self, k.checked_sub(1), true) || east(self, (k + 1 < n).then_some(k + 1), false)) {
+                continue;
             }
-            for k in (i..j).filter(|_| j - i >= 2) {
-                let st = &self.styles[self.pieces[k].style as usize];
-                if let Some(f) = self.east_asia_face(self.pieces[k].style) {
-                    self.pieces[k].width = f.avg_width * st.size * st.run.scale / 100.0 + st.run.spacing;
-                }
+            let st = &self.styles[self.pieces[k].style as usize];
+            // Half the em with an East Asian font in the slot; the space's own font's average character with the
+            // theme's empty slot.
+            let named = self.face(&st.run.east_asia, &st.run).is_some_and(|f| f.east_asian);
+            let em = if named {
+                Some(0.5)
+            } else if st.run.east_asia_unset {
+                st.face.as_ref().map(|f| f.avg_width)
+            } else {
+                None
+            };
+            if let Some(em) = em {
+                self.pieces[k].width = em * st.size * st.run.scale / 100.0 + st.run.spacing;
             }
-            i = j.max(i + 1);
         }
     }
 
@@ -1081,7 +1104,7 @@ pub fn shape_space(
     preview: Option<&super::Preview>,
 ) -> ShapeSpace {
     let mut space = ShapeSpace {
-        balance: text.balance_spaces,
+        balance: text.default_east_asia.clone().filter(|_| text.balance_spaces),
         compress: text.compress_punctuation,
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
         view: text.review.view,

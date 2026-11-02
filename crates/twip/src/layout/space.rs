@@ -16,8 +16,9 @@ use super::env::TextEnv;
 pub struct ShapeSpace {
     pub fields: Vec<Option<String>>,
     pub notes: Vec<String>,
-    /// [`super::env::TextEnv::balance_spaces`] and [`super::env::TextEnv::compress_punctuation`].
-    pub balance: bool,
+    /// FONT-14: with [`super::env::TextEnv::balance_spaces`], the document default East Asian font
+    /// ([`super::env::TextEnv::default_east_asia`]). [`super::env::TextEnv::compress_punctuation`].
+    pub balance: Option<String>,
     pub compress: bool,
     /// FONT-18: compat ≤ 14 [`super::env::TextEnv::word97_line_breaks`].
     pub em1000: bool,
