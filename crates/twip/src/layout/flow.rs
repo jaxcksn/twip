@@ -1486,6 +1486,14 @@ impl<'d> PageFill<'d, '_> {
                     yy = e;
                     continue;
                 }
+                // FLOAT-7 (compat ≤ 14): a keepLines paragraph's line whose band holds a float's top starts at that top.
+                if style.keep_lines {
+                    let top = near().filter(|f| f.wrap != Wrap::None && f.excl[1] > yy + EPS).map(|f| f.excl[1]).fold(f64::INFINITY, f64::min);
+                    if top < yy + h - EPS {
+                        yy = top;
+                        continue;
+                    }
+                }
             }
             for attempt in 0..2 {
                 match float::intervals(here, cx0, cx1, yy, yy + h) {

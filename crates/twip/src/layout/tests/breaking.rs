@@ -505,3 +505,28 @@ fn spaces_next_to_a_no_break_space_dont_break() {
     assert!(plain.ends_with("carbon."), "{plain}");
     assert!(!first("\u{a0} ").unwrap().ends_with("carbon.\u{a0}"));
 }
+
+#[test]
+fn a_runs_rpr_after_its_first_text_formats_the_text_after_it() {
+    // STYLE-10: a second w:rPr between two w:t makes the second bold (wider); a trailing one does nothing.
+    let width = |run: &str| lines("", ARIAL_12, &format!("<w:p>{run}<w:r><w:t>|</w:t></w:r></w:p>")).map(|l| l[0].2);
+    let Some(plain) = width("<w:r><w:t>aaaa</w:t><w:t>aaaa</w:t></w:r>") else { return };
+    let bold = width("<w:r><w:t>aaaa</w:t><w:rPr><w:b/></w:rPr><w:t>aaaa</w:t></w:r>").unwrap();
+    let trailing = width("<w:r><w:t>aaaa</w:t><w:t>aaaa</w:t><w:rPr><w:b/></w:rPr></w:r>").unwrap();
+    assert!(bold > plain + 0.1 && (trailing - plain).abs() < 1e-9, "{plain} {bold} {trailing}");
+}
+
+#[test]
+fn an_inline_pictures_box_takes_its_effect_extents_and_run_position() {
+    // FLOAT-5: a 20pt picture with 2pt top and bottom effect extents, lowered 3pt, makes a 24pt box: ascent 21,
+    // descent 3; the next line moves down with it.
+    let pic = |extra: &str| {
+        format!(
+            r#"<w:p><w:r><w:rPr><w:position w:val="-6"/></w:rPr><w:drawing><wp:inline><wp:extent cx="254000" cy="254000"/>{extra}<a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p><w:p><w:r><w:t>Next</w:t></w:r></w:p>"#
+        )
+    };
+    let y = |extra: &str| baselines("", ARIAL_12, &pic(extra)).map(|l| l.iter().find(|x| x.1 == "Next").unwrap().3);
+    let Some(plain) = y("") else { return };
+    let grown = y(r#"<wp:effectExtent l="0" t="25400" r="0" b="25400"/>"#).unwrap();
+    assert!((grown - plain - 4.0).abs() < 0.01, "{plain} {grown}");
+}

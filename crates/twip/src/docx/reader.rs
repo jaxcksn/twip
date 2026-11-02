@@ -1190,22 +1190,25 @@ impl Reader {
     }
 
     fn read_run(&mut self, r: Node, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
-        let mut direct = RunProps::parse(child(r, "rPr"));
-        // FIELD-5: a table of contents' result shows its entries without the Hyperlink character style;
-        // other character styles and direct formatting show. The source keeps it.
-        let toc = self.fields.iter().any(|f| f.toc && f.in_result);
-        if toc && direct.style.as_deref() == Some("Hyperlink") {
-            direct.style = None;
+        // STYLE-10: a run's `w:rPr` elements apply in order: the leading ones merge, a later one formats the content
+        // after it, a trailing one does nothing.
+        let mut direct = RunProps::default();
+        for c in r.children().filter(|c| c.is_element()).take_while(|c| is_w(*c, "rPr")) {
+            direct.merge(&RunProps::parse(Some(c)));
         }
-        let props = self.res.run_props(base, &direct);
-        let run = self.with_direct(self.run_style(&props), child(r, "rPr"));
-        let mut run = self.tracked(run, base, child(r, "rPr"));
-        if toc {
-            Rc::make_mut(&mut run).toc = true;
-        }
+        let mut run = self.direct_run(r, base, &mut direct);
+        let mut content = false;
         // The child being read and the units before it: what it added becomes a seg when the next one starts.
         let mut prev: Option<(std::ops::Range<usize>, (usize, usize))> = None;
         for c in r.children().filter(|c| c.is_element()) {
+            if is_w(c, "rPr") {
+                if content {
+                    direct.merge(&RunProps::parse(Some(c)));
+                    run = self.direct_run(r, base, &mut direct);
+                }
+                continue;
+            }
+            content = true;
             if self.record {
                 self.note_seg(out, prev.take());
                 prev = Some((c.range(), units_mark(out)));
@@ -1653,7 +1656,10 @@ impl Reader {
             .descendants()
             .any(|n| matches!(n.tag_name().name(), "graphicFrameLocks" | "picLocks") && matches!(n.attribute("noChangeAspect"), Some("1" | "true")));
         if is(item, WP, "inline") {
-            out.push(Inline::Picture(Picture { w, h, image, alt, lock_aspect }, run.clone()));
+            let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
+            let e = |n: &str| ee.and_then(|e| emu(e.attribute(n))).unwrap_or(0.0).max(0.0);
+            let effect = [e("l"), e("t"), e("r"), e("b")];
+            out.push(Inline::Picture(Picture { w, h, image, alt, lock_aspect, effect }, run.clone()));
             return;
         }
         let pos = |name: &str| item.children().find(|c| is(*c, WP, name));
@@ -1735,6 +1741,24 @@ impl Reader {
             }),
             run.clone(),
         ));
+    }
+
+    /// A run's formatting from its direct properties `direct` over `base` (its first `w:rPr` kept for saving and
+    /// revisions).
+    fn direct_run(&mut self, r: Node, base: &RunProps, direct: &mut RunProps) -> Run {
+        // FIELD-5: a table of contents' result shows its entries without the Hyperlink character style;
+        // other character styles and direct formatting show. The source keeps it.
+        let toc = self.fields.iter().any(|f| f.toc && f.in_result);
+        if toc && direct.style.as_deref() == Some("Hyperlink") {
+            direct.style = None;
+        }
+        let props = self.res.run_props(base, direct);
+        let run = self.with_direct(self.run_style(&props), child(r, "rPr"));
+        let mut run = self.tracked(run, base, child(r, "rPr"));
+        if toc {
+            Rc::make_mut(&mut run).toc = true;
+        }
+        run
     }
 
     /// A text box's content and box settings: `shape` holds its `bodyPr` and outline, `t` its `w:txbxContent`.

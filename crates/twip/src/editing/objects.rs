@@ -404,7 +404,7 @@ impl Editor {
         let (w, h) = (((w * 20.0).round() / 20.0).max(1.0), ((h * 20.0).round() / 20.0).max(1.0));
         let image = Some(self.pending_image(data));
         let out = self.insert_inline(
-            |run| Inline::Picture(crate::docx::Picture { w, h, image, alt: "".into(), lock_aspect: true }, run),
+            |run| Inline::Picture(crate::docx::Picture { w, h, image, alt: "".into(), lock_aspect: true, effect: [0.0; 4] }, run),
             "Insert Picture",
             fonts,
         );

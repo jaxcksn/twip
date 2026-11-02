@@ -194,6 +194,8 @@ pub struct Picture {
     /// Lock aspect ratio (`a:graphicFrameLocks/@noChangeAspect` or `a:picLocks/@noChangeAspect`): corner handles keep
     /// the ratio.
     pub lock_aspect: bool,
+    /// `wp:effectExtent` (left, top, right, bottom), points: the layout box grows by it (FLOAT-5).
+    pub effect: [f64; 4],
 }
 
 /// An anchored (floating) picture or text box (the FLOAT rules).

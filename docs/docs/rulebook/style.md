@@ -95,3 +95,7 @@ Example: docDefaults `w:eastAsiaTheme="minorEastAsia"` (empty in the theme) and 
 Tab stops don't replace each other level by level; they accumulate through the paragraph cascade (docDefaults, table style, paragraph style chain, list level, direct). A stop at the same position as an inherited one (within 0.025pt) replaces it; `w:val="clear"` removes the inherited stop at its position. Sort the result by position.
 
 Example: a style with stops at 1in and 3in, and direct `w:tab w:val="clear" w:pos="4320"` plus a right stop at 6in: the paragraph's stops are 1in and 6in.
+
+### STYLE-10. Several w:rPr in a run {#style-10}
+
+A run's children are read in order. The `w:rPr` elements before its first content merge into its direct formatting; a `w:rPr` after some content adds its properties for the content after it, as a later layer; one after the last content does nothing. Content before any `w:rPr` has no direct formatting.

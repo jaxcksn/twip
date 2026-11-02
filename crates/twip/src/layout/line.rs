@@ -1605,7 +1605,10 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 // FLOAT-5: an inline picture's bottom sits on the baseline.
                 if let Some(Object::Picture(pic)) = p.object.map(|o| &sp.objects[o as usize]) {
                     flush(&mut run, &mut out);
-                    out.push(Item::Image { rect: [x, base - pic.h, x + pic.w, base], key: ImageKey { index: pic.image, generation: 0 } });
+                    // FLOAT-5: inside its effect extents, raised or lowered with its run.
+                    let bottom = base - sp.styles[p.style as usize].run.position - pic.effect[3];
+                    let x0 = x + pic.effect[0];
+                    out.push(Item::Image { rect: [x0, bottom - pic.h, x0 + pic.w, bottom], key: ImageKey { index: pic.image, generation: 0 } });
                     if let Some(unit) = first {
                         atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + pic.w), para: q, unit, brk: false });
                     }

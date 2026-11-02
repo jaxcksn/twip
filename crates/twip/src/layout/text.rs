@@ -776,9 +776,11 @@ impl Builder<'_> {
                 }
                 (Inline::Picture(pic, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Object, run, None, run.size, 0.0);
-                    p.width = pic.w;
-                    p.ascent = pic.h;
-                    p.descent = 0.0;
+                    // FLOAT-5: the box is the extent and its effect extents, raised or lowered like text (FONT-7).
+                    let [l, t, r, b] = pic.effect;
+                    p.width = pic.w + l + r;
+                    p.ascent = (pic.h + t + b + run.position).max(0.0);
+                    p.descent = (-run.position).max(0.0);
                     p.object = Some(Object::Picture(pic.clone()));
                     // BREAK-3: a line may end before and after an inline picture.
                     p.break_after = true;

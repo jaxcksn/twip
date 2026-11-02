@@ -46,6 +46,8 @@ Example: a tab, then a 64pt-wide 30pt-high picture, 14.65 below the top of a 112
 
 An inline picture (`wp:inline`) is a glyph whose bottom sits on the baseline: ascent = picture height, descent 0. The line height follows [LINE-1](line#line-1): `max(pictureHeight, textAscent) + textDescent`. With exact line spacing the line keeps its height ([LINE-12](line#line-12)) and the picture overflows upward, unclipped.
 
+Its box is `wp:extent` grown by `wp:effectExtent` on each side: width + l + r, height + t + b; the picture is drawn inside. A run's `w:position` moves it like text ([FONT-7](font#font-7)): raised by p, ascent = box height + p and descent 0; lowered by p, ascent = box height − p and descent p.
+
 ### FLOAT-6. Anchor position {#float-6}
 
 **Horizontal** (`wp:positionH/@relativeFrom`), giving a box `[x0, x0 + w)`:
@@ -92,6 +94,7 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 - An interval that starts at a float's edge (not the column's) takes the place of the left indent: its lines start at `max(edge, left indent)`, and the first line adds its first-line indent to that, so a hanging first line starts left of the edge, over the float's distance or the float itself.
 - Tabs in an interval that starts at a float's edge: compat ≤ 14 lays the interval out as a line of its own, so default stops are at `edge + k·defaultTabStop` and custom stops shift by the edge. Compat 15 keeps the stops counted from the margin; stops left of the interval start are skipped.
 - Compat ≤ 14: the intervals found at a line's top hold down to the bottom of a float covering that top. When that bottom is inside the line and another float starts inside the line, the line doesn't use them: it moves down to that bottom and is tried again there. A line that only overhangs a float's bottom, or meets a float starting inside it with none covering its top, stays.
+- Compat ≤ 14: a line of a `keepLines` paragraph whose band (its top to its top plus its height) holds the top of a wrapping float (with its top distance) starts at that top, beside the float. Without keepLines, and in compat 15, the line stays where the flow puts it.
 
 Example: a float's exclusion ending at 255pt beside a paragraph with `w:left="-540" w:firstLine="540"`: the first line starts at 282pt, the next ones at 255pt. With `w:hanging="540"` instead the first line starts at 228pt.
 
