@@ -48,6 +48,10 @@ pub struct Placed {
     pub side: Side,
     pub allow_overlap: bool,
     pub float: Rc<Float>,
+    /// TABLE-49: a floating table placed while every float before it on the page was already acting on the text.
+    /// The next attempt keeps only settled positions: another is placed again when the flow reaches it, and acts on no
+    /// text until then.
+    pub settled: bool,
 }
 
 /// The page boxes a float positions against (FLOAT-6).
@@ -98,6 +102,7 @@ impl Placed {
             side,
             allow_overlap: f.allow_overlap,
             float: f.clone(),
+            settled: true,
         }
     }
 
@@ -198,6 +203,7 @@ mod tests {
             side,
             allow_overlap: true,
             float,
+            settled: true,
         }
     }
 

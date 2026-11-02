@@ -808,7 +808,8 @@ pub fn layout_body(
                     end = Some(pos.clone());
                     drops += 1;
                 }
-                known = found;
+                // TABLE-49: an unsettled table is placed again, from the flow, when the next attempt reaches it.
+                known = found.into_iter().filter(|f| f.settled).collect();
                 reserve = notes;
                 Ok(false)
             })

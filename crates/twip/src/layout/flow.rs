@@ -1922,9 +1922,13 @@ impl<'d> PageFill<'d, '_> {
             },
             _ => col.x,
         };
+        // TABLE-49: whether the position comes from an attempt in which every float before the table on the page was
+        // already acting on the text (each one found so far is known, unmoved).
+        let mut settled = true;
         if let Some(fp) = fp
             && pos.at.at_start()
         {
+            settled = self.at.found.iter().all(|f| self.at.known.iter().any(|k| k.same(f)));
             let h: f64 = tb.rows.iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>() + tb.bottom_border;
             let (t0, t1) = match fp.v_anchor {
                 TableAnchor::Page => (0.0, self.page_h),
@@ -2221,7 +2225,7 @@ impl<'d> PageFill<'d, '_> {
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
                 finish(rows, out);
-                self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);
+                self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
                 return Ok(Stop::Full);
             }
             if at_top {
@@ -2266,12 +2270,12 @@ impl<'d> PageFill<'d, '_> {
                 *y += tb.bottom_border;
             }
             finish(rows, out);
-            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);
+            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
             return Ok(Stop::Full);
         }
         finish(rows, out);
         if fp.is_some() {
-            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);
+            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
             (*y, *empty) = (flow_y, was_empty);
         }
         pos.next_block();
@@ -2284,7 +2288,8 @@ impl<'d> PageFill<'d, '_> {
     /// It reaches no higher than where the table stood in the flow unless the table itself does (only then does
     /// the text before it re-wrap). Compat ≤ 14: a table in the flow (text-anchored, tblpY 0) has no distance above
     /// and below, and with a negative tblInd the obstacle stays at the frame, which starts at tblpX.
-    fn table_obstacle(&mut self, bi: usize, tb: &TableLayout, at_x: f64, top: f64, bottom: f64, flow_y: f64) {
+    #[allow(clippy::too_many_arguments, reason = "the part's place and the attempt state it was placed in")]
+    fn table_obstacle(&mut self, bi: usize, tb: &TableLayout, at_x: f64, top: f64, bottom: f64, flow_y: f64, settled: bool) {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return };
         let Some(fp) = t.floating else { return };
         if bottom <= top + EPS {
@@ -2335,6 +2340,7 @@ impl<'d> PageFill<'d, '_> {
         if legacy {
             o.excl[0] -= t.ind.min(0.0);
         }
+        o.settled = settled;
         self.at.found.push(o);
     }
 }
