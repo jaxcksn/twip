@@ -111,7 +111,8 @@ impl Resolver {
             spacing: p.spacing.unwrap_or(0.0),
             scale: p.scale.unwrap_or(100.0),
             kern: p.kern.unwrap_or(0.0),
-            ligatures: p.ligatures.unwrap_or(0),
+            // FONT-4: bit 16 for contextual alternates.
+            ligatures: p.ligatures.unwrap_or(0) | if p.cntxt_alts == Some(true) { 16 } else { 0 },
             lang: p.lang.clone().unwrap_or_default(),
             style_id: p.style.clone(),
             direct: Raw::default(),
@@ -141,6 +142,7 @@ impl Resolver {
             line,
             line_rule: if p.line.is_some() { line_rule } else { LineRule::Auto },
             contextual: p.contextual.unwrap_or(false),
+            snap_to_grid: p.snap_to_grid.unwrap_or(true),
             keep_next: p.keep_next.unwrap_or(false),
             keep_lines: p.keep_lines.unwrap_or(false),
             page_break_before: p.page_break_before.unwrap_or(false),

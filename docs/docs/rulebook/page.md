@@ -102,3 +102,9 @@ When testing whether a keepNext paragraph's successor fits ([PAGE-6](page#page-6
 A continuous section break doesn't change the space between the paragraphs on either side of it: the section ends below its last paragraph's space-after, and the next section's first paragraph is spaced from that paragraph by [PARA-1](para#para-1)'s gap, `max(spaceAfter, spaceBefore)` (their sum with `doNotUseHTMLParagraphAutoSpacing`). One column or several, compat 12 and 15 alike. A balanced section's end already includes the space-after ([COL-5](col#col-5)).
 
 Example: after 12pt and before 2pt, the next section's first line is 12pt lower than with no space-after; before 20pt, 20pt.
+
+### PAGE-11. A leading page-break line never moves {#page-11}
+
+A line that holds only a page break and isn't its paragraph's last line with content (`<w:br w:type="page"/>Next` at the start of a paragraph) takes its break on the current page even when it doesn't fit there ([PAGE-1](page#page-1)): the rest of the paragraph follows on the next page, and no page is left empty. A paragraph holding only a page break (its mark joins the break line) is an ordinary line and moves when it doesn't fit, which leaves an empty page. Lines beside floats too; both modes.
+
+Example: a paragraph ends at y 716 above a bottom of 720, and the next paragraph is a page break followed by a heading. The break line doesn't fit, but the heading starts the next page, not the one after it.

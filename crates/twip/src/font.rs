@@ -250,8 +250,8 @@ impl Face {
         let feats = [
             Feature::new(Tag::new(b"kern"), on(kern), ..),
             Feature::new(Tag::new(b"liga"), on(ligatures & 1 != 0), ..),
-            Feature::new(Tag::new(b"clig"), on(ligatures & 1 != 0), ..),
-            Feature::new(Tag::new(b"calt"), on(ligatures & 2 != 0), ..),
+            Feature::new(Tag::new(b"clig"), on(ligatures & 2 != 0), ..),
+            Feature::new(Tag::new(b"calt"), on(ligatures & 16 != 0), ..),
             Feature::new(Tag::new(b"hlig"), on(ligatures & 4 != 0), ..),
             Feature::new(Tag::new(b"dlig"), on(ligatures & 8 != 0), ..),
         ];

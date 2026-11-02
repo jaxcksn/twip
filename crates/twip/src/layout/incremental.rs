@@ -140,6 +140,7 @@ fn props(s: &Section) -> Section {
         line_numbers,
         v_align,
         page_borders,
+        line_grid,
         blocks: _,
         change,
     } = s;
@@ -163,6 +164,7 @@ fn props(s: &Section) -> Section {
         line_numbers: line_numbers.clone(),
         v_align: v_align.clone(),
         page_borders: page_borders.clone(),
+        line_grid: *line_grid,
         blocks: Vec::new(),
         change: change.clone(),
     }

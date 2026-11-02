@@ -33,14 +33,22 @@ pub struct TextEnv {
     pub default_style: Option<String>,
     /// `w:growAutofit` (TABLE-17: tables may grow past the text width).
     pub grow_autofit: bool,
-    /// `w:balanceSingleByteDoubleByteWidth` (FONT-14: runs of spaces widen).
+    /// `w:balanceSingleByteDoubleByteWidth` (FONT-14: spaces next to East Asian text widen).
     pub balance_spaces: bool,
+    /// FONT-14: the document default East Asian font (`w:rPrDefault`), empty for the theme's empty slot; `None`
+    /// without one.
+    pub default_east_asia: Option<String>,
     /// `w:ulTrailSpace` (FONT-15: the spaces that end a line are underlined too).
     pub ul_trail_space: bool,
     /// `w:characterSpacingControl` compressPunctuation (BREAK-8: no break after a hyphen in East Asian runs).
     pub compress_punctuation: bool,
     /// The markup view and author colours: which revisions show, and how.
     pub review: ReviewView,
+    /// LINE-16: the section's line grid pitch (layout units) where its lines snap: main text, and cells with
+    /// `w:adjustLineHeightInTable`. `None` in headers, footers, notes and text boxes.
+    pub line_grid: Option<i32>,
+    /// `w:adjustLineHeightInTable` (LINE-16: cell lines snap to the grid).
+    pub adjust_line_height_in_table: bool,
 }
 
 impl TextEnv {
@@ -65,6 +73,12 @@ impl TextEnv {
             ul_trail_space: s.has("ulTrailSpace"),
             compress_punctuation: s.compress_punctuation,
             review: doc.review.clone(),
+            line_grid: None,
+            default_east_asia: doc.resolver.as_ref().and_then(|r| match &r.styles.doc_rpr.east_asia {
+                Some(crate::docx::props::FontRef::Theme(t)) if r.theme.ea_unset(t) => Some(String::new()),
+                f => r.font(f),
+            }),
+            adjust_line_height_in_table: s.has("adjustLineHeightInTable"),
         }
     }
 }

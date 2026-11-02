@@ -77,7 +77,7 @@ Margins are the page's after gutter and mirroring ([HDR-13](hdr#hdr-13)). Then `
 
 **`simplePos="1"`**: an axis without an alignment is at `wp:simplePos` on the page; an axis with an alignment keeps it and its `relativeFrom`.
 
-**An anchor after a page or column break in its paragraph**: compat ≤ 14 continues the paragraph after the break at the top of the next page or column, so the anchor is placed there, `paragraph` counting from the continuation's top. Compat 15 ends the paragraph at the break. Not done: compat 15 placing such an anchor on the paragraph's first page (it isn't drawn).
+**An anchor after a page or column break in its paragraph**: the paragraph continues after the break at the top of the next page or column (nothing after a break is dropped), so the anchor is placed there, `paragraph` counting from the continuation's top, both modes. When only anchors and the paragraph mark follow a page break, the break's line holds the anchors: their floats stay on the old page, `paragraph` counting from the paragraph's top there. With `w:splitPgBreakAndParaMark` (compat ≤ 14, [COMPAT-3](compat#compat-3)) the mark gets its own line on the next page and the anchors go with it. Not done: a page-relative float that would cover text laid out before its anchor on the old page (the break line then moves to the next page with the float).
 
 **Offsets are truncated to whole twips**: `twips = trunc(EMU / 635)`, `points = twips / 20`. 170688 EMU = 268.8 twips → 268 → 13.40pt.
 
@@ -85,7 +85,8 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 
 ### FLOAT-7. Square wrap {#float-7}
 
-- The exclusion is the float's box grown by `distT`, `distB`, `distL`, `distR`. A text box's outline width isn't added.
+- The exclusion is the float's box grown by its `wp:effectExtent` (`l`, `t`, `r`, `b`: EMU to twips, truncated; a negative extent shrinks it), then by `distT`, `distB`, `distL`, `distR`. Both modes, square and top-and-bottom wrap; a tight or through polygon ([FLOAT-8](float#float-8)) takes no effect extents. A text box's outline width isn't added.
+- An alignment (`wp:align`) aligns the box grown by its effect extents: `left` puts the float at `x0 + l`, `right` at `x0 + w − width − r`, `center` at `x0 + (w − width + l − r) / 2`. An offset places the bare box.
 - A line wraps if its line box overlaps the exclusion ([FLOAT-1](float#float-1)).
 - An interval's edges replace the paragraph's indents, except that an interval reaching the column's right edge keeps the paragraph's right indent, a negative one too.
 - Fill the free intervals of a band one after another, each **independently, one unbreakable piece of text at a time** (up to the next break opportunity). If the next piece doesn't fit the current interval, that interval stays as it is and the text continues in the next interval of the same band. Once a float cuts the column, an interval narrower than 18pt takes no text; one of exactly 18pt does.
@@ -119,7 +120,8 @@ Floats positioned relative to the page or margins, and wrapNone floats ([FLOAT-1
 ### FLOAT-10. Text boxes {#float-10}
 
 - Insets `bodyPr/@lIns`, `tIns`, `rIns`, `bIns` default to 7.2, 3.6, 7.2, 3.6pt. The outline (`a:ln/@w`, 0.75pt when `a:ln` has no `w`; none without `a:ln` or with `a:noFill`) is centred on the box edge.
-- Lay the content out as an ordinary story ([HDR-3](hdr#hdr-3)) at `width = boxW − lIns − rIns − outline`, starting at `(boxX + lIns + outline/2, boxY + tIns + outline/2)`.
+- The text frame starts inside the preset geometry's text rectangle, computed on the shape's size on the page (after a group's scale): `rect` the whole shape; `roundRect` `min(w, h) × adj / 100000 × 0.29289` in on every side (`adj` 16667 by default); `ellipse` `0.14645 w` left and right, `0.14645 h` top and bottom; `triangle` `l = w × adj / 200000` (`adj` 50000 by default), top `h / 2`, right `w − l − w / 2`, bottom 0. Other presets: the whole shape. The outline stays on the shape edge.
+- Lay the content out as an ordinary story ([HDR-3](hdr#hdr-3)) at `width = frameW − lIns − rIns − outline`, starting at `(frameX + lIns + outline/2, frameY + tIns + outline/2)`.
 - `a:spAutoFit`: the box height is `content + tIns + bIns + outline`.
 - Fixed height: the content bottom is `boxBottom − bIns − outline/2`. Draw a line only if its line box starts above the content bottom; draw no later line. The content bottom clips the lines drawn like an exact row's bottom ([TABLE-34](table#table-34)): a glyph whose ink top is at or below it is not drawn (its characters go with it); a line whose glyphs all go shows nothing.
 - Fixed height, `bodyPr/@anchor`: `ctr` moves the content down by half the room below it (whole layout units, rounded down), `b` by all of it, never up; other values are top. In compat ≤ 14 `w:doNotVertAlignInTxbx` keeps it at the top; compat 15 ignores the option. Not done: floats inside the box don't count as its content.

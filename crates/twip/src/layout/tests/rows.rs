@@ -402,21 +402,36 @@ mod floats {
 
     #[test]
     fn float_6_an_anchor_after_a_page_break_is_placed_on_the_next_page() {
-        // Compat ≤ 14: the paragraph goes on after its page break, so the 360pt box anchored after the break sits at the
-        // top of page 2 and the next paragraph's long word, too wide for either side of it, goes below it.
+        // The paragraph goes on after its page break, so the 360pt box anchored after the break, with text after it,
+        // sits at the top of page 2 with that text, and the next paragraph's long word, too wide for either side of it,
+        // goes below it. With only the mark after the anchor, the break's line holds it: the box stays on page 1.
         let b = text_box(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 60.0, "Boxed")
             .replace(r#"cx="1270000""#, r#"cx="4572000""#)
             .replacen("<wp:posOffset>0</wp:posOffset>", "<wp:posOffset>685800</wp:posOffset>", 1)
             .replacen("<w:p>", r#"<w:p><w:r><w:t>Before</w:t><w:br w:type="page"/></w:r>"#, 1);
-        let d = doc(&format!("{b}<w:p><w:r><w:t>After{}</w:t></w:r></w:p>", "x".repeat(60)));
-        let s = layout(&d, &fonts());
-        let page2: Vec<(f64, String)> = paint_items(&s.pages()[1])
-            .iter()
-            .filter_map(|i| if let Item::Glyphs(r) = i { Some((r.baseline, r.chars.iter().map(|c| c.0).collect())) } else { None })
-            .collect();
-        let at = |t: &str| page2.iter().find(|(_, x)| x.contains(t)).map(|(b, _)| *b);
-        let (boxed, after) = (at("Boxed").expect("the box on page 2"), at("After").expect("the next paragraph on page 2"));
-        assert!(after - boxed > 50.0, "box {boxed} vs after {after}");
+        let glyphs = |p: &crate::layout::fragment::PageFragment| -> Vec<(f64, String)> {
+            paint_items(p)
+                .iter()
+                .filter_map(|i| if let Item::Glyphs(r) = i { Some((r.baseline, r.chars.iter().map(|c| c.0).collect())) } else { None })
+                .collect()
+        };
+        let at = |runs: &[(f64, String)], t: &str| runs.iter().find(|(_, x)| x.contains(t)).map(|(b, _)| *b);
+        let doc_compat = |body: &str, mode: i64| {
+            let mut d = doc(body);
+            d.settings.compat_mode = mode;
+            d
+        };
+        for compat in [12, 15] {
+            let titled = b.replacen("</w:drawing></w:r></w:p>", "</w:drawing></w:r><w:r><w:t>Title</w:t></w:r></w:p>", 1);
+            let body = format!("{titled}<w:p><w:r><w:t>After{}</w:t></w:r></w:p>", "x".repeat(60));
+            let s = layout(&doc_compat(&body, compat), &fonts());
+            let page2 = glyphs(&s.pages()[1]);
+            let (boxed, after) = (at(&page2, "Boxed").expect("the box on page 2"), at(&page2, "After").expect("the next paragraph on page 2"));
+            assert!(at(&page2, "Title").is_some(), "compat {compat}: the title on page 2");
+            assert!(after - boxed > 50.0, "compat {compat}: box {boxed} vs after {after}");
+            let s = layout(&doc_compat(&format!("{b}<w:p><w:r><w:t>After</w:t></w:r></w:p>"), compat), &fonts());
+            assert!(at(&glyphs(&s.pages()[0]), "Boxed").is_some(), "compat {compat}: the box stays on page 1");
+        }
     }
 
     #[test]

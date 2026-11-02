@@ -17,7 +17,8 @@ use super::ids::ParaId;
 use super::job::{Memos, Yield};
 use super::join::{Joined, LaidPara, laid_para, piece_para};
 use super::line::{
-    Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, break_lines, draw_label, draw_line, neighbour_borders, top_border_extra,
+    Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, break_lines, breaks_only, draw_label, draw_line, neighbour_borders,
+    top_border_extra,
 };
 use super::node::{Notes, SectionNode};
 use super::paragraph::{gap, lines_to_take, space_after, space_before};
@@ -1247,8 +1248,15 @@ impl<'d> PageFill<'d, '_> {
         let has_anchor = pb.pieces().iter().any(|q| q.kind == Kind::Anchor);
         // A paragraph that ends above a float's top doesn't wrap it: its gap and every line unwrapped.
         let bottom = *y + self.para_gap(p, pos, carry, *empty) + pb.lines.iter().map(|l| l.pitch).sum::<f64>();
+        // TABLE-49: a floating table meets the paragraph's text: compat 15 down to its last line's text (without the
+        // extra below of multiple spacing), compat ≤ 14 down to its end with its space-after.
+        let text_bottom = match self.ctx.env.text.compat {
+            Compat::Generic => bottom - pb.lines.last().map_or(0.0, |l| l.below),
+            Compat::Legacy => bottom + space_after(&self.ctx.env.text, p.para_style_in(self.ctx.env.text.review.view)),
+        };
         let affected = self.at.known.iter().any(|f| {
-            f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < bottom - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
+            let reach = if f.key.2 == float::TABLE_PIECE { text_bottom } else { bottom };
+            f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < reach - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
         });
         if has_anchor || affected {
             return self.place_wrapped(p, pb, pos, carry, col, y, empty, area, out, memos);
@@ -1307,12 +1315,12 @@ impl<'d> PageFill<'d, '_> {
             let room = l.pitch - l.below;
             let refs = pb.notes(i);
             let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
-            if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, memos)? {
+            if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, memos)? && !pb.leading_page_break(i) {
                 break;
             }
             // PAGE-8: above a footnote area nothing is suppressed.
             let tail = if i + 1 == n { after } else { 0.0 };
-            if a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) {
+            if a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) && !pb.leading_page_break(i) {
                 break;
             }
             areas.push((a, rest));
@@ -1746,12 +1754,14 @@ impl<'d> PageFill<'d, '_> {
             let room = l.pitch - l.below;
             let refs: Vec<(NoteKind, i64)> = segs.iter().flat_map(|l| (l.start..l.end).filter_map(|k| sp.note(pb.from + k))).collect();
             let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
-            if !self.add_notes(&refs, &mut a, col, bt + room, &mut rest, memos)? {
+            // PAGE-11: a band holding only a page break, with more of the paragraph after it, always fits.
+            let lead = segs.len() == 1 && breaks_only(pieces, l) && l.end < n;
+            if !self.add_notes(&refs, &mut a, col, bt + room, &mut rest, memos)? && !lead {
                 break;
             }
             // Above a footnote area nothing is suppressed (PAGE-8; see `place_para`).
             let tail = if bi_ + 1 == nb { after } else { 0.0 };
-            if a.total() > 0.0 && !col.bottom.holds(bt + l.pitch + tail + a.total()) {
+            if a.total() > 0.0 && !col.bottom.holds(bt + l.pitch + tail + a.total()) && !lead {
                 break;
             }
             areas.push((a, rest));
@@ -1827,9 +1837,9 @@ impl<'d> PageFill<'d, '_> {
         carry.prev = Some(p.para_style_in(self.ctx.env.text.review.view).clone());
         carry.balanced_after = 0.0;
         carry.prev_after = after;
-        // FLOAT-6 (compat ≤ 14): what follows a page or column break (its anchors and text) continues on the next
-        // page or column, the bands having stopped at the break; compat 15 ends the paragraph there.
-        let after_break = (take == nb && s < n && compat == Compat::Legacy).then_some(s);
+        // FLOAT-6: what follows a page or column break (its anchors and text) continues on the next page or column,
+        // the bands having stopped at the break; its floats are positioned from that part's top.
+        let after_break = (take == nb && s < n).then_some(s);
         let done = take >= nb && after_break.is_none();
         if done {
             pos.next_block();
@@ -1912,9 +1922,13 @@ impl<'d> PageFill<'d, '_> {
             },
             _ => col.x,
         };
+        // TABLE-49: whether the position comes from an attempt in which every float before the table on the page was
+        // already acting on the text (each one found so far is known, unmoved).
+        let mut settled = true;
         if let Some(fp) = fp
             && pos.at.at_start()
         {
+            settled = self.at.found.iter().all(|f| self.at.known.iter().any(|k| k.same(f)));
             let h: f64 = tb.rows.iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>() + tb.bottom_border;
             let (t0, t1) = match fp.v_anchor {
                 TableAnchor::Page => (0.0, self.page_h),
@@ -2211,7 +2225,7 @@ impl<'d> PageFill<'d, '_> {
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
                 finish(rows, out);
-                self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);
+                self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
                 return Ok(Stop::Full);
             }
             if at_top {
@@ -2256,12 +2270,12 @@ impl<'d> PageFill<'d, '_> {
                 *y += tb.bottom_border;
             }
             finish(rows, out);
-            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);
+            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
             return Ok(Stop::Full);
         }
         finish(rows, out);
         if fp.is_some() {
-            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y);
+            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
             (*y, *empty) = (flow_y, was_empty);
         }
         pos.next_block();
@@ -2274,7 +2288,8 @@ impl<'d> PageFill<'d, '_> {
     /// It reaches no higher than where the table stood in the flow unless the table itself does (only then does
     /// the text before it re-wrap). Compat ≤ 14: a table in the flow (text-anchored, tblpY 0) has no distance above
     /// and below, and with a negative tblInd the obstacle stays at the frame, which starts at tblpX.
-    fn table_obstacle(&mut self, bi: usize, tb: &TableLayout, at_x: f64, top: f64, bottom: f64, flow_y: f64) {
+    #[allow(clippy::too_many_arguments, reason = "the part's place and the attempt state it was placed in")]
+    fn table_obstacle(&mut self, bi: usize, tb: &TableLayout, at_x: f64, top: f64, bottom: f64, flow_y: f64, settled: bool) {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return };
         let Some(fp) = t.floating else { return };
         if bottom <= top + EPS {
@@ -2302,6 +2317,7 @@ impl<'d> PageFill<'d, '_> {
             wrap: "square".into(),
             wrap_text: "bothSides".into(),
             dist: if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] },
+            effect: [0.0; 4],
             poly: None,
             behind: false,
             allow_overlap: true,
@@ -2324,6 +2340,7 @@ impl<'d> PageFill<'d, '_> {
         if legacy {
             o.excl[0] -= t.ind.min(0.0);
         }
+        o.settled = settled;
         self.at.found.push(o);
     }
 }

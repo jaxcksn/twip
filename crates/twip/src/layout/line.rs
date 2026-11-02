@@ -86,6 +86,8 @@ pub struct Frame {
     pub tab_origin: f64,
     /// JUST-7: compat ≤ 14 `w:wpJustification`.
     pub wp_justification: bool,
+    /// LINE-16: the line grid pitch, layout units.
+    pub line_grid: Option<i32>,
 }
 
 impl Frame {
@@ -100,6 +102,7 @@ impl Frame {
             no_wrap: space.fit,
             tab_origin: 0.0,
             wp_justification: e.compat == Compat::Legacy && e.wp_justification,
+            line_grid: e.line_grid,
         }
     }
 }
@@ -134,6 +137,11 @@ impl PartialEq for ParaLines {
     }
 }
 
+/// PAGE-11: the line holds only line and page breaks and ends with a page break.
+pub fn breaks_only(pieces: &[Piece], l: &Line) -> bool {
+    l.hard == Some(Kind::PageBreak) && l.start < l.end && pieces[l.start..l.end].iter().all(|q| matches!(q.kind, Kind::LineBreak | Kind::PageBreak))
+}
+
 impl ParaLines {
     /// The pieces the lines index into.
     pub fn pieces(&self) -> &[Piece] {
@@ -144,6 +152,11 @@ impl ParaLines {
     pub fn notes(&self, i: usize) -> Vec<(NoteKind, i64)> {
         let l = &self.lines[i];
         (l.start..l.end).filter_map(|k| self.shaped.note(self.from + k)).collect()
+    }
+
+    /// PAGE-11: line `i` holds only breaks, ends with a page break, and a later line of the paragraph has content.
+    pub fn leading_page_break(&self, i: usize) -> bool {
+        breaks_only(self.pieces(), &self.lines[i]) && self.lines[i + 1..].iter().any(|m| m.start < m.end)
     }
 
     /// Line `i` drawn (with its top at 0, the column's left edge at [`ParaSpace::x0`]).
@@ -406,7 +419,7 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         } else {
             fit_text(&mut line, pieces, right - 1.0);
         }
-        size(&mut line, sp, pieces, style, mark, fonts, is_last, frame.compat);
+        size(&mut line, sp, pieces, style, mark, fonts, is_last, frame);
         lines.push(line);
         first = false;
         if end >= n {
@@ -421,7 +434,7 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
             || last.end == n && matches!(last.hard, Some(Kind::PageBreak)) && frame.split_page_break;
         if trailing {
             let mut line = Line::empty(n);
-            size(&mut line, sp, pieces, style, mark, fonts, true, frame.compat);
+            size(&mut line, sp, pieces, style, mark, fonts, true, frame);
             lines.push(line);
         }
     }
@@ -429,7 +442,7 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         // An empty paragraph: one line from the mark (LINE-4, STYLE-5).
         lines.clear();
         let mut line = Line::empty(0);
-        size(&mut line, sp, pieces, style, mark, fonts, true, frame.compat);
+        size(&mut line, sp, pieces, style, mark, fonts, true, frame);
         lines.push(line);
     }
     lines
@@ -563,7 +576,7 @@ pub fn band(
     // The band's height covers every segment (LINE-1 over the band's pieces).
     let mut merged = segs[0].clone();
     merged.end = s;
-    size(&mut merged, sp, pieces, style, mark, fonts, s >= n, frame.compat);
+    size(&mut merged, sp, pieces, style, mark, fonts, s >= n, frame);
     for l in &mut segs {
         l.ascent = merged.ascent;
         l.descent = merged.descent;
@@ -723,7 +736,17 @@ fn fit_line(
                 if let Some((w, cap)) = squeeze {
                     shrink_spaces(sp, pieces, start, w, cap, right, &mut xs, &mut ws);
                 }
-                return Fit { end: i + 1, xs, widths: ws, hard: Some(p.kind), hyphen: false, leaders };
+                // FLOAT-6: when only anchors follow a page break, the break's line holds them (their floats stay on
+                // this page), unless the mark moves on with them (COMPAT-3).
+                let mut end = i + 1;
+                if p.kind == Kind::PageBreak && !frame.split_page_break && end < n && pieces[end..].iter().all(|q| q.kind == Kind::Anchor) {
+                    for _ in end..n {
+                        xs.push(pen);
+                        ws.push(0.0);
+                    }
+                    end = n;
+                }
+                return Fit { end, xs, widths: ws, hard: Some(p.kind), hyphen: false, leaders };
             }
             Kind::Tab => {
                 if let Some(pt) = pending.take() {
@@ -1339,7 +1362,8 @@ fn times_line(h: f64, m: f64) -> f64 {
 }
 
 /// Vertical size of a line: LINE-1 to LINE-5, LIST-7, FLOAT-5, then the line spacing rule (LINE-6 to LINE-13).
-fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, fonts: &Fonts, last: bool, compat: Compat) {
+fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, fonts: &Fonts, last: bool, frame: &Frame) {
+    let compat = frame.compat;
     let (mut asc, mut desc) = (0.0f64, 0.0f64);
     // STYLE-4: a compat ≤ 14 cell mark laid out at its paragraph's size, not its own.
     let mark_size = style.mark_size.unwrap_or(mark.size);
@@ -1466,6 +1490,25 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                     _ => 0.0,
                 };
         }
+    }
+    // LINE-16: a line on the document grid takes max(ceil(h / P) P, trunc(P m / 240)); the extra's floor half goes
+    // below the text (and needn't fit at a page bottom, PAGE-2), the rest above, with an at-least value's excess.
+    if let Some(p) = frame.line_grid
+        && style.snap_to_grid
+        && style.line_rule != LineRule::Exact
+        && style.line > 0.0
+    {
+        let p = i64::from(p);
+        let h = i64::from(Lu::round_half_up(h).0);
+        let m = if style.line_rule == LineRule::Auto { (style.line * 240.0).round() as i64 } else { 240 };
+        let hg = ((h + p - 1) / p * p).max(p * m / 240);
+        let below = (hg - h) / 2;
+        let x = if style.line_rule == LineRule::AtLeast { i64::from(Lu::round_half_up(style.line).0) } else { 0 };
+        let pitch = hg.max(x);
+        let lu = |v: i64| Lu(v as i32).to_pt();
+        line.pitch = lu(pitch);
+        line.below = lu(below);
+        line.baseline = lu(pitch - below) - desc;
     }
 }
 

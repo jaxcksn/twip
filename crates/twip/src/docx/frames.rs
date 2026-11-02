@@ -84,6 +84,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         text_box: Some(TextBox {
             blocks,
             insets: [0.0, 0.0, lx + rx, 0.0],
+            geometry: Default::default(),
             outline: 0.0,
             auto_fit: fr.h_rule.as_deref() != Some("exact"),
             v_anchor: 0,
@@ -103,6 +104,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         .into(),
         wrap_text: "bothSides".into(),
         dist: [fr.v_space, fr.v_space, fr.h_space, fr.h_space],
+        effect: [0.0; 4],
         poly: None,
         behind: false,
         allow_overlap: true,

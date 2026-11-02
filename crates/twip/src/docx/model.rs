@@ -46,6 +46,7 @@ pub struct RunStyle {
     pub scale: f64,
     /// Kern at or above this size; 0 = off.
     pub kern: f64,
+    /// `w14:ligatures` bits (1 standard, 2 contextual, 4 historical, 8 discretional) and 16 for `w14:cntxtAlts` (FONT-4).
     pub ligatures: u8,
     /// `w:em`, when it marks the text ("dot", "comma", "circle", "underDot").
     pub em: Option<String>,
@@ -90,6 +91,8 @@ pub struct ParaStyle {
     pub line: f64,
     pub line_rule: LineRule,
     pub contextual: bool,
+    /// LINE-16: `w:snapToGrid` (default on).
+    pub snap_to_grid: bool,
     pub keep_next: bool,
     pub keep_lines: bool,
     pub page_break_before: bool,
@@ -225,6 +228,8 @@ pub struct Float {
     /// `bothSides`, `left`, `right`, `largest`.
     pub wrap_text: String,
     pub dist: [f64; 4],
+    /// `wp:effectExtent` (left, top, right, bottom), points, whole twips; may be negative (FLOAT-6, FLOAT-7).
+    pub effect: [f64; 4],
     /// A tight or through wrap polygon's bounding box, fractions of the extent (x0, y0, x1, y1); None without a
     /// polygon of at least two points (FLOAT-8).
     pub poly: Option<[f64; 4]>,
@@ -260,10 +265,39 @@ impl Float {
     }
 }
 
+/// FLOAT-10: a shape's preset geometry, as far as it moves the text in from the shape's edge.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Geometry {
+    #[default]
+    Rect,
+    /// `roundRect` with its `adj` (corner radius, 100000ths of the shorter side).
+    RoundRect(f64),
+    Ellipse,
+    /// `triangle` with its `adj` (apex position, 100000ths of the width).
+    Triangle(f64),
+}
+
+impl Geometry {
+    /// FLOAT-10: how far the geometry's text rectangle lies inside a `w` × `h` shape: (left, top, right, bottom).
+    pub fn text_inset(self, w: f64, h: f64) -> [f64; 4] {
+        match self {
+            Geometry::Rect => [0.0; 4],
+            Geometry::RoundRect(adj) => [w.min(h) * adj / 100000.0 * 0.29289; 4],
+            Geometry::Ellipse => [0.14645 * w, 0.14645 * h, 0.14645 * w, 0.14645 * h],
+            Geometry::Triangle(adj) => {
+                let l = w * adj / 200000.0;
+                [l, h / 2.0, w - l - w / 2.0, 0.0]
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextBox {
     pub blocks: Vec<Block>,
     pub insets: [f64; 4],
+    /// The shape's preset geometry (FLOAT-10).
+    pub geometry: Geometry,
     pub outline: f64,
     pub auto_fit: bool,
     /// `wps:bodyPr/@anchor`: 0 top, 1 centre (`ctr`), 2 bottom (`b`); others are top (FLOAT-10).
@@ -759,6 +793,8 @@ pub struct Section {
     pub line_numbers: Option<LineNumbering>,
     pub v_align: String,
     pub page_borders: Option<PageBorders>,
+    /// LINE-16: `w:docGrid` line pitch in layout units, for a grid of type `lines`, `linesAndChars` or `snapToChars`.
+    pub line_grid: Option<i32>,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,

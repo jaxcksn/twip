@@ -48,6 +48,10 @@ pub struct Placed {
     pub side: Side,
     pub allow_overlap: bool,
     pub float: Rc<Float>,
+    /// TABLE-49: a floating table placed while every float before it on the page was already acting on the text.
+    /// The next attempt keeps only settled positions: another is placed again when the flow reaches it, and acts on no
+    /// text until then.
+    pub settled: bool,
 }
 
 /// The page boxes a float positions against (FLOAT-6).
@@ -82,7 +86,11 @@ impl Placed {
                 let top = y + y0 * h;
                 [x + x0 * f.w, top, x + x1 * f.w, (y + y1 * h).max(top + 1.0 / LU_PER_PT)]
             }
-            None => rect,
+            // FLOAT-7: a rectangle's wrap box includes the effect extents.
+            None => {
+                let [l, t, r, b] = f.effect;
+                [rect[0] - l, rect[1] - t, rect[2] + r, rect[3] + b]
+            }
         };
         Placed {
             key,
@@ -94,6 +102,7 @@ impl Placed {
             side,
             allow_overlap: f.allow_overlap,
             float: f.clone(),
+            settled: true,
         }
     }
 
@@ -174,6 +183,7 @@ mod tests {
             wrap: "square".into(),
             wrap_text: "bothSides".into(),
             dist: [0.0; 4],
+            effect: [0.0; 4],
             poly: None,
             behind: false,
             allow_overlap: true,
@@ -193,6 +203,7 @@ mod tests {
             side,
             allow_overlap: true,
             float,
+            settled: true,
         }
     }
 

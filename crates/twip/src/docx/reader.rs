@@ -884,6 +884,7 @@ impl Reader {
             line_numbers: None,
             v_align: "top".into(),
             page_borders: None,
+            line_grid: None,
             blocks: Vec::new(),
             change: None,
         }
@@ -958,6 +959,10 @@ impl Reader {
         }
         if let Some(v) = child(s, "vAlign").and_then(val) {
             sec.v_align = v.to_string();
+        }
+        // LINE-16: the pitch is the twips x 204.8, truncated, at least one twip.
+        if let Some(g) = child(s, "docGrid").filter(|g| matches!(attr(*g, "type"), Some("lines" | "linesAndChars" | "snapToChars"))) {
+            sec.line_grid = Some((int(attr(g, "linePitch")).unwrap_or(0).max(1) * 2048 / 10) as i32);
         }
         if let Some(b) = child(s, "pgBorders") {
             let side = |n| child(b, n).map(Border::parse);
@@ -1728,6 +1733,12 @@ impl Reader {
                 wrap: wrap.into(),
                 wrap_text,
                 dist: [dist("distT"), dist("distB"), dist("distL"), dist("distR")],
+                effect: {
+                    let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
+                    // FLOAT-7: EMU to twips, truncated.
+                    let e = |n: &str| ee.and_then(|e| e.attribute(n)?.parse::<f64>().ok()).map_or(0.0, |v| (v / 635.0).trunc() / 20.0);
+                    [e("l"), e("t"), e("r"), e("b")]
+                },
                 poly: wrap_el.filter(|_| matches!(wrap, "tight" | "through")).and_then(|w| {
                     let pts: Vec<(f64, f64)> = w
                         .children()
@@ -1788,7 +1799,20 @@ impl Reader {
             Some("b") => 2,
             _ => 0,
         };
-        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
+        // FLOAT-10: the preset geometry's text rectangle.
+        let prst = shape.descendants().find(|n| is(*n, A, "prstGeom"));
+        let adj = |dflt: f64| {
+            prst.and_then(|p| p.descendants().find(|g| is(*g, A, "gd") && g.attribute("name") == Some("adj")))
+                .and_then(|g| g.attribute("fmla")?.strip_prefix("val ")?.trim().parse::<f64>().ok())
+                .unwrap_or(dflt)
+        };
+        let geometry = match prst.and_then(|p| p.attribute("prst")) {
+            Some("roundRect") => Geometry::RoundRect(adj(16667.0)),
+            Some("ellipse") => Geometry::Ellipse,
+            Some("triangle") => Geometry::Triangle(adj(50000.0)),
+            _ => Geometry::Rect,
+        };
+        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], geometry, outline, auto_fit, v_anchor }
     }
 
     /// FLOAT-15: the pictures and text boxes of group `g` (or of a group inside it), `map` taking its child

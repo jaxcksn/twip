@@ -80,6 +80,8 @@ pub struct RunProps {
     pub kern: Option<f64>,
     /// `w14:ligatures` bits: 1 standard, 2 contextual, 4 historical, 8 discretionary.
     pub ligatures: Option<u8>,
+    /// `w14:cntxtAlts`: contextual alternates (FONT-4).
+    pub cntxt_alts: Option<bool>,
     /// `w:em`: the emphasis mark ("dot", "comma", "circle", "underDot"; "none").
     pub em: Option<String>,
     pub lang: Option<String>,
@@ -121,6 +123,8 @@ impl RunProps {
                         Some("all") => 15,
                         _ => 0,
                     });
+                } else if name == "cntxtAlts" {
+                    p.cntxt_alts = Some(!matches!(val_any(e), Some("0" | "false" | "off")));
                 }
                 continue;
             }
@@ -202,7 +206,7 @@ impl RunProps {
         }
         take!(
             ascii, h_ansi, east_asia, cs, hint, size, dstrike, underline, color, highlight, shading, vert_align, position, spacing, scale, kern,
-            ligatures, lang, style, rtl, em
+            ligatures, cntxt_alts, lang, style, rtl, em
         );
         self.toggles = (self.toggles & !o.toggles_set) | (o.toggles & o.toggles_set);
         self.toggles_set |= o.toggles_set;
@@ -391,6 +395,7 @@ pub struct ParaProps {
     pub line: Option<f64>,
     pub line_rule: Option<LineRule>,
     pub contextual: Option<bool>,
+    pub snap_to_grid: Option<bool>,
     pub keep_next: Option<bool>,
     pub keep_lines: Option<bool>,
     pub page_break_before: Option<bool>,
@@ -449,6 +454,7 @@ impl ParaProps {
                     });
                 }
                 "contextualSpacing" => p.contextual = Some(on_off(e)),
+                "snapToGrid" => p.snap_to_grid = Some(on_off(e)),
                 "keepNext" => p.keep_next = Some(on_off(e)),
                 "keepLines" => p.keep_lines = Some(on_off(e)),
                 "pageBreakBefore" => p.page_break_before = Some(on_off(e)),
@@ -542,6 +548,7 @@ impl ParaProps {
             line,
             line_rule,
             contextual,
+            snap_to_grid,
             keep_next,
             keep_lines,
             page_break_before,
@@ -773,7 +780,19 @@ impl TblProps {
                             Some("text") => TableAnchor::Text,
                             _ => TableAnchor::Margin,
                         },
-                        y: attr_twips(c, "tblpY").unwrap_or(0.0),
+                        // TABLE-49: against the text, a tblpYSpec is its stored code taken as a twip offset.
+                        y: match (attr(c, "vertAnchor"), attr(c, "tblpYSpec")) {
+                            (Some("text"), Some(s)) => {
+                                (match s {
+                                    "center" => -8.0,
+                                    "bottom" => -12.0,
+                                    "inside" => -16.0,
+                                    "outside" => -20.0,
+                                    _ => -4.0,
+                                }) / 20.0
+                            }
+                            _ => attr_twips(c, "tblpY").unwrap_or(0.0),
+                        },
                         x: attr_twips(c, "tblpX").unwrap_or(0.0),
                         x_spec: match attr(c, "tblpXSpec") {
                             Some("center") => Some(Jc::Center),

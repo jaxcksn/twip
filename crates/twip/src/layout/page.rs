@@ -738,8 +738,17 @@ pub fn layout_body(
     // COL-3: compat 15's one note stream across the columns.
     let shared = cols.len() > 1 && env.ctx.env.text.compat == Compat::Generic;
     let mut reserve = 0.0;
+    // LINE-16: the section's main text snaps to its line grid.
+    let grid_env;
+    let ctx = match s.line_grid {
+        Some(g) => {
+            grid_env = super::LayoutEnv { text: super::env::TextEnv { line_grid: Some(g), ..env.ctx.env.text.clone() }, ..env.ctx.env.clone() };
+            LayoutCtx { env: &grid_env, ..env.ctx }
+        }
+        None => env.ctx,
+    };
     let mut fill = PageFill {
-        ctx: env.ctx,
+        ctx,
         sec,
         notes: env.notes,
         fields,
@@ -799,7 +808,8 @@ pub fn layout_body(
                     end = Some(pos.clone());
                     drops += 1;
                 }
-                known = found;
+                // TABLE-49: an unsettled table is placed again, from the flow, when the next attempt reaches it.
+                known = found.into_iter().filter(|f| f.settled).collect();
                 reserve = notes;
                 Ok(false)
             })

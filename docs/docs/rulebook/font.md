@@ -33,7 +33,7 @@ Example: `w:kern w:val="2"` (1pt) kerns every run of 1pt or more, which in pract
 
 ### FONT-4. Ligatures {#font-4}
 
-`w14:ligatures` selects OpenType features: `standard` turns on `liga` and `clig`, `contextual` turns on `calt`, `historical` turns on `hlig`, `discretional` turns on `dlig`; the combined values (`standardContextual`, `all`, …) turn on each of their parts. With no `w14:ligatures` anywhere in the cascade, shape with all four groups off.
+`w14:ligatures` selects OpenType features: `standard` turns on `liga`, `contextual` turns on `clig`, `historical` turns on `hlig`, `discretional` turns on `dlig`; the combined values (`standardContextual`, `all`, …) turn on each of their parts. `calt` comes only from `w14:cntxtAlts`. Any non-zero character spacing (`w:spacing`) turns the four ligature features off, not `calt`. With no `w14:ligatures` anywhere in the cascade, shape with all four off.
 
 ### FONT-5. Run width {#font-5}
 
@@ -135,11 +135,15 @@ In Symbol, Wingdings, Wingdings 2, Wingdings 3 and Webdings, a `w:sym` character
 
 When Symbol or Wingdings isn't available, draw that character instead of the code, in the first font that has it (the run's own font, then the fallback fonts). The bullets of the standard bullet list are Symbol B7 (•), Wingdings A7 (▪), 76 (❖), D8 (➢), FC (✓), 75 (◆), 6E (■) and E8 (➔); Courier New "o" needs no symbol font.
 
-### FONT-14. Balanced space runs {#font-14}
+### FONT-14. Balanced spaces {#font-14}
 
-With `w:balanceSingleByteDoubleByteWidth` in the settings, every space of a run of two or more consecutive spaces (U+0020 or U+00A0, across run boundaries) is as wide as the East Asian font's average character, `OS/2.xAvgCharWidth × size / upem` (times `w:w / 100`, plus `w:spacing`). That applies when the run's `w:eastAsia` font is an East Asian font, or when its East Asian slot is a theme font the theme leaves empty (then use the space's own font). A single space, a named non-East-Asian font in the slot, or the setting off leaves spaces as shaped.
+With `w:balanceSingleByteDoubleByteWidth` in the settings, and only when the document default East Asian font (`w:rPrDefault` `w:eastAsia` or `w:eastAsiaTheme`) is an East Asian font or the theme's empty slot, a space (U+0020 or U+00A0) widens when the character before it or after it is missing (the paragraph's start or end), is a space, or takes the East Asian font slot (Hangul, kana, CJK, full-width forms; with `w:hint="eastAsia"` also the shared characters such as quotes and the section sign). Latin letters, digits and Latin punctuation never count, whatever the run's font or hint: "abc def" in Malgun Gothic keeps its space; "2 가" and ". 가" widen. Compat 12, 14 and 15 alike; `w:useFELayout` alone doesn't do it.
 
-Example: MS Gothic's average character is half an em, so at 10pt each space of a run of three is 5pt.
+A widened space is half the run's em (its size / 2, times `w:w / 100`, plus `w:spacing`) when the run's `w:eastAsia` font is an East Asian font; with the theme's empty slot it is the space's own font's average character, `OS/2.xAvgCharWidth × size / upem`. A named non-East-Asian font in the run's slot leaves it as shaped.
+
+Not done: with `w:wordWrap` off every space widens (unless the run's East Asian language is Korean).
+
+Example: Malgun Gothic 10pt, "가나 다라": the space is 5pt (its average character would give 4.63).
 
 ### FONT-15. Decorations {#font-15}
 
