@@ -353,7 +353,6 @@ fn row_restart(
     let rec = p.or_else(|| base.iter().position(|pg| inside(pg, span).is_some()))?;
     let width = base[rec].bodies[0].space.columns[0].width;
     let env = LayoutEnv::new(doc);
-    fonts.use_document(&doc.font_table);
     let ctx = LayoutCtx { fonts, env: &env };
     let fields = super::text::FieldValues::default();
     let story = super::story::StoryEnv { ctx, fields: &fields, notes };
@@ -860,7 +859,6 @@ impl DocumentLayout {
         if self.current {
             return (Step::Done, false);
         }
-        fonts.use_document(&doc.font_table);
         if self.job.is_none() {
             let r = crate::prof::time("layout:start", || self.start(doc, fonts));
             self.job = Some(r);
@@ -882,7 +880,6 @@ impl DocumentLayout {
             Step::Done => self.complete_job(doc, fonts),
             Step::Yielded if progressed => {
                 let env = LayoutEnv::new(doc);
-                fonts.use_document(&doc.font_table);
                 let ctx = LayoutCtx { fonts, env: &env };
                 let shown = self.published.pages().len();
                 if let Some(running) = self.job.as_mut() {

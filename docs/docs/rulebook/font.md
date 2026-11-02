@@ -174,12 +174,3 @@ width = floor(w1000 × hp × 2048 / 1000)
 with `hp` the size in half-points: every glyph is rounded on its own and the line sums them. Kerning ([FONT-3](font#font-3)) and character spacing are added as usual. The run's ascent, descent and line gap ([FONT-1](font#font-1)) are each first rounded to the 1000-unit em, then scaled as usual. Every other run keeps its design metrics; compat 15 ignores the option.
 
 Example: Courier New 12pt (1229/2048 em) is 600/1000 em, 29491 layout units a glyph instead of 29496: 65 characters fill a 468pt line instead of 64.
-
-### FONT-19. Fonts that aren't installed {#font-19}
-
-A font a run names that isn't installed draws in the first of these that is:
-
-1. its built-in substitute: Windows' FontSubstitutes table (`Helvetica` → Arial, `Times` → Times New Roman, `Arial CE` → Arial, `MS Shell Dlg 2` → Tahoma, …);
-2. the font table's `w:altName` for it (`ArialMT` → Arial, `inherit` → Cambria), or that name's substitute;
-3. its script's family: Nirmala UI for the Devanagari fonts (Mangal, Aparajita, Kokila, Utsaah), Malgun Gothic for the Korean ones (Gulim, Dotum, Batang, Gungsuh and their Che forms, in either spelling) and for any font the table gives charset 81 (Hangul). The run's Latin text draws in it too;
-4. Cambria. Not the document's default font, and not a font of the same panose class.
