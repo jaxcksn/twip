@@ -37,7 +37,7 @@ fn unchanged(bencher: Bencher, (scroll, retained): (f64, bool)) {
 }
 
 /// A frame 200 CSS px further down, from the first page to the last and back. Budget: under 8.3 ms, one 120 Hz
-/// frame (spec SC-008).
+/// frame.
 #[divan::bench(sample_size = 1)]
 fn scroll(bencher: Bencher) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];

@@ -17,8 +17,7 @@ fn read(name: &str) -> twip::internal::docx::Document {
     twip::internal::docx::read(&super::fixture(name)).expect("the fixture reads")
 }
 
-/// A whole document from scratch. Budget: at least 25% below `main` at 4131d3b on the documents both lay out (spec
-/// SC-006).
+/// A whole document from scratch. Budget: at least 25% below `main` at 4131d3b on the documents both lay out.
 #[divan::bench(args = ["big.docx", "docx-feature-showcase.docx", "editor/FX-LONG-50.docx", "editor/FX-LONG-100.docx"], sample_count = 20)]
 fn full(bencher: Bencher, name: &str) {
     let (fonts, doc) = (Fonts::system(), read(name));
@@ -72,8 +71,7 @@ fn keystroke(bencher: Bencher, name: &str) {
 }
 
 /// Enter on page 1 of a 50-page document (a copy of its third paragraph inserted after it), laid out until it settles;
-/// the copy is removed again between samples, untimed. Budget: under a quarter of `full` on the same document (spec
-/// SC-004).
+/// the copy is removed again between samples, untimed. Budget: under a quarter of `full` on the same document.
 #[divan::bench(sample_size = 1)]
 fn reflow(bencher: Bencher) {
     let (fonts, doc) = (Fonts::system(), RefCell::new(read(LONG)));
@@ -103,7 +101,7 @@ fn reflow(bencher: Bencher) {
 }
 
 /// Opening: the document read from its bytes, then laid out through its first page (what the first frame waits for).
-/// Budget: the showcase 150 ms and FX-LONG-100 200 ms, the browser's start-up share included (spec SC-006).
+/// Budget: the showcase 150 ms and FX-LONG-100 200 ms, the browser's start-up share included.
 #[divan::bench(args = ["docx-feature-showcase.docx", "editor/FX-LONG-100.docx"], sample_count = 20)]
 fn first_page(bencher: Bencher, name: &str) {
     let (fonts, bytes) = (Fonts::system(), super::fixture(name));

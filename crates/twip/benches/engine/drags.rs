@@ -57,7 +57,7 @@ fn along(at: Point, border: Border, d: f64) -> Point {
 }
 
 /// One pointer move of a pressed border, alternating between 10 and 30 px from where it was pressed, with the frame
-/// that shows it. Budget: p95 at most 2 ms of engine time, inside one 8.3 ms frame (spec SC-005).
+/// that shows it. Budget: p95 at most 2 ms of engine time, inside one 8.3 ms frame.
 fn moving(bencher: Bencher, name: &str, border: Border) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];
     let (mut engine, id, at) = session(name, border, &mut pixels);
@@ -76,20 +76,20 @@ fn moving(bencher: Bencher, name: &str, border: Border) {
         });
 }
 
-/// A column border's pointer move with its frame. Budget: p95 at most 2 ms of engine time (SC-005).
+/// A column border's pointer move with its frame. Budget: p95 at most 2 ms of engine time.
 #[divan::bench(args = DOCS, sample_size = 1)]
 fn column_border(bencher: Bencher, name: &str) {
     moving(bencher, name, Border::Column);
 }
 
-/// A row border's pointer move with its frame. Budget: p95 at most 2 ms of engine time (SC-005).
+/// A row border's pointer move with its frame. Budget: p95 at most 2 ms of engine time.
 #[divan::bench(args = DOCS, sample_size = 1)]
 fn row_border(bencher: Bencher, name: &str) {
     moving(bencher, name, Border::Row);
 }
 
 /// A column border dragged 20 px (untimed), then released: the resize committed and laid out through the visible
-/// pages, with the frame that shows it. Undone between samples. Budget: p95 at most 8.3 ms, one frame (SC-005).
+/// pages, with the frame that shows it. Undone between samples. Budget: p95 at most 8.3 ms, one frame.
 #[divan::bench(args = DOCS, sample_size = 1)]
 fn release(bencher: Bencher, name: &str) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];

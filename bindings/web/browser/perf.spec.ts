@@ -200,7 +200,7 @@ for (const dpr of [1, 2]) {
     });
 
     for (const name of ['docx-feature-showcase.docx', 'editor/FX-LONG-100.docx']) {
-      // SC-006 runs from the document's bytes: one editor is mounted (its surface set up once, as a page does), and
+      // Opening is timed from the document's bytes: one editor is mounted (its surface set up once, as a page does), and
       // each sample opens the document into it, to the first frame drawn after the open.
       test(`@perf opening ${name}`, async ({ page }) => {
         await open(page);

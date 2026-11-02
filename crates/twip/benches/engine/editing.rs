@@ -150,7 +150,7 @@ fn places(doc: &twip::internal::docx::Document, place: &str) -> Vec<(ParaId, u32
 
 /// Typing at the end of a paragraph where the fidelity rules do the most work (`places`): the middle one of its kind,
 /// the keystroke undone between samples so the paragraph keeps its length. Budget: p95 at most 1 ms, max at most
-/// 3 ms (spec SC-002).
+/// 3 ms.
 #[divan::bench(
     args = ["showcase/body", "showcase/cell", "showcase/float", "showcase/columns", "FX-OBJ/float", "FX-LONG-50/body", "FX-LONG-50/cell"],
     sample_size = 1
