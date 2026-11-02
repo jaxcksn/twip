@@ -295,7 +295,7 @@ impl Editor {
     pub fn key_command(&mut self, code: &str, mods: Mods) -> Option<Command> {
         let cx = KeyContext {
             in_table: self.focus_chain_depth() > 0 || matches!(self.selection, Selection::Cells { .. }),
-            list_start: self.list_item_start().is_some(),
+            list_start: self.tab_changes_level(),
             float: matches!(self.selection, Selection::Object(ObjectRef::Floating(_))),
             mac: self.mac,
         };

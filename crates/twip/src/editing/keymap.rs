@@ -19,7 +19,7 @@ pub struct Mods {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct KeyContext {
     pub in_table: bool,
-    /// A collapsed caret at a list item's start.
+    /// A collapsed caret at a list item's start, or a selection of list items: Tab changes the level.
     pub list_start: bool,
     /// A floating object selected (Tab and Shift+Tab go through the floats).
     pub float: bool,
@@ -126,9 +126,10 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "ArrowUp" | "ArrowDown" if alt && shift && !ctrl && cx.in_table => {
             run(Command::MoveRows(if code == "ArrowUp" { VerticalDirection::Up } else { VerticalDirection::Down }))
         }
+        // A list item in a cell takes Tab for its level, as in Word; elsewhere in a cell Tab goes to the next cell.
+        "Tab" if cx.list_start && !ctrl && !alt => run(Command::SetListLevel(if shift { LevelChange::Decrease } else { LevelChange::Increase })),
         "Tab" if cx.in_table && ctrl && !alt && !shift => run(Command::InsertTab),
         "Tab" if cx.in_table && !ctrl && !alt => run(Command::MoveToCell(if shift { Order::Previous } else { Order::Next })),
-        "Tab" if cx.list_start && !ctrl && !alt => run(Command::SetListLevel(if shift { LevelChange::Decrease } else { LevelChange::Increase })),
         // Shift+Tab in text inserts a tab too.
         "Tab" if !alt && !ctrl => run(Command::InsertTab),
         "Escape" if plain => run(Command::Escape),

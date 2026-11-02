@@ -96,22 +96,51 @@ impl Editor {
         Some(self.commit(tx, None, fonts))
     }
 
-    /// Tab (`back`: Shift+Tab) at a list item's start: one level down (up); Shift+Tab at level 1 does nothing. Tab at
-    /// the list's first item would indent the whole list, which needs numbering-part edits: not yet.
-    pub(super) fn list_level(&mut self, back: bool, fonts: &Fonts) -> Outcome {
-        let Some((para, (num, ilvl))) = self.list_item_start() else { return Outcome::Unchanged("not at a list item's start") };
-        let to = if back { ilvl - 1 } else { ilvl + 1 };
-        if !(0..=8).contains(&to) {
-            return Outcome::Unchanged("no level there");
+    /// The list items among `paras`, with their (numId, ilvl).
+    fn list_items(&self, paras: &[ParaId]) -> Vec<(ParaId, (i64, i64))> {
+        let num = |&para: &ParaId| Some((para, self.index.para(&self.doc, para)?.style.num.filter(|(id, _)| *id != 0)?));
+        paras.iter().filter_map(num).collect()
+    }
+
+    /// Whether Tab changes the list level: a caret at a list item's start, or a selection over more than one
+    /// paragraph, all list items.
+    pub(super) fn tab_changes_level(&mut self) -> bool {
+        if self.list_item_start().is_some() {
+            return true;
         }
-        if !back && self.first_of_list(para, num) {
-            return Outcome::Unchanged("indenting a whole list isn't supported yet");
+        if !matches!(self.selection, Selection::Text { .. }) {
+            return false;
+        }
+        let paras = self.selected_paras();
+        paras.len() > 1 && self.list_items(&paras).len() == paras.len()
+    }
+
+    /// List Level (Tab, Shift+Tab at a list item's start): the selected list items one level down (`back`: up), each
+    /// within 1…9. The list's first item goes down a level too.
+    // ponytail: Word indents the whole list on Tab at its first item (a numbering-part edit); nesting it is the
+    // simpler behaviour, change when that difference matters.
+    pub(super) fn list_level(&mut self, back: bool, fonts: &Fonts) -> Outcome {
+        let paras = self.selected_paras();
+        let items = self.list_items(&paras);
+        if items.is_empty() {
+            return Outcome::Unchanged("not in a list");
         }
         let mut tx = self.begin("Numbering");
-        if !self.repara(&mut tx, para, &|p, w| p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{to}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>")))
-        {
+        let mut changed = false;
+        for (para, (num, ilvl)) in items {
+            let to = if back { ilvl - 1 } else { ilvl + 1 };
+            if !(0..=8).contains(&to) {
+                continue;
+            }
+            if !self.repara(&mut tx, para, &|p, w| p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{to}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"))) {
+                self.abort(tx);
+                return Outcome::Unchanged("numbering failed");
+            }
+            changed = true;
+        }
+        if !changed {
             self.abort(tx);
-            return Outcome::Unchanged("numbering failed");
+            return Outcome::Unchanged("no level there");
         }
         self.commit(tx, None, fonts)
     }
@@ -232,28 +261,6 @@ impl Editor {
             return 0;
         }
         num_id
-    }
-
-    /// Whether `para` is the first paragraph of list `num` in document order.
-    fn first_of_list(&self, para: ParaId, num: i64) -> bool {
-        fn walk(blocks: &[Block], para: ParaId, num: i64) -> Option<bool> {
-            for b in blocks {
-                match b {
-                    Block::Para(p) if p.id == para.0 => return Some(true),
-                    Block::Para(p) if p.style.num.is_some_and(|(id, _)| id == num) => return Some(false),
-                    Block::Para(_) => {}
-                    Block::Table(t) => {
-                        for c in t.rows.iter().flat_map(|r| r.cells.iter()) {
-                            if let Some(v) = walk(&c.blocks, para, num) {
-                                return Some(v);
-                            }
-                        }
-                    }
-                }
-            }
-            None
-        }
-        self.doc.sections.iter().find_map(|s| walk(&s.blocks, para, num)).unwrap_or(false)
     }
 
     /// Numbers the body's list items again in document order, as reading does, and changes the labels that differ
