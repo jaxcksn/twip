@@ -186,7 +186,7 @@ impl Editor {
             // With a cell block selected, a drag starting on one of its rows moves the border in those rows only.
             Border::Column(k) if k < grid.len() && selected.as_ref().is_some_and(|s| s.contains(&d.row)) => {
                 let sel = selected.unwrap_or(0..=0);
-                let g = Grid::of(&t);
+                let g = Grid::of(t);
                 let x: f64 = grid[..k].iter().sum();
                 let total: f64 = grid.iter().sum();
                 let dx = d.now.0 - d.start.0;
@@ -230,7 +230,7 @@ impl Editor {
                 if k == 0 || k > n {
                     return Some(Outcome::Unchanged("not a column border"));
                 }
-                let grid_of = Grid::of(&t);
+                let grid_of = Grid::of(t);
                 let g = &grid_of;
                 // A column is at least its cells' left and right margins plus 4.5 pt.
                 let min = |c: usize| {
@@ -278,7 +278,7 @@ impl Editor {
                 // Columns scale with the width (each still at least its margins plus 4.5 pt); the rows on the
                 // dragged page scale with the height, as "at least" heights (exact ones stay exact).
                 let total: f64 = grid.iter().sum();
-                let grid_of = Grid::of(&t);
+                let grid_of = Grid::of(t);
                 let g = &grid_of;
                 let floor = grid
                     .iter()
