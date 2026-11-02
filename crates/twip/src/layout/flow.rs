@@ -2305,6 +2305,7 @@ impl<'d> PageFill<'d, '_> {
             wrap: "square".into(),
             wrap_text: "bothSides".into(),
             dist: if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] },
+            effect: [0.0; 4],
             poly: None,
             behind: false,
             allow_overlap: true,

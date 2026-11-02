@@ -85,7 +85,8 @@ Floats anchored in table cells: [FLOAT-14](float#float-14).
 
 ### FLOAT-7. Square wrap {#float-7}
 
-- The exclusion is the float's box grown by `distT`, `distB`, `distL`, `distR`. A text box's outline width isn't added.
+- The exclusion is the float's box grown by its `wp:effectExtent` (`l`, `t`, `r`, `b`: EMU to twips, truncated; a negative extent shrinks it), then by `distT`, `distB`, `distL`, `distR`. Both modes, square and top-and-bottom wrap; a tight or through polygon ([FLOAT-8](float#float-8)) takes no effect extents. A text box's outline width isn't added.
+- An alignment (`wp:align`) aligns the box grown by its effect extents: `left` puts the float at `x0 + l`, `right` at `x0 + w − width − r`, `center` at `x0 + (w − width + l − r) / 2`. An offset places the bare box.
 - A line wraps if its line box overlaps the exclusion ([FLOAT-1](float#float-1)).
 - An interval's edges replace the paragraph's indents, except that an interval reaching the column's right edge keeps the paragraph's right indent, a negative one too.
 - Fill the free intervals of a band one after another, each **independently, one unbreakable piece of text at a time** (up to the next break opportunity). If the next piece doesn't fit the current interval, that interval stays as it is and the text continues in the next interval of the same band. Once a float cuts the column, an interval narrower than 18pt takes no text; one of exactly 18pt does.

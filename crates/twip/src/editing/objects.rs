@@ -553,6 +553,7 @@ impl Editor {
             wrap: "none".into(),
             wrap_text: "bothSides".into(),
             dist: [3.6, 3.6, 9.0, 9.0],
+            effect: [0.0; 4],
             poly: None,
             behind: false,
             allow_overlap: true,
@@ -852,6 +853,7 @@ impl Editor {
             wrap_text: "bothSides".into(),
             // Word's: none above and below, 0.125 in at the sides.
             dist: [0.0, 0.0, 9.0, 9.0],
+            effect: [0.0; 4],
             poly: None,
             behind,
             allow_overlap: true,

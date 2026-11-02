@@ -82,7 +82,11 @@ impl Placed {
                 let top = y + y0 * h;
                 [x + x0 * f.w, top, x + x1 * f.w, (y + y1 * h).max(top + 1.0 / LU_PER_PT)]
             }
-            None => rect,
+            // FLOAT-7: a rectangle's wrap box includes the effect extents.
+            None => {
+                let [l, t, r, b] = f.effect;
+                [rect[0] - l, rect[1] - t, rect[2] + r, rect[3] + b]
+            }
         };
         Placed {
             key,
@@ -174,6 +178,7 @@ mod tests {
             wrap: "square".into(),
             wrap_text: "bothSides".into(),
             dist: [0.0; 4],
+            effect: [0.0; 4],
             poly: None,
             behind: false,
             allow_overlap: true,

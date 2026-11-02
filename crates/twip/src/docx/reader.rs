@@ -1733,6 +1733,12 @@ impl Reader {
                 wrap: wrap.into(),
                 wrap_text,
                 dist: [dist("distT"), dist("distB"), dist("distL"), dist("distR")],
+                effect: {
+                    let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
+                    // FLOAT-7: EMU to twips, truncated.
+                    let e = |n: &str| ee.and_then(|e| e.attribute(n)?.parse::<f64>().ok()).map_or(0.0, |v| (v / 635.0).trunc() / 20.0);
+                    [e("l"), e("t"), e("r"), e("b")]
+                },
                 poly: wrap_el.filter(|_| matches!(wrap, "tight" | "through")).and_then(|w| {
                     let pts: Vec<(f64, f64)> = w
                         .children()

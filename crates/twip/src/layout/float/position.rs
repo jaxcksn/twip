@@ -23,10 +23,13 @@ pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
             _ => {}
         }
     }
+    // FLOAT-6: an alignment aligns the box grown by its effect extents (a wrap polygon's float: the bare box); an
+    // offset places the bare box.
+    let [l, _, r, _] = if f.poly.is_none() { f.effect } else { [0.0; 4] };
     match f.h_align.as_deref() {
-        Some("center") => x0 + (w - f.w) / 2.0,
-        Some("right" | "outside") => x0 + w - f.w,
-        Some(_) => x0,
+        Some("center") => x0 + (w - f.w) / 2.0 + (l - r) / 2.0,
+        Some("right" | "outside") => x0 + w - f.w - r,
+        Some(_) => x0 + l,
         None => x0 + f.h_offset,
     }
 }

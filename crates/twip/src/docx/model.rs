@@ -227,6 +227,8 @@ pub struct Float {
     /// `bothSides`, `left`, `right`, `largest`.
     pub wrap_text: String,
     pub dist: [f64; 4],
+    /// `wp:effectExtent` (left, top, right, bottom), points, whole twips; may be negative (FLOAT-6, FLOAT-7).
+    pub effect: [f64; 4],
     /// A tight or through wrap polygon's bounding box, fractions of the extent (x0, y0, x1, y1); None without a
     /// polygon of at least two points (FLOAT-8).
     pub poly: Option<[f64; 4]>,
