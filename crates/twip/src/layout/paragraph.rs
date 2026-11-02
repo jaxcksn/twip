@@ -68,6 +68,27 @@ pub fn lines_to_take(n: usize, fit: usize, hard: bool, first_part: bool, keep_li
     take
 }
 
+/// STYLE-7: whether a paragraph is hidden whole: its mark is hidden and it has nothing shown (only hidden or empty
+/// text, bookmarks, ranges, controls and field markers; no objects). It isn't laid out.
+pub fn vanished(p: &crate::docx::Paragraph) -> bool {
+    use crate::docx::Inline;
+    p.mark.hidden
+        && p.list.is_none()
+        && p.inlines.iter().all(|i| match i {
+            Inline::Text(t, r) => t.is_empty() || r.hidden,
+            Inline::Tab(r) | Inline::Break(_, r) => r.hidden,
+            Inline::Bookmark(_)
+            | Inline::Range(_)
+            | Inline::ControlStart(_)
+            | Inline::ControlEnd(_)
+            | Inline::CommentRef { .. }
+            | Inline::FieldBegin { .. }
+            | Inline::FieldSep { .. }
+            | Inline::FieldEnd { .. } => true,
+            _ => false,
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::lines_to_take;
@@ -156,25 +177,4 @@ mod tests {
     fn a_hard_break_takes_what_fits() {
         assert_eq!(lines_to_take(5, 2, true, true, true, true), 2);
     }
-}
-
-/// STYLE-7: whether a paragraph is hidden whole: its mark is hidden and it has nothing shown (only hidden or empty
-/// text, bookmarks, ranges, controls and field markers; no objects). It isn't laid out.
-pub fn vanished(p: &crate::docx::Paragraph) -> bool {
-    use crate::docx::Inline;
-    p.mark.hidden
-        && p.list.is_none()
-        && p.inlines.iter().all(|i| match i {
-            Inline::Text(t, r) => t.is_empty() || r.hidden,
-            Inline::Tab(r) | Inline::Break(_, r) => r.hidden,
-            Inline::Bookmark(_)
-            | Inline::Range(_)
-            | Inline::ControlStart(_)
-            | Inline::ControlEnd(_)
-            | Inline::CommentRef { .. }
-            | Inline::FieldBegin { .. }
-            | Inline::FieldSep { .. }
-            | Inline::FieldEnd { .. } => true,
-            _ => false,
-        })
 }
