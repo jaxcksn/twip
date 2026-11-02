@@ -2082,11 +2082,9 @@ fn tab_changes_the_level_of_list_items() {
 
 #[test]
 fn tab_in_a_cells_list_item_changes_its_level() {
-    // The showcase's lists sit in a layout table: Tab at an item's start nests it rather than going to the next cell.
+    // A list in a table cell: Tab at an item's start nests it rather than going to the next cell.
     use crate::editing::keymap::Mods;
-    let mut e =
-        super::super::Editor::open(&std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Twip-Feature-Showcase.docx")).unwrap(), fonts())
-            .unwrap();
+    let mut e = open("FX-LISTS.docx");
     let found = (0..e.document().sections.len()).find_map(|si| {
         e.document().sections[si].blocks.iter().find_map(|b| match b {
             crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).find_map(|b| match b {
