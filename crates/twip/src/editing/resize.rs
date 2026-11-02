@@ -150,7 +150,10 @@ impl Editor {
         if d.now == d.start {
             return Some(Outcome::Unchanged("no drag"));
         }
-        let t = self.index.table(&self.doc, d.table)?.clone();
+        // Borrowed: only its rows are copied, as the step's new rows.
+        let t = self.index.table(&self.doc, d.table)?;
+        let old_sum: f64 = t.grid.iter().sum();
+        let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
         let mut rows = t.rows.clone();
         // The columns as drawn on the dragged page (autofit can make them differ from the file's gridCols): what the
         // drag moves, so the cells it doesn't touch keep the widths they show. Boundaries no drawn row has keep the
@@ -342,21 +345,19 @@ impl Editor {
                 row.height = Some((h, rule.to_string()));
             }
         }
-        let old_sum: f64 = t.grid.iter().sum();
         let new_sum: f64 = grid.iter().sum();
         let mut tx = self.begin(match d.border {
             Border::Row(_) => "Row Height",
             Border::Handle => "Resize Table",
             Border::Column(_) => "Column Width",
         });
-        let n = t.rows.len();
         let stepped =
             crate::prof::time("edit:rows-step", || self.step(&mut tx, Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }));
         if stepped.is_err() {
             self.abort(tx);
             return Some(Outcome::Unchanged("stale table"));
         }
-        if (new_sum - old_sum).abs() > 1e-9 && !matches!(t.width, Width::Auto | Width::Nil) {
+        if (new_sum - old_sum).abs() > 1e-9 && sized {
             let _ = self.step(&mut tx, Step::TableWidth { table: d.table, width: Width::Dxa(new_sum) });
         }
         // Widths and heights only: every cell keeps its row and column, so its style region (banding, first and

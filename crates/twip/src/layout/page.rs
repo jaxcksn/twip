@@ -760,47 +760,49 @@ pub fn layout_body(
     let mut attempt = 0;
     while attempt < attempts {
         attempt += 1;
-        let r: Result<bool, Yield> = super::job::unit("page attempt", || {
-            fill.at = AttemptState {
-                known: known.clone(),
-                end: end.clone(),
-                stream: shared.then(|| stream_area(reserve, cols.len(), space.note_width)),
-                ..Default::default()
-            };
-            pos = saved.0.clone();
-            carry = saved.1.clone();
-            col_children.clear();
-            bottoms.clear();
-            for (k, col) in cols.iter().enumerate() {
-                let page_empty = k == 0 && !space.mid_page;
-                let r = fill.fill(&pos, &carry, *col, page_empty, memos)?;
-                let st = r.stop;
-                (pos, carry) = (r.token, r.state);
-                col_children.push(r.children);
-                bottoms.push(r.bottom);
-                stop = st;
-                if matches!(st, Stop::Done | Stop::Page) {
-                    break;
+        let r: Result<bool, Yield> = crate::prof::time("layout:attempt", || {
+            super::job::unit("page attempt", || {
+                fill.at = AttemptState {
+                    known: known.clone(),
+                    end: end.clone(),
+                    stream: shared.then(|| stream_area(reserve, cols.len(), space.note_width)),
+                    ..Default::default()
+                };
+                pos = saved.0.clone();
+                carry = saved.1.clone();
+                col_children.clear();
+                bottoms.clear();
+                for (k, col) in cols.iter().enumerate() {
+                    let page_empty = k == 0 && !space.mid_page;
+                    let r = fill.fill(&pos, &carry, *col, page_empty, memos)?;
+                    let st = r.stop;
+                    (pos, carry) = (r.token, r.state);
+                    col_children.push(r.children);
+                    bottoms.push(r.bottom);
+                    stop = st;
+                    if matches!(st, Stop::Done | Stop::Page) {
+                        break;
+                    }
+                    if k + 1 < cols.len() {
+                        // COL-2: a column top below the page's body top keeps a paragraph's space-before.
+                        carry.keep_top = st == Stop::Column && carry.keep_top || st == Stop::Full && space.mid_page;
+                    }
                 }
-                if k + 1 < cols.len() {
-                    // COL-2: a column top below the page's body top keeps a paragraph's space-before.
-                    carry.keep_top = st == Stop::Column && carry.keep_top || st == Stop::Full && space.mid_page;
+                let found = fill.at.found.clone();
+                let notes = fill.at.stream.as_ref().map_or(0.0, |a| a.height);
+                let stable = found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f)));
+                attempts = attempts.max(2 + found.len() + drops).min(64);
+                if (stable && (notes - reserve).abs() < EPS) || attempt >= attempts {
+                    return Ok(true);
                 }
-            }
-            let found = fill.at.found.clone();
-            let notes = fill.at.stream.as_ref().map_or(0.0, |a| a.height);
-            let stable = found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f)));
-            attempts = attempts.max(2 + found.len() + drops).min(64);
-            if (stable && (notes - reserve).abs() < EPS) || attempt >= attempts {
-                return Ok(true);
-            }
-            if end.is_none() && known.iter().any(|k| !found.iter().any(|f| f.key == k.key)) {
-                end = Some(pos.clone());
-                drops += 1;
-            }
-            known = found;
-            reserve = notes;
-            Ok(false)
+                if end.is_none() && known.iter().any(|k| !found.iter().any(|f| f.key == k.key)) {
+                    end = Some(pos.clone());
+                    drops += 1;
+                }
+                known = found;
+                reserve = notes;
+                Ok(false)
+            })
         });
         if r? {
             break;
@@ -816,7 +818,7 @@ pub fn layout_body(
         Paginator::draw_stream(&mut fill, a, cols, &mut body, memos)?;
     }
     let next_shares = stop == Stop::Done && space.next_continuous;
-    let floats = Paginator::draw_floats(&fill, &placed, memos)?;
+    let floats = crate::prof::time("layout:floats", || Paginator::draw_floats(&fill, &placed, memos))?;
     if !space.mid_page && !next_shares && cols.len() == 1 {
         let done = pos.at.at_start();
         let bottom = bottoms.first().copied().unwrap_or(page_top) + if done { carry.prev_after } else { 0.0 };
