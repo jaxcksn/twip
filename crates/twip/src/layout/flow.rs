@@ -596,15 +596,13 @@ pub fn place_units(units: &[StoryUnit], x: f64, y: f64, out: &mut Vec<Child>) {
 /// FLOAT-14: compat ≤ 14 honours layoutInCell="0" (unless the float is character- or line-relative): a float anchored
 /// in one of the table's cells is placed like a body float, not in the cell.
 /// shortcut: the table's own cells only; floats in nested tables stay in their cells.
-fn page_floats(t: &Table) -> HashMap<u64, &Float> {
+fn page_floats<'b>(t: &'b Table, ctx: &LayoutCtx<'b>) -> HashMap<u64, &'b Float> {
     let mut out = HashMap::new();
     for b in t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()) {
         let Block::Para(p) = b else { continue };
-        for i in &p.inlines {
-            if let Inline::Float(f, _) = i
-                && !f.in_cell(Compat::Legacy)
-            {
-                out.insert(f.id, &**f);
+        for f in ctx.floats_of(p) {
+            if !f.in_cell(Compat::Legacy) {
+                out.insert(f.id, f);
             }
         }
     }
@@ -686,7 +684,7 @@ impl<'d> PageFill<'d, '_> {
     ) -> Result<Rc<ParaLines>, Yield> {
         let p = laid.para();
         let (prev, next) = self.sec.blocks.neighbours(bi, end, self.ctx.env.text.review.view);
-        let space = laid.shape_space(self.fields, self.note_numbers, &self.ctx.env.text);
+        let space = laid.shape_space(self.fields, self.note_numbers, &self.ctx);
         let shaped = shape(p, &space, self.ctx.fonts, memos)?;
         let ps = para_space(p.para_style_in(self.ctx.env.text.review.view), prev, next, width, from, x0, &self.ctx);
         let lines = break_lines(&shaped, p, &ps, self.ctx.fonts, memos)?;
@@ -1973,7 +1971,7 @@ impl<'d> PageFill<'d, '_> {
             }
         }
         let page_floats = match self.sec.blocks.get(pos.block) {
-            Some(Block::Table(t)) if self.ctx.env.text.compat == Compat::Legacy => page_floats(t),
+            Some(Block::Table(t)) if self.ctx.env.text.compat == Compat::Legacy => page_floats(t, &self.ctx),
             _ => HashMap::new(),
         };
         let frames = Frames {

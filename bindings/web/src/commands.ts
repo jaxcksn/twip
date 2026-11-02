@@ -3,12 +3,15 @@ import type { ControlKind, ControlOptions, DataBinding } from './services/elemen
 import type { TabAlignment, TabLeader } from './services/ruler.js';
 import type {
   HighlightColor,
+  HorizontalPosition,
   LineSpacing,
   MarkupView,
   ObjectWrap,
   RowHeight,
   TableWidth,
   UnderlineStyle,
+  VerticalPosition,
+  WrapSide,
 } from './state.js';
 import type { Color, CommentId, ElementId, Points, RevisionId, StyleId } from './types.js';
 
@@ -311,6 +314,19 @@ export interface Commands {
   setObjectWrap(wrap: ObjectWrap): Promise<void>;
   /** Locks a floating object's anchor. */
   setAnchorLocked(on: boolean): Promise<void>;
+  /**
+   * Places the floating object: each axis given is aligned, offset, or (with neither) kept where it is and measured
+   * from its new reference; `vertical: { relativeTo: 'page' }` fixes it on the page, `'paragraph'` moves it with text.
+   * Unset fields keep their value.
+   */
+  setObjectPosition(options: {
+    horizontal?: HorizontalPosition;
+    vertical?: VerticalPosition;
+    allowOverlap?: boolean;
+    layoutInCell?: boolean;
+  }): Promise<void>;
+  /** Sets the sides text wraps on around the floating object and its distance from the text, 0 to 1584; unset fields keep their value. */
+  setObjectWrapOptions(options: { side?: WrapSide; top?: Points; bottom?: Points; left?: Points; right?: Points }): Promise<void>;
   /** Sets the alternative text, or marks the object decorative. */
   setAltText(options: { text: string; decorative?: boolean }): Promise<void>;
   /** Deletes the object. */
@@ -428,7 +444,7 @@ export interface Commands {
   /** Sets the zoom: 10 to 500 percent, or a fit. */
   setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
   /** Shows or hides formatting marks (Ctrl+Shift+8), gridlines and text boundaries. */
-  setViewOptions(options: { formattingMarks?: boolean; gridlines?: boolean; textBoundaries?: boolean }): Promise<void>;
+  setViewOptions(options: { formattingMarks?: boolean; gridlines?: boolean; textBoundaries?: boolean; liveLayout?: boolean }): Promise<void>;
   /** Switches between editing and design mode. */
   setMode(mode: 'editing' | 'design'): Promise<void>;
 }
@@ -626,6 +642,8 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   resetObjectSize: 'none',
   setObjectWrap: 'value',
   setAnchorLocked: 'value',
+  setObjectPosition: 'spread',
+  setObjectWrapOptions: 'spread',
   setAltText: 'spread',
   deleteObject: 'none',
   setField: 'spread',

@@ -597,6 +597,27 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetAnchorLocked(bool on) => Op(CommandId.SetAnchorLocked, new Arg("value", Node(on)));
 
+    /// <summary>
+    /// Places the selected floating object. Each axis given is aligned, offset, or (with neither) kept where it is and
+    /// measured from its new reference: <see cref="VerticalReference.Page"/> fixes it on the page,
+    /// <see cref="VerticalReference.Paragraph"/> moves it with the text. Unset values are kept.
+    /// </summary>
+    /// <param name="horizontal">The horizontal place.</param>
+    /// <param name="vertical">The vertical place.</param>
+    /// <param name="allowOverlap">Whether other floating objects may overlap it.</param>
+    /// <param name="layoutInCell">Whether, in a table cell, it is kept within the cell.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetObjectPosition(HorizontalPosition? horizontal = null, VerticalPosition? vertical = null, bool? allowOverlap = null, bool? layoutInCell = null) => Op(CommandId.SetObjectPosition, new Arg("horizontal", horizontal is { } horizontal_ ? Node(horizontal_) : null, Optional: true), new Arg("vertical", vertical is { } vertical_ ? Node(vertical_) : null, Optional: true), new Arg("allowOverlap", allowOverlap is { } allowOverlap_ ? Node(allowOverlap_) : null, Optional: true), new Arg("layoutInCell", layoutInCell is { } layoutInCell_ ? Node(layoutInCell_) : null, Optional: true));
+
+    /// <summary>Sets the sides text wraps on around the selected floating object and its distance from the text, 0 to 1584 pt. Unset values are kept.</summary>
+    /// <param name="side">The sides text wraps on.</param>
+    /// <param name="top">The distance from the text above.</param>
+    /// <param name="bottom">The distance from the text below.</param>
+    /// <param name="left">The distance from the text on the left.</param>
+    /// <param name="right">The distance from the text on the right.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetObjectWrapOptions(WrapSide? side = null, Length? top = null, Length? bottom = null, Length? left = null, Length? right = null) => Op(CommandId.SetObjectWrapOptions, new Arg("side", side is { } side_ ? Node(side_) : null, Optional: true), new Arg("top", top is { } top_ ? Node(top_) : null, Optional: true), new Arg("bottom", bottom is { } bottom_ ? Node(bottom_) : null, Optional: true), new Arg("left", left is { } left_ ? Node(left_) : null, Optional: true), new Arg("right", right is { } right_ ? Node(right_) : null, Optional: true));
+
     /// <summary>Sets the alternative text of the selected object.</summary>
     /// <param name="text">The text.</param>
     /// <param name="decorative">Marks the object as decorative.</param>
@@ -818,8 +839,9 @@ public abstract partial record EditorOperation
     /// <param name="formattingMarks">Formatting marks.</param>
     /// <param name="gridlines">Table gridlines.</param>
     /// <param name="textBoundaries">Text boundaries.</param>
+    /// <param name="liveLayout">Text wraps around an object again as it is dragged; otherwise a preview shows until the release.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", formattingMarks is { } formattingMarks_ ? Node(formattingMarks_) : null, Optional: true), new Arg("gridlines", gridlines is { } gridlines_ ? Node(gridlines_) : null, Optional: true), new Arg("textBoundaries", textBoundaries is { } textBoundaries_ ? Node(textBoundaries_) : null, Optional: true));
+    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", formattingMarks is { } formattingMarks_ ? Node(formattingMarks_) : null, Optional: true), new Arg("gridlines", gridlines is { } gridlines_ ? Node(gridlines_) : null, Optional: true), new Arg("textBoundaries", textBoundaries is { } textBoundaries_ ? Node(textBoundaries_) : null, Optional: true), new Arg("liveLayout", liveLayout is { } liveLayout_ ? Node(liveLayout_) : null, Optional: true));
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>

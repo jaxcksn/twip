@@ -131,6 +131,7 @@ pub fn fixtures() -> Vec<Fixture> {
         "height-rule": HeightRule,
         "highlight-color": HighlightColor,
         "horizontal-alignment": HorizontalAlignment,
+        "horizontal-reference": HorizontalReference,
         "horizontal-side": HorizontalSide,
         "host-command": HostCommand,
         "key": Key,
@@ -144,6 +145,8 @@ pub fn fixtures() -> Vec<Fixture> {
         "mode": Mode,
         "move-unit": MoveUnit,
         "object-kind": ObjectKind,
+        "object-horizontal-alignment": ObjectHorizontalAlignment,
+        "object-vertical-alignment": ObjectVerticalAlignment,
         "object-wrap": ObjectWrap,
         "order": Order,
         "orientation": Orientation,
@@ -172,8 +175,10 @@ pub fn fixtures() -> Vec<Fixture> {
         "underline-style": UnderlineStyle,
         "vertical-direction": VerticalDirection,
         "vertical-merge": VerticalMerge,
+        "vertical-reference": VerticalReference,
         "vertical-side": VerticalSide,
         "warning-code": WarningCode,
+        "wrap-side": WrapSide,
         "zoom-fit": ZoomFit,
     });
     out.extend([
@@ -587,6 +592,23 @@ fn commands() -> Vec<Command> {
         Command::ResetObjectSize,
         Command::SetObjectWrap(ObjectWrap::Square),
         Command::SetAnchorLocked(true),
+        Command::SetObjectPosition(ObjectPosition {
+            horizontal: Some(HorizontalPosition {
+                relative_to: HorizontalReference::Margin,
+                align: Some(ObjectHorizontalAlignment::Right),
+                offset: None,
+            }),
+            vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(12.5)) }),
+            allow_overlap: Some(false),
+            layout_in_cell: Some(true),
+        }),
+        Command::SetObjectWrapOptions(ObjectWrapOptions {
+            side: Some(WrapSide::Largest),
+            top: Some(Points(0.5)),
+            bottom: Some(Points(0.5)),
+            left: Some(Points(9.5)),
+            right: Some(Points(9.5)),
+        }),
         Command::SetAltText(AltText { text: "A chart".into(), decorative: Some(false) }),
         Command::DeleteObject,
         Command::SetField(SetField { id: id("field-1"), code: Some("MERGEFIELD Total".into()), display: Some(Body::Text("«Total»".into())) }),
@@ -659,7 +681,12 @@ fn commands() -> Vec<Command> {
         Command::SelectComment(CommentId("c4".into())),
         Command::SetAuthorColor(AuthorColor { author: "Ada Lovelace".into(), color: Color(0x7030A0) }),
         Command::SetZoom(Zoom::Fit(ZoomFit::WholePage)),
-        Command::SetViewOptions(ViewOptions { formatting_marks: Some(true), gridlines: Some(false), text_boundaries: Some(true) }),
+        Command::SetViewOptions(ViewOptions {
+            formatting_marks: Some(true),
+            gridlines: Some(false),
+            text_boundaries: Some(true),
+            live_layout: Some(false),
+        }),
         Command::SetMode(Mode::Design),
     ]
 }
@@ -750,6 +777,14 @@ fn selection() -> SelectionSummary {
             alt_text: "A note".into(),
             decorative: false,
             anchor_locked: Some(true),
+            placement: Some(ObjectPlacement {
+                horizontal: HorizontalPosition { relative_to: HorizontalReference::Column, align: None, offset: Some(Points(36.5)) },
+                vertical: VerticalPosition { relative_to: VerticalReference::Page, align: Some(ObjectVerticalAlignment::Top), offset: None },
+                allow_overlap: true,
+                layout_in_cell: true,
+                wrap_side: WrapSide::BothSides,
+                distance: TextDistance { top: Points(3.5), bottom: Points(3.5), left: Points(9.5), right: Points(9.5) },
+            }),
         }),
         context: vec![ElementContext {
             id: id("field-1"),

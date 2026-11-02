@@ -856,7 +856,7 @@ fn vertical_width(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result
     for b in &super::join::laid(blocks, view) {
         let LaidBlock::Para(laid) = b else { continue };
         let p = laid.para();
-        let space = laid.shape_space_in(env.fields, env.notes, &env.ctx.env.text, true);
+        let space = laid.shape_space_in(env.fields, env.notes, &env.ctx, true);
         let shaped = shape(p, &space, env.ctx.fonts, memos)?;
         let s = p.para_style_in(view);
         let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false };
@@ -900,7 +900,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
         match b {
             LaidBlock::Para(laid) => {
                 let p = laid.para();
-                let space = laid.shape_space_in(env.fields, env.notes, &env.ctx.env.text, true);
+                let space = laid.shape_space_in(env.fields, env.notes, &env.ctx, true);
                 let shaped = shape(p, &space, env.ctx.fonts, memos)?;
                 let s = p.para_style_in(env.ctx.env.text.review.view);
                 let ps =

@@ -27,6 +27,12 @@ pub struct ShapeSpace {
     pub view: MarkupView,
     /// Where a joined paragraph's units come from (REV-6): its pieces name their own paragraphs once drawn.
     pub join: Option<std::rc::Rc<super::join::JoinMap>>,
+    /// Live layout's previewed float ([`super::Preview`]) when this paragraph is its anchor: laid out in place of the
+    /// document's float, or anchored at the paragraph's start. `None` for every other paragraph.
+    pub float: Option<std::rc::Rc<crate::docx::Float>>,
+    /// The previewed float's id when the paragraph anchors it in the document but the preview anchors it elsewhere:
+    /// it isn't laid out here.
+    pub hide: Option<u64>,
 }
 
 /// A paragraph's border settings, which make consecutive paragraphs share one box when identical (PARA-7):

@@ -12,7 +12,7 @@ use std::rc::Rc;
 use crate::docx::model::{Block, Inline, NoteKind, Paragraph, Table};
 use crate::docx::review::MarkupView;
 
-use super::env::TextEnv;
+use super::LayoutCtx;
 use super::ids::{ParaId, Unit};
 use super::space::ShapeSpace;
 use super::text::{FieldValues, ShapedPara, shape_space};
@@ -131,14 +131,14 @@ impl LaidPara<'_> {
         }
     }
 
-    /// Its [`ShapeSpace`]: the values of its fields and note numbers, and where its units come from.
-    /// [`Self::shape_space`] for a paragraph in a table cell (BREAK-10) or not.
-    pub fn shape_space_in(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, text: &TextEnv, in_cell: bool) -> ShapeSpace {
-        ShapeSpace { in_cell, ..self.shape_space(fields, notes, text) }
+    /// Its [`ShapeSpace`]: the values of its fields and note numbers, where its units come from, and a previewed float
+    /// it anchors. [`Self::shape_space`] for a paragraph in a table cell (BREAK-10) or not.
+    pub fn shape_space_in(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, ctx: &LayoutCtx, in_cell: bool) -> ShapeSpace {
+        ShapeSpace { in_cell, ..self.shape_space(fields, notes, ctx) }
     }
 
-    pub fn shape_space(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, text: &TextEnv) -> ShapeSpace {
-        let mut space = shape_space(self.para(), fields, notes, text);
+    pub fn shape_space(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, ctx: &LayoutCtx) -> ShapeSpace {
+        let mut space = shape_space(self.para(), fields, notes, &ctx.env.text, ctx.preview);
         if let LaidPara::Joined(j) = self {
             space.join = Some(j.map.clone());
         }

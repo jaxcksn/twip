@@ -234,6 +234,8 @@ const ENTRIES: &[Entry] = {
         (C::ResetObjectSize, "Reset Size", G::Object, &[], &[], false, true, U::Step),
         (C::SetObjectWrap, "Wrap Text", G::Object, &[], &[], true, true, U::Step),
         (C::SetAnchorLocked, "Lock Anchor", G::Object, &[], &[], true, true, U::Step),
+        (C::SetObjectPosition, "Position", G::Object, &[], &[], true, true, U::Step),
+        (C::SetObjectWrapOptions, "Wrap Options", G::Object, &[], &[], true, true, U::Step),
         (C::SetAltText, "Alt Text", G::Object, &[], &[], true, true, U::Step),
         (C::DeleteObject, "Delete", G::Object, &[], &[], false, true, U::Step),
         (C::SetField, "Edit Field", G::Field, &[], &[], true, true, U::Step),

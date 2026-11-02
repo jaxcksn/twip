@@ -722,6 +722,29 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetAnchorLockedAsync(bool on, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetAnchorLocked(on), ct);
 
+    /// <summary>
+    /// Places the selected floating object. Each axis given is aligned, offset, or (with neither) kept where it is and
+    /// measured from its new reference: <see cref="VerticalReference.Page"/> fixes it on the page,
+    /// <see cref="VerticalReference.Paragraph"/> moves it with the text. Unset values are kept.
+    /// </summary>
+    /// <param name="horizontal">The horizontal place.</param>
+    /// <param name="vertical">The vertical place.</param>
+    /// <param name="allowOverlap">Whether other floating objects may overlap it.</param>
+    /// <param name="layoutInCell">Whether, in a table cell, it is kept within the cell.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetObjectPositionAsync(HorizontalPosition? horizontal = null, VerticalPosition? vertical = null, bool? allowOverlap = null, bool? layoutInCell = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetObjectPosition(horizontal, vertical, allowOverlap, layoutInCell), ct);
+
+    /// <summary>Sets the sides text wraps on around the selected floating object and its distance from the text, 0 to 1584 pt. Unset values are kept.</summary>
+    /// <param name="side">The sides text wraps on.</param>
+    /// <param name="top">The distance from the text above.</param>
+    /// <param name="bottom">The distance from the text below.</param>
+    /// <param name="left">The distance from the text on the left.</param>
+    /// <param name="right">The distance from the text on the right.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetObjectWrapOptionsAsync(WrapSide? side = null, Length? top = null, Length? bottom = null, Length? left = null, Length? right = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetObjectWrapOptions(side, top, bottom, left, right), ct);
+
     /// <summary>Sets the alternative text of the selected object.</summary>
     /// <param name="text">The text.</param>
     /// <param name="decorative">Marks the object as decorative.</param>
@@ -982,9 +1005,10 @@ public sealed class EditorCommands
     /// <param name="formattingMarks">Formatting marks.</param>
     /// <param name="gridlines">Table gridlines.</param>
     /// <param name="textBoundaries">Text boundaries.</param>
+    /// <param name="liveLayout">Text wraps around an object again as it is dragged; otherwise a preview shows until the release.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries), ct);
+    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout), ct);
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>

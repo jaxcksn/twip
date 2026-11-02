@@ -177,7 +177,7 @@ impl Renderer {
             } else {
                 paint(page, &mut |p| self.item(canvas, &p.absolute(), images));
             }
-            self.overlays(canvas, view, i, f);
+            self.overlays(canvas, view, images, i, f);
             canvas.restore();
         }
         canvas.restore();

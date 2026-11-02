@@ -333,6 +333,7 @@ fn row_restart(
     memo: &mut super::flow::PassMemo,
     latest: Option<&LatestTable>,
     relaid: &mut Option<LatestTable>,
+    preview: Option<&super::Preview>,
 ) -> Option<usize> {
     let row = span.row?;
     let blocks = &doc.sections.get(span.section)?.blocks;
@@ -353,7 +354,7 @@ fn row_restart(
     let rec = p.or_else(|| base.iter().position(|pg| inside(pg, span).is_some()))?;
     let width = base[rec].bodies[0].space.columns[0].width;
     let env = LayoutEnv::new(doc);
-    let ctx = LayoutCtx { fonts, env: &env };
+    let ctx = LayoutCtx { fonts, env: &env, preview };
     let fields = super::text::FieldValues::default();
     let story = super::story::StoryEnv { ctx, fields: &fields, notes };
     // Laid out through the document's cache, without storing the new version (an incremental pass's);
@@ -664,6 +665,8 @@ pub struct DocumentLayout {
     /// Published page fragments by their first body's id: a page published again with the same bodies, header and
     /// footer and numbering keeps its fragment (and so its converted items).
     frames: HashMap<FragmentId, Frame>,
+    /// Live layout's previewed float ([`LayoutCtx::preview`]).
+    preview: Option<Rc<super::Preview>>,
 }
 
 /// A published page fragment with the numbering and header and footer it was published with.
@@ -688,6 +691,7 @@ impl DocumentLayout {
             current: false,
             reused: (0, 0),
             frames: HashMap::new(),
+            preview: None,
         }
     }
 
@@ -699,6 +703,25 @@ impl DocumentLayout {
     /// The revision of the last edit: a snapshot of an older one predates it.
     pub fn revision(&self) -> Revision {
         self.revision
+    }
+
+    /// Live layout: from `revision` on, the document is laid out with `preview` (`None`: as the document is). Nothing
+    /// in the document changes. `hints` are the extents of the paragraphs the change concerns (the float's anchor in the
+    /// document, and its previewed anchors before and now), as for an edit; one without (a header's or footer's
+    /// paragraph) lays everything out again. False when the preview is the one already laid out (nothing to do).
+    pub fn preview(&mut self, revision: Revision, preview: Option<super::Preview>, hints: &[Option<Change>]) -> bool {
+        if self.preview.as_deref() == preview.as_ref() {
+            return false;
+        }
+        self.preview = preview.map(Rc::new);
+        for &h in hints {
+            self.edit(revision, h);
+        }
+        if hints.iter().any(Option::is_none) {
+            // shortcut: a header or footer float is previewed by a full layout; a story hint would lay out less.
+            self.acc.full = true;
+        }
+        true
     }
 
     /// The document changed to `revision` (already applied): merges the change into the accumulated span and abandons
@@ -816,7 +839,7 @@ impl DocumentLayout {
                 let notes = job.note_numbers().clone();
                 let latest = b.table.as_ref();
                 crate::prof::time("layout:row-restart", || {
-                    row_restart(base, s, doc, fonts, &notes, &mut self.cache, &mut job.run.memo, latest, &mut relaid)
+                    row_restart(base, s, doc, fonts, &notes, &mut self.cache, &mut job.run.memo, latest, &mut relaid, self.preview.as_deref())
                 })
                 .filter(|&p| p > r)
                 .unwrap_or(r)
@@ -880,7 +903,7 @@ impl DocumentLayout {
             self.job = Some(r);
         }
         let env = LayoutEnv::new(doc);
-        let ctx = LayoutCtx { fonts, env: &env };
+        let ctx = LayoutCtx { fonts, env: &env, preview: self.preview.as_deref() };
         let running = self.job.as_mut().expect("started above");
         let before = running.job.committed().len();
         self.cache.store_tables = !running.incremental;
@@ -905,7 +928,7 @@ impl DocumentLayout {
             Step::Done => self.complete_job(doc, fonts),
             Step::Yielded if progressed => {
                 let env = LayoutEnv::new(doc);
-                let ctx = LayoutCtx { fonts, env: &env };
+                let ctx = LayoutCtx { fonts, env: &env, preview: self.preview.as_deref() };
                 let shown = self.published.pages().len();
                 if let Some(running) = self.job.as_mut() {
                     running.job.compose_committed(doc, &ctx, &mut self.cache, shown);

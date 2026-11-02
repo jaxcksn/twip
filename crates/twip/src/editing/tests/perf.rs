@@ -56,6 +56,31 @@ fn pointer_hits_and_drag_moves_are_within_budget() {
 
 #[test]
 #[ignore = "timing: run alone in a release build, `cargo test --release --lib perf -- --ignored`"]
+fn live_float_drag_moves_are_within_budget() {
+    // Live layout: each move of a dragged float places it and lays its page out again (as the frame after it
+    // would), p95 ≤ 16 ms.
+    let mut e = open("FX-OBJ.docx");
+    e.complete(fonts());
+    let mut seq = 0;
+    send(&mut e, &mut seq, json!({ "type": "viewport", "left": 0, "top": 0, "width": 960, "height": 675 }));
+    let st = crate::editing::inspect::inspect(&mut e, "geometry", true);
+    let f = st["geometry"]["floats"].as_array().unwrap().iter().find(|f| f["float"] == 1).unwrap()["rect"].clone();
+    let (x, y) = ((f[0].as_f64().unwrap() + f[2].as_f64().unwrap()) / 2.0, (f[1].as_f64().unwrap() + f[3].as_f64().unwrap()) / 2.0);
+    send(&mut e, &mut seq, json!({ "type": "pointer", "kind": "down", "x": x, "y": y, "clicks": 1 }));
+    let moves: Vec<f64> = (0..100)
+        .map(|k| {
+            let ms = send(&mut e, &mut seq, json!({ "type": "pointer", "kind": "move", "x": x + k as f64 * 0.5, "y": y - k as f64 * 1.5 }));
+            let t = Instant::now();
+            e.ensure_page(0, fonts());
+            ms + t.elapsed().as_secs_f64() * 1e3
+        })
+        .collect();
+    send(&mut e, &mut seq, json!({ "type": "pointer", "kind": "up", "x": x + 50.0, "y": y - 150.0 }));
+    assert!(p95(moves.clone()) <= 16.0, "live drag move p95 {:.3} ms", p95(moves));
+}
+
+#[test]
+#[ignore = "timing: run alone in a release build, `cargo test --release --lib perf -- --ignored`"]
 fn table_structure_and_resize_commits_are_within_budget() {
     // Inserting a row and committing a column resize on FX-TBL-LARGE, p95 ≤ 50 ms each.
     let mut e = open("FX-TBL-LARGE.docx");

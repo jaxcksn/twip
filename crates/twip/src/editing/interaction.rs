@@ -59,11 +59,30 @@ impl Editor {
     pub(super) fn text_drag_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.text_drag.take()?;
         self.requests.push(Request::ReleasePointer);
+        // An inline picture dragged: moved as the one unit it is, and selected again where it lands.
+        let object = match self.selection {
+            s @ Selection::Object(super::selection::ObjectRef::Inline { para, offset }) if d.moved => {
+                let at = |u: u32| Position::text(d.press.story, para, Unit(u));
+                self.selection = Selection::range(at(offset.0), at(offset.0 + 1), super::selection::Granularity::Char);
+                Some(s)
+            }
+            _ => None,
+        };
         if !d.moved {
-            self.set_selection(Selection::Caret(d.press));
+            if !matches!(self.selection, Selection::Object(_)) {
+                self.set_selection(Selection::Caret(d.press));
+            }
             return Some(Outcome::Moved);
         }
-        let Some(drop) = d.drop else { return Some(Outcome::Unchanged("no drop place")) };
+        let restore = |e: &mut Self| {
+            if let Some(o) = object {
+                e.selection = o;
+            }
+        };
+        let Some(drop) = d.drop else {
+            restore(self);
+            return Some(Outcome::Unchanged("no drop place"));
+        };
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(Outcome::Unchanged("no selection")) };
         // Into a text box the selection holds: as onto the selection (the box goes with the text).
         let in_box = match drop.story {
@@ -79,6 +98,7 @@ impl Editor {
         let inside = |p: &Position| self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater;
         if inside(&drop) || in_box.is_some_and(|p| inside(&p)) {
             // Onto itself: nothing moves.
+            restore(self);
             return Some(Outcome::Unchanged("dropped on the selection"));
         }
         let frag = self.copy_fragment()?;
@@ -101,7 +121,7 @@ impl Editor {
         let delete = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             e.set_selection(sel);
             // Smart cut: the space the move would leave doubled goes with it. A recorded move takes what was selected.
-            if !moving {
+            if !moving && object.is_none() {
                 e.smart_cut();
             }
             let ok = matches!(e.delete(super::commands::Dir::Forward, false, fonts), Outcome::Changed(_));
@@ -141,13 +161,18 @@ impl Editor {
         };
         if steps == 0 {
             self.end_batch(false, fonts);
+            restore(self);
             return Some(Outcome::Unchanged("nothing dropped"));
         }
         if moving && let (Some(to), Some(from)) = &marks {
             self.record_move(to, from, fonts);
         }
-        // The dropped text is selected.
-        if let Some((s, t)) = placed {
+        // The dropped text is selected; a dropped picture, as the object.
+        if object.is_some()
+            && let Some((para, offset)) = placed.and_then(|(s, _)| s.para_offset())
+        {
+            self.selection = Selection::Object(super::selection::ObjectRef::Inline { para, offset });
+        } else if let Some((s, t)) = placed {
             self.selection = Selection::range(s, t, super::selection::Granularity::Char);
         }
         Some(self.end_batch(true, fonts))

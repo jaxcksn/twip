@@ -435,6 +435,131 @@ pub enum ObjectWrap {
     InFrontOfText,
 }
 
+/// What a floating object's horizontal position is measured from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HorizontalReference {
+    /// The column it is anchored in (the default).
+    #[default]
+    Column,
+    /// The area between the left and right margins.
+    Margin,
+    /// The page's edges.
+    Page,
+    /// The character its anchor is at.
+    Character,
+    /// The left margin's area.
+    LeftMargin,
+    /// The right margin's area.
+    RightMargin,
+    /// The inside margin's area (left on odd pages, right on even ones).
+    InsideMargin,
+    /// The outside margin's area.
+    OutsideMargin,
+}
+
+/// What a floating object's vertical position is measured from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VerticalReference {
+    /// Its anchor paragraph's top: it moves with the text (the default).
+    #[default]
+    Paragraph,
+    /// Its anchor line's top: it moves with the text.
+    Line,
+    /// The area between the top and bottom margins.
+    Margin,
+    /// The page's edges: it stays where it is on the page.
+    Page,
+    /// The top margin's area.
+    TopMargin,
+    /// The bottom margin's area.
+    BottomMargin,
+    /// The inside margin's area.
+    InsideMargin,
+    /// The outside margin's area.
+    OutsideMargin,
+}
+
+/// A floating object aligned across its horizontal reference.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ObjectHorizontalAlignment {
+    /// At its left edge.
+    #[default]
+    Left,
+    /// Centred.
+    Center,
+    /// At its right edge.
+    Right,
+    /// At its inside edge (left on odd pages).
+    Inside,
+    /// At its outside edge.
+    Outside,
+}
+
+/// A floating object aligned across its vertical reference.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ObjectVerticalAlignment {
+    /// At its top.
+    #[default]
+    Top,
+    /// Centred.
+    Center,
+    /// At its bottom.
+    Bottom,
+    /// At its inside edge.
+    Inside,
+    /// At its outside edge.
+    Outside,
+}
+
+/// Which sides of a floating object text wraps on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WrapSide {
+    /// Both sides (the default).
+    #[default]
+    BothSides,
+    /// Its left only.
+    Left,
+    /// Its right only.
+    Right,
+    /// Whichever side has more room.
+    Largest,
+}
+
+/// A floating object's horizontal place: aligned across its reference, or an offset from the reference's left edge.
+/// Given with neither, the object stays where it is, measured from the new reference.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HorizontalPosition {
+    /// What it is measured from.
+    pub relative_to: HorizontalReference,
+    /// Aligned across the reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align: Option<ObjectHorizontalAlignment>,
+    /// Right of the reference's left edge (−1584…1584 pt).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<Points>,
+}
+
+/// A floating object's vertical place: aligned across its reference, or an offset below the reference's top. Given
+/// with neither, the object stays where it is, measured from the new reference.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VerticalPosition {
+    /// What it is measured from.
+    pub relative_to: VerticalReference,
+    /// Aligned across the reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align: Option<ObjectVerticalAlignment>,
+    /// Below the reference's top (−1584…1584 pt).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<Points>,
+}
+
 /// A table's preferred width.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]

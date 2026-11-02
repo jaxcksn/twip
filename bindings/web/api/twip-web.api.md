@@ -427,12 +427,25 @@ export interface Commands {
     }): Promise<void>;
     setMarkupView(view: MarkupView): Promise<void>;
     setMode(mode: 'editing' | 'design'): Promise<void>;
+    setObjectPosition(options: {
+        horizontal?: HorizontalPosition;
+        vertical?: VerticalPosition;
+        allowOverlap?: boolean;
+        layoutInCell?: boolean;
+    }): Promise<void>;
     setObjectSize(options: {
         width?: Points;
         height?: Points;
         lockAspect?: boolean;
     }): Promise<void>;
     setObjectWrap(wrap: ObjectWrap): Promise<void>;
+    setObjectWrapOptions(options: {
+        side?: WrapSide;
+        top?: Points;
+        bottom?: Points;
+        left?: Points;
+        right?: Points;
+    }): Promise<void>;
     setOrientation(orientation: 'portrait' | 'landscape'): Promise<void>;
     setPaperSize(options: {
         width: Points;
@@ -480,6 +493,7 @@ export interface Commands {
         formattingMarks?: boolean;
         gridlines?: boolean;
         textBoundaries?: boolean;
+        liveLayout?: boolean;
     }): Promise<void>;
     setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
     showFieldCodes(options: {
@@ -569,6 +583,7 @@ export interface CommandValues {
         formattingMarks: boolean;
         gridlines: boolean;
         textBoundaries: boolean;
+        liveLayout: boolean;
     };
     setZoom: number;
     undo: string | null;
@@ -1127,6 +1142,16 @@ export class HeadlessEditor {
 export type HighlightColor = 'yellow' | 'brightGreen' | 'turquoise' | 'pink' | 'blue' | 'red' | 'darkBlue' | 'teal' | 'green' | 'violet' | 'darkRed' | 'darkYellow' | 'gray50' | 'gray25' | 'black';
 
 // @public
+export interface HorizontalPosition {
+    align?: ObjectHorizontalAlignment;
+    offset?: Points;
+    relativeTo: HorizontalReference;
+}
+
+// @public
+export type HorizontalReference = 'column' | 'margin' | 'page' | 'character' | 'leftMargin' | 'rightMargin' | 'insideMargin' | 'outsideMargin';
+
+// @public
 export type HostCommand = 'save' | 'saveAs' | 'print' | 'open' | 'new' | 'find' | 'replace' | 'goTo' | 'insertHyperlink' | 'nextMisspelling' | 'focusFont' | 'focusFontSize' | 'help';
 
 // @public
@@ -1270,15 +1295,32 @@ export type NoArgumentCommandId = {
 }[CommandId];
 
 // @public
+export type ObjectHorizontalAlignment = 'left' | 'center' | 'right' | 'inside' | 'outside';
+
+// @public
+export interface ObjectPlacement {
+    allowOverlap: boolean;
+    distance: TextDistance;
+    horizontal: HorizontalPosition;
+    layoutInCell: boolean;
+    vertical: VerticalPosition;
+    wrapSide: WrapSide;
+}
+
+// @public
 export interface ObjectSelection {
     altText: string;
     anchorLocked: boolean | null;
     decorative: boolean;
     height: Points;
     kind: 'picture' | 'textBox';
+    placement: ObjectPlacement | null;
     width: Points;
     wrap: ObjectWrap;
 }
+
+// @public
+export type ObjectVerticalAlignment = 'top' | 'center' | 'bottom' | 'inside' | 'outside';
 
 // @public
 export type ObjectWrap = 'inline' | 'square' | 'tight' | 'through' | 'topAndBottom' | 'behindText' | 'inFrontOfText';
@@ -1696,6 +1738,14 @@ export type TableWidth = {
 export type TabSelector = TabAlignment | 'firstLineIndent' | 'hangingIndent';
 
 // @public
+export interface TextDistance {
+    bottom: Points;
+    left: Points;
+    right: Points;
+    top: Points;
+}
+
+// @public
 export interface Tooltip {
     at: ClientPoint;
     kind: 'link' | 'mark' | 'revision' | 'comment';
@@ -1786,6 +1836,16 @@ export interface TwipEvents {
 export type UnderlineStyle = 'none' | 'single' | 'words' | 'double' | 'thick' | 'dotted' | 'dash' | 'dotDash' | 'wave';
 
 // @public
+export interface VerticalPosition {
+    align?: ObjectVerticalAlignment;
+    offset?: Points;
+    relativeTo: VerticalReference;
+}
+
+// @public
+export type VerticalReference = 'paragraph' | 'line' | 'margin' | 'page' | 'topMargin' | 'bottomMargin' | 'insideMargin' | 'outsideMargin';
+
+// @public
 export interface View {
     frameStats(): Promise<FrameStats>;
     revealSelection(): Promise<void>;
@@ -1804,6 +1864,7 @@ export interface ViewState {
     fieldCodes: boolean;
     formattingMarks: boolean;
     gridlines: boolean;
+    liveLayout: boolean;
     markupPaneWidth: number;
     rulers: {
         horizontal: boolean;
@@ -1835,5 +1896,8 @@ export interface WordCount {
     paragraphs: number;
     words: number;
 }
+
+// @public
+export type WrapSide = 'bothSides' | 'left' | 'right' | 'largest';
 
 ```

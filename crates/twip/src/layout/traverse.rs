@@ -209,6 +209,27 @@ pub fn paint_lines<'a>(
         }
     }
 }
+/// One float's items in paint order (its backgrounds, then its content), in page coordinates: what an object drag's
+/// ghost draws.
+pub fn paint_float(page: &PageFragment, id: FloatId) -> Vec<Item> {
+    let mut found = Vec::new();
+    for c in page.children.iter() {
+        let b: &BoxFragment = match c {
+            PageChild::Body(b) => b,
+            PageChild::Header(b) | PageChild::Footer(b) => b,
+        };
+        boxes_of(&b.children, b.offset.0, b.offset.1, &|k| matches!(k, BoxKind::Float { float, .. } if *float == id), &mut found);
+    }
+    let mut v = Vec::new();
+    let mut out = |p: Placed| v.push(p.absolute());
+    for (fb, dx, dy) in found {
+        let (dx, dy) = (dx + fb.offset.0, dy + fb.offset.1);
+        backgrounds(&fb.children, dx, dy, &|_| false, &mut out);
+        flow(&fb.children, dx, dy, &|_| false, &mut Lines { n: 0, placed: &mut |_, _, _, _, _| {} }, &mut out);
+    }
+    v
+}
+
 /// The page's items in paint order, in page coordinates.
 pub fn paint_items(page: &PageFragment) -> Vec<Item> {
     let mut v = Vec::new();

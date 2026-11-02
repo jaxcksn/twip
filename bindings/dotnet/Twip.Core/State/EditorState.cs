@@ -312,6 +312,47 @@ public sealed record ObjectSelection
 
     /// <summary>Whether its anchor is locked; null for inline objects.</summary>
     public bool? AnchorLocked { get; init; }
+
+    /// <summary>Where a floating object is and how text keeps from it; null for inline objects.</summary>
+    public ObjectPlacement? Placement { get; init; }
+}
+
+/// <summary>A floating object's place and its wrapping options.</summary>
+public sealed record ObjectPlacement
+{
+    /// <summary>The horizontal place: an alignment or an offset.</summary>
+    public HorizontalPosition Horizontal { get; init; } = new(HorizontalReference.Column);
+
+    /// <summary>The vertical place: an alignment or an offset.</summary>
+    public VerticalPosition Vertical { get; init; } = new(VerticalReference.Paragraph);
+
+    /// <summary>Whether other floating objects may overlap it.</summary>
+    public bool AllowOverlap { get; init; }
+
+    /// <summary>Whether, in a table cell, it is kept within the cell.</summary>
+    public bool LayoutInCell { get; init; }
+
+    /// <summary>The sides text wraps on.</summary>
+    public WrapSide WrapSide { get; init; }
+
+    /// <summary>The distance from the text.</summary>
+    public TextDistance Distance { get; init; } = new();
+}
+
+/// <summary>How far text keeps from a floating object.</summary>
+public sealed record TextDistance
+{
+    /// <summary>Above it.</summary>
+    public Length Top { get; init; }
+
+    /// <summary>Below it.</summary>
+    public Length Bottom { get; init; }
+
+    /// <summary>On its left.</summary>
+    public Length Left { get; init; }
+
+    /// <summary>On its right.</summary>
+    public Length Right { get; init; }
 }
 
 /// <summary>What a merge-designer element is.</summary>
@@ -599,6 +640,9 @@ public sealed record ViewState
 
     /// <summary>Whether text boundaries show.</summary>
     public bool TextBoundaries { get; init; }
+
+    /// <summary>Whether text wraps around an object again as it is dragged; otherwise a preview shows until the release.</summary>
+    public bool LiveLayout { get; init; } = true;
 
     /// <summary>Whether field codes show instead of results.</summary>
     public bool FieldCodes { get; init; }

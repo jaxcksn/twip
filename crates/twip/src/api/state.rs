@@ -9,8 +9,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use super::command::{CommandId, SelectionMode};
 use super::services::{DialogKind, RulerModel, RulerUnit, TabSelector};
 use super::value::{
-    Alignment, AutoOr, CellAlignment, Color, CommentId, ElementId, HighlightColor, HorizontalAlignment, LineSpacing, NoneOr, ObjectWrap, Orientation,
-    Points, RevisionId, RowHeight, Story, StyleId, TableWidth, UnderlineStyle,
+    Alignment, AutoOr, CellAlignment, Color, CommentId, ElementId, HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, NoneOr,
+    ObjectWrap, Orientation, Points, RevisionId, RowHeight, Story, StyleId, TableWidth, UnderlineStyle, VerticalPosition, WrapSide,
 };
 
 pub use crate::docx::review::MarkupView;
@@ -299,6 +299,40 @@ pub struct ObjectSelection {
     pub decorative: bool,
     /// `null` for inline objects.
     pub anchor_locked: Option<bool>,
+    /// Where a floating object is and how text keeps from it; `null` for inline objects.
+    pub placement: Option<ObjectPlacement>,
+}
+
+/// A floating object's place and its wrapping options.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ObjectPlacement {
+    /// The horizontal place: an alignment or an offset.
+    pub horizontal: HorizontalPosition,
+    /// The vertical place: an alignment or an offset.
+    pub vertical: VerticalPosition,
+    /// Other floating objects may overlap it.
+    pub allow_overlap: bool,
+    /// In a table cell, it is kept within the cell.
+    pub layout_in_cell: bool,
+    /// The sides text wraps on.
+    pub wrap_side: WrapSide,
+    /// The distance from the text: top, bottom, left and right.
+    pub distance: TextDistance,
+}
+
+/// How far text keeps from a floating object.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextDistance {
+    /// Above it.
+    pub top: Points,
+    /// Below it.
+    pub bottom: Points,
+    /// On its left.
+    pub left: Points,
+    /// On its right.
+    pub right: Points,
 }
 
 /// The kinds of merge-designer element.
@@ -636,6 +670,9 @@ pub struct ViewState {
     pub gridlines: bool,
     /// Text boundaries are shown.
     pub text_boundaries: bool,
+    /// Text wraps around an object again as it is dragged (otherwise a preview shows where it goes, and the text
+    /// wraps on the release).
+    pub live_layout: bool,
     /// Field codes are shown.
     pub field_codes: bool,
     /// Which rulers show.
@@ -657,6 +694,7 @@ impl Default for ViewState {
             formatting_marks: false,
             gridlines: false,
             text_boundaries: false,
+            live_layout: true,
             field_codes: false,
             rulers: RulerVisibility::default(),
             ruler_unit: RulerUnit::default(),

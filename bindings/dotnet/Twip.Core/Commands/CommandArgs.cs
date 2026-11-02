@@ -430,6 +430,115 @@ public enum ObjectWrap
     InFrontOfText,
 }
 
+/// <summary>What a floating object's horizontal position is measured from.</summary>
+public enum HorizontalReference
+{
+    /// <summary>The column it is anchored in.</summary>
+    Column,
+    /// <summary>The area between the left and right margins.</summary>
+    Margin,
+    /// <summary>The page's edges.</summary>
+    Page,
+    /// <summary>The character its anchor is at.</summary>
+    Character,
+    /// <summary>The left margin's area.</summary>
+    LeftMargin,
+    /// <summary>The right margin's area.</summary>
+    RightMargin,
+    /// <summary>The inside margin's area (left on odd pages, right on even ones).</summary>
+    InsideMargin,
+    /// <summary>The outside margin's area.</summary>
+    OutsideMargin,
+}
+
+/// <summary>What a floating object's vertical position is measured from.</summary>
+public enum VerticalReference
+{
+    /// <summary>Its anchor paragraph's top: it moves with the text.</summary>
+    Paragraph,
+    /// <summary>Its anchor line's top: it moves with the text.</summary>
+    Line,
+    /// <summary>The area between the top and bottom margins.</summary>
+    Margin,
+    /// <summary>The page's edges: it stays where it is on the page.</summary>
+    Page,
+    /// <summary>The top margin's area.</summary>
+    TopMargin,
+    /// <summary>The bottom margin's area.</summary>
+    BottomMargin,
+    /// <summary>The inside margin's area.</summary>
+    InsideMargin,
+    /// <summary>The outside margin's area.</summary>
+    OutsideMargin,
+}
+
+/// <summary>A floating object aligned across its horizontal reference.</summary>
+public enum ObjectHorizontalAlignment
+{
+    /// <summary>At its left edge.</summary>
+    Left,
+    /// <summary>Centred.</summary>
+    Center,
+    /// <summary>At its right edge.</summary>
+    Right,
+    /// <summary>At its inside edge (left on odd pages).</summary>
+    Inside,
+    /// <summary>At its outside edge.</summary>
+    Outside,
+}
+
+/// <summary>A floating object aligned across its vertical reference.</summary>
+public enum ObjectVerticalAlignment
+{
+    /// <summary>At its top.</summary>
+    Top,
+    /// <summary>Centred.</summary>
+    Center,
+    /// <summary>At its bottom.</summary>
+    Bottom,
+    /// <summary>At its inside edge.</summary>
+    Inside,
+    /// <summary>At its outside edge.</summary>
+    Outside,
+}
+
+/// <summary>Which sides of a floating object text wraps on.</summary>
+public enum WrapSide
+{
+    /// <summary>Both sides.</summary>
+    BothSides,
+    /// <summary>Its left only.</summary>
+    Left,
+    /// <summary>Its right only.</summary>
+    Right,
+    /// <summary>Whichever side has more room.</summary>
+    Largest,
+}
+
+/// <summary>
+/// A floating object's horizontal place: aligned across its reference, or an offset from the reference's left edge.
+/// Set with neither, the object stays where it is, measured from the new reference.
+/// </summary>
+/// <param name="RelativeTo">What it is measured from.</param>
+/// <param name="Align">Aligned across the reference.</param>
+/// <param name="Offset">Right of the reference's left edge, −1584 to 1584 pt.</param>
+public sealed record HorizontalPosition(
+    HorizontalReference RelativeTo,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectHorizontalAlignment? Align = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null);
+
+/// <summary>
+/// A floating object's vertical place: aligned across its reference, or an offset below the reference's top. Set with
+/// neither, the object stays where it is, measured from the new reference.
+/// </summary>
+/// <param name="RelativeTo">What it is measured from.</param>
+/// <param name="Align">Aligned across the reference.</param>
+/// <param name="Offset">Below the reference's top, −1584 to 1584 pt.</param>
+public sealed record VerticalPosition(
+    VerticalReference RelativeTo,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectVerticalAlignment? Align = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null);
+
 /// <summary>A content control kind.</summary>
 public enum ControlKind
 {

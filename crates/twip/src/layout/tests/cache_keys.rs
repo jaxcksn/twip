@@ -49,5 +49,34 @@ fn markup_view_is_in_the_keys() {
     let none = TextEnv::new(&doc);
     assert_ne!(all, none);
     let notes = Default::default();
-    assert_ne!(shape_space(&p, &FieldValues::default(), &notes, &all), shape_space(&p, &FieldValues::default(), &notes, &none));
+    assert_ne!(shape_space(&p, &FieldValues::default(), &notes, &all, None), shape_space(&p, &FieldValues::default(), &notes, &none, None));
+}
+
+/// Live layout's preview is in the shape keys of the paragraphs it concerns only: the one anchoring it in the preview
+/// (the float in place of its own, or added) and its anchor in the document (left out there), so every other
+/// paragraph keeps its caches.
+#[test]
+fn a_preview_is_in_the_keys_of_its_paragraphs_only() {
+    use crate::docx::{Inline, Paragraph};
+    use crate::layout::text::{FieldValues, shape_space};
+    use crate::layout::{ParaId, Preview};
+    let e = crate::editing::tests::open("FX-OBJ.docx");
+    let doc = e.document();
+    let paras: Vec<&Paragraph> = doc.sections[0].blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).collect();
+    let float_of = |p: &Paragraph| p.inlines.iter().find_map(|i| if let Inline::Float(f, _) = i { Some((**f).clone()) } else { None });
+    let (home, f) = paras.iter().find_map(|p| float_of(p).map(|f| (*p, f))).expect("a float");
+    let other = *paras.iter().find(|p| float_of(p).is_none()).expect("a paragraph without one");
+    let env = LayoutEnv::new(doc);
+    let (fields, notes) = (FieldValues::default(), Default::default());
+    let space = |p: &Paragraph, v: Option<&Preview>| shape_space(p, &fields, &notes, &env.text, v);
+    let mut moved = f.clone();
+    moved.v_offset += 36.0;
+    // In place: its paragraph's key changes, no other's.
+    let here = Preview { float: moved.clone(), anchor: ParaId(home.id) };
+    assert_ne!(space(home, Some(&here)), space(home, None));
+    assert_eq!(space(other, Some(&here)), space(other, None));
+    // Re-anchored: the new anchor adds it, the old one leaves it out.
+    let there = Preview { float: moved, anchor: ParaId(other.id) };
+    assert_eq!(space(other, Some(&there)).float.map(|g| g.id), Some(f.id));
+    assert_eq!(space(home, Some(&there)).hide, Some(f.id));
 }

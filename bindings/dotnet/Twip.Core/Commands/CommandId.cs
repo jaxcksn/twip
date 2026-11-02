@@ -237,6 +237,10 @@ public enum CommandId
     SetObjectWrap,
     /// <summary>Locks the selected floating object's anchor.</summary>
     SetAnchorLocked,
+    /// <summary>Places the selected floating object. Unset values are kept.</summary>
+    SetObjectPosition,
+    /// <summary>Sets the sides text wraps on around the selected floating object and its distance from the text. Unset values are kept.</summary>
+    SetObjectWrapOptions,
     /// <summary>Sets the alternative text of the selected object.</summary>
     SetAltText,
     /// <summary>Deletes the selected object.</summary>

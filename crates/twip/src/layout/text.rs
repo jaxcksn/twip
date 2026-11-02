@@ -689,6 +689,13 @@ impl Builder<'_> {
         let mut pend_runs: Vec<(usize, Run)> = Vec::new();
         let mut pend_units: Vec<u32> = Vec::new();
         let view = space.view;
+        // Live layout: a previewed float re-anchored here is anchored at the paragraph's start, as the release puts it.
+        if let Some(f) = space.float.clone().filter(|f| !para.inlines.iter().any(|i| matches!(i, Inline::Float(g, _) if g.id == f.id))) {
+            let run = para.mark_in(view);
+            let mut p = self.new_piece(Kind::Anchor, run, None, run.size, 0.0);
+            p.object = Some(Object::Float(f));
+            self.atom(p, "");
+        }
         for (k, inl) in para.inlines.iter().enumerate() {
             let evaluated = matches!(inl, Inline::FieldBegin { kind: Some(_), .. });
             // STYLE-7: hidden text (and anything else in a hidden run) takes no space and draws nothing; its units
@@ -789,9 +796,12 @@ impl Builder<'_> {
                     }
                     self.atom(p, "\u{FFFC}");
                 }
+                // Live layout: a previewed float anchored elsewhere isn't laid out here.
+                (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) => {}
                 (Inline::Float(f, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Anchor, run, None, run.size, 0.0);
-                    p.object = Some(Object::Float(Rc::new((**f).clone())));
+                    let previewed = space.float.clone().filter(|p| p.id == f.id);
+                    p.object = Some(Object::Float(previewed.unwrap_or_else(|| Rc::new((**f).clone()))));
                     self.atom(p, "");
                 }
                 (Inline::NoteRef { kind, id, custom, .. }, Some(run)) => {
@@ -1061,8 +1071,15 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
     Ok(ShapedPara { join: space.join.clone(), ..b.finish() })
 }
 
-/// The field values and note numbers a paragraph's [`ShapeSpace`] holds, from the values the page or story gives.
-pub fn shape_space(para: &Paragraph, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, text: &TextEnv) -> ShapeSpace {
+/// The field values and note numbers a paragraph's [`ShapeSpace`] holds, from the values the page or story gives, and
+/// the previewed float when the paragraph anchors it.
+pub fn shape_space(
+    para: &Paragraph,
+    fields: &FieldValues,
+    notes: &HashMap<(NoteKind, i64), String>,
+    text: &TextEnv,
+    preview: Option<&super::Preview>,
+) -> ShapeSpace {
     let mut space = ShapeSpace {
         balance: text.balance_spaces,
         compress: text.compress_punctuation,
@@ -1081,6 +1098,13 @@ pub fn shape_space(para: &Paragraph, fields: &FieldValues, notes: &HashMap<(Note
                 space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default())
             }
             _ => {}
+        }
+    }
+    if let Some(v) = preview {
+        if v.anchor == ParaId(para.id) {
+            space.float = Some(Rc::new(v.float.clone()));
+        } else if para.inlines.iter().any(|i| matches!(i, Inline::Float(f, _) if f.id == v.float.id)) {
+            space.hide = Some(v.float.id);
         }
     }
     space
