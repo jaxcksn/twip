@@ -1752,8 +1752,10 @@ fn assemble(
             top_border += gap_top;
             cell_bottom = cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max) + gap(s, ri + 1 == t.rows.len());
         }
-        let content =
-            cells.iter().filter(|c| c.v_merge == VMerge::None).map(|c| c.margins[0] + c.content_h + c.margins[2] + cell_bottom).fold(0.0, f64::max);
+        // TABLE-27: one bottom margin for the whole row, its cells' largest, below the tallest content.
+        let below = cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
+        let content = cells.iter().filter(|c| c.v_merge == VMerge::None).map(|c| c.margins[0] + c.content_h).fold(f64::NEG_INFINITY, f64::max);
+        let content = if content.is_finite() { content + below + cell_bottom } else { 0.0 };
         let min_margins = cells.iter().map(|c| c.margins[0] + c.margins[2]).fold(0.0, f64::max);
         let content = content.max(min_margins);
         // TABLE-8: the cells' bottom margin is outside the row height Word was given, and an atLeast row's top margin

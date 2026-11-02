@@ -23,7 +23,7 @@ Work from the body area ([HDR-4](hdr#hdr-4), [HDR-6](hdr#hdr-6)): its left edge 
 
 - A column that is full continues in the next column; after the last column, on the next page.
 - `w:br w:type="column"` ends the column; the text after it starts the next column. A column break that ends its paragraph leaves the paragraph's empty remainder as the first line of the next column.
-- Space-before at a column top: dropped after natural flow ([PARA-2](para#para-2)). If a paragraph's first character is a column break, the rest of that paragraph keeps the paragraph's space-before at the top of the next column; a column break after text in the paragraph drops it.
+- Space-before at a column top: dropped after natural flow when the column top is the page's body top; kept (less the previous space-after, [PAGE-7](page#page-7)) when it is lower, in a continuous section's columns on the page it starts ([PARA-2](para#para-2)). Balancing trials behave the same. If a paragraph's first character is a column break, the rest of that paragraph keeps the paragraph's space-before at the top of the next column; a column break after text in the paragraph drops it.
 - Widow/orphan control and keeps apply at every column bottom, not only at page bottoms.
 - Lay out tables against the column width (`pct` 5000 = the column width). A fixed table wider than the column overflows it, unclipped.
 - A section break of type `nextColumn` acts as a next-page break.
@@ -37,6 +37,9 @@ In compat 15, when the section has two or more columns, the page's footnotes for
 2. **Fit test.** A line referencing notes fits only if the stream, with its new notes added, balances within the room below the line: `lineBottom + separator + h ≤ bodyBottom`. If it doesn't, the line moves on to the next column (or page) with its notes. The stream never continues on the next page.
 3. **Refill.** Reserving the area shortens every column, including ones already filled. Fill the page again with the new reserved height, and repeat until the height no longer changes.
 4. **Drawing.** The area ends at the body bottom. Put one separator at the left of column 1, then the stream's columns, all starting at the same y below it (top-aligned; a shorter last column ends higher).
+5. **Width.** When the section in effect at the top of the page has one column and references a footnote anywhere (not necessarily on this page), the stream is one column at the full text width instead.
+
+A balanced section's notes go in this stream too, at the bottom of the page; the balancing trials leave them out of their short columns.
 
 Example: notes of 3 lines in two columns fill 2 / 1; 13 lines fill 7 / 6.
 
@@ -56,14 +59,14 @@ A note that doesn't fit ([NOTE-6](note#note-6)) continues at the bottom of the *
 Balance a section when it has two or more columns, the **next** section starts with a `continuous` break, and the section ends on this page; in compat ≤ 14 `w:noColumnBalance` turns this off. The document's last section is balanced only when endnotes follow it: its body balances as here, and the endnotes start below its tallest column, in its first column ([NOTE-10](note#note-10)). Only the page where the section ends is balanced.
 
 1. Fill the columns at full height. A height **fits** if the section's remaining content then ends within its n columns with all the normal rules (fit, widow/orphan control, keeps, space-before dropped at column tops), without dropping a keep or widow rule ([PAGE-5](page#page-5)). If even the full height doesn't, leave the section unbalanced: the next section starts at the full column bottom.
-2. While balancing, nothing is suppressed at a column bottom: every line needs its whole pitch, and a paragraph's last line needs its space-after too, unless the paragraph starts the column.
+2. Each trial fills the columns with the page-bottom rules ([PAGE-1](page#page-1), [PAGE-2](page#page-2)): a paragraph's last line fits without its space-after, and a line without the extra space multiple line spacing adds below its text.
 3. Each fill gives per column: its lines and table rows (a row counts as one line), their total height (line pitches, row heights), the smallest of them, and the column's used height. In layout units:
    - compat ≤ 14: start at `h = ceil(Σ height / n)` (columns of different widths: `Σ (used_i in whole twips × width_i) / Σ width_i`), at least the mean line height `Σ height / Σ lines` (12pt with no lines). While the content doesn't fit, add the mean line height of what the last fill put in the columns.
    - compat 15: start at `h = Σ (width_i × height_i) / Σ width_i`, rounded down to a multiple of the smallest line or row. If the content doesn't fit, add the smallest line or row of the last fill until it does; if it fits at once, take that step off while it still fits.
    No height goes past the full column height. The result is not always the smallest height that holds the content.
 4. Fill the columns in order at `h`, so the leftover goes to the last columns.
-5. The next section starts below the tallest column: its last line's bottom plus that paragraph's space-after, or, for a column that ends in a table part (cut between rows or in a split row), below that part's closing bottom border.
-6. Notes referenced in a balanced section go in per-column areas ([COL-4](col#col-4)), also in compat 15.
+5. The next section starts below the tallest column: its last line's bottom plus that paragraph's space-after (the space-after still counts here, and [PAGE-7](page#page-7) subtracts it from a next paragraph's kept space-before on a new page; a column whose last line ends in a column break takes none: the paragraph's space-after belongs to its part in the next column), or, for a column that ends in a table part (cut between rows or in a split row), below that part's closing bottom border.
+6. Compat ≤ 14: notes referenced in a balanced section go in per-column areas ([COL-4](col#col-4)). Compat 15 puts them in the page's stream ([COL-3](col#col-3)).
 
 Single-line paragraphs, 2 columns: 3 → 2 / 1, 5 → 3 / 2, 7 → 4 / 3. Three columns: 5 → 2 / 2 / 1. Compat 12, eight 13.43pt lines and a 28pt line in 2 columns: `h = 67.7pt` holds five lines and leaves 68.3pt for the second column, so `h` grows by the mean 15.05pt: six lines, then three.
 

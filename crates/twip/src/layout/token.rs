@@ -86,11 +86,23 @@ pub struct FlowState {
     pub line_no: i64,
     /// COL-2: the space-before of a paragraph whose first line ended in a column break, kept by its continuation.
     pub break_before: f64,
+    /// COL-5: the space-after a balanced section ended with (already in where it ends): PAGE-7 subtracts it when the
+    /// next section's first paragraph starts a new page.
+    pub balanced_after: f64,
 }
 
 impl Default for FlowState {
     fn default() -> Self {
-        FlowState { prev: None, prev_after: 0.0, keep_top: true, first_para: true, note_rest: Vec::new(), line_no: 0, break_before: 0.0 }
+        FlowState {
+            prev: None,
+            prev_after: 0.0,
+            keep_top: true,
+            first_para: true,
+            note_rest: Vec::new(),
+            line_no: 0,
+            break_before: 0.0,
+            balanced_after: 0.0,
+        }
     }
 }
 
@@ -111,6 +123,7 @@ impl PartialEq for FlowState {
             && o.note_rest.is_empty()
             && self.line_no == o.line_no
             && self.break_before == o.break_before
+            && self.balanced_after == o.balanced_after
     }
 }
 

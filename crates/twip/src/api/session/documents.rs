@@ -123,8 +123,15 @@ impl Session {
             }
             ExportFormat::Pdf => {
                 let fonts = self.fonts.fonts();
-                self.editor.complete(&fonts);
-                let bytes = crate::pdf::export(self.editor.document(), &self.editor.snapshot(), "");
+                // REV-1: a PDF prints the No-markup view, whatever view the editor shows.
+                let bytes = if self.editor.document().review.view == crate::docx::review::MarkupView::NoMarkup {
+                    self.editor.complete(&fonts);
+                    crate::pdf::export(self.editor.document(), &self.editor.snapshot(), "")
+                } else {
+                    let mut doc = self.editor.document().clone();
+                    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+                    crate::pdf::export(&doc, &crate::layout::layout(&doc, &fonts), "")
+                };
                 Ok(Export { bytes: Bytes(bytes), revision, warnings: font_fallbacks(&self.editor, &fonts) })
             }
         }

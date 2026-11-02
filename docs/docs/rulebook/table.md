@@ -467,15 +467,18 @@ topBorder   = the widest resolved top edge among the row's cells (TABLE-36), by 
 above       = max(W, max over the row's cells of (h(top(c)) + topMargin(c)))
                   top(c) = the cell's own top border, else the table's top (row 0) or insideH, before conflicts
                   W      = the previous row's widest own-else-insideH bottom border, h() as in TABLE-37 (0 on row 0)
-contentH    = max over the row's cells that are not vertically merged of
-                  (above − topBorder + cell content height + bottomMargin)
+contentH    = max over the row's cells that are not vertically merged of (above − topBorder + cell content height)
+              + below
               but at least the largest (topMargin + bottomMargin) of any cell in the row
+below       = the largest bottomMargin of any cell in the row: one bottom margin for the whole row
 rowPitch    = topBorder + contentH                       (auto height; TABLE-28)
 firstLineTop = rowTop + above (+ the vAlign offset, TABLE-30), the same for every cell of the row
 tableBottom = last row's bottom + the widest resolved bottom edge among the last row's cells, by its h()
 ```
 
 Example: a 3pt bottom border over a 0.5pt insideH and 2pt top margins gives `above = max(3, 2.5) = 3`.
+
+Example: a three-line cell with no bottom margin beside a one-line cell with a 10pt bottom margin: the row is the three lines plus 10pt.
 
 Cells in a vertical merge (restart or continuation) don't count in `contentH`: see [TABLE-31](#table-31). [TABLE-38](#table-38) can widen `topBorder`, and cell spacing adds to it ([TABLE-39](#table-39)).
 

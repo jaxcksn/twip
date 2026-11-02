@@ -22,14 +22,15 @@ When a paragraph starts at the top of an empty page or column:
 | How it got there | Compat 15 | Compat ≤ 14 |
 |---|---|---|
 | it is the first paragraph of the document | kept | kept |
-| the previous page or column overflowed | dropped | dropped |
+| the previous page or column overflowed, to a column top that is the page's body top | dropped | dropped |
+| the previous column overflowed, to a column top below the page's body top (a continuous section's columns on the page it starts) | kept | kept |
 | the previous paragraph ended with a page-break character | dropped | dropped |
-| it has `w:pageBreakBefore` | dropped | kept |
+| it has `w:pageBreakBefore` | dropped; kept when it is the first paragraph of a continuous section | kept |
 | it is the first paragraph of a next-page section ([PAGE-7](page#page-7)) | kept | kept |
 
 A kept space-before is what the gap to the previous paragraph ([PARA-1](para#para-1)) leaves after that paragraph's space-after, which stayed on the page before ([PAGE-7](page#page-7)); the document's first paragraph keeps all of it.
 
-When a paragraph's **first character** is a column break, the rest of that paragraph starts the next column with its space-before again ([COL-2](col#col-2)). When its first character is a page break, the rest starts the next page with what the previous paragraph's space-after left of its space-before, as after a next-page section break ([PAGE-7](page#page-7)): all of it with `doNotUseHTMLParagraphAutoSpacing`, else `max(0, spaceBefore − spaceAfter(previous))`. A page or column break that follows text in the same paragraph drops the space-before, and so does any other paragraph at a column top reached by flow. Compat 12 and 15, one column or two, are the same.
+When a paragraph's **first character** is a column break, the rest of that paragraph starts the next column with its space-before again ([COL-2](col#col-2)). When its first character is a page break, the rest starts the next page with what the previous paragraph's space-after left of its space-before, as after a next-page section break ([PAGE-7](page#page-7)): all of it with `doNotUseHTMLParagraphAutoSpacing`, else `max(0, spaceBefore − spaceAfter(previous))`. A page or column break that follows text in the same paragraph drops the space-before, and so does any other paragraph at a column top reached by flow that is the page's body top. Compat 12 and 15, one column or two, are the same.
 
 Example: a paragraph with 6pt before that starts with a page break starts the next page 6pt down after a paragraph with no space-after, and at the top after one with 6pt after. With text before the break, it starts at the top.
 

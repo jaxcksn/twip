@@ -65,10 +65,18 @@ pub struct NoteArea {
     /// over `cols` columns, and this is the height reserved by the page's previous fill.
     pub shared: Option<f64>,
     pub cols: usize,
+    /// A shared stream laid out at this width in one column (COL-3), not at the columns'.
+    pub width: Option<f64>,
+    /// COL-5: a balancing trial's stream: the notes are at the page bottom, below the trial's short columns, and
+    /// take no room in them.
+    pub below: bool,
 }
 
 impl NoteArea {
     pub fn total(&self) -> f64 {
+        if self.below {
+            return 0.0;
+        }
         self.sep + self.shared.map_or(self.height, |r| self.height.max(r))
     }
 }
@@ -717,8 +725,12 @@ impl<'d> PageFill<'d, '_> {
             // COL-3: the line fits if the page's stream with its notes balances within the room left below it.
             // shortcut: no NOTE-6 continuation in a shared area; a stream that can't fit moves the referencing line.
             for &(k, id) in refs.iter().filter(|r| r.0 == NoteKind::Foot) {
-                let u = self.note_units(k, id, col.width, memos)?;
+                let u = self.note_units(k, id, a.width.unwrap_or(col.width), memos)?;
                 a.parts.push(NotePart { kind: k, id, units: u.units.clone() });
+            }
+            if a.below {
+                *area = a;
+                return Ok(col.bottom.holds(line_bottom));
             }
             let Some(h) = stream_height(&a.parts, a.cols, col.bottom.to_pt() - line_bottom - a.sep) else { return Ok(false) };
             a.height = h;
@@ -953,8 +965,10 @@ impl<'d> PageFill<'d, '_> {
                     let p = laid.para();
                     let style = p.para_style_in(self.ctx.env.text.review.view);
                     if pos.at.at_start() && style.page_break_before && !(empty && page_empty) {
-                        // PAGE-6: always a new page; PARA-2: its space-before is dropped in compat 15, kept in 14.
-                        carry.keep_top = self.ctx.env.text.compat == Compat::Legacy;
+                        // PAGE-6: always a new page; PARA-2: its space-before is dropped in compat 15, kept in 14 and
+                        // by a continuous section's first paragraph.
+                        carry.keep_top = self.ctx.env.text.compat == Compat::Legacy
+                            || bi == 0 && self.sec.section.break_kind == crate::docx::SectionBreak::Continuous;
                         return Ok((Stop::Page, y));
                     }
                     let pb = self.para_lines(&laid, bi, end, col.width, pos.at.index(), col.x, memos)?;
@@ -1216,7 +1230,8 @@ impl<'d> PageFill<'d, '_> {
             // the page before: all the space-before with doNotUseHTMLParagraphAutoSpacing, else what the space-after
             // leaves of it.
             if carry.keep_top || carry.first_para {
-                (super::paragraph::gap_plain(&self.ctx.env.text, carry.prev_after, before) - carry.prev_after).max(0.0)
+                let after = if pos.block == 0 { carry.prev_after.max(carry.balanced_after) } else { carry.prev_after };
+                (super::paragraph::gap_plain(&self.ctx.env.text, after, before) - after).max(0.0)
             } else {
                 0.0
             }
@@ -1232,7 +1247,7 @@ impl<'d> PageFill<'d, '_> {
         let mut fit = 0;
         let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
         for (i, l) in pb.lines.iter().enumerate() {
-            let room = if col.balance { l.pitch } else { l.pitch - l.below };
+            let room = l.pitch - l.below;
             let refs = pb.notes(i);
             let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
             if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, memos)? {
@@ -1263,10 +1278,6 @@ impl<'d> PageFill<'d, '_> {
         {
             self.at.keep_cap = None;
             take = take.min(cap);
-        }
-        // Balancing: the paragraph's space-after must fit too.
-        if col.balance && take == n && !col.bottom.holds(yy + after) && !at_top {
-            take = 0;
         }
         if take == 0 {
             if at_top {
@@ -1300,6 +1311,7 @@ impl<'d> PageFill<'d, '_> {
         *empty = false;
         carry.first_para = false;
         carry.prev = Some(p.para_style_in(self.ctx.env.text.review.view).clone());
+        carry.balanced_after = 0.0;
         let prev_after = std::mem::replace(&mut carry.prev_after, after);
         let done = take >= n;
         if done {
@@ -1358,7 +1370,8 @@ impl<'d> PageFill<'d, '_> {
             // the page before: all the space-before with doNotUseHTMLParagraphAutoSpacing, else what the space-after
             // leaves of it.
             if carry.keep_top || carry.first_para {
-                (super::paragraph::gap_plain(&self.ctx.env.text, carry.prev_after, before) - carry.prev_after).max(0.0)
+                let after = if pos.block == 0 { carry.prev_after.max(carry.balanced_after) } else { carry.prev_after };
+                (super::paragraph::gap_plain(&self.ctx.env.text, after, before) - after).max(0.0)
             } else {
                 0.0
             }
@@ -1673,7 +1686,7 @@ impl<'d> PageFill<'d, '_> {
         let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
         for (bi_, (bt, segs)) in bands.iter().enumerate() {
             let l = &segs[0];
-            let room = if col.balance { l.pitch } else { l.pitch - l.below };
+            let room = l.pitch - l.below;
             let refs: Vec<(NoteKind, i64)> = segs.iter().flat_map(|l| (l.start..l.end).filter_map(|k| sp.note(pb.from + k))).collect();
             let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
             if !self.add_notes(&refs, &mut a, col, bt + room, &mut rest, memos)? {
@@ -1755,6 +1768,7 @@ impl<'d> PageFill<'d, '_> {
         *empty = false;
         carry.first_para = false;
         carry.prev = Some(p.para_style_in(self.ctx.env.text.review.view).clone());
+        carry.balanced_after = 0.0;
         carry.prev_after = after;
         // FLOAT-6 (compat ≤ 14): what follows a page or column break (its anchors and text) continues on the next
         // page or column, the bands having stopped at the break; compat 15 ends the paragraph there.
@@ -1886,6 +1900,7 @@ impl<'d> PageFill<'d, '_> {
         let part_top = *y;
         carry.prev = None;
         carry.prev_after = 0.0;
+        carry.balanced_after = 0.0;
         let headers: Vec<usize> = (0..tb.rows.len()).take_while(|&r| tb.rows[r].header).collect();
         let n = tb.rows.len();
         // TABLE-46: header rows repeat at the top of a continuation column.
