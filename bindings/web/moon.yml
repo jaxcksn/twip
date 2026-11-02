@@ -46,7 +46,8 @@ tasks:
   # The performance scenarios (browser/perf.spec.ts, tagged @perf), JSON to target/perf: run alone, last, on a quiet
   # machine with a GPU.
   perf:
-    command: pnpm exec playwright test --grep @perf
+    # `[@]perf`: moon reads an argument starting with @ as its own token.
+    command: pnpm exec playwright test --grep "[@]perf"
     deps: [build]
     inputs: ['browser/**/*', 'playwright.config.mjs']
     options:

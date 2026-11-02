@@ -8,6 +8,8 @@ import { test, type Page } from '@playwright/test';
 import { fixture, mount, open, softwareGpu } from './helpers.ts';
 
 test.skip(softwareGpu, 'a software GPU');
+// Each scenario runs hundreds of inputs (typing: 300 keys 100 ms apart).
+test.setTimeout(240_000);
 
 const REFRESH = 1000 / 120;
 const OUT = new URL('../../../target/perf/', import.meta.url);
@@ -45,18 +47,23 @@ async function instrument(page: Page): Promise<void> {
     const w = window as any;
     w.samples = [];
     const start = (e: Event) => {
-      const sample: any = { at: e.timeStamp, frame: 0 };
+      // `seen`: the first state after the event; `asked`: the first frame call after it; `frame`: that frame drawn.
+      const sample: any = { at: e.timeStamp, seen: 0, asked: 0, frame: 0 };
       sample.painted = new Promise((r) => (sample.paint = r));
       w.sample = sample;
     };
     document.addEventListener('keydown', start, true);
     document.addEventListener('pointermove', start, true);
     document.addEventListener('wheel', start, true);
+    w.editor.subscribe(() => {
+      if (w.sample && !w.sample.seen) w.sample.seen = performance.now();
+    });
     const transport = sessionOf(w.editor).transport;
     const frame = transport.frame.bind(transport);
     transport.frame = (...args: unknown[]) => {
       const sample = w.sample;
       const asked = performance.now();
+      if (sample && !sample.asked && asked >= sample.at) sample.asked = asked;
       return frame(...args).then((drawn: unknown) => {
         if (drawn && sample && !sample.frame && asked >= sample.at) {
           sample.frame = performance.now();
@@ -76,13 +83,26 @@ async function instrument(page: Page): Promise<void> {
   });
 }
 
-/** The time from the last input event to its painted frame (Infinity if none came within 2 s). */
-function painted(page: Page): Promise<number> {
-  return page.evaluate(async () => {
-    const sample = (window as any).sample;
-    await Promise.race([sample.painted, new Promise((r) => setTimeout(r, 2000))]);
-    return sample.frame ? sample.frame - sample.at : Infinity;
-  });
+/** The time from the last input event to its painted frame (Infinity if none came within 2 s); its stages go to
+ * `stages` when given: event to state, state (or event) to the frame call, the call to the frame drawn. */
+function painted(page: Page, stages?: number[][]): Promise<number> {
+  return page
+    .evaluate(async () => {
+      const sample = (window as any).sample;
+      await Promise.race([sample.painted, new Promise((r) => setTimeout(r, 2000))]);
+      const seen = sample.seen || sample.at;
+      return { total: sample.frame ? sample.frame - sample.at : Infinity, stages: [seen - sample.at, (sample.asked || seen) - seen, sample.frame ? sample.frame - (sample.asked || seen) : Infinity] };
+    })
+    .then((r) => {
+      stages?.push(r.stages);
+      return r.total;
+    });
+}
+
+/** Each stage's median, from `painted`'s stage samples. */
+function medians(stages: number[][]): { to_state: number; to_frame_call: number; drawing: number } {
+  const median = (k: number) => [...stages.map((s) => s[k]!)].sort((a, b) => a - b)[Math.floor(stages.length / 2)] ?? NaN;
+  return { to_state: median(0), to_frame_call: median(1), drawing: median(2) };
 }
 
 /** Resets the longest frame gap, after setup. */
@@ -95,7 +115,7 @@ async function ready(page: Page, name: string): Promise<void> {
   await mount(page, { docx: fixture(name), width: 1000, height: 800, mount: { execution: 'worker' } });
   await page.evaluate(async () => {
     const editor = (window as any).editor;
-    for (let i = 0; i < 600 && !editor.state.pages?.complete; i++) await new Promise((r) => setTimeout(r, 50));
+    for (let i = 0; i < 600 && !editor.getState().pages.complete; i++) await new Promise((r) => setTimeout(r, 50));
   });
   await instrument(page);
 }
@@ -111,12 +131,15 @@ for (const dpr of [1, 2]) {
         await page.keyboard.press('End');
         await resetGap(page);
         const samples: number[] = [];
+        const stages: number[][] = [];
         for (let i = 0; i < 300; i++) {
           await page.keyboard.press(i % 10 === 9 ? 'Backspace' : 'a');
-          samples.push(await painted(page));
+          samples.push(await painted(page, stages));
           await page.waitForTimeout(100);
         }
-        await record(page, { id: 'typing', document: name, samples_ms: samples, longest_gap_ms: await gap(page), frame_stats: await page.evaluate(() => (window as any).editor.view.frameStats()) });
+        const frame_stats = await page.evaluate(() => (window as any).editor.view.frameStats());
+        console.log(`typing ${name} stages (median ms):`, JSON.stringify(medians(stages)));
+        await record(page, { id: 'typing', document: name, samples_ms: samples, stages_ms: medians(stages), longest_gap_ms: await gap(page), frame_stats });
       });
     }
 
@@ -157,6 +180,7 @@ for (const dpr of [1, 2]) {
         }
         const longest = await gap(page);
         await page.mouse.up();
+        // ponytail: the release's frame is timed from the last move's event; a pointerup listener would time it alone.
         const release = await painted(page);
         await record(page, { id: 'drag-column', document: name, samples_ms: moves, release_ms: release, longest_gap_ms: longest });
       });
@@ -166,34 +190,33 @@ for (const dpr of [1, 2]) {
       await ready(page, 'editor/FX-LONG-50.docx');
       await resetGap(page);
       const samples: number[] = [];
+      // Down past the 50 pages (400 px a step), then back up: every step moves, so every step draws.
       await page.mouse.move(500, 400);
-      for (let i = 0; i < 400; i++) {
-        await page.mouse.wheel(0, 200);
+      for (let i = 0; i < 300; i++) {
+        await page.mouse.wheel(0, i < 150 ? 400 : -400);
         samples.push(await painted(page));
       }
       await record(page, { id: 'scroll', document: 'editor/FX-LONG-50.docx', samples_ms: samples, longest_gap_ms: await gap(page) });
     });
 
     for (const name of ['docx-feature-showcase.docx', 'editor/FX-LONG-100.docx']) {
+      // SC-006 runs from the document's bytes: one editor is mounted (its surface set up once, as a page does), and
+      // each sample opens the document into it, to the first frame drawn after the open.
       test(`@perf opening ${name}`, async ({ page }) => {
         await open(page);
-        const samples: number[] = [];
-        for (let i = 0; i < 5; i++) {
-          const ms = await page.evaluate(async ({ docx, i }) => {
-            const container = Object.assign(document.createElement('div'), { id: `open${i}` });
-            container.style.cssText = 'width:1000px;height:800px;';
-            document.body.append(container);
-            const w = window as any;
+        await mount(page, { width: 1000, height: 800, mount: { execution: 'worker' } });
+        const samples = await page.evaluate(async ({ docx }) => {
+          const editor = (window as any).editor;
+          const out: number[] = [];
+          for (let i = 0; i < 8; i++) {
+            const before = (await editor.view.frameStats()).frames;
             const t = performance.now();
-            const editor = await w.twip.Editor.mount(container, { document: new Uint8Array(docx), execution: 'worker' });
-            while ((await editor.view.frameStats()).frames < 1) await new Promise((r) => requestAnimationFrame(r));
-            const ms = performance.now() - t;
-            await editor.destroy();
-            container.remove();
-            return ms;
-          }, { docx: fixture(name), i });
-          samples.push(ms);
-        }
+            await editor.open(new Uint8Array(docx));
+            while ((await editor.view.frameStats()).frames <= before) await new Promise((r) => requestAnimationFrame(r));
+            out.push(performance.now() - t);
+          }
+          return out;
+        }, { docx: fixture(name) });
         await record(page, { id: 'open', document: name, samples_ms: samples });
       });
     }
