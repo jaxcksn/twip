@@ -1248,8 +1248,15 @@ impl<'d> PageFill<'d, '_> {
         let has_anchor = pb.pieces().iter().any(|q| q.kind == Kind::Anchor);
         // A paragraph that ends above a float's top doesn't wrap it: its gap and every line unwrapped.
         let bottom = *y + self.para_gap(p, pos, carry, *empty) + pb.lines.iter().map(|l| l.pitch).sum::<f64>();
+        // TABLE-49: a floating table meets the paragraph's text: compat 15 down to its last line's text (without the
+        // extra below of multiple spacing), compat ≤ 14 down to its end with its space-after.
+        let text_bottom = match self.ctx.env.text.compat {
+            Compat::Generic => bottom - pb.lines.last().map_or(0.0, |l| l.below),
+            Compat::Legacy => bottom + space_after(&self.ctx.env.text, p.para_style_in(self.ctx.env.text.review.view)),
+        };
         let affected = self.at.known.iter().any(|f| {
-            f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < bottom - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
+            let reach = if f.key.2 == float::TABLE_PIECE { text_bottom } else { bottom };
+            f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < reach - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
         });
         if has_anchor || affected {
             return self.place_wrapped(p, pb, pos, carry, col, y, empty, area, out, memos);

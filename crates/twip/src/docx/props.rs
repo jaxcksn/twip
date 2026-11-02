@@ -780,7 +780,19 @@ impl TblProps {
                             Some("text") => TableAnchor::Text,
                             _ => TableAnchor::Margin,
                         },
-                        y: attr_twips(c, "tblpY").unwrap_or(0.0),
+                        // TABLE-49: against the text, a tblpYSpec is its stored code taken as a twip offset.
+                        y: match (attr(c, "vertAnchor"), attr(c, "tblpYSpec")) {
+                            (Some("text"), Some(s)) => {
+                                (match s {
+                                    "center" => -8.0,
+                                    "bottom" => -12.0,
+                                    "inside" => -16.0,
+                                    "outside" => -20.0,
+                                    _ => -4.0,
+                                }) / 20.0
+                            }
+                            _ => attr_twips(c, "tblpY").unwrap_or(0.0),
+                        },
                         x: attr_twips(c, "tblpX").unwrap_or(0.0),
                         x_spec: match attr(c, "tblpXSpec") {
                             Some("center") => Some(Jc::Center),
