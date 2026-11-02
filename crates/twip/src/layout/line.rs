@@ -134,6 +134,11 @@ impl PartialEq for ParaLines {
     }
 }
 
+/// PAGE-11: the line holds only line and page breaks and ends with a page break.
+pub fn breaks_only(pieces: &[Piece], l: &Line) -> bool {
+    l.hard == Some(Kind::PageBreak) && l.start < l.end && pieces[l.start..l.end].iter().all(|q| matches!(q.kind, Kind::LineBreak | Kind::PageBreak))
+}
+
 impl ParaLines {
     /// The pieces the lines index into.
     pub fn pieces(&self) -> &[Piece] {
@@ -144,6 +149,11 @@ impl ParaLines {
     pub fn notes(&self, i: usize) -> Vec<(NoteKind, i64)> {
         let l = &self.lines[i];
         (l.start..l.end).filter_map(|k| self.shaped.note(self.from + k)).collect()
+    }
+
+    /// PAGE-11: line `i` holds only breaks, ends with a page break, and a later line of the paragraph has content.
+    pub fn leading_page_break(&self, i: usize) -> bool {
+        breaks_only(self.pieces(), &self.lines[i]) && self.lines[i + 1..].iter().any(|m| m.start < m.end)
     }
 
     /// Line `i` drawn (with its top at 0, the column's left edge at [`ParaSpace::x0`]).

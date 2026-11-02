@@ -17,7 +17,8 @@ use super::ids::ParaId;
 use super::job::{Memos, Yield};
 use super::join::{Joined, LaidPara, laid_para, piece_para};
 use super::line::{
-    Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, break_lines, draw_label, draw_line, neighbour_borders, top_border_extra,
+    Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, break_lines, breaks_only, draw_label, draw_line, neighbour_borders,
+    top_border_extra,
 };
 use super::node::{Notes, SectionNode};
 use super::paragraph::{gap, lines_to_take, space_after, space_before};
@@ -1307,12 +1308,12 @@ impl<'d> PageFill<'d, '_> {
             let room = l.pitch - l.below;
             let refs = pb.notes(i);
             let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
-            if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, memos)? {
+            if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, memos)? && !pb.leading_page_break(i) {
                 break;
             }
             // PAGE-8: above a footnote area nothing is suppressed.
             let tail = if i + 1 == n { after } else { 0.0 };
-            if a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) {
+            if a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) && !pb.leading_page_break(i) {
                 break;
             }
             areas.push((a, rest));
@@ -1746,12 +1747,14 @@ impl<'d> PageFill<'d, '_> {
             let room = l.pitch - l.below;
             let refs: Vec<(NoteKind, i64)> = segs.iter().flat_map(|l| (l.start..l.end).filter_map(|k| sp.note(pb.from + k))).collect();
             let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
-            if !self.add_notes(&refs, &mut a, col, bt + room, &mut rest, memos)? {
+            // PAGE-11: a band holding only a page break, with more of the paragraph after it, always fits.
+            let lead = segs.len() == 1 && breaks_only(pieces, l) && l.end < n;
+            if !self.add_notes(&refs, &mut a, col, bt + room, &mut rest, memos)? && !lead {
                 break;
             }
             // Above a footnote area nothing is suppressed (PAGE-8; see `place_para`).
             let tail = if bi_ + 1 == nb { after } else { 0.0 };
-            if a.total() > 0.0 && !col.bottom.holds(bt + l.pitch + tail + a.total()) {
+            if a.total() > 0.0 && !col.bottom.holds(bt + l.pitch + tail + a.total()) && !lead {
                 break;
             }
             areas.push((a, rest));
