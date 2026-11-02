@@ -242,7 +242,11 @@ impl Resolver {
     pub fn label_shows(&self, num_id: i64, ilvl: i64, from_style: bool, style_id: Option<&str>) -> bool {
         !from_style || {
             let a = self.numbering.abstract_of(num_id, &self.styles).unwrap_or(-1);
-            self.style_links.get(&(a, ilvl)).map(|s| Some(s.as_str()) == style_id).unwrap_or(true)
+            self.style_links.get(&(a, ilvl)).is_none_or(|linked| {
+                // A style based on the linked one that doesn't set numbering itself inherits the linked style's list.
+                let chain = self.styles.chain(style_id);
+                chain.iter().rposition(|s| s.id == *linked).is_some_and(|i| chain[i + 1..].iter().all(|s| s.base.ppr.num_id.is_none()))
+            })
         }
     }
 

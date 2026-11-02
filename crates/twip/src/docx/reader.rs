@@ -1111,6 +1111,16 @@ impl Reader {
             if e.tag_name().namespace() == Some(W) {
                 match e.tag_name().name() {
                     "r" => self.read_run(e, base, pkg, out),
+                    // BREAK-3: a break directly in the paragraph, outside any run, is one in a run of its own.
+                    "br" | "cr" => {
+                        let run = self.direct_run(e, base, &mut RunProps::default());
+                        let kind = match attr(e, "type") {
+                            Some("page") if e.tag_name().name() == "br" => BreakKind::Page,
+                            Some("column") if e.tag_name().name() == "br" => BreakKind::Column,
+                            _ => BreakKind::Line,
+                        };
+                        out.push(Inline::Break(kind, run));
+                    }
                     "fldSimple" if !self.in_code() => {
                         let code = attr(e, "instr").unwrap_or("").to_string();
                         self.read_simple_field(e, code, base, pkg, out);

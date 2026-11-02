@@ -25,6 +25,7 @@ A list level's `w:pPr` slots into the paragraph cascade as [STYLE-6](style#style
 
 - `w:basedOn` is ordinary inheritance: the derived style overrides what it sets and inherits the rest, for paragraph and character styles alike.
 - A style with no `w:basedOn` sits directly on `docDefaults`, not on Normal.
+- A `w:docDefaults` without `w:pPrDefault` takes the paragraph defaults of a document with no docDefaults (8pt after, 1.16 lines); without `w:rPrDefault`, its run defaults. Each is taken on its own; an empty `<w:pPrDefault/>` is there (no spacing, single).
 - Merge per attribute, not per element: a direct `<w:spacing w:after="0"/>` keeps the style's `w:before`; a direct `<w:ind w:hanging="360"/>` keeps the style's `w:left` and `w:right`; a direct `<w:rFonts w:hAnsi="Arial"/>` keeps the style's `w:ascii`.
 - A paragraph with no `w:pStyle`, or naming a style that doesn't exist, uses the paragraph style marked `w:default="1"` (the last one if several are marked); with none marked, the paragraph style whose id is `Normal`.
 - The default character style is never applied implicitly, only where a run names it.
@@ -72,7 +73,7 @@ The paragraph mark's run properties (`w:pPr/w:rPr`, through its `w:rStyle` and t
 - **Direct `w:numPr`**: the level's `w:pPr` (its indent) sits above the paragraph style: `… → paragraph style chain → level → direct`. A direct `w:ind` still beats the level ([LIST-4](list#list-4)).
 - **`w:numPr` in a paragraph style** applies the list, and the style's own `w:ind` beats the level's: `… → level → paragraph style chain → direct`.
 - A direct `w:numId` of 0 removes the list; a direct `w:numPr` with another `w:numId` replaces it. A direct `w:ilvl` overrides the style's.
-- **One style per list level.** A level's number is drawn only in paragraphs whose list comes from direct numbering, or whose style is the one linked to that level: the level's `w:pStyle`, else the first paragraph style in `styles.xml` order whose `w:numPr` points at that level (through any `w:numId` of the same `w:abstractNum`). Other styles pointing there get the level's indent but no number, and don't advance its counter ([LIST-12](list#list-12)).
+- **One style per list level.** A level's number is drawn only in paragraphs whose list comes from direct numbering, or whose style is the one linked to that level: the level's `w:pStyle`, else the first paragraph style in `styles.xml` order whose `w:numPr` points at that level (through any `w:numId` of the same `w:abstractNum`). A style based on the linked one (at any depth) that sets no `w:numPr` of its own inherits it, number included. Other styles pointing there get the level's indent but no number, and don't advance its counter ([LIST-12](list#list-12)).
 
 ### STYLE-7. Hidden text {#style-7}
 

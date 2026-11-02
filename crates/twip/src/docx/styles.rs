@@ -157,8 +157,15 @@ impl Styles {
         let root = doc.root_element();
         match child(root, "docDefaults") {
             Some(dd) => {
-                s.doc_rpr = RunProps::parse(child(dd, "rPrDefault").and_then(|n| child(n, "rPr")));
-                s.doc_ppr = ParaProps::parse(child(dd, "pPrDefault").and_then(|n| child(n, "pPr")));
+                // STYLE-2: a missing rPrDefault or pPrDefault takes Word's own default, each on its own (an empty one
+                // is there).
+                s.app_defaults();
+                if let Some(r) = child(dd, "rPrDefault") {
+                    s.doc_rpr = RunProps::parse(child(r, "rPr"));
+                }
+                if let Some(p) = child(dd, "pPrDefault") {
+                    s.doc_ppr = ParaProps::parse(child(p, "pPr"));
+                }
             }
             None => s.app_defaults(),
         }

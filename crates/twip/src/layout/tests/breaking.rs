@@ -37,7 +37,7 @@ fn baselines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, 
                 r#"<w:document xmlns:w="{W}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
             ),
         ),
-        ("word/styles.xml", format!(r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{rpr}</w:rPr></w:rPrDefault></w:docDefaults></w:styles>"#)),
+        ("word/styles.xml", format!(r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{rpr}</w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults></w:styles>"#)),
         ("word/settings.xml", format!(r#"<w:settings xmlns:w="{W}">{settings}<w:characterSpacingControl w:val="compressPunctuation"/>{compat}</w:settings>"#)),
         (
             "word/_rels/document.xml.rels",
@@ -545,4 +545,42 @@ fn a_hidden_empty_paragraph_before_a_table_takes_no_line() {
     let Some(shown) = gap("") else { return };
     let hidden = gap("<w:rPr><w:vanish/></w:rPr>").unwrap();
     assert!((shown - hidden - 13.8).abs() < 0.01, "{shown} {hidden}");
+}
+
+#[test]
+fn a_missing_paragraph_default_is_words_own() {
+    // STYLE-2: docDefaults without a pPrDefault take 8pt after and 1.16 lines; an empty one is single, no space.
+    let p = |t: &str| format!("<w:p><w:r><w:t>{t}</w:t></w:r></w:p>");
+    let body = p("A") + &p("B");
+    let gap = |styles: &str| {
+        let parts = [
+            (
+                "word/document.xml",
+                format!(
+                    r#"<w:document xmlns:w="{W}"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+                ),
+            ),
+            (
+                "word/styles.xml",
+                format!(
+                    r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{ARIAL_12}</w:rPr></w:rPrDefault>{styles}</w:docDefaults></w:styles>"#
+                ),
+            ),
+        ];
+        let parts: Vec<(String, Vec<u8>)> = parts.into_iter().map(|(n, x)| (n.to_string(), x.into_bytes())).collect();
+        let doc = crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads");
+        let snap = layout(&doc, &fonts());
+        let mut ys = Vec::new();
+        paint(&snap.pages()[0], &mut |q| {
+            if let Item::Glyphs(r) = q.absolute() {
+                ys.push(r.baseline);
+            }
+        });
+        ys[1] - ys[0]
+    };
+    if fonts().face("Arial", false, false).is_none() {
+        return;
+    }
+    assert!((gap("<w:pPrDefault/>") - 13.8).abs() < 0.01);
+    assert!(gap("") > 13.8 + 8.0);
 }

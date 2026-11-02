@@ -23,7 +23,7 @@ A line may end after:
 - a tab character;
 - before and after an inline picture, even with no space next to it.
 
-Nowhere else: not after a no-break space or a no-break hyphen, an em dash or a slash, and not between ideographs. Line breaks (`w:br`, `w:cr`) always end the line; page and column breaks end it too and move on to the next page or column ([COL-2](col#col-2)).
+Nowhere else: not after a no-break space or a no-break hyphen, an em dash or a slash, and not between ideographs. Line breaks (`w:br`, `w:cr`, also directly in `w:p` outside any run, where they take the paragraph's run defaults) always end the line; page and column breaks end it too and move on to the next page or column ([COL-2](col#col-2)).
 
 ### BREAK-4. When no break opportunity fits {#break-4}
 
