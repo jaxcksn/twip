@@ -27,7 +27,8 @@ fn main() {
 /// the first paragraph's start (column and paragraph, offset 0), 90 x 60 pt, no wrapping: a drag's target.
 fn shapes_doc() -> Vec<u8> {
     use std::io::Write;
-    const PRESETS: [&str; 10] = ["rect", "roundRect", "ellipse", "star5", "wedgeRectCallout", "rightArrow", "hexagon", "cloud", "heart", "flowChartProcess"];
+    const PRESETS: [&str; 10] =
+        ["rect", "roundRect", "ellipse", "star5", "wedgeRectCallout", "rightArrow", "hexagon", "cloud", "heart", "flowChartProcess"];
     let emu = |pt: f64| (pt * 12700.0).round() as i64;
     let style = r#"<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="15000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></wps:style>"#;
     let mut runs = String::new();
@@ -35,7 +36,10 @@ fn shapes_doc() -> Vec<u8> {
         let (w, h) = if k == 0 { (90.0, 60.0) } else { (40.0, 30.0) };
         let (x, y) = (60.0 + (k % 10) as f64 * 50.0, 60.0 + (k / 10) as f64 * 66.0);
         let (h_pos, v_pos) = if k == 0 {
-            ("<wp:positionH relativeFrom=\"column\"><wp:posOffset>0</wp:posOffset></wp:positionH>".to_string(), "<wp:positionV relativeFrom=\"paragraph\"><wp:posOffset>0</wp:posOffset></wp:positionV>".to_string())
+            (
+                "<wp:positionH relativeFrom=\"column\"><wp:posOffset>0</wp:posOffset></wp:positionH>".to_string(),
+                "<wp:positionV relativeFrom=\"paragraph\"><wp:posOffset>0</wp:posOffset></wp:positionV>".to_string(),
+            )
         } else {
             (
                 format!("<wp:positionH relativeFrom=\"page\"><wp:posOffset>{}</wp:posOffset></wp:positionH>", emu(x)),

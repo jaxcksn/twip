@@ -114,11 +114,21 @@ pub enum ColourBase {
     /// `a:scrgbClr`: linear RGB, 100000ths.
     ScRgb([Pct; 3]),
     /// `a:hslClr`: hue (60000ths of a degree), saturation and luminance (100000ths).
-    Hsl { hue: Angle, sat: Pct, lum: Pct },
+    Hsl {
+        hue: Angle,
+        sat: Pct,
+        lum: Pct,
+    },
     /// `a:sysClr`: a system colour name and the value last seen for it.
-    Sys { name: String, last: u32 },
+    Sys {
+        name: String,
+        last: u32,
+    },
     /// `a:prstClr`: a preset colour name and its value.
-    Preset { name: String, value: u32 },
+    Preset {
+        name: String,
+        value: u32,
+    },
     Scheme(SchemeSlot),
 }
 

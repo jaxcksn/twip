@@ -531,7 +531,8 @@ impl Recording {
         let had: HashSet<u64> = p.inlines.iter().filter_map(float_id).collect();
         let has: HashSet<u64> = inlines.iter().filter_map(float_id).collect();
         if FLOAT_INSERTS.contains(&self.label) && !has.is_subset(&had) {
-            let inlines = inlines.into_iter().map(|i| if float_id(&i).is_some_and(|f| !had.contains(&f)) { self.ins_inline(i, ids) } else { i }).collect();
+            let inlines =
+                inlines.into_iter().map(|i| if float_id(&i).is_some_and(|f| !had.contains(&f)) { self.ins_inline(i, ids) } else { i }).collect();
             return vec![Step::Restyle { para, inlines }];
         }
         if self.label == "Delete" && !had.is_subset(&has) {

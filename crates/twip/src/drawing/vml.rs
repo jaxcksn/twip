@@ -793,7 +793,12 @@ fn polyline(points: &[(f64, f64)], closed: bool) -> (Geometry, [f64; 4]) {
         cmds.push_str("<a:close/>");
     }
     let fill = if closed { "" } else { r#" fill="none""# };
-    (custom(&format!(r#"<a:custGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:pathLst><a:path w="{w}" h="{h}"{fill}>{cmds}</a:path></a:pathLst></a:custGeom>"#)), b)
+    (
+        custom(&format!(
+            r#"<a:custGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:pathLst><a:path w="{w}" h="{h}"{fill}>{cmds}</a:path></a:pathLst></a:custGeom>"#
+        )),
+        b,
+    )
 }
 
 /// A point list `x,y,x,y…` (lengths).
@@ -850,7 +855,8 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
             let q = [p("from", "0,0"), p("control1", "0,0"), p("control2", "0,0"), p("to", "0,0")];
             let b = q.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| [b[0].min(p.0), b[1].min(p.1), b[2].max(p.0), b[3].max(p.1)]);
             let (w, h) = (((b[2] - b[0]) * 100.0).round().max(1.0) as i64, ((b[3] - b[1]) * 100.0).round().max(1.0) as i64);
-            let at = |p: (f64, f64)| format!(r#"<a:pt x="{}" y="{}"/>"#, ((p.0 - b[0]) * 100.0).round() as i64, ((p.1 - b[1]) * 100.0).round() as i64);
+            let at =
+                |p: (f64, f64)| format!(r#"<a:pt x="{}" y="{}"/>"#, ((p.0 - b[0]) * 100.0).round() as i64, ((p.1 - b[1]) * 100.0).round() as i64);
             let xml = format!(
                 r#"<a:custGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:pathLst><a:path w="{w}" h="{h}" fill="none"><a:moveTo>{}</a:moveTo><a:cubicBezTo>{}{}{}</a:cubicBezTo></a:path></a:pathLst></a:custGeom>"#,
                 at(q[0]),
@@ -893,7 +899,12 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                 };
                 let line = (on(el.attribute("stroked"), false) || child(el, "stroke").is_some()).then(|| stroke(el));
                 return Some(Shape {
-                    nv: NonVisual { name: el.attribute("id").unwrap_or("").to_string(), descr: el.attribute("alt").unwrap_or("").into(), hidden: st.hidden, ..NonVisual::default() },
+                    nv: NonVisual {
+                        name: el.attribute("id").unwrap_or("").to_string(),
+                        descr: el.attribute("alt").unwrap_or("").into(),
+                        hidden: st.hidden,
+                        ..NonVisual::default()
+                    },
                     xfrm: xfrm(&st, None),
                     kind: ShapeKind::Pic(Box::new(PicShape {
                         geom: Geometry::Preset { preset: Preset::Rect, adj: Vec::new() },
@@ -914,11 +925,13 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                 _ => None,
             };
             if let Some(preset) = builtin {
-                let adj = el.attribute("adj").or_else(|| t.and_then(|t| t.attribute("adj"))).and_then(|a| a.split(',').next()?.trim().parse::<f64>().ok());
+                let adj =
+                    el.attribute("adj").or_else(|| t.and_then(|t| t.attribute("adj"))).and_then(|a| a.split(',').next()?.trim().parse::<f64>().ok());
                 let adj = adj.map(|v| vec![("adj".to_string(), (v * 100000.0 / 21600.0).round() as i64)]).unwrap_or_default();
                 return finish(el, &st, Geometry::Preset { preset, adj }, None, &mut image);
             }
-            let path = el.attribute("path").or_else(|| child(el, "path").and_then(|p| p.attribute("v"))).or_else(|| t.and_then(|t| t.attribute("path")));
+            let path =
+                el.attribute("path").or_else(|| child(el, "path").and_then(|p| p.attribute("v"))).or_else(|| t.and_then(|t| t.attribute("path")));
             match path {
                 Some(path) => {
                     let formulas: Vec<String> = child(el, "formulas")
@@ -926,13 +939,16 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                         .map(|f| f.children().filter(|c| is(*c, V, "f")).filter_map(|c| c.attribute("eqn").map(str::to_string)).collect())
                         .unwrap_or_default();
                     // Adjust values: the shape's, each falling back to its type's.
-                    let parse = |v: Option<&str>| v.map(|a| a.split(',').map(|x| x.trim().parse::<i64>().ok()).collect::<Vec<_>>()).unwrap_or_default();
+                    let parse =
+                        |v: Option<&str>| v.map(|a| a.split(',').map(|x| x.trim().parse::<i64>().ok()).collect::<Vec<_>>()).unwrap_or_default();
                     let (mine, theirs) = (parse(el.attribute("adj")), parse(t.and_then(|t| t.attribute("adj"))));
                     let adj: Vec<i64> = (0..mine.len().max(theirs.len()))
                         .map(|i| mine.get(i).copied().flatten().or_else(|| theirs.get(i).copied().flatten()).unwrap_or(0))
                         .collect();
                     let (origin, size) = coords(el, t);
-                    let tbr = child(el, "path").and_then(|p| p.attribute("textboxrect")).or_else(|| t.and_then(|t| child(t, "path")).and_then(|p| p.attribute("textboxrect")));
+                    let tbr = child(el, "path")
+                        .and_then(|p| p.attribute("textboxrect"))
+                        .or_else(|| t.and_then(|t| child(t, "path")).and_then(|p| p.attribute("textboxrect")));
                     (custom(&path_geometry(path, &formulas, &adj, origin, size, tbr)), None)
                 }
                 // A shape type without a path: its MSO number's preset, as far as the engine knows it.
@@ -1009,7 +1025,12 @@ fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &
         kept_3d: child(el, "textpath").is_some() || el.children().any(|c| is(c, O, "extrusion")),
     };
     Some(Shape {
-        nv: NonVisual { name: el.attribute("id").unwrap_or("").to_string(), descr: el.attribute("alt").unwrap_or("").into(), hidden: st.hidden, ..NonVisual::default() },
+        nv: NonVisual {
+            name: el.attribute("id").unwrap_or("").to_string(),
+            descr: el.attribute("alt").unwrap_or("").into(),
+            hidden: st.hidden,
+            ..NonVisual::default()
+        },
         xfrm: xfrm(st, rect),
         kind: ShapeKind::Sp(Box::new(sp)),
         spans: Spans::default(),
@@ -1035,9 +1056,7 @@ fn xfrm(st: &Style, rect: Option<[f64; 4]>) -> Xfrm {
 /// DRAW-25: the VML object in `pict` (a `w:pict` or `w:object`): its first shape element (`v:shapetype`s define
 /// types, not shapes). `None` when it holds none.
 pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, 'i>> {
-    let el = pict
-        .children()
-        .find(|c| c.is_element() && c.tag_name().namespace() == Some(V) && c.tag_name().name() != "shapetype")?;
+    let el = pict.children().find(|c| c.is_element() && c.tag_name().namespace() == Some(V) && c.tag_name().name() != "shapetype")?;
     let shape = element(el, ctx)?;
     let mut st = style(el);
     // Lines take their box from their points.
@@ -1047,7 +1066,10 @@ pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, '
         st.w = shape.xfrm.ext[0].0 as f64 / 12700.0;
         st.h = shape.xfrm.ext[1].0 as f64 / 12700.0;
     }
-    let wrap = el.children().find(|c| is(*c, W10, "wrap")).map(|w| (w.attribute("type").unwrap_or("").to_string(), w.attribute("side").unwrap_or("both").to_string()));
+    let wrap = el
+        .children()
+        .find(|c| is(*c, W10, "wrap"))
+        .map(|w| (w.attribute("type").unwrap_or("").to_string(), w.attribute("side").unwrap_or("both").to_string()));
     let mut shape = shape;
     shape.xfrm.off = [Emu(0); 2];
     Some(VmlObject { textbox: textbox(el, &st), shape, wrap, alt: el.attribute("alt").unwrap_or("").to_string(), style: st })
@@ -1092,7 +1114,18 @@ mod tests {
         let xml = path_geometry("m0,10800qx10800,0e", &[], &[], [0.0, 0.0], [21600.0, 21600.0], None);
         let g = custom(&xml).evaluate(Emu(1270000), Emu(1270000));
         assert!(g.paths[0].segs.len() >= 2, "{:?}", g.paths[0].segs);
-        assert_eq!(tokens("m@0,,l1,2"), vec![Tok::Cmd("m".into()), Tok::Arg("@0".into()), Tok::Arg("0".into()), Tok::Arg("0".into()), Tok::Cmd("l".into()), Tok::Arg("1".into()), Tok::Arg("2".into())]);
+        assert_eq!(
+            tokens("m@0,,l1,2"),
+            vec![
+                Tok::Cmd("m".into()),
+                Tok::Arg("@0".into()),
+                Tok::Arg("0".into()),
+                Tok::Arg("0".into()),
+                Tok::Cmd("l".into()),
+                Tok::Arg("1".into()),
+                Tok::Arg("2".into())
+            ]
+        );
         assert_eq!(tokens("qy10800,x"), vec![Tok::Cmd("qy".into()), Tok::Arg("10800".into()), Tok::Arg("0".into()), Tok::Cmd("x".into())]);
     }
 }

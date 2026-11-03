@@ -499,7 +499,9 @@ pub fn line_xml(l: &Line) -> String {
     let dash = match &l.dash {
         None => String::new(),
         Some(Dash::Preset(p)) => format!(r#"<a:prstDash val="{}"/>"#, p.name()),
-        Some(Dash::Custom(ds)) => format!("<a:custDash>{}</a:custDash>", ds.iter().map(|(d, s)| format!(r#"<a:ds d="{}" sp="{}"/>"#, d.0, s.0)).collect::<String>()),
+        Some(Dash::Custom(ds)) => {
+            format!("<a:custDash>{}</a:custDash>", ds.iter().map(|(d, s)| format!(r#"<a:ds d="{}" sp="{}"/>"#, d.0, s.0)).collect::<String>())
+        }
     };
     let join = match l.join {
         None => String::new(),
@@ -555,7 +557,9 @@ fn body_xml(b: &BodyProps) -> String {
     let fit = match b.autofit {
         AutoFit::None => "<a:noAutofit/>".to_string(),
         AutoFit::Shape => "<a:spAutoFit/>".to_string(),
-        AutoFit::Normal { font_scale, line_reduction } => format!(r#"<a:normAutofit fontScale="{}" lnSpcReduction="{}"/>"#, font_scale.0, line_reduction.0),
+        AutoFit::Normal { font_scale, line_reduction } => {
+            format!(r#"<a:normAutofit fontScale="{}" lnSpcReduction="{}"/>"#, font_scale.0, line_reduction.0)
+        }
     };
     let up = if b.upright { r#" upright="1""# } else { "" };
     format!(
@@ -634,7 +638,11 @@ fn shape_xml(s: &Shape, path: &mut Vec<u16>, txbx: Stories, w: &str, ns: Option<
             opt(p.effects.as_ref().map(effects_xml)),
         ),
         ShapeKind::Group(g) => {
-            let (tag, nv) = if top { ("wpg:wgp", String::new()) } else { ("wpg:grpSp", format!(r#"<wpg:cNvPr id="{}" name="{name}"{descr}{hidden}/>"#, s.nv.id)) };
+            let (tag, nv) = if top {
+                ("wpg:wgp", String::new())
+            } else {
+                ("wpg:grpSp", format!(r#"<wpg:cNvPr id="{}" name="{name}"{descr}{hidden}/>"#, s.nv.id))
+            };
             let mut kids = String::new();
             for (i, c) in g.children.iter().enumerate() {
                 path.push(i as u16);
@@ -673,7 +681,12 @@ mod tests {
         let wrapped = format!(r#"<r xmlns:a="{}">{xml}</r>"#, crate::docx::xml::A);
         let d = roxmltree::Document::parse(&wrapped).unwrap();
         assert_eq!(Fill::child_of(d.root_element(), &mut |_| None), Some(f));
-        let l = Line { width: Some(crate::drawing::units::Emu(12700)), fill: Some(Fill::Solid(Colour::srgb(0xFF0000))), dash: Some(Dash::Preset(crate::drawing::paint::PresetDash::Dash)), ..Line::default() };
+        let l = Line {
+            width: Some(crate::drawing::units::Emu(12700)),
+            fill: Some(Fill::Solid(Colour::srgb(0xFF0000))),
+            dash: Some(Dash::Preset(crate::drawing::paint::PresetDash::Dash)),
+            ..Line::default()
+        };
         let wrapped = format!(r#"<r xmlns:a="{}">{}</r>"#, crate::docx::xml::A, line_xml(&l));
         let d = roxmltree::Document::parse(&wrapped).unwrap();
         assert_eq!(Line::parse(d.root_element().first_element_child().unwrap()), l);
@@ -701,11 +714,15 @@ mod round_trip {
     fn doc(alternate: bool) -> crate::docx::Document {
         let shape = match alternate {
             false => format!("<w:r>{DRAWING}</w:r>"),
-            true => format!(r#"<w:r><mc:AlternateContent><mc:Choice Requires="wps">{DRAWING}</mc:Choice><mc:Fallback><w:pict><v:rect/></w:pict></mc:Fallback></mc:AlternateContent></w:r>"#),
+            true => format!(
+                r#"<w:r><mc:AlternateContent><mc:Choice Requires="wps">{DRAWING}</mc:Choice><mc:Fallback><w:pict><v:rect/></w:pict></mc:Fallback></mc:AlternateContent></w:r>"#
+            ),
         };
         let ct = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
         let rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
-        let document = format!(r#"<?xml version="1.0"?><w:document {NS}><w:body><w:p><w:r><w:t>Before</w:t></w:r>{shape}</w:p><w:sectPr/></w:body></w:document>"#);
+        let document = format!(
+            r#"<?xml version="1.0"?><w:document {NS}><w:body><w:p><w:r><w:t>Before</w:t></w:r>{shape}</w:p><w:sectPr/></w:body></w:document>"#
+        );
         use std::io::Write;
         let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
         for (name, xml) in [("[Content_Types].xml", ct), ("_rels/.rels", rels), ("word/document.xml", document.as_str())] {
@@ -759,7 +776,8 @@ mod round_trip {
         ];
         let mut d = doc(false);
         let Block::Para(p) = &mut d.sections[0].blocks[0] else { panic!() };
-        let (f, run) = p.inlines.iter().find_map(|i| if let Inline::Float(f, r) = i { Some(((**f).clone(), r.clone())) } else { None }).expect("a float");
+        let (f, run) =
+            p.inlines.iter().find_map(|i| if let Inline::Float(f, r) = i { Some(((**f).clone(), r.clone())) } else { None }).expect("a float");
         for (k, shape) in made.iter().enumerate() {
             let g = crate::docx::model::Float { id: 1000 + k as u64, src: None, shape: Some(Box::new(shape.clone())), ..f.clone() };
             p.inlines.push(Inline::Float(Box::new(g), run.clone()));
@@ -784,7 +802,8 @@ mod round_trip {
         let rect = r##"<w:r><w:pict><v:rect id="R" style="position:absolute;margin-left:72pt;margin-top:144pt;width:90pt;height:60pt;z-index:3;mso-position-horizontal-relative:page;mso-position-vertical-relative:page" fillcolor="#4472c4" strokecolor="black" strokeweight="1pt"/></w:pict></w:r>"##;
         let ct = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
         let rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
-        let document = format!(r#"<?xml version="1.0"?><w:document {ns}><w:body><w:p><w:r><w:t>Text</w:t></w:r>{rect}</w:p><w:sectPr/></w:body></w:document>"#);
+        let document =
+            format!(r#"<?xml version="1.0"?><w:document {ns}><w:body><w:p><w:r><w:t>Text</w:t></w:r>{rect}</w:p><w:sectPr/></w:body></w:document>"#);
         use std::io::Write;
         let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
         for (name, xml) in [("[Content_Types].xml", ct), ("_rels/.rels", rels), ("word/document.xml", document.as_str())] {
@@ -812,7 +831,12 @@ mod round_trip {
         f.shape.as_deref_mut().and_then(|s| s.sp_mut()).expect("a shape").fill = Some(Fill::Solid(Colour::srgb(0x00FF00)));
         let saved = document_xml(&crate::docx::write::save(&d).expect("saves"));
         assert!(saved.contains("margin-left:100pt") && saved.contains(r##"fillcolor="#00ff00""##), "{saved}");
-        assert_eq!(saved.replace("margin-left:100pt", "margin-left:72pt").replace(r##"fillcolor="#00ff00""##, r##"fillcolor="#4472c4""##).replace(r#" filled="t""#, ""), original);
+        assert_eq!(
+            saved
+                .replace("margin-left:100pt", "margin-left:72pt")
+                .replace(r##"fillcolor="#00ff00""##, r##"fillcolor="#4472c4""##)
+                .replace(r#" filled="t""#, ""),
+            original
+        );
     }
-
 }

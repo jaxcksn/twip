@@ -592,7 +592,12 @@ impl Editor {
         let (w, h) = (((w * 20.0).round() / 20.0).max(1.0), ((h * 20.0).round() / 20.0).max(1.0));
         let image = Some(self.pending_image(data));
         let out = self.insert_inline(
-            |run| Inline::Picture(crate::docx::Picture { w, h, image, alt: "".into(), lock_aspect: true, effect: [0.0; 4], shape: None, text: None }, run),
+            |run| {
+                Inline::Picture(
+                    crate::docx::Picture { w, h, image, alt: "".into(), lock_aspect: true, effect: [0.0; 4], shape: None, text: None },
+                    run,
+                )
+            },
             "Insert Picture",
             fonts,
         );
@@ -1013,7 +1018,16 @@ impl Editor {
         }
         let at = Unit(p.inlines[..k].iter().map(|i| i.units() as u32).sum());
         let text = fl.text_box.clone().map(|text_box| Box::new(crate::docx::InlineText { id: crate::docx::next_para_id(), text_box }));
-        let pic = crate::docx::Picture { w: fl.w, h: fl.h, image: fl.image, alt: fl.alt.clone(), lock_aspect: fl.lock_aspect, effect: [0.0; 4], shape: fl.shape.clone(), text };
+        let pic = crate::docx::Picture {
+            w: fl.w,
+            h: fl.h,
+            image: fl.image,
+            alt: fl.alt.clone(),
+            lock_aspect: fl.lock_aspect,
+            effect: [0.0; 4],
+            shape: fl.shape.clone(),
+            text,
+        };
         let with = vec![Inline::Picture(pic, run.clone())];
         let mut tx = self.begin("Wrap Text");
         let inserted = self.step(&mut tx, Step::Text { para: anchor, range: at..at, with, edges: Default::default() });
@@ -1031,7 +1045,16 @@ impl Editor {
 
     /// A float moved or resized from box `old` to `new` (page coordinates on `page`): its offsets keep their reference
     /// (page, margin, column or paragraph), an aligned position becoming an offset.
-    pub(super) fn place_float(&mut self, f: FloatId, page: usize, old: [f64; 4], new: [f64; 4], label: &'static str, reanchor: bool, fonts: &Fonts) -> Outcome {
+    pub(super) fn place_float(
+        &mut self,
+        f: FloatId,
+        page: usize,
+        old: [f64; 4],
+        new: [f64; 4],
+        label: &'static str,
+        reanchor: bool,
+        fonts: &Fonts,
+    ) -> Outcome {
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
         let Some(moved) = self.moved_float(f, page, old, new) else { return Outcome::Unchanged("no float") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };

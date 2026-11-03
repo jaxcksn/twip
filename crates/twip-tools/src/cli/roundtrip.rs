@@ -433,7 +433,10 @@ pub fn run(args: &[String]) -> Result<(), String> {
                     "shape-format",
                     vec![
                         Command::SetShapeLine(LineChange { width: Some(Points(2.0)), dash: Some("dash".into()), ..LineChange::default() }),
-                        Command::SetShapeEffects(EffectsChange { glow: Some(Some(Glow { colour, radius: Points(4.0) })), ..EffectsChange::default() }),
+                        Command::SetShapeEffects(EffectsChange {
+                            glow: Some(Some(Glow { colour, radius: Points(4.0) })),
+                            ..EffectsChange::default()
+                        }),
                         Command::SetObjectRotation(30.0),
                         Command::FlipObject(FlipAxis::Horizontal),
                     ],

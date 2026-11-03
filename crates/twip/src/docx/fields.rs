@@ -296,8 +296,7 @@ fn paras(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
                 f(p);
                 // Text boxes anchored in the paragraph hold fields too.
                 for i in &mut p.inlines {
-                    if let Some(tb) = i.story_mut()
-                    {
+                    if let Some(tb) = i.story_mut() {
                         paras(&mut tb.blocks, f);
                     }
                 }

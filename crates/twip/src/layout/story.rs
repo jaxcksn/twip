@@ -566,7 +566,16 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
     }
     if let Some(tb) = f.text_box.as_ref().filter(|_| chain.is_none()) {
         let shape = f.shape.as_deref();
-        turned_text(tb, shape, shape_rect, shape.map_or(0.0, |s| s.xfrm.rot.normalized().degrees()), shape.is_some_and(|s| s.xfrm.flip_v), env, &mut groups, memos)?;
+        turned_text(
+            tb,
+            shape,
+            shape_rect,
+            shape.map_or(0.0, |s| s.xfrm.rot.normalized().degrees()),
+            shape.is_some_and(|s| s.xfrm.flip_v),
+            env,
+            &mut groups,
+            memos,
+        )?;
         if f.shape.is_none() {
             outline(tb.outline, rect, &mut groups);
         }
@@ -664,7 +673,15 @@ fn chain_slices(story: &StoryLayout, heights: &[f64], widow: bool) -> Vec<std::o
 /// FLOAT-21: box `k` of chain `c` (float `f`, its shape at `rect`): its part of the chain's story, laid out at the first box's
 /// width.
 // shortcut: every box breaks its lines at the first box's width, and a turned or vertical box isn't turned.
-fn linked_text(c: &super::env::Chain, k: usize, f: &Float, rect: [f64; 4], env: &StoryEnv, groups: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
+fn linked_text(
+    c: &super::env::Chain,
+    k: usize,
+    f: &Float,
+    rect: [f64; 4],
+    env: &StoryEnv,
+    groups: &mut Vec<Child>,
+    memos: &mut Memos,
+) -> Result<(), Yield> {
     let blocks: Vec<&Block> = c.story.blocks.iter().collect();
     let story = layout(&blocks, c.boxes[0].1[0].max(1.0), env, None, memos)?;
     let heights: Vec<f64> = c.boxes.iter().map(|b| b.1[1]).collect();
@@ -687,7 +704,13 @@ fn linked_text(c: &super::env::Chain, k: usize, f: &Float, rect: [f64; 4], env: 
 
 /// FLOAT-20: an inline shape's story laid out in its box `rect` (the line drew the shape): a box of its own, in front, that
 /// editing knows as the story of the shape's id.
-pub fn inline_text_box(pic: &crate::docx::Picture, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memos: &mut Memos) -> Result<Option<Child>, Yield> {
+pub fn inline_text_box(
+    pic: &crate::docx::Picture,
+    rect: [f64; 4],
+    anchor: ParaId,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<Option<Child>, Yield> {
     let Some(t) = &pic.text else { return Ok(None) };
     let shape = pic.shape.as_deref();
     let (rot, flip_v) = shape.map_or((0.0, false), |s| (s.xfrm.rot.normalized().degrees(), s.xfrm.flip_v));
@@ -767,10 +790,36 @@ pub(super) fn shape_items(
 
 /// DRAW-14: the presets whose lines join with miters (limit 8) unless the line asks for bevel or miter joins.
 const MITER_PRESETS: &[&str] = &[
-    "bentUpArrow", "chevron", "cube", "downArrow", "ellipseRibbon", "ellipseRibbon2", "leftArrowCallout", "leftRightArrowCallout",
-    "leftUpArrow", "mathEqual", "mathMinus", "mathMultiply", "mathNotEqual", "mathPlus", "moon", "notchedRightArrow", "plus",
-    "quadArrowCallout", "rightArrow", "star10", "star12", "star16", "star24", "star32", "star4", "star5", "star8", "stripedRightArrow",
-    "upDownArrow", "upDownArrowCallout",
+    "bentUpArrow",
+    "chevron",
+    "cube",
+    "downArrow",
+    "ellipseRibbon",
+    "ellipseRibbon2",
+    "leftArrowCallout",
+    "leftRightArrowCallout",
+    "leftUpArrow",
+    "mathEqual",
+    "mathMinus",
+    "mathMultiply",
+    "mathNotEqual",
+    "mathPlus",
+    "moon",
+    "notchedRightArrow",
+    "plus",
+    "quadArrowCallout",
+    "rightArrow",
+    "star10",
+    "star12",
+    "star16",
+    "star24",
+    "star32",
+    "star4",
+    "star5",
+    "star8",
+    "stripedRightArrow",
+    "upDownArrow",
+    "upDownArrowCallout",
 ];
 
 /// FLOAT-17: a shape's text: laid out in its unturned frame (`rect`, the shape's own box) and drawn turned about the

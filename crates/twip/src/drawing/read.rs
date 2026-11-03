@@ -98,7 +98,8 @@ struct Props {
 fn props(sp_pr: Option<Node>, ctx: &mut Ctx, spans: &mut Spans) -> Props {
     let Some(p) = sp_pr else { return Props { fill: None, line: None, effects: None, kept_3d: false } };
     let fill_el = p.children().filter(|c| c.is_element()).find(|c| {
-        c.tag_name().namespace() == Some(A) && matches!(c.tag_name().name(), "noFill" | "solidFill" | "gradFill" | "pattFill" | "blipFill" | "grpFill")
+        c.tag_name().namespace() == Some(A)
+            && matches!(c.tag_name().name(), "noFill" | "solidFill" | "gradFill" | "pattFill" | "blipFill" | "grpFill")
     });
     spans.fill = fill_el.map(|n| n.range());
     let fill = fill_el.and_then(|f| Fill::parse_with(f, &mut |r| ctx.source.image(r)));
@@ -174,7 +175,8 @@ fn pic(n: Node, ctx: &mut Ctx) -> Shape {
     let blip = blip_fill.map_or_else(|| BlipFill::parse(n, &mut |_| None), |b| BlipFill::parse(b, &mut |r| ctx.source.image(r)));
     let nv = named(n, "nvPicPr");
     let mut nonvisual = nv_of(nv.and_then(|v| named(v, "cNvPr")));
-    nonvisual.lock_aspect = nv.and_then(|v| named(v, "cNvPicPr")).and_then(|c| named(c, "picLocks")).is_some_and(|l| on(l.attribute("noChangeAspect")));
+    nonvisual.lock_aspect =
+        nv.and_then(|v| named(v, "cNvPicPr")).and_then(|c| named(c, "picLocks")).is_some_and(|l| on(l.attribute("noChangeAspect")));
     Shape { nv: nonvisual, xfrm, kind: ShapeKind::Pic(Box::new(PicShape { geom, blip, line, effects, kept_3d })), spans }
 }
 
@@ -206,7 +208,7 @@ fn child(c: Node, ctx: &mut Ctx) -> Option<Shape> {
                 xfrm,
                 kind: ShapeKind::Raw(RawGraphic { uri: "graphicFrame".into() }),
                 spans: Spans { shape: Some(c.range()), ..Spans::default() },
-                    }
+            }
         }
         _ => return None,
     })
@@ -218,7 +220,8 @@ pub fn read(item: Node, ctx: &mut Ctx) -> Shape {
     let extent = item.children().find(|c| c.is_element() && c.tag_name().name() == "extent" && c.tag_name().namespace() == Some(WP));
     let ext = ["cx", "cy"].map(|k| extent.and_then(|e| e.attribute(k)).and_then(Emu::parse).unwrap_or_default());
     let doc_pr = item.children().find(|c| c.is_element() && c.tag_name().name() == "docPr");
-    let lock_aspect = item.descendants().any(|n| matches!(n.tag_name().name(), "graphicFrameLocks" | "picLocks") && on(n.attribute("noChangeAspect")));
+    let lock_aspect =
+        item.descendants().any(|n| matches!(n.tag_name().name(), "graphicFrameLocks" | "picLocks") && on(n.attribute("noChangeAspect")));
     let data = item.descendants().find(|n| n.is_element() && n.tag_name().name() == "graphicData" && n.tag_name().namespace() == Some(A));
     let uri = data.and_then(|d| d.attribute("uri")).unwrap_or("").to_string();
     let body = data.and_then(|d| d.children().find(|c| c.is_element()));
@@ -259,11 +262,16 @@ fn raw(uri: &str, n: Node) -> Shape {
 pub fn diagram_drawing(xml: &str, ctx: &mut Ctx) -> Option<Shape> {
     let doc = roxmltree::Document::parse(xml).ok()?;
     let tree = doc.descendants().find(|n| n.is_element() && n.tag_name().name() == "spTree")?;
-    let children: Vec<Shape> = tree.children().filter(|c| c.is_element()).filter_map(|c| child(c, ctx)).map(|mut s| {
-        // The drawing part is not the document part: its spans mean nothing to saving.
-        s.spans = Spans::default();
-        s
-    }).collect();
+    let children: Vec<Shape> = tree
+        .children()
+        .filter(|c| c.is_element())
+        .filter_map(|c| child(c, ctx))
+        .map(|mut s| {
+            // The drawing part is not the document part: its spans mean nothing to saving.
+            s.spans = Spans::default();
+            s
+        })
+        .collect();
     if children.is_empty() {
         return None;
     }

@@ -157,13 +157,17 @@ fn same_as_full(e: &mut Editor) {
 
 fn shape_of(e: &Editor) -> crate::drawing::Shape {
     let f = floats(e)[0];
-    e.document().sections[0].blocks.iter().find_map(|b| match b {
-        crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
-            crate::docx::Inline::Float(fl, _) if fl.id == f => fl.shape.as_deref().cloned(),
+    e.document().sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
+                crate::docx::Inline::Float(fl, _) if fl.id == f => fl.shape.as_deref().cloned(),
+                _ => None,
+            }),
             _ => None,
-        }),
-        _ => None,
-    }).expect("the float's shape")
+        })
+        .expect("the float's shape")
 }
 
 #[test]
@@ -294,13 +298,17 @@ fn a_click_or_a_drag_inserts_a_shape_there() {
 
 /// The body's floats' shapes by id.
 fn shape_by_id(e: &Editor, f: u64) -> crate::docx::Float {
-    e.document().sections[0].blocks.iter().find_map(|b| match b {
-        crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
-            crate::docx::Inline::Float(fl, _) if fl.id == f => Some((**fl).clone()),
+    e.document().sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
+                crate::docx::Inline::Float(fl, _) if fl.id == f => Some((**fl).clone()),
+                _ => None,
+            }),
             _ => None,
-        }),
-        _ => None,
-    }).expect("the float")
+        })
+        .expect("the float")
 }
 
 #[test]
@@ -372,7 +380,10 @@ fn a_shape_goes_in_line_with_text_and_floats_again() {
     let out = e.execute(Command::SetObjectWrap(ObjectWrap::Inline), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     let inline_shapes = |e: &Editor| -> Vec<crate::drawing::Shape> {
-        e.document().sections[0].blocks.iter().filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
+        e.document().sections[0]
+            .blocks
+            .iter()
+            .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
             .flat_map(|p| p.inlines.iter())
             .filter_map(|i| if let crate::docx::Inline::Picture(p, _) = i { p.shape.as_deref().cloned() } else { None })
             .collect()
@@ -452,7 +463,14 @@ fn insert_shape_command_selects_the_shape() {
     use super::super::commands::Command;
     let mut e = Editor::open(&bytes("<w:p><w:r><w:t>Text</w:t></w:r></w:p>").expect("a package"), fonts()).expect("opens");
     e.execute(Command::InsertText("Shapes".into()), fonts());
-    let out = e.execute(Command::InsertShape(crate::api::drawing::ShapeInsert { preset: crate::api::drawing::ShapePreset::from_name("star5").unwrap(), width: None, height: None }), fonts());
+    let out = e.execute(
+        Command::InsertShape(crate::api::drawing::ShapeInsert {
+            preset: crate::api::drawing::ShapePreset::from_name("star5").unwrap(),
+            width: None,
+            height: None,
+        }),
+        fonts(),
+    );
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     assert!(picked(e.selection()).is_some(), "{:?}", e.selection());
     assert!(e.object_selection().is_some(), "object state");
@@ -522,7 +540,10 @@ fn with_tracking_a_shape_inserted_or_deleted_is_a_revision() {
     e.execute(Command::RejectAllRevisions(Default::default()), fonts());
     assert!(float_runs(&e).is_empty());
     // A shape from before tracking, deleted: it stays, marked deleted, until accepted.
-    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(100, 300, 100, 100, 1, false, 1, &sp(0, 0, 100, 100, "rect", "", "0000FF"))));
+    let mut e = editor(&format!(
+        "<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>",
+        anchor(100, 300, 100, 100, 1, false, 1, &sp(0, 0, 100, 100, "rect", "", "0000FF"))
+    ));
     e.execute(Command::SetTrackChanges(true), fonts());
     click(&mut e, 150.0, 350.0);
     e.execute(Command::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None }), fonts());
@@ -631,7 +652,8 @@ fn an_inline_shape_with_text_floats_and_goes_in_line_again_with_its_text() {
 /// Three linked 150 x 60 pt boxes at (72, 300), (250, 300) and (72, 400): the first holds the story, eight short
 /// paragraphs "P1" to "P8" of three lines' worth each.
 fn linked_boxes() -> Editor {
-    let story: String = (1..=8).map(|i| format!("<w:p><w:r><w:t>P{i} words to fill the boxes in turn, one after another.</w:t></w:r></w:p>")).collect();
+    let story: String =
+        (1..=8).map(|i| format!("<w:p><w:r><w:t>P{i} words to fill the boxes in turn, one after another.</w:t></w:r></w:p>")).collect();
     let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF");
     let head = rect.replace("<wps:bodyPr/>", &format!(r#"<wps:txbx id="1"><w:txbxContent>{story}</w:txbxContent></wps:txbx><wps:bodyPr/>"#));
     let link = |seq: u32| rect.replace("<wps:bodyPr/>", &format!(r#"<wps:linkedTxbx id="1" seq="{seq}"/><wps:bodyPr/>"#));

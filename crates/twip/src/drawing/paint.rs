@@ -44,7 +44,11 @@ pub enum Fill {
     None,
     Solid(Colour),
     Gradient(Gradient),
-    Pattern { preset: PatternPreset, fg: Colour, bg: Colour },
+    Pattern {
+        preset: PatternPreset,
+        fg: Colour,
+        bg: Colour,
+    },
     Blip(BlipFill),
     /// `a:grpFill`: the enclosing group's fill.
     Group,
@@ -134,7 +138,9 @@ impl BlipFill {
                 Some(match e.tag_name().name() {
                     "alphaModFix" => BlipAdjust::AlphaModFix(pct_attr(e, "amt").unwrap_or(Pct::ONE)),
                     "grayscl" => BlipAdjust::Grayscale,
-                    "lum" => BlipAdjust::Lum { bright: pct_attr(e, "bright").unwrap_or_default(), contrast: pct_attr(e, "contrast").unwrap_or_default() },
+                    "lum" => {
+                        BlipAdjust::Lum { bright: pct_attr(e, "bright").unwrap_or_default(), contrast: pct_attr(e, "contrast").unwrap_or_default() }
+                    }
                     "biLevel" => BlipAdjust::BiLevel(pct_attr(e, "thresh").unwrap_or(Pct(50000))),
                     "duotone" => {
                         let mut cs = e.children().filter(Node::is_element).filter_map(Colour::parse);
@@ -513,7 +519,12 @@ impl EffectList {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.outer.is_none() && self.inner.is_none() && self.preset.is_none() && self.glow.is_none() && self.soft_edge.is_none() && self.blur.is_none()
+        self.outer.is_none()
+            && self.inner.is_none()
+            && self.preset.is_none()
+            && self.glow.is_none()
+            && self.soft_edge.is_none()
+            && self.blur.is_none()
     }
 }
 
@@ -810,12 +821,8 @@ mod tests {
         let t = Theme::parse(Some(theme_xml));
         let m = ColourMap::default();
         let p = Palette { theme: &t, map: &m };
-        let style = StyleRefs {
-            line: Some((2, Some(Colour::srgb(0xFF0000)))),
-            fill: Some((1, Some(Colour::srgb(0x00FF00)))),
-            effect: None,
-            font: None,
-        };
+        let style =
+            StyleRefs { line: Some((2, Some(Colour::srgb(0xFF0000)))), fill: Some((1, Some(Colour::srgb(0x00FF00)))), effect: None, font: None };
         assert_eq!(resolve_fill(None, Some(&style), p, &Paint::None), Paint::Solid(Rgba::rgb(0x00FF00)));
         assert_eq!(resolve_fill(Some(&Fill::None), Some(&style), p, &Paint::None), Paint::None);
         let l = resolve_line(None, Some(&style), p, &Paint::None);
@@ -828,7 +835,9 @@ mod tests {
 
     #[test]
     fn effect_lists_note_what_is_not_drawn() {
-        let x = node_xml(r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw><a:reflection/></a:effectLst>"#);
+        let x = node_xml(
+            r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw><a:reflection/></a:effectLst>"#,
+        );
         let d = roxmltree::Document::parse(&x).unwrap();
         let e = EffectList::parse(d.root_element().first_element_child().unwrap());
         assert!(e.kept);

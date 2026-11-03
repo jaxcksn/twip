@@ -21,7 +21,11 @@ pub(crate) fn sp(x: i64, y: i64, w: i64, h: i64, prst: &str, extra: &str, colour
 }
 
 pub(crate) fn anchor(x: i64, y: i64, w: i64, h: i64, id: u32, behind: bool, z: u32, graphic: &str) -> String {
-    let uri = if graphic.starts_with("<wpg:") { "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" } else { "http://schemas.microsoft.com/office/word/2010/wordprocessingShape" };
+    let uri = if graphic.starts_with("<wpg:") {
+        "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"
+    } else {
+        "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+    };
     format!(
         r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{z}" behindDoc="{}" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="{id}" name="S{id}"/><a:graphic><a:graphicData uri="{uri}">{graphic}</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
         u8::from(behind),
@@ -158,7 +162,13 @@ fn settings_doc(body: &str, compat: u32) -> Option<crate::docx::Document> {
     let document = format!(
         r#"<?xml version="1.0"?><w:document {NS}><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
     );
-    package(&[("[Content_Types].xml", ct), ("_rels/.rels", rels), ("word/_rels/document.xml.rels", drels), ("word/settings.xml", &settings), ("word/document.xml", &document)])
+    package(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", rels),
+        ("word/_rels/document.xml.rels", drels),
+        ("word/settings.xml", &settings),
+        ("word/document.xml", &document),
+    ])
 }
 
 fn float_rect(snap: &crate::layout::Snapshot) -> [f64; 4] {

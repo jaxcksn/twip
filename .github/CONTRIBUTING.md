@@ -142,7 +142,7 @@ change or add a behaviour, update the rule in the same pull request.
   | `feat!` / `fix!` or a `BREAKING CHANGE:` footer | Breaking API or behaviour change | minor | major |
   | `refactor`, `docs`, `test`, `build`, `ci`, `chore`, `revert` | Everything else | none | none |
 
-  Scopes are optional: `layout`, `editing`, `render`, `ffi`, `dotnet`, `web`, `angular`, `react`, `harness`, `docs`,
+  Scopes are optional: `layout`, `editing`, `drawing`, `render`, `ffi`, `dotnet`, `web`, `angular`, `react`, `harness`, `docs`,
   `release`, `deps`. The list lives in the `commitlint` key of `package.json`.
   A change to layout output that alters where text lands on the page is a behaviour change. Mark it `fix(layout)` and
   say what moves.

@@ -243,8 +243,7 @@ fn tables_and_paras(doc: &Document) -> (Vec<TableId>, Vec<ParaId>) {
                 Block::Para(q) => {
                     p.push(ParaId(q.id));
                     for i in &q.inlines {
-                        if let Some(tb) = i.story().map(|(_, tb)| tb)
-                        {
+                        if let Some(tb) = i.story().map(|(_, tb)| tb) {
                             boxes.push(&tb.blocks);
                         }
                     }

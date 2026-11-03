@@ -196,10 +196,12 @@ pub fn paint_lines<'a>(
         backgrounds(&b.children, b.offset.0, b.offset.1, &neither, &mut visible);
     }
     // FLOAT-16: floats behind the text (the body's and the headers' and footers'), lowest first, under the body text.
-    let stories = || page.children.iter().map(|c| match c {
-        PageChild::Body(b) => &**b,
-        PageChild::Header(b) | PageChild::Footer(b) => b,
-    });
+    let stories = || {
+        page.children.iter().map(|c| match c {
+            PageChild::Body(b) => &**b,
+            PageChild::Header(b) | PageChild::Footer(b) => b,
+        })
+    };
     let behind = |k: &BoxKind| matches!(k, BoxKind::Float { layer, .. } if layer.behind);
     let mut found = Vec::new();
     for b in stories() {

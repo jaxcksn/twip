@@ -100,7 +100,10 @@ fn odd_documents_lay_out() {
     cases.push(("a font that isn't installed", with(&sample, &|d| d.sections[0].blocks.insert(0, text("Missing font", &missing)))));
     let picture = para_with(
         &p,
-        vec![Inline::Picture(Picture { w: 0.0, h: 0.0, image: None, alt: "".into(), lock_aspect: false, effect: [0.0; 4], shape: None, text: None }, run.clone())],
+        vec![Inline::Picture(
+            Picture { w: 0.0, h: 0.0, image: None, alt: "".into(), lock_aspect: false, effect: [0.0; 4], shape: None, text: None },
+            run.clone(),
+        )],
     );
     cases.push(("a zero-size picture", with(&sample, &|d| d.sections[0].blocks.insert(0, picture.clone()))));
     let dangling = para_with(

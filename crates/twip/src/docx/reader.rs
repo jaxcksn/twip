@@ -1675,12 +1675,20 @@ impl Reader {
             let blocks = self.read_blocks(t, pkg, None);
             (self.fields, self.wrap) = saved;
             // FLOAT-10: the pen allowance of the shape's stroke.
-            let outline = shape.sp().and_then(|s| s.line.as_ref()).filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).and_then(|l| l.width).map_or(0.0, |w| w.0 as f64 / 12700.0);
+            let outline = shape
+                .sp()
+                .and_then(|s| s.line.as_ref())
+                .filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None)))
+                .and_then(|l| l.width)
+                .map_or(0.0, |w| w.0 as f64 / 12700.0);
             TextBox { blocks, insets, outline, auto_fit: false, v_anchor }
         });
         if !st.absolute {
             let text = text_box.map(|text_box| Box::new(InlineText { id: next_para_id(), text_box }));
-            out.push(Inline::Picture(Picture { w: st.w, h: st.h, image, alt, lock_aspect: false, effect: [0.0; 4], shape: Some(Box::new(shape)), text }, run.clone()));
+            out.push(Inline::Picture(
+                Picture { w: st.w, h: st.h, image, alt, lock_aspect: false, effect: [0.0; 4], shape: Some(Box::new(shape)), text },
+                run.clone(),
+            ));
             return;
         }
         let h_relative = match st.h_relative.as_deref() {
@@ -2225,8 +2233,7 @@ fn strip_ranges(blocks: &mut [Block], gone: &[(RangeKind, i64)]) {
             Block::Para(p) => {
                 p.inlines.retain(|i| !matches!(i, Inline::Range(m) if gone.contains(&(m.kind, m.id))));
                 for i in &mut p.inlines {
-                    if let Some(tb) = i.story_mut()
-                    {
+                    if let Some(tb) = i.story_mut() {
                         strip_ranges(&mut tb.blocks, gone);
                     }
                 }

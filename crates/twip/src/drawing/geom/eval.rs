@@ -74,12 +74,15 @@ impl CustomGeom {
             ops.push(Op { f, a: [a(0), a(1), a(2)] });
             scope.gd.push(gd.attribute("name").unwrap_or("").to_string());
         }
-        let lim = |h: Node, r: &str, lo: &str, hi: &str| scope.adj(h.attribute(r)).map(|i| (i, scope.opt(h.attribute(lo)), scope.opt(h.attribute(hi))));
+        let lim =
+            |h: Node, r: &str, lo: &str, hi: &str| scope.adj(h.attribute(r)).map(|i| (i, scope.opt(h.attribute(lo)), scope.opt(h.attribute(hi))));
         let ah = el(n, "ahLst")
             .into_iter()
             .flat_map(|l| l.children().filter(Node::is_element))
             .filter_map(|h| match h.tag_name().name() {
-                "ahXY" => Some(HandleDef::Xy { x: lim(h, "gdRefX", "minX", "maxX"), y: lim(h, "gdRefY", "minY", "maxY"), pos: pt(&scope, el(h, "pos")) }),
+                "ahXY" => {
+                    Some(HandleDef::Xy { x: lim(h, "gdRefX", "minX", "maxX"), y: lim(h, "gdRefY", "minY", "maxY"), pos: pt(&scope, el(h, "pos")) })
+                }
                 "ahPolar" => Some(HandleDef::Polar {
                     r: lim(h, "gdRefR", "minR", "maxR"),
                     ang: lim(h, "gdRefAng", "minAng", "maxAng"),
@@ -142,8 +145,11 @@ impl CustomGeom {
     #[cfg(not(target_os = "emscripten"))]
     pub fn to_bytes(&self) -> Vec<u8> {
         let names: Vec<(&str, i64)> = self.av_names.iter().zip(&self.av).map(|(n, v)| (n.as_str(), *v)).collect();
-        let paths: Vec<super::PathDef> =
-            self.paths.iter().map(|(w, h, fill, stroke, cmds, args)| super::PathDef { w: *w, h: *h, fill: *fill, stroke: *stroke, cmds, args }).collect();
+        let paths: Vec<super::PathDef> = self
+            .paths
+            .iter()
+            .map(|(w, h, fill, stroke, cmds, args)| super::PathDef { w: *w, h: *h, fill: *fill, stroke: *stroke, cmds, args })
+            .collect();
         super::pack::encode(&GeomDef { av: &names, gd: &self.gd, ah: &self.ah, cxn: &self.cxn, rect: self.rect, paths: &paths })
     }
 }

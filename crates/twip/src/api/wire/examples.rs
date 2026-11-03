@@ -9,8 +9,8 @@ use serde::{Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::api::catalog::{CommandGroup, CommandInfo, CommandShortcuts, UndoGrouping};
-use crate::api::drawing as dr;
 use crate::api::command::*;
+use crate::api::drawing as dr;
 use crate::api::engine::{Dictionary, SessionId, SessionOptions};
 use crate::api::error::{Error, ErrorCode};
 use crate::api::event::{Event, FieldRequest, HostCommand, KeyOutcome, LinkVia};
@@ -217,7 +217,15 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("control-options", ControlOptions, control_options()),
         // shapes
         fixture!("shape-preset", dr::ShapePreset, dr::ShapePreset::all().collect()),
-        fixture!("colour-value", dr::ColourValue, vec![theme_colour(), dr::ColourValue::rgb(Color(0x1F4E79)), dr::ColourValue { preset: Some("cornflowerBlue".into()), ..Default::default() }]),
+        fixture!(
+            "colour-value",
+            dr::ColourValue,
+            vec![
+                theme_colour(),
+                dr::ColourValue::rgb(Color(0x1F4E79)),
+                dr::ColourValue { preset: Some("cornflowerBlue".into()), ..Default::default() }
+            ]
+        ),
         fixture!("colour-transform", dr::ColourTransform, vec![dr::ColourTransform { kind: dr::TransformKind::Tint, value: 0.5 }]),
         fixture!("gradient-stop", dr::GradientStop, vec![dr::GradientStop { position: 0.5, colour: theme_colour() }]),
         fixture!("fill-value", dr::FillValue, fills()),
@@ -234,10 +242,18 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("picture-adjust-change", dr::PictureAdjustChange, vec![picture_adjust()]),
         fixture!("shape-insert", dr::ShapeInsert, vec![dr::ShapeInsert { preset: preset("line"), width: None, height: Some(Points(0.5)) }]),
         fixture!("shape-adjust", dr::ShapeAdjust, vec![dr::ShapeAdjust { index: 1, value: -12500 }]),
-        fixture!("fill-state", dr::FillState, vec![dr::FillState::Explicit(dr::FillValue::None), dr::FillState::FromStyle(dr::FillValue::Solid { colour: theme_colour() })]),
+        fixture!(
+            "fill-state",
+            dr::FillState,
+            vec![dr::FillState::Explicit(dr::FillValue::None), dr::FillState::FromStyle(dr::FillValue::Solid { colour: theme_colour() })]
+        ),
         fixture!("line-state", dr::LineState, vec![dr::LineState::Explicit(line_value()), dr::LineState::FromStyle(line_value())]),
         fixture!("shape-state", dr::ShapeState, vec![shape_state()]),
-        fixture!("shape-gallery-group", dr::ShapeGalleryGroup, vec![dr::ShapeGalleryGroup { label: "Basic Shapes".into(), presets: vec![preset("rect"), preset("ellipse")] }]),
+        fixture!(
+            "shape-gallery-group",
+            dr::ShapeGalleryGroup,
+            vec![dr::ShapeGalleryGroup { label: "Basic Shapes".into(), presets: vec![preset("rect"), preset("ellipse")] }]
+        ),
         // errors, warnings, records
         fixture!(
             "error",
@@ -1395,13 +1411,15 @@ fn events() -> Vec<Event> {
     ]
 }
 
-
 fn preset(name: &str) -> dr::ShapePreset {
     dr::ShapePreset::from_name(name).expect("a preset")
 }
 
 fn theme_colour() -> dr::ColourValue {
-    dr::ColourValue { transforms: vec![dr::ColourTransform { kind: dr::TransformKind::LumMod, value: 0.75 }], ..dr::ColourValue::theme(dr::ThemeColour::Accent1) }
+    dr::ColourValue {
+        transforms: vec![dr::ColourTransform { kind: dr::TransformKind::LumMod, value: 0.75 }],
+        ..dr::ColourValue::theme(dr::ThemeColour::Accent1)
+    }
 }
 
 fn fills() -> Vec<dr::FillValue> {

@@ -227,7 +227,11 @@ impl Renderer {
             for a in &s.adjust {
                 let mut d = skia_safe::PathBuilder::new();
                 let [x, y] = *a;
-                d.move_to((x as f32, y as f32 - 3.5)).line_to((x as f32 + 3.5, y as f32)).line_to((x as f32, y as f32 + 3.5)).line_to((x as f32 - 3.5, y as f32)).close();
+                d.move_to((x as f32, y as f32 - 3.5))
+                    .line_to((x as f32 + 3.5, y as f32))
+                    .line_to((x as f32, y as f32 + 3.5))
+                    .line_to((x as f32 - 3.5, y as f32))
+                    .close();
                 let d = d.detach();
                 canvas.draw_path(&d, &fill);
                 canvas.draw_path(&d, &outline);

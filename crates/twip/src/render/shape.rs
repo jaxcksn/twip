@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use skia_safe::{Canvas, Color, Data, Image, Matrix, Paint, PaintStyle, Path, PathBuilder, PathFillType, Point, Rect, SamplingOptions, TileMode};
 use skia_safe::gradient::{Colors, Gradient, Interpolation, shaders};
+use skia_safe::{Canvas, Color, Data, Image, Matrix, Paint, PaintStyle, Path, PathBuilder, PathFillType, Point, Rect, SamplingOptions, TileMode};
 
 use super::Renderer;
 use crate::drawing::colour::{Rgba, linear_to_srgb, srgb_to_linear};
@@ -25,7 +25,11 @@ impl PathCache {
         if self.paths.len() > 4096 {
             self.paths.clear();
         }
-        self.paths.entry(Rc::as_ptr(g) as usize).or_insert_with(|| (g.clone(), Rc::new(g.paths.iter().map(|p| skia_path(&p.segs)).collect()))).1.clone()
+        self.paths
+            .entry(Rc::as_ptr(g) as usize)
+            .or_insert_with(|| (g.clone(), Rc::new(g.paths.iter().map(|p| skia_path(&p.segs)).collect())))
+            .1
+            .clone()
     }
 }
 
@@ -74,7 +78,10 @@ fn picture_adjust(adjust: &[crate::drawing::paint::ResolvedBlipAdjust], paint: &
                 let row = |i: usize| [(b[i] - a[i]) * L[0], (b[i] - a[i]) * L[1], (b[i] - a[i]) * L[2], 0.0, a[i]];
                 let (r0, r1, r2) = (row(0), row(1), row(2));
                 then(Some(color_filters::matrix_row_major(
-                    &[r0[0], r0[1], r0[2], r0[3], r0[4], r1[0], r1[1], r1[2], r1[3], r1[4], r2[0], r2[1], r2[2], r2[3], r2[4], 0.0, 0.0, 0.0, 1.0, 0.0],
+                    &[
+                        r0[0], r0[1], r0[2], r0[3], r0[4], r1[0], r1[1], r1[2], r1[3], r1[4], r2[0], r2[1], r2[2], r2[3], r2[4], 0.0, 0.0, 0.0, 1.0,
+                        0.0,
+                    ],
                     None,
                 )));
             }
@@ -105,7 +112,9 @@ const SOFT_FADE: f64 = 0.64;
 fn reach(s: &ShapeItem, m: &Matrix) -> Rect {
     let [x0, y0, x1, y1] = s.rect;
     let e = &s.effects;
-    let shadow = |sh: &Option<crate::drawing::paint::ResolvedShadow>| sh.as_ref().map_or(0.0, |sh| sh.dist * sh.scale[0].abs().max(sh.scale[1].abs()).max(1.0) + 3.0 * sh.blur);
+    let shadow = |sh: &Option<crate::drawing::paint::ResolvedShadow>| {
+        sh.as_ref().map_or(0.0, |sh| sh.dist * sh.scale[0].abs().max(sh.scale[1].abs()).max(1.0) + 3.0 * sh.blur)
+    };
     let pad = s.line.width + shadow(&e.outer) + e.glow.map_or(0.0, |g| 3.0 * g.0) + 3.0 * e.blur.unwrap_or(0.0) + e.soft_edge.unwrap_or(0.0) + 4.0;
     let b = m.map_rect(Rect::new(0.0, 0.0, (x1 - x0) as f32, (y1 - y0) as f32)).0;
     // A skewed or scaled shadow can reach further: the box's size again on each side.
@@ -159,7 +168,11 @@ fn skia_path(segs: &[Seg]) -> Path {
         && a[1] < c[1]
     {
         let mut p = PathBuilder::new();
-        p.move_to((d[0] as f32, d[1] as f32)).line_to((c[0] as f32, c[1] as f32)).line_to((b[0] as f32, b[1] as f32)).line_to((a[0] as f32, a[1] as f32)).close();
+        p.move_to((d[0] as f32, d[1] as f32))
+            .line_to((c[0] as f32, c[1] as f32))
+            .line_to((b[0] as f32, b[1] as f32))
+            .line_to((a[0] as f32, a[1] as f32))
+            .close();
         return p.detach();
     }
     let mut b = PathBuilder::new();
@@ -284,7 +297,15 @@ impl Renderer {
     /// DRAW-18: the outer (or preset) shadow: the silhouette in the shadow colour, scaled and skewed about its
     /// alignment point, moved `dist` towards `dir` and blurred by `blur`; turned with the shape when it rotates with
     /// it, else moved in the page's directions.
-    fn outer_shadow(&mut self, canvas: &Canvas, s: &ShapeItem, m: &Matrix, sh: &crate::drawing::paint::ResolvedShadow, soft: Option<f64>, area: &Rect) {
+    fn outer_shadow(
+        &mut self,
+        canvas: &Canvas,
+        s: &ShapeItem,
+        m: &Matrix,
+        sh: &crate::drawing::paint::ResolvedShadow,
+        soft: Option<f64>,
+        area: &Rect,
+    ) {
         let mut p = Paint::default();
         p.set_anti_alias(true);
         p.set_color(colour(sh.colour));
@@ -445,7 +466,11 @@ impl Renderer {
             Fill::Picture { image, src, mode: blip, adjust, .. } => {
                 picture_adjust(adjust, &mut paint);
                 let key = ImageKey { index: *image, generation: 0 };
-                let img = self.images.entry(key).or_insert_with(|| image.and_then(|i| images.get(i)).and_then(|b| Image::from_encoded(Data::new_copy(b)))).clone();
+                let img = self
+                    .images
+                    .entry(key)
+                    .or_insert_with(|| image.and_then(|i| images.get(i)).and_then(|b| Image::from_encoded(Data::new_copy(b))))
+                    .clone();
                 let Some(img) = img else {
                     // A picture without decodable data: a light frame, as an undecodable inline picture.
                     let mut frame = Paint::default();
@@ -510,7 +535,13 @@ impl Renderer {
                 );
                 canvas.save();
                 canvas.clip_path(path, None, true);
-                canvas.draw_image_rect_with_sampling_options(&img, Some((&part, skia_safe::canvas::SrcRectConstraint::Fast)), to, SamplingOptions::default(), &paint);
+                canvas.draw_image_rect_with_sampling_options(
+                    &img,
+                    Some((&part, skia_safe::canvas::SrcRectConstraint::Fast)),
+                    to,
+                    SamplingOptions::default(),
+                    &paint,
+                );
                 canvas.restore();
             }
         }
@@ -680,8 +711,20 @@ fn pen(line: &ResolvedLine, w: f64) -> Paint {
     };
     if !lengths.is_empty() && w > 0.0 {
         let capped = line.cap != Cap::Flat;
-        let intervals: Vec<f32> =
-            lengths.iter().enumerate().map(|(i, l)| ((l + if !capped { 0.0 } else if i % 2 == 0 { -1.0 } else { 1.0 }) * w).max(0.0) as f32).collect();
+        let intervals: Vec<f32> = lengths
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                ((l + if !capped {
+                    0.0
+                } else if i % 2 == 0 {
+                    -1.0
+                } else {
+                    1.0
+                }) * w)
+                    .max(0.0) as f32
+            })
+            .collect();
         if let Some(e) = skia_safe::PathEffect::dash(&intervals, 0.0) {
             paint.set_path_effect(e);
         }

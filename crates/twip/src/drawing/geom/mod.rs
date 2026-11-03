@@ -228,7 +228,10 @@ pub struct CustomGeom {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Geometry {
     /// A preset and its adjust values that override the defaults, by name.
-    Preset { preset: Preset, adj: Vec<(String, i64)> },
+    Preset {
+        preset: Preset,
+        adj: Vec<(String, i64)>,
+    },
     Custom(Rc<CustomGeom>),
 }
 
@@ -368,8 +371,11 @@ impl Geometry {
             }
             Geometry::Custom(c) => {
                 let names: Vec<(&str, i64)> = c.av_names.iter().zip(&c.av).map(|(n, v)| (n.as_str(), *v)).collect();
-                let paths: Vec<PathDef> =
-                    c.paths.iter().map(|(w, h, fill, stroke, cmds, args)| PathDef { w: *w, h: *h, fill: *fill, stroke: *stroke, cmds, args }).collect();
+                let paths: Vec<PathDef> = c
+                    .paths
+                    .iter()
+                    .map(|(w, h, fill, stroke, cmds, args)| PathDef { w: *w, h: *h, fill: *fill, stroke: *stroke, cmds, args })
+                    .collect();
                 let def = GeomDef { av: &names, gd: &c.gd, ah: &c.ah, cxn: &c.cxn, rect: c.rect, paths: &paths };
                 f(&def, &c.av)
             }

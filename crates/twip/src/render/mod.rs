@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 
 mod overlay;
-mod shape;
 pub mod retained;
 pub mod ruler;
+mod shape;
 #[cfg(target_os = "emscripten")]
 pub mod web;
 #[cfg(twip_dawn)]

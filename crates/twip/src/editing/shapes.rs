@@ -207,7 +207,8 @@ impl Editor {
         let child = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
         let Some(item) = self.selected_shape(f, frame.page).or_else(|| self.group_item(f, frame.page)) else { return false };
         let Some(root) = self.shape_root(f, frame.page) else { return false };
-        self.shape_drag = Some(ShapeDrag { f, root, child, handle, item, start: [px, py], now: [px, py], page: frame.page, shift: false, previewed: None });
+        self.shape_drag =
+            Some(ShapeDrag { f, root, child, handle, item, start: [px, py], now: [px, py], page: frame.page, shift: false, previewed: None });
         self.requests.push(super::input::Request::CapturePointer);
         true
     }
@@ -377,17 +378,33 @@ impl Editor {
     /// at its top, measured from the column and that paragraph; `None`: 72 x 72 pt (a line 72 x 0) at the caret's
     /// paragraph, its left at the column's. One step.
     // shortcut: the column is the section's first (its left margin).
-    pub(super) fn insert_shape(&mut self, kind: crate::drawing::NewShape, at: Option<(usize, [f64; 4])>, fonts: &crate::font::Fonts) -> super::commands::Outcome {
+    pub(super) fn insert_shape(
+        &mut self,
+        kind: crate::drawing::NewShape,
+        at: Option<(usize, [f64; 4])>,
+        fonts: &crate::font::Fonts,
+    ) -> super::commands::Outcome {
         let line = matches!(kind, crate::drawing::NewShape::Line(_));
         self.insert_shape_in(kind, at, [72.0, if line { 0.0 } else { 72.0 }], fonts)
     }
 
     /// [`Editor::insert_shape`] at the caret, `size` (points) large.
-    pub(super) fn insert_shape_sized(&mut self, kind: crate::drawing::NewShape, size: [f64; 2], fonts: &crate::font::Fonts) -> super::commands::Outcome {
+    pub(super) fn insert_shape_sized(
+        &mut self,
+        kind: crate::drawing::NewShape,
+        size: [f64; 2],
+        fonts: &crate::font::Fonts,
+    ) -> super::commands::Outcome {
         self.insert_shape_in(kind, None, size, fonts)
     }
 
-    fn insert_shape_in(&mut self, kind: crate::drawing::NewShape, at: Option<(usize, [f64; 4])>, size: [f64; 2], fonts: &crate::font::Fonts) -> super::commands::Outcome {
+    fn insert_shape_in(
+        &mut self,
+        kind: crate::drawing::NewShape,
+        at: Option<(usize, [f64; 4])>,
+        size: [f64; 2],
+        fonts: &crate::font::Fonts,
+    ) -> super::commands::Outcome {
         use super::commands::Outcome;
         use crate::drawing::{NewShape, Shape};
         if kind == NewShape::TextBox {
@@ -710,7 +727,11 @@ impl Editor {
             "Flip",
             |s| {
                 let x = &mut s.xfrm;
-                if horizontal { x.flip_h = !x.flip_h } else { x.flip_v = !x.flip_v }
+                if horizontal {
+                    x.flip_h = !x.flip_h
+                } else {
+                    x.flip_v = !x.flip_v
+                }
                 true
             },
             fonts,
@@ -766,7 +787,12 @@ impl Editor {
             return super::commands::Outcome::Unchanged("already there");
         }
         let floats: Vec<FloatId> = set.iter().map(|s| s.0).collect();
-        self.edit_floats("Arrange", &floats, |n, _| set.iter().find(|s| s.0 == FloatId(n.id)).is_some_and(|s| std::mem::replace(&mut n.z, s.1) != s.1), fonts)
+        self.edit_floats(
+            "Arrange",
+            &floats,
+            |n, _| set.iter().find(|s| s.0 == FloatId(n.id)).is_some_and(|s| std::mem::replace(&mut n.z, s.1) != s.1),
+            fonts,
+        )
     }
 }
 
@@ -798,7 +824,8 @@ impl Editor {
         paras.dedup();
         for (k, para) in paras.iter().enumerate() {
             let Some(p) = self.index.para(&self.doc, *para) else { continue };
-            let mut inlines: Vec<Inline> = p.inlines.iter().filter(|i| !matches!(i, Inline::Float(fl, _) if ids.contains(&FloatId(fl.id)))).cloned().collect();
+            let mut inlines: Vec<Inline> =
+                p.inlines.iter().filter(|i| !matches!(i, Inline::Float(fl, _) if ids.contains(&FloatId(fl.id)))).cloned().collect();
             if *para == anchor {
                 for (n, (fl, _)) in new.iter().enumerate() {
                     inlines.insert(n, Inline::Float(Box::new(fl.clone()), run.clone()));
@@ -855,7 +882,9 @@ impl Editor {
         };
         let first = members[0].0.clone();
         members.sort_by_key(|(m, ..)| (m.z, m.order));
-        let u = members.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |u, (_, _, r)| [u[0].min(r[0]), u[1].min(r[1]), u[2].max(r[2]), u[3].max(r[3])]);
+        let u = members
+            .iter()
+            .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |u, (_, _, r)| [u[0].min(r[0]), u[1].min(r[1]), u[2].max(r[2]), u[3].max(r[3])]);
         let emu = |v: f64| Emu((v * 12700.0).round() as i64);
         let (mut children, mut parts) = (Vec::new(), Vec::new());
         for (k, (m, _, r)) in members.iter().enumerate() {
@@ -912,7 +941,9 @@ impl Editor {
         let ids = self.selected_floats();
         let [g] = ids[..] else { return Outcome::unavailable("select one group to ungroup") };
         let Some(m) = self.float_of(g).cloned() else { return Outcome::Unchanged("no float") };
-        let Some(crate::drawing::ShapeKind::Group(gs)) = m.shape.as_deref().map(|s| s.kind.clone()) else { return Outcome::unavailable("not a group") };
+        let Some(crate::drawing::ShapeKind::Group(gs)) = m.shape.as_deref().map(|s| s.kind.clone()) else {
+            return Outcome::unavailable("not a group");
+        };
         let Some(anchor) = self.index.float_anchor(g) else { return Outcome::Unchanged("no anchor") };
         let Some((_, r)) = self.float_box(g, fonts) else { return Outcome::Unchanged("not laid out") };
         let compat = self.doc.settings.compat_mode;
@@ -924,7 +955,12 @@ impl Editor {
         };
         let mut new = Vec::new();
         for (k, c) in gs.children.iter().enumerate() {
-            let rect = [map(c.xfrm.off[0].0, 0), map(c.xfrm.off[1].0, 1), map(c.xfrm.off[0].0 + c.xfrm.ext[0].0, 0), map(c.xfrm.off[1].0 + c.xfrm.ext[1].0, 1)];
+            let rect = [
+                map(c.xfrm.off[0].0, 0),
+                map(c.xfrm.off[1].0, 1),
+                map(c.xfrm.off[0].0 + c.xfrm.ext[0].0, 0),
+                map(c.xfrm.off[1].0 + c.xfrm.ext[1].0, 1),
+            ];
             let (w, h) = (rect[2] - rect[0], rect[3] - rect[1]);
             let mut s = c.clone();
             s.xfrm.off = [Emu(0), Emu(0)];
@@ -994,10 +1030,12 @@ impl Editor {
             C::SetShapeFill(v) => {
                 // A picture's bytes go in with the commit (`pending_image`): its index is given after the conversion.
                 let mut images = Vec::new();
-                let fill = match v.to_model(&mut |data| crate::docx::image::image_info(data).map(|_| {
-                    images.push(data.to_vec());
-                    0
-                })) {
+                let fill = match v.to_model(&mut |data| {
+                    crate::docx::image::image_info(data).map(|_| {
+                        images.push(data.to_vec());
+                        0
+                    })
+                }) {
                     Ok(f) => f,
                     Err(e) => return bad(e),
                 };
@@ -1119,7 +1157,11 @@ impl Editor {
     pub fn theme_colours(&self) -> Vec<crate::api::value::Color> {
         crate::api::drawing::ThemeColour::ALL
             .iter()
-            .map(|t| crate::api::value::Color(crate::drawing::colour::Colour::scheme(t.slot()).resolve(&self.doc.theme, &self.doc.colour_map, None).to_rgb()))
+            .map(|t| {
+                crate::api::value::Color(
+                    crate::drawing::colour::Colour::scheme(t.slot()).resolve(&self.doc.theme, &self.doc.colour_map, None).to_rgb(),
+                )
+            })
             .collect()
     }
 }
@@ -1190,7 +1232,9 @@ impl Editor {
                 let fill = match &sp.fill {
                     Some(f) => FillState::Explicit(FillValue::of(f, None, &[])),
                     None => FillState::FromStyle(match refs.and_then(|r| style(&r.fill)) {
-                        Some((i, c)) => style_entry(&theme.fills, Some(&theme.bg_fills), i).map_or(FillValue::None, |f| FillValue::of(f, c.as_ref(), &[])),
+                        Some((i, c)) => {
+                            style_entry(&theme.fills, Some(&theme.bg_fills), i).map_or(FillValue::None, |f| FillValue::of(f, c.as_ref(), &[]))
+                        }
                         None => FillValue::None,
                     }),
                 };
@@ -1227,7 +1271,11 @@ impl Editor {
                     fill: FillState::Explicit(FillValue::of(&crate::drawing::paint::Fill::Blip(p.blip.clone()), None, &[])),
                     line: match &p.line {
                         Some(l) => LineState::Explicit(LineValue::of(l, None, &[])),
-                        None => LineState::FromStyle(LineValue::of(&crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() }, None, &[])),
+                        None => LineState::FromStyle(LineValue::of(
+                            &crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() },
+                            None,
+                            &[],
+                        )),
                     },
                     effects: p.effects.as_ref().map(|e| EffectsValue::of(e, None)).unwrap_or_default(),
                     text: None,
@@ -1240,7 +1288,11 @@ impl Editor {
                     preset: None,
                     adjust: Vec::new(),
                     fill: g.fill.as_ref().map_or(FillState::FromStyle(FillValue::None), |f| FillState::Explicit(FillValue::of(f, None, &[]))),
-                    line: LineState::FromStyle(LineValue::of(&crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() }, None, &[])),
+                    line: LineState::FromStyle(LineValue::of(
+                        &crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() },
+                        None,
+                        &[],
+                    )),
                     effects: EffectsValue::default(),
                     text: None,
                 });

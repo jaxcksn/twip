@@ -363,7 +363,14 @@ impl FillValue {
             FillValue::Picture { image: bytes, tile } => {
                 let index = image(&bytes.0).ok_or("the picture isn't an image the engine reads")?;
                 let mode = if tile.unwrap_or(false) {
-                    paint::BlipMode::Tile { tx: Emu(0), ty: Emu(0), sx: Pct(100000), sy: Pct(100000), flip: paint::TileFlip::None, align: paint::RectAlign::Tl }
+                    paint::BlipMode::Tile {
+                        tx: Emu(0),
+                        ty: Emu(0),
+                        sx: Pct(100000),
+                        sy: Pct(100000),
+                        flip: paint::TileFlip::None,
+                        align: paint::RectAlign::Tl,
+                    }
                 } else {
                     paint::BlipMode::Stretch([Pct(0); 4])
                 };
@@ -755,8 +762,18 @@ impl EffectsValue {
     pub(crate) fn of(e: &paint::EffectList, placeholder: Option<&Colour>) -> EffectsValue {
         let c = |x: &Colour| ColourValue::of(x, placeholder);
         EffectsValue {
-            outer_shadow: e.outer.as_ref().map(|s| Shadow { colour: c(&s.colour), blur: points(s.blur), distance: points(s.dist), direction: s.dir.degrees() }),
-            inner_shadow: e.inner.as_ref().map(|s| Shadow { colour: c(&s.colour), blur: points(s.blur), distance: points(s.dist), direction: s.dir.degrees() }),
+            outer_shadow: e.outer.as_ref().map(|s| Shadow {
+                colour: c(&s.colour),
+                blur: points(s.blur),
+                distance: points(s.dist),
+                direction: s.dir.degrees(),
+            }),
+            inner_shadow: e.inner.as_ref().map(|s| Shadow {
+                colour: c(&s.colour),
+                blur: points(s.blur),
+                distance: points(s.dist),
+                direction: s.dir.degrees(),
+            }),
             glow: e.glow.as_ref().map(|g| Glow { colour: c(&g.colour), radius: points(g.radius) }),
             soft_edge: e.soft_edge.map(points),
             blur: e.blur.map(points),
@@ -788,7 +805,9 @@ impl EffectsChange {
         }
         if let Some(s) = &self.inner_shadow {
             e.inner = match s {
-                Some(s) => Some(paint::InnerShadow { blur: emu(s.blur), dist: emu(s.distance), dir: angle(s.direction), colour: s.colour.to_model()? }),
+                Some(s) => {
+                    Some(paint::InnerShadow { blur: emu(s.blur), dist: emu(s.distance), dir: angle(s.direction), colour: s.colour.to_model()? })
+                }
                 None => None,
             };
         }
@@ -977,7 +996,8 @@ impl PictureAdjustChange {
     pub(crate) fn apply(&self, adjust: &[paint::BlipAdjust]) -> Result<Vec<paint::BlipAdjust>, String> {
         use paint::BlipAdjust as A;
         let pct = |v: f64| Pct((v * 100000.0).round() as i32);
-        let unit = |v: Option<f64>, lo: f64| v.map_or(Ok(()), |v| if (lo..=1.0).contains(&v) { Ok(()) } else { Err(format!("{v} is out of {lo} to 1")) });
+        let unit =
+            |v: Option<f64>, lo: f64| v.map_or(Ok(()), |v| if (lo..=1.0).contains(&v) { Ok(()) } else { Err(format!("{v} is out of {lo} to 1")) });
         unit(self.transparency, 0.0)?;
         unit(self.brightness, -1.0)?;
         unit(self.contrast, -1.0)?;
@@ -995,7 +1015,10 @@ impl PictureAdjustChange {
             }
         }
         if self.brightness.is_some() || self.contrast.is_some() {
-            let (b0, c0) = out.iter().find_map(|a| if let A::Lum { bright, contrast } = a { Some((*bright, *contrast)) } else { None }).unwrap_or((Pct(0), Pct(0)));
+            let (b0, c0) = out
+                .iter()
+                .find_map(|a| if let A::Lum { bright, contrast } = a { Some((*bright, *contrast)) } else { None })
+                .unwrap_or((Pct(0), Pct(0)));
             out.retain(|a| !matches!(a, A::Lum { .. }));
             let (b, c) = (self.brightness.map_or(b0, pct), self.contrast.map_or(c0, pct));
             if b.0 != 0 || c.0 != 0 {
@@ -1108,14 +1131,29 @@ pub struct ShapeGalleryGroup {
 
 /// Word's Insert > Shapes gallery: its groups and their presets, in order (research R13).
 const GALLERY: &[(&str, &str)] = &[
-        ("Lines", "line straightConnector1 bentConnector3 curvedConnector3"),
-        ("Rectangles", "rect roundRect snip1Rect snip2SameRect snip2DiagRect snipRoundRect round1Rect round2SameRect round2DiagRect"),
-        ("Basic Shapes", "ellipse triangle rtTriangle parallelogram trapezoid diamond pentagon hexagon heptagon octagon decagon dodecagon pie chord teardrop frame halfFrame corner diagStripe plus plaque can cube bevel donut noSmoking blockArc foldedCorner smileyFace heart lightningBolt sun moon cloud arc bracketPair bracePair leftBracket rightBracket leftBrace rightBrace"),
-        ("Block Arrows", "rightArrow leftArrow upArrow downArrow leftRightArrow upDownArrow quadArrow leftRightUpArrow bentArrow uturnArrow leftUpArrow bentUpArrow curvedRightArrow curvedLeftArrow curvedUpArrow curvedDownArrow stripedRightArrow notchedRightArrow homePlate chevron rightArrowCallout downArrowCallout leftArrowCallout upArrowCallout leftRightArrowCallout quadArrowCallout circularArrow"),
-        ("Equation Shapes", "mathPlus mathMinus mathMultiply mathDivide mathEqual mathNotEqual"),
-        ("Flowchart", "flowChartProcess flowChartAlternateProcess flowChartDecision flowChartInputOutput flowChartPredefinedProcess flowChartInternalStorage flowChartDocument flowChartMultidocument flowChartTerminator flowChartPreparation flowChartManualInput flowChartManualOperation flowChartConnector flowChartOffpageConnector flowChartPunchedCard flowChartPunchedTape flowChartSummingJunction flowChartOr flowChartCollate flowChartSort flowChartExtract flowChartMerge flowChartOnlineStorage flowChartDelay flowChartMagneticTape flowChartMagneticDisk flowChartMagneticDrum flowChartDisplay"),
-        ("Stars and Banners", "irregularSeal1 irregularSeal2 star4 star5 star6 star7 star8 star10 star12 star16 star24 star32 ribbon2 ribbon ellipseRibbon2 ellipseRibbon verticalScroll horizontalScroll wave doubleWave"),
-        ("Callouts", "wedgeRectCallout wedgeRoundRectCallout wedgeEllipseCallout cloudCallout borderCallout1 borderCallout2 borderCallout3 accentCallout1 accentCallout2 accentCallout3 callout1 callout2 callout3 accentBorderCallout1 accentBorderCallout2 accentBorderCallout3"),
+    ("Lines", "line straightConnector1 bentConnector3 curvedConnector3"),
+    ("Rectangles", "rect roundRect snip1Rect snip2SameRect snip2DiagRect snipRoundRect round1Rect round2SameRect round2DiagRect"),
+    (
+        "Basic Shapes",
+        "ellipse triangle rtTriangle parallelogram trapezoid diamond pentagon hexagon heptagon octagon decagon dodecagon pie chord teardrop frame halfFrame corner diagStripe plus plaque can cube bevel donut noSmoking blockArc foldedCorner smileyFace heart lightningBolt sun moon cloud arc bracketPair bracePair leftBracket rightBracket leftBrace rightBrace",
+    ),
+    (
+        "Block Arrows",
+        "rightArrow leftArrow upArrow downArrow leftRightArrow upDownArrow quadArrow leftRightUpArrow bentArrow uturnArrow leftUpArrow bentUpArrow curvedRightArrow curvedLeftArrow curvedUpArrow curvedDownArrow stripedRightArrow notchedRightArrow homePlate chevron rightArrowCallout downArrowCallout leftArrowCallout upArrowCallout leftRightArrowCallout quadArrowCallout circularArrow",
+    ),
+    ("Equation Shapes", "mathPlus mathMinus mathMultiply mathDivide mathEqual mathNotEqual"),
+    (
+        "Flowchart",
+        "flowChartProcess flowChartAlternateProcess flowChartDecision flowChartInputOutput flowChartPredefinedProcess flowChartInternalStorage flowChartDocument flowChartMultidocument flowChartTerminator flowChartPreparation flowChartManualInput flowChartManualOperation flowChartConnector flowChartOffpageConnector flowChartPunchedCard flowChartPunchedTape flowChartSummingJunction flowChartOr flowChartCollate flowChartSort flowChartExtract flowChartMerge flowChartOnlineStorage flowChartDelay flowChartMagneticTape flowChartMagneticDisk flowChartMagneticDrum flowChartDisplay",
+    ),
+    (
+        "Stars and Banners",
+        "irregularSeal1 irregularSeal2 star4 star5 star6 star7 star8 star10 star12 star16 star24 star32 ribbon2 ribbon ellipseRibbon2 ellipseRibbon verticalScroll horizontalScroll wave doubleWave",
+    ),
+    (
+        "Callouts",
+        "wedgeRectCallout wedgeRoundRectCallout wedgeEllipseCallout cloudCallout borderCallout1 borderCallout2 borderCallout3 accentCallout1 accentCallout2 accentCallout3 callout1 callout2 callout3 accentBorderCallout1 accentBorderCallout2 accentBorderCallout3",
+    ),
 ];
 
 /// The shape gallery: the presets of Word's Insert > Shapes gallery in its eight groups, in Word's order.
@@ -1132,7 +1170,11 @@ mod tests {
 
     #[test]
     fn colours_keep_their_theme_and_transforms() {
-        let v = ColourValue { theme: Some(ThemeColour::Accent1), transforms: vec![ColourTransform { kind: TransformKind::LumMod, value: 0.75 }], ..ColourValue::default() };
+        let v = ColourValue {
+            theme: Some(ThemeColour::Accent1),
+            transforms: vec![ColourTransform { kind: TransformKind::LumMod, value: 0.75 }],
+            ..ColourValue::default()
+        };
         let m = v.to_model().expect("valid");
         assert_eq!(m, Colour::scheme(SchemeSlot::Accent(1)).with(ColourMod::LumMod(Pct(75000))));
         assert_eq!(ColourValue::of(&m, None), v);
@@ -1164,7 +1206,9 @@ mod tests {
     fn effect_changes_keep_remove_or_replace() {
         let c: EffectsChange = serde_json::from_str(r#"{"glow": null, "softEdge": 3}"#).expect("parses");
         assert_eq!((c.glow.clone(), c.soft_edge, c.outer_shadow.clone()), (Some(None), Some(Some(Points(3.0))), None));
-        let e = c.apply(Some(&paint::EffectList { glow: Some(paint::Glow { radius: Emu(1), colour: Colour::srgb(0) }), ..Default::default() })).expect("applies");
+        let e = c
+            .apply(Some(&paint::EffectList { glow: Some(paint::Glow { radius: Emu(1), colour: Colour::srgb(0) }), ..Default::default() }))
+            .expect("applies");
         assert_eq!((e.glow, e.soft_edge), (None, Some(Emu(38100))));
     }
 }

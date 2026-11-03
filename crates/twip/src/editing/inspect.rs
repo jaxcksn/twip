@@ -40,8 +40,7 @@ fn stories(e: &Editor) -> Vec<(StoryId, &[Block])> {
             match b {
                 Block::Para(p) => {
                     for i in &p.inlines {
-                        if let Some((fid, tb)) = i.story()
-                        {
+                        if let Some((fid, tb)) = i.story() {
                             out.push((StoryId::TextBox(crate::layout::FloatId(fid)), tb.blocks.as_slice()));
                             boxes(&tb.blocks, out);
                         }

@@ -1814,7 +1814,8 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// Also floats whose insertion or deletion changed (a shape inserted or deleted with tracking on): in their
     /// revision wrappers.
     fn moved_in(&self, p: &Paragraph, qs: &[&Paragraph]) -> String {
-        let here = |id: u64, run: &Run| qs.iter().flat_map(|q| q.inlines.iter()).any(|i| matches!(i, Inline::Float(f, r) if f.id == id && same_rev(r, run)));
+        let here =
+            |id: u64, run: &Run| qs.iter().flat_map(|q| q.inlines.iter()).any(|i| matches!(i, Inline::Float(f, r) if f.id == id && same_rev(r, run)));
         let mut out = String::new();
         for i in &p.inlines {
             let Inline::Float(f, run) = i else { continue };
@@ -1849,10 +1850,7 @@ impl<'a, 'i> Saver<'a, 'i> {
 
     /// The source element at exactly `r`, inside one of the part's paragraphs.
     fn node_at(&self, r: Range<usize>) -> Option<Node<'a, 'i>> {
-        self.paras
-            .values()
-            .filter(|p| p.range().start <= r.start && r.end <= p.range().end)
-            .find_map(|p| p.descendants().find(|n| n.range() == r))
+        self.paras.values().filter(|p| p.range().start <= r.start && r.end <= p.range().end).find_map(|p| p.descendants().find(|n| n.range() == r))
     }
 
     /// The `mc:AlternateContent` around the drawing at `r`, when it is its Choice's.
@@ -2081,7 +2079,9 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         // A toggled checkbox keeps its run and changes its face.
         (Inline::Sym { ch: a, run: r, .. }, Inline::Sym { ch: b, run: q, .. }) => a == b && Rc::ptr_eq(r, q),
         // Moved or resized floats are written patched (their text boxes' content is its own container).
-        (Inline::Float(a, r), Inline::Float(b, q)) => a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && Rc::ptr_eq(r, q),
+        (Inline::Float(a, r), Inline::Float(b, q)) => {
+            a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && Rc::ptr_eq(r, q)
+        }
         // A resized picture is written patched.
         (Inline::Picture(a, r), Inline::Picture(b, q)) => a.image == b.image && a.w == b.w && a.h == b.h && a.alt == b.alt && Rc::ptr_eq(r, q),
         _ => {
@@ -3400,7 +3400,8 @@ impl Saver<'_, '_> {
                 shape.xfrm.ext = [crate::drawing::units::Emu(cx), crate::drawing::units::Emu(cy)];
                 // Each shape's story: the float's own, or its group part's.
                 let txbx = |path: &[u16]| {
-                    let tb = if path.is_empty() { f.text_box.as_ref() } else { f.parts.iter().find(|p| p.path == path).and_then(|p| p.text_box.as_ref()) };
+                    let tb =
+                        if path.is_empty() { f.text_box.as_ref() } else { f.parts.iter().find(|p| p.path == path).and_then(|p| p.text_box.as_ref()) };
                     new_blocks_xml(self.xml, &tb?.blocks, self.people).ok()
                 };
                 Some(drawing::graphic_data(&shape, &txbx, &self.w))

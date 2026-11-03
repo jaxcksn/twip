@@ -569,7 +569,11 @@ impl Editor {
         };
         let shape = self.shape_info().unwrap_or_default();
         Some(ObjectSelection {
-            kind: shape.kind.unwrap_or(if o.kind == ObjectKind::TextBox { crate::api::state::ObjectKind::TextBox } else { crate::api::state::ObjectKind::Picture }),
+            kind: shape.kind.unwrap_or(if o.kind == ObjectKind::TextBox {
+                crate::api::state::ObjectKind::TextBox
+            } else {
+                crate::api::state::ObjectKind::Picture
+            }),
             wrap,
             width: Points(o.width),
             height: Points(o.height),

@@ -21,8 +21,7 @@ fn box_paras(doc: &Document) -> std::collections::HashSet<u64> {
                         out.insert(p.id);
                     }
                     for i in &p.inlines {
-                        if let Some(tb) = i.story().map(|(_, tb)| tb)
-                        {
+                        if let Some(tb) = i.story().map(|(_, tb)| tb) {
                             walk(&tb.blocks, true, out);
                         }
                     }
@@ -45,8 +44,7 @@ fn ids(doc: &Document) -> HashMap<u64, usize> {
                     let n = out.len() + 1;
                     out.entry(p.id).or_insert(n);
                     for i in &p.inlines {
-                        if let Some(tb) = i.story().map(|(_, tb)| tb)
-                        {
+                        if let Some(tb) = i.story().map(|(_, tb)| tb) {
                             walk(&tb.blocks, out);
                         }
                     }
@@ -207,8 +205,7 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                         Item::Shape(s) if s.float == 0 => &s.rect,
                         _ => continue,
                     };
-                    if placed.line.atoms.iter().any(|a| !a.brk && (a.x0 - rect[0]).abs() < 0.01)
-                    {
+                    if placed.line.atoms.iter().any(|a| !a.brk && (a.x0 - rect[0]).abs() < 0.01) {
                         objects.push((line, dx + placed.x + rect[0], dy + placed.y + placed.line.baseline, para.map_or(0, |p| p.0)));
                     }
                 }
