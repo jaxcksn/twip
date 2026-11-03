@@ -82,6 +82,20 @@ pub struct Ghost {
     pub to: [f64; 4],
 }
 
+/// A selected shape's frame: its unrotated box and rotation, where its rotate handle is, and its adjust handles,
+/// page coordinates.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShapeFrame {
+    pub page: usize,
+    pub rect: [f64; 4],
+    /// Degrees clockwise about the box's centre.
+    pub rot: f64,
+    /// The rotate handle, 18 px above the top's middle (turned with the shape), and that middle.
+    pub rotate: [f64; 2],
+    pub top: [f64; 2],
+    pub adjust: Vec<[f64; 2]>,
+}
+
 /// Everything a renderer needs for one frame besides the snapshot's own content.
 #[derive(Clone, Debug)]
 pub struct View {
@@ -104,6 +118,8 @@ pub struct View {
     pub anchor: Option<(usize, [f64; 2])>,
     /// An object move or resize in progress.
     pub ghost: Option<Ghost>,
+    /// The selected shapes' rotate and adjust handles.
+    pub shapes: Vec<ShapeFrame>,
     pub cursor: super::input::Cursor,
     /// Unfilled placeholders on the visible pages drawn the host's way: page coordinates.
     pub placeholders: Vec<PlaceholderView>,

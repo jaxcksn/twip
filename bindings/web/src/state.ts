@@ -2,7 +2,7 @@ import type { CommandId } from './commands.js';
 import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind } from './services/elements.js';
 import type { RulerModel, RulerUnit, TabSelector } from './services/ruler.js';
-import type { Color, CommentId, ElementId, Points, RevisionId, StyleId } from './types.js';
+import type { Color, CommentId, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
 
 /** An on/off value over the selection: `'mixed'` where it differs, `null` where it doesn't apply. */
 export type Tri = boolean | 'mixed' | null;
@@ -55,6 +55,11 @@ export interface EditorState {
   ruler: RulerModel;
   /** Whether formatting is held for `pasteFormatting`. */
   formatPainter: boolean;
+  /**
+   * The document's 12 theme colours, in `ThemeColour` order (text1, background1, text2, background2, accent1 to
+   * accent6, hyperlink, followedHyperlink), for an application's colour picker.
+   */
+  themeColours: Color[];
 }
 
 /** The value each command reports in state, for the commands that report one. */
@@ -257,10 +262,10 @@ export interface TableStyleOptions {
 /** A table width. */
 export type TableWidth = { kind: 'auto' } | { kind: 'points'; value: Points } | { kind: 'percent'; value: number };
 
-/** The selected picture or text box. */
+/** The selected object. */
 export interface ObjectSelection {
-  /** A picture or a text box. */
-  kind: 'picture' | 'textBox';
+  /** A picture, a text box, a shape, a line or connector (a shape with no filled path), or a group. */
+  kind: 'picture' | 'textBox' | 'shape' | 'line' | 'group';
   /** How text wraps around it. */
   wrap: ObjectWrap;
   /** The width. */
@@ -275,6 +280,18 @@ export interface ObjectSelection {
   anchorLocked: boolean | null;
   /** Where a floating object is and how text keeps from it; `null` when inline. */
   placement: ObjectPlacement | null;
+  /** The shape's properties as written; `null` for objects without shape properties (frames) and kept graphics. */
+  shape: ShapeState | null;
+  /** Its rotation, clockwise. */
+  rotation: Degrees;
+  /** Flipped left to right. */
+  flipH: boolean;
+  /** Flipped top to bottom. */
+  flipV: boolean;
+  /** The selected child's place in its group; empty unless a group child is selected. */
+  childPath: number[];
+  /** How many objects are selected: 2 or more for a multi-selection, the other fields describing the first. */
+  count: number;
 }
 
 /** How text wraps around an object. */

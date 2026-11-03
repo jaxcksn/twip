@@ -1,4 +1,7 @@
 [
   "picture",
-  "textBox"
+  "textBox",
+  "shape",
+  "line",
+  "group"
 ]

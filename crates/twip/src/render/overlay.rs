@@ -154,8 +154,12 @@ impl Renderer {
                 None => crate::layout::traverse::paint_items(page)
                     .into_iter()
                     .filter(|it| {
-                        matches!(it, Item::Image { rect: [x0, y0, x1, y1], .. }
-                            if *x0 >= a0 - 0.5 && *y0 >= b0 - 0.5 && *x1 <= a1 + 0.5 && *y1 <= b1 + 0.5)
+                        let r = match it {
+                            Item::Image { rect, .. } => *rect,
+                            Item::Shape(s) => s.rect,
+                            _ => return false,
+                        };
+                        r[0] >= a0 - 0.5 && r[1] >= b0 - 0.5 && r[2] <= a1 + 0.5 && r[3] <= b1 + 0.5
                     })
                     .collect(),
             };
@@ -203,6 +207,31 @@ impl Renderer {
                 }
             }
             SelectionView::None => {}
+        }
+        // A selected shape: its turned outline, its rotate handle on a stem above its top, its adjust handles as
+        // yellow diamonds.
+        for s in view.shapes.iter().filter(|s| s.page == i) {
+            let [x0, y0, x1, y1] = s.rect;
+            if s.rot != 0.0 {
+                canvas.save();
+                canvas.rotate(s.rot as f32, Some(((x0 + x1) as f32 / 2.0, (y0 + y1) as f32 / 2.0).into()));
+                canvas.draw_rect(Rect::new(x0 as f32, y0 as f32, x1 as f32, y1 as f32), &outline);
+                canvas.restore();
+            }
+            let pt = |p: [f64; 2]| skia_safe::Point::new(p[0] as f32, p[1] as f32);
+            canvas.draw_line(pt(s.top), pt(s.rotate), &outline);
+            let mut fill = white.clone();
+            canvas.draw_circle(pt(s.rotate), 3.5, &fill);
+            canvas.draw_circle(pt(s.rotate), 3.5, &outline);
+            fill.set_color(skia_safe::Color::from_rgb(0xFF, 0xD7, 0x00));
+            for a in &s.adjust {
+                let mut d = skia_safe::PathBuilder::new();
+                let [x, y] = *a;
+                d.move_to((x as f32, y as f32 - 3.5)).line_to((x as f32 + 3.5, y as f32)).line_to((x as f32, y as f32 + 3.5)).line_to((x as f32 - 3.5, y as f32)).close();
+                let d = d.detach();
+                canvas.draw_path(&d, &fill);
+                canvas.draw_path(&d, &outline);
+            }
         }
         self.marks(canvas, view, i, f);
         // The caret: a bar at the insertion point, at least one device pixel wide, last so nothing covers it.

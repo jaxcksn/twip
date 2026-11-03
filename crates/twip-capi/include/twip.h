@@ -148,7 +148,8 @@ enum TwipMethod {
     TWIP_HOST_FRAME_STATS = 72,       /* -> FrameStats (what the frames have cost so far) */
     TWIP_HOST_SET_OVERLAY_PALETTE = 73, /* OverlayPalette (colours #RRGGBB) -> null */
     TWIP_HOST_SET_PAINT_BUDGET = 74,  /* PaintBudget { recordings } bytes -> null */
-    TWIP_HOST_SET_LEADERS = 75        /* Point[][] (content CSS px) -> null: the balloons' leader lines */
+    TWIP_HOST_SET_LEADERS = 75,       /* Point[][] (content CSS px) -> null: the balloons' leader lines */
+    TWIP_SHAPE_GALLERY = 76           /* no session -> ShapeGalleryGroup[]: Word's Insert > Shapes presets */
 };
 
 int32_t twip_call(TwipEngine* engine, uint32_t session, uint32_t method, const uint8_t* req, size_t len, TwipBuf* out);

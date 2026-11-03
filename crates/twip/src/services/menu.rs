@@ -36,7 +36,8 @@ fn target(state: &State, misspelled: Option<&Misspelled>) -> MenuTarget {
         return MenuTarget::Link { address: l.address.clone() };
     }
     match s.object.as_ref().map(|o| o.kind) {
-        Some(ObjectKind::Picture) => return MenuTarget::Picture,
+        // A shape, line or group takes the object menu a picture does.
+        Some(ObjectKind::Picture | ObjectKind::Shape | ObjectKind::Line | ObjectKind::Group) => return MenuTarget::Picture,
         Some(ObjectKind::TextBox) => return MenuTarget::TextBox,
         None => {}
     }
@@ -57,7 +58,7 @@ fn item(state: &State, label: &str, command: Command, needs_selection: bool) -> 
     let (enabled, checked) =
         state.commands.get(&id).map_or((fallback, None), |c| (c.enabled && (!needs_selection || !state.selection.empty), c.checked));
     let shortcut = catalog::info(id).and_then(|c| c.shortcuts.windows.first().cloned());
-    MenuItem::Command { command: id, label: label.into(), enabled, checked, shortcut, action: MenuAction::Command { command } }
+    MenuItem::Command { command: id, label: label.into(), enabled, checked, shortcut, action: MenuAction::Command { command: Box::new(command) } }
 }
 
 /// The context menu for the selection.

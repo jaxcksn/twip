@@ -1882,8 +1882,8 @@ fn unaligned_floats(children: &Rc<[Child]>, off: f64, fixed: &[u64]) -> Option<R
     }
     let up = |c: &Child| match c {
         Child::Box(b) if float(c) => match b.kind {
-            BoxKind::Float { anchor, float, rect } => Child::Box(super::fragment::BoxFragment {
-                kind: BoxKind::Float { anchor, float, rect: [rect[0], rect[1] - off, rect[2], rect[3] - off] },
+            BoxKind::Float { anchor, float, rect, layer } => Child::Box(super::fragment::BoxFragment {
+                kind: BoxKind::Float { anchor, float, layer, rect: [rect[0], rect[1] - off, rect[2], rect[3] - off] },
                 offset: (b.offset.0, b.offset.1 - off),
                 ..b.clone()
             }),
@@ -1960,6 +1960,7 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
                 atoms,
                 changed: placed.line.changed,
                 mark: placed.line.mark,
+                texts: placed.line.texts.clone(),
             });
             Child::Line { para: *para, placed: PlacedLine { line, ..placed.clone() } }
         }

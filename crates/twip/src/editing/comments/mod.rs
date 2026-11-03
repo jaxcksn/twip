@@ -217,8 +217,8 @@ pub(super) fn deletion_cuts(p: &Paragraph, a: u32, b: u32) -> (Vec<u32>, Vec<Com
 fn ids_in(inlines: &[Inline], out: &mut Vec<CommentId>) {
     for i in inlines {
         match i {
-            Inline::Float(f, _) => {
-                if let Some(tb) = &f.text_box {
+            i if i.story().is_some() => {
+                if let Some((_, tb)) = i.story() {
                     ids_in_blocks(&tb.blocks, out);
                 }
             }

@@ -539,6 +539,121 @@ public sealed record VerticalPosition(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectVerticalAlignment? Align = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null);
 
+/// <summary>Which way to flip an object.</summary>
+public enum FlipAxis
+{
+    /// <summary>Left to right.</summary>
+    Horizontal,
+    /// <summary>Top to bottom.</summary>
+    Vertical,
+}
+
+/// <summary>Where an object goes in the paint order.</summary>
+public enum Arrange
+{
+    /// <summary>Over the next object above it.</summary>
+    Forward,
+    /// <summary>Under the next object below it.</summary>
+    Backward,
+    /// <summary>Over every object.</summary>
+    ToFront,
+    /// <summary>Under every object.</summary>
+    ToBack,
+    /// <summary>In front of the text.</summary>
+    InFrontOfText,
+    /// <summary>Behind the text.</summary>
+    BehindText,
+}
+
+/// <summary>An outline change; unset values are kept.</summary>
+/// <param name="Width">The width, 0 to 1584 pt.</param>
+/// <param name="Fill">
+/// <see cref="FillValue.None"/>, <see cref="FillValue.Solid"/> or <see cref="FillValue.Gradient"/>;
+/// <see cref="FillValue.FromStyle"/> removes the whole explicit outline.
+/// </param>
+/// <param name="Dash">The ECMA-376 dash name, such as <c>dash</c> or <c>sysDot</c>.</param>
+/// <param name="Compound">Single or several lines.</param>
+/// <param name="Cap">The ends.</param>
+/// <param name="Join">The joins.</param>
+/// <param name="Ends">The arrowheads; they replace both ends.</param>
+public sealed record LineChange(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Width = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FillValue? Fill = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Dash = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineCompound? Compound = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineCap? Cap = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineJoin? Join = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineEnds? Ends = null);
+
+/// <summary>One effect of an <see cref="EffectsChange"/>: kept (the default), removed, or set. A value converts to set.</summary>
+/// <typeparam name="T">The effect's value type.</typeparam>
+public readonly record struct EffectChange<T>
+{
+    private readonly byte _kind; // 0 keep, 1 remove, 2 set
+
+    private EffectChange(byte kind, T value) => (_kind, Value) = (kind, value);
+
+    /// <summary>The effect stays as it is.</summary>
+    public static EffectChange<T> Keep => default;
+
+    /// <summary>The effect is removed.</summary>
+    public static EffectChange<T> Remove => new(1, default!);
+
+    /// <summary>The effect is set to <paramref name="value"/>.</summary>
+    /// <param name="value">The effect.</param>
+    public static EffectChange<T> Set(T value) => new(2, value);
+
+    /// <summary>The effect is set to <paramref name="value"/>.</summary>
+    /// <param name="value">The effect.</param>
+    public static implicit operator EffectChange<T>(T value) => Set(value);
+
+    /// <summary>Whether the effect is removed.</summary>
+    public bool IsRemove => _kind == 1;
+
+    /// <summary>Whether the effect is set to <see cref="Value"/>.</summary>
+    public bool IsSet => _kind == 2;
+
+    /// <summary>The effect, when set.</summary>
+    public T Value { get; }
+}
+
+/// <summary>An effects change: each effect is kept, removed or set.</summary>
+/// <param name="OuterShadow">A shadow outside the shape.</param>
+/// <param name="InnerShadow">A shadow inside the shape.</param>
+/// <param name="Glow">A glow around the shape.</param>
+/// <param name="SoftEdge">Edges faded over this distance.</param>
+/// <param name="Blur">The whole shape blurred by this radius.</param>
+public sealed record EffectsChange(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Shadow> OuterShadow = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Shadow> InnerShadow = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Glow> Glow = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Length> SoftEdge = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Length> Blur = default);
+
+/// <summary>A shape text body change; unset values are kept.</summary>
+/// <param name="Insets">The left, top, right and bottom insets, 0 to 1584 pt.</param>
+/// <param name="Anchor">Where the text sits.</param>
+/// <param name="Autofit">How the shape fits it.</param>
+/// <param name="WrapText">Lines wrap at the shape's width.</param>
+/// <param name="Direction">Which way it runs.</param>
+public sealed record ShapeTextChange(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<Length>? Insets = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextAnchor? Anchor = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextAutofit? Autofit = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WrapText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDirection? Direction = null);
+
+/// <summary>A picture adjustment change; unset values are kept.</summary>
+/// <param name="Transparency">How see-through the picture is, 0 (opaque) to 1 (invisible).</param>
+/// <param name="Grayscale">Shown in shades of grey.</param>
+/// <param name="Brightness">Lighter (positive) or darker, −1 to 1.</param>
+/// <param name="Contrast">More (positive) or less contrast, −1 to 1.</param>
+public sealed record PictureAdjustChange(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Transparency = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Grayscale = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Brightness = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Contrast = null);
+
 /// <summary>A content control kind.</summary>
 public enum ControlKind
 {

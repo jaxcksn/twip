@@ -89,6 +89,11 @@ public sealed class WireTests
         ["selectionmode"] = Ctx.TextSelectionMode,
         ["severity"] = Ctx.MarkSeverity,
         ["tabsaction"] = Ctx.TabsDialogAction,
+        ["themecolour"] = Ctx.ThemeColor,
+        ["colourvalue"] = Ctx.ShapeColor,
+        ["colourtransform"] = Ctx.ColorTransform,
+        ["transformkind"] = Ctx.ColorTransformKind,
+        ["compound"] = Ctx.LineCompound,
     };
 
     /// <summary>Each engine event's payload type: the event is <c>{ "type": ..., ...payload }</c>.</summary>

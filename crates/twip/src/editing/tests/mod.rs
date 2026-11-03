@@ -13,6 +13,7 @@ mod provisional;
 pub(crate) mod recorder;
 pub(crate) mod scenarios;
 mod sections;
+mod shapes;
 mod steps;
 mod transactions;
 

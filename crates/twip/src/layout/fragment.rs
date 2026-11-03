@@ -54,6 +54,111 @@ pub enum Item {
     Gridline {
         line: [f64; 4],
     },
+    /// A DrawingML shape or picture (DRAW-1): shared by the layouts that place it alike.
+    Shape(Rc<ShapeItem>),
+    /// Items drawn turned (a rotated shape's text, FLOAT-17): drawn only; hit testing and the semantic order don't
+    /// see inside.
+    Turned(Rc<Turned>),
+}
+
+/// Items turned `deg` degrees clockwise about `centre`.
+#[derive(Debug)]
+pub struct Turned {
+    pub centre: [f64; 2],
+    pub deg: f64,
+    pub items: Vec<Item>,
+}
+
+/// FLOAT-16: a float's paint layer: behind the text or in front of it, then by `relativeHeight` and document order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Layer {
+    pub behind: bool,
+    pub z: u32,
+    pub order: usize,
+}
+
+/// A shape drawn at its place (a float, an inline object, or one of a group's children).
+#[derive(Debug, PartialEq)]
+pub struct ShapeItem {
+    /// The unrotated box (x0, y0, x1, y1).
+    pub rect: [f64; 4],
+    /// Degrees clockwise about the box's centre, and the flips, composed with the shape's groups (DRAW-4).
+    pub rot: f64,
+    pub flip_h: bool,
+    pub flip_v: bool,
+    /// The geometry evaluated on the box's size: paths from the box's top left.
+    pub geom: Rc<crate::drawing::geom::Geom>,
+    pub fill: crate::drawing::paint::Paint,
+    pub line: crate::drawing::paint::ResolvedLine,
+    pub effects: crate::drawing::paint::ResolvedEffects,
+    /// Behind the story's text (`wp:anchor/@behindDoc`).
+    pub behind: bool,
+    /// The object it draws: the float's id (0 for an inline object) and the child's path in its group.
+    pub float: u64,
+    pub path: crate::drawing::ChildPath,
+    /// A picture (`pic:pic`): its outline lies outside it (DRAW-22).
+    pub picture: bool,
+}
+
+impl ShapeItem {
+    /// Whether the point (x, y) hits the shape: inside a filled path, or within `slop` of a stroked path's pen. The
+    /// point is taken back through the rotation and flips first (DRAW-4).
+    pub fn hit(&self, x: f64, y: f64, slop: f64) -> bool {
+        use crate::drawing::paint::Paint;
+        let stroked = !matches!(self.line.paint, Paint::None);
+        self.geom.hit(self.to_local([x, y]), !matches!(self.fill, Paint::None), stroked.then_some(self.line.width / 2.0 + slop))
+    }
+
+    /// [`ShapeItem::to_page`] undone: a drawn point in the shape's own coordinates.
+    pub fn to_local(&self, p: [f64; 2]) -> [f64; 2] {
+        let [x0, y0, x1, y1] = self.rect;
+        let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        let (s, c) = (-self.rot).to_radians().sin_cos();
+        let (dx, dy) = (p[0] - cx, p[1] - cy);
+        let (mut qx, mut qy) = (dx * c - dy * s, dx * s + dy * c);
+        if self.flip_h {
+            qx = -qx;
+        }
+        if self.flip_v {
+            qy = -qy;
+        }
+        [qx + cx - x0, qy + cy - y0]
+    }
+
+    /// A point of the shape's own coordinates (from its box's top left) where it is drawn: flipped and rotated about
+    /// the box's centre (DRAW-4).
+    pub fn to_page(&self, p: [f64; 2]) -> [f64; 2] {
+        let [x0, y0, x1, y1] = self.rect;
+        let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        let (mut dx, mut dy) = (p[0] + x0 - cx, p[1] + y0 - cy);
+        if self.flip_h {
+            dx = -dx;
+        }
+        if self.flip_v {
+            dy = -dy;
+        }
+        let (s, c) = self.rot.to_radians().sin_cos();
+        [cx + dx * c - dy * s, cy + dx * s + dy * c]
+    }
+
+    /// The same shape moved by (dx, dy).
+    pub fn moved(&self, dx: f64, dy: f64) -> ShapeItem {
+        let r = self.rect;
+        ShapeItem {
+            rect: [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy],
+            rot: self.rot,
+            flip_h: self.flip_h,
+            flip_v: self.flip_v,
+            geom: self.geom.clone(),
+            fill: self.fill.clone(),
+            line: self.line.clone(),
+            effects: self.effects.clone(),
+            behind: self.behind,
+            float: self.float,
+            path: self.path.clone(),
+            picture: self.picture,
+        }
+    }
 }
 
 impl Item {
@@ -63,6 +168,8 @@ impl Item {
             Item::Glyphs(r) => r.baseline,
             Item::Rect { rect, .. } | Item::Image { rect, .. } => rect[1],
             Item::Gridline { line } => line[1],
+            Item::Shape(s) => s.rect[1],
+            Item::Turned(t) => t.items.first().map_or(t.centre[1], Item::top),
         }
     }
 }
@@ -84,6 +191,8 @@ pub struct LineFragment {
     /// A line without pieces (an empty paragraph, or the mark's line after a trailing break): its paragraph's end unit,
     /// the caret's place there. Editing can't find it from the page alone when the break is on an earlier page.
     pub mark: Option<Unit>,
+    /// The line's inline shapes with text, each at its box (the items' coordinates): the page lays out their stories.
+    pub texts: Box<[([f64; 4], crate::docx::Picture)]>,
 }
 
 /// A unit drawn without characters on a line: x from and to (the items' coordinates), its paragraph and unit, and
@@ -205,6 +314,8 @@ pub enum BoxKind {
         anchor: ParaId,
         float: FloatId,
         rect: [f64; 4],
+        /// Where it paints (FLOAT-16): behind or in front of the story's text, and its place among the floats.
+        layer: Layer,
     },
     /// A header or footer: the story part it shows.
     Header {

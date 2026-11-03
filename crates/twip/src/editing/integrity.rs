@@ -178,8 +178,8 @@ fn review(doc: &Document, out: &mut Vec<Violation>) {
                                 }
                                 seen.refs.insert(*id);
                             }
-                            Inline::Float(f, _) => {
-                                if let Some(tb) = &f.text_box {
+                            i if i.story().is_some() => {
+                                if let Some((_, tb)) = i.story() {
                                     blocks(&tb.blocks, open, seen, doc, out);
                                 }
                             }
@@ -347,9 +347,9 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                             Inline::Sym { control: Some(c), .. } => {
                                 used.insert(*c);
                             }
-                            Inline::Float(f, _) => {
-                                if let Some(tb) = &f.text_box {
-                                    walk(&tb.blocks, &format!("text box {}", f.id), doc, seen, used, members, out);
+                            i if i.story().is_some() => {
+                                if let Some((id, tb)) = i.story() {
+                                    walk(&tb.blocks, &format!("text box {id}"), doc, seen, used, members, out);
                                 }
                             }
                             _ => {}

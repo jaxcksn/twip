@@ -17,10 +17,11 @@ use std::rc::Rc;
 use roxmltree::Node;
 
 use super::review::{CommentId, People, RangeKind, RangeMark, RevisionMark, SectionChange};
-use super::xml::{W, child, is_w};
+use super::xml::{MC, W, child, is, is_w};
 use super::*;
 
 mod comments;
+mod drawing;
 pub mod props;
 mod revisions;
 
@@ -968,10 +969,13 @@ fn boxes<'d>(orig: &[&'d [Block]], now: &[&'d [Block]]) -> Vec<(&'d [Block], &'d
             match b {
                 Block::Para(p) => {
                     for i in &p.inlines {
-                        if let Inline::Float(f, _) = i
-                            && let Some(tb) = &f.text_box
-                        {
-                            out.push((f.id, &tb.blocks));
+                        let story = match i {
+                            Inline::Float(f, _) => f.text_box.as_ref().map(|tb| (f.id, tb)),
+                            Inline::Picture(pic, _) => pic.text.as_ref().map(|t| (t.id, &t.text_box)),
+                            _ => None,
+                        };
+                        if let Some((id, tb)) = story {
+                            out.push((id, &tb.blocks));
                             walk(&tb.blocks, out);
                         }
                     }
@@ -1807,28 +1811,61 @@ impl<'a, 'i> Saver<'a, 'i> {
 
     /// Floats of `p` that came from another paragraph (re-anchored): their source drawings, placed as they
     /// are now, in runs at the paragraph's start.
+    /// Also floats whose insertion or deletion changed (a shape inserted or deleted with tracking on): in their
+    /// revision wrappers.
     fn moved_in(&self, p: &Paragraph, qs: &[&Paragraph]) -> String {
-        let here = |id: u64| qs.iter().flat_map(|q| q.inlines.iter()).any(|i| matches!(i, Inline::Float(f, _) if f.id == id));
+        let here = |id: u64, run: &Run| qs.iter().flat_map(|q| q.inlines.iter()).any(|i| matches!(i, Inline::Float(f, r) if f.id == id && same_rev(r, run)));
         let mut out = String::new();
         for i in &p.inlines {
-            let Inline::Float(f, _) = i else { continue };
-            if here(f.id) {
+            let Inline::Float(f, run) = i else { continue };
+            if here(f.id, run) {
                 continue;
             }
+            let (open, close) = revisions::wrappers(&self.w, run.rev.ins.as_deref(), run.rev.del.as_deref(), self.people);
+            let mut push = |x: &str| out.push_str(&format!("{open}<{w}r>{x}</{w}r>{close}", w = self.w));
             let Some((r, was)) = self.float_src.get(&f.id) else {
                 if let Some(x) = self.new_float_xml(f) {
-                    out.push_str(&format!("<{w}r>{x}</{w}r>", w = self.w));
+                    push(&x);
                 }
                 continue;
             };
-            let src = self.src_text(r.clone());
+            let mut src = self.src_text(r.clone());
+            if drawing::is_vml(&src) {
+                push(&drawing::vml_patch(&src, was, f));
+                continue;
+            }
+            // The shape's own properties first (their ranges are in the source as read), then its placement.
+            if let Some(edits) = drawing::changed(was, f, &src) {
+                src = drawing::apply(&src, edits);
+            }
             let d = match Placement::changed(was, f) {
                 Some(pl) => pl.apply(&src),
                 None => src,
             };
-            out.push_str(&format!("<{w}r>{d}</{w}r>", w = self.w));
+            push(&d);
         }
         out
+    }
+
+    /// The source element at exactly `r`, inside one of the part's paragraphs.
+    fn node_at(&self, r: Range<usize>) -> Option<Node<'a, 'i>> {
+        self.paras
+            .values()
+            .filter(|p| p.range().start <= r.start && r.end <= p.range().end)
+            .find_map(|p| p.descendants().find(|n| n.range() == r))
+    }
+
+    /// The `mc:AlternateContent` around the drawing at `r`, when it is its Choice's.
+    fn alternate_content(&self, r: Range<usize>) -> Option<Range<usize>> {
+        let ch = self.node_at(r)?.parent().filter(|c| is(*c, MC, "Choice"))?;
+        ch.parent().filter(|a| is(*a, MC, "AlternateContent")).map(|a| a.range())
+    }
+
+    /// The Choice's `w:drawing` of the `mc:AlternateContent` at `r`.
+    fn choice_drawing(&self, r: Range<usize>) -> Option<Range<usize>> {
+        let ac = self.node_at(r).filter(|a| is(*a, MC, "AlternateContent"))?;
+        let ch = ac.children().find(|c| is(*c, MC, "Choice"))?;
+        ch.children().find(|d| is_w(*d, "drawing")).map(|d| d.range())
     }
 
     /// Where an element's start tag ends.
@@ -2044,7 +2081,7 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         // A toggled checkbox keeps its run and changes its face.
         (Inline::Sym { ch: a, run: r, .. }, Inline::Sym { ch: b, run: q, .. }) => a == b && Rc::ptr_eq(r, q),
         // Moved or resized floats are written patched (their text boxes' content is its own container).
-        (Inline::Float(a, r), Inline::Float(b, q)) => a.id == b.id && Placement::changed(a, b).is_none() && Rc::ptr_eq(r, q),
+        (Inline::Float(a, r), Inline::Float(b, q)) => a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && Rc::ptr_eq(r, q),
         // A resized picture is written patched.
         (Inline::Picture(a, r), Inline::Picture(b, q)) => a.image == b.image && a.w == b.w && a.h == b.h && a.alt == b.alt && Rc::ptr_eq(r, q),
         _ => {
@@ -2233,8 +2270,8 @@ struct Orig {
     run: *const RunStyle,
     /// The character it wrote (a checkbox's face, to see it toggled).
     ch: char,
-    /// An inline picture's size and alternative text (to see them changed).
-    size: Option<(f64, f64, Rc<str>)>,
+    /// An inline picture's size, alternative text and shape tree (to see them changed).
+    size: Option<PicState>,
 }
 
 /// A unit now: what it writes, and in which formatting (`None`: a paragraph mark).
@@ -2246,7 +2283,7 @@ struct Cur {
     run: Option<Run>,
     /// What a new object writes as, for the objects the model can write (note reference and note marks).
     obj: Option<String>,
-    size: Option<(f64, f64, Rc<str>)>,
+    size: Option<PicState>,
     /// The markers right before it (inline controls, comment and move ranges, comment references, in order): written
     /// when the group is written from the model.
     ctl: Vec<Marker>,
@@ -2566,14 +2603,19 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             head.0.insert_str(0, &opens);
             head.1.push_str(&closes);
         }
-        let floats = |ps: &[&Paragraph]| -> Vec<(u64, Option<Range<usize>>)> {
+        let floats = |ps: &[&Paragraph]| -> Vec<(u64, Option<Range<usize>>, Run)> {
             ps.iter()
                 .flat_map(|p| p.inlines.iter())
-                .filter_map(|i| if let Inline::Float(f, _) = i { Some((f.id, f.src.clone())) } else { None })
+                .filter_map(|i| if let Inline::Float(f, r) = i { Some((f.id, f.src.clone(), r.clone())) } else { None })
                 .collect()
         };
-        let now: Vec<u64> = floats(ps).into_iter().map(|(id, _)| id).collect();
-        let dropped = floats(qs).into_iter().filter(|(id, _)| !now.contains(id)).filter_map(|(_, src)| src).collect();
+        // A float whose insertion or deletion changed is written again, in its wrappers (`moved_in`).
+        let now = floats(ps);
+        let dropped = floats(qs)
+            .into_iter()
+            .filter(|(id, _, r)| !now.iter().any(|(n, _, q)| n == id && same_rev(r, q)))
+            .filter_map(|(_, src, _)| src)
+            .collect();
         let all = |ps: &[&Paragraph]| -> Vec<Float> {
             ps.iter().flat_map(|p| p.inlines.iter()).filter_map(|i| if let Inline::Float(f, _) = i { Some((**f).clone()) } else { None }).collect()
         };
@@ -2582,8 +2624,35 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             .iter()
             .filter_map(|a| {
                 let b = is.iter().find(|b| b.id == a.id)?;
-                let p = Placement::changed(a, b)?;
-                Some((a.src.clone()?, p))
+                let src = a.src.clone()?;
+                // A VML float's edits patch its VML (`style`, fill and stroke attributes).
+                let text = s.src_text(src.clone());
+                if drawing::is_vml(&text) {
+                    let now = drawing::vml_patch(&text, a, b);
+                    return (now != text).then(|| (src, Placement { replace: Some(now), ..Placement::default() }));
+                }
+                // The shape's own properties (their ranges are in the source as read), then its placement.
+                let mut shape = drawing::changed(a, b, &text);
+                // A story added by typing into the shape: its `wps:txbx`, written from the model.
+                if let (Some(at), Some(tb)) = (drawing::story_added(a, b), b.text_box.as_ref())
+                    && let Ok(blocks) = new_blocks_xml(s.xml, &tb.blocks, s.people)
+                {
+                    let txbx = format!("<wps:txbx><{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx>", w = s.w);
+                    shape.get_or_insert_with(Vec::new).push((at..at, txbx));
+                }
+                let edited = shape.is_some();
+                let mut p = match Placement::changed(a, b) {
+                    Some(p) => Placement { shape, ..p },
+                    None => Placement { shape: Some(shape?), ..Placement::default() },
+                };
+                // an edited shape inside `mc:AlternateContent` is written as its bare Choice drawing.
+                match s.alternate_content(src.clone()).filter(|_| edited) {
+                    Some(ac) => {
+                        p.inner = Some(src.start - ac.start..src.end - ac.start);
+                        Some((ac, p))
+                    }
+                    None => Some((src, p)),
+                }
             })
             .collect();
         let seg_at = segs.iter().enumerate().map(|(k, g)| (g.range.start, k)).collect();
@@ -2888,10 +2957,18 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                         let (ch, code) = (self.cur[j].ch, self.cur[j].code);
                         self.add_char(to, ch, code)
                     } else if let Some(size) = resized(self, i) {
-                        // A resized inline picture: its drawing with the new extents.
+                        // A resized or reformatted inline picture: its drawing with the new extents and properties.
                         self.add(to, None, None);
                         self.flush_text();
-                        let p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
+                        let mut p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
+                        if let (Some(a), Some(b)) = (self.orig[i].size.as_ref().and_then(|s| s.3.as_deref()), size.3.as_deref()) {
+                            let d = self.s.choice_drawing(range.clone()).unwrap_or(range.clone());
+                            p.shape = drawing::shape_changed(a, b, d.start, &self.s.src_text(d.clone()));
+                            // an edited shape drops its VML fallback.
+                            if p.shape.is_some() && d != range {
+                                p.inner = Some(d.start - range.start..d.end - range.start);
+                            }
+                        }
                         self.pend.push_str(&p.apply(&self.s.src_text(range.clone())));
                     } else {
                         self.add(to, None, Some(range.clone()))
@@ -3282,8 +3359,11 @@ fn checkbox_xml(src: &str, face: char) -> String {
     s
 }
 
-fn picture_size(i: &Inline) -> Option<(f64, f64, Rc<str>)> {
-    if let Inline::Picture(p, _) = i { Some((p.w, p.h, p.alt.clone())) } else { None }
+/// An inline picture's size, alternative text and shape tree.
+type PicState = (f64, f64, Rc<str>, Option<Box<crate::drawing::Shape>>);
+
+fn picture_size(i: &Inline) -> Option<PicState> {
+    if let Inline::Picture(p, _) = i { Some((p.w, p.h, p.alt.clone(), p.shape.clone())) } else { None }
 }
 
 /// Marks [`Saver::object_xml`] content written between runs, not in one.
@@ -3294,7 +3374,7 @@ const DRAWING_IDS: u32 = 0x4345_0000;
 
 /// The relationship id a new picture's image is embedded by (`rIdCeImg` and its index in [`Document::images`]):
 /// [`add_images`] gives each part that names one the image and the relationship.
-const NEW_IMAGE: &str = "rIdCeImg";
+pub(super) const NEW_IMAGE: &str = "rIdCeImg";
 
 impl Saver<'_, '_> {
     /// A float with no source (an inserted text box, or a picture float): its `w:drawing`, from the model. `None` for
@@ -3313,7 +3393,22 @@ impl Saver<'_, '_> {
             Some(a) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:align>{}</wp:align></wp:{name}>", props::esc(a)),
             None => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:posOffset>{}</wp:posOffset></wp:{name}>", emu(off)),
         };
+        // A float made with a shape tree writes it (its extent the float's), its story in `wps:txbx`.
+        let made = match f.shape.as_deref() {
+            Some(shape) => {
+                let mut shape = shape.clone();
+                shape.xfrm.ext = [crate::drawing::units::Emu(cx), crate::drawing::units::Emu(cy)];
+                // Each shape's story: the float's own, or its group part's.
+                let txbx = |path: &[u16]| {
+                    let tb = if path.is_empty() { f.text_box.as_ref() } else { f.parts.iter().find(|p| p.path == path).and_then(|p| p.text_box.as_ref()) };
+                    new_blocks_xml(self.xml, &tb?.blocks, self.people).ok()
+                };
+                Some(drawing::graphic_data(&shape, &txbx, &self.w))
+            }
+            None => None,
+        };
         let graphic = match (&f.text_box, f.image) {
+            _ if made.is_some() => made.clone().unwrap_or_default(),
             (Some(tb), _) => {
                 let blocks = new_blocks_xml(self.xml, &tb.blocks, self.people).ok()?;
                 let [l, t, r, b] = tb.insets.map(emu);
@@ -3386,7 +3481,10 @@ impl Saver<'_, '_> {
             cx = cx,
             cy = cy,
             wrap = wrap_xml("wp:", &f.wrap, &f.wrap_text),
-            kind = if f.text_box.is_some() { "Text Box" } else { "Picture" },
+            kind = match f.shape.as_deref().map(|s| s.nv.name.as_str()).filter(|n| !n.is_empty()) {
+                Some(n) => props::esc(n),
+                None => (if f.text_box.is_some() { "Text Box" } else { "Picture" }).to_string(),
+            },
             graphic = graphic,
         ))
     }
@@ -3418,6 +3516,39 @@ impl Saver<'_, '_> {
                 f = f,
             ));
             return Some(format!("{PARA_LEVEL}{}<{w}r>{rpr}<{w}t>{ch}</{w}t></{w}r></{w}sdtContent></{w}sdt>", control_open(w, *c, &ctl)));
+        }
+        // A shape put in line with text: its tree in a `wp:inline`.
+        if let Inline::Picture(p, _) = i
+            && let Some(shape) = p.shape.as_deref().filter(|s| p.image.is_none() || s.pic().is_none())
+        {
+            let id = self.ids.get();
+            self.ids.set(id + 1);
+            let emu = |pt: f64| (pt * 12700.0).round() as i64;
+            let (cx, cy) = (emu(p.w), emu(p.h));
+            let mut shape = shape.clone();
+            shape.xfrm.ext = [crate::drawing::units::Emu(cx), crate::drawing::units::Emu(cy)];
+            const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+            const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+            let name = if shape.nv.name.is_empty() { "Shape".to_string() } else { props::esc(&shape.nv.name) };
+            return Some(format!(
+                concat!(
+                    r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
+                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="{name} {id}"/><wp:cNvGraphicFramePr/>"#,
+                    r#"<a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:inline></{w}drawing>"#
+                ),
+                w = self.w,
+                wp = WP,
+                a = A,
+                cx = cx,
+                cy = cy,
+                id = id,
+                name = name,
+                graphic = drawing::graphic_data(
+                    &shape,
+                    &|path: &[u16]| new_blocks_xml(self.xml, &p.text.as_ref().filter(|_| path.is_empty())?.text_box.blocks, self.people).ok(),
+                    &self.w
+                ),
+            ));
         }
         if let Inline::Picture(p, _) = i {
             let image = p.image?;
@@ -3563,17 +3694,42 @@ struct Placement {
     /// Wrapping (`wrap`, `wrap_text`, behind the text) and the anchor lock, when changed.
     wrap: Option<(String, String, bool)>,
     locked: Option<bool>,
+    /// `relativeHeight` (FLOAT-16: the paint order), when arranged.
+    z: Option<u32>,
     /// The alternative text (`wp:docPr/@descr`).
     alt: Option<String>,
     /// The distance from the text (`distT`, `distB`, `distL`, `distR`), `allowOverlap` and `layoutInCell`.
     dist: Option<[f64; 4]>,
     overlap: Option<bool>,
     in_cell: Option<bool>,
+    /// The shape's own properties (DRAW), as edits in the drawing's text: applied first.
+    shape: Option<Vec<drawing::Edit>>,
+    /// The drawing's place in the patched text, when only it is written (an `mc:AlternateContent` around it is
+    /// dropped).
+    inner: Option<Range<usize>>,
+    /// The whole text written instead (a VML object patched as VML).
+    replace: Option<String>,
 }
 
 impl Placement {
     fn changed(a: &Float, b: &Float) -> Option<Placement> {
         let ne = |x: f64, y: f64| (x - y).abs() > 1e-6;
+        // FLOAT-17: a quarter-turned float holds its turned box: the document gets its own extent and offsets back.
+        let unswap = |f: &Float| {
+            let mut f = f.clone();
+            if f.rot_swap {
+                let (w, h) = (f.w, f.h);
+                if f.h_align.is_none() {
+                    f.h_offset -= (h - w) / 2.0;
+                }
+                if f.v_align.is_none() {
+                    f.v_offset -= (w - h) / 2.0;
+                }
+                (f.w, f.h) = (h, w);
+            }
+            f
+        };
+        let (a, b) = (&unswap(a), &unswap(b));
         // An aligned position that became an offset is written as one.
         let pos = |(ra, aa, oa): (&String, &Option<String>, f64), (rb, ab, ob): (&String, &Option<String>, f64)| {
             (ra != rb || aa != ab || ab.is_none() && ne(oa, ob)).then(|| (rb.clone(), ab.clone(), ob))
@@ -3584,18 +3740,29 @@ impl Placement {
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
             wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind).then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind)),
             locked: (a.locked != b.locked).then_some(b.locked),
+            z: (a.z != b.z).then_some(b.z),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
             dist: a.dist.iter().zip(&b.dist).any(|(x, y)| ne(*x, *y)).then_some(b.dist),
             overlap: (a.allow_overlap != b.allow_overlap).then_some(b.allow_overlap),
             in_cell: (a.layout_in_cell != b.layout_in_cell).then_some(b.layout_in_cell),
+            shape: None,
+            inner: None,
+            replace: None,
         };
-        let any = p.h.is_some() || p.v.is_some() || p.size.is_some() || p.wrap.is_some() || p.locked.is_some() || p.alt.is_some();
+        let any = p.h.is_some() || p.v.is_some() || p.size.is_some() || p.wrap.is_some() || p.locked.is_some() || p.alt.is_some() || p.z.is_some();
         (any || p.dist.is_some() || p.overlap.is_some() || p.in_cell.is_some()).then_some(p)
     }
 
     fn apply(&self, d: &str) -> String {
         let emu = |pt: f64| ((pt * 12700.0).round() as i64).to_string();
-        let mut s = d.to_string();
+        if let Some(r) = &self.replace {
+            return r.clone();
+        }
+        let d = self.inner.clone().and_then(|r| d.get(r)).unwrap_or(d);
+        let mut s = match &self.shape {
+            Some(e) => drawing::apply(d, e.clone()),
+            None => d.to_string(),
+        };
         for (name, pos) in [("positionH", &self.h), ("positionV", &self.v)] {
             let Some((rel, align, off)) = pos else { continue };
             if let Some((start, end)) = find_tag(&s, name, 0) {
@@ -3611,6 +3778,9 @@ impl Placement {
             let mut tag = s[start..end].to_string();
             if let Some((_, _, behind)) = &self.wrap {
                 tag = set_attr(&tag, "behindDoc", if *behind { "1" } else { "0" });
+            }
+            if let Some(z) = self.z {
+                tag = set_attr(&tag, "relativeHeight", &z.to_string());
             }
             if let Some(l) = self.locked {
                 tag = set_attr(&tag, "locked", if l { "1" } else { "0" });
@@ -3656,7 +3826,8 @@ impl Placement {
             s.replace_range(start..end, &tag);
         }
         if let Some((w, h)) = self.size {
-            // The anchor's extent and the shape's own size (`a:ext` with cx; extension lists' `a:ext` have none).
+            // The anchor's extent and the top shape's own size: the first `a:ext` with cx (extension lists' have none;
+            // a group's children keep theirs, scaled by its child frame).
             for name in ["extent", "ext"] {
                 let mut from = 0;
                 while let Some((start, end)) = find_tag(&s, name, from) {
@@ -3664,15 +3835,19 @@ impl Placement {
                     if tag.contains(" cx=") {
                         let t = set_attr(&set_attr(&tag, "cx", &emu(w)), "cy", &emu(h));
                         s.replace_range(start..end, &t);
-                        from = start + t.len();
-                    } else {
-                        from = end;
+                        break;
                     }
+                    from = end;
                 }
             }
         }
         s
     }
+}
+
+/// Whether two runs carry the same insertion and deletion.
+fn same_rev(a: &RunStyle, b: &RunStyle) -> bool {
+    a.rev.ins == b.rev.ins && a.rev.del == b.rev.del
 }
 
 /// The first start tag named `local` (any prefix) at or after `from`: its byte range.

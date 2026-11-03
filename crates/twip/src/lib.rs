@@ -3,6 +3,7 @@
 
 pub mod api;
 pub(crate) mod docx;
+pub(crate) mod drawing;
 pub(crate) mod editing;
 #[cfg(not(target_os = "emscripten"))]
 pub(crate) mod features;
@@ -21,6 +22,9 @@ mod tests;
 pub mod internal {
     pub mod docx {
         pub use crate::docx::*;
+    }
+    pub mod drawing {
+        pub use crate::drawing::*;
     }
     pub mod editing {
         pub use crate::editing::*;

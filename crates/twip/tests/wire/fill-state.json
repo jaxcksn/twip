@@ -1,0 +1,21 @@
+[
+  {
+    "explicit": {
+      "type": "none"
+    }
+  },
+  {
+    "fromStyle": {
+      "colour": {
+        "theme": "accent1",
+        "transforms": [
+          {
+            "kind": "lumMod",
+            "value": 0.75
+          }
+        ]
+      },
+      "type": "solid"
+    }
+  }
+]

@@ -25,6 +25,22 @@ export interface AccessibleNode {
 }
 
 // @public
+export type Arrange = 'forward' | 'backward' | 'toFront' | 'toBack' | 'inFrontOfText' | 'behindText';
+
+// @public
+export interface Arrowhead {
+    kind: ArrowKind;
+    length?: ArrowSize;
+    width?: ArrowSize;
+}
+
+// @public
+export type ArrowKind = 'triangle' | 'stealth' | 'diamond' | 'oval' | 'arrow';
+
+// @public
+export type ArrowSize = 'small' | 'medium' | 'large';
+
+// @public
 export interface Author {
     identity?: {
         provider: string;
@@ -101,6 +117,20 @@ export function cm(n: number): Points;
 export type Color = `#${string}`;
 
 // @public
+export interface ColourTransform {
+    kind: TransformKind;
+    value: number;
+}
+
+// @public
+export interface ColourValue {
+    preset?: string;
+    rgb?: Color;
+    theme?: ThemeColour;
+    transforms?: ColourTransform[];
+}
+
+// @public
 export interface CommandEntry {
     group: 'text' | 'clipboard' | 'history' | 'selection' | 'character' | 'paragraph' | 'tabs' | 'page' | 'headerFooter' | 'insert' | 'table' | 'object' | 'field' | 'control' | 'data' | 'review' | 'view';
     id: CommandId;
@@ -141,6 +171,7 @@ export interface Commands {
         alignment?: TabAlignment;
         leader?: TabLeader;
     }): Promise<void>;
+    arrangeObject(where: Arrange): Promise<void>;
     autoFitColumns(to: 'contents' | 'window' | 'fixed'): Promise<void>;
     changeCase(to: 'lower' | 'upper' | 'sentence' | 'title' | 'toggle'): Promise<void>;
     clearFormatting(): Promise<void>;
@@ -184,8 +215,10 @@ export interface Commands {
         key?: string;
         image: Uint8Array;
     }): Promise<void>;
+    flipObject(axis: FlipAxis): Promise<void>;
     goBack(): Promise<void>;
     goToPage(page: number): Promise<void>;
+    groupObjects(): Promise<void>;
     growFont(): Promise<void>;
     increaseIndent(): Promise<void>;
     insertColumnBreak(): Promise<void>;
@@ -235,6 +268,7 @@ export interface Commands {
         count?: number;
     }): Promise<void>;
     insertSectionBreak(kind: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'): Promise<void>;
+    insertShape(options: ShapeInsert): Promise<void>;
     insertSymbol(options: {
         char: string;
         font?: string;
@@ -323,6 +357,7 @@ export interface Commands {
     select(unit: 'word' | 'sentence' | 'paragraph' | 'cell' | 'row' | 'column' | 'table'): Promise<void>;
     selectAll(): Promise<void>;
     selectComment(id: CommentId): Promise<void>;
+    selectGroupChild(direction: 'next' | 'previous'): Promise<void>;
     selectNextObject(direction: 'next' | 'previous'): Promise<void>;
     selectRevision(direction: 'next' | 'previous'): Promise<void>;
     setActiveComment(id: CommentId | null): Promise<void>;
@@ -433,6 +468,7 @@ export interface Commands {
         allowOverlap?: boolean;
         layoutInCell?: boolean;
     }): Promise<void>;
+    setObjectRotation(degrees: Degrees): Promise<void>;
     setObjectSize(options: {
         width?: Points;
         height?: Points;
@@ -464,6 +500,7 @@ export interface Commands {
         after?: Points | 'auto';
     }): Promise<void>;
     setParagraphStyle(styleId: StyleId): Promise<void>;
+    setPictureAdjust(change: PictureAdjustChange): Promise<void>;
     setPlaceholderLooks(options: {
         looks: PlaceholderLook[];
         merge?: boolean;
@@ -471,6 +508,12 @@ export interface Commands {
     setRowCanBreak(on: boolean): Promise<void>;
     setRowHeight(height: RowHeight): Promise<void>;
     setSelectionMode(mode: 'normal' | 'extend' | 'block'): Promise<void>;
+    setShapeAdjust(options: ShapeAdjust): Promise<void>;
+    setShapeEffects(change: EffectsChange): Promise<void>;
+    setShapeFill(fill: FillValue): Promise<void>;
+    setShapeLine(change: LineChange): Promise<void>;
+    setShapePreset(preset: ShapePreset): Promise<void>;
+    setShapeText(change: ShapeTextChange): Promise<void>;
     setSmallCaps(on: boolean): Promise<void>;
     setStrikethrough(on: boolean): Promise<void>;
     setSubscript(on: boolean): Promise<void>;
@@ -506,6 +549,7 @@ export interface Commands {
     }): Promise<void>;
     splitTable(): Promise<void>;
     undo(): Promise<void>;
+    ungroupObjects(): Promise<void>;
     unlinkFields(options?: FieldTargets): Promise<void>;
     updateFields(options?: FieldTargets): Promise<void>;
     wrapInRepeatingSection(options?: {
@@ -627,6 +671,9 @@ export interface CommentThread {
 }
 
 // @public
+export type Compound = 'single' | 'double' | 'thickThin' | 'thinThick' | 'triple';
+
+// @public
 export interface ContentPoint {
     x: number;
     y: number;
@@ -685,6 +732,9 @@ export interface DataParts {
         itemId: string;
     }[]>;
 }
+
+// @public
+export type Degrees = number;
 
 // @public
 export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility';
@@ -891,7 +941,26 @@ export interface EditorState {
         language: string;
         misspellings: number;
     };
+    themeColours: Color[];
     view: ViewState;
+}
+
+// @public
+export interface EffectsChange {
+    blur?: Points | null;
+    glow?: Glow | null;
+    innerShadow?: Shadow | null;
+    outerShadow?: Shadow | null;
+    softEdge?: Points | null;
+}
+
+// @public
+export interface EffectsValue {
+    blur?: Points;
+    glow?: Glow;
+    innerShadow?: Shadow;
+    outerShadow?: Shadow;
+    softEdge?: Points;
 }
 
 // @public
@@ -989,6 +1058,37 @@ export interface FieldTargets {
 }
 
 // @public
+export type FillState = {
+    explicit: FillValue;
+} | {
+    fromStyle: FillValue;
+};
+
+// @public
+export type FillValue = {
+    type: 'none';
+} | {
+    type: 'solid';
+    colour: ColourValue;
+} | {
+    type: 'gradient';
+    kind: GradientShape;
+    angle?: Degrees;
+    stops: GradientStop[];
+} | {
+    type: 'pattern';
+    preset: string;
+    foreground: ColourValue;
+    background: ColourValue;
+} | {
+    type: 'picture';
+    image: Uint8Array;
+    tile?: boolean;
+} | {
+    type: 'fromStyle';
+};
+
+// @public
 export interface Find {
     all(query: FindQuery): Promise<FindMatch[]>;
     next(query: FindQuery): Promise<FindResult>;
@@ -1021,6 +1121,9 @@ export interface FindResult {
     found: boolean;
     wrapped: boolean;
 }
+
+// @public
+export type FlipAxis = 'horizontal' | 'vertical';
 
 // @public
 export class FontLibrary {
@@ -1085,6 +1188,21 @@ export interface Gestures {
 }
 
 // @public
+export interface Glow {
+    colour: ColourValue;
+    radius: Points;
+}
+
+// @public
+export type GradientShape = 'linear' | 'radial' | 'rectangular' | 'path';
+
+// @public
+export interface GradientStop {
+    colour: ColourValue;
+    position: number;
+}
+
+// @public
 export interface Heading {
     id: HeadingId;
     level: number;
@@ -1131,6 +1249,7 @@ export class HeadlessEditor {
     setAuthor(author: Author): Promise<void>;
     setMode(mode: 'editing' | 'design'): Promise<void>;
     setReadOnly(value: boolean): Promise<void>;
+    readonly shapeGallery: readonly ShapeGalleryGroup[];
     readonly shortcuts: Shortcuts;
     readonly spelling: Spelling;
     readonly styles: Styles;
@@ -1158,6 +1277,29 @@ export type HostCommand = 'save' | 'saveAs' | 'print' | 'open' | 'new' | 'find' 
 export function inches(n: number): Points;
 
 // @public
+export type LineCap = 'flat' | 'round' | 'square';
+
+// @public
+export interface LineChange {
+    cap?: LineCap;
+    compound?: Compound;
+    dash?: string;
+    ends?: LineEnds;
+    fill?: FillValue;
+    join?: LineJoin;
+    width?: Points;
+}
+
+// @public
+export interface LineEnds {
+    head?: Arrowhead;
+    tail?: Arrowhead;
+}
+
+// @public
+export type LineJoin = 'round' | 'bevel' | 'miter';
+
+// @public
 export type LineSpacing = {
     rule: 'multiple';
     lines: number;
@@ -1165,6 +1307,24 @@ export type LineSpacing = {
     rule: 'exact' | 'atLeast';
     size: Points;
 };
+
+// @public
+export type LineState = {
+    explicit: LineValue;
+} | {
+    fromStyle: LineValue;
+};
+
+// @public
+export interface LineValue {
+    cap: LineCap;
+    compound: Compound;
+    dash: string;
+    ends: LineEnds;
+    fill: FillValue;
+    join: LineJoin;
+    width: Points;
+}
 
 // @public
 export type MarkupView = 'all' | 'simple' | 'noMarkup' | 'original';
@@ -1311,10 +1471,16 @@ export interface ObjectPlacement {
 export interface ObjectSelection {
     altText: string;
     anchorLocked: boolean | null;
+    childPath: number[];
+    count: number;
     decorative: boolean;
+    flipH: boolean;
+    flipV: boolean;
     height: Points;
-    kind: 'picture' | 'textBox';
+    kind: 'picture' | 'textBox' | 'shape' | 'line' | 'group';
     placement: ObjectPlacement | null;
+    rotation: Degrees;
+    shape: ShapeState | null;
     width: Points;
     wrap: ObjectWrap;
 }
@@ -1335,7 +1501,7 @@ export type Op = {
 // @public
 export type OpArgs<K extends CommandId> = Parameters<Commands[K]> extends [] ? {} : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [string | number | boolean | null] ? {
     value: Exclude<Parameters<Commands[K]>[0], undefined>;
-} : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | readonly unknown[]] ? {
+} : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | FillValue | readonly unknown[]] ? {
     value: Exclude<Parameters<Commands[K]>[0], undefined>;
 } : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [object] ? Exclude<Parameters<Commands[K]>[0], undefined> : {
     value: Exclude<Parameters<Commands[K]>[0], undefined>;
@@ -1410,6 +1576,14 @@ export interface Person {
     };
     initials?: string;
     name: string;
+}
+
+// @public
+export interface PictureAdjustChange {
+    brightness?: number;
+    contrast?: number;
+    grayscale?: boolean;
+    transparency?: number;
 }
 
 // @public
@@ -1613,6 +1787,64 @@ export interface SessionOptions {
 }
 
 // @public
+export interface Shadow {
+    blur: Points;
+    colour: ColourValue;
+    direction: Degrees;
+    distance: Points;
+}
+
+// @public
+export interface ShapeAdjust {
+    index: number;
+    value: number;
+}
+
+// @public
+export interface ShapeGalleryGroup {
+    label: string;
+    presets: ShapePreset[];
+}
+
+// @public
+export interface ShapeInsert {
+    height?: Points;
+    preset: ShapePreset;
+    width?: Points;
+}
+
+// @public
+export type ShapePreset = 'accentBorderCallout1' | 'accentBorderCallout2' | 'accentBorderCallout3' | 'accentCallout1' | 'accentCallout2' | 'accentCallout3' | 'actionButtonBackPrevious' | 'actionButtonBeginning' | 'actionButtonBlank' | 'actionButtonDocument' | 'actionButtonEnd' | 'actionButtonForwardNext' | 'actionButtonHelp' | 'actionButtonHome' | 'actionButtonInformation' | 'actionButtonMovie' | 'actionButtonReturn' | 'actionButtonSound' | 'arc' | 'bentArrow' | 'bentConnector2' | 'bentConnector3' | 'bentConnector4' | 'bentConnector5' | 'bentUpArrow' | 'bevel' | 'blockArc' | 'borderCallout1' | 'borderCallout2' | 'borderCallout3' | 'bracePair' | 'bracketPair' | 'callout1' | 'callout2' | 'callout3' | 'can' | 'chartPlus' | 'chartStar' | 'chartX' | 'chevron' | 'chord' | 'circularArrow' | 'cloud' | 'cloudCallout' | 'corner' | 'cornerTabs' | 'cube' | 'curvedConnector2' | 'curvedConnector3' | 'curvedConnector4' | 'curvedConnector5' | 'curvedDownArrow' | 'curvedLeftArrow' | 'curvedRightArrow' | 'curvedUpArrow' | 'decagon' | 'diagStripe' | 'diamond' | 'dodecagon' | 'donut' | 'doubleWave' | 'downArrow' | 'downArrowCallout' | 'ellipse' | 'ellipseRibbon' | 'ellipseRibbon2' | 'flowChartAlternateProcess' | 'flowChartCollate' | 'flowChartConnector' | 'flowChartDecision' | 'flowChartDelay' | 'flowChartDisplay' | 'flowChartDocument' | 'flowChartExtract' | 'flowChartInputOutput' | 'flowChartInternalStorage' | 'flowChartMagneticDisk' | 'flowChartMagneticDrum' | 'flowChartMagneticTape' | 'flowChartManualInput' | 'flowChartManualOperation' | 'flowChartMerge' | 'flowChartMultidocument' | 'flowChartOfflineStorage' | 'flowChartOffpageConnector' | 'flowChartOnlineStorage' | 'flowChartOr' | 'flowChartPredefinedProcess' | 'flowChartPreparation' | 'flowChartProcess' | 'flowChartPunchedCard' | 'flowChartPunchedTape' | 'flowChartSort' | 'flowChartSummingJunction' | 'flowChartTerminator' | 'foldedCorner' | 'frame' | 'funnel' | 'gear6' | 'gear9' | 'halfFrame' | 'heart' | 'heptagon' | 'hexagon' | 'homePlate' | 'horizontalScroll' | 'irregularSeal1' | 'irregularSeal2' | 'leftArrow' | 'leftArrowCallout' | 'leftBrace' | 'leftBracket' | 'leftCircularArrow' | 'leftRightArrow' | 'leftRightArrowCallout' | 'leftRightCircularArrow' | 'leftRightRibbon' | 'leftRightUpArrow' | 'leftUpArrow' | 'lightningBolt' | 'line' | 'lineInv' | 'mathDivide' | 'mathEqual' | 'mathMinus' | 'mathMultiply' | 'mathNotEqual' | 'mathPlus' | 'moon' | 'noSmoking' | 'nonIsoscelesTrapezoid' | 'notchedRightArrow' | 'octagon' | 'parallelogram' | 'pentagon' | 'pie' | 'pieWedge' | 'plaque' | 'plaqueTabs' | 'plus' | 'quadArrow' | 'quadArrowCallout' | 'rect' | 'ribbon' | 'ribbon2' | 'rightArrow' | 'rightArrowCallout' | 'rightBrace' | 'rightBracket' | 'round1Rect' | 'round2DiagRect' | 'round2SameRect' | 'roundRect' | 'rtTriangle' | 'smileyFace' | 'snip1Rect' | 'snip2DiagRect' | 'snip2SameRect' | 'snipRoundRect' | 'squareTabs' | 'star10' | 'star12' | 'star16' | 'star24' | 'star32' | 'star4' | 'star5' | 'star6' | 'star7' | 'star8' | 'straightConnector1' | 'stripedRightArrow' | 'sun' | 'swooshArrow' | 'teardrop' | 'trapezoid' | 'triangle' | 'upArrow' | 'upArrowCallout' | 'upDownArrow' | 'upDownArrowCallout' | 'uturnArrow' | 'verticalScroll' | 'wave' | 'wedgeEllipseCallout' | 'wedgeRectCallout' | 'wedgeRoundRectCallout';
+
+// @public
+export interface ShapeState {
+    adjust: number[];
+    effects: EffectsValue;
+    fill: FillState;
+    line: LineState;
+    preset: ShapePreset | null;
+    text: ShapeTextState | null;
+}
+
+// @public
+export interface ShapeTextChange {
+    anchor?: TextAnchor;
+    autofit?: TextAutofit;
+    direction?: TextDirection;
+    insets?: [Points, Points, Points, Points];
+    wrapText?: boolean;
+}
+
+// @public
+export interface ShapeTextState {
+    anchor: TextAnchor;
+    autofit: TextAutofit;
+    direction: TextDirection;
+    insets: [Points, Points, Points, Points];
+    wrapText: boolean;
+}
+
+// @public
 export interface Shortcuts {
     lookup(keys: string): {
         kind: 'command';
@@ -1738,12 +1970,24 @@ export type TableWidth = {
 export type TabSelector = TabAlignment | 'firstLineIndent' | 'hangingIndent';
 
 // @public
+export type TextAnchor = 'top' | 'middle' | 'bottom';
+
+// @public
+export type TextAutofit = 'none' | 'shape';
+
+// @public
+export type TextDirection = 'horizontal' | 'vertical' | 'vertical270' | 'eastAsianVertical' | 'mongolianVertical' | 'stacked' | 'stackedRightToLeft';
+
+// @public
 export interface TextDistance {
     bottom: Points;
     left: Points;
     right: Points;
     top: Points;
 }
+
+// @public
+export type ThemeColour = 'text1' | 'background1' | 'text2' | 'background2' | 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6' | 'hyperlink' | 'followedHyperlink';
 
 // @public
 export interface Tooltip {
@@ -1769,6 +2013,9 @@ export interface TransactionRecord {
     };
     time: string;
 }
+
+// @public
+export type TransformKind = 'tint' | 'shade' | 'lumMod' | 'lumOff' | 'satMod' | 'satOff' | 'hueMod' | 'hueOff' | 'alpha' | 'alphaMod';
 
 // @public
 export type Tri = boolean | 'mixed' | null;
@@ -1878,7 +2125,7 @@ export interface ViewState {
 
 // @public
 export interface Warning {
-    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'font-substituted' | 'rewritten-content' | 'pdf-font-fallback' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan';
+    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'font-substituted' | 'rewritten-content' | 'pdf-font-fallback' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset';
     count: number;
     location?: {
         part: string;

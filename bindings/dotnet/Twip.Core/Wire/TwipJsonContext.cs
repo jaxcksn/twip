@@ -92,6 +92,22 @@ namespace Twip.Wire;
         typeof(CamelEnum<UndoGrouping>),
         typeof(CamelEnum<VerticalDirection>),
         typeof(CamelEnum<VerticalMerge>),
+        typeof(CamelEnum<ArrowKind>),
+        typeof(CamelEnum<ArrowSize>),
+        typeof(CamelEnum<Arrange>),
+        typeof(CamelEnum<ColorTransformKind>),
+        typeof(CamelEnum<FlipAxis>),
+        typeof(CamelEnum<GradientShape>),
+        typeof(CamelEnum<LineCap>),
+        typeof(CamelEnum<LineCompound>),
+        typeof(CamelEnum<LineJoin>),
+        typeof(CamelEnum<TextAnchor>),
+        typeof(CamelEnum<TextAutofit>),
+        typeof(CamelEnum<TextDirection>),
+        typeof(CamelEnum<ThemeColor>),
+        typeof(EffectChangeConverter<Shadow>),
+        typeof(EffectChangeConverter<Glow>),
+        typeof(EffectChangeConverter<Length>),
         typeof(FormatValueConverter<bool>),
         typeof(FormatValueConverter<string>),
         typeof(FormatValueConverter<Length>),
@@ -445,4 +461,46 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(WordAddedPayload))]
 [JsonSerializable(typeof(WordCount))]
 [JsonSerializable(typeof(ZoomLevel))]
+[JsonSerializable(typeof(ArrowKind))]
+[JsonSerializable(typeof(ArrowSize))]
+[JsonSerializable(typeof(Arrange))]
+[JsonSerializable(typeof(ColorTransformKind))]
+[JsonSerializable(typeof(FlipAxis))]
+[JsonSerializable(typeof(GradientShape))]
+[JsonSerializable(typeof(LineCap))]
+[JsonSerializable(typeof(LineCompound))]
+[JsonSerializable(typeof(LineJoin))]
+[JsonSerializable(typeof(TextAnchor))]
+[JsonSerializable(typeof(TextAutofit))]
+[JsonSerializable(typeof(TextDirection))]
+[JsonSerializable(typeof(ThemeColor))]
+[JsonSerializable(typeof(Arrowhead))]
+[JsonSerializable(typeof(ColorTransform))]
+[JsonSerializable(typeof(EffectsChange))]
+[JsonSerializable(typeof(EffectsValue))]
+[JsonSerializable(typeof(FillState))]
+[JsonSerializable(typeof(FillValue))]
+[JsonSerializable(typeof(GradientStop))]
+[JsonSerializable(typeof(Glow))]
+[JsonSerializable(typeof(LineChange))]
+[JsonSerializable(typeof(LineEnds))]
+[JsonSerializable(typeof(LineState))]
+[JsonSerializable(typeof(LineValue))]
+[JsonSerializable(typeof(PictureAdjustChange))]
+[JsonSerializable(typeof(Shadow))]
+[JsonSerializable(typeof(ShapeAdjust))]
+[JsonSerializable(typeof(ShapeColor))]
+[JsonSerializable(typeof(ShapeGalleryGroup))]
+[JsonSerializable(typeof(ShapeInsert))]
+[JsonSerializable(typeof(ShapePreset))]
+[JsonSerializable(typeof(ShapeState))]
+[JsonSerializable(typeof(ShapeTextChange))]
+[JsonSerializable(typeof(ShapeTextState))]
+[JsonSerializable(typeof(IReadOnlyList<ShapeGalleryGroup>))]
+[JsonSerializable(typeof(FillValue.None), TypeInfoPropertyName = "FillValue_None")]
+[JsonSerializable(typeof(FillValue.Solid), TypeInfoPropertyName = "FillValue_Solid")]
+[JsonSerializable(typeof(FillValue.Gradient), TypeInfoPropertyName = "FillValue_Gradient")]
+[JsonSerializable(typeof(FillValue.Pattern), TypeInfoPropertyName = "FillValue_Pattern")]
+[JsonSerializable(typeof(FillValue.Picture), TypeInfoPropertyName = "FillValue_Picture")]
+[JsonSerializable(typeof(FillValue.FromStyle), TypeInfoPropertyName = "FillValue_FromStyle")]
 internal sealed partial class TwipJsonContext : JsonSerializerContext;

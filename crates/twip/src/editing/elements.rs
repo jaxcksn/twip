@@ -257,9 +257,9 @@ impl<'d> Walk<'d> {
                     stack.pop();
                 }
                 Inline::Sym { ch, control: Some(c), .. } => self.control(*c, story, stack.last().copied(), ch.to_string(), here),
-                Inline::Float(f, _) => {
-                    if let Some(tb) = &f.text_box {
-                        self.boxes.push((FloatId(f.id), &tb.blocks));
+                i if i.story().is_some() => {
+                    if let Some((id, tb)) = i.story() {
+                        self.boxes.push((FloatId(id), &tb.blocks));
                     }
                 }
                 _ => {}

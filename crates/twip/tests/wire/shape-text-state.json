@@ -1,0 +1,14 @@
+[
+  {
+    "anchor": "middle",
+    "autofit": "shape",
+    "direction": "vertical270",
+    "insets": [
+      7.2,
+      3.6,
+      7.2,
+      3.6
+    ],
+    "wrapText": true
+  }
+]

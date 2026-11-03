@@ -115,6 +115,7 @@ internal enum Method : uint
     HostSetOverlayPalette = 73,
     HostSetPaintBudget = 74,
     HostSetLeaders = 75,
+    ShapeGallery = 76,
 }
 
 /// <summary>Status codes the C functions return.</summary>

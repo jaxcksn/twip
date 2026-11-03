@@ -318,6 +318,11 @@
     "type": "insertTextBox"
   },
   {
+    "preset": "star5",
+    "type": "insertShape",
+    "width": 90.5
+  },
+  {
     "type": "insertFootnote"
   },
   {
@@ -513,6 +518,87 @@
   },
   {
     "type": "deleteObject"
+  },
+  {
+    "type": "setShapePreset",
+    "value": "roundRect"
+  },
+  {
+    "index": 0,
+    "type": "setShapeAdjust",
+    "value": 25000
+  },
+  {
+    "type": "setShapeFill",
+    "value": {
+      "colour": {
+        "theme": "accent1",
+        "transforms": [
+          {
+            "kind": "lumMod",
+            "value": 0.75
+          }
+        ]
+      },
+      "type": "solid"
+    }
+  },
+  {
+    "dash": "sysDot",
+    "ends": {
+      "tail": {
+        "kind": "stealth",
+        "length": "small",
+        "width": "large"
+      }
+    },
+    "type": "setShapeLine",
+    "width": 2.5
+  },
+  {
+    "glow": null,
+    "outerShadow": {
+      "blur": 4.5,
+      "colour": {
+        "rgb": "#000000"
+      },
+      "direction": 45.5,
+      "distance": 3.5
+    },
+    "type": "setShapeEffects"
+  },
+  {
+    "anchor": "bottom",
+    "type": "setShapeText",
+    "wrapText": false
+  },
+  {
+    "contrast": -0.5,
+    "grayscale": true,
+    "transparency": 0.25,
+    "type": "setPictureAdjust"
+  },
+  {
+    "type": "setObjectRotation",
+    "value": 45.5
+  },
+  {
+    "type": "flipObject",
+    "value": "horizontal"
+  },
+  {
+    "type": "arrangeObject",
+    "value": "toFront"
+  },
+  {
+    "type": "groupObjects"
+  },
+  {
+    "type": "ungroupObjects"
+  },
+  {
+    "type": "selectGroupChild",
+    "value": "next"
   },
   {
     "code": "MERGEFIELD Total",

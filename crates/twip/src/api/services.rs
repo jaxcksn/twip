@@ -152,7 +152,7 @@ pub enum MenuAction {
     /// Runs a command.
     Command {
         /// The command.
-        command: Command,
+        command: Box<Command>,
     },
     /// Replaces the misspelling at the selection.
     ReplaceWord {

@@ -199,6 +199,36 @@ pub struct Picture {
     pub lock_aspect: bool,
     /// `wp:effectExtent` (left, top, right, bottom), points: the layout box grows by it (FLOAT-5).
     pub effect: [f64; 4],
+    /// The DrawingML object: its geometry, paint and transform (`None`: a picture inserted without them).
+    pub shape: Option<Box<crate::drawing::Shape>>,
+    /// An inline shape's text (`wps:txbx`): its story, edited as a text box's (`StoryId::TextBox` of its id).
+    pub text: Option<Box<InlineText>>,
+}
+
+impl Inline {
+    /// The story this inline holds and the id it goes by: a float's text box, or an inline shape's text.
+    pub fn story(&self) -> Option<(u64, &TextBox)> {
+        match self {
+            Inline::Float(f, _) => f.text_box.as_ref().map(|tb| (f.id, tb)),
+            Inline::Picture(p, _) => p.text.as_ref().map(|t| (t.id, &t.text_box)),
+            _ => None,
+        }
+    }
+
+    pub fn story_mut(&mut self) -> Option<&mut TextBox> {
+        match self {
+            Inline::Float(f, _) => f.text_box.as_mut(),
+            Inline::Picture(p, _) => p.text.as_mut().map(|t| &mut t.text_box),
+            _ => None,
+        }
+    }
+}
+
+/// An inline shape's story and the id it goes by (from the floats' id space).
+#[derive(Clone, Debug, PartialEq)]
+pub struct InlineText {
+    pub id: u64,
+    pub text_box: TextBox,
 }
 
 /// An anchored (floating) picture or text box (the FLOAT rules).
@@ -238,6 +268,11 @@ pub struct Float {
     pub layout_in_cell: bool,
     /// Document order of the float, for F13.
     pub order: usize,
+    /// `wp:anchor/@relativeHeight`: its place among the floats of its plane (FLOAT-16).
+    pub z: u32,
+    /// FLOAT-17: the shape is turned a quarter (45° to 135° mod 180°, compat ≠ 12): `w`, `h` and the offsets are the
+    /// box turned about its centre, which is what is positioned and wrapped; the document's extent is (`h`, `w`).
+    pub rot_swap: bool,
     /// The source `w:drawing` element's byte range in its part: saving drops it when the float is deleted.
     pub src: Option<std::ops::Range<usize>>,
     /// `wp:anchor/@locked`: the anchor stays in its paragraph when the float is moved.
@@ -247,6 +282,8 @@ pub struct Float {
     /// A group shape's pictures and text boxes (FLOAT-15), in drawing order; the float's own image and text box are
     /// then none.
     pub parts: Vec<GroupPart>,
+    /// The DrawingML object (geometry, paint, transform, group tree); `None` for frames and floats made without one.
+    pub shape: Option<Box<crate::drawing::Shape>>,
 }
 
 /// A picture or text box of a group shape: its box from the group's top left, points (FLOAT-15).
@@ -255,6 +292,8 @@ pub struct GroupPart {
     pub rect: [f64; 4],
     pub image: Option<usize>,
     pub text_box: Option<TextBox>,
+    /// The part's place in the float's shape tree.
+    pub path: crate::drawing::ChildPath,
 }
 
 impl Float {
@@ -265,39 +304,10 @@ impl Float {
     }
 }
 
-/// FLOAT-10: a shape's preset geometry, as far as it moves the text in from the shape's edge.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub enum Geometry {
-    #[default]
-    Rect,
-    /// `roundRect` with its `adj` (corner radius, 100000ths of the shorter side).
-    RoundRect(f64),
-    Ellipse,
-    /// `triangle` with its `adj` (apex position, 100000ths of the width).
-    Triangle(f64),
-}
-
-impl Geometry {
-    /// FLOAT-10: how far the geometry's text rectangle lies inside a `w` × `h` shape: (left, top, right, bottom).
-    pub fn text_inset(self, w: f64, h: f64) -> [f64; 4] {
-        match self {
-            Geometry::Rect => [0.0; 4],
-            Geometry::RoundRect(adj) => [w.min(h) * adj / 100000.0 * 0.29289; 4],
-            Geometry::Ellipse => [0.14645 * w, 0.14645 * h, 0.14645 * w, 0.14645 * h],
-            Geometry::Triangle(adj) => {
-                let l = w * adj / 200000.0;
-                [l, h / 2.0, w - l - w / 2.0, 0.0]
-            }
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextBox {
     pub blocks: Vec<Block>,
     pub insets: [f64; 4],
-    /// The shape's preset geometry (FLOAT-10).
-    pub geometry: Geometry,
     pub outline: f64,
     pub auto_fit: bool,
     /// `wps:bodyPr/@anchor`: 0 top, 1 centre (`ctr`), 2 bottom (`b`); others are top (FLOAT-10).
@@ -855,6 +865,9 @@ pub struct AddedList {
 #[derive(Clone, Debug, Default)]
 pub struct Document {
     pub sections: Vec<Section>,
+    /// The theme's colour and format schemes (DRAW-7, DRAW-8) and the settings' colour mapping.
+    pub theme: Rc<crate::drawing::theme::Theme>,
+    pub colour_map: crate::drawing::theme::ColourMap,
     /// Headers and footers by part name, in name order (the editor addresses them by place in it).
     pub stories: std::collections::BTreeMap<String, Vec<Block>>,
     pub footnotes: HashMap<i64, Vec<Block>>,

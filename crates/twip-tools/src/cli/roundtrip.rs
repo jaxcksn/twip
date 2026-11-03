@@ -156,6 +156,18 @@ fn floats(e: &Editor) -> Vec<twip::internal::layout::FloatId> {
         .collect()
 }
 
+/// Whether float `f` has a shape tree (a shape, picture or group as DrawingML or VML gives it).
+fn shaped(e: &Editor, f: twip::internal::layout::FloatId) -> bool {
+    use twip::internal::docx::{Block, Inline};
+    e.document()
+        .sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .flat_map(|p| p.inlines.iter())
+        .any(|i| matches!(i, Inline::Float(fl, _) if fl.id == f.0 && fl.shape.as_deref().is_some_and(|s| s.sp().is_some())))
+}
+
 fn dump(e: &mut Editor) -> serde_json::Value {
     inspect::inspect(e, "dump", true)["dump"].clone()
 }
@@ -407,6 +419,41 @@ pub fn run(args: &[String]) -> Result<(), String> {
                     twip::internal::editing::commands::moving(MoveBy::Char, Dir::Forward, false)
                 };
                 e.execute(c, &fonts);
+                e.history().undo_depth() > 0
+            });
+        }
+        // Shapes: the first float with a shape tree, formatted; a new shape inserted.
+        {
+            use twip::api::drawing::{ColourValue, EffectsChange, FillValue, FlipAxis, Glow, LineChange, ShapeInsert, ShapePreset};
+            use twip::api::value::{Color, Points};
+            let colour = ColourValue::rgb(Color(0x00B050));
+            let shape_families: Vec<(&str, Vec<Command>)> = vec![
+                ("shape-fill", vec![Command::SetShapeFill(FillValue::Solid { colour: colour.clone() })]),
+                (
+                    "shape-format",
+                    vec![
+                        Command::SetShapeLine(LineChange { width: Some(Points(2.0)), dash: Some("dash".into()), ..LineChange::default() }),
+                        Command::SetShapeEffects(EffectsChange { glow: Some(Some(Glow { colour, radius: Points(4.0) })), ..EffectsChange::default() }),
+                        Command::SetObjectRotation(30.0),
+                        Command::FlipObject(FlipAxis::Horizontal),
+                    ],
+                ),
+                ("shape-preset", vec![Command::SetShapePreset(ShapePreset::from_name("hexagon").expect("a preset"))]),
+            ];
+            for (label, cmds) in shape_families {
+                run_family(label, &mut |e| {
+                    let Some(f) = floats(e).into_iter().find(|f| shaped(e, *f)) else { return false };
+                    e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(f)));
+                    let before = e.history().undo_depth();
+                    for c in &cmds {
+                        e.execute(c.clone(), &fonts);
+                    }
+                    e.history().undo_depth() > before
+                });
+            }
+            run_family("shape-insert", &mut |e| {
+                let preset = ShapePreset::from_name("star5").expect("a preset");
+                e.execute(Command::InsertShape(ShapeInsert { preset, width: None, height: None }), &fonts);
                 e.history().undo_depth() > 0
             });
         }

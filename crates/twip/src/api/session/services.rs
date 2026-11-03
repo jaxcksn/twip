@@ -38,7 +38,7 @@ impl Session {
     /// Runs a menu item as one transaction.
     pub fn invoke(&mut self, action: MenuAction) -> Result<Commit, Error> {
         match action {
-            MenuAction::Command { command } => self.run(command),
+            MenuAction::Command { command } => self.run(*command),
             MenuAction::ReplaceWord { with } => {
                 let f = self
                     .services

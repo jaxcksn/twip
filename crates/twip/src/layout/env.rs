@@ -4,6 +4,7 @@
 use crate::docx::Compat;
 use crate::docx::review::ReviewView;
 use crate::docx::{Document, Run};
+use std::rc::Rc;
 
 /// What text layout reads from the document settings. Values are kept as written; each algorithm interprets them
 /// (for example `splitPgBreakAndParaMark` only applies in compat 14 or below, COMPAT-3).
@@ -49,6 +50,9 @@ pub struct TextEnv {
     pub line_grid: Option<i32>,
     /// `w:adjustLineHeightInTable` (LINE-16: cell lines snap to the grid).
     pub adjust_line_height_in_table: bool,
+    /// The colours shapes resolve against (DRAW-7, DRAW-8): read-only document state.
+    pub theme: std::rc::Rc<crate::drawing::theme::Theme>,
+    pub colour_map: crate::drawing::theme::ColourMap,
 }
 
 impl TextEnv {
@@ -79,6 +83,8 @@ impl TextEnv {
                 f => r.font(f),
             }),
             adjust_line_height_in_table: s.has("adjustLineHeightInTable"),
+            theme: doc.theme.clone(),
+            colour_map: doc.colour_map,
         }
     }
 }
@@ -94,6 +100,64 @@ pub struct LayoutEnv {
     pub gutter_at_top: bool,
     /// The resolved `LineNumber` character style (LNUM-1).
     pub line_number_run: Option<Run>,
+    /// Linked text boxes: each chain's story and its boxes in order.
+    pub chains: Rc<[Chain]>,
+}
+
+/// A chain of linked text boxes (`wps:txbx id` in the first, `wps:linkedTxbx id seq` in the others): the first box's
+/// story, laid out box after box; each box's float id and text frame size (width, height), first box first.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Chain {
+    pub story: crate::docx::TextBox,
+    pub boxes: Vec<(u64, [f64; 2])>,
+}
+
+impl LayoutEnv {
+    /// The chain float `f` is a box of, and its place in it.
+    pub fn chain_of(&self, f: u64) -> Option<(&Chain, usize)> {
+        self.chains.iter().find_map(|c| c.boxes.iter().position(|b| b.0 == f).map(|k| (c, k)))
+    }
+}
+
+/// The document's chains of linked text boxes (those whose first box is in the document and that have another box).
+fn chains(doc: &Document) -> Rc<[Chain]> {
+    use crate::drawing::ShapeText;
+    use std::collections::BTreeMap;
+    // By chain id: the first box's story and frame, and the later boxes by their seq.
+    let mut heads: BTreeMap<u32, (crate::docx::TextBox, (u64, [f64; 2]))> = BTreeMap::new();
+    let mut later: BTreeMap<u32, Vec<(u32, (u64, [f64; 2]))>> = BTreeMap::new();
+    fn walk(blocks: &[crate::docx::Block], out: &mut dyn FnMut(&crate::docx::Float)) {
+        for b in blocks {
+            match b {
+                crate::docx::Block::Para(p) => p.inlines.iter().for_each(|i| {
+                    if let crate::docx::Inline::Float(f, _) = i {
+                        out(f);
+                    }
+                }),
+                crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
+            }
+        }
+    }
+    let mut each = |f: &crate::docx::Float| {
+        let Some(sp) = f.shape.as_deref().and_then(|s| s.sp()) else { return };
+        match (&sp.text, sp.chain, &f.text_box) {
+            (ShapeText::Story, Some(c), Some(tb)) => {
+                heads.insert(c, (tb.clone(), (f.id, super::story::text_frame_size(f))));
+            }
+            (ShapeText::Linked { chain, seq }, ..) => later.entry(*chain).or_default().push((*seq, (f.id, super::story::text_frame_size(f)))),
+            _ => {}
+        }
+    };
+    doc.sections.iter().for_each(|s| walk(&s.blocks, &mut each));
+    doc.stories.values().for_each(|b| walk(b, &mut each));
+    heads
+        .into_iter()
+        .filter_map(|(id, (story, first))| {
+            let mut rest = later.remove(&id)?;
+            rest.sort_by_key(|(seq, _)| *seq);
+            Some(Chain { story, boxes: std::iter::once(first).chain(rest.into_iter().map(|(_, b)| b)).collect() })
+        })
+        .collect()
 }
 
 impl LayoutEnv {
@@ -105,6 +169,7 @@ impl LayoutEnv {
             mirror_margins: s.mirror_margins,
             gutter_at_top: s.gutter_at_top,
             line_number_run: doc.line_number_run.clone(),
+            chains: chains(doc),
         }
     }
 }

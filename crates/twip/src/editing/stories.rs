@@ -115,11 +115,16 @@ impl Editor {
             return Outcome::Moved;
         }
         // Esc during an object drag cancels it: nothing changes.
-        if self.object_cancel() {
+        if self.object_cancel() || self.shape_cancel() || self.shape_insert.take().is_some() {
             return Outcome::Moved;
         }
         if self.border_drag.take().is_some() {
             self.requests.push(super::input::Request::ReleasePointer);
+            return Outcome::Moved;
+        }
+        // Esc with a group's child selected selects the group.
+        if self.selected_child().is_some() {
+            self.object_child = None;
             return Outcome::Moved;
         }
         match self.selection {
@@ -138,7 +143,7 @@ impl Editor {
         }
         match self.selection.focus().map(|p| p.story) {
             Some(StoryId::TextBox(f)) => {
-                self.set_selection(Selection::Object(ObjectRef::Floating(f)));
+                self.set_selection(Selection::Object(self.story_object(f)));
                 Outcome::Moved
             }
             _ if matches!(self.editing(), StoryId::HeaderFooter(_)) => self.close_header_footer(),

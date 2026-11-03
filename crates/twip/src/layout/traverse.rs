@@ -48,6 +48,12 @@ pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
         Item::Rect { rect, colour } => Item::Rect { rect: r4(rect), colour: *colour },
         Item::Image { rect, key } => Item::Image { rect: r4(rect), key: *key },
         Item::Gridline { line } => Item::Gridline { line: r4(line) },
+        Item::Shape(s) => Item::Shape(std::rc::Rc::new(s.moved(dx, dy))),
+        Item::Turned(t) => Item::Turned(std::rc::Rc::new(super::fragment::Turned {
+            centre: [t.centre[0] + dx, t.centre[1] + dy],
+            deg: t.deg,
+            items: t.items.iter().map(|i| translated(i, dx, dy)).collect(),
+        })),
     }
 }
 
@@ -189,24 +195,65 @@ pub fn paint_lines<'a>(
     for b in bodies() {
         backgrounds(&b.children, b.offset.0, b.offset.1, &neither, &mut visible);
     }
+    // FLOAT-16: floats behind the text (the body's and the headers' and footers'), lowest first, under the body text.
+    let stories = || page.children.iter().map(|c| match c {
+        PageChild::Body(b) => &**b,
+        PageChild::Header(b) | PageChild::Footer(b) => b,
+    });
+    let behind = |k: &BoxKind| matches!(k, BoxKind::Float { layer, .. } if layer.behind);
+    let mut found = Vec::new();
+    for b in stories() {
+        boxes_of(&b.children, b.offset.0, b.offset.1, &behind, &mut found);
+    }
+    found.sort_by_key(|(fb, ..)| layer_of(&fb.kind));
+    for (fb, dx, dy) in found {
+        backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut visible);
+        flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut visible);
+    }
     for b in bodies() {
         flow(&b.children, b.offset.0, b.offset.1, &neither, &mut lines, &mut visible);
     }
-    for want in [&is_notes as &dyn Fn(&BoxKind) -> bool, &is_float] {
+    let in_front = |k: &BoxKind| is_float(k) && !behind(k);
+    for want in [&is_notes as &dyn Fn(&BoxKind) -> bool, &in_front] {
+        let mut found = Vec::new();
         for b in bodies() {
-            let mut found = Vec::new();
             boxes_of(&b.children, b.offset.0, b.offset.1, want, &mut found);
-            for (fb, dx, dy) in found {
-                backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut visible);
-                flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut visible);
-            }
+        }
+        found.sort_by_key(|(fb, ..)| layer_of(&fb.kind));
+        for (fb, dx, dy) in found {
+            backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut visible);
+            flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut visible);
         }
     }
     for c in page.children.iter() {
         if let PageChild::Header(b) | PageChild::Footer(b) = c {
-            backgrounds(&b.children, b.offset.0, b.offset.1, &|_| false, &mut visible);
-            flow(&b.children, b.offset.0, b.offset.1, &|_| false, &mut lines, &mut visible);
+            backgrounds(&b.children, b.offset.0, b.offset.1, &behind, &mut visible);
+            flow(&b.children, b.offset.0, b.offset.1, &behind, &mut lines, &mut visible);
         }
+    }
+}
+
+/// Every line of `children` outside floats, with its paragraph and the offset of its coordinates.
+pub fn lines_in<'a>(children: &'a [Child], placed: &mut dyn FnMut(Option<ParaId>, &'a PlacedLine, f64, f64)) {
+    let mut each = |_: u32, para: Option<ParaId>, l: &'a PlacedLine, dx: f64, dy: f64| placed(para, l, dx, dy);
+    let mut lines = Lines { n: 0, placed: &mut each };
+    flow(children, 0.0, 0.0, &is_float, &mut lines, &mut |_| {});
+}
+
+/// The items of `children` in paint order, in their own coordinates (what a turned group draws).
+pub fn items_of(children: &[Child]) -> Vec<Item> {
+    let mut v = Vec::new();
+    let mut out = |p: Placed| v.push(p.absolute());
+    backgrounds(children, 0.0, 0.0, &|_| false, &mut out);
+    flow(children, 0.0, 0.0, &|_| false, &mut Lines { n: 0, placed: &mut |_, _, _, _, _| {} }, &mut out);
+    v
+}
+
+/// A float box's paint layer (FLOAT-16); other boxes sort first, in their found order.
+fn layer_of(k: &BoxKind) -> Option<super::fragment::Layer> {
+    match k {
+        BoxKind::Float { layer, .. } => Some(*layer),
+        _ => None,
     }
 }
 /// One float's items in paint order (its backgrounds, then its content), in page coordinates: what an object drag's
@@ -529,7 +576,7 @@ impl<'a> SpatialWalk<'a> {
         for c in children {
             match c {
                 Child::Box(b) => match &b.kind {
-                    BoxKind::Float { anchor, float, rect } => {
+                    BoxKind::Float { anchor, float, rect, .. } => {
                         let n = self.stories.len();
                         self.story(StoryRef::Float { float: *float, anchor: *anchor }, b, dx, dy);
                         // A cell's float is placed in its unit: `rect` is relative to the parents' offsets.
@@ -663,6 +710,7 @@ mod tests {
                 atoms: Box::new([]),
                 changed: false,
                 mark: None,
+                texts: Box::new([]),
             }),
         }
     }
@@ -705,7 +753,7 @@ mod tests {
         float.push(Child::Items(Box::new([rect(30.0, 6)])));
         let mut body = BoxBuilder::new();
         body.push(Child::Box(float.finish(
-            BoxKind::Float { anchor: ParaId(1), float: FloatId(11), rect: [0.0, 0.0, 10.0, 10.0] },
+            BoxKind::Float { anchor: ParaId(1), float: FloatId(11), rect: [0.0, 0.0, 10.0, 10.0], layer: Default::default() },
             (0.0, 0.0),
             (10.0, 10.0),
         )));
@@ -780,6 +828,7 @@ mod tests {
                 atoms: Box::new([]),
                 changed: false,
                 mark: None,
+                texts: Box::new([]),
             }),
         };
         let mut body = BoxBuilder::new();

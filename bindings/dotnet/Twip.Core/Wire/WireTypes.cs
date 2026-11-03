@@ -26,6 +26,15 @@ internal sealed record BatchRequest(IReadOnlyList<EditorOperation> Commands, [pr
 
 internal sealed record TimerRequest(uint Timer, double Ms);
 
+/// <summary><c>insertShape</c>'s fields.</summary>
+internal sealed record ShapeInsert(
+    ShapePreset Preset,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Width = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Height = null);
+
+/// <summary><c>setShapeAdjust</c>'s fields.</summary>
+internal sealed record ShapeAdjust(int Index, long Value);
+
 internal sealed record ErrorBody(
     EditorErrorCode Code, string Message, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? Details);
 

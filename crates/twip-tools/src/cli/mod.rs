@@ -2,5 +2,7 @@
 
 pub mod dump;
 pub mod dumpdiff;
+pub mod pdf;
+pub mod presets;
 pub mod roundtrip;
 pub mod units;

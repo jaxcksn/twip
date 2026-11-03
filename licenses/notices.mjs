@@ -25,6 +25,8 @@ const native = [
   ['Emscripten WebGPU port', 'MIT OR NCSA', 'WebAssembly', 'emscripten-webgpu.txt'],
   // The engine's last-resort symbol font, a subset of DejaVu Sans (font.rs).
   ['DejaVu Sans (subset)', 'Bitstream-Vera', 'both', 'dejavu-fonts.txt'],
+  // The preset shape geometries (drawing/geom/presets.rs), generated from the standard's definitions.
+  ['ECMA-376 preset shape definitions', 'LicenseRef-Ecma', 'both', 'ecma-376.txt'],
 ];
 // cargo about refuses to write to a pipe on Windows, so it writes a file.
 const tmp = `${out}.crates`;
@@ -33,5 +35,5 @@ const crates = readFileSync(tmp, 'utf8');
 rmSync(tmp);
 const libs = native.map(([name, id, where, file]) =>
   `### ${name} (${id})\n\nIn: ${where === 'both' ? 'the native library and the WebAssembly module' : `the ${where === 'native' ? 'native library' : 'WebAssembly module'}`}\n\n\`\`\`\n${readFileSync(join(dir, file), 'utf8').trim()}\n\`\`\`\n`);
-writeFileSync(out, `${crates.trim()}\n\n## C and C++ libraries, and fonts\n\n${libs.join('\n')}`);
+writeFileSync(out, `${crates.trim()}\n\n## C and C++ libraries, fonts and data\n\n${libs.join('\n')}`);
 console.log(`wrote ${out}`);

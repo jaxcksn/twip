@@ -22,6 +22,9 @@ use super::super::step::{Edges, Step, para_len};
 /// Table edits that are applied as they are with tracking on: merging and splitting cells.
 const UNTRACKED_TABLE_EDITS: [&str; 2] = ["Merge Cells", "Split Cells"];
 
+/// The edits whose new floats are tracked insertions.
+const FLOAT_INSERTS: [&str; 2] = ["Insert Shape", "Insert Text Box"];
+
 /// One transaction's recording: who and when, and the marks its insertions, deletions and property changes share.
 pub struct Recording {
     pub author: AuthorId,
@@ -522,6 +525,28 @@ impl Recording {
 
     fn restyle(&mut self, para: ParaId, inlines: Vec<Inline>, doc: &Document, idx: &DocIndex, ids: &mut IdCounter) -> Vec<Step> {
         let Some(p) = idx.para(doc, para) else { return vec![Step::Restyle { para, inlines }] };
+        // A float inserted is marked inserted; one deleted stays, marked deleted (the author's own insertion goes).
+        // Other edits that take a float out or put one in (moving it to another anchor, grouping) aren't tracked.
+        let float_id = |i: &Inline| if let Inline::Float(f, _) = i { Some(f.id) } else { None };
+        let had: HashSet<u64> = p.inlines.iter().filter_map(float_id).collect();
+        let has: HashSet<u64> = inlines.iter().filter_map(float_id).collect();
+        if FLOAT_INSERTS.contains(&self.label) && !has.is_subset(&had) {
+            let inlines = inlines.into_iter().map(|i| if float_id(&i).is_some_and(|f| !had.contains(&f)) { self.ins_inline(i, ids) } else { i }).collect();
+            return vec![Step::Restyle { para, inlines }];
+        }
+        if self.label == "Delete" && !had.is_subset(&has) {
+            let mut out = inlines;
+            for (k, i) in p.inlines.iter().enumerate() {
+                if let Inline::Float(f, r) = i
+                    && !has.contains(&f.id)
+                    && !self.own_insertion(r)
+                {
+                    let d = self.deleted(r, ids).unwrap_or_else(|| r.clone());
+                    out.insert(k.min(out.len()), Inline::Float(f.clone(), d));
+                }
+            }
+            return vec![Step::Restyle { para, inlines: out }];
+        }
         // Runs resolved again (a paragraph's style or place changed) keep their revisions; that isn't a formatting
         // change of its own.
         if content(&p.inlines) == content(&inlines) {

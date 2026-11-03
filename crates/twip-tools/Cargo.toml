@@ -16,6 +16,7 @@ test = false
 doctest = false
 
 [target.'cfg(not(target_os = "emscripten"))'.dependencies]
+roxmltree = "0.21.1"
 twip = { path = "../twip" }
 skia-safe = { version = "0.153.3", features = ["graphite", "vulkan"] }
 ash = "0.38"

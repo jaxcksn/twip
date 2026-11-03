@@ -9,6 +9,7 @@ use serde::{Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::api::catalog::{CommandGroup, CommandInfo, CommandShortcuts, UndoGrouping};
+use crate::api::drawing as dr;
 use crate::api::command::*;
 use crate::api::engine::{Dictionary, SessionId, SessionOptions};
 use crate::api::error::{Error, ErrorCode};
@@ -180,6 +181,19 @@ pub fn fixtures() -> Vec<Fixture> {
         "warning-code": WarningCode,
         "wrap-side": WrapSide,
         "zoom-fit": ZoomFit,
+        "theme-colour": dr::ThemeColour,
+        "transform-kind": dr::TransformKind,
+        "gradient-shape": dr::GradientShape,
+        "compound": dr::Compound,
+        "line-cap": dr::LineCap,
+        "line-join": dr::LineJoin,
+        "arrow-kind": dr::ArrowKind,
+        "arrow-size": dr::ArrowSize,
+        "text-anchor": dr::TextAnchor,
+        "text-autofit": dr::TextAutofit,
+        "text-direction": dr::TextDirection,
+        "flip-axis": dr::FlipAxis,
+        "arrange": dr::Arrange,
     });
     out.extend([
         // values
@@ -201,6 +215,29 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("row-height", RowHeight, vec![row_height()]),
         fixture!("data-binding", DataBinding, vec![binding()]),
         fixture!("control-options", ControlOptions, control_options()),
+        // shapes
+        fixture!("shape-preset", dr::ShapePreset, dr::ShapePreset::all().collect()),
+        fixture!("colour-value", dr::ColourValue, vec![theme_colour(), dr::ColourValue::rgb(Color(0x1F4E79)), dr::ColourValue { preset: Some("cornflowerBlue".into()), ..Default::default() }]),
+        fixture!("colour-transform", dr::ColourTransform, vec![dr::ColourTransform { kind: dr::TransformKind::Tint, value: 0.5 }]),
+        fixture!("gradient-stop", dr::GradientStop, vec![dr::GradientStop { position: 0.5, colour: theme_colour() }]),
+        fixture!("fill-value", dr::FillValue, fills()),
+        fixture!("line-value", dr::LineValue, vec![line_value()]),
+        fixture!("line-change", dr::LineChange, vec![line_change(), dr::LineChange::default()]),
+        fixture!("line-ends", dr::LineEnds, vec![line_ends()]),
+        fixture!("arrowhead", dr::Arrowhead, vec![arrowhead()]),
+        fixture!("shadow", dr::Shadow, vec![shadow()]),
+        fixture!("glow", dr::Glow, vec![glow()]),
+        fixture!("effects-value", dr::EffectsValue, vec![effects(), dr::EffectsValue::default()]),
+        fixture!("effects-change", dr::EffectsChange, vec![effects_change()]),
+        fixture!("shape-text-state", dr::ShapeTextState, vec![text_state()]),
+        fixture!("shape-text-change", dr::ShapeTextChange, vec![text_change()]),
+        fixture!("picture-adjust-change", dr::PictureAdjustChange, vec![picture_adjust()]),
+        fixture!("shape-insert", dr::ShapeInsert, vec![dr::ShapeInsert { preset: preset("line"), width: None, height: Some(Points(0.5)) }]),
+        fixture!("shape-adjust", dr::ShapeAdjust, vec![dr::ShapeAdjust { index: 1, value: -12500 }]),
+        fixture!("fill-state", dr::FillState, vec![dr::FillState::Explicit(dr::FillValue::None), dr::FillState::FromStyle(dr::FillValue::Solid { colour: theme_colour() })]),
+        fixture!("line-state", dr::LineState, vec![dr::LineState::Explicit(line_value()), dr::LineState::FromStyle(line_value())]),
+        fixture!("shape-state", dr::ShapeState, vec![shape_state()]),
+        fixture!("shape-gallery-group", dr::ShapeGalleryGroup, vec![dr::ShapeGalleryGroup { label: "Basic Shapes".into(), presets: vec![preset("rect"), preset("ellipse")] }]),
         // errors, warnings, records
         fixture!(
             "error",
@@ -544,6 +581,7 @@ fn commands() -> Vec<Command> {
         Command::InsertTable(TableSize { rows: 3, columns: 2 }),
         Command::InsertPicture(Picture { data: picture_bytes(), alt_text: Some("Company logo".into()) }),
         Command::InsertTextBox,
+        Command::InsertShape(dr::ShapeInsert { preset: preset("star5"), width: Some(Points(90.5)), height: None }),
         Command::InsertFootnote,
         Command::InsertEndnote,
         Command::InsertHyperlink(Hyperlink { address: "https://example.com".into(), text: Some("Example".into()) }),
@@ -611,6 +649,19 @@ fn commands() -> Vec<Command> {
         }),
         Command::SetAltText(AltText { text: "A chart".into(), decorative: Some(false) }),
         Command::DeleteObject,
+        Command::SetShapePreset(preset("roundRect")),
+        Command::SetShapeAdjust(dr::ShapeAdjust { index: 0, value: 25000 }),
+        Command::SetShapeFill(dr::FillValue::Solid { colour: theme_colour() }),
+        Command::SetShapeLine(line_change()),
+        Command::SetShapeEffects(effects_change()),
+        Command::SetShapeText(text_change()),
+        Command::SetPictureAdjust(picture_adjust()),
+        Command::SetObjectRotation(45.5),
+        Command::FlipObject(dr::FlipAxis::Horizontal),
+        Command::ArrangeObject(dr::Arrange::ToFront),
+        Command::GroupObjects,
+        Command::UngroupObjects,
+        Command::SelectGroupChild(Order::Next),
         Command::SetField(SetField { id: id("field-1"), code: Some("MERGEFIELD Total".into()), display: Some(Body::Text("«Total»".into())) }),
         Command::SetFieldResults(FieldResults { results: vec![FieldResult { id: id("field-1"), display: Body::Rich(rich()) }], token: Some(4) }),
         Command::UpdateFields(ElementIds { ids: ids() }),
@@ -785,6 +836,12 @@ fn selection() -> SelectionSummary {
                 wrap_side: WrapSide::BothSides,
                 distance: TextDistance { top: Points(3.5), bottom: Points(3.5), left: Points(9.5), right: Points(9.5) },
             }),
+            shape: Some(shape_state()),
+            rotation: 30.5,
+            flip_h: true,
+            flip_v: false,
+            child_path: vec![1],
+            count: 1,
         }),
         context: vec![ElementContext {
             id: id("field-1"),
@@ -898,6 +955,7 @@ fn state() -> State {
         fonts: FontsState { pending: vec!["Aptos".into()], unresolved: vec!["Brand Sans".into()] },
         ruler: ruler(),
         format_painter: false,
+        theme_colours: vec![Color(0x000000), Color(0xFFFFFF)],
     }
 }
 
@@ -977,7 +1035,7 @@ fn menu_targets() -> Vec<MenuTarget> {
 
 fn menu_actions() -> Vec<MenuAction> {
     vec![
-        MenuAction::Command { command: Command::Cut },
+        MenuAction::Command { command: Box::new(Command::Cut) },
         MenuAction::ReplaceWord { with: "the".into() },
         MenuAction::IgnoreWord { word: "teh".into() },
         MenuAction::AddWord { word: "Twip".into(), language: "en-US".into() },
@@ -992,7 +1050,7 @@ fn menu_items() -> Vec<MenuItem> {
             enabled: true,
             checked: Some(false),
             shortcut: Some("Ctrl+X".into()),
-            action: MenuAction::Command { command: Command::Cut },
+            action: MenuAction::Command { command: Box::new(Command::Cut) },
         },
         MenuItem::Suggestion { label: "the".into(), action: MenuAction::ReplaceWord { with: "the".into() } },
         MenuItem::Submenu {
@@ -1335,6 +1393,102 @@ fn events() -> Vec<Event> {
         Event::Warning(warning()),
         Event::fault(Error::new(ErrorCode::Internal, "the engine failed")),
     ]
+}
+
+
+fn preset(name: &str) -> dr::ShapePreset {
+    dr::ShapePreset::from_name(name).expect("a preset")
+}
+
+fn theme_colour() -> dr::ColourValue {
+    dr::ColourValue { transforms: vec![dr::ColourTransform { kind: dr::TransformKind::LumMod, value: 0.75 }], ..dr::ColourValue::theme(dr::ThemeColour::Accent1) }
+}
+
+fn fills() -> Vec<dr::FillValue> {
+    vec![
+        dr::FillValue::None,
+        dr::FillValue::Solid { colour: theme_colour() },
+        dr::FillValue::Gradient {
+            kind: dr::GradientShape::Linear,
+            angle: Some(90.5),
+            stops: vec![
+                dr::GradientStop { position: 0.0, colour: theme_colour() },
+                dr::GradientStop { position: 1.0, colour: dr::ColourValue::rgb(Color(0xFFFFFF)) },
+            ],
+        },
+        dr::FillValue::Pattern { preset: "dkDnDiag".into(), foreground: theme_colour(), background: dr::ColourValue::rgb(Color(0xFFFFFF)) },
+        dr::FillValue::Picture { image: picture_bytes(), tile: Some(true) },
+        dr::FillValue::FromStyle,
+    ]
+}
+
+fn arrowhead() -> dr::Arrowhead {
+    dr::Arrowhead { kind: dr::ArrowKind::Stealth, width: dr::ArrowSize::Large, length: dr::ArrowSize::Small }
+}
+
+fn line_ends() -> dr::LineEnds {
+    dr::LineEnds { head: None, tail: Some(arrowhead()) }
+}
+
+fn line_value() -> dr::LineValue {
+    dr::LineValue {
+        width: Points(1.5),
+        fill: dr::FillValue::Solid { colour: theme_colour() },
+        dash: "dash".into(),
+        compound: dr::Compound::Double,
+        cap: dr::LineCap::Round,
+        join: dr::LineJoin::Miter,
+        ends: line_ends(),
+    }
+}
+
+fn line_change() -> dr::LineChange {
+    dr::LineChange { width: Some(Points(2.5)), dash: Some("sysDot".into()), ends: Some(line_ends()), ..Default::default() }
+}
+
+fn shadow() -> dr::Shadow {
+    dr::Shadow { colour: dr::ColourValue::rgb(Color(0x000000)), blur: Points(4.5), distance: Points(3.5), direction: 45.5 }
+}
+
+fn glow() -> dr::Glow {
+    dr::Glow { colour: theme_colour(), radius: Points(5.5) }
+}
+
+fn effects() -> dr::EffectsValue {
+    dr::EffectsValue { outer_shadow: Some(shadow()), glow: Some(glow()), soft_edge: Some(Points(2.5)), ..Default::default() }
+}
+
+fn effects_change() -> dr::EffectsChange {
+    dr::EffectsChange { outer_shadow: Some(Some(shadow())), glow: Some(None), ..Default::default() }
+}
+
+fn text_state() -> dr::ShapeTextState {
+    dr::ShapeTextState {
+        insets: [Points(7.2), Points(3.6), Points(7.2), Points(3.6)],
+        anchor: dr::TextAnchor::Middle,
+        autofit: dr::TextAutofit::Shape,
+        wrap_text: true,
+        direction: dr::TextDirection::Vertical270,
+    }
+}
+
+fn text_change() -> dr::ShapeTextChange {
+    dr::ShapeTextChange { anchor: Some(dr::TextAnchor::Bottom), wrap_text: Some(false), ..Default::default() }
+}
+
+fn picture_adjust() -> dr::PictureAdjustChange {
+    dr::PictureAdjustChange { transparency: Some(0.25), grayscale: Some(true), brightness: None, contrast: Some(-0.5) }
+}
+
+fn shape_state() -> dr::ShapeState {
+    dr::ShapeState {
+        preset: Some(preset("wedgeRectCallout")),
+        adjust: vec![-20833, 62500],
+        fill: dr::FillState::FromStyle(dr::FillValue::Solid { colour: theme_colour() }),
+        line: dr::LineState::Explicit(line_value()),
+        effects: effects(),
+        text: Some(text_state()),
+    }
 }
 
 #[cfg(test)]

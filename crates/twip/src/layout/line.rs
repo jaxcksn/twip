@@ -129,6 +129,8 @@ pub struct ParaLines {
     review: ReviewView,
     /// `w:ulTrailSpace` ([`ParaSpace::env`]).
     ul_trail_space: bool,
+    theme: std::rc::Rc<crate::drawing::theme::Theme>,
+    colour_map: crate::drawing::theme::ColourMap,
 }
 
 impl PartialEq for ParaLines {
@@ -175,6 +177,7 @@ impl ParaLines {
             para: self.para,
             review: &self.review,
             ul_trail_space: self.ul_trail_space,
+            palette: crate::drawing::paint::Palette { theme: &self.theme, map: &self.colour_map },
         }
     }
 
@@ -276,6 +279,8 @@ pub fn break_lines_uncached(
         compat: space.env.compat,
         review: space.env.review.clone(),
         ul_trail_space: space.env.ul_trail_space,
+        theme: space.env.theme.clone(),
+        colour_map: space.env.colour_map,
     })
 }
 
@@ -1565,6 +1570,8 @@ pub struct LineOrigin<'a> {
     pub review: &'a ReviewView,
     /// `w:ulTrailSpace` (FONT-15).
     pub ul_trail_space: bool,
+    /// The colours inline shapes resolve against (DRAW-7).
+    pub palette: crate::drawing::paint::Palette<'a>,
 }
 
 impl LineOrigin<'_> {
@@ -1600,6 +1607,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
         };
         let mut atoms: Vec<Atom> = Vec::new();
+        let mut texts: Vec<([f64; 4], crate::docx::Picture)> = Vec::new();
         // REV-6: a joined paragraph's pieces keep their own paragraphs and units (generated text, its first's).
         let join = sp.join.as_deref();
         let source = |p: &Piece| match (join, p.src) {
@@ -1653,7 +1661,15 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                     // FLOAT-5: inside its effect extents, raised or lowered with its run.
                     let bottom = base - sp.styles[p.style as usize].run.position - pic.effect[3];
                     let x0 = x + pic.effect[0];
-                    out.push(Item::Image { rect: [x0, bottom - pic.h, x0 + pic.w, bottom], key: ImageKey { index: pic.image, generation: 0 } });
+                    let rect = [x0, bottom - pic.h, x0 + pic.w, bottom];
+                    // DRAW-1: an inline object with a shape tree draws its shapes; a picture made without one, its image.
+                    match pic.shape.as_deref() {
+                        Some(shape) => out.extend(super::story::shape_items(shape, rect, 0, false, o.palette).into_iter().map(Item::Shape)),
+                        None => out.push(Item::Image { rect, key: ImageKey { index: pic.image, generation: 0 } }),
+                    }
+                    if pic.text.is_some() {
+                        texts.push((rect, pic.clone()));
+                    }
                     if let Some(unit) = first {
                         atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + pic.w), para: q, unit, brk: false });
                     }
@@ -1735,7 +1751,15 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         }
         let changed = o.review.view.change_bars() && line_changed(o, line, src);
         let mark = (line.start == line.end && o.shaped.join.is_none()).then(|| Unit(src.inlines.iter().map(Inline::units).sum::<usize>() as u32));
-        LineFragment { items: out.into_boxed_slice(), pitch: line.pitch, baseline: line.baseline, atoms: atoms.into_boxed_slice(), changed, mark }
+        LineFragment {
+            items: out.into_boxed_slice(),
+            pitch: line.pitch,
+            baseline: line.baseline,
+            atoms: atoms.into_boxed_slice(),
+            changed,
+            mark,
+            texts: texts.into_boxed_slice(),
+        }
     }
 }
 

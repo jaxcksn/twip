@@ -1,0 +1,26 @@
+[
+  {
+    "glow": {
+      "colour": {
+        "theme": "accent1",
+        "transforms": [
+          {
+            "kind": "lumMod",
+            "value": 0.75
+          }
+        ]
+      },
+      "radius": 5.5
+    },
+    "outerShadow": {
+      "blur": 4.5,
+      "colour": {
+        "rgb": "#000000"
+      },
+      "direction": 45.5,
+      "distance": 3.5
+    },
+    "softEdge": 2.5
+  },
+  {}
+]

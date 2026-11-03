@@ -70,6 +70,10 @@ public sealed record EditorState
 
     /// <summary>Whether formatting is held for <see cref="EditorCommands.PasteFormattingAsync"/>.</summary>
     public bool FormatPainter { get; init; }
+
+    /// <summary>The document's 12 theme colours in <see cref="ThemeColor"/> order, for an application's colour picker.</summary>
+    [JsonPropertyName("themeColours")]
+    public IReadOnlyList<ColorValue> ThemeColors { get; init; } = [];
 }
 
 /// <summary>Whether a document is ready.</summary>
@@ -280,19 +284,25 @@ public sealed record TableStyleOptions
     public bool BandedColumns { get; init; }
 }
 
-/// <summary>A picture or a text box.</summary>
+/// <summary>What kind of object is selected.</summary>
 public enum ObjectKind
 {
     /// <summary>A picture.</summary>
     Picture,
     /// <summary>A text box.</summary>
     TextBox,
+    /// <summary>A shape.</summary>
+    Shape,
+    /// <summary>A line or connector (a shape whose preset has no filled path).</summary>
+    Line,
+    /// <summary>A group of objects.</summary>
+    Group,
 }
 
 /// <summary>The selected object.</summary>
 public sealed record ObjectSelection
 {
-    /// <summary>Picture or text box.</summary>
+    /// <summary>What kind of object.</summary>
     public ObjectKind Kind { get; init; }
 
     /// <summary>How text wraps around it.</summary>
@@ -315,6 +325,89 @@ public sealed record ObjectSelection
 
     /// <summary>Where a floating object is and how text keeps from it; null for inline objects.</summary>
     public ObjectPlacement? Placement { get; init; }
+
+    /// <summary>The shape's properties as written; null for objects without shape properties (frames) and kept graphics.</summary>
+    public ShapeState? Shape { get; init; }
+
+    /// <summary>Its rotation in degrees, clockwise.</summary>
+    public double Rotation { get; init; }
+
+    /// <summary>Flipped left to right.</summary>
+    public bool FlipH { get; init; }
+
+    /// <summary>Flipped top to bottom.</summary>
+    public bool FlipV { get; init; }
+
+    /// <summary>The selected child's place in its group; empty unless a group child is selected.</summary>
+    public IReadOnlyList<int> ChildPath { get; init; } = [];
+
+    /// <summary>How many objects are selected: 2 or more is a multi-selection, the other properties describing the first.</summary>
+    public int Count { get; init; }
+}
+
+/// <summary>The selected shape's properties, as written.</summary>
+public sealed record ShapeState
+{
+    /// <summary>The preset geometry; null for a custom geometry.</summary>
+    public ShapePreset? Preset { get; init; }
+
+    /// <summary>The adjust values in effect, in the preset's order.</summary>
+    public IReadOnlyList<long> Adjust { get; init; } = [];
+
+    /// <summary>The fill.</summary>
+    public FillState Fill { get; init; } = new();
+
+    /// <summary>The outline.</summary>
+    public LineState Line { get; init; } = new();
+
+    /// <summary>The effects.</summary>
+    public EffectsValue Effects { get; init; } = new();
+
+    /// <summary>The text body; null for pictures and groups.</summary>
+    public ShapeTextState? Text { get; init; }
+}
+
+/// <summary>A fill as written: the shape's own (<see cref="Explicit"/>) or its style reference's (<see cref="FromStyle"/>).</summary>
+public sealed record FillState
+{
+    /// <summary>The shape's own fill.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FillValue? Explicit { get; init; }
+
+    /// <summary>The style reference's fill (the theme's, with the reference's colour), when the shape has none of its own.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FillValue? FromStyle { get; init; }
+}
+
+/// <summary>An outline as written: the shape's own (<see cref="Explicit"/>) or its style reference's (<see cref="FromStyle"/>).</summary>
+public sealed record LineState
+{
+    /// <summary>The shape's own outline.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LineValue? Explicit { get; init; }
+
+    /// <summary>The style reference's outline, when the shape has none of its own.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LineValue? FromStyle { get; init; }
+}
+
+/// <summary>A shape's text body as written.</summary>
+public sealed record ShapeTextState
+{
+    /// <summary>The left, top, right and bottom insets.</summary>
+    public IReadOnlyList<Length> Insets { get; init; } = [];
+
+    /// <summary>Where the text sits.</summary>
+    public TextAnchor Anchor { get; init; }
+
+    /// <summary>How the shape fits it.</summary>
+    public TextAutofit Autofit { get; init; }
+
+    /// <summary>Lines wrap at the shape's width.</summary>
+    public bool WrapText { get; init; }
+
+    /// <summary>Which way it runs.</summary>
+    public TextDirection Direction { get; init; }
 }
 
 /// <summary>A floating object's place and its wrapping options.</summary>

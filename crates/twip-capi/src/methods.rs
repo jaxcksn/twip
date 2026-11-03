@@ -197,6 +197,8 @@ methods! {
     HostSetPaintBudget = 74,
     /// `Point[][]` (content CSS px) → `null`: the balloons' leader lines the engine draws.
     HostSetLeaders = 75,
+    /// No session → `ShapeGalleryGroup[]`: Word's Insert > Shapes presets in its groups.
+    ShapeGallery = 76,
 }
 
 #[derive(Deserialize)]
@@ -338,6 +340,7 @@ fn engine_call(e: &mut TwipEngine, method: Method, json: &[u8]) -> Option<Result
     let fonts = e.engine.fonts();
     let result = match method {
         Method::Catalog => to_value(Session::catalog()),
+        Method::ShapeGallery => to_value(Session::shape_gallery()),
         Method::FontFamilies => to_value(fonts.families()),
         Method::FontSetSubstitutions => request::<Vec<SubstitutionRule>>(json).map(|r| {
             fonts.set_substitutions(r);
@@ -557,6 +560,7 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         }
         // `call` answers these before looking for a session.
         Method::Catalog
+        | Method::ShapeGallery
         | Method::FontFamilies
         | Method::FontSetSubstitutions
         | Method::FontSetDefault

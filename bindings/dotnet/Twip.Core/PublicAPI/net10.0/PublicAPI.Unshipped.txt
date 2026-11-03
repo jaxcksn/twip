@@ -16,3 +16,9 @@ override Twip.MenuTarget.TextBox.<Clone>$() -> Twip.MenuTarget.TextBox!
 override Twip.SeparatorItem.<Clone>$() -> Twip.SeparatorItem!
 override Twip.SubmenuItem.<Clone>$() -> Twip.SubmenuItem!
 override Twip.SuggestionItem.<Clone>$() -> Twip.SuggestionItem!
+override Twip.FillValue.FromStyle.<Clone>$() -> Twip.FillValue.FromStyle!
+override Twip.FillValue.Gradient.<Clone>$() -> Twip.FillValue.Gradient!
+override Twip.FillValue.None.<Clone>$() -> Twip.FillValue.None!
+override Twip.FillValue.Pattern.<Clone>$() -> Twip.FillValue.Pattern!
+override Twip.FillValue.Picture.<Clone>$() -> Twip.FillValue.Picture!
+override Twip.FillValue.Solid.<Clone>$() -> Twip.FillValue.Solid!

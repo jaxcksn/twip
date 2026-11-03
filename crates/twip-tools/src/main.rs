@@ -1,4 +1,4 @@
-//! The developer tools: `twip-tools <command> ...` (golden, dump, dumpdiff, roundtrip, render, ...). Native only; the
+//! The developer tools: `twip-tools <command> ...` (golden, dump, dumpdiff, roundtrip, render, pdf, presets, ...). Native only; the
 //! browser module is `twip-wasm`. Speed is measured by the engine's Divan benchmarks (`cargo bench -p twip`).
 
 #[cfg(target_os = "emscripten")]
@@ -58,6 +58,22 @@ fn main() {
             // twip roundtrip [--edits all] [--keep <dir>] <docx or folders...> (cli/roundtrip.rs).
             let a: Vec<String> = args.skip(1).collect();
             return exit_on_error(cli::roundtrip::run(&a));
+        }
+        Some("pdf") => {
+            // twip pdf <docx> <out.pdf>: the document's PDF export (cli/pdf.rs).
+            let a: Vec<String> = args.skip(1).collect();
+            let (Some(docx), Some(out)) = (a.first(), a.get(1)) else {
+                return exit_on_error(Err("usage: pdf <docx> <out.pdf>".into()));
+            };
+            return exit_on_error(cli::pdf::run(std::path::Path::new(docx), std::path::Path::new(out)));
+        }
+        Some("presets") => {
+            // twip presets <presetShapeDefinitions.xml> <out.rs>: the engine's preset geometry table (cli/presets.rs).
+            let a: Vec<String> = args.skip(1).collect();
+            let (Some(xml), Some(out)) = (a.first(), a.get(1)) else {
+                return exit_on_error(Err("usage: presets <presetShapeDefinitions.xml> <out.rs>".into()));
+            };
+            return exit_on_error(cli::presets::run(std::path::Path::new(xml), std::path::Path::new(out)));
         }
         Some("units") => {
             // twip units <docx or folders...>: atomic units over the limit.

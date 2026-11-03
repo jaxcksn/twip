@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Twip.Engine;
 using Twip.Hosting;
 using Twip.Native;
@@ -14,6 +15,7 @@ namespace Twip;
 public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
 {
     private static IReadOnlyList<CommandInfo>? s_catalog;
+    private static IReadOnlyList<ShapeGalleryGroup>? s_shapeGallery;
     private readonly EditorSessionOptions _options;
     private readonly SerialExecutor _executor = new();
     private volatile EditorState _state = new();
@@ -119,15 +121,19 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
 
     /// <summary>Every command with its label, group, shortcuts and undo grouping.</summary>
     /// <remarks>Read once from the engine, which starts if it hasn't yet.</remarks>
-    public IReadOnlyList<CommandInfo> Catalog
+    public IReadOnlyList<CommandInfo> Catalog => ReadOnce(ref s_catalog, Method.Catalog, TwipJsonContext.Default.IReadOnlyListCommandInfo);
+
+    /// <summary>Word's Insert &gt; Shapes gallery: its eight groups and their presets, in Word's order.</summary>
+    /// <remarks>Read once from the engine, which starts if it hasn't yet.</remarks>
+    public IReadOnlyList<ShapeGalleryGroup> ShapeGallery => ReadOnce(ref s_shapeGallery, Method.ShapeGallery, TwipJsonContext.Default.IReadOnlyListShapeGalleryGroup);
+
+    /// <summary>A list the engine answers without a session, read once and cached for every session.</summary>
+    private IReadOnlyList<T> ReadOnce<T>(ref IReadOnlyList<T>? cache, Method method, JsonTypeInfo<IReadOnlyList<T>> info)
     {
-        get
-        {
-            if (Volatile.Read(ref s_catalog) is { } catalog) return catalog;
-            IReadOnlyList<CommandInfo> Load() => Fonts.Native.Call(0, Method.Catalog, [])?.Deserialize(TwipJsonContext.Default.IReadOnlyListCommandInfo) ?? [];
-            catalog = EngineThread.Instance.IsCurrent ? Load() : EngineThread.Instance.Post(Load).GetAwaiter().GetResult();
-            return Interlocked.CompareExchange(ref s_catalog, catalog, null) ?? catalog;
-        }
+        if (Volatile.Read(ref cache) is { } cached) return cached;
+        IReadOnlyList<T> Load() => Fonts.Native.Call(0, method, [])?.Deserialize(info) ?? [];
+        var list = EngineThread.Instance.IsCurrent ? Load() : EngineThread.Instance.Post(Load).GetAwaiter().GetResult();
+        return Interlocked.CompareExchange(ref cache, list, null) ?? list;
     }
 
     // Settings

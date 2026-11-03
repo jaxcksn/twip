@@ -406,3 +406,306 @@ public sealed record LineSpacing(
     /// <param name="size">The minimum line height.</param>
     public static LineSpacing AtLeast(Length size) => new(LineSpacingRule.AtLeast, Size: size);
 }
+
+/// <summary>A preset geometry by its ECMA-376 name, such as <c>wedgeRectCallout</c>. <see cref="EditorSession.ShapeGallery"/> lists Word's.</summary>
+/// <param name="Value">The ECMA-376 name.</param>
+[JsonConverter(typeof(ShapePresetConverter))]
+public readonly record struct ShapePreset(string Value)
+{
+    /// <inheritdoc/>
+    public override string ToString() => Value;
+}
+
+/// <summary>A theme colour, in the theme's order.</summary>
+public enum ThemeColor
+{
+    /// <summary>Dark 1 (through the document's colour mapping).</summary>
+    Text1,
+    /// <summary>Light 1.</summary>
+    Background1,
+    /// <summary>Dark 2.</summary>
+    Text2,
+    /// <summary>Light 2.</summary>
+    Background2,
+    /// <summary>Accent 1.</summary>
+    Accent1,
+    /// <summary>Accent 2.</summary>
+    Accent2,
+    /// <summary>Accent 3.</summary>
+    Accent3,
+    /// <summary>Accent 4.</summary>
+    Accent4,
+    /// <summary>Accent 5.</summary>
+    Accent5,
+    /// <summary>Accent 6.</summary>
+    Accent6,
+    /// <summary>The hyperlink colour.</summary>
+    Hyperlink,
+    /// <summary>The followed hyperlink colour.</summary>
+    FollowedHyperlink,
+}
+
+/// <summary>What a colour transform does.</summary>
+public enum ColorTransformKind
+{
+    /// <summary>Towards white by <c>1 - value</c>.</summary>
+    Tint,
+    /// <summary>Towards black by <c>1 - value</c>.</summary>
+    Shade,
+    /// <summary>Luminance times the value.</summary>
+    LumMod,
+    /// <summary>Luminance plus the value.</summary>
+    LumOff,
+    /// <summary>Saturation times the value.</summary>
+    SatMod,
+    /// <summary>Saturation plus the value.</summary>
+    SatOff,
+    /// <summary>Hue times the value.</summary>
+    HueMod,
+    /// <summary>Hue plus the value in degrees.</summary>
+    HueOff,
+    /// <summary>Opacity of the value.</summary>
+    Alpha,
+    /// <summary>Opacity times the value.</summary>
+    AlphaMod,
+}
+
+/// <summary>One colour transform.</summary>
+/// <param name="Kind">What it does.</param>
+/// <param name="Value">How much: a fraction (0.75), or degrees for <see cref="ColorTransformKind.HueOff"/>.</param>
+public sealed record ColorTransform(ColorTransformKind Kind, double Value);
+
+/// <summary>
+/// A shape's colour as written: exactly one base (a theme colour, an RGB colour or a preset colour name), then its
+/// transforms in order. Theme colours stay theme colours; they are never only the resolved RGB.
+/// </summary>
+/// <param name="Theme">A theme colour.</param>
+/// <param name="Rgb">An RGB colour.</param>
+/// <param name="Preset">A preset colour by its CSS name, such as <c>cornflowerBlue</c>.</param>
+/// <param name="Transforms">The transforms, applied in order; null for none.</param>
+public sealed record ShapeColor(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ThemeColor? Theme = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Rgb = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Preset = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ColorTransform>? Transforms = null)
+{
+    /// <summary>A theme colour with transforms, such as accent 1 at 75% luminance.</summary>
+    /// <param name="theme">The theme colour.</param>
+    /// <param name="transforms">The transforms, applied in order.</param>
+    public static ShapeColor FromTheme(ThemeColor theme, params ColorTransform[] transforms) => new(Theme: theme, Transforms: transforms.Length > 0 ? transforms : null);
+
+    /// <summary>An RGB colour.</summary>
+    /// <param name="rgb">The colour.</param>
+    public static ShapeColor FromRgb(ColorValue rgb) => new(Rgb: rgb);
+}
+
+/// <summary>A gradient's shape.</summary>
+public enum GradientShape
+{
+    /// <summary>Along a direction.</summary>
+    Linear,
+    /// <summary>From the centre outward in circles.</summary>
+    Radial,
+    /// <summary>From the centre outward in rectangles.</summary>
+    Rectangular,
+    /// <summary>Following the shape's outline.</summary>
+    Path,
+}
+
+/// <summary>A gradient stop.</summary>
+/// <param name="Position">0 to 1 along the gradient.</param>
+/// <param name="Color">The colour there.</param>
+public sealed record GradientStop(double Position, [property: JsonPropertyName("colour")] ShapeColor Color);
+
+/// <summary>A shape's fill.</summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
+[JsonDerivedType(typeof(None), "none")]
+[JsonDerivedType(typeof(Solid), "solid")]
+[JsonDerivedType(typeof(Gradient), "gradient")]
+[JsonDerivedType(typeof(Pattern), "pattern")]
+[JsonDerivedType(typeof(Picture), "picture")]
+[JsonDerivedType(typeof(FromStyle), "fromStyle")]
+public abstract record FillValue
+{
+    private protected FillValue() { }
+
+    /// <summary>No fill.</summary>
+    public sealed record None : FillValue;
+
+    /// <summary>One colour.</summary>
+    /// <param name="Color">The colour.</param>
+    public sealed record Solid([property: JsonPropertyName("colour")] ShapeColor Color) : FillValue;
+
+    /// <summary>A gradient.</summary>
+    /// <param name="Kind">Its shape.</param>
+    /// <param name="Stops">Two or more stops.</param>
+    /// <param name="Angle">A linear gradient's direction in degrees (0: left to right).</param>
+    public sealed record Gradient(
+        GradientShape Kind, IReadOnlyList<GradientStop> Stops,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Angle = null) : FillValue;
+
+    /// <summary>A two-colour pattern.</summary>
+    /// <param name="Preset">The ECMA-376 pattern name, such as <c>pct50</c> or <c>dkDnDiag</c>.</param>
+    /// <param name="Foreground">The pattern's colour.</param>
+    /// <param name="Background">The colour behind it.</param>
+    public sealed record Pattern(string Preset, ShapeColor Foreground, ShapeColor Background) : FillValue;
+
+    /// <summary>A picture.</summary>
+    /// <param name="Image">The image (PNG, JPEG, GIF, BMP).</param>
+    /// <param name="Tile">Tiled at its own size instead of stretched.</param>
+    public sealed record Picture(
+        ReadOnlyMemory<byte> Image, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Tile = null) : FillValue;
+
+    /// <summary>The style reference's fill: as a command argument, it removes the explicit fill.</summary>
+    public sealed record FromStyle : FillValue;
+}
+
+/// <summary>How a line is drawn along its length.</summary>
+public enum LineCompound
+{
+    /// <summary>One line.</summary>
+    Single,
+    /// <summary>Two equal lines.</summary>
+    Double,
+    /// <summary>A thick line then a thin one.</summary>
+    ThickThin,
+    /// <summary>A thin line then a thick one.</summary>
+    ThinThick,
+    /// <summary>Three lines.</summary>
+    Triple,
+}
+
+/// <summary>A line's ends.</summary>
+public enum LineCap
+{
+    /// <summary>Square, at the end.</summary>
+    Flat,
+    /// <summary>Rounded.</summary>
+    Round,
+    /// <summary>Square, half the width past the end.</summary>
+    Square,
+}
+
+/// <summary>How a line's segments join.</summary>
+public enum LineJoin
+{
+    /// <summary>Rounded.</summary>
+    Round,
+    /// <summary>Cut off.</summary>
+    Bevel,
+    /// <summary>Pointed.</summary>
+    Miter,
+}
+
+/// <summary>An arrowhead's shape.</summary>
+public enum ArrowKind
+{
+    /// <summary>A filled triangle.</summary>
+    Triangle,
+    /// <summary>A notched triangle.</summary>
+    Stealth,
+    /// <summary>A diamond.</summary>
+    Diamond,
+    /// <summary>An oval.</summary>
+    Oval,
+    /// <summary>An open V.</summary>
+    Arrow,
+}
+
+/// <summary>An arrowhead's width or length.</summary>
+public enum ArrowSize
+{
+    /// <summary>Small.</summary>
+    Small,
+    /// <summary>Medium.</summary>
+    Medium,
+    /// <summary>Large.</summary>
+    Large,
+}
+
+/// <summary>An arrowhead.</summary>
+/// <param name="Kind">Its shape.</param>
+/// <param name="Width">Its width.</param>
+/// <param name="Length">Its length.</param>
+public sealed record Arrowhead(ArrowKind Kind, ArrowSize Width = ArrowSize.Medium, ArrowSize Length = ArrowSize.Medium);
+
+/// <summary>A line's arrowheads.</summary>
+/// <param name="Head">At the start.</param>
+/// <param name="Tail">At the end.</param>
+public sealed record LineEnds(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Arrowhead? Head = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Arrowhead? Tail = null);
+
+/// <summary>A shape's outline.</summary>
+/// <param name="Width">The width (0.75 pt when the document gives none).</param>
+/// <param name="Fill"><see cref="FillValue.None"/>, <see cref="FillValue.Solid"/> or <see cref="FillValue.Gradient"/>.</param>
+/// <param name="Dash">The ECMA-376 dash name, such as <c>solid</c>, <c>dash</c> or <c>sysDot</c>; <c>custom</c> for a custom dash.</param>
+/// <param name="Compound">Single or several lines.</param>
+/// <param name="Cap">The ends.</param>
+/// <param name="Join">The joins.</param>
+/// <param name="Ends">The arrowheads.</param>
+public sealed record LineValue(Length Width, FillValue Fill, string Dash, LineCompound Compound, LineCap Cap, LineJoin Join, LineEnds Ends);
+
+/// <summary>A shadow.</summary>
+/// <param name="Color">Its colour, with its transparency as an <see cref="ColorTransformKind.Alpha"/> transform.</param>
+/// <param name="Blur">How far it blurs.</param>
+/// <param name="Distance">How far from the shape.</param>
+/// <param name="Direction">Which way, in degrees clockwise from the right.</param>
+public sealed record Shadow([property: JsonPropertyName("colour")] ShapeColor Color, Length Blur, Length Distance, double Direction);
+
+/// <summary>A glow.</summary>
+/// <param name="Color">Its colour.</param>
+/// <param name="Radius">How far it reaches.</param>
+public sealed record Glow([property: JsonPropertyName("colour")] ShapeColor Color, Length Radius);
+
+/// <summary>A shape's effects.</summary>
+/// <param name="OuterShadow">A shadow outside the shape.</param>
+/// <param name="InnerShadow">A shadow inside the shape.</param>
+/// <param name="Glow">A glow around the shape.</param>
+/// <param name="SoftEdge">Edges faded over this distance.</param>
+/// <param name="Blur">The whole shape blurred by this radius.</param>
+public sealed record EffectsValue(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Shadow? OuterShadow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Shadow? InnerShadow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Glow? Glow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? SoftEdge = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Blur = null);
+
+/// <summary>Where text sits in a shape vertically.</summary>
+public enum TextAnchor
+{
+    /// <summary>At the top.</summary>
+    Top,
+    /// <summary>In the middle.</summary>
+    Middle,
+    /// <summary>At the bottom.</summary>
+    Bottom,
+}
+
+/// <summary>How a shape fits its text.</summary>
+public enum TextAutofit
+{
+    /// <summary>The shape keeps its size.</summary>
+    None,
+    /// <summary>The shape's height follows its text.</summary>
+    Shape,
+}
+
+/// <summary>Which way a shape's text runs.</summary>
+public enum TextDirection
+{
+    /// <summary>Left to right, lines downward.</summary>
+    Horizontal,
+    /// <summary>Turned 90° clockwise.</summary>
+    Vertical,
+    /// <summary>Turned 270° clockwise.</summary>
+    Vertical270,
+    /// <summary>East Asian vertical: CJK upright, other text turned.</summary>
+    EastAsianVertical,
+    /// <summary>Mongolian vertical.</summary>
+    MongolianVertical,
+    /// <summary>Letters stacked, one per line.</summary>
+    Stacked,
+    /// <summary>Letters stacked, right to left.</summary>
+    StackedRightToLeft,
+}

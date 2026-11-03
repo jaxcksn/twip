@@ -40,10 +40,9 @@ fn stories(e: &Editor) -> Vec<(StoryId, &[Block])> {
             match b {
                 Block::Para(p) => {
                     for i in &p.inlines {
-                        if let crate::docx::Inline::Float(f, _) = i
-                            && let Some(tb) = &f.text_box
+                        if let Some((fid, tb)) = i.story()
                         {
-                            out.push((StoryId::TextBox(crate::layout::FloatId(f.id)), tb.blocks.as_slice()));
+                            out.push((StoryId::TextBox(crate::layout::FloatId(fid)), tb.blocks.as_slice()));
                             boxes(&tb.blocks, out);
                         }
                     }

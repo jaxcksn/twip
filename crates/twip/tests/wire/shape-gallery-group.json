@@ -1,0 +1,9 @@
+[
+  {
+    "label": "Basic Shapes",
+    "presets": [
+      "rect",
+      "ellipse"
+    ]
+  }
+]

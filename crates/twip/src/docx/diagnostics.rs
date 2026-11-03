@@ -29,6 +29,8 @@ pub enum WarningCode {
     CommentUnanchored,
     /// A comment reference or range naming a comment the comments part doesn't have.
     CommentReferenceOrphan,
+    /// A shape's preset geometry the engine has no definition for: it draws as a rectangle and is kept on save.
+    UnknownPreset,
 }
 
 impl WarningCode {
@@ -46,6 +48,7 @@ impl WarningCode {
             WarningCode::AuthorMissing => "author-missing",
             WarningCode::CommentUnanchored => "comment-unanchored",
             WarningCode::CommentReferenceOrphan => "comment-reference-orphan",
+            WarningCode::UnknownPreset => "unknown-preset",
         }
     }
 }

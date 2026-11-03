@@ -253,12 +253,12 @@ Twip.CommandGroup.Tabs = 6 -> Twip.CommandGroup
 Twip.CommandGroup.Text = 0 -> Twip.CommandGroup
 Twip.CommandGroup.View = 16 -> Twip.CommandGroup
 Twip.CommandId
-Twip.CommandId.AcceptAllRevisions = 147 -> Twip.CommandId
-Twip.CommandId.AcceptRevision = 143 -> Twip.CommandId
-Twip.CommandId.AcceptRevisionsInSelection = 145 -> Twip.CommandId
-Twip.CommandId.AddComment = 150 -> Twip.CommandId
+Twip.CommandId.AcceptAllRevisions = 161 -> Twip.CommandId
+Twip.CommandId.AcceptRevision = 157 -> Twip.CommandId
+Twip.CommandId.AcceptRevisionsInSelection = 159 -> Twip.CommandId
+Twip.CommandId.AddComment = 164 -> Twip.CommandId
 Twip.CommandId.AddTabStop = 59 -> Twip.CommandId
-Twip.CommandId.AutoFitColumns = 97 -> Twip.CommandId
+Twip.CommandId.AutoFitColumns = 98 -> Twip.CommandId
 Twip.CommandId.ChangeCase = 44 -> Twip.CommandId
 Twip.CommandId.ClearFormatting = 43 -> Twip.CommandId
 Twip.CommandId.ClearTabStops = 62 -> Twip.CommandId
@@ -268,105 +268,105 @@ Twip.CommandId.CopyFormatting = 45 -> Twip.CommandId
 Twip.CommandId.Cut = 9 -> Twip.CommandId
 Twip.CommandId.DecreaseIndent = 52 -> Twip.CommandId
 Twip.CommandId.Delete = 8 -> Twip.CommandId
-Twip.CommandId.DeleteCells = 90 -> Twip.CommandId
-Twip.CommandId.DeleteColumns = 88 -> Twip.CommandId
-Twip.CommandId.DeleteComment = 153 -> Twip.CommandId
-Twip.CommandId.DeleteObject = 120 -> Twip.CommandId
-Twip.CommandId.DeleteRows = 87 -> Twip.CommandId
+Twip.CommandId.DeleteCells = 91 -> Twip.CommandId
+Twip.CommandId.DeleteColumns = 89 -> Twip.CommandId
+Twip.CommandId.DeleteComment = 167 -> Twip.CommandId
+Twip.CommandId.DeleteObject = 121 -> Twip.CommandId
+Twip.CommandId.DeleteRows = 88 -> Twip.CommandId
 Twip.CommandId.DeleteTabStop = 61 -> Twip.CommandId
-Twip.CommandId.DeleteTable = 89 -> Twip.CommandId
-Twip.CommandId.DistributeColumns = 95 -> Twip.CommandId
-Twip.CommandId.DistributeRows = 94 -> Twip.CommandId
-Twip.CommandId.EditComment = 152 -> Twip.CommandId
+Twip.CommandId.DeleteTable = 90 -> Twip.CommandId
+Twip.CommandId.DistributeColumns = 96 -> Twip.CommandId
+Twip.CommandId.DistributeRows = 95 -> Twip.CommandId
+Twip.CommandId.EditComment = 166 -> Twip.CommandId
 Twip.CommandId.EditFooter = 73 -> Twip.CommandId
 Twip.CommandId.EditHeader = 72 -> Twip.CommandId
-Twip.CommandId.EditHyperlink = 82 -> Twip.CommandId
+Twip.CommandId.EditHyperlink = 83 -> Twip.CommandId
 Twip.CommandId.Escape = 22 -> Twip.CommandId
-Twip.CommandId.FillControl = 131 -> Twip.CommandId
-Twip.CommandId.FillPlaceholder = 138 -> Twip.CommandId
+Twip.CommandId.FillControl = 145 -> Twip.CommandId
+Twip.CommandId.FillPlaceholder = 152 -> Twip.CommandId
 Twip.CommandId.GoBack = 21 -> Twip.CommandId
 Twip.CommandId.GoToPage = 24 -> Twip.CommandId
 Twip.CommandId.GrowFont = 37 -> Twip.CommandId
 Twip.CommandId.IncreaseIndent = 51 -> Twip.CommandId
 Twip.CommandId.InsertColumnBreak = 4 -> Twip.CommandId
-Twip.CommandId.InsertColumns = 86 -> Twip.CommandId
-Twip.CommandId.InsertControl = 128 -> Twip.CommandId
-Twip.CommandId.InsertEndnote = 80 -> Twip.CommandId
-Twip.CommandId.InsertField = 84 -> Twip.CommandId
-Twip.CommandId.InsertFootnote = 79 -> Twip.CommandId
-Twip.CommandId.InsertHyperlink = 81 -> Twip.CommandId
+Twip.CommandId.InsertColumns = 87 -> Twip.CommandId
+Twip.CommandId.InsertControl = 142 -> Twip.CommandId
+Twip.CommandId.InsertEndnote = 81 -> Twip.CommandId
+Twip.CommandId.InsertField = 85 -> Twip.CommandId
+Twip.CommandId.InsertFootnote = 80 -> Twip.CommandId
+Twip.CommandId.InsertHyperlink = 82 -> Twip.CommandId
 Twip.CommandId.InsertLineBreak = 2 -> Twip.CommandId
 Twip.CommandId.InsertPageBreak = 3 -> Twip.CommandId
 Twip.CommandId.InsertPageNumber = 75 -> Twip.CommandId
 Twip.CommandId.InsertParagraph = 1 -> Twip.CommandId
 Twip.CommandId.InsertPicture = 77 -> Twip.CommandId
-Twip.CommandId.InsertRows = 85 -> Twip.CommandId
+Twip.CommandId.InsertRows = 86 -> Twip.CommandId
 Twip.CommandId.InsertSectionBreak = 5 -> Twip.CommandId
 Twip.CommandId.InsertSymbol = 7 -> Twip.CommandId
 Twip.CommandId.InsertTab = 6 -> Twip.CommandId
 Twip.CommandId.InsertTable = 76 -> Twip.CommandId
 Twip.CommandId.InsertText = 0 -> Twip.CommandId
 Twip.CommandId.InsertTextBox = 78 -> Twip.CommandId
-Twip.CommandId.MarkElements = 136 -> Twip.CommandId
-Twip.CommandId.MergeCells = 91 -> Twip.CommandId
+Twip.CommandId.MarkElements = 150 -> Twip.CommandId
+Twip.CommandId.MergeCells = 92 -> Twip.CommandId
 Twip.CommandId.MoveColumnBoundary = 71 -> Twip.CommandId
-Twip.CommandId.MoveRows = 96 -> Twip.CommandId
+Twip.CommandId.MoveRows = 97 -> Twip.CommandId
 Twip.CommandId.MoveSelection = 18 -> Twip.CommandId
 Twip.CommandId.MoveTabStop = 60 -> Twip.CommandId
-Twip.CommandId.MoveTableColumnBoundary = 106 -> Twip.CommandId
-Twip.CommandId.MoveTableRowBoundary = 107 -> Twip.CommandId
+Twip.CommandId.MoveTableColumnBoundary = 107 -> Twip.CommandId
+Twip.CommandId.MoveTableRowBoundary = 108 -> Twip.CommandId
 Twip.CommandId.MoveToCell = 19 -> Twip.CommandId
 Twip.CommandId.Paste = 11 -> Twip.CommandId
 Twip.CommandId.PasteFormatting = 46 -> Twip.CommandId
 Twip.CommandId.PasteText = 12 -> Twip.CommandId
 Twip.CommandId.Redo = 14 -> Twip.CommandId
-Twip.CommandId.RejectAllRevisions = 148 -> Twip.CommandId
-Twip.CommandId.RejectRevision = 144 -> Twip.CommandId
-Twip.CommandId.RejectRevisionsInSelection = 146 -> Twip.CommandId
-Twip.CommandId.RemoveControl = 130 -> Twip.CommandId
-Twip.CommandId.RemoveDataPart = 140 -> Twip.CommandId
-Twip.CommandId.RemoveElement = 134 -> Twip.CommandId
-Twip.CommandId.RemoveHyperlink = 83 -> Twip.CommandId
+Twip.CommandId.RejectAllRevisions = 162 -> Twip.CommandId
+Twip.CommandId.RejectRevision = 158 -> Twip.CommandId
+Twip.CommandId.RejectRevisionsInSelection = 160 -> Twip.CommandId
+Twip.CommandId.RemoveControl = 144 -> Twip.CommandId
+Twip.CommandId.RemoveDataPart = 154 -> Twip.CommandId
+Twip.CommandId.RemoveElement = 148 -> Twip.CommandId
+Twip.CommandId.RemoveHyperlink = 84 -> Twip.CommandId
 Twip.CommandId.Repeat = 15 -> Twip.CommandId
-Twip.CommandId.ReplaceInElements = 135 -> Twip.CommandId
-Twip.CommandId.ReplyToComment = 151 -> Twip.CommandId
-Twip.CommandId.ResetObjectSize = 114 -> Twip.CommandId
-Twip.CommandId.ResolveComment = 154 -> Twip.CommandId
+Twip.CommandId.ReplaceInElements = 149 -> Twip.CommandId
+Twip.CommandId.ReplyToComment = 165 -> Twip.CommandId
+Twip.CommandId.ResetObjectSize = 115 -> Twip.CommandId
+Twip.CommandId.ResolveComment = 168 -> Twip.CommandId
 Twip.CommandId.Select = 17 -> Twip.CommandId
 Twip.CommandId.SelectAll = 16 -> Twip.CommandId
-Twip.CommandId.SelectComment = 156 -> Twip.CommandId
+Twip.CommandId.SelectComment = 170 -> Twip.CommandId
 Twip.CommandId.SelectNextObject = 23 -> Twip.CommandId
-Twip.CommandId.SelectRevision = 149 -> Twip.CommandId
-Twip.CommandId.SetActiveComment = 155 -> Twip.CommandId
+Twip.CommandId.SelectRevision = 163 -> Twip.CommandId
+Twip.CommandId.SetActiveComment = 169 -> Twip.CommandId
 Twip.CommandId.SetAlignment = 47 -> Twip.CommandId
 Twip.CommandId.SetAllCaps = 33 -> Twip.CommandId
-Twip.CommandId.SetAltText = 119 -> Twip.CommandId
-Twip.CommandId.SetAnchorLocked = 116 -> Twip.CommandId
-Twip.CommandId.SetAuthorColor = 157 -> Twip.CommandId
+Twip.CommandId.SetAltText = 120 -> Twip.CommandId
+Twip.CommandId.SetAnchorLocked = 117 -> Twip.CommandId
+Twip.CommandId.SetAuthorColor = 171 -> Twip.CommandId
 Twip.CommandId.SetBold = 25 -> Twip.CommandId
-Twip.CommandId.SetCellAlignment = 98 -> Twip.CommandId
-Twip.CommandId.SetCellBorders = 100 -> Twip.CommandId
-Twip.CommandId.SetCellMargins = 101 -> Twip.CommandId
-Twip.CommandId.SetCellShading = 99 -> Twip.CommandId
+Twip.CommandId.SetCellAlignment = 99 -> Twip.CommandId
+Twip.CommandId.SetCellBorders = 101 -> Twip.CommandId
+Twip.CommandId.SetCellMargins = 102 -> Twip.CommandId
+Twip.CommandId.SetCellShading = 100 -> Twip.CommandId
 Twip.CommandId.SetCharacterPosition = 42 -> Twip.CommandId
 Twip.CommandId.SetCharacterSpacing = 41 -> Twip.CommandId
-Twip.CommandId.SetCheckbox = 132 -> Twip.CommandId
-Twip.CommandId.SetColumnWidth = 105 -> Twip.CommandId
+Twip.CommandId.SetCheckbox = 146 -> Twip.CommandId
+Twip.CommandId.SetColumnWidth = 106 -> Twip.CommandId
 Twip.CommandId.SetColumns = 67 -> Twip.CommandId
-Twip.CommandId.SetControl = 129 -> Twip.CommandId
+Twip.CommandId.SetControl = 143 -> Twip.CommandId
 Twip.CommandId.SetDefaultTabStop = 63 -> Twip.CommandId
 Twip.CommandId.SetDifferentFirstPage = 69 -> Twip.CommandId
 Twip.CommandId.SetDifferentOddEvenPages = 70 -> Twip.CommandId
 Twip.CommandId.SetDoubleStrikethrough = 29 -> Twip.CommandId
-Twip.CommandId.SetField = 121 -> Twip.CommandId
-Twip.CommandId.SetFieldLabels = 127 -> Twip.CommandId
-Twip.CommandId.SetFieldResults = 122 -> Twip.CommandId
-Twip.CommandId.SetFieldsLocked = 124 -> Twip.CommandId
+Twip.CommandId.SetField = 135 -> Twip.CommandId
+Twip.CommandId.SetFieldLabels = 141 -> Twip.CommandId
+Twip.CommandId.SetFieldResults = 136 -> Twip.CommandId
+Twip.CommandId.SetFieldsLocked = 138 -> Twip.CommandId
 Twip.CommandId.SetFont = 35 -> Twip.CommandId
 Twip.CommandId.SetFontColor = 39 -> Twip.CommandId
 Twip.CommandId.SetFontSize = 36 -> Twip.CommandId
 Twip.CommandId.SetHeaderFooterDistance = 68 -> Twip.CommandId
-Twip.CommandId.SetHeaderRow = 102 -> Twip.CommandId
+Twip.CommandId.SetHeaderRow = 103 -> Twip.CommandId
 Twip.CommandId.SetHidden = 34 -> Twip.CommandId
 Twip.CommandId.SetHighlight = 40 -> Twip.CommandId
 Twip.CommandId.SetIndents = 50 -> Twip.CommandId
@@ -375,10 +375,10 @@ Twip.CommandId.SetLineSpacing = 48 -> Twip.CommandId
 Twip.CommandId.SetList = 54 -> Twip.CommandId
 Twip.CommandId.SetListLevel = 55 -> Twip.CommandId
 Twip.CommandId.SetMargins = 64 -> Twip.CommandId
-Twip.CommandId.SetMarkupView = 142 -> Twip.CommandId
-Twip.CommandId.SetMode = 160 -> Twip.CommandId
-Twip.CommandId.SetObjectSize = 113 -> Twip.CommandId
-Twip.CommandId.SetObjectWrap = 115 -> Twip.CommandId
+Twip.CommandId.SetMarkupView = 156 -> Twip.CommandId
+Twip.CommandId.SetMode = 174 -> Twip.CommandId
+Twip.CommandId.SetObjectSize = 114 -> Twip.CommandId
+Twip.CommandId.SetObjectWrap = 116 -> Twip.CommandId
 Twip.CommandId.SetOrientation = 65 -> Twip.CommandId
 Twip.CommandId.SetPaperSize = 66 -> Twip.CommandId
 Twip.CommandId.SetParagraphBorders = 57 -> Twip.CommandId
@@ -386,32 +386,32 @@ Twip.CommandId.SetParagraphFlow = 56 -> Twip.CommandId
 Twip.CommandId.SetParagraphShading = 58 -> Twip.CommandId
 Twip.CommandId.SetParagraphSpacing = 49 -> Twip.CommandId
 Twip.CommandId.SetParagraphStyle = 53 -> Twip.CommandId
-Twip.CommandId.SetPlaceholderLooks = 137 -> Twip.CommandId
-Twip.CommandId.SetRowCanBreak = 104 -> Twip.CommandId
-Twip.CommandId.SetRowHeight = 103 -> Twip.CommandId
+Twip.CommandId.SetPlaceholderLooks = 151 -> Twip.CommandId
+Twip.CommandId.SetRowCanBreak = 105 -> Twip.CommandId
+Twip.CommandId.SetRowHeight = 104 -> Twip.CommandId
 Twip.CommandId.SetSelectionMode = 20 -> Twip.CommandId
 Twip.CommandId.SetSmallCaps = 32 -> Twip.CommandId
 Twip.CommandId.SetStrikethrough = 28 -> Twip.CommandId
 Twip.CommandId.SetSubscript = 30 -> Twip.CommandId
 Twip.CommandId.SetSuperscript = 31 -> Twip.CommandId
-Twip.CommandId.SetTableAlignment = 109 -> Twip.CommandId
-Twip.CommandId.SetTableIndent = 110 -> Twip.CommandId
-Twip.CommandId.SetTableStyle = 111 -> Twip.CommandId
-Twip.CommandId.SetTableStyleOptions = 112 -> Twip.CommandId
-Twip.CommandId.SetTableWidth = 108 -> Twip.CommandId
-Twip.CommandId.SetTrackChanges = 141 -> Twip.CommandId
+Twip.CommandId.SetTableAlignment = 110 -> Twip.CommandId
+Twip.CommandId.SetTableIndent = 111 -> Twip.CommandId
+Twip.CommandId.SetTableStyle = 112 -> Twip.CommandId
+Twip.CommandId.SetTableStyleOptions = 113 -> Twip.CommandId
+Twip.CommandId.SetTableWidth = 109 -> Twip.CommandId
+Twip.CommandId.SetTrackChanges = 155 -> Twip.CommandId
 Twip.CommandId.SetUnderline = 27 -> Twip.CommandId
-Twip.CommandId.SetViewOptions = 159 -> Twip.CommandId
-Twip.CommandId.SetZoom = 158 -> Twip.CommandId
-Twip.CommandId.ShowFieldCodes = 126 -> Twip.CommandId
+Twip.CommandId.SetViewOptions = 173 -> Twip.CommandId
+Twip.CommandId.SetZoom = 172 -> Twip.CommandId
+Twip.CommandId.ShowFieldCodes = 140 -> Twip.CommandId
 Twip.CommandId.ShrinkFont = 38 -> Twip.CommandId
-Twip.CommandId.SplitCells = 92 -> Twip.CommandId
-Twip.CommandId.SplitTable = 93 -> Twip.CommandId
+Twip.CommandId.SplitCells = 93 -> Twip.CommandId
+Twip.CommandId.SplitTable = 94 -> Twip.CommandId
 Twip.CommandId.Undo = 13 -> Twip.CommandId
-Twip.CommandId.UnlinkFields = 125 -> Twip.CommandId
-Twip.CommandId.UpdateFields = 123 -> Twip.CommandId
-Twip.CommandId.WrapInRepeatingSection = 133 -> Twip.CommandId
-Twip.CommandId.WriteDataPart = 139 -> Twip.CommandId
+Twip.CommandId.UnlinkFields = 139 -> Twip.CommandId
+Twip.CommandId.UpdateFields = 137 -> Twip.CommandId
+Twip.CommandId.WrapInRepeatingSection = 147 -> Twip.CommandId
+Twip.CommandId.WriteDataPart = 153 -> Twip.CommandId
 Twip.CommandInfo
 Twip.CommandInfo.<Clone>$() -> Twip.CommandInfo!
 Twip.CommandInfo.CommandInfo(Twip.CommandId Id, string! Label, Twip.CommandGroup Group, Twip.Shortcuts! Shortcuts, bool TakesArguments, bool Mutates, Twip.UndoGrouping Undo) -> void
@@ -2942,6 +2942,7 @@ Twip.Warning.Warning(Twip.WarningCode Code, string! Message, int Count, Twip.War
 Twip.WarningCode
 Twip.WarningCode.AuthorMissing = 8 -> Twip.WarningCode
 Twip.WarningCode.CommentReferenceOrphan = 10 -> Twip.WarningCode
+Twip.WarningCode.UnknownPreset = 11 -> Twip.WarningCode
 Twip.WarningCode.CommentUnanchored = 9 -> Twip.WarningCode
 Twip.WarningCode.FontSubstituted = 3 -> Twip.WarningCode
 Twip.WarningCode.FontUnresolved = 2 -> Twip.WarningCode
@@ -4098,8 +4099,8 @@ Twip.VerticalPosition.Align.get -> Twip.ObjectVerticalAlignment?
 Twip.VerticalPosition.Align.init -> void
 Twip.VerticalPosition.Offset.get -> Twip.Length?
 Twip.VerticalPosition.Offset.init -> void
-Twip.CommandId.SetObjectWrapOptions = 118 -> Twip.CommandId
-Twip.CommandId.SetObjectPosition = 117 -> Twip.CommandId
+Twip.CommandId.SetObjectWrapOptions = 119 -> Twip.CommandId
+Twip.CommandId.SetObjectPosition = 118 -> Twip.CommandId
 Twip.VerticalReference
 Twip.HorizontalReference
 Twip.ObjectHorizontalAlignment
@@ -4171,3 +4172,571 @@ Twip.EditorCommands.SetObjectPositionAsync(Twip.HorizontalPosition? horizontal =
 Twip.EditorCommands.SetObjectWrapOptionsAsync(Twip.WrapSide? side = null, Twip.Length? top = null, Twip.Length? bottom = null, Twip.Length? left = null, Twip.Length? right = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Twip.EditorOperation.SetObjectPosition(Twip.HorizontalPosition? horizontal = null, Twip.VerticalPosition? vertical = null, bool? allowOverlap = null, bool? layoutInCell = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetObjectWrapOptions(Twip.WrapSide? side = null, Twip.Length? top = null, Twip.Length? bottom = null, Twip.Length? left = null, Twip.Length? right = null) -> Twip.EditorOperation!
+Twip.Arrange
+Twip.Arrange.Backward = 1 -> Twip.Arrange
+Twip.Arrange.BehindText = 5 -> Twip.Arrange
+Twip.Arrange.Forward = 0 -> Twip.Arrange
+Twip.Arrange.InFrontOfText = 4 -> Twip.Arrange
+Twip.Arrange.ToBack = 3 -> Twip.Arrange
+Twip.Arrange.ToFront = 2 -> Twip.Arrange
+Twip.ArrowKind
+Twip.ArrowKind.Arrow = 4 -> Twip.ArrowKind
+Twip.ArrowKind.Diamond = 2 -> Twip.ArrowKind
+Twip.ArrowKind.Oval = 3 -> Twip.ArrowKind
+Twip.ArrowKind.Stealth = 1 -> Twip.ArrowKind
+Twip.ArrowKind.Triangle = 0 -> Twip.ArrowKind
+Twip.ArrowSize
+Twip.ArrowSize.Large = 2 -> Twip.ArrowSize
+Twip.ArrowSize.Medium = 1 -> Twip.ArrowSize
+Twip.ArrowSize.Small = 0 -> Twip.ArrowSize
+Twip.Arrowhead
+Twip.Arrowhead.<Clone>$() -> Twip.Arrowhead!
+Twip.Arrowhead.Arrowhead(Twip.ArrowKind Kind, Twip.ArrowSize Width = Twip.ArrowSize.Medium, Twip.ArrowSize Length = Twip.ArrowSize.Medium) -> void
+Twip.Arrowhead.Deconstruct(out Twip.ArrowKind Kind, out Twip.ArrowSize Width, out Twip.ArrowSize Length) -> void
+Twip.Arrowhead.Equals(Twip.Arrowhead? other) -> bool
+Twip.Arrowhead.Kind.get -> Twip.ArrowKind
+Twip.Arrowhead.Kind.init -> void
+Twip.Arrowhead.Length.get -> Twip.ArrowSize
+Twip.Arrowhead.Length.init -> void
+Twip.Arrowhead.Width.get -> Twip.ArrowSize
+Twip.Arrowhead.Width.init -> void
+Twip.ColorTransform
+Twip.ColorTransform.<Clone>$() -> Twip.ColorTransform!
+Twip.ColorTransform.ColorTransform(Twip.ColorTransformKind Kind, double Value) -> void
+Twip.ColorTransform.Deconstruct(out Twip.ColorTransformKind Kind, out double Value) -> void
+Twip.ColorTransform.Equals(Twip.ColorTransform? other) -> bool
+Twip.ColorTransform.Kind.get -> Twip.ColorTransformKind
+Twip.ColorTransform.Kind.init -> void
+Twip.ColorTransform.Value.get -> double
+Twip.ColorTransform.Value.init -> void
+Twip.ColorTransformKind
+Twip.ColorTransformKind.Alpha = 8 -> Twip.ColorTransformKind
+Twip.ColorTransformKind.AlphaMod = 9 -> Twip.ColorTransformKind
+Twip.ColorTransformKind.HueMod = 6 -> Twip.ColorTransformKind
+Twip.ColorTransformKind.HueOff = 7 -> Twip.ColorTransformKind
+Twip.ColorTransformKind.LumMod = 2 -> Twip.ColorTransformKind
+Twip.ColorTransformKind.LumOff = 3 -> Twip.ColorTransformKind
+Twip.ColorTransformKind.SatMod = 4 -> Twip.ColorTransformKind
+Twip.ColorTransformKind.SatOff = 5 -> Twip.ColorTransformKind
+Twip.ColorTransformKind.Shade = 1 -> Twip.ColorTransformKind
+Twip.ColorTransformKind.Tint = 0 -> Twip.ColorTransformKind
+Twip.CommandId.ArrangeObject = 131 -> Twip.CommandId
+Twip.CommandId.FlipObject = 130 -> Twip.CommandId
+Twip.CommandId.GroupObjects = 132 -> Twip.CommandId
+Twip.CommandId.InsertShape = 79 -> Twip.CommandId
+Twip.CommandId.SelectGroupChild = 134 -> Twip.CommandId
+Twip.CommandId.SetObjectRotation = 129 -> Twip.CommandId
+Twip.CommandId.SetPictureAdjust = 128 -> Twip.CommandId
+Twip.CommandId.SetShapeAdjust = 123 -> Twip.CommandId
+Twip.CommandId.SetShapeEffects = 126 -> Twip.CommandId
+Twip.CommandId.SetShapeFill = 124 -> Twip.CommandId
+Twip.CommandId.SetShapeLine = 125 -> Twip.CommandId
+Twip.CommandId.SetShapePreset = 122 -> Twip.CommandId
+Twip.CommandId.SetShapeText = 127 -> Twip.CommandId
+Twip.CommandId.UngroupObjects = 133 -> Twip.CommandId
+Twip.EditorCommands.ArrangeObjectAsync(Twip.Arrange arrange, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.FlipObjectAsync(Twip.FlipAxis axis, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.GroupObjectsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.InsertShapeAsync(Twip.ShapePreset preset, Twip.Length? width = null, Twip.Length? height = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SelectGroupChildAsync(Twip.NavigationDirection direction, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetObjectRotationAsync(double degrees, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetPictureAdjustAsync(Twip.PictureAdjustChange! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetShapeAdjustAsync(int index, long value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetShapeEffectsAsync(Twip.EffectsChange! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetShapeFillAsync(Twip.FillValue! fill, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetShapeLineAsync(Twip.LineChange! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetShapePresetAsync(Twip.ShapePreset preset, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetShapeTextAsync(Twip.ShapeTextChange! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.UngroupObjectsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSession.ShapeGallery.get -> System.Collections.Generic.IReadOnlyList<Twip.ShapeGalleryGroup!>!
+Twip.EditorState.ThemeColors.get -> System.Collections.Generic.IReadOnlyList<Twip.ColorValue>!
+Twip.EditorState.ThemeColors.init -> void
+Twip.EffectChange<T>
+Twip.EffectChange<T>.EffectChange() -> void
+Twip.EffectChange<T>.Equals(Twip.EffectChange<T> other) -> bool
+Twip.EffectChange<T>.IsRemove.get -> bool
+Twip.EffectChange<T>.IsSet.get -> bool
+Twip.EffectChange<T>.Value.get -> T
+Twip.EffectsChange
+Twip.EffectsChange.<Clone>$() -> Twip.EffectsChange!
+Twip.EffectsChange.Blur.get -> Twip.EffectChange<Twip.Length>
+Twip.EffectsChange.Blur.init -> void
+Twip.EffectsChange.Deconstruct(out Twip.EffectChange<Twip.Shadow!> OuterShadow, out Twip.EffectChange<Twip.Shadow!> InnerShadow, out Twip.EffectChange<Twip.Glow!> Glow, out Twip.EffectChange<Twip.Length> SoftEdge, out Twip.EffectChange<Twip.Length> Blur) -> void
+Twip.EffectsChange.EffectsChange(Twip.EffectChange<Twip.Shadow!> OuterShadow = default(Twip.EffectChange<Twip.Shadow!>), Twip.EffectChange<Twip.Shadow!> InnerShadow = default(Twip.EffectChange<Twip.Shadow!>), Twip.EffectChange<Twip.Glow!> Glow = default(Twip.EffectChange<Twip.Glow!>), Twip.EffectChange<Twip.Length> SoftEdge = default(Twip.EffectChange<Twip.Length>), Twip.EffectChange<Twip.Length> Blur = default(Twip.EffectChange<Twip.Length>)) -> void
+Twip.EffectsChange.Equals(Twip.EffectsChange? other) -> bool
+Twip.EffectsChange.Glow.get -> Twip.EffectChange<Twip.Glow!>
+Twip.EffectsChange.Glow.init -> void
+Twip.EffectsChange.InnerShadow.get -> Twip.EffectChange<Twip.Shadow!>
+Twip.EffectsChange.InnerShadow.init -> void
+Twip.EffectsChange.OuterShadow.get -> Twip.EffectChange<Twip.Shadow!>
+Twip.EffectsChange.OuterShadow.init -> void
+Twip.EffectsChange.SoftEdge.get -> Twip.EffectChange<Twip.Length>
+Twip.EffectsChange.SoftEdge.init -> void
+Twip.EffectsValue
+Twip.EffectsValue.<Clone>$() -> Twip.EffectsValue!
+Twip.EffectsValue.Blur.get -> Twip.Length?
+Twip.EffectsValue.Blur.init -> void
+Twip.EffectsValue.Deconstruct(out Twip.Shadow? OuterShadow, out Twip.Shadow? InnerShadow, out Twip.Glow? Glow, out Twip.Length? SoftEdge, out Twip.Length? Blur) -> void
+Twip.EffectsValue.EffectsValue(Twip.Shadow? OuterShadow = null, Twip.Shadow? InnerShadow = null, Twip.Glow? Glow = null, Twip.Length? SoftEdge = null, Twip.Length? Blur = null) -> void
+Twip.EffectsValue.Equals(Twip.EffectsValue? other) -> bool
+Twip.EffectsValue.Glow.get -> Twip.Glow?
+Twip.EffectsValue.Glow.init -> void
+Twip.EffectsValue.InnerShadow.get -> Twip.Shadow?
+Twip.EffectsValue.InnerShadow.init -> void
+Twip.EffectsValue.OuterShadow.get -> Twip.Shadow?
+Twip.EffectsValue.OuterShadow.init -> void
+Twip.EffectsValue.SoftEdge.get -> Twip.Length?
+Twip.EffectsValue.SoftEdge.init -> void
+Twip.FillState
+Twip.FillState.<Clone>$() -> Twip.FillState!
+Twip.FillState.Equals(Twip.FillState? other) -> bool
+Twip.FillState.Explicit.get -> Twip.FillValue?
+Twip.FillState.Explicit.init -> void
+Twip.FillState.FillState() -> void
+Twip.FillState.FromStyle.get -> Twip.FillValue?
+Twip.FillState.FromStyle.init -> void
+Twip.FillValue
+Twip.FillValue.FillValue(Twip.FillValue! original) -> void
+Twip.FillValue.FromStyle
+Twip.FillValue.FromStyle.Equals(Twip.FillValue.FromStyle? other) -> bool
+Twip.FillValue.FromStyle.FromStyle() -> void
+Twip.FillValue.Gradient
+Twip.FillValue.Gradient.Angle.get -> double?
+Twip.FillValue.Gradient.Angle.init -> void
+Twip.FillValue.Gradient.Deconstruct(out Twip.GradientShape Kind, out System.Collections.Generic.IReadOnlyList<Twip.GradientStop!>! Stops, out double? Angle) -> void
+Twip.FillValue.Gradient.Equals(Twip.FillValue.Gradient? other) -> bool
+Twip.FillValue.Gradient.Gradient(Twip.GradientShape Kind, System.Collections.Generic.IReadOnlyList<Twip.GradientStop!>! Stops, double? Angle = null) -> void
+Twip.FillValue.Gradient.Kind.get -> Twip.GradientShape
+Twip.FillValue.Gradient.Kind.init -> void
+Twip.FillValue.Gradient.Stops.get -> System.Collections.Generic.IReadOnlyList<Twip.GradientStop!>!
+Twip.FillValue.Gradient.Stops.init -> void
+Twip.FillValue.None
+Twip.FillValue.None.Equals(Twip.FillValue.None? other) -> bool
+Twip.FillValue.None.None() -> void
+Twip.FillValue.Pattern
+Twip.FillValue.Pattern.Background.get -> Twip.ShapeColor!
+Twip.FillValue.Pattern.Background.init -> void
+Twip.FillValue.Pattern.Deconstruct(out string! Preset, out Twip.ShapeColor! Foreground, out Twip.ShapeColor! Background) -> void
+Twip.FillValue.Pattern.Equals(Twip.FillValue.Pattern? other) -> bool
+Twip.FillValue.Pattern.Foreground.get -> Twip.ShapeColor!
+Twip.FillValue.Pattern.Foreground.init -> void
+Twip.FillValue.Pattern.Pattern(string! Preset, Twip.ShapeColor! Foreground, Twip.ShapeColor! Background) -> void
+Twip.FillValue.Pattern.Preset.get -> string!
+Twip.FillValue.Pattern.Preset.init -> void
+Twip.FillValue.Picture
+Twip.FillValue.Picture.Deconstruct(out System.ReadOnlyMemory<byte> Image, out bool? Tile) -> void
+Twip.FillValue.Picture.Equals(Twip.FillValue.Picture? other) -> bool
+Twip.FillValue.Picture.Image.get -> System.ReadOnlyMemory<byte>
+Twip.FillValue.Picture.Image.init -> void
+Twip.FillValue.Picture.Picture(System.ReadOnlyMemory<byte> Image, bool? Tile = null) -> void
+Twip.FillValue.Picture.Tile.get -> bool?
+Twip.FillValue.Picture.Tile.init -> void
+Twip.FillValue.Solid
+Twip.FillValue.Solid.Color.get -> Twip.ShapeColor!
+Twip.FillValue.Solid.Color.init -> void
+Twip.FillValue.Solid.Deconstruct(out Twip.ShapeColor! Color) -> void
+Twip.FillValue.Solid.Equals(Twip.FillValue.Solid? other) -> bool
+Twip.FillValue.Solid.Solid(Twip.ShapeColor! Color) -> void
+Twip.FlipAxis
+Twip.FlipAxis.Horizontal = 0 -> Twip.FlipAxis
+Twip.FlipAxis.Vertical = 1 -> Twip.FlipAxis
+Twip.Glow
+Twip.Glow.<Clone>$() -> Twip.Glow!
+Twip.Glow.Color.get -> Twip.ShapeColor!
+Twip.Glow.Color.init -> void
+Twip.Glow.Deconstruct(out Twip.ShapeColor! Color, out Twip.Length Radius) -> void
+Twip.Glow.Equals(Twip.Glow? other) -> bool
+Twip.Glow.Glow(Twip.ShapeColor! Color, Twip.Length Radius) -> void
+Twip.Glow.Radius.get -> Twip.Length
+Twip.Glow.Radius.init -> void
+Twip.GradientShape
+Twip.GradientShape.Linear = 0 -> Twip.GradientShape
+Twip.GradientShape.Path = 3 -> Twip.GradientShape
+Twip.GradientShape.Radial = 1 -> Twip.GradientShape
+Twip.GradientShape.Rectangular = 2 -> Twip.GradientShape
+Twip.GradientStop
+Twip.GradientStop.<Clone>$() -> Twip.GradientStop!
+Twip.GradientStop.Color.get -> Twip.ShapeColor!
+Twip.GradientStop.Color.init -> void
+Twip.GradientStop.Deconstruct(out double Position, out Twip.ShapeColor! Color) -> void
+Twip.GradientStop.Equals(Twip.GradientStop? other) -> bool
+Twip.GradientStop.GradientStop(double Position, Twip.ShapeColor! Color) -> void
+Twip.GradientStop.Position.get -> double
+Twip.GradientStop.Position.init -> void
+Twip.LineCap
+Twip.LineCap.Flat = 0 -> Twip.LineCap
+Twip.LineCap.Round = 1 -> Twip.LineCap
+Twip.LineCap.Square = 2 -> Twip.LineCap
+Twip.LineChange
+Twip.LineChange.<Clone>$() -> Twip.LineChange!
+Twip.LineChange.Cap.get -> Twip.LineCap?
+Twip.LineChange.Cap.init -> void
+Twip.LineChange.Compound.get -> Twip.LineCompound?
+Twip.LineChange.Compound.init -> void
+Twip.LineChange.Dash.get -> string?
+Twip.LineChange.Dash.init -> void
+Twip.LineChange.Deconstruct(out Twip.Length? Width, out Twip.FillValue? Fill, out string? Dash, out Twip.LineCompound? Compound, out Twip.LineCap? Cap, out Twip.LineJoin? Join, out Twip.LineEnds? Ends) -> void
+Twip.LineChange.Ends.get -> Twip.LineEnds?
+Twip.LineChange.Ends.init -> void
+Twip.LineChange.Equals(Twip.LineChange? other) -> bool
+Twip.LineChange.Fill.get -> Twip.FillValue?
+Twip.LineChange.Fill.init -> void
+Twip.LineChange.Join.get -> Twip.LineJoin?
+Twip.LineChange.Join.init -> void
+Twip.LineChange.LineChange(Twip.Length? Width = null, Twip.FillValue? Fill = null, string? Dash = null, Twip.LineCompound? Compound = null, Twip.LineCap? Cap = null, Twip.LineJoin? Join = null, Twip.LineEnds? Ends = null) -> void
+Twip.LineChange.Width.get -> Twip.Length?
+Twip.LineChange.Width.init -> void
+Twip.LineCompound
+Twip.LineCompound.Double = 1 -> Twip.LineCompound
+Twip.LineCompound.Single = 0 -> Twip.LineCompound
+Twip.LineCompound.ThickThin = 2 -> Twip.LineCompound
+Twip.LineCompound.ThinThick = 3 -> Twip.LineCompound
+Twip.LineCompound.Triple = 4 -> Twip.LineCompound
+Twip.LineEnds
+Twip.LineEnds.<Clone>$() -> Twip.LineEnds!
+Twip.LineEnds.Deconstruct(out Twip.Arrowhead? Head, out Twip.Arrowhead? Tail) -> void
+Twip.LineEnds.Equals(Twip.LineEnds? other) -> bool
+Twip.LineEnds.Head.get -> Twip.Arrowhead?
+Twip.LineEnds.Head.init -> void
+Twip.LineEnds.LineEnds(Twip.Arrowhead? Head = null, Twip.Arrowhead? Tail = null) -> void
+Twip.LineEnds.Tail.get -> Twip.Arrowhead?
+Twip.LineEnds.Tail.init -> void
+Twip.LineJoin
+Twip.LineJoin.Bevel = 1 -> Twip.LineJoin
+Twip.LineJoin.Miter = 2 -> Twip.LineJoin
+Twip.LineJoin.Round = 0 -> Twip.LineJoin
+Twip.LineState
+Twip.LineState.<Clone>$() -> Twip.LineState!
+Twip.LineState.Equals(Twip.LineState? other) -> bool
+Twip.LineState.Explicit.get -> Twip.LineValue?
+Twip.LineState.Explicit.init -> void
+Twip.LineState.FromStyle.get -> Twip.LineValue?
+Twip.LineState.FromStyle.init -> void
+Twip.LineState.LineState() -> void
+Twip.LineValue
+Twip.LineValue.<Clone>$() -> Twip.LineValue!
+Twip.LineValue.Cap.get -> Twip.LineCap
+Twip.LineValue.Cap.init -> void
+Twip.LineValue.Compound.get -> Twip.LineCompound
+Twip.LineValue.Compound.init -> void
+Twip.LineValue.Dash.get -> string!
+Twip.LineValue.Dash.init -> void
+Twip.LineValue.Deconstruct(out Twip.Length Width, out Twip.FillValue! Fill, out string! Dash, out Twip.LineCompound Compound, out Twip.LineCap Cap, out Twip.LineJoin Join, out Twip.LineEnds! Ends) -> void
+Twip.LineValue.Ends.get -> Twip.LineEnds!
+Twip.LineValue.Ends.init -> void
+Twip.LineValue.Equals(Twip.LineValue? other) -> bool
+Twip.LineValue.Fill.get -> Twip.FillValue!
+Twip.LineValue.Fill.init -> void
+Twip.LineValue.Join.get -> Twip.LineJoin
+Twip.LineValue.Join.init -> void
+Twip.LineValue.LineValue(Twip.Length Width, Twip.FillValue! Fill, string! Dash, Twip.LineCompound Compound, Twip.LineCap Cap, Twip.LineJoin Join, Twip.LineEnds! Ends) -> void
+Twip.LineValue.Width.get -> Twip.Length
+Twip.LineValue.Width.init -> void
+Twip.ObjectKind.Group = 4 -> Twip.ObjectKind
+Twip.ObjectKind.Line = 3 -> Twip.ObjectKind
+Twip.ObjectKind.Shape = 2 -> Twip.ObjectKind
+Twip.ObjectSelection.ChildPath.get -> System.Collections.Generic.IReadOnlyList<int>!
+Twip.ObjectSelection.ChildPath.init -> void
+Twip.ObjectSelection.Count.get -> int
+Twip.ObjectSelection.Count.init -> void
+Twip.ObjectSelection.FlipH.get -> bool
+Twip.ObjectSelection.FlipH.init -> void
+Twip.ObjectSelection.FlipV.get -> bool
+Twip.ObjectSelection.FlipV.init -> void
+Twip.ObjectSelection.Rotation.get -> double
+Twip.ObjectSelection.Rotation.init -> void
+Twip.ObjectSelection.Shape.get -> Twip.ShapeState?
+Twip.ObjectSelection.Shape.init -> void
+Twip.PictureAdjustChange
+Twip.PictureAdjustChange.<Clone>$() -> Twip.PictureAdjustChange!
+Twip.PictureAdjustChange.Brightness.get -> double?
+Twip.PictureAdjustChange.Brightness.init -> void
+Twip.PictureAdjustChange.Contrast.get -> double?
+Twip.PictureAdjustChange.Contrast.init -> void
+Twip.PictureAdjustChange.Deconstruct(out double? Transparency, out bool? Grayscale, out double? Brightness, out double? Contrast) -> void
+Twip.PictureAdjustChange.Equals(Twip.PictureAdjustChange? other) -> bool
+Twip.PictureAdjustChange.Grayscale.get -> bool?
+Twip.PictureAdjustChange.Grayscale.init -> void
+Twip.PictureAdjustChange.PictureAdjustChange(double? Transparency = null, bool? Grayscale = null, double? Brightness = null, double? Contrast = null) -> void
+Twip.PictureAdjustChange.Transparency.get -> double?
+Twip.PictureAdjustChange.Transparency.init -> void
+Twip.Shadow
+Twip.Shadow.<Clone>$() -> Twip.Shadow!
+Twip.Shadow.Blur.get -> Twip.Length
+Twip.Shadow.Blur.init -> void
+Twip.Shadow.Color.get -> Twip.ShapeColor!
+Twip.Shadow.Color.init -> void
+Twip.Shadow.Deconstruct(out Twip.ShapeColor! Color, out Twip.Length Blur, out Twip.Length Distance, out double Direction) -> void
+Twip.Shadow.Direction.get -> double
+Twip.Shadow.Direction.init -> void
+Twip.Shadow.Distance.get -> Twip.Length
+Twip.Shadow.Distance.init -> void
+Twip.Shadow.Equals(Twip.Shadow? other) -> bool
+Twip.Shadow.Shadow(Twip.ShapeColor! Color, Twip.Length Blur, Twip.Length Distance, double Direction) -> void
+Twip.ShapeColor
+Twip.ShapeColor.<Clone>$() -> Twip.ShapeColor!
+Twip.ShapeColor.Deconstruct(out Twip.ThemeColor? Theme, out Twip.ColorValue? Rgb, out string? Preset, out System.Collections.Generic.IReadOnlyList<Twip.ColorTransform!>? Transforms) -> void
+Twip.ShapeColor.Equals(Twip.ShapeColor? other) -> bool
+Twip.ShapeColor.Preset.get -> string?
+Twip.ShapeColor.Preset.init -> void
+Twip.ShapeColor.Rgb.get -> Twip.ColorValue?
+Twip.ShapeColor.Rgb.init -> void
+Twip.ShapeColor.ShapeColor(Twip.ThemeColor? Theme = null, Twip.ColorValue? Rgb = null, string? Preset = null, System.Collections.Generic.IReadOnlyList<Twip.ColorTransform!>? Transforms = null) -> void
+Twip.ShapeColor.Theme.get -> Twip.ThemeColor?
+Twip.ShapeColor.Theme.init -> void
+Twip.ShapeColor.Transforms.get -> System.Collections.Generic.IReadOnlyList<Twip.ColorTransform!>?
+Twip.ShapeColor.Transforms.init -> void
+Twip.ShapeGalleryGroup
+Twip.ShapeGalleryGroup.<Clone>$() -> Twip.ShapeGalleryGroup!
+Twip.ShapeGalleryGroup.Deconstruct(out string! Label, out System.Collections.Generic.IReadOnlyList<Twip.ShapePreset>! Presets) -> void
+Twip.ShapeGalleryGroup.Equals(Twip.ShapeGalleryGroup? other) -> bool
+Twip.ShapeGalleryGroup.Label.get -> string!
+Twip.ShapeGalleryGroup.Label.init -> void
+Twip.ShapeGalleryGroup.Presets.get -> System.Collections.Generic.IReadOnlyList<Twip.ShapePreset>!
+Twip.ShapeGalleryGroup.Presets.init -> void
+Twip.ShapeGalleryGroup.ShapeGalleryGroup(string! Label, System.Collections.Generic.IReadOnlyList<Twip.ShapePreset>! Presets) -> void
+Twip.ShapePreset
+Twip.ShapePreset.Deconstruct(out string! Value) -> void
+Twip.ShapePreset.Equals(Twip.ShapePreset other) -> bool
+Twip.ShapePreset.ShapePreset() -> void
+Twip.ShapePreset.ShapePreset(string! Value) -> void
+Twip.ShapePreset.Value.get -> string!
+Twip.ShapePreset.Value.init -> void
+Twip.ShapeState
+Twip.ShapeState.<Clone>$() -> Twip.ShapeState!
+Twip.ShapeState.Adjust.get -> System.Collections.Generic.IReadOnlyList<long>!
+Twip.ShapeState.Adjust.init -> void
+Twip.ShapeState.Effects.get -> Twip.EffectsValue!
+Twip.ShapeState.Effects.init -> void
+Twip.ShapeState.Equals(Twip.ShapeState? other) -> bool
+Twip.ShapeState.Fill.get -> Twip.FillState!
+Twip.ShapeState.Fill.init -> void
+Twip.ShapeState.Line.get -> Twip.LineState!
+Twip.ShapeState.Line.init -> void
+Twip.ShapeState.Preset.get -> Twip.ShapePreset?
+Twip.ShapeState.Preset.init -> void
+Twip.ShapeState.ShapeState() -> void
+Twip.ShapeState.Text.get -> Twip.ShapeTextState?
+Twip.ShapeState.Text.init -> void
+Twip.ShapeTextChange
+Twip.ShapeTextChange.<Clone>$() -> Twip.ShapeTextChange!
+Twip.ShapeTextChange.Anchor.get -> Twip.TextAnchor?
+Twip.ShapeTextChange.Anchor.init -> void
+Twip.ShapeTextChange.Autofit.get -> Twip.TextAutofit?
+Twip.ShapeTextChange.Autofit.init -> void
+Twip.ShapeTextChange.Deconstruct(out System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets, out Twip.TextAnchor? Anchor, out Twip.TextAutofit? Autofit, out bool? WrapText, out Twip.TextDirection? Direction) -> void
+Twip.ShapeTextChange.Direction.get -> Twip.TextDirection?
+Twip.ShapeTextChange.Direction.init -> void
+Twip.ShapeTextChange.Equals(Twip.ShapeTextChange? other) -> bool
+Twip.ShapeTextChange.Insets.get -> System.Collections.Generic.IReadOnlyList<Twip.Length>?
+Twip.ShapeTextChange.Insets.init -> void
+Twip.ShapeTextChange.ShapeTextChange(System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets = null, Twip.TextAnchor? Anchor = null, Twip.TextAutofit? Autofit = null, bool? WrapText = null, Twip.TextDirection? Direction = null) -> void
+Twip.ShapeTextChange.WrapText.get -> bool?
+Twip.ShapeTextChange.WrapText.init -> void
+Twip.ShapeTextState
+Twip.ShapeTextState.<Clone>$() -> Twip.ShapeTextState!
+Twip.ShapeTextState.Anchor.get -> Twip.TextAnchor
+Twip.ShapeTextState.Anchor.init -> void
+Twip.ShapeTextState.Autofit.get -> Twip.TextAutofit
+Twip.ShapeTextState.Autofit.init -> void
+Twip.ShapeTextState.Direction.get -> Twip.TextDirection
+Twip.ShapeTextState.Direction.init -> void
+Twip.ShapeTextState.Equals(Twip.ShapeTextState? other) -> bool
+Twip.ShapeTextState.Insets.get -> System.Collections.Generic.IReadOnlyList<Twip.Length>!
+Twip.ShapeTextState.Insets.init -> void
+Twip.ShapeTextState.ShapeTextState() -> void
+Twip.ShapeTextState.WrapText.get -> bool
+Twip.ShapeTextState.WrapText.init -> void
+Twip.TextAnchor
+Twip.TextAnchor.Bottom = 2 -> Twip.TextAnchor
+Twip.TextAnchor.Middle = 1 -> Twip.TextAnchor
+Twip.TextAnchor.Top = 0 -> Twip.TextAnchor
+Twip.TextAutofit
+Twip.TextAutofit.None = 0 -> Twip.TextAutofit
+Twip.TextAutofit.Shape = 1 -> Twip.TextAutofit
+Twip.TextDirection
+Twip.TextDirection.EastAsianVertical = 3 -> Twip.TextDirection
+Twip.TextDirection.Horizontal = 0 -> Twip.TextDirection
+Twip.TextDirection.MongolianVertical = 4 -> Twip.TextDirection
+Twip.TextDirection.Stacked = 5 -> Twip.TextDirection
+Twip.TextDirection.StackedRightToLeft = 6 -> Twip.TextDirection
+Twip.TextDirection.Vertical = 1 -> Twip.TextDirection
+Twip.TextDirection.Vertical270 = 2 -> Twip.TextDirection
+Twip.ThemeColor
+Twip.ThemeColor.Accent1 = 4 -> Twip.ThemeColor
+Twip.ThemeColor.Accent2 = 5 -> Twip.ThemeColor
+Twip.ThemeColor.Accent3 = 6 -> Twip.ThemeColor
+Twip.ThemeColor.Accent4 = 7 -> Twip.ThemeColor
+Twip.ThemeColor.Accent5 = 8 -> Twip.ThemeColor
+Twip.ThemeColor.Accent6 = 9 -> Twip.ThemeColor
+Twip.ThemeColor.Background1 = 1 -> Twip.ThemeColor
+Twip.ThemeColor.Background2 = 3 -> Twip.ThemeColor
+Twip.ThemeColor.FollowedHyperlink = 11 -> Twip.ThemeColor
+Twip.ThemeColor.Hyperlink = 10 -> Twip.ThemeColor
+Twip.ThemeColor.Text1 = 0 -> Twip.ThemeColor
+Twip.ThemeColor.Text2 = 2 -> Twip.ThemeColor
+abstract Twip.FillValue.<Clone>$() -> Twip.FillValue!
+override Twip.Arrowhead.Equals(object? obj) -> bool
+override Twip.Arrowhead.GetHashCode() -> int
+override Twip.Arrowhead.ToString() -> string!
+override Twip.ColorTransform.Equals(object? obj) -> bool
+override Twip.ColorTransform.GetHashCode() -> int
+override Twip.ColorTransform.ToString() -> string!
+override Twip.EffectChange<T>.GetHashCode() -> int
+override Twip.EffectsChange.Equals(object? obj) -> bool
+override Twip.EffectsChange.GetHashCode() -> int
+override Twip.EffectsChange.ToString() -> string!
+override Twip.EffectsValue.Equals(object? obj) -> bool
+override Twip.EffectsValue.GetHashCode() -> int
+override Twip.EffectsValue.ToString() -> string!
+override Twip.FillState.Equals(object? obj) -> bool
+override Twip.FillState.GetHashCode() -> int
+override Twip.FillState.ToString() -> string!
+override Twip.FillValue.Equals(object? obj) -> bool
+override Twip.FillValue.FromStyle.Equals(object? obj) -> bool
+override Twip.FillValue.FromStyle.GetHashCode() -> int
+override Twip.FillValue.FromStyle.ToString() -> string!
+override Twip.FillValue.GetHashCode() -> int
+override Twip.FillValue.Gradient.Equals(object? obj) -> bool
+override Twip.FillValue.Gradient.GetHashCode() -> int
+override Twip.FillValue.Gradient.ToString() -> string!
+override Twip.FillValue.None.Equals(object? obj) -> bool
+override Twip.FillValue.None.GetHashCode() -> int
+override Twip.FillValue.None.ToString() -> string!
+override Twip.FillValue.Pattern.Equals(object? obj) -> bool
+override Twip.FillValue.Pattern.GetHashCode() -> int
+override Twip.FillValue.Pattern.ToString() -> string!
+override Twip.FillValue.Picture.Equals(object? obj) -> bool
+override Twip.FillValue.Picture.GetHashCode() -> int
+override Twip.FillValue.Picture.ToString() -> string!
+override Twip.FillValue.Solid.Equals(object? obj) -> bool
+override Twip.FillValue.Solid.GetHashCode() -> int
+override Twip.FillValue.Solid.ToString() -> string!
+override Twip.FillValue.ToString() -> string!
+override Twip.Glow.Equals(object? obj) -> bool
+override Twip.Glow.GetHashCode() -> int
+override Twip.Glow.ToString() -> string!
+override Twip.GradientStop.Equals(object? obj) -> bool
+override Twip.GradientStop.GetHashCode() -> int
+override Twip.GradientStop.ToString() -> string!
+override Twip.LineChange.Equals(object? obj) -> bool
+override Twip.LineChange.GetHashCode() -> int
+override Twip.LineChange.ToString() -> string!
+override Twip.LineEnds.Equals(object? obj) -> bool
+override Twip.LineEnds.GetHashCode() -> int
+override Twip.LineEnds.ToString() -> string!
+override Twip.LineState.Equals(object? obj) -> bool
+override Twip.LineState.GetHashCode() -> int
+override Twip.LineState.ToString() -> string!
+override Twip.LineValue.Equals(object? obj) -> bool
+override Twip.LineValue.GetHashCode() -> int
+override Twip.LineValue.ToString() -> string!
+override Twip.PictureAdjustChange.Equals(object? obj) -> bool
+override Twip.PictureAdjustChange.GetHashCode() -> int
+override Twip.PictureAdjustChange.ToString() -> string!
+override Twip.Shadow.Equals(object? obj) -> bool
+override Twip.Shadow.GetHashCode() -> int
+override Twip.Shadow.ToString() -> string!
+override Twip.ShapeColor.Equals(object? obj) -> bool
+override Twip.ShapeColor.GetHashCode() -> int
+override Twip.ShapeColor.ToString() -> string!
+override Twip.ShapeGalleryGroup.Equals(object? obj) -> bool
+override Twip.ShapeGalleryGroup.GetHashCode() -> int
+override Twip.ShapeGalleryGroup.ToString() -> string!
+override Twip.ShapePreset.GetHashCode() -> int
+override Twip.ShapePreset.ToString() -> string!
+override Twip.ShapeState.Equals(object? obj) -> bool
+override Twip.ShapeState.GetHashCode() -> int
+override Twip.ShapeState.ToString() -> string!
+override Twip.ShapeTextChange.Equals(object? obj) -> bool
+override Twip.ShapeTextChange.GetHashCode() -> int
+override Twip.ShapeTextChange.ToString() -> string!
+override Twip.ShapeTextState.Equals(object? obj) -> bool
+override Twip.ShapeTextState.GetHashCode() -> int
+override Twip.ShapeTextState.ToString() -> string!
+override sealed Twip.FillValue.FromStyle.Equals(Twip.FillValue? other) -> bool
+override sealed Twip.FillValue.Gradient.Equals(Twip.FillValue? other) -> bool
+override sealed Twip.FillValue.None.Equals(Twip.FillValue? other) -> bool
+override sealed Twip.FillValue.Pattern.Equals(Twip.FillValue? other) -> bool
+override sealed Twip.FillValue.Picture.Equals(Twip.FillValue? other) -> bool
+override sealed Twip.FillValue.Solid.Equals(Twip.FillValue? other) -> bool
+static Twip.Arrowhead.operator !=(Twip.Arrowhead? left, Twip.Arrowhead? right) -> bool
+static Twip.Arrowhead.operator ==(Twip.Arrowhead? left, Twip.Arrowhead? right) -> bool
+static Twip.ColorTransform.operator !=(Twip.ColorTransform? left, Twip.ColorTransform? right) -> bool
+static Twip.ColorTransform.operator ==(Twip.ColorTransform? left, Twip.ColorTransform? right) -> bool
+static Twip.EditorOperation.ArrangeObject(Twip.Arrange arrange) -> Twip.EditorOperation!
+static Twip.EditorOperation.FlipObject(Twip.FlipAxis axis) -> Twip.EditorOperation!
+static Twip.EditorOperation.GroupObjects() -> Twip.EditorOperation!
+static Twip.EditorOperation.InsertShape(Twip.ShapePreset preset, Twip.Length? width = null, Twip.Length? height = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SelectGroupChild(Twip.NavigationDirection direction) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetObjectRotation(double degrees) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetPictureAdjust(Twip.PictureAdjustChange! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetShapeAdjust(int index, long value) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetShapeEffects(Twip.EffectsChange! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetShapeFill(Twip.FillValue! fill) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetShapeLine(Twip.LineChange! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetShapePreset(Twip.ShapePreset preset) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetShapeText(Twip.ShapeTextChange! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.UngroupObjects() -> Twip.EditorOperation!
+static Twip.EffectChange<T>.Keep.get -> Twip.EffectChange<T>
+static Twip.EffectChange<T>.Remove.get -> Twip.EffectChange<T>
+static Twip.EffectChange<T>.Set(T value) -> Twip.EffectChange<T>
+static Twip.EffectChange<T>.implicit operator Twip.EffectChange<T>(T value) -> Twip.EffectChange<T>
+static Twip.EffectChange<T>.operator !=(Twip.EffectChange<T> left, Twip.EffectChange<T> right) -> bool
+static Twip.EffectChange<T>.operator ==(Twip.EffectChange<T> left, Twip.EffectChange<T> right) -> bool
+static Twip.EffectsChange.operator !=(Twip.EffectsChange? left, Twip.EffectsChange? right) -> bool
+static Twip.EffectsChange.operator ==(Twip.EffectsChange? left, Twip.EffectsChange? right) -> bool
+static Twip.EffectsValue.operator !=(Twip.EffectsValue? left, Twip.EffectsValue? right) -> bool
+static Twip.EffectsValue.operator ==(Twip.EffectsValue? left, Twip.EffectsValue? right) -> bool
+static Twip.FillState.operator !=(Twip.FillState? left, Twip.FillState? right) -> bool
+static Twip.FillState.operator ==(Twip.FillState? left, Twip.FillState? right) -> bool
+static Twip.FillValue.FromStyle.operator !=(Twip.FillValue.FromStyle? left, Twip.FillValue.FromStyle? right) -> bool
+static Twip.FillValue.FromStyle.operator ==(Twip.FillValue.FromStyle? left, Twip.FillValue.FromStyle? right) -> bool
+static Twip.FillValue.Gradient.operator !=(Twip.FillValue.Gradient? left, Twip.FillValue.Gradient? right) -> bool
+static Twip.FillValue.Gradient.operator ==(Twip.FillValue.Gradient? left, Twip.FillValue.Gradient? right) -> bool
+static Twip.FillValue.None.operator !=(Twip.FillValue.None? left, Twip.FillValue.None? right) -> bool
+static Twip.FillValue.None.operator ==(Twip.FillValue.None? left, Twip.FillValue.None? right) -> bool
+static Twip.FillValue.Pattern.operator !=(Twip.FillValue.Pattern? left, Twip.FillValue.Pattern? right) -> bool
+static Twip.FillValue.Pattern.operator ==(Twip.FillValue.Pattern? left, Twip.FillValue.Pattern? right) -> bool
+static Twip.FillValue.Picture.operator !=(Twip.FillValue.Picture? left, Twip.FillValue.Picture? right) -> bool
+static Twip.FillValue.Picture.operator ==(Twip.FillValue.Picture? left, Twip.FillValue.Picture? right) -> bool
+static Twip.FillValue.Solid.operator !=(Twip.FillValue.Solid? left, Twip.FillValue.Solid? right) -> bool
+static Twip.FillValue.Solid.operator ==(Twip.FillValue.Solid? left, Twip.FillValue.Solid? right) -> bool
+static Twip.FillValue.operator !=(Twip.FillValue? left, Twip.FillValue? right) -> bool
+static Twip.FillValue.operator ==(Twip.FillValue? left, Twip.FillValue? right) -> bool
+static Twip.Glow.operator !=(Twip.Glow? left, Twip.Glow? right) -> bool
+static Twip.Glow.operator ==(Twip.Glow? left, Twip.Glow? right) -> bool
+static Twip.GradientStop.operator !=(Twip.GradientStop? left, Twip.GradientStop? right) -> bool
+static Twip.GradientStop.operator ==(Twip.GradientStop? left, Twip.GradientStop? right) -> bool
+static Twip.LineChange.operator !=(Twip.LineChange? left, Twip.LineChange? right) -> bool
+static Twip.LineChange.operator ==(Twip.LineChange? left, Twip.LineChange? right) -> bool
+static Twip.LineEnds.operator !=(Twip.LineEnds? left, Twip.LineEnds? right) -> bool
+static Twip.LineEnds.operator ==(Twip.LineEnds? left, Twip.LineEnds? right) -> bool
+static Twip.LineState.operator !=(Twip.LineState? left, Twip.LineState? right) -> bool
+static Twip.LineState.operator ==(Twip.LineState? left, Twip.LineState? right) -> bool
+static Twip.LineValue.operator !=(Twip.LineValue? left, Twip.LineValue? right) -> bool
+static Twip.LineValue.operator ==(Twip.LineValue? left, Twip.LineValue? right) -> bool
+static Twip.PictureAdjustChange.operator !=(Twip.PictureAdjustChange? left, Twip.PictureAdjustChange? right) -> bool
+static Twip.PictureAdjustChange.operator ==(Twip.PictureAdjustChange? left, Twip.PictureAdjustChange? right) -> bool
+static Twip.Shadow.operator !=(Twip.Shadow? left, Twip.Shadow? right) -> bool
+static Twip.Shadow.operator ==(Twip.Shadow? left, Twip.Shadow? right) -> bool
+static Twip.ShapeColor.FromRgb(Twip.ColorValue rgb) -> Twip.ShapeColor!
+static Twip.ShapeColor.FromTheme(Twip.ThemeColor theme, params Twip.ColorTransform![]! transforms) -> Twip.ShapeColor!
+static Twip.ShapeColor.operator !=(Twip.ShapeColor? left, Twip.ShapeColor? right) -> bool
+static Twip.ShapeColor.operator ==(Twip.ShapeColor? left, Twip.ShapeColor? right) -> bool
+static Twip.ShapeGalleryGroup.operator !=(Twip.ShapeGalleryGroup? left, Twip.ShapeGalleryGroup? right) -> bool
+static Twip.ShapeGalleryGroup.operator ==(Twip.ShapeGalleryGroup? left, Twip.ShapeGalleryGroup? right) -> bool
+static Twip.ShapePreset.operator !=(Twip.ShapePreset left, Twip.ShapePreset right) -> bool
+static Twip.ShapePreset.operator ==(Twip.ShapePreset left, Twip.ShapePreset right) -> bool
+static Twip.ShapeState.operator !=(Twip.ShapeState? left, Twip.ShapeState? right) -> bool
+static Twip.ShapeState.operator ==(Twip.ShapeState? left, Twip.ShapeState? right) -> bool
+static Twip.ShapeTextChange.operator !=(Twip.ShapeTextChange? left, Twip.ShapeTextChange? right) -> bool
+static Twip.ShapeTextChange.operator ==(Twip.ShapeTextChange? left, Twip.ShapeTextChange? right) -> bool
+static Twip.ShapeTextState.operator !=(Twip.ShapeTextState? left, Twip.ShapeTextState? right) -> bool
+static Twip.ShapeTextState.operator ==(Twip.ShapeTextState? left, Twip.ShapeTextState? right) -> bool
+virtual Twip.FillValue.EqualityContract.get -> System.Type!
+virtual Twip.FillValue.Equals(Twip.FillValue? other) -> bool
+virtual Twip.FillValue.PrintMembers(System.Text.StringBuilder! builder) -> bool
+~override Twip.EffectChange<T>.Equals(object obj) -> bool
+~override Twip.EffectChange<T>.ToString() -> string
+~override Twip.ShapePreset.Equals(object obj) -> bool

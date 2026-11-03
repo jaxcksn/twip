@@ -119,10 +119,10 @@ Floats positioned relative to the page or margins, and wrapNone floats ([FLOAT-1
 
 ### FLOAT-10. Text boxes {#float-10}
 
-- Insets `bodyPr/@lIns`, `tIns`, `rIns`, `bIns` default to 7.2, 3.6, 7.2, 3.6pt. The outline (`a:ln/@w`, 0.75pt when `a:ln` has no `w`; none without `a:ln` or with `a:noFill`) is centred on the box edge.
-- The text frame starts inside the preset geometry's text rectangle, computed on the shape's size on the page (after a group's scale): `rect` the whole shape; `roundRect` `min(w, h) × adj / 100000 × 0.29289` in on every side (`adj` 16667 by default); `ellipse` `0.14645 w` left and right, `0.14645 h` top and bottom; `triangle` `l = w × adj / 200000` (`adj` 50000 by default), top `h / 2`, right `w − l − w / 2`, bottom 0. Other presets: the whole shape. The outline stays on the shape edge.
+- Insets `bodyPr/@lIns`, `tIns`, `rIns`, `bIns` default to 7.2, 3.6, 7.2, 3.6pt. The pen allowance is half the shape's `a:ln/@w` on each side, in whole EMU (`w` div 2), or all of `w` with `a:ln/@algn="in"`; an `a:ln` without `w`, or none, gives 0; the line's fill (`a:noFill` too) doesn't matter. Below, `outline` is twice the allowance.
+- The text frame starts inside the geometry's text rectangle (`a:rect`, [DRAW-1](draw#draw-1)), computed on the shape's size on the page (after a group's scale), for every preset and custom geometry. For example `rect` the whole shape; `roundRect` `min(w, h) × adj / 100000 × 0.29289` in on every side (`adj` 16667 by default); `ellipse` `0.14645 w` left and right, `0.14645 h` top and bottom; `triangle` `l = w × adj / 200000` (`adj` 50000 by default), top `h / 2`, right `w − l − w / 2`, bottom 0. A frame has no geometry: its whole box.
 - Lay the content out as an ordinary story ([HDR-3](hdr#hdr-3)) at `width = frameW − lIns − rIns − outline`, starting at `(frameX + lIns + outline/2, frameY + tIns + outline/2)`.
-- `a:spAutoFit`: the box height is `content + tIns + bIns + outline`.
+- `a:spAutoFit`: the box height is the stored height less its text frame's height (on the stored size: geometry, insets and pen), plus the content's height (at most 1584pt), in one pass from the stored size every time the box is laid out. The frame is then computed again on the new height, so a non-rectangular geometry may clip its last line. A frame (no geometry) with no insets and no outline keeps its stored height as a minimum ([FRAME-1](frame#frame-1)).
 - Fixed height: the content bottom is `boxBottom − bIns − outline/2`. Draw a line only if its line box starts above the content bottom; draw no later line. The content bottom clips the lines drawn like an exact row's bottom ([TABLE-34](table#table-34)): a glyph whose ink top is at or below it is not drawn (its characters go with it); a line whose glyphs all go shows nothing.
 - Fixed height, `bodyPr/@anchor`: `ctr` moves the content down by half the room below it (whole layout units, rounded down), `b` by all of it, never up; other values are top. In compat ≤ 14 `w:doNotVertAlignInTxbx` keeps it at the top; compat 15 ignores the option. Not done: floats inside the box don't count as its content.
 - Text wraps around the outer box (with its dist values).
@@ -162,8 +162,36 @@ A wrapNone float (in front of or behind the text) is never moved by [FLOAT-9](fl
 
 ### FLOAT-15. Group shapes {#float-15}
 
-A group shape (`wpg:wgp`) is one float: its extent is the box that is positioned and wrapped. Each of its pictures and text boxes ([FLOAT-10](float#float-10)) is drawn in its own box. A group maps its children's `a:xfrm` boxes from its child frame (`a:chOff`, `a:chExt`) onto its own box (`a:off`, `a:ext`; the outermost group's box is the float's extent); a group inside it (`wpg:grpSp`) is a child placed the same way, its own children mapped through its own child frame, at every level. Shapes without text aren't drawn.
+A group shape (`wpg:wgp`) is one float: its extent is the box that is positioned and wrapped. Each of its pictures and text boxes ([FLOAT-10](float#float-10)) is drawn in its own box. A group maps its children's `a:xfrm` boxes from its child frame (`a:chOff`, `a:chExt`) onto its own box (`a:off`, `a:ext`; the outermost group's box is the float's extent); a group inside it (`wpg:grpSp`) is a child placed the same way, its own children mapped through its own child frame, at every level. A child frame of zero size maps at scale 1. Every shape, picture and text box of the group is drawn ([DRAW-1](draw#draw-1), [DRAW-4](draw#draw-4)).
 
 Example: a 100pt group whose child frame is 200pt wide halves its children; a nested group at child x 100 starts 50pt in, and a text box at x 50 in its 100pt-for-100pt child frame starts 25pt further.
 
 A text box's fields take the values of the page it is drawn on, in a header or footer cell too ([FIELD-1](field#field-1)).
+
+### FLOAT-16. Paint order {#float-16}
+
+Draw a page in this order: the body's backgrounds (shading, borders); the floats with `behindDoc="1"`, the body's and the headers' and footers' together; the body's text; the notes; the other floats; the headers and footers. Within each group of floats, the lower `wp:anchor/@relativeHeight` is drawn first, then document order. A group's children are drawn in their document order, inside the group's place.
+
+### FLOAT-17. Rotated shapes {#float-17}
+
+A float's rotation is its graphic's own `a:xfrm/@rot` (60000ths of a degree; `wps:spPr`, `pic:spPr`, `wpg:grpSpPr`). When the rotation mod 180° is from 45° up to 135° and the document's `compatibilityMode` isn't 12 (no setting counts as 12), the float is positioned and wrapped as its box turned a quarter about its centre: an axis with an offset places the unturned extent there and then turns it, so the centre stays; an axis with an alignment aligns the turned box. The wrap rectangle is that box with the effect extents and distances as written ([FLOAT-7](float#float-7)). Other rotations don't move or resize the float.
+
+The shape is drawn at its own extent about the placed box's centre, turned ([DRAW-3](draw#draw-3)). Its text is laid out in the unturned text frame ([FLOAT-10](float#float-10)) and drawn turned about the shape's centre by the rotation plus `bodyPr/@rot`, 180° more with `flipV` (`flipH` doesn't change it). With `bodyPr/@upright="1"` the text is level: in the frame turned a quarter about its own centre when the shape is turned a quarter, else in the unturned frame. A group child's text turns with the child's composed rotation ([DRAW-4](draw#draw-4)).
+
+### FLOAT-18. Text boxes that don't wrap {#float-18}
+
+A text box whose `bodyPr/@wrap` is `none` lays each paragraph out as one line, however long. Its width is its stored width less its text frame's width ([FLOAT-10](float#float-10)) plus the right edge of its widest line (trailing spaces excluded), at most the column's width (or its stored width if wider); the body text wraps around that width. A turned box ([FLOAT-17](float#float-17)) keeps its stored width.
+
+### FLOAT-19. Vertical text {#float-19}
+
+`bodyPr/@vert` other than `horz` lays the box's story out in its text frame ([FLOAT-10](float#float-10)) turned a quarter about the frame's centre (the line width is the frame's height), and turns it into the frame: `vert` and `eaVert` 90° clockwise, so the lines stack from the right; `vert270` 270°, the text reading upward and the lines stacking from the left; `mongolianVert`, `wordArtVert` and `wordArtVertRtl` 90° clockwise with the lines stacking from the left. A vertical line's box is 1.032 times its horizontal height, its baseline moving with it. The shape's own rotation ([FLOAT-17](float#float-17)) then turns the whole.
+
+### FLOAT-20. Text in inline shapes {#float-20}
+
+An inline shape (`wp:inline`) with a story (`wps:txbx`) lays the story out in its text frame as a floating text box does ([FLOAT-10](float#float-10)), the frame taken from the box the line gives the shape ([FLOAT-5](float#float-5)); the text turns with the shape ([FLOAT-17](float#float-17)). The story is drawn above the line's text. A group's children's stories are not drawn in an inline group.
+
+### FLOAT-21. Linked text boxes {#float-21}
+
+Text boxes linked into a chain share one story: the first box holds it (`wps:txbx/@id`), the others name the chain and their place in it (`wps:linkedTxbx/@id`, `@seq`). The story is laid out at the first box's text frame width and shown box after box in `seq` order: each box takes the lines from where the previous one stopped while their boxes end within its text frame's height; the last box takes the rest, clipped as a text box clips ([FLOAT-10](float#float-10)). In compat 15 a paragraph with widow control doesn't leave its first line alone at the bottom of a box, nor its last line alone at the top of the next: a lone first line moves to the next box, and a lone last line takes the line before it along (the whole paragraph when it has only two lines in the box); a box never ends up empty this way. Compat ≤ 14 breaks between boxes wherever the height runs out.
+
+Example: three 60pt boxes of 12.6pt lines hold four lines each; with eight three-line paragraphs, compat 15 shows paragraph 1 in the first box (paragraph 2 would leave one line behind), paragraph 2 in the second, and paragraph 3 and the first line of paragraph 4 in the last; compat 14 shows paragraph 1 and the first line of paragraph 2 in the first box.

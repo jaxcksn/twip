@@ -348,7 +348,7 @@ impl Editor {
             Command::SetTableIndent(i) => self.table_format(&super::table_format::TableFormat::TableIndent(i.0), fonts),
             Command::SetTableStyle(id) => self.set_table_style(id, fonts),
             Command::SetTableStyleOptions(o) => self.set_table_style_options(o, fonts),
-            // Pictures and text boxes
+            // Objects
             Command::SetObjectSize(s) => self.set_object_size(s, fonts),
             Command::ResetObjectSize => self.object_cmd(super::objects::ObjectCmd::ResetSize, fonts),
             Command::SetObjectWrap(w) => self.set_object_wrap(w, fonts),
@@ -357,6 +357,20 @@ impl Editor {
             Command::SetObjectWrapOptions(w) => self.set_object_wrap_options(w, fonts),
             Command::SetAltText(a) => self.alt_text(a, fonts),
             Command::DeleteObject => self.delete_selected_object(fonts),
+            c @ (Command::InsertShape(_)
+            | Command::SetShapePreset(_)
+            | Command::SetShapeAdjust(_)
+            | Command::SetShapeFill(_)
+            | Command::SetShapeLine(_)
+            | Command::SetShapeEffects(_)
+            | Command::SetShapeText(_)
+            | Command::SetPictureAdjust(_)
+            | Command::SetObjectRotation(_)
+            | Command::FlipObject(_)
+            | Command::ArrangeObject(_)
+            | Command::GroupObjects
+            | Command::UngroupObjects
+            | Command::SelectGroupChild(_)) => self.shape_command(c, fonts),
             // Fields
             Command::SetField(f) => self.set_field(f, fonts),
             Command::SetFieldResults(r) => self.set_field_results(r, fonts),

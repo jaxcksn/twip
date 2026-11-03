@@ -107,8 +107,15 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
 
     let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref());
     let numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref());
-    let theme = ThemeFonts::parse(part_of("theme").and_then(|p| pkg.read_str(&p)).as_deref());
-    let settings = read_settings(part_of("settings").and_then(|p| pkg.read_str(&p)).as_deref());
+    let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
+    let theme = ThemeFonts::parse(theme_xml.as_deref());
+    let drawing_theme = Rc::new(crate::drawing::theme::Theme::parse(theme_xml.as_deref()));
+    let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
+    let settings = read_settings(settings_xml.as_deref());
+    // DRAW-7: the settings' colour mapping.
+    let colour_map = crate::drawing::theme::ColourMap::parse(
+        settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok()).as_ref().map(|d| d.root_element()),
+    );
     styles.compat = settings.compat();
     styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
     let xml = pkg.read_str(&main).ok_or("no main document part")?;
@@ -262,6 +269,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     doc.images = r.images;
     doc.controls = std::mem::take(&mut r.controls);
     doc.data_parts = data_parts(&mut pkg, &rels);
+    doc.theme = drawing_theme;
+    doc.colour_map = colour_map;
     doc.settings = r.settings;
     doc.people = r.people;
     doc.review_ids = r.ids;
@@ -1367,6 +1376,7 @@ impl Reader {
                     out.push(Inline::Sym { ch: char::from_u32(code).unwrap_or('?'), font, run: run.clone(), control: None });
                 }
                 "drawing" => self.read_drawing(c, &run, pkg, out),
+                "pict" | "object" => self.read_pict(c, &run, pkg, out),
                 "footnoteReference" | "endnoteReference" => out.push(Inline::NoteRef {
                     kind: if name == "footnoteReference" { NoteKind::Foot } else { NoteKind::End },
                     id: int(attr(c, "id")).unwrap_or(0),
@@ -1649,6 +1659,101 @@ impl Reader {
         out
     }
 
+    /// DRAW-25: a VML object (`w:pict`, `w:object`): positioned (`position:absolute`), a float placed as its style
+    /// says; else an inline object.
+    fn read_pict(&mut self, pict: Node, run: &Run, pkg: &mut Package, out: &mut Vec<Inline>) {
+        let mut src = DrawingSource { reader: self, pkg };
+        let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
+        let Some(v) = crate::drawing::vml::read(pict, &mut ctx) else { return };
+        let st = &v.style;
+        let mut shape = v.shape;
+        shape.xfrm.ext = [crate::drawing::units::Emu((st.w * 12700.0).round() as i64), crate::drawing::units::Emu((st.h * 12700.0).round() as i64)];
+        let image = shape.pic().and_then(|p| p.blip.image);
+        let alt: Rc<str> = v.alt.as_str().into();
+        let text_box = v.textbox.map(|(t, insets, v_anchor)| {
+            let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
+            let blocks = self.read_blocks(t, pkg, None);
+            (self.fields, self.wrap) = saved;
+            // FLOAT-10: the pen allowance of the shape's stroke.
+            let outline = shape.sp().and_then(|s| s.line.as_ref()).filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).and_then(|l| l.width).map_or(0.0, |w| w.0 as f64 / 12700.0);
+            TextBox { blocks, insets, outline, auto_fit: false, v_anchor }
+        });
+        if !st.absolute {
+            let text = text_box.map(|text_box| Box::new(InlineText { id: next_para_id(), text_box }));
+            out.push(Inline::Picture(Picture { w: st.w, h: st.h, image, alt, lock_aspect: false, effect: [0.0; 4], shape: Some(Box::new(shape)), text }, run.clone()));
+            return;
+        }
+        let h_relative = match st.h_relative.as_deref() {
+            Some("margin") => "margin",
+            Some("page") => "page",
+            Some("char") => "character",
+            Some("left-margin-area") => "leftMargin",
+            Some("right-margin-area") => "rightMargin",
+            Some("inner-margin-area") => "insideMargin",
+            Some("outer-margin-area") => "outsideMargin",
+            _ => "column",
+        };
+        let v_relative = match st.v_relative.as_deref() {
+            Some("margin") => "margin",
+            Some("page") => "page",
+            Some("line") => "line",
+            Some("top-margin-area") => "topMargin",
+            Some("bottom-margin-area") => "bottomMargin",
+            Some("inner-margin-area") => "insideMargin",
+            Some("outer-margin-area") => "outsideMargin",
+            _ => "paragraph",
+        };
+        let align = |a: &Option<String>| a.as_deref().filter(|a| *a != "absolute").map(str::to_string);
+        let (wrap, side) = v.wrap.unwrap_or_default();
+        let wrap = match wrap.as_str() {
+            "square" | "tight" | "through" | "topAndBottom" => wrap,
+            _ => "none".into(),
+        };
+        let wrap_text = match side.as_str() {
+            "left" => "left",
+            "right" => "right",
+            "largest" => "largest",
+            _ => "bothSides",
+        };
+        let twips = |v: f64| (v * 20.0).trunc() / 20.0;
+        self.float_order += 1;
+        out.push(Inline::Float(
+            Box::new(Float {
+                id: next_para_id(),
+                w: st.w,
+                auto_w: false,
+                h: st.h,
+                image,
+                alt,
+                lock_aspect: false,
+                text_box,
+                h_relative: h_relative.into(),
+                h_align: align(&st.h_align),
+                h_offset: twips(st.x),
+                v_relative: v_relative.into(),
+                v_align: align(&st.v_align),
+                v_offset: twips(st.y),
+                wrap,
+                wrap_text: wrap_text.into(),
+                dist: [0.0, 0.0, 9.0, 9.0],
+                effect: [0.0; 4],
+                poly: None,
+                behind: st.z < 0,
+                allow_overlap: true,
+                layout_in_cell: true,
+                order: self.float_order,
+                z: st.z.unsigned_abs().min(u64::from(u32::MAX)) as u32,
+                src: Some(pict.range()),
+                locked: false,
+                frame_src: None,
+                parts: Vec::new(),
+                rot_swap: false,
+                shape: Some(Box::new(shape)),
+            }),
+            run.clone(),
+        ));
+    }
+
     fn read_drawing(&mut self, d: Node, run: &Run, pkg: &mut Package, out: &mut Vec<Inline>) {
         let Some(item) = d.children().find(|c| is(*c, WP, "inline") || is(*c, WP, "anchor")) else { return };
         let extent = item.children().find(|c| is(*c, WP, "extent"));
@@ -1657,10 +1762,7 @@ impl Reader {
         let blip = item.descendants().find(|n| is(*n, A, "blip"));
         let image = blip.and_then(|b| b.attribute((R, "embed"))).map(str::to_string).and_then(|rid| self.image(&rid, pkg));
         let txbx = item.descendants().find(|n| is_w(*n, "txbxContent"));
-        let is_pic = item.descendants().any(|n| n.tag_name().name() == "pic" && n.tag_name().namespace().is_some_and(|ns| ns.ends_with("/picture")));
-        if !is_pic && txbx.is_none() {
-            return; // other shapes are out of scope
-        }
+        let shape = self.drawing_shape(item, pkg);
         let alt: Rc<str> = item
             .children()
             .find(|c| is(*c, WP, "docPr"))
@@ -1674,7 +1776,10 @@ impl Reader {
             let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
             let e = |n: &str| ee.and_then(|e| emu(e.attribute(n))).unwrap_or(0.0).max(0.0);
             let effect = [e("l"), e("t"), e("r"), e("b")];
-            out.push(Inline::Picture(Picture { w, h, image, alt, lock_aspect, effect }, run.clone()));
+            // An inline shape's text: a stand-alone shape's (a group's children's text isn't read inline).
+            let group = item.descendants().any(|n| n.tag_name().name() == "wgp");
+            let text = txbx.filter(|_| !group).map(|t| Box::new(InlineText { id: next_para_id(), text_box: self.text_box(item, t, pkg) }));
+            out.push(Inline::Picture(Picture { w, h, image, alt, lock_aspect, effect, shape: Some(Box::new(shape)), text }, run.clone()));
             return;
         }
         let pos = |name: &str| item.children().find(|c| is(*c, WP, name));
@@ -1709,7 +1814,7 @@ impl Reader {
         let mut parts = Vec::new();
         if let Some(g) = group {
             let map = child_xfrm(g, "grpSpPr").map_or(Map::EMU, |f| Map::of(&f, w, h));
-            self.group_parts(g, &map, pkg, &mut parts);
+            self.group_parts(g, &map, &mut Vec::new(), pkg, &mut parts);
         }
         let text_box = txbx.filter(|_| group.is_none()).map(|t| self.text_box(item, t, pkg));
         let image = if group.is_some() { None } else { image };
@@ -1755,13 +1860,44 @@ impl Reader {
                 allow_overlap: item.attribute("allowOverlap").map(|v| on_off_str(Some(v))).unwrap_or(true),
                 layout_in_cell: item.attribute("layoutInCell").map(|v| on_off_str(Some(v))).unwrap_or(true),
                 order: self.float_order,
+                z: item.attribute("relativeHeight").and_then(|v| v.parse().ok()).unwrap_or(0),
                 src: Some(d.range()),
                 locked: item.attribute("locked").is_some_and(|v| on_off_str(Some(v))),
                 frame_src: None,
                 parts,
+                rot_swap: false,
+                shape: Some(Box::new(shape)),
             }),
             run.clone(),
         ));
+        // FLOAT-17: a shape turned a quarter is positioned and wrapped as its box turned about its centre: an offset
+        // places the unturned box, which then turns; an alignment aligns the turned box.
+        if let Some(Inline::Float(f, _)) = out.last_mut() {
+            let deg = f.shape.as_ref().map_or(0.0, |s| s.xfrm.rot.normalized().degrees()) % 180.0;
+            if (45.0..135.0).contains(&deg) && self.settings.compat_mode != 12 {
+                let (w0, h0) = (f.w, f.h);
+                (f.w, f.h) = (h0, w0);
+                if f.h_align.is_none() {
+                    f.h_offset += (w0 - h0) / 2.0;
+                }
+                if f.v_align.is_none() {
+                    f.v_offset += (h0 - w0) / 2.0;
+                }
+                f.rot_swap = true;
+            }
+        }
+    }
+
+    /// The DrawingML object of a `wp:inline` or `wp:anchor` (its graphic read into a shape tree); presets the engine
+    /// has no definition for are warned about and drawn as `rect` (DRAW-1).
+    fn drawing_shape(&mut self, item: Node, pkg: &mut Package) -> crate::drawing::Shape {
+        let mut src = DrawingSource { reader: self, pkg };
+        let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
+        let shape = crate::drawing::read::read(item, &mut ctx);
+        for name in ctx.unknown_presets {
+            self.warn(WarningCode::UnknownPreset, || format!("preset geometry {name} isn't one the engine draws; it is drawn as a rectangle"));
+        }
+        shape
     }
 
     /// A run's formatting from its direct properties `direct` over `base` (its first `w:rPr` kept for saving and
@@ -1786,9 +1922,13 @@ impl Reader {
     fn text_box(&mut self, shape: Node, t: Node, pkg: &mut Package) -> TextBox {
         let body = shape.descendants().find(|n| n.tag_name().name() == "bodyPr");
         let ins = |n: &str, dflt: f64| body.and_then(|b| emu(b.attribute(n))).unwrap_or(dflt);
-        let ln = shape.descendants().find(|n| is(*n, A, "ln"));
-        let has_line = ln.is_some_and(|l| !l.children().any(|c| is(c, A, "noFill")));
-        let outline = if has_line { ln.and_then(|l| emu(l.attribute("w"))).unwrap_or(0.75) } else { 0.0 };
+        // FLOAT-10: the pen allowance is half the line's width on each side (all of it with `algn="in"`), whatever the
+        // line's fill; a line without a width has none. `outline` is twice the allowance.
+        // `shape` is the `wp:anchor` of a stand-alone box, or the `wps:wsp` of a group's child: its first `spPr` is the shape's.
+        let ln = shape.descendants().find(|c| c.tag_name().name() == "spPr").and_then(|p| p.children().find(|c| is(*c, A, "ln")));
+        let w = ln.and_then(|l| l.attribute("w")).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+        let inside = ln.and_then(|l| l.attribute("algn")) == Some("in");
+        let outline = 2.0 * if inside { w } else { w / 2 } as f64 / 12700.0;
         let auto_fit = body.is_some_and(|b| b.children().any(|c| is(c, A, "spAutoFit")));
         // A text box is its own content: the anchor's fields and revision wrappers don't reach into it.
         let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
@@ -1799,47 +1939,39 @@ impl Reader {
             Some("b") => 2,
             _ => 0,
         };
-        // FLOAT-10: the preset geometry's text rectangle.
-        let prst = shape.descendants().find(|n| is(*n, A, "prstGeom"));
-        let adj = |dflt: f64| {
-            prst.and_then(|p| p.descendants().find(|g| is(*g, A, "gd") && g.attribute("name") == Some("adj")))
-                .and_then(|g| g.attribute("fmla")?.strip_prefix("val ")?.trim().parse::<f64>().ok())
-                .unwrap_or(dflt)
-        };
-        let geometry = match prst.and_then(|p| p.attribute("prst")) {
-            Some("roundRect") => Geometry::RoundRect(adj(16667.0)),
-            Some("ellipse") => Geometry::Ellipse,
-            Some("triangle") => Geometry::Triangle(adj(50000.0)),
-            _ => Geometry::Rect,
-        };
-        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], geometry, outline, auto_fit, v_anchor }
+        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
     }
 
     /// FLOAT-15: the pictures and text boxes of group `g` (or of a group inside it), `map` taking its child
     /// coordinates to points from the outer group's top left; nested groups map through their own offsets.
-    fn group_parts(&mut self, g: Node, map: &Map, pkg: &mut Package, out: &mut Vec<GroupPart>) {
-        for c in g.children().filter(|c| c.is_element()) {
+    fn group_parts(&mut self, g: Node, map: &Map, path: &mut crate::drawing::ChildPath, pkg: &mut Package, out: &mut Vec<GroupPart>) {
+        // The children the shape tree keeps, in its order (drawing/read.rs `child`).
+        let kept = |c: &Node| matches!(c.tag_name().name(), "wsp" | "sp" | "cxnSp" | "pic" | "grpSp" | "graphicFrame");
+        for (i, c) in g.children().filter(|c| c.is_element()).filter(kept).enumerate() {
+            path.push(i as u16);
             match c.tag_name().name() {
                 "grpSp" => {
                     if let Some(f) = child_xfrm(c, "grpSpPr") {
                         let r = map.rect(&f);
-                        self.group_parts(c, &Map::of(&f, r[2] - r[0], r[3] - r[1]).at(r[0], r[1]), pkg, out);
+                        self.group_parts(c, &Map::of(&f, r[2] - r[0], r[3] - r[1]).at(r[0], r[1]), path, pkg, out);
                     }
                 }
                 "wsp" => {
-                    let Some(t) = c.descendants().find(|n| is_w(*n, "txbxContent")) else { continue };
-                    let Some(f) = child_xfrm(c, "spPr") else { continue };
-                    let text_box = Some(self.text_box(c, t, pkg));
-                    out.push(GroupPart { rect: map.rect(&f), image: None, text_box });
+                    if let (Some(t), Some(f)) = (c.descendants().find(|n| is_w(*n, "txbxContent")), child_xfrm(c, "spPr")) {
+                        let text_box = Some(self.text_box(c, t, pkg));
+                        out.push(GroupPart { rect: map.rect(&f), image: None, text_box, path: path.clone() });
+                    }
                 }
                 "pic" => {
-                    let Some(f) = child_xfrm(c, "spPr") else { continue };
-                    let rid = c.descendants().find(|n| is(*n, A, "blip")).and_then(|b| b.attribute((R, "embed"))).map(str::to_string);
-                    let image = rid.and_then(|r| self.image(&r, pkg));
-                    out.push(GroupPart { rect: map.rect(&f), image, text_box: None });
+                    if let Some(f) = child_xfrm(c, "spPr") {
+                        let rid = c.descendants().find(|n| is(*n, A, "blip")).and_then(|b| b.attribute((R, "embed"))).map(str::to_string);
+                        let image = rid.and_then(|r| self.image(&r, pkg));
+                        out.push(GroupPart { rect: map.rect(&f), image, text_box: None, path: path.clone() });
+                    }
                 }
                 _ => {}
             }
+            path.pop();
         }
     }
 
@@ -2093,8 +2225,7 @@ fn strip_ranges(blocks: &mut [Block], gone: &[(RangeKind, i64)]) {
             Block::Para(p) => {
                 p.inlines.retain(|i| !matches!(i, Inline::Range(m) if gone.contains(&(m.kind, m.id))));
                 for i in &mut p.inlines {
-                    if let Inline::Float(f, _) = i
-                        && let Some(tb) = &mut f.text_box
+                    if let Some(tb) = i.story_mut()
                     {
                         strip_ranges(&mut tb.blocks, gone);
                     }
@@ -2209,4 +2340,38 @@ fn data_parts(pkg: &mut Package, rels: &HashMap<String, (String, String)>) -> Ve
         out.push(DataPart { namespace, item_id, xml, src: Some(target.clone()), changed: false });
     }
     out
+}
+
+/// The document reader as the shape reader's source: images through the reader's relationships, a SmartArt
+/// diagram's stored drawing through its data part's `dsp:dataModelExt/@relId`.
+struct DrawingSource<'r, 'p> {
+    reader: &'r mut Reader,
+    pkg: &'p mut Package,
+}
+
+impl crate::drawing::read::Source for DrawingSource<'_, '_> {
+    fn image(&mut self, rid: &str) -> Option<usize> {
+        self.reader.image(rid, self.pkg)
+    }
+
+    fn diagram(&mut self, dm: &str) -> Option<crate::drawing::Shape> {
+        let (_, data) = self.reader.rels.get(dm)?.clone();
+        let xml = self.pkg.read_str(&data)?;
+        let doc = roxmltree::Document::parse(&xml).ok()?;
+        let rel = doc.descendants().find(|n| n.tag_name().name() == "dataModelExt")?.attribute("relId")?.to_string();
+        let (_, drawing) = self.reader.rels.get(&rel)?.clone();
+        let xml = self.pkg.read_str(&drawing)?;
+        // The drawing's pictures are relative to its own part: they are not looked up.
+        struct NoImages;
+        impl crate::drawing::read::Source for NoImages {
+            fn image(&mut self, _: &str) -> Option<usize> {
+                None
+            }
+            fn diagram(&mut self, _: &str) -> Option<crate::drawing::Shape> {
+                None
+            }
+        }
+        let mut ctx = crate::drawing::read::Ctx { source: &mut NoImages, unknown_presets: Vec::new() };
+        crate::drawing::read::diagram_drawing(&xml, &mut ctx)
+    }
 }

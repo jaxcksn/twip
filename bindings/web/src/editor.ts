@@ -18,7 +18,7 @@ import type { EditorState } from './state.js';
 import { directTransport } from './transport/direct.js';
 import { chooseExecution, workerTransport } from './transport/worker.js';
 import { decodeEvent, type FrameInfo, Kind, Method, type Input, type Message, type Transport } from './transport/protocol.js';
-import type { Author, Color, OverlayColors, Warning, WordCount } from './types.js';
+import type { Author, Color, OverlayColors, ShapeGalleryGroup, Warning, WordCount } from './types.js';
 
 /** Options for a new session. */
 export interface SessionOptions {
@@ -120,11 +120,23 @@ interface Commit {
 }
 
 function deepFreeze<T>(value: T): T {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+  // Bytes can't be frozen.
+  if (value && typeof value === 'object' && !ArrayBuffer.isView(value) && !Object.isFrozen(value)) {
     Object.freeze(value);
     for (const v of Object.values(value)) deepFreeze(v);
   }
   return value;
+}
+
+/** The state in the SDK's shape: a picture fill's image, base64 as the engine sends it, as bytes. */
+function fromWireState(state: EditorState): EditorState {
+  const shape = state.selection.object?.shape;
+  for (const fill of shape ? [Object.values(shape.fill)[0], Object.values(shape.line)[0]?.fill] : []) {
+    if (fill?.type === 'picture' && typeof fill.image === 'string') {
+      fill.image = Uint8Array.from(atob(fill.image), (c) => c.charCodeAt(0));
+    }
+  }
+  return state;
 }
 
 /** One editor's session over a transport: the state cache, the listeners and the calls. Internal. */
@@ -133,6 +145,7 @@ export class Session {
   readonly id: number;
   state: EditorState;
   readonly catalog: readonly CommandInfo[];
+  readonly shapeGallery: readonly ShapeGalleryGroup[];
   destroyed = false;
   readonly #subscribers = new Set<(state: EditorState) => void>();
   readonly #listeners = new Map<string, Set<(event: never) => void>>();
@@ -148,11 +161,18 @@ export class Session {
   /** Commits waiting for the state cache to reach their revision. */
   #waiting: { revision: number; resolve: () => void }[] = [];
 
-  private constructor(transport: Transport, id: number, state: EditorState, catalog: readonly CommandInfo[]) {
+  private constructor(
+    transport: Transport,
+    id: number,
+    state: EditorState,
+    catalog: readonly CommandInfo[],
+    shapeGallery: readonly ShapeGalleryGroup[],
+  ) {
     this.transport = transport;
     this.id = id;
-    this.state = deepFreeze(state);
+    this.state = deepFreeze(fromWireState(state));
     this.catalog = deepFreeze(catalog);
+    this.shapeGallery = deepFreeze(shapeGallery);
     this.disposers.push(transport.listen(id, (m) => this.#receive(m)));
   }
 
@@ -169,7 +189,8 @@ export class Session {
         if (e instanceof EditorError && e.code === 'unsupported') return [];
         throw e;
       })) as CommandInfo[];
-      const session = new Session(transport, id, state, catalog);
+      const shapeGallery = (await transport.call(id, Method.ShapeGallery)) as ShapeGalleryGroup[];
+      const session = new Session(transport, id, state, catalog, shapeGallery);
       for (const dictionary of options.dictionaries ?? []) await session.call(Method.SpellingAddDictionary, dictionary);
       return session;
     } catch (e) {
@@ -266,7 +287,7 @@ export class Session {
     if (this.destroyed) return;
     switch (message.kind) {
       case Kind.State: {
-        this.state = deepFreeze(message.payload as EditorState);
+        this.state = deepFreeze(fromWireState(message.payload as EditorState));
         const revision = this.state.revision;
         for (const w of this.#waiting) if (w.revision <= revision) w.resolve();
         this.#waiting = this.#waiting.filter((w) => w.revision > revision);
@@ -312,6 +333,8 @@ export class HeadlessEditor {
   readonly commands: Commands;
   /** Every command's id, label, group, shortcuts and undo grouping. */
   readonly catalog: readonly CommandInfo[];
+  /** Word's Insert \> Shapes gallery: its groups and their presets, in order. */
+  readonly shapeGallery: readonly ShapeGalleryGroup[];
   /** The context menu. */
   readonly menus: Menus;
   /** The dialogs. */
@@ -345,6 +368,7 @@ export class HeadlessEditor {
     sessions.set(this, session);
     this.commands = createCommands((op) => session.run(op));
     this.catalog = session.catalog;
+    this.shapeGallery = session.shapeGallery;
     this.menus = createMenus(session);
     this.dialogs = createDialogs(session);
     this.find = createFind(session);
