@@ -117,8 +117,8 @@ fn para_faces<'a>(p: &'a Paragraph, out: &mut HashSet<(&'a str, bool, bool)>) {
     for i in &p.inlines {
         match i {
             Inline::Text(_, run) => run_faces(run, out),
-            Inline::Float(f, _) => {
-                if let Some(tb) = &f.text_box {
+            i if i.story().is_some() => {
+                if let Some((_, tb)) = i.story() {
                     walk(&tb.blocks, out);
                 }
             }

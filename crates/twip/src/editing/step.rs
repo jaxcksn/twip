@@ -248,8 +248,8 @@ impl Targets {
                 Inline::Range(r) if matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => {
                     self.comments.insert(CommentId(r.id));
                 }
-                Inline::Float(f, _) => {
-                    if let Some(b) = &f.text_box {
+                i if i.story().is_some() => {
+                    if let Some((_, b)) = i.story() {
                         self.blocks(&b.blocks);
                     }
                 }

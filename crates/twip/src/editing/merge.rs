@@ -1903,7 +1903,8 @@ impl Editor {
                 props.showing_placeholder = true;
                 self.pending_controls.push((id, Control::new(props)));
                 let image = Some(self.pending_image(PICTURE_PLACEHOLDER.to_vec()));
-                let picture = crate::docx::Picture { w: 144.0, h: 108.0, image, alt: "".into(), lock_aspect: true, effect: [0.0; 4] };
+                let picture =
+                    crate::docx::Picture { w: 144.0, h: 108.0, image, alt: "".into(), lock_aspect: true, effect: [0.0; 4], shape: None, text: None };
                 self.insert_inlines(
                     |run| vec![Inline::ControlStart(id), Inline::Picture(picture.clone(), run), Inline::ControlEnd(id)],
                     "Insert Content Control",

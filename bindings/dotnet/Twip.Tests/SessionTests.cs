@@ -198,4 +198,13 @@ public sealed class SessionTests : IDisposable
         Assert.Contains(session.Catalog, c => c.Id == CommandId.SetBold && c.Mutates);
         Assert.Equal(Enum.GetValues<CommandId>().Order(), session.Catalog.Select(c => c.Id).Order());
     }
+
+    [Fact]
+    public async Task TheShapeGalleryHasWordsGroups()
+    {
+        Native.Require();
+        await using var session = new EditorSession();
+        Assert.Equal(8, session.ShapeGallery.Count);
+        Assert.Contains(session.ShapeGallery, g => g.Label == "Basic Shapes" && g.Presets.Contains(new ShapePreset("ellipse")));
+    }
 }

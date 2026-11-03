@@ -52,10 +52,33 @@ pub struct DocIndex {
     tables: HashMap<TableId, Slot>,
     /// Floating objects by their anchor paragraph.
     floats: HashMap<FloatId, ParaId>,
+    /// The boxes of chains of linked text boxes: their chain's id, and whether the box holds its story.
+    links: HashMap<FloatId, (u32, bool)>,
     /// Fields and content controls by where they are: a control around several blocks or rows is in each.
     elements: HashMap<ElementId, HashSet<Loc>>,
     /// Header and footer part names; `StoryId::HeaderFooter(k)` names `parts[k]`. Only appended to, so ids stay valid.
     parts: Vec<String>,
+}
+
+/// A float that is a box of a chain of linked text boxes: the chain's id and whether it holds the story.
+fn link_of(i: &Inline) -> Option<(u64, (u32, bool))> {
+    use crate::drawing::ShapeText;
+    let Inline::Float(f, _) = i else { return None };
+    let sp = f.shape.as_deref()?.sp()?;
+    match (&sp.text, sp.chain) {
+        (ShapeText::Linked { chain, .. }, _) => Some((f.id, (*chain, false))),
+        (ShapeText::Story, Some(c)) => Some((f.id, (c, true))),
+        _ => None,
+    }
+}
+
+/// A float's id and its story, or an inline shape's with text (`None`: no inline holding one).
+fn story_of(i: &Inline) -> Option<(u64, Option<&TextBox>)> {
+    match i {
+        Inline::Float(f, _) => Some((f.id, f.text_box.as_ref())),
+        Inline::Picture(p, _) => p.text.as_ref().map(|t| (t.id, Some(&t.text_box))),
+        _ => None,
+    }
 }
 
 impl DocIndex {
@@ -171,10 +194,13 @@ impl DocIndex {
 
     fn add_floats(&mut self, p: &Paragraph) {
         for i in &p.inlines {
-            if let Inline::Float(f, _) = i {
-                self.floats.insert(FloatId(f.id), ParaId(p.id));
-                if let Some(tb) = &f.text_box {
-                    self.add_blocks(Container::Story(StoryId::TextBox(FloatId(f.id))), &tb.blocks);
+            if let Some((id, l)) = link_of(i) {
+                self.links.insert(FloatId(id), l);
+            }
+            if let Some((id, tb)) = story_of(i) {
+                self.floats.insert(FloatId(id), ParaId(p.id));
+                if let Some(tb) = tb {
+                    self.add_blocks(Container::Story(StoryId::TextBox(FloatId(id))), &tb.blocks);
                 }
             }
         }
@@ -200,9 +226,12 @@ impl DocIndex {
 
     fn remove_floats(&mut self, inlines: &[Inline]) {
         for i in inlines {
-            if let Inline::Float(f, _) = i {
-                self.floats.remove(&FloatId(f.id));
-                if let Some(tb) = &f.text_box {
+            if let Some((id, _)) = link_of(i) {
+                self.links.remove(&FloatId(id));
+            }
+            if let Some((id, tb)) = story_of(i) {
+                self.floats.remove(&FloatId(id));
+                if let Some(tb) = tb {
                     tb.blocks.iter().for_each(|b| self.remove_block(b));
                 }
             }
@@ -445,15 +474,25 @@ impl DocIndex {
                 let anchor = self.float_anchor(f)?;
                 self.para_mut(doc, anchor)?.inlines.iter_mut().find_map(|i| match i {
                     Inline::Float(fl, _) if FloatId(fl.id) == f => fl.text_box.as_mut().map(|tb| &mut tb.blocks),
+                    Inline::Picture(p, _) => p.text.as_mut().filter(|t| FloatId(t.id) == f).map(|t| &mut t.text_box.blocks),
                     _ => None,
                 })
             }
         }
     }
 
+    /// The story a float's box shows: a later box of a chain of linked text boxes shows its chain's, held by the
+    /// chain's first box; any other float its own.
+    pub fn box_story(&self, f: FloatId) -> FloatId {
+        match self.links.get(&f) {
+            Some(&(c, false)) => self.links.iter().find(|(_, l)| **l == (c, true)).map_or(f, |(h, _)| *h),
+            _ => f,
+        }
+    }
+
     pub fn text_box<'d>(&self, doc: &'d Document, f: FloatId) -> Option<&'d TextBox> {
-        self.para(doc, self.float_anchor(f)?)?.inlines.iter().find_map(|i| match i {
-            Inline::Float(fl, _) if FloatId(fl.id) == f => fl.text_box.as_ref(),
+        self.para(doc, self.float_anchor(f)?)?.inlines.iter().find_map(|i| match story_of(i) {
+            Some((id, tb)) if FloatId(id) == f => tb,
             _ => None,
         })
     }

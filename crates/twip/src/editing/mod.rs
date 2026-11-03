@@ -38,6 +38,7 @@ mod resize;
 pub mod revisions;
 pub mod section;
 pub mod selection;
+mod shapes;
 mod smart;
 pub mod state;
 pub mod step;
@@ -115,6 +116,16 @@ pub struct Editor {
     body_return: Option<Selection>,
     /// A float being moved or resized by the pointer.
     object_drag: Option<objects::ObjectDrag>,
+    /// The selected float's group child (a second press into a selected group): kept only while that float is the
+    /// selection.
+    object_child: Option<(crate::layout::FloatId, crate::drawing::ChildPath)>,
+    /// The floats Shift or Ctrl and a press added to the selected float (one story's): kept only while it is the
+    /// selection.
+    object_also: Option<(crate::layout::FloatId, Vec<crate::layout::FloatId>)>,
+    /// A shape's rotate or adjust handle being dragged.
+    shape_drag: Option<shapes::ShapeDrag>,
+    /// Shape insert mode: the next press inserts a shape.
+    shape_insert: Option<shapes::ShapeInsert>,
     /// The checkbox a click or Space last toggled, while the caret stays after it.
     toggled_checkbox: Option<objects::ToggledCheckbox>,
     /// A header or footer made by entering it, removed if left unchanged.
@@ -311,6 +322,10 @@ impl Editor {
             viewport: Viewport::default(),
             body_return: None,
             object_drag: None,
+            object_child: None,
+            object_also: None,
+            shape_drag: None,
+            shape_insert: None,
             toggled_checkbox: None,
             provisional: None,
             placeholder_looks: std::collections::HashMap::new(),
@@ -1444,6 +1459,8 @@ impl Editor {
         {
             return if self.mode == Mode::Design { Outcome::Unchanged("design mode") } else { self.toggle_checkbox(p, fonts) };
         }
+        // Typing into a selected shape without text gives it its story first.
+        self.shape_story_for_typing(fonts);
         self.object_to_caret();
         if self.refuse_locked() {
             return Outcome::Unchanged("locked");
@@ -2283,6 +2300,9 @@ impl Editor {
     }
 
     fn pointer(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: keymap::Mods, fonts: &Fonts) {
+        if self.shape_insert_pointer(kind, x, y, mods.shift, fonts) {
+            return;
+        }
         match kind {
             PointerKind::Down => {
                 // In extend mode a click extends the selection.
@@ -2294,6 +2314,12 @@ impl Editor {
                     return;
                 }
                 if self.story_click(x, y, clicks, fonts) {
+                    return;
+                }
+                if !mods.ctrl && self.shape_press(x, y) {
+                    return;
+                }
+                if (mods.shift || mods.ctrl) && self.object_toggle(x, y, fonts) {
                     return;
                 }
                 if !mods.shift && self.object_press(x, y, mods.ctrl, fonts) {
@@ -2454,6 +2480,10 @@ impl Editor {
                     self.object_move(x, y, mods.shift);
                     return;
                 }
+                if self.shape_drag.is_some() {
+                    self.shape_move(x, y, mods.shift);
+                    return;
+                }
                 if let Some(d) = self.border_drag.as_mut() {
                     d.now = (x, y);
                     return;
@@ -2523,6 +2553,10 @@ impl Editor {
                 self.pending = None;
             }
             PointerKind::Cancel if self.object_cancel() => {}
+            PointerKind::Cancel if self.shape_cancel() => {}
+            PointerKind::Up if self.shape_drag.is_some() => {
+                self.shape_release(fonts);
+            }
             PointerKind::Cancel if self.border_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
             PointerKind::Up if self.border_drag.is_some() => {
                 self.border_release(fonts);
@@ -2734,7 +2768,12 @@ impl Editor {
                             out.push((page, d.rect(self.object_locked(o))));
                         }
                     }
-                    selection::ObjectRef::Floating(f) => out.extend(geo.stories.iter().filter(|s| s.float == Some(f)).map(|s| (page, s.rect))),
+                    // A multi-selection outlines every object.
+                    selection::ObjectRef::Floating(_) => {
+                        for f in self.selected_floats() {
+                            out.extend(geo.stories.iter().filter(|s| s.float == Some(f)).map(|s| (page, s.rect)));
+                        }
+                    }
                     selection::ObjectRef::Inline { para, offset } => out.extend(self.inline_box(&geo, para, offset).map(|r| (page, r))),
                 }
             }
@@ -2865,6 +2904,7 @@ impl Editor {
             guide: self.border_drag.map(|d| (d.page, d.guide())),
             anchor,
             ghost,
+            shapes: self.shape_frames(visible_pages.clone()),
             placeholders: self.placeholder_views(&visible_pages),
             marks,
             tooltip,

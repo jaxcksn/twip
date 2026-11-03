@@ -1,0 +1,14 @@
+[
+  {
+    "dash": "sysDot",
+    "ends": {
+      "tail": {
+        "kind": "stealth",
+        "length": "small",
+        "width": "large"
+      }
+    },
+    "width": 2.5
+  },
+  {}
+]

@@ -12,7 +12,7 @@ use super::LayoutCtx;
 use super::cache::{CacheKey, cached};
 use super::env::TextEnv;
 use super::float::{self, Placed};
-use super::fragment::{BoxFragment, BoxKind, Child, ImageKey, Item, PlacedLine};
+use super::fragment::{BoxFragment, BoxKind, Child, ImageKey, Item, Layer, PlacedLine, ShapeItem};
 use super::ids::{FloatId, ParaId};
 use super::job::{Memos, Yield};
 use super::join::LaidBlock;
@@ -514,42 +514,86 @@ fn wrap_bands(
     bands
 }
 
-/// A float's height: the picture's, or a text box's (spAutoFit: content + insets + outline, FLOAT-10).
+/// A float's height: the picture's, or a text box's (spAutoFit, FLOAT-10): the stored height less its text frame's
+/// height, plus the content's (at most 1584 pt), in one pass from the stored size.
 pub fn float_height(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<f64, Yield> {
     Ok(match &f.text_box {
         Some(tb) if tb.auto_fit => {
-            let g = tb.geometry.text_inset(f.w, f.h);
-            let w = (f.w - g[0] - g[2] - tb.insets[0] - tb.insets[2] - tb.outline).max(1.0);
+            // FLOAT-17: a quarter-turned box grows along its own height, which is the placed box's width.
+            let (w0, h0) = if f.rot_swap { (f.h, f.w) } else { (f.w, f.h) };
+            let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, w0, h0]);
+            let w = (fr[2] - fr[0]).max(1.0);
             let blocks: Vec<&Block> = tb.blocks.iter().collect();
             let fields = FieldValues::default();
-            let h = layout(&blocks, w, &StoryEnv { fields: &fields, ..*env }, None, memos)?.height;
-            let h = h + tb.insets[1] + tb.insets[3] + tb.outline;
+            let content = layout(&blocks, w, &StoryEnv { fields: &fields, ..*env }, None, memos)?.height.min(1584.0);
+            let h = h0 - (fr[3] - fr[1]) + content;
             // FRAME-1: a frame's `h` without hRule="exact" is a minimum.
-            if f.auto_w || tb.insets[1] == 0.0 && tb.insets[3] == 0.0 && tb.outline == 0.0 { h.max(f.h) } else { h }
+            if f.auto_w || f.shape.is_none() && tb.insets[1] == 0.0 && tb.insets[3] == 0.0 && tb.outline == 0.0 { h.max(f.h) } else { h }
         }
         _ => f.h,
     })
 }
 
-/// A float drawn at `rect`: its picture, or its text box with content and outline (FLOAT-10).
+/// A float drawn at `rect`: its shape tree's shapes and pictures (DRAW-1, DRAW-4), then its text boxes' content
+/// (FLOAT-10). A float without a shape tree (a frame, an object made in the editor) draws its picture and a black
+/// outline of its text box.
 pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memos: &mut Memos) -> Result<Child, Yield> {
     let [x0, y0, x1, y1] = rect;
+    // FLOAT-17: a quarter-turned float is drawn at its own box, unturned about the placed box's centre.
+    let shape_rect = if f.rot_swap {
+        let (cx, cy, hw, hh) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (y1 - y0) / 2.0, (x1 - x0) / 2.0);
+        [cx - hw, cy - hh, cx + hw, cy + hh]
+    } else {
+        rect
+    };
     let mut items = Vec::new();
     let mut groups = Vec::new();
-    if let Some(img) = f.image {
-        items.push(Item::Image { rect, key: ImageKey { index: Some(img), generation: 0 } });
+    match f.shape.as_deref() {
+        Some(shape) => {
+            let t = &env.ctx.env.text;
+            let palette = crate::drawing::paint::Palette { theme: &t.theme, map: &t.colour_map };
+            items.extend(shape_items(shape, shape_rect, f.id, f.behind, palette).into_iter().map(Item::Shape));
+        }
+        None => {
+            if let Some(img) = f.image {
+                items.push(Item::Image { rect, key: ImageKey { index: Some(img), generation: 0 } });
+            }
+        }
     }
-    if let Some(tb) = &f.text_box {
-        text_box(tb, rect, env, &mut groups, memos)?;
+    let chain = env.ctx.env.chain_of(f.id);
+    if let Some((c, k)) = chain {
+        linked_text(c, k, f, shape_rect, env, &mut groups, memos)?;
     }
-    // FLOAT-15: a group's pictures and text boxes, each in its own box.
+    if let Some(tb) = f.text_box.as_ref().filter(|_| chain.is_none()) {
+        let shape = f.shape.as_deref();
+        turned_text(
+            tb,
+            shape,
+            shape_rect,
+            shape.map_or(0.0, |s| s.xfrm.rot.normalized().degrees()),
+            shape.is_some_and(|s| s.xfrm.flip_v),
+            env,
+            &mut groups,
+            memos,
+        )?;
+        if f.shape.is_none() {
+            outline(tb.outline, rect, &mut groups);
+        }
+    }
+    // FLOAT-15: a group's text boxes, each in its own box (DRAW-4: at its place and turn in the group).
+    let leaves = f.shape.as_deref().map(|s| s.leaves(shape_rect)).unwrap_or_default();
     for part in &f.parts {
         let r = [x0 + part.rect[0], y0 + part.rect[1], x0 + part.rect[2], y0 + part.rect[3]];
-        if let Some(img) = part.image {
+        if f.shape.is_none()
+            && let Some(img) = part.image
+        {
             items.push(Item::Image { rect: r, key: ImageKey { index: Some(img), generation: 0 } });
         }
         if let Some(tb) = &part.text_box {
-            text_box(tb, r, env, &mut groups, memos)?;
+            match leaves.iter().find(|l| l.path == part.path) {
+                Some(l) => turned_text(tb, Some(l.shape), l.rect, l.rot, l.flip_v, env, &mut groups, memos)?,
+                None => text_box(tb, f.shape.as_deref().and_then(|s| s.at(&part.path)), r, env, &mut groups, memos)?,
+            }
         }
     }
     let mut children = Vec::new();
@@ -558,7 +602,7 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
     }
     children.extend(groups);
     Ok(Child::Box(BoxFragment {
-        kind: BoxKind::Float { anchor, float: FloatId(f.id), rect },
+        kind: BoxKind::Float { anchor, float: FloatId(f.id), rect, layer: Layer { behind: f.behind, z: f.z, order: f.order } },
         id: None,
         offset: (0.0, 0.0),
         size: (x1 - x0, y1 - y0),
@@ -566,45 +610,392 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
     }))
 }
 
-/// A text box's content and outline in `rect` (FLOAT-10), appended to `groups`.
-fn text_box(tb: &crate::docx::TextBox, rect: [f64; 4], env: &StoryEnv, groups: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
-    // FLOAT-10: the text frame starts inside the geometry's text rectangle, computed on the shape's size on the page.
-    let g = tb.geometry.text_inset(rect[2] - rect[0], rect[3] - rect[1]);
-    let [x0, y0, x1, y1] = [rect[0] + g[0], rect[1] + g[1], rect[2] - g[2], rect[3] - g[3]];
-    {
-        let o = tb.outline;
-        let w = (x1 - x0 - tb.insets[0] - tb.insets[2] - o).max(1.0);
-        let blocks: Vec<&Block> = tb.blocks.iter().collect();
-        // A text box or frame shows its story's fields: a header's PAGE counts in its frames (the page number
-        // gallery's framed PAGE); body text boxes get none (page::draw_floats).
-        let story = layout(&blocks, w, env, None, memos)?;
-        let (cx, mut cy) = (x0 + tb.insets[0] + o / 2.0, y0 + tb.insets[1] + o / 2.0);
-        let content_bottom = y1 - tb.insets[3] - o / 2.0;
-        // FLOAT-10: centred or bottom text takes all or half (in whole layout units, down) of the room below it, never
-        // less than none; compat ≤ 14 with doNotVertAlignInTxbx keeps it at the top.
-        // shortcut: floats inside the text box don't count as its content.
-        let text = &env.ctx.env.text;
-        if !tb.auto_fit && tb.v_anchor > 0 && !(text.compat == Compat::Legacy && text.do_not_vert_align_in_txbx) {
-            let free = Lu::round_half_up(content_bottom - cy - story.height).0.max(0);
-            cy += Lu(if tb.v_anchor == 2 { free } else { free / 2 }).to_pt();
+/// A box of a chain of linked text boxes, as a text box with its shape's insets and pen allowance (FLOAT-10): the
+/// first box's own, or a later box's from its `bodyPr` and line.
+fn chain_box(f: &Float) -> crate::docx::TextBox {
+    if let Some(tb) = &f.text_box {
+        return crate::docx::TextBox { blocks: Vec::new(), ..tb.clone() };
+    }
+    let sp = f.shape.as_deref().and_then(|s| s.sp());
+    let pt = |e: crate::drawing::units::Emu| e.0 as f64 / 12700.0;
+    let insets = sp.map_or([7.2, 3.6, 7.2, 3.6], |s| s.body.insets.map(pt));
+    let outline = sp.and_then(|s| s.line.as_ref()).map_or(0.0, |l| {
+        let w = l.width.map_or(0, |w| w.0);
+        2.0 * if l.inset == Some(true) { w } else { w / 2 } as f64 / 12700.0
+    });
+    crate::docx::TextBox { blocks: Vec::new(), insets, outline, auto_fit: false, v_anchor: 0 }
+}
+
+/// The size of float `f`'s text frame (FLOAT-10), as a box of a chain of linked text boxes.
+pub(super) fn text_frame_size(f: &Float) -> [f64; 2] {
+    let (w, h) = if f.rot_swap { (f.h, f.w) } else { (f.w, f.h) };
+    let fr = layout_frame(&chain_box(f), f.shape.as_deref(), [0.0, 0.0, w, h]);
+    [fr[2] - fr[0], fr[3] - fr[1]]
+}
+
+/// FLOAT-21: which of the story's units each box of a chain shows: in order, as many as its frame holds, the last box the rest
+/// (clipped as a text box clips). `widow`: a paragraph with widow control leaves no single line at the bottom of a box
+/// or at the top of the next (compat 15; compat <= 14 doesn't).
+fn chain_slices(story: &StoryLayout, heights: &[f64], widow: bool) -> Vec<std::ops::Range<usize>> {
+    let units = &story.units;
+    let n = units.len();
+    let (mut out, mut at) = (Vec::new(), 0);
+    for (k, &h) in heights.iter().enumerate() {
+        if k + 1 == heights.len() {
+            out.push(at..n);
+            break;
         }
-        for u in &story.units {
-            // FLOAT-10: a line is drawn if its box starts above the content bottom.
-            if !tb.auto_fit && cy + u.top >= content_bottom - EPS {
-                continue;
+        let base = units.get(at).map_or(0.0, |u| u.top);
+        let mut end = at;
+        while end < n && units[end].top - base + units[end].height <= h + EPS {
+            end += 1;
+        }
+        if widow && at < end && end < n && units[end].widow && units[end - 1].block == units[end].block {
+            let b = units[end].block;
+            let before = (at..end).rev().take_while(|&i| units[i].block == b).count();
+            let after = (end..n).take_while(|&i| units[i].block == b).count();
+            let back = match (before, after) {
+                (1, _) => 1,
+                (2, 1) => 2,
+                (_, 1) => 1,
+                _ => 0,
+            };
+            if end - back > at {
+                end -= back;
             }
-            // FLOAT-10: the content bottom clips per glyph, as an exact row's bottom does (TABLE-34).
-            let bottom = if tb.auto_fit { f64::INFINITY } else { content_bottom - (cy + u.top) + super::table::INK_SLACK };
-            let children = super::table::clip_x(&u.content, f64::NEG_INFINITY, f64::INFINITY, bottom).unwrap_or_else(|| u.content.clone());
-            groups.push(Child::Group { offset: (cx, cy + u.top), children });
         }
-        if o > 0.0 {
-            // The outline is centred on the shape edge, not the text frame.
-            let [x0, y0, x1, y1] = rect;
-            let h = o / 2.0;
-            let outline = [[x0 - h, y0 - h, x1 + h, y0 + h], [x0 - h, y1 - h, x1 + h, y1 + h], [x0 - h, y0, x0 + h, y1], [x1 - h, y0, x1 + h, y1]];
-            groups.push(Child::Items(outline.iter().map(|r| Item::Rect { rect: *r, colour: 0 }).collect()));
+        out.push(at..end);
+        at = end;
+    }
+    out
+}
+
+/// FLOAT-21: box `k` of chain `c` (float `f`, its shape at `rect`): its part of the chain's story, laid out at the first box's
+/// width.
+// shortcut: every box breaks its lines at the first box's width, and a turned or vertical box isn't turned.
+fn linked_text(
+    c: &super::env::Chain,
+    k: usize,
+    f: &Float,
+    rect: [f64; 4],
+    env: &StoryEnv,
+    groups: &mut Vec<Child>,
+    memos: &mut Memos,
+) -> Result<(), Yield> {
+    let blocks: Vec<&Block> = c.story.blocks.iter().collect();
+    let story = layout(&blocks, c.boxes[0].1[0].max(1.0), env, None, memos)?;
+    let heights: Vec<f64> = c.boxes.iter().map(|b| b.1[1]).collect();
+    let slices = chain_slices(&story, &heights, env.ctx.env.text.compat != Compat::Legacy);
+    let Some(range) = slices.get(k).cloned() else { return Ok(()) };
+    let fr = layout_frame(&chain_box(f), f.shape.as_deref(), rect);
+    let base = story.units.get(range.start).map_or(0.0, |u| u.top);
+    for u in &story.units[range] {
+        let y = fr[1] + u.top - base;
+        // FLOAT-10: a line is drawn if its box starts above the content bottom, clipped there per glyph.
+        if y >= fr[3] - EPS {
+            continue;
         }
+        let bottom = fr[3] - y + super::table::INK_SLACK;
+        let children = super::table::clip_x(&u.content, f64::NEG_INFINITY, f64::INFINITY, bottom).unwrap_or_else(|| u.content.clone());
+        groups.push(Child::Group { offset: (fr[0], y), children });
+    }
+    Ok(())
+}
+
+/// FLOAT-20: an inline shape's story laid out in its box `rect` (the line drew the shape): a box of its own, in front, that
+/// editing knows as the story of the shape's id.
+pub fn inline_text_box(
+    pic: &crate::docx::Picture,
+    rect: [f64; 4],
+    anchor: ParaId,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<Option<Child>, Yield> {
+    let Some(t) = &pic.text else { return Ok(None) };
+    let shape = pic.shape.as_deref();
+    let (rot, flip_v) = shape.map_or((0.0, false), |s| (s.xfrm.rot.normalized().degrees(), s.xfrm.flip_v));
+    let mut groups = Vec::new();
+    turned_text(&t.text_box, shape, rect, rot, flip_v, env, &mut groups, memos)?;
+    let [x0, y0, x1, y1] = rect;
+    Ok(Some(Child::Box(BoxFragment {
+        kind: BoxKind::Float { anchor, float: FloatId(t.id), rect, layer: Layer { behind: false, z: u32::MAX, order: usize::MAX } },
+        id: None,
+        offset: (0.0, 0.0),
+        size: (x1 - x0, y1 - y0),
+        children: groups.into(),
+    })))
+}
+
+/// DRAW-1, DRAW-4, DRAW-8: the drawn shapes of `shape` placed at `rect`, each with its geometry evaluated on its size
+/// and its paint resolved against the document's theme. Hidden shapes and graphics the engine keeps without drawing
+/// (charts, ink) draw nothing.
+pub(super) fn shape_items(
+    shape: &crate::drawing::Shape,
+    rect: [f64; 4],
+    float: u64,
+    behind: bool,
+    palette: crate::drawing::paint::Palette,
+) -> Vec<Rc<ShapeItem>> {
+    use crate::drawing::ShapeKind;
+    use crate::drawing::paint::{self, Fill, Paint};
+    use crate::drawing::units::Emu;
+    if shape.nv.hidden {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for leaf in shape.leaves(rect) {
+        let group = leaf.group_fill.map_or(Paint::None, |g| paint::paint(g, palette, None, &Paint::None));
+        let [lx0, ly0, lx1, ly1] = leaf.rect;
+        let (w, h) = (Emu::from_pt(lx1 - lx0), Emu::from_pt(ly1 - ly0));
+        let (geom, fill, line, effects) = match &leaf.shape.kind {
+            ShapeKind::Sp(sp) => (
+                sp.geom.evaluate(w, h),
+                paint::resolve_fill(sp.fill.as_ref(), sp.style.as_ref(), palette, &group),
+                paint::resolve_line(sp.line.as_ref(), sp.style.as_ref(), palette, &group),
+                paint::resolve_effects(sp.effects.as_ref(), sp.style.as_ref(), palette),
+            ),
+            ShapeKind::Pic(p) => (
+                p.geom.evaluate(w, h),
+                paint::paint(&Fill::Blip(p.blip.clone()), palette, None, &group),
+                paint::resolve_line(p.line.as_ref(), None, palette, &group),
+                paint::resolve_effects(p.effects.as_ref(), None, palette),
+            ),
+            ShapeKind::Group(_) | ShapeKind::Raw(_) => continue,
+        };
+        if leaf.shape.nv.hidden {
+            continue;
+        }
+        // DRAW-14: these presets join their lines with miters where a line asks for round joins or none.
+        let mut line = line;
+        if line.join == paint::Join::Round && leaf.shape.geometry().and_then(|g| g.preset()).is_some_and(|p| MITER_PRESETS.contains(&p.name())) {
+            line.join = paint::Join::Miter(crate::drawing::units::Pct(800_000));
+        }
+        out.push(Rc::new(ShapeItem {
+            rect: leaf.rect,
+            rot: leaf.rot,
+            flip_h: leaf.flip_h,
+            flip_v: leaf.flip_v,
+            geom,
+            fill,
+            line,
+            effects,
+            behind,
+            float,
+            picture: leaf.shape.pic().is_some(),
+            path: leaf.path,
+        }));
+    }
+    out
+}
+
+/// DRAW-14: the presets whose lines join with miters (limit 8) unless the line asks for bevel or miter joins.
+const MITER_PRESETS: &[&str] = &[
+    "bentUpArrow",
+    "chevron",
+    "cube",
+    "downArrow",
+    "ellipseRibbon",
+    "ellipseRibbon2",
+    "leftArrowCallout",
+    "leftRightArrowCallout",
+    "leftUpArrow",
+    "mathEqual",
+    "mathMinus",
+    "mathMultiply",
+    "mathNotEqual",
+    "mathPlus",
+    "moon",
+    "notchedRightArrow",
+    "plus",
+    "quadArrowCallout",
+    "rightArrow",
+    "star10",
+    "star12",
+    "star16",
+    "star24",
+    "star32",
+    "star4",
+    "star5",
+    "star8",
+    "stripedRightArrow",
+    "upDownArrow",
+    "upDownArrowCallout",
+];
+
+/// FLOAT-17: a shape's text: laid out in its unturned frame (`rect`, the shape's own box) and drawn turned about the
+/// box's centre by the shape's rotation `deg` plus `bodyPr/@rot`, 180° more with `flipV` (`flipH` changes nothing).
+/// `bodyPr/@upright` with the shape turned a quarter (45° to 135° mod 180°) lays the text out level in the frame turned
+/// about its own centre; with any other turn, level in the unturned frame.
+#[allow(clippy::too_many_arguments)]
+fn turned_text(
+    tb: &crate::docx::TextBox,
+    shape: Option<&crate::drawing::Shape>,
+    rect: [f64; 4],
+    deg: f64,
+    flip_v: bool,
+    env: &StoryEnv,
+    groups: &mut Vec<Child>,
+    memos: &mut Memos,
+) -> Result<(), Yield> {
+    let body = shape.and_then(|s| s.sp()).map(|s| &s.body);
+    let turn = (deg + body.map_or(0.0, |b| b.rot.degrees()) + if flip_v { 180.0 } else { 0.0 }).rem_euclid(360.0);
+    let mut frame = layout_frame(tb, shape, rect);
+    // FLOAT-19: vertical text is laid out in the text frame turned a quarter about its centre, then turned into it.
+    use crate::drawing::text::TextDirection as D;
+    let dir = body.map_or(D::Horizontal, |b| b.direction);
+    if dir != D::Horizontal {
+        let [x0, y0, x1, y1] = frame;
+        let (fx, fy, hw, hh) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (y1 - y0) / 2.0, (x1 - x0) / 2.0);
+        let quarter = [fx - hw, fy - hh, fx + hw, fy + hh];
+        let reverse = matches!(dir, D::MongolianVert | D::WordArtVert | D::WordArtVertRtl);
+        let mut lines = Vec::new();
+        lay_lines(tb, quarter, Some((VERTICAL_PITCH, reverse)), env, &mut lines, memos)?;
+        let quarter_turn = if dir == D::Vert270 { 270.0 } else { 90.0 };
+        let inner = Item::Turned(Rc::new(super::fragment::Turned { centre: [fx, fy], deg: quarter_turn, items: super::traverse::items_of(&lines) }));
+        let item = if turn.abs() < 1e-9 {
+            inner
+        } else {
+            let centre = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0];
+            Item::Turned(Rc::new(super::fragment::Turned { centre, deg: turn, items: vec![inner] }))
+        };
+        groups.push(Child::Items(vec![item].into()));
+        return Ok(());
+    }
+    if body.is_some_and(|b| b.upright) {
+        if (45.0..135.0).contains(&(deg % 180.0)) {
+            let [x0, y0, x1, y1] = frame;
+            let (cx, cy, hw, hh) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (y1 - y0) / 2.0, (x1 - x0) / 2.0);
+            frame = [cx - hw, cy - hh, cx + hw, cy + hh];
+        }
+        return lay_text(tb, frame, env, groups, memos);
+    }
+    if turn.abs() < 1e-9 {
+        return lay_text(tb, frame, env, groups, memos);
+    }
+    let mut lines = Vec::new();
+    lay_text(tb, frame, env, &mut lines, memos)?;
+    let centre = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0];
+    let items = super::traverse::items_of(&lines);
+    groups.push(Child::Items(vec![Item::Turned(Rc::new(super::fragment::Turned { centre, deg: turn, items }))].into()));
+    Ok(())
+}
+
+/// A text box outline of width `o` centred on the edge of `rect`, as four black strips (an object without a shape
+/// tree).
+fn outline(o: f64, rect: [f64; 4], groups: &mut Vec<Child>) {
+    if o <= 0.0 {
+        return;
+    }
+    let [x0, y0, x1, y1] = rect;
+    let h = o / 2.0;
+    let outline = [[x0 - h, y0 - h, x1 + h, y0 + h], [x0 - h, y1 - h, x1 + h, y1 + h], [x0 - h, y0, x0 + h, y1], [x1 - h, y0, x1 + h, y1]];
+    groups.push(Child::Items(outline.iter().map(|r| Item::Rect { rect: *r, colour: 0 }).collect()));
+}
+
+/// FLOAT-10: how far the text rectangle of `shape`'s geometry (DRAW-1) lies inside its `w` × `h` box: left, top,
+/// right, bottom. A frame or a shape without a geometry has none.
+fn text_inset(shape: Option<&crate::drawing::Shape>, w: f64, h: f64) -> [f64; 4] {
+    use crate::drawing::units::Emu;
+    let Some(g) = shape.and_then(crate::drawing::Shape::geometry) else { return [0.0; 4] };
+    let r = g.evaluate(Emu::from_pt(w), Emu::from_pt(h)).text_rect;
+    [r[0], r[1], w - r[2], h - r[3]]
+}
+
+/// FLOAT-10: the text frame of a text box in `rect`: inside the geometry's text rectangle, the insets and the pen
+/// allowance (half of `outline` on each side).
+fn inner_frame(tb: &crate::docx::TextBox, shape: Option<&crate::drawing::Shape>, rect: [f64; 4]) -> [f64; 4] {
+    let g = text_inset(shape, rect[2] - rect[0], rect[3] - rect[1]);
+    let h = tb.outline / 2.0;
+    let x0 = rect[0] + g[0] + tb.insets[0] + h;
+    let y0 = rect[1] + g[1] + tb.insets[1] + h;
+    let x1 = (rect[2] - g[2] - tb.insets[2] - h).max(x0);
+    let y1 = (rect[3] - g[3] - tb.insets[3] - h).max(y0);
+    [x0, y0, x1, y1]
+}
+
+/// A text box's content in `rect` (FLOAT-10), appended to `groups`; `shape` gives its geometry.
+fn text_box(
+    tb: &crate::docx::TextBox,
+    shape: Option<&crate::drawing::Shape>,
+    rect: [f64; 4],
+    env: &StoryEnv,
+    groups: &mut Vec<Child>,
+    memos: &mut Memos,
+) -> Result<(), Yield> {
+    lay_text(tb, layout_frame(tb, shape, rect), env, groups, memos)
+}
+
+/// The frame a text box's lines are laid out in: its text frame, a hair wider when the box doesn't wrap (FLOAT-18:
+/// the box is as wide as its longest line, which then stays whole).
+fn layout_frame(tb: &crate::docx::TextBox, shape: Option<&crate::drawing::Shape>, rect: [f64; 4]) -> [f64; 4] {
+    let mut fr = inner_frame(tb, shape, rect);
+    if shape.and_then(|s| s.sp()).is_some_and(|s| s.body.no_wrap) {
+        fr[2] += 0.05;
+    }
+    fr
+}
+
+/// A text box's content laid out in its text frame `fr` (FLOAT-10), appended to `groups`.
+fn lay_text(tb: &crate::docx::TextBox, fr: [f64; 4], env: &StoryEnv, groups: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
+    lay_lines(tb, fr, None, env, groups, memos)
+}
+
+/// FLOAT-19: a vertical text frame's line pitch, as a multiple of the horizontal pitch.
+// shortcut: one factor fitted on Arial at 10 and 11 pt; the vertical metrics themselves are not known.
+const VERTICAL_PITCH: f64 = 1.032;
+
+/// The top of a unit's first line box to its baseline (FLOAT-19 scales it with the pitch).
+fn first_baseline(children: &[Child]) -> Option<f64> {
+    children.iter().find_map(|c| match c {
+        Child::Line { placed, .. } => Some(placed.y + placed.line.baseline),
+        Child::Para(p) => p.lines.first().map(|l| l.y + l.line.baseline),
+        Child::Group { offset, children } => first_baseline(children).map(|b| b + offset.1),
+        _ => None,
+    })
+}
+
+/// [`lay_text`], with `vertical` = (pitch factor, lines from the frame's bottom up) for a vertical frame (FLOAT-19).
+fn lay_lines(
+    tb: &crate::docx::TextBox,
+    fr: [f64; 4],
+    vertical: Option<(f64, bool)>,
+    env: &StoryEnv,
+    groups: &mut Vec<Child>,
+    memos: &mut Memos,
+) -> Result<(), Yield> {
+    let w = (fr[2] - fr[0]).max(1.0);
+    let blocks: Vec<&Block> = tb.blocks.iter().collect();
+    // A text box or frame shows its story's fields: a header's PAGE counts in its frames (the page number gallery's
+    // framed PAGE); body text boxes get none (page::draw_floats).
+    let story = layout(&blocks, w, env, None, memos)?;
+    let (cx, mut cy) = (fr[0], fr[1]);
+    let content_bottom = fr[3];
+    // FLOAT-10: centred or bottom text takes all or half (in whole layout units, down) of the room below it, never
+    // less than none; compat ≤ 14 with doNotVertAlignInTxbx keeps it at the top.
+    // shortcut: floats inside the text box don't count as its content.
+    let text = &env.ctx.env.text;
+    if !tb.auto_fit && tb.v_anchor > 0 && !(text.compat == Compat::Legacy && text.do_not_vert_align_in_txbx) {
+        let free = Lu::round_half_up(content_bottom - cy - story.height).0.max(0);
+        cy += Lu(if tb.v_anchor == 2 { free } else { free / 2 }).to_pt();
+    }
+    for u in &story.units {
+        // FLOAT-10: a line is drawn if its box starts above the content bottom.
+        if !tb.auto_fit && cy + u.top >= content_bottom - EPS {
+            continue;
+        }
+        // FLOAT-10: the content bottom clips per glyph, as an exact row's bottom does (TABLE-34).
+        let bottom = if tb.auto_fit { f64::INFINITY } else { content_bottom - (cy + u.top) + super::table::INK_SLACK };
+        let children = super::table::clip_x(&u.content, f64::NEG_INFINITY, f64::INFINITY, bottom).unwrap_or_else(|| u.content.clone());
+        let y = match vertical {
+            None => cy + u.top,
+            Some((k, reverse)) => {
+                // The line box grows by the factor, its baseline with it.
+                let b = first_baseline(&u.content).unwrap_or(0.8 * u.height);
+                let top = u.top * k + (k - 1.0) * b;
+                if reverse { content_bottom - (top + u.height * k) + (cy - fr[1]) } else { cy + top }
+            }
+        };
+        groups.push(Child::Group { offset: (cx, y), children });
     }
     Ok(())
 }
@@ -641,7 +1032,21 @@ pub fn hf_floats(
 /// FRAME-1: a frame without `w` is as wide as its content (trailing spaces excluded), at most `width`, with the
 /// fields of the story it is in. `None` for any other float.
 pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<Option<Float>, Yield> {
+    // FLOAT-18: a text box with `bodyPr/@wrap="none"` takes its longest paragraph as one line: its width is the stored
+    // width less its text frame's width plus that line's, at most `width`.
+    let no_wrap = f.shape.as_deref().and_then(|s| s.sp()).is_some_and(|s| s.body.no_wrap) && !f.rot_swap;
+    if let Some(tb) = f.text_box.as_ref().filter(|_| no_wrap) {
+        let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, f.w, f.h]);
+        let longest = longest_line(tb, 1584.0, env, memos)?;
+        return Ok(Some(Float { w: (f.w - (fr[2] - fr[0]) + longest).min(width.max(f.w)), ..f.clone() }));
+    }
     let Some(tb) = f.text_box.as_ref().filter(|_| f.auto_w) else { return Ok(None) };
+    let w = longest_line(tb, width, env, memos)?;
+    Ok(Some(Float { w: w.min(width) + tb.insets[0] + tb.insets[2], ..f.clone() }))
+}
+
+/// The right edge of a story's widest line laid out at `width`, trailing spaces excluded (FRAME-1, FLOAT-18).
+fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<f64, Yield> {
     let view = env.ctx.env.text.review.view;
     let mut w: f64 = 0.0;
     for b in super::join::laid(&tb.blocks, view) {
@@ -660,7 +1065,7 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
             }
         }
     }
-    Ok(Some(Float { w: w.min(width) + tb.insets[0] + tb.insets[2], ..f.clone() }))
+    Ok(w)
 }
 
 /// The header and footer height cap (HDR-8).

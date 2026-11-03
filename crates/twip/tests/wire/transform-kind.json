@@ -1,0 +1,12 @@
+[
+  "tint",
+  "shade",
+  "lumMod",
+  "lumOff",
+  "satMod",
+  "satOff",
+  "hueMod",
+  "hueOff",
+  "alpha",
+  "alphaMod"
+]

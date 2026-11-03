@@ -71,11 +71,19 @@ pub(super) fn fresh(b: &Block) -> Block {
             p.id = crate::docx::next_para_id();
             p.src = None;
             for i in &mut p.inlines {
-                if let Inline::Float(f, _) = i {
-                    f.id = crate::docx::next_para_id();
-                    if let Some(tb) = &mut f.text_box {
-                        tb.blocks = tb.blocks.iter().map(fresh).collect();
+                let story = match i {
+                    Inline::Float(f, _) => {
+                        f.id = crate::docx::next_para_id();
+                        f.text_box.as_mut()
                     }
+                    Inline::Picture(pic, _) => pic.text.as_mut().map(|t| {
+                        t.id = crate::docx::next_para_id();
+                        &mut t.text_box
+                    }),
+                    _ => None,
+                };
+                if let Some(tb) = story {
+                    tb.blocks = tb.blocks.iter().map(fresh).collect();
                 }
             }
             Block::Para(p)
@@ -681,8 +689,8 @@ pub(super) fn adopt(
                         match i {
                             Inline::FieldBegin { id, .. } | Inline::FieldSep { id, .. } | Inline::FieldEnd { id, .. } => ids.field(id),
                             Inline::ControlStart(c) | Inline::ControlEnd(c) | Inline::Sym { control: Some(c), .. } => ids.control(c),
-                            Inline::Float(f, _) => {
-                                if let Some(tb) = &mut f.text_box {
+                            i if i.story().is_some() => {
+                                if let Some(tb) = i.story_mut() {
                                     walk(&mut tb.blocks, ids);
                                 }
                             }
@@ -729,8 +737,8 @@ pub(super) fn controls_of(blocks: &[Block], doc: &crate::docx::Document) -> std:
                     for i in &p.inlines {
                         match i {
                             Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. } => out.push(*c),
-                            Inline::Float(f, _) => {
-                                if let Some(tb) = &f.text_box {
+                            i if i.story().is_some() => {
+                                if let Some((_, tb)) = i.story() {
                                     ids(&tb.blocks, out);
                                 }
                             }

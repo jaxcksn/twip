@@ -28,7 +28,10 @@ impl Editor {
         for (si, s) in geo.stories.iter().enumerate().rev() {
             let Some(f) = s.float else { continue };
             let [x0, y0, x1, y1] = s.rect;
-            if !reachable(ctx, s.host) || px < x0 - one || px > x1 + one || py < y0 - one || py > y1 + one {
+            let in_box = px >= x0 - one && px <= x1 + one && py >= y0 - one && py <= y1 + one;
+            let text_box = self.index.text_box(&self.doc, self.index.box_story(f)).is_some();
+            // A shape is hit on its ink, wherever its rotation draws it; a text box on its box.
+            if !reachable(ctx, s.host) || text_box && !in_box || !text_box && !self.shape_hit(page, f, px, py, 3.0 * one, in_box) {
                 continue;
             }
             // Behind the text, a line over it takes the press.
@@ -44,7 +47,7 @@ impl Editor {
             if self.float_behind(f) && text_over() {
                 continue;
             }
-            if self.index.text_box(&self.doc, f).is_none() {
+            if !text_box {
                 return Some(Selection::Object(ObjectRef::Floating(f)));
             }
             let left = px - x0 < band;
@@ -58,7 +61,7 @@ impl Editor {
             {
                 return Some(Selection::range(a, b, Granularity::Line));
             }
-            return Some(Selection::Object(ObjectRef::Floating(f)));
+            return Some(Selection::Object(self.story_object(f)));
         }
         for l in geo.lines.iter().filter(|l| py >= l.top && py < l.bottom && reachable(ctx, geo.stories[l.story].host)) {
             for w in l.stops.windows(2) {
@@ -71,6 +74,85 @@ impl Editor {
             }
         }
         None
+    }
+
+    /// The object whose story is `TextBox(f)`: float `f`, or the inline shape whose text goes by `f`.
+    pub(super) fn story_object(&self, f: FloatId) -> ObjectRef {
+        let found = self.index.float_anchor(f).and_then(|para| {
+            let p = self.index.para(&self.doc, para)?;
+            let mut at = 0u32;
+            for i in &p.inlines {
+                if let Inline::Picture(pic, _) = i
+                    && pic.text.as_ref().is_some_and(|t| t.id == f.0)
+                {
+                    return Some(ObjectRef::Inline { para, offset: Unit(at) });
+                }
+                at += i.units() as u32;
+            }
+            None
+        });
+        found.unwrap_or(ObjectRef::Floating(f))
+    }
+
+    /// The path of float `f`'s topmost shape under (x, y) on `page` (empty: the float's own shape).
+    fn child_at(&self, page: usize, f: FloatId, x: f64, y: f64, slop: f64) -> Option<crate::drawing::ChildPath> {
+        let snap = self.snapshot();
+        let items = crate::layout::traverse::paint_float(snap.pages().get(page)?, f);
+        items.iter().rev().find_map(|it| match it {
+            crate::layout::fragment::Item::Shape(s) if s.hit(x, y, slop) => Some(s.path.clone()),
+            _ => None,
+        })
+    }
+
+    /// The selected float's selected group child, if any.
+    pub(super) fn selected_child(&self) -> Option<&[u16]> {
+        match (&self.object_child, self.selection) {
+            (Some((f, c)), Selection::Object(ObjectRef::Floating(g))) if *f == g => Some(c),
+            _ => None,
+        }
+    }
+
+    /// The selected floats: the selected one first, then those added to it.
+    pub fn selected_floats(&self) -> Vec<FloatId> {
+        let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Vec::new() };
+        let mut v = vec![f];
+        if let Some((p, also)) = &self.object_also
+            && *p == f
+        {
+            v.extend(also.iter().copied().filter(|g| *g != f));
+        }
+        v
+    }
+
+    /// Shift or Ctrl and a press on another float of the selected float's story: it joins the selection, or leaves
+    /// it when it was in it. True when handled.
+    pub(super) fn object_toggle(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
+        let Selection::Object(ObjectRef::Floating(p)) = self.selection else { return false };
+        let Some(Selection::Object(ObjectRef::Floating(f))) = self.object_hit(x, y, fonts) else { return false };
+        let story = |e: &Self, f: FloatId| e.index.float_anchor(f).and_then(|a| e.index.para_slot(a)).map(|s| e.index.story(s.container));
+        if f == p || story(self, f) != story(self, p) {
+            return false;
+        }
+        let mut also = self.selected_floats().split_off(1);
+        match also.iter().position(|g| *g == f) {
+            Some(i) => {
+                also.remove(i);
+            }
+            None => also.push(f),
+        }
+        self.object_also = Some((p, also));
+        self.object_child = None;
+        true
+    }
+
+    /// Whether a press at (x, y) on `page` hits float `f`'s shapes: inside a filled path or within `slop` of an
+    /// outline. A float drawn without shapes (a frame, a picture made by the editor) is hit on its box (`in_box`).
+    fn shape_hit(&self, page: usize, f: FloatId, x: f64, y: f64, slop: f64, in_box: bool) -> bool {
+        let snap = self.snapshot();
+        let Some(frag) = snap.pages().get(page) else { return in_box };
+        let items = crate::layout::traverse::paint_float(frag, f);
+        let mut shapes = items.iter().filter_map(|it| if let crate::layout::fragment::Item::Shape(s) = it { Some(s) } else { None }).peekable();
+        if shapes.peek().is_none() { in_box } else { shapes.any(|s| s.hit(x, y, slop)) }
     }
 
     /// Before typing over a selected object: the caret goes before an inline picture (keeping it), or to a float's
@@ -260,9 +342,28 @@ impl Editor {
         self.ensure_page(page, fonts);
         let Some(geo) = self.pages.page(page, &self.index) else { return false };
         let Some(s) = self.object_hit(x, y, fonts) else { return false };
+        let was = self.selection;
         self.set_selection(s);
+        // A press on the selected group selects its child under the pointer; any other press, the whole object.
+        let (_, px, py) = stack.page_at(x, y).unwrap_or((page, x, y));
+        self.object_also = None;
+        self.object_child = match s {
+            Selection::Object(ObjectRef::Floating(f)) if was == s => {
+                let one = 0.75 / self.viewport.zoom.max(0.1);
+                self.child_at(page, f, px, py, 3.0 * one).filter(|c| !c.is_empty()).map(|c| (f, c))
+            }
+            _ => None,
+        };
         self.drag = None;
         self.activate_placeholder();
+        // A press on a child of the selected group moves that child.
+        if let Selection::Object(obj @ ObjectRef::Floating(f)) = s
+            && self.selected_child().is_some()
+            && !self.object_fixed(obj)
+        {
+            self.child_move_press(f, page, px, py);
+            return true;
+        }
         if let Selection::Object(obj @ ObjectRef::Floating(f)) = s
             && !self.object_fixed(obj)
             && let Some(st) = geo.stories.iter().find(|t| t.float == Some(f))
@@ -491,7 +592,12 @@ impl Editor {
         let (w, h) = (((w * 20.0).round() / 20.0).max(1.0), ((h * 20.0).round() / 20.0).max(1.0));
         let image = Some(self.pending_image(data));
         let out = self.insert_inline(
-            |run| Inline::Picture(crate::docx::Picture { w, h, image, alt: "".into(), lock_aspect: true, effect: [0.0; 4] }, run),
+            |run| {
+                Inline::Picture(
+                    crate::docx::Picture { w, h, image, alt: "".into(), lock_aspect: true, effect: [0.0; 4], shape: None, text: None },
+                    run,
+                )
+            },
             "Insert Picture",
             fonts,
         );
@@ -540,7 +646,6 @@ impl Editor {
             text_box: Some(crate::docx::TextBox {
                 blocks: vec![crate::docx::Block::Para(inner)],
                 insets: [7.2, 3.6, 7.2, 3.6],
-                geometry: Default::default(),
                 outline: 0.5,
                 auto_fit: false,
                 v_anchor: 0,
@@ -561,10 +666,13 @@ impl Editor {
             layout_in_cell: true,
             // Above every float read (paint order).
             order: usize::MAX / 2,
+            z: u32::MAX,
             src: None,
             locked: false,
             frame_src: None,
             parts: Vec::new(),
+            shape: None,
+            rot_swap: false,
         };
         let mut inlines = p.inlines.clone();
         inlines.insert(0, Inline::Float(Box::new(float), run));
@@ -689,7 +797,7 @@ impl Editor {
     }
 
     /// A float replaced by `n` (the one with its id), selected. One step; none when nothing differs.
-    fn set_float(&mut self, n: crate::docx::Float, label: &'static str, fonts: &Fonts) -> Outcome {
+    pub(super) fn set_float(&mut self, n: crate::docx::Float, label: &'static str, fonts: &Fonts) -> Outcome {
         let f = FloatId(n.id);
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };
@@ -808,7 +916,7 @@ impl Editor {
     }
 
     /// Where a float is drawn: the nearest page drawing it, and its box there.
-    fn float_box(&mut self, f: FloatId, fonts: &Fonts) -> Option<(usize, [f64; 4])> {
+    pub(super) fn float_box(&mut self, f: FloatId, fonts: &Fonts) -> Option<(usize, [f64; 4])> {
         let n = self.pages.len();
         let near = self.near;
         (0..n).map(|d| if d % 2 == 0 { near + d / 2 } else { near.wrapping_sub(d / 2 + 1) }).filter(|&p| p < n).find_map(|p| {
@@ -834,6 +942,7 @@ impl Editor {
             "front" => ("none", false),
             w => (w, false),
         };
+        // A shape's text goes with it (a new id: the index drops the old one's as the picture goes).
         let id = crate::docx::next_para_id();
         let float = crate::docx::Float {
             id,
@@ -843,7 +952,7 @@ impl Editor {
             image: pic.image,
             alt: pic.alt.clone(),
             lock_aspect: pic.lock_aspect,
-            text_box: None,
+            text_box: pic.text.clone().map(|t| t.text_box),
             h_relative: "column".into(),
             h_align: None,
             h_offset: 0.0,
@@ -861,10 +970,13 @@ impl Editor {
             layout_in_cell: true,
             // Above every float read (paint order).
             order: usize::MAX / 2,
+            z: u32::MAX,
             src: None,
             locked: false,
             frame_src: None,
             parts: Vec::new(),
+            shape: pic.shape.clone(),
+            rot_swap: false,
         };
         // One undo step: the conversion, then the move onto where the picture was.
         self.begin_batch(Some("Wrap Text".into()));
@@ -892,8 +1004,8 @@ impl Editor {
         self.end_batch(true, fonts)
     }
 
-    /// In Line with Text on a floating picture: an inline picture where its anchor is. Text boxes and groups stay
-    /// floating. One step.
+    /// In Line with Text on a floating picture or shape: an inline one where its anchor is, a shape's text with it.
+    /// Groups stay floating. One step.
     fn inline_float(&mut self, f: FloatId, fonts: &Fonts) -> Outcome {
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };
@@ -901,11 +1013,21 @@ impl Editor {
             return Outcome::Unchanged("no float");
         };
         let Inline::Float(fl, run) = &p.inlines[k] else { return Outcome::Unchanged("no float") };
-        if fl.text_box.is_some() || !fl.parts.is_empty() || fl.image.is_none() {
-            return Outcome::unsupported("only a picture goes in line with text");
+        if !fl.parts.is_empty() || fl.shape.is_none() && (fl.image.is_none() || fl.text_box.is_some()) {
+            return Outcome::unsupported("only a picture or a shape goes in line with text");
         }
         let at = Unit(p.inlines[..k].iter().map(|i| i.units() as u32).sum());
-        let pic = crate::docx::Picture { w: fl.w, h: fl.h, image: fl.image, alt: fl.alt.clone(), lock_aspect: fl.lock_aspect, effect: [0.0; 4] };
+        let text = fl.text_box.clone().map(|text_box| Box::new(crate::docx::InlineText { id: crate::docx::next_para_id(), text_box }));
+        let pic = crate::docx::Picture {
+            w: fl.w,
+            h: fl.h,
+            image: fl.image,
+            alt: fl.alt.clone(),
+            lock_aspect: fl.lock_aspect,
+            effect: [0.0; 4],
+            shape: fl.shape.clone(),
+            text,
+        };
         let with = vec![Inline::Picture(pic, run.clone())];
         let mut tx = self.begin("Wrap Text");
         let inserted = self.step(&mut tx, Step::Text { para: anchor, range: at..at, with, edges: Default::default() });
@@ -923,7 +1045,16 @@ impl Editor {
 
     /// A float moved or resized from box `old` to `new` (page coordinates on `page`): its offsets keep their reference
     /// (page, margin, column or paragraph), an aligned position becoming an offset.
-    fn place_float(&mut self, f: FloatId, page: usize, old: [f64; 4], new: [f64; 4], label: &'static str, reanchor: bool, fonts: &Fonts) -> Outcome {
+    pub(super) fn place_float(
+        &mut self,
+        f: FloatId,
+        page: usize,
+        old: [f64; 4],
+        new: [f64; 4],
+        label: &'static str,
+        reanchor: bool,
+        fonts: &Fonts,
+    ) -> Outcome {
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
         let Some(moved) = self.moved_float(f, page, old, new) else { return Outcome::Unchanged("no float") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };

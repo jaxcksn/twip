@@ -278,9 +278,9 @@ impl<'a> Walk<'a> {
         for i in &p.inlines {
             let n = i.units() as u32;
             match i {
-                Inline::Float(f, _) => {
-                    if let Some(tb) = &f.text_box {
-                        self.boxes.push((FloatId(f.id), &tb.blocks));
+                i if i.story().is_some() => {
+                    if let Some((id, tb)) = i.story() {
+                        self.boxes.push((FloatId(id), &tb.blocks));
                     }
                 }
                 Inline::Range(m) if matches!(m.kind, RangeKind::MoveFromStart | RangeKind::MoveToStart) => {

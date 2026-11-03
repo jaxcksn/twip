@@ -3,9 +3,9 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-const CATEGORIES: [&str; 21] = [
+const CATEGORIES: [&str; 22] = [
     "UNIT", "FONT", "STYLE", "FIELD", "LINE", "PARA", "BREAK", "JUST", "TAB", "LIST", "PAGE", "COL", "FLOAT", "FRAME", "TABLE", "HDR", "NOTE",
-    "COMPAT", "LNUM", "SETUP", "REV",
+    "COMPAT", "LNUM", "SETUP", "REV", "DRAW",
 ];
 
 /// The comment part of a line (`//` to the end), ignoring `//` inside string literals.

@@ -119,8 +119,10 @@ pub fn export(doc: &Document, snapshot: &Snapshot, title: &str) -> Vec<u8> {
                     Some(_) => node_id::OTHER_ARTIFACT,
                     None => node_id::PAGINATION_ARTIFACT,
                 },
-                Item::Rect { .. } | Item::Gridline { .. } => node_id::LAYOUT_ARTIFACT,
-                Item::Image { .. } => {
+                Item::Rect { .. } | Item::Gridline { .. } | Item::Turned(_) => node_id::LAYOUT_ARTIFACT,
+                // A picture is a figure; another shape is an artifact.
+                Item::Shape(s) if !matches!(s.fill, crate::drawing::paint::Paint::Picture { .. }) => node_id::LAYOUT_ARTIFACT,
+                Item::Image { .. } | Item::Shape(_) => {
                     figures.push((last, n + 1 + figures.len() as i32));
                     figures.last().unwrap().1
                 }

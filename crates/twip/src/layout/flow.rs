@@ -625,7 +625,7 @@ fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<
                 .iter()
                 .map(|k| match k {
                     Child::Box(b) => match b.kind {
-                        BoxKind::Float { anchor, float, rect } if floats.contains_key(&float.0) => {
+                        BoxKind::Float { anchor, float, rect, layer } if floats.contains_key(&float.0) => {
                             let f = floats[&float.0];
                             let x = float::h_pos(f, fr) - offset.0;
                             let y = match f.v_relative.as_str() {
@@ -634,7 +634,7 @@ fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<
                             };
                             let d = (x - rect[0], y - rect[1]);
                             Child::Box(BoxFragment {
-                                kind: BoxKind::Float { anchor, float, rect: [rect[0] + d.0, rect[1] + d.1, rect[2] + d.0, rect[3] + d.1] },
+                                kind: BoxKind::Float { anchor, float, layer, rect: [rect[0] + d.0, rect[1] + d.1, rect[2] + d.0, rect[3] + d.1] },
                                 offset: (b.offset.0 + d.0, b.offset.1 + d.1),
                                 ..b.clone()
                             })
@@ -1817,6 +1817,7 @@ impl<'d> PageFill<'d, '_> {
             para: anchor,
             review: &self.ctx.env.text.review,
             ul_trail_space: self.ctx.env.text.ul_trail_space,
+            palette: crate::drawing::paint::Palette { theme: &self.ctx.env.text.theme, map: &self.ctx.env.text.colour_map },
         };
         let mut lines = Vec::new();
         let mut numbers = Vec::new();
@@ -2323,10 +2324,13 @@ impl<'d> PageFill<'d, '_> {
             allow_overlap: true,
             layout_in_cell: true,
             order: 0,
+            z: 0,
             src: None,
             locked: false,
             frame_src: None,
             parts: Vec::new(),
+            shape: None,
+            rot_swap: false,
         });
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));

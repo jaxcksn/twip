@@ -158,6 +158,8 @@ public enum WarningCode
     CommentUnanchored,
     /// <summary>A comment reference pointed at no comment.</summary>
     CommentReferenceOrphan,
+    /// <summary>A shape's preset geometry the engine doesn't define; it draws as a rectangle and is kept on save.</summary>
+    UnknownPreset,
 }
 
 /// <summary>An import or export approximation, aggregated per code and part.</summary>
@@ -244,6 +246,11 @@ public sealed record CommandInfo(
 /// <param name="Windows">On Windows and Linux.</param>
 /// <param name="Mac">On macOS.</param>
 public sealed record Shortcuts(IReadOnlyList<string> Windows, IReadOnlyList<string> Mac);
+
+/// <summary>A group of Word's Insert &gt; Shapes gallery.</summary>
+/// <param name="Label">Its label, such as <c>Basic Shapes</c>.</param>
+/// <param name="Presets">Its presets, in Word's order.</param>
+public sealed record ShapeGalleryGroup(string Label, IReadOnlyList<ShapePreset> Presets);
 
 /// <summary>A command group.</summary>
 public enum CommandGroup

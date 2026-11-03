@@ -66,6 +66,31 @@ internal sealed class StyleIdConverter : IdConverter<StyleId>
     protected override string Value(StyleId id) => id.Value;
 }
 
+internal sealed class ShapePresetConverter : IdConverter<ShapePreset>
+{
+    protected override ShapePreset Create(string value) => new(value);
+
+    protected override string Value(ShapePreset id) => id.Value;
+}
+
+/// <summary><c>T | null</c> when set or removed; a kept effect isn't written (its property is ignored when default).</summary>
+internal sealed class EffectChangeConverter<T> : JsonConverter<EffectChange<T>>
+{
+    public override bool HandleNull => true;
+
+    public override EffectChange<T> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        reader.TokenType == JsonTokenType.Null ? EffectChange<T>.Remove : EffectChange<T>.Set(JsonSerializer.Deserialize(ref reader, Info(options))!);
+
+    public override void Write(Utf8JsonWriter writer, EffectChange<T> value, JsonSerializerOptions options)
+    {
+        if (value.IsSet) JsonSerializer.Serialize(writer, value.Value, Info(options));
+        else if (value.IsRemove) writer.WriteNullValue();
+        else throw new JsonException("a kept effect has no wire form");
+    }
+
+    private static JsonTypeInfo<T> Info(JsonSerializerOptions options) => (JsonTypeInfo<T>)options.GetTypeInfo(typeof(T));
+}
+
 /// <summary>Enums travel camelCase (<c>setBold</c>, <c>noMarkup</c>).</summary>
 internal sealed class CamelEnum<T>() : JsonStringEnumConverter<T>(JsonNamingPolicy.CamelCase, allowIntegerValues: false) where T : struct, Enum;
 

@@ -160,8 +160,8 @@ impl Editor {
             for i in v {
                 match i {
                     Inline::ControlStart(c) | Inline::ControlEnd(c) | Inline::Sym { control: Some(c), .. } => out.push(*c),
-                    Inline::Float(f, _) => {
-                        if let Some(tb) = &f.text_box {
+                    i if i.story().is_some() => {
+                        if let Some((_, tb)) = i.story() {
                             blocks(&tb.blocks, out);
                         }
                     }

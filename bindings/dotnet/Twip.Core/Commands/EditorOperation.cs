@@ -408,6 +408,13 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation InsertTextBox() => Op(CommandId.InsertTextBox);
 
+    /// <summary>Inserts a floating shape at the caret's paragraph, in front of the text, with the theme's default style, and selects it.</summary>
+    /// <param name="preset">The preset geometry.</param>
+    /// <param name="width">The width; 72 pt when not given.</param>
+    /// <param name="height">The height; 72 pt when not given, 0 for lines.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation InsertShape(ShapePreset preset, Length? width = null, Length? height = null) => Op(CommandId.InsertShape, Arg.Flatten(new ShapeInsert(preset, width, height)));
+
     /// <summary>Inserts a footnote at the selection.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation InsertFootnote() => Op(CommandId.InsertFootnote);
@@ -627,6 +634,70 @@ public abstract partial record EditorOperation
     /// <summary>Deletes the selected object.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation DeleteObject() => Op(CommandId.DeleteObject);
+
+    /// <summary>Changes the selected shape's preset geometry. Its text, fill, outline and effects stay; its adjust values reset.</summary>
+    /// <param name="preset">The preset geometry.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetShapePreset(ShapePreset preset) => Op(CommandId.SetShapePreset, new Arg("value", Node(preset)));
+
+    /// <summary>Sets one of the selected shape's adjust values.</summary>
+    /// <param name="index">The adjust value's index, in the preset's order.</param>
+    /// <param name="value">Its new value, in the preset's units (usually 100000ths).</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetShapeAdjust(int index, long value) => Op(CommandId.SetShapeAdjust, Arg.Flatten(new ShapeAdjust(index, value)));
+
+    /// <summary>Sets the selected objects' fill; <see cref="FillValue.FromStyle"/> gives them the style reference's fill again.</summary>
+    /// <param name="fill">The fill.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetShapeFill(FillValue fill) => Op(CommandId.SetShapeFill, new Arg("value", Node(fill)));
+
+    /// <summary>Sets the selected objects' outline. Unset values are kept.</summary>
+    /// <param name="options">The outline values to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetShapeLine(LineChange options) => Op(CommandId.SetShapeLine, Arg.Flatten(options));
+
+    /// <summary>Sets the selected objects' shadows, glow, soft edge and blur: each effect is kept, removed or set.</summary>
+    /// <param name="options">The effects to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetShapeEffects(EffectsChange options) => Op(CommandId.SetShapeEffects, Arg.Flatten(options));
+
+    /// <summary>Sets the selected shape's text insets, anchor, autofit, wrapping and direction. Unset values are kept.</summary>
+    /// <param name="options">The text body values to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetShapeText(ShapeTextChange options) => Op(CommandId.SetShapeText, Arg.Flatten(options));
+
+    /// <summary>Sets the selected picture's transparency, greyscale, brightness and contrast. Unset values are kept.</summary>
+    /// <param name="options">The adjustments to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetPictureAdjust(PictureAdjustChange options) => Op(CommandId.SetPictureAdjust, Arg.Flatten(options));
+
+    /// <summary>Rotates the selected objects.</summary>
+    /// <param name="degrees">The rotation, 0 to 360 degrees clockwise.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetObjectRotation(double degrees) => Op(CommandId.SetObjectRotation, new Arg("value", Node(degrees)));
+
+    /// <summary>Flips the selected objects.</summary>
+    /// <param name="axis">Which way.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation FlipObject(FlipAxis axis) => Op(CommandId.FlipObject, new Arg("value", Node(axis)));
+
+    /// <summary>Moves the selected floating object in the paint order, or behind or in front of the text.</summary>
+    /// <param name="arrange">Where it goes.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ArrangeObject(Arrange arrange) => Op(CommandId.ArrangeObject, new Arg("value", Node(arrange)));
+
+    /// <summary>Groups the selected floating objects (two or more, in one story) and selects the group.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation GroupObjects() => Op(CommandId.GroupObjects);
+
+    /// <summary>Ungroups the selected group and selects its children.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation UngroupObjects() => Op(CommandId.UngroupObjects);
+
+    /// <summary>Selects the next or previous child of the selected group. Not an edit: no undo step.</summary>
+    /// <param name="direction">Next or previous.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SelectGroupChild(NavigationDirection direction) => Op(CommandId.SelectGroupChild, new Arg("value", Node(direction)));
 
     /// <summary>Changes a field's code or display text.</summary>
     /// <param name="id">The field.</param>

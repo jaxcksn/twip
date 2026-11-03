@@ -4,13 +4,38 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use crate::docx::{Block, Document, Inline};
+use crate::docx::{Block, Document};
 
 use super::fragment::{BoxFragment, Child, Item, PageChild, PageFragment, RowFragment};
 use super::snapshot::Snapshot;
 use super::traverse::paint_lines;
 
 /// Paragraph and table ids renumbered in document order: body, stories, footnotes, endnotes, separators.
+/// The paragraphs of text boxes (any depth), by id.
+fn box_paras(doc: &Document) -> std::collections::HashSet<u64> {
+    fn walk(blocks: &[Block], inside: bool, out: &mut std::collections::HashSet<u64>) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => {
+                    if inside {
+                        out.insert(p.id);
+                    }
+                    for i in &p.inlines {
+                        if let Some(tb) = i.story().map(|(_, tb)| tb) {
+                            walk(&tb.blocks, true, out);
+                        }
+                    }
+                }
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, inside, out)),
+            }
+        }
+    }
+    let mut out = std::collections::HashSet::new();
+    doc.sections.iter().for_each(|s| walk(&s.blocks, false, &mut out));
+    doc.stories.values().for_each(|b| walk(b, false, &mut out));
+    out
+}
+
 fn ids(doc: &Document) -> HashMap<u64, usize> {
     fn walk(blocks: &[Block], out: &mut HashMap<u64, usize>) {
         for b in blocks {
@@ -19,9 +44,7 @@ fn ids(doc: &Document) -> HashMap<u64, usize> {
                     let n = out.len() + 1;
                     out.entry(p.id).or_insert(n);
                     for i in &p.inlines {
-                        if let Inline::Float(f, _) = i
-                            && let Some(tb) = &f.text_box
-                        {
+                        if let Some(tb) = i.story().map(|(_, tb)| tb) {
                             walk(&tb.blocks, out);
                         }
                     }
@@ -143,6 +166,7 @@ fn text_boxes(page: &PageFragment, out: &mut Vec<(&'static str, [f64; 4], Vec<u6
 /// The dump text of a snapshot.
 pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
     let ids = ids(doc);
+    let in_box = box_paras(doc);
     let id = |v: u64| if v == 0 { 0 } else { ids.get(&v).copied().unwrap_or(usize::MAX) };
     let mut s = String::new();
     let mut base = 0;
@@ -155,9 +179,11 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
             let ps: Vec<String> = ps.iter().map(|&p| id(p).to_string()).collect();
             writeln!(s, "X {kind} {} {} {} {} paras {}", f(r[0]), f(r[1]), f(r[2]), f(r[3]), ps.join(" ")).unwrap();
         }
-        // Lines are numbered in paint order. A line without ink (a tab alone, the empty line after a break, a line of
-        // spaces) gets an empty glyph record at its baseline and the end of what it holds, so it is listed with its x.
+        // Lines are numbered in paint order, text-box lines after the rest wherever FLOAT-16 paints their boxes. A line
+        // without ink (a tab alone, the empty line after a break, a line of spaces) gets an empty glyph record at its
+        // baseline and the end of what it holds, so it is listed with its x.
         let mut used = Vec::new();
+        let mut boxed = std::collections::HashSet::new();
         let mut bare = Vec::new();
         let mut objects = Vec::new();
         paint_lines(
@@ -168,12 +194,18 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                 }
             },
             &mut |line, para, placed, dx, dy| {
+                if para.is_some_and(|p| in_box.contains(&p.0)) {
+                    boxed.insert(line);
+                }
                 // An inline picture (one with a caret stop at its left edge; a float drawn with the line has none) shows
                 // as U+FFFC there, on its line's baseline.
                 for it in placed.line.items.iter() {
-                    if let Item::Image { rect, .. } = it
-                        && placed.line.atoms.iter().any(|a| !a.brk && (a.x0 - rect[0]).abs() < 0.01)
-                    {
+                    let rect = match it {
+                        Item::Image { rect, .. } => rect,
+                        Item::Shape(s) if s.float == 0 => &s.rect,
+                        _ => continue,
+                    };
+                    if placed.line.atoms.iter().any(|a| !a.brk && (a.x0 - rect[0]).abs() < 0.01) {
                         objects.push((line, dx + placed.x + rect[0], dy + placed.y + placed.line.baseline, para.map_or(0, |p| p.0)));
                     }
                 }
@@ -191,9 +223,10 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
             },
         );
         used.extend(bare.iter().chain(&objects).map(|b| b.0));
-        used.sort_unstable();
+        used.sort_unstable_by_key(|l| (boxed.contains(l), *l));
         used.dedup();
-        let number = |line: u32| base + used.binary_search(&line).expect("every numbered line was collected");
+        let order: std::collections::HashMap<u32, usize> = used.iter().enumerate().map(|(i, l)| (*l, i)).collect();
+        let number = |line: u32| base + order[&line];
         paint_lines(
             page,
             &mut |p| match p.absolute() {
@@ -227,6 +260,11 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                     writeln!(s, "I {} {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3]), key.index.map_or(-1, |i| i as isize)).unwrap()
                 }
                 Item::Gridline { line: b } => writeln!(s, "L {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3])).unwrap(),
+                Item::Turned(t) => writeln!(s, "T turned {} about {} {} items {}", f(t.deg), f(t.centre[0]), f(t.centre[1]), t.items.len()).unwrap(),
+                Item::Shape(sh) => {
+                    let b = sh.rect;
+                    writeln!(s, "S {} {} {} {} rot {} paths {}", f(b[0]), f(b[1]), f(b[2]), f(b[3]), f(sh.rot), sh.geom.paths.len()).unwrap()
+                }
             },
             &mut |_, _, _, _, _| {},
         );

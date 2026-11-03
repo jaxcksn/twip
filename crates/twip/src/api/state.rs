@@ -116,6 +116,10 @@ pub struct State {
     pub ruler: RulerModel,
     /// Formatting is held for `pasteFormatting`.
     pub format_painter: bool,
+    /// The document's 12 theme colours, in `ThemeColour` order (text1, background1, text2, background2, accent1 to
+    /// accent6, hyperlink, followedHyperlink), for an application's colour picker.
+    #[serde(default)]
+    pub theme_colours: Vec<Color>,
 }
 
 /// One command's state.
@@ -279,6 +283,12 @@ pub enum ObjectKind {
     Picture,
     /// A text box.
     TextBox,
+    /// A shape.
+    Shape,
+    /// A line or connector (a shape whose preset has no filled path).
+    Line,
+    /// A group of objects.
+    Group,
 }
 
 /// The selected picture or text box.
@@ -301,6 +311,24 @@ pub struct ObjectSelection {
     pub anchor_locked: Option<bool>,
     /// Where a floating object is and how text keeps from it; `null` for inline objects.
     pub placement: Option<ObjectPlacement>,
+    /// The shape's properties as written; `null` for objects without shape properties (frames) and kept graphics.
+    #[serde(default)]
+    pub shape: Option<crate::api::drawing::ShapeState>,
+    /// Its rotation, clockwise.
+    #[serde(default)]
+    pub rotation: crate::api::drawing::Degrees,
+    /// Flipped left to right.
+    #[serde(default)]
+    pub flip_h: bool,
+    /// Flipped top to bottom.
+    #[serde(default)]
+    pub flip_v: bool,
+    /// The selected child's place in its group; empty unless a group child is selected.
+    #[serde(default)]
+    pub child_path: Vec<u16>,
+    /// How many objects are selected (2 or more: a multi-selection, the other fields describing the first).
+    #[serde(default)]
+    pub count: u16,
 }
 
 /// A floating object's place and its wrapping options.

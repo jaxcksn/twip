@@ -495,6 +495,14 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task InsertTextBoxAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertTextBox(), ct);
 
+    /// <summary>Inserts a floating shape at the caret's paragraph, in front of the text, with the theme's default style, and selects it.</summary>
+    /// <param name="preset">The preset geometry.</param>
+    /// <param name="width">The width; 72 pt when not given.</param>
+    /// <param name="height">The height; 72 pt when not given, 0 for lines.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task InsertShapeAsync(ShapePreset preset, Length? width = null, Length? height = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertShape(preset, width, height), ct);
+
     /// <summary>Inserts a footnote at the selection.</summary>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
@@ -756,6 +764,83 @@ public sealed class EditorCommands
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task DeleteObjectAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.DeleteObject(), ct);
+
+    /// <summary>Changes the selected shape's preset geometry. Its text, fill, outline and effects stay; its adjust values reset.</summary>
+    /// <param name="preset">The preset geometry.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetShapePresetAsync(ShapePreset preset, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetShapePreset(preset), ct);
+
+    /// <summary>Sets one of the selected shape's adjust values.</summary>
+    /// <param name="index">The adjust value's index, in the preset's order.</param>
+    /// <param name="value">Its new value, in the preset's units (usually 100000ths).</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetShapeAdjustAsync(int index, long value, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetShapeAdjust(index, value), ct);
+
+    /// <summary>Sets the selected objects' fill; <see cref="FillValue.FromStyle"/> gives them the style reference's fill again.</summary>
+    /// <param name="fill">The fill.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetShapeFillAsync(FillValue fill, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetShapeFill(fill), ct);
+
+    /// <summary>Sets the selected objects' outline. Unset values are kept.</summary>
+    /// <param name="options">The outline values to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetShapeLineAsync(LineChange options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetShapeLine(options), ct);
+
+    /// <summary>Sets the selected objects' shadows, glow, soft edge and blur: each effect is kept, removed or set.</summary>
+    /// <param name="options">The effects to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetShapeEffectsAsync(EffectsChange options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetShapeEffects(options), ct);
+
+    /// <summary>Sets the selected shape's text insets, anchor, autofit, wrapping and direction. Unset values are kept.</summary>
+    /// <param name="options">The text body values to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetShapeTextAsync(ShapeTextChange options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetShapeText(options), ct);
+
+    /// <summary>Sets the selected picture's transparency, greyscale, brightness and contrast. Unset values are kept.</summary>
+    /// <param name="options">The adjustments to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetPictureAdjustAsync(PictureAdjustChange options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetPictureAdjust(options), ct);
+
+    /// <summary>Rotates the selected objects.</summary>
+    /// <param name="degrees">The rotation, 0 to 360 degrees clockwise.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetObjectRotationAsync(double degrees, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetObjectRotation(degrees), ct);
+
+    /// <summary>Flips the selected objects.</summary>
+    /// <param name="axis">Which way.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task FlipObjectAsync(FlipAxis axis, CancellationToken ct = default) => _session.RunAsync(EditorOperation.FlipObject(axis), ct);
+
+    /// <summary>Moves the selected floating object in the paint order, or behind or in front of the text.</summary>
+    /// <param name="arrange">Where it goes.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task ArrangeObjectAsync(Arrange arrange, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ArrangeObject(arrange), ct);
+
+    /// <summary>Groups the selected floating objects (two or more, in one story) and selects the group.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task GroupObjectsAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.GroupObjects(), ct);
+
+    /// <summary>Ungroups the selected group and selects its children.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task UngroupObjectsAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.UngroupObjects(), ct);
+
+    /// <summary>Selects the next or previous child of the selected group. Not an edit: no undo step.</summary>
+    /// <param name="direction">Next or previous.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SelectGroupChildAsync(NavigationDirection direction, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SelectGroupChild(direction), ct);
 
     /// <summary>Changes a field's code or display text.</summary>
     /// <param name="id">The field.</param>

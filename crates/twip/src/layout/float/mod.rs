@@ -189,10 +189,13 @@ mod tests {
             allow_overlap: true,
             layout_in_cell: true,
             order: 0,
+            z: 0,
             src: None,
             locked: false,
             frame_src: None,
             parts: Vec::new(),
+            shape: None,
+            rot_swap: false,
         });
         Placed {
             key: (0, 0, 0),

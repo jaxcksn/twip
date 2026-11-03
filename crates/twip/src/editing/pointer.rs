@@ -60,6 +60,9 @@ impl Editor {
 
     /// The pointer's shape during a drag: the border, handle, zone or text drag's; `None` with no drag.
     pub(super) fn drag_cursor(&self) -> Option<Cursor> {
+        if self.shape_insert.is_some() {
+            return Some(Cursor::Crosshair);
+        }
         if let Some(d) = self.border_drag {
             return Some(match d.border {
                 Border::Column(_) => Cursor::ResizeHorizontal,

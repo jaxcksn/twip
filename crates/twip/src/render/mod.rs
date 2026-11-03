@@ -7,6 +7,7 @@ use std::collections::HashMap;
 mod overlay;
 pub mod retained;
 pub mod ruler;
+mod shape;
 #[cfg(target_os = "emscripten")]
 pub mod web;
 #[cfg(twip_dawn)]
@@ -39,6 +40,8 @@ pub struct Frame {
 pub struct Renderer {
     typefaces: HashMap<(usize, u32, u32), Option<Typeface>>,
     images: HashMap<ImageKey, Option<Image>>,
+    /// Skia paths of the shapes drawn, by geometry.
+    paths: shape::PathCache,
     /// Placeholder icons as Skia paths, by the icon's address.
     icons: HashMap<usize, Vec<(skia_safe::Path, Option<u32>)>>,
     /// The host's look images, decoded once, by the bytes' address.
@@ -281,6 +284,15 @@ impl Renderer {
                 paint.set_color(Color::from_rgb(0x9d, 0xc3, 0xe6)).set_style(skia_safe::PaintStyle::Stroke).set_stroke_width(0.75);
                 paint.set_path_effect(skia_safe::PathEffect::dash(&[2.25, 1.5], 0.0));
                 canvas.draw_line((*x0 as f32, *y0 as f32), (*x1 as f32, *y1 as f32), &paint);
+            }
+            Item::Shape(s) => self.shape(canvas, s, images),
+            Item::Turned(t) => {
+                canvas.save();
+                canvas.rotate(t.deg as f32, Some(Point::new(t.centre[0] as f32, t.centre[1] as f32)));
+                for i in &t.items {
+                    self.item(canvas, i, images);
+                }
+                canvas.restore();
             }
             Item::Image { rect: [x0, y0, x1, y1], key } => {
                 let dst = Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32);

@@ -180,6 +180,7 @@ impl Session {
         let mut state = super::state::build(&mut self.editor, flags);
         drop(fonts);
         state.fonts = self.watch.state.clone();
+        state.theme_colours = self.editor.theme_colours();
         services::fill_state(self, &mut state);
         review::fill_state(self, &mut state);
         host::fill_state(self, &mut state);

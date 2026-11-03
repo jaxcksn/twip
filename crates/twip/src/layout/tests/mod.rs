@@ -20,6 +20,7 @@ mod reuse;
 mod robustness;
 mod rows;
 mod rule_ids;
+pub(crate) mod shapes;
 mod showcase;
 mod signatures;
 mod snapshot_immutable;
@@ -136,13 +137,18 @@ pub fn page_chars(doc: &Document) -> Vec<Vec<(char, f64, f64)>> {
 
 /// A document read from a package of the given parts (name, XML); `None` if it doesn't read.
 pub fn package(parts: &[(&str, &str)]) -> Option<Document> {
+    crate::docx::read(&package_bytes(parts)?).ok()
+}
+
+/// The package of `parts`, as bytes.
+pub fn package_bytes(parts: &[(&str, &str)]) -> Option<Vec<u8>> {
     use std::io::Write;
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     for (name, xml) in parts {
         z.start_file(*name, zip::write::SimpleFileOptions::default()).ok()?;
         z.write_all(xml.as_bytes()).ok()?;
     }
-    crate::docx::read(&z.finish().ok()?.into_inner()).ok()
+    Some(z.finish().ok()?.into_inner())
 }
 
 /// `n` words of filler text.

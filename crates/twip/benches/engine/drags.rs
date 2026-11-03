@@ -76,6 +76,40 @@ fn moving(bencher: Bencher, name: &str, border: Border) {
         });
 }
 
+/// Dragging a shape with live layout on a page of 100 shapes (`shapes_doc`): one pointer move of the pressed shape,
+/// alternating 10 and 30 px from the press, with the frame that shows it. Budget: 16 ms per frame.
+#[divan::bench(sample_size = 1)]
+fn shape_live(bencher: Bencher) {
+    let mut pixels = vec![0u8; (W * H * 4) as usize];
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("the session was just created");
+    s.open(&super::shapes_doc()).expect("the document opens");
+    s.host().set_size(f64::from(W), f64::from(H), 1.0);
+    s.host().set_focus(true);
+    while s.host().idle() {}
+    s.host().frame_rgba(&mut pixels, W, H).expect("a frame");
+    // The first shape's middle: the first paragraph's start, plus half of its 90 x 60 pt (at 4/3 px a point).
+    let c = s.host().frame_info();
+    let at = Point { x: c.caret_x + 45.0 * 4.0 / 3.0, y: c.caret_y + 30.0 * 4.0 / 3.0 };
+    s.pointer(PointerKind::Down, at, PointerButton::Primary, 1, NONE);
+    let (s, pixels, mut far, prof) = (RefCell::new(s), RefCell::new(pixels), false, RefCell::new(super::Prof::default()));
+    bencher
+        .with_inputs(|| {
+            far = !far;
+            super::Prof::skip();
+            Point { x: at.x + if far { 30.0 } else { 10.0 }, ..at }
+        })
+        .bench_local_values(|to| {
+            let mut s = s.borrow_mut();
+            s.pointer(PointerKind::Move, to, PointerButton::Primary, 0, NONE);
+            let frame = s.host().frame_rgba(&mut pixels.borrow_mut(), W, H).expect("a frame");
+            prof.borrow_mut().add();
+            frame
+        });
+    prof.borrow_mut().print("shape_live");
+}
+
 /// A column border's pointer move with its frame. Budget: p95 at most 2 ms of engine time.
 #[divan::bench(args = DOCS, sample_size = 1)]
 fn column_border(bencher: Bencher, name: &str) {

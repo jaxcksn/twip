@@ -606,3 +606,16 @@ fn the_default_selection_keeps_black_text_readable() {
     assert!(contrast >= 4.5, "black on the selection: {contrast:.1}:1");
     assert_eq!(crate::render::Palette::default().selection, crate::render::rgb(selection), "the renderer's default is the API's");
 }
+
+#[test]
+fn an_inserted_shape_is_the_selected_object() {
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Shapes".into())).expect("types");
+    let preset = crate::api::drawing::ShapePreset::from_name("star5").expect("a preset");
+    s.run(Command::InsertShape(crate::api::drawing::ShapeInsert { preset, width: None, height: None })).expect("inserts");
+    let o = s.state().selection.object.clone();
+    assert!(o.is_some(), "{:?}", s.state().selection);
+    assert_eq!(o.and_then(|o| o.shape).and_then(|s| s.preset), Some(preset));
+}

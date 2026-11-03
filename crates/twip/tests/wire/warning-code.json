@@ -9,5 +9,6 @@
   "range-unpaired",
   "author-missing",
   "comment-unanchored",
-  "comment-reference-orphan"
+  "comment-reference-orphan",
+  "unknown-preset"
 ]

@@ -30,7 +30,7 @@ pub mod traverse;
 pub(crate) mod units;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use document::{layout, layout_with};
 pub use ids::{FloatId, FragmentId, LayoutRevision, ParaId, Revision, TableId, Unit};

@@ -347,6 +347,7 @@ impl Editor {
         let body_text = editable && story == StoryId::Body && !in_table;
         let object = f.and_then(|f| f.object);
         let floating = matches!(object, Some(ObjectKind::Float | ObjectKind::TextBox));
+        let shape = self.shape_info();
         let in_list = f.is_some_and(|f| f.list.is_some());
         let header_footer = matches!(story, StoryId::HeaderFooter(_));
         let can_merge = matches!(self.selection, Selection::Cells { anchor, focus, .. } if anchor != focus);
@@ -456,6 +457,18 @@ impl Editor {
                 (C::SetObjectSize | C::SetObjectWrap | C::SetAltText | C::DeleteObject, _) => (editable && object.is_some(), (None, None)),
                 (C::ResetObjectSize, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::SetAnchorLocked | C::SetObjectPosition | C::SetObjectWrapOptions, _) => (editable && floating, (None, None)),
+                (C::SetShapePreset | C::SetShapeAdjust | C::SetShapeText, _) => (editable && shape.as_ref().is_some_and(|s| s.sp), (None, None)),
+                (C::SetShapeFill | C::SetShapeEffects, _) => (editable && shape.is_some(), (None, None)),
+                (C::SetShapeLine, _) => (editable && shape.as_ref().is_some_and(|s| s.sp || s.pic), (None, None)),
+                (C::SetPictureAdjust, _) => (editable && shape.as_ref().is_some_and(|s| s.pic), (None, None)),
+                (C::SetObjectRotation | C::FlipObject, _) => (editable && shape.is_some(), (None, None)),
+                (C::ArrangeObject, _) => (editable && floating, (None, None)),
+                (C::GroupObjects, _) => (editable && self.selected_floats().len() >= 2, (None, None)),
+                (C::UngroupObjects, _) => (editable && shape.as_ref().is_some_and(|s| s.group && s.child_path.is_empty()), (None, None)),
+                (C::SelectGroupChild, _) => {
+                    let in_group = shape.as_ref().is_some_and(|s| s.group || !s.child_path.is_empty());
+                    (in_group, (None, None))
+                }
                 (C::SetTrackChanges, _) => (editable && !(locked && tracking), (Some(tracking), None)),
                 (C::SetMarkupView, _) => (true, (None, Some(CommandValue::MarkupView(self.doc.review.view)))),
                 (C::SetActiveComment | C::SelectComment, _) => (comments, (None, None)),
@@ -554,8 +567,13 @@ impl Editor {
             Some((_, true)) => ObjectWrap::BehindText,
             Some((_, false)) => ObjectWrap::InFrontOfText,
         };
+        let shape = self.shape_info().unwrap_or_default();
         Some(ObjectSelection {
-            kind: if o.kind == ObjectKind::TextBox { crate::api::state::ObjectKind::TextBox } else { crate::api::state::ObjectKind::Picture },
+            kind: shape.kind.unwrap_or(if o.kind == ObjectKind::TextBox {
+                crate::api::state::ObjectKind::TextBox
+            } else {
+                crate::api::state::ObjectKind::Picture
+            }),
             wrap,
             width: Points(o.width),
             height: Points(o.height),
@@ -563,6 +581,12 @@ impl Editor {
             decorative: false,
             anchor_locked: o.locked,
             placement: self.object_placement(),
+            shape: shape.state,
+            rotation: shape.rotation,
+            flip_h: shape.flip_h,
+            flip_v: shape.flip_v,
+            child_path: shape.child_path,
+            count: shape.count.max(1),
         })
     }
 

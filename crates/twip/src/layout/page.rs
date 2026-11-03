@@ -869,6 +869,21 @@ pub fn layout_body(
     } else if pos.block >= nblocks {
         section_end = Some(bottoms.iter().copied().fold(page_top, f64::max));
     }
+    // Inline shapes with text: their stories, where their lines put them.
+    let mut texts = Vec::new();
+    super::traverse::lines_in(&body, &mut |para, l, dx, dy| {
+        for (r, pic) in l.line.texts.iter() {
+            let (ox, oy) = (dx + l.x, dy + l.y);
+            texts.push((para.unwrap_or(super::ids::ParaId(0)), [r[0] + ox, r[1] + oy, r[2] + ox, r[3] + oy], pic.clone()));
+        }
+    });
+    if !texts.is_empty() {
+        let fields = super::text::FieldValues::default();
+        let senv = super::story::StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
+        for (para, rect, pic) in texts {
+            body.extend(super::story::inline_text_box(&pic, rect, para, &senv, memos)?);
+        }
+    }
     separators(&s.section_in(env.ctx.env.text.review.view).columns, cols, page_top, earlier, &mut body);
     if env.ctx.env.text.review.view.change_bars() {
         change_bars(space, &mut body);

@@ -1,0 +1,17 @@
+[
+  {
+    "theme": "accent1",
+    "transforms": [
+      {
+        "kind": "lumMod",
+        "value": 0.75
+      }
+    ]
+  },
+  {
+    "rgb": "#1F4E79"
+  },
+  {
+    "preset": "cornflowerBlue"
+  }
+]

@@ -161,6 +161,8 @@ public enum CommandId
     InsertPicture,
     /// <summary>Inserts a text box.</summary>
     InsertTextBox,
+    /// <summary>Inserts a floating shape at the caret's paragraph, in front of the text, with the theme's default style, and selects it.</summary>
+    InsertShape,
     /// <summary>Inserts a footnote at the selection.</summary>
     InsertFootnote,
     /// <summary>Inserts an endnote at the selection.</summary>
@@ -245,6 +247,32 @@ public enum CommandId
     SetAltText,
     /// <summary>Deletes the selected object.</summary>
     DeleteObject,
+    /// <summary>Changes the selected shape's preset geometry. Its text, fill, outline and effects stay; its adjust values reset.</summary>
+    SetShapePreset,
+    /// <summary>Sets one of the selected shape's adjust values.</summary>
+    SetShapeAdjust,
+    /// <summary>Sets the selected objects' fill; <see cref="FillValue.FromStyle"/> gives them the style reference's fill again.</summary>
+    SetShapeFill,
+    /// <summary>Sets the selected objects' outline. Unset values are kept.</summary>
+    SetShapeLine,
+    /// <summary>Sets the selected objects' shadows, glow, soft edge and blur: each effect is kept, removed or set.</summary>
+    SetShapeEffects,
+    /// <summary>Sets the selected shape's text insets, anchor, autofit, wrapping and direction. Unset values are kept.</summary>
+    SetShapeText,
+    /// <summary>Sets the selected picture's transparency, greyscale, brightness and contrast. Unset values are kept.</summary>
+    SetPictureAdjust,
+    /// <summary>Rotates the selected objects.</summary>
+    SetObjectRotation,
+    /// <summary>Flips the selected objects.</summary>
+    FlipObject,
+    /// <summary>Moves the selected floating object in the paint order, or behind or in front of the text.</summary>
+    ArrangeObject,
+    /// <summary>Groups the selected floating objects (two or more, in one story) and selects the group.</summary>
+    GroupObjects,
+    /// <summary>Ungroups the selected group and selects its children.</summary>
+    UngroupObjects,
+    /// <summary>Selects the next or previous child of the selected group. Not an edit: no undo step.</summary>
+    SelectGroupChild,
     /// <summary>Changes a field's code or display text.</summary>
     SetField,
     /// <summary>Sets computed field results. A token joins the update step a FieldsUpdateRequested event started.</summary>

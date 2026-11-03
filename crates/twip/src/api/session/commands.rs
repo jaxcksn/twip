@@ -46,6 +46,11 @@ impl Session {
         crate::api::catalog::catalog()
     }
 
+    /// The shape gallery: Word's Insert > Shapes presets in its groups.
+    pub fn shape_gallery() -> Vec<crate::api::drawing::ShapeGalleryGroup> {
+        crate::api::drawing::shape_gallery()
+    }
+
     /// Whether `id` can run now, and its state value.
     pub fn command_state(&self, id: CommandId) -> Option<&CommandState> {
         self.state.commands.get(&id)
@@ -138,6 +143,17 @@ impl Session {
             C::SetTableWidth(TableWidth::Points { value }) => within("the width", value.0, 0.0, MAX),
             C::SetTableWidth(TableWidth::Percent { value }) => within("the width", *value, 1.0, 600.0),
             C::SetObjectSize(s) => length("the width", s.width, 1.0, MAX).and(length("the height", s.height, 1.0, MAX)),
+            C::InsertShape(i) => length("the width", i.width, 0.0, MAX).and(length("the height", i.height, 0.0, MAX)),
+            C::SetShapeFill(f) => f.to_model(&mut |data| crate::docx::image::image_info(data).map(|_| 0)).map(|_| ()).map_err(Error::invalid),
+            C::SetShapeLine(l) => l.apply(None, &mut |_| Some(0)).map(|_| ()).map_err(Error::invalid),
+            C::SetShapeEffects(e) => e.apply(None).map(|_| ()).map_err(Error::invalid),
+            C::SetShapeText(t) => t.apply(&crate::drawing::text::BodyProps::default()).map(|_| ()).map_err(Error::invalid),
+            C::SetPictureAdjust(a) => a.apply(&[]).map(|_| ()).map_err(Error::invalid),
+            C::SetObjectRotation(d) => within("the rotation", *d, 0.0, 360.0),
+            C::SetShapeAdjust(a) => {
+                let count = self.editor.shape_info().and_then(|s| s.state).map_or(0, |s| s.adjust.len());
+                if usize::from(a.index) < count { Ok(()) } else { Err(Error::invalid(format!("the shape has {count} adjust values"))) }
+            }
             C::SetObjectPosition(p) => {
                 let axes = [p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))];
                 for (aligned, offset) in axes.into_iter().flatten() {

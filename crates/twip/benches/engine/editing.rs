@@ -210,6 +210,21 @@ fn typing_api(bencher: Bencher) {
         .bench_local_values(|()| s.borrow_mut().text("x"));
 }
 
+/// Typing in the first paragraph of a page with 100 theme-styled shapes (`shapes_doc`: mixed presets, some with
+/// text, shadows and glows, some wrapping). Budget: within the spread of `typing_api`.
+#[divan::bench(sample_size = 1)]
+fn typing_shapes(bencher: Bencher) {
+    let fonts = Fonts::system();
+    let mut e = Editor::open(&super::shapes_doc(), &fonts).expect("the document opens");
+    e.complete(&fonts);
+    let (para, len) = text_paras(&e)[0];
+    caret(&mut e, para, len / 2);
+    let e = RefCell::new(e);
+    bencher
+        .with_inputs(|| while e.borrow_mut().idle(&fonts) {})
+        .bench_local_values(|()| e.borrow_mut().execute(Command::InsertText("x".into()), &fonts));
+}
+
 /// Mail merge on `FX-MERGE-LARGE.docx` (2,000 elements, 500 references in one group).
 mod merge {
     use std::cell::RefCell;

@@ -10,6 +10,7 @@
 
 pub mod catalog;
 pub mod command;
+pub mod drawing;
 pub mod engine;
 pub mod error;
 pub mod event;

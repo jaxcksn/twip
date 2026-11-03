@@ -8,6 +8,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::drawing::{
+    Arrange, Degrees, EffectsChange, FillValue, FlipAxis, LineChange, PictureAdjustChange, ShapeAdjust, ShapeInsert, ShapePreset, ShapeTextChange,
+};
 use super::review::{Body, MarkupView};
 use super::state::Mode;
 use super::value::{
@@ -229,6 +232,8 @@ commands! {
     InsertPicture(Picture),
     /// A text box. Undo: one step.
     InsertTextBox,
+    /// A floating shape at the caret's paragraph, in front of the text, with the theme's default style. Undo: one step.
+    InsertShape(ShapeInsert),
     /// A footnote at the caret. Undo: one step.
     InsertFootnote,
     /// An endnote at the caret. Undo: one step.
@@ -300,7 +305,7 @@ commands! {
     /// Which parts of the table style apply. Undo: one step.
     SetTableStyleOptions(TableStyleChange),
 
-    // Pictures and text boxes
+    // Objects
     /// The selected object's size (1…1584 pt). Undo: one step.
     SetObjectSize(ObjectSize),
     /// The selected picture at its original size. Undo: one step.
@@ -317,6 +322,34 @@ commands! {
     SetAltText(AltText),
     /// Deletes the selected object. Undo: one step.
     DeleteObject,
+    /// The selected shape's preset geometry; its text, fill, outline and effects stay and its adjust values reset.
+    /// Undo: one step.
+    SetShapePreset(#[serde(with = "value")] ShapePreset),
+    /// One of the selected shape's adjust values. Undo: one step.
+    SetShapeAdjust(ShapeAdjust),
+    /// The selected objects' fill (`fromStyle`: the style reference's again). Undo: one step.
+    SetShapeFill(#[serde(with = "value")] FillValue),
+    /// The selected objects' outline; what isn't given is kept. Undo: one step.
+    SetShapeLine(LineChange),
+    /// The selected objects' shadows, glow, soft edge and blur; what isn't given is kept, `null` removes. Undo: one
+    /// step.
+    SetShapeEffects(EffectsChange),
+    /// The selected shape's text insets, anchor, autofit, wrapping and direction. Undo: one step.
+    SetShapeText(ShapeTextChange),
+    /// The selected picture's transparency, greyscale, brightness and contrast. Undo: one step.
+    SetPictureAdjust(PictureAdjustChange),
+    /// The selected objects' rotation (0…360°, clockwise). Undo: one step.
+    SetObjectRotation(#[serde(with = "value")] Degrees),
+    /// Flips the selected objects. Undo: one step.
+    FlipObject(#[serde(with = "value")] FlipAxis),
+    /// Moves the selected floating object in the paint order, or behind or in front of the text. Undo: one step.
+    ArrangeObject(#[serde(with = "value")] Arrange),
+    /// Groups the selected floating objects (two or more, one story). Undo: one step.
+    GroupObjects,
+    /// Ungroups the selected group. Undo: one step.
+    UngroupObjects,
+    /// Selects the next or previous child of the selected group. Undo: view.
+    SelectGroupChild(#[serde(with = "value")] Order),
 
     // Fields
     /// Changes a field's code or result. Undo: one step.

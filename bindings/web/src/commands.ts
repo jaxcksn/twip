@@ -13,7 +13,25 @@ import type {
   VerticalPosition,
   WrapSide,
 } from './state.js';
-import type { Color, CommentId, ElementId, Points, RevisionId, StyleId } from './types.js';
+import type {
+  Arrange,
+  Color,
+  CommentId,
+  Degrees,
+  EffectsChange,
+  ElementId,
+  FillValue,
+  FlipAxis,
+  LineChange,
+  PictureAdjustChange,
+  Points,
+  RevisionId,
+  ShapeAdjust,
+  ShapeInsert,
+  ShapePreset,
+  ShapeTextChange,
+  StyleId,
+} from './types.js';
 
 /** Which elements a field command acts on: the given ids, or the selection's by default. */
 export interface FieldTargets {
@@ -224,6 +242,11 @@ export interface Commands {
   insertPicture(options: { data: Uint8Array; altText?: string }): Promise<void>;
   /** Inserts a text box. */
   insertTextBox(): Promise<void>;
+  /**
+   * Inserts a floating shape at the caret's paragraph, in front of the text, with the theme's default style, and
+   * selects it.
+   */
+  insertShape(options: ShapeInsert): Promise<void>;
   /** Inserts a footnote. */
   insertFootnote(): Promise<void>;
   /** Inserts an endnote. */
@@ -305,7 +328,7 @@ export interface Commands {
     bandedColumns?: boolean;
   }): Promise<void>;
 
-  // Pictures and text boxes: the selected object
+  // Objects: the selected object
   /** Sets the object's size, 1 to 1584. */
   setObjectSize(options: { width?: Points; height?: Points; lockAspect?: boolean }): Promise<void>;
   /** Resets the object to its original size. */
@@ -331,6 +354,32 @@ export interface Commands {
   setAltText(options: { text: string; decorative?: boolean }): Promise<void>;
   /** Deletes the object. */
   deleteObject(): Promise<void>;
+  /** Changes the shape's preset geometry; its text, fill, outline and effects stay and its adjust values reset. */
+  setShapePreset(preset: ShapePreset): Promise<void>;
+  /** Sets one of the shape's adjust values. */
+  setShapeAdjust(options: ShapeAdjust): Promise<void>;
+  /** Sets the selected objects' fill; `fromStyle` gives them the style reference's again. */
+  setShapeFill(fill: FillValue): Promise<void>;
+  /** Sets the selected objects' outline; unset fields keep their value. */
+  setShapeLine(change: LineChange): Promise<void>;
+  /** Sets the selected objects' shadows, glow, soft edge and blur; unset fields keep their value, `null` removes. */
+  setShapeEffects(change: EffectsChange): Promise<void>;
+  /** Sets the shape's text insets, anchor, autofit, wrapping and direction; unset fields keep their value. */
+  setShapeText(change: ShapeTextChange): Promise<void>;
+  /** Sets the picture's transparency, greyscale, brightness and contrast; unset fields keep their value. */
+  setPictureAdjust(change: PictureAdjustChange): Promise<void>;
+  /** Sets the selected objects' rotation, 0 to 360 degrees clockwise. */
+  setObjectRotation(degrees: Degrees): Promise<void>;
+  /** Flips the selected objects. */
+  flipObject(axis: FlipAxis): Promise<void>;
+  /** Moves the floating object in the paint order, or behind or in front of the text. */
+  arrangeObject(where: Arrange): Promise<void>;
+  /** Groups the selected floating objects: two or more, in one story. The group is selected. */
+  groupObjects(): Promise<void>;
+  /** Ungroups the selected group. Its children are selected. */
+  ungroupObjects(): Promise<void>;
+  /** Selects the next or previous child of the selected group. View. */
+  selectGroupChild(direction: 'next' | 'previous'): Promise<void>;
 
   // Fields
   /** Changes a field's code or display. */
@@ -453,15 +502,15 @@ export interface Commands {
 export type CommandId = keyof Commands;
 
 /**
- * An op's fields besides `type`. A single argument (a primitive, {@link RichText}, bytes, an array, or a union with a
- * primitive) goes in `value`; an options object, and a tagged value such as {@link LineSpacing} or
- * {@link TableWidth}, is spread into the op.
+ * An op's fields besides `type`. A single argument (a primitive, {@link RichText}, bytes, an array, a
+ * {@link FillValue}, whose `type` would clash with the op's, or a union with a primitive) goes in `value`; an options
+ * object, and a tagged value such as {@link LineSpacing} or {@link TableWidth}, is spread into the op.
  */
 export type OpArgs<K extends CommandId> = Parameters<Commands[K]> extends []
   ? {}
   : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [string | number | boolean | null]
     ? { value: Exclude<Parameters<Commands[K]>[0], undefined> }
-    : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | readonly unknown[]]
+    : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | FillValue | readonly unknown[]]
       ? { value: Exclude<Parameters<Commands[K]>[0], undefined> }
       : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [object]
         ? Exclude<Parameters<Commands[K]>[0], undefined>
@@ -604,6 +653,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   insertTable: 'spread',
   insertPicture: 'spread',
   insertTextBox: 'none',
+  insertShape: 'spread',
   insertFootnote: 'none',
   insertEndnote: 'none',
   insertHyperlink: 'spread',
@@ -646,6 +696,19 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setObjectWrapOptions: 'spread',
   setAltText: 'spread',
   deleteObject: 'none',
+  setShapePreset: 'value',
+  setShapeAdjust: 'spread',
+  setShapeFill: 'value',
+  setShapeLine: 'spread',
+  setShapeEffects: 'spread',
+  setShapeText: 'spread',
+  setPictureAdjust: 'spread',
+  setObjectRotation: 'value',
+  flipObject: 'value',
+  arrangeObject: 'value',
+  groupObjects: 'none',
+  ungroupObjects: 'none',
+  selectGroupChild: 'value',
   setField: 'spread',
   setFieldResults: 'spread',
   updateFields: 'spread',
