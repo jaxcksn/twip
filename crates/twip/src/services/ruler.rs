@@ -12,8 +12,11 @@ use crate::editing::Editor;
 use crate::editing::position::StoryId;
 use crate::editing::view::{RulerMeasure, Tone};
 
-/// A ruler band's thickness, CSS px.
-pub const BAND: f64 = 24.0;
+/// A ruler band's thickness, CSS px: the paper strip and the desk on both sides of it.
+pub const BAND: f64 = 22.0;
+
+/// The desk between a band's edges and its paper strip, CSS px.
+pub const INSET: f64 = 3.0;
 
 /// Below the horizontal ruler's band, CSS px: a hover hint's top, a quiet drag's chip's top, and a drag's dimension
 /// line.
@@ -25,7 +28,7 @@ const DIMENSION_Y: f64 = 51.0;
 const REMOVE_BELOW: f64 = 30.0;
 
 /// The tab type box in the rulers' corner, CSS px.
-pub const SELECTOR: ClientRect = ClientRect { left: 0.0, top: 3.0, width: 18.0, height: 18.0 };
+pub const SELECTOR: ClientRect = ClientRect { left: INSET, top: INSET, width: BAND - 2.0 * INSET, height: BAND - 2.0 * INSET };
 
 /// A section's text columns between `left` and `right` (page points).
 fn columns(s: &Section, left: f64, right: f64) -> Vec<Span> {
@@ -633,7 +636,7 @@ mod tests {
         // The dimension line is 51 px below the band, from the text start to the marker.
         assert_eq!(
             d(Marker::FirstLine, 108.0, false, s, false),
-            [RulerMeasure::Dimension { from: [72.0, 45.0], to: [108.0, 45.0], label: "First line 0.50″".into(), tone: Tone::Accent }]
+            [RulerMeasure::Dimension { from: [72.0, 43.0], to: [108.0, 43.0], label: "First line 0.50″".into(), tone: Tone::Accent }]
         );
         // Alt, or the full level, adds the change since the press (the first line was 0.75 in).
         assert_eq!(labels(&d(Marker::FirstLine, 108.0, false, s, true)), ["First line 0.50″  Δ −0.25″"]);
@@ -645,7 +648,7 @@ mod tests {
         assert_eq!(labels(&d(Marker::TextStart, 90.0, false, s, false)), ["Left margin 1.25″"]);
         assert_eq!(
             d(Marker::TextEnd, 540.0, false, s, false),
-            [RulerMeasure::Dimension { from: [540.0, 45.0], to: [612.0, 45.0], label: "Right margin 1.00″".into(), tone: Tone::Accent }]
+            [RulerMeasure::Dimension { from: [540.0, 43.0], to: [612.0, 43.0], label: "Right margin 1.00″".into(), tone: Tone::Accent }]
         );
         // A stop dragged off the ruler says what the release does.
         assert_eq!(labels(&d(Marker::Tab(144.0), 270.0, true, s, false)), ["Release to remove tab stop"]);

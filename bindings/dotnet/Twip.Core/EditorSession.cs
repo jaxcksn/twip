@@ -264,15 +264,13 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
 
     /// <summary>
     /// A click or command asked for a popover: show it at its anchor and answer it with its commands. Attached only.
-    /// While nothing handles it, <c>DocumentEditor</c> shows its own.
+    /// The application draws it; when it closes it on its own, <see cref="EditorCommands.ClosePopoverAsync"/>.
     /// </summary>
     public event EventHandler<PopoverRequestedEventArgs>? PopoverRequested;
 
-    /// <summary>The engine dismissed the open popover: Esc, a press elsewhere, or its target gone. Close yours.</summary>
+    /// <summary>The engine dismissed the open popover: Esc, a press elsewhere, its answer, or its target gone. Close yours.</summary>
     public event EventHandler? PopoverClosed;
 
-    /// <summary>The popovers no <see cref="PopoverRequested"/> handler takes: the editor control's own.</summary>
-    internal event EventHandler<PopoverRequestedEventArgs>? UnhandledPopover;
 
     /// <summary>A popover's entry asked for a dialog (AutoCorrect rules…), as the engine's requests do.</summary>
     internal void RequestDialog(DialogKind kind) => Notify(() => Raise(DialogRequested, new DialogRequestedEventArgs(kind, _state)));
@@ -581,7 +579,7 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
             case "popoverRequested":
                 var popover = root.Deserialize(ctx.Popover)!;
                 if (_host is { } popoverHost) popover = popoverHost.ToClient(popover);
-                Notify(() => Raise(PopoverRequested ?? UnhandledPopover, new PopoverRequestedEventArgs(popover, snapshot)));
+                Notify(() => Raise(PopoverRequested, new PopoverRequestedEventArgs(popover, snapshot)));
                 break;
             case "popoverClosed":
                 Notify(() => Raise(PopoverClosed, EventArgs.Empty));

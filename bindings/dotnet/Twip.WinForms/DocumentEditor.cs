@@ -52,7 +52,6 @@ public class DocumentEditor : Control
     private bool _themeSet;
     private bool _backColorSet; // the application set BackColor; until then it follows the theme's desk
     private bool _followingDesk;
-    private PopoverDropDown? _popover;
     private static readonly Color DefaultAccent = Color.FromArgb(0x0A, 0x74, 0xE4);
 
     /// <summary>Creates an editor with its own session over a blank document. Designer-safe.</summary>
@@ -81,8 +80,6 @@ public class DocumentEditor : Control
         Controls.Add(_vertical);
         session.StateChanged += OnStateChanged;
         session.CommentAnchorsChanged += OnCommentAnchorsChanged;
-        session.UnhandledPopover += OnPopoverRequested;
-        session.PopoverClosed += OnPopoverClosed;
         if (!_designTime) Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
     }
 
@@ -168,7 +165,7 @@ public class DocumentEditor : Control
     }
 
     /// <summary>
-    /// The chrome's colour scheme: the desk, rulers, handles, guides, readouts and popovers. While Windows' high
+    /// The chrome's colour scheme: the desk, rulers, handles, guides and readouts. While Windows' high
     /// contrast is on, the editor uses the system colours instead (<see cref="ChromeTheme.HighContrast"/>).
     /// </summary>
     [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -688,54 +685,9 @@ public class DocumentEditor : Control
     private void Follow(EditorState state)
     {
         State.Update(state);
+        _tabSelector = state.View.TabSelector;
         if (state.View.Background.Color is { } desk) FollowDesk(desk);
     }
-
-    // Popovers: shown here unless the application handles EditorSession.PopoverRequested.
-
-    private void OnPopoverRequested(object? sender, PopoverRequestedEventArgs e)
-    {
-        if (InvokeRequired || IsDisposed || !IsHandleCreated) return;
-        ShowPopover(e.Popover);
-    }
-
-    private void OnPopoverClosed(object? sender, EventArgs e)
-    {
-        if (InvokeRequired || IsDisposed) return;
-        ClosePopover();
-    }
-
-    /// <summary>The popover open now, for tests.</summary>
-    internal PopoverDropDown? OpenPopover => _popover;
-
-    internal void ShowPopover(Popover popover)
-    {
-        ClosePopover();
-        var dropDown = new PopoverDropDown(this, popover);
-        dropDown.Closed += (_, _) =>
-        {
-            // Closed on its own (Esc, a click elsewhere): the engine's closes too.
-            if (_popover == dropDown)
-            {
-                _popover = null;
-                Observe(Session.Commands.ClosePopoverAsync());
-            }
-            BeginInvoke(dropDown.Dispose);
-        };
-        _popover = dropDown;
-        dropDown.ShowAt();
-    }
-
-    internal void ClosePopover()
-    {
-        if (_popover is not { } dropDown) return;
-        _popover = null;
-        if (dropDown.Visible) dropDown.Close(ToolStripDropDownCloseReason.CloseCalled); // Closed disposes it
-        else BeginInvoke(dropDown.Dispose);
-    }
-
-    /// <summary>The tab type picker's answer: <see cref="TabSelector"/> follows it.</summary>
-    internal void TabSelectorPicked(TabSelector value) => _tabSelector = value;
 
     internal void Announce(string text) => ((DocumentAccessibleObject)AccessibilityObject).Announce(text);
 
@@ -989,9 +941,6 @@ public class DocumentEditor : Control
         {
             Session.StateChanged -= OnStateChanged;
             Session.CommentAnchorsChanged -= OnCommentAnchorsChanged;
-            Session.UnhandledPopover -= OnPopoverRequested;
-            Session.PopoverClosed -= OnPopoverClosed;
-            _popover?.Dispose();
             Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _caret.Destroy();
             _host?.Dispose();

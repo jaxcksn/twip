@@ -31,7 +31,7 @@ export function followDarkMode(editor: Editor): () => void {
   return () => dark.removeEventListener('change', follow);
 }
 
-// The application's own popovers: listening for popoverRequested turns the editor's off.
+// The popovers: the application draws them, and answers them with commands.
 export function ownPopovers(editor: Editor, show: (p: Popover, pick: (choice: string) => Promise<void>) => void, hide: () => void) {
   editor.on('popoverRequested', (p) => {
     switch (p.kind) {
@@ -50,9 +50,12 @@ export function ownPopovers(editor: Editor, show: (p: Popover, pick: (choice: st
         break;
     }
   });
-  // The engine dismissed it: Esc, a press elsewhere, or its target gone.
+  // The engine dismissed it: Esc, a press elsewhere, its answer, or its target gone.
   editor.on('popoverClosed', hide);
 }
+
+// Yours closed on its own (Esc, a click elsewhere): the engine's closes too.
+export const popoverDismissed = (editor: Editor) => editor.commands.closePopover();
 
 // #endregion
 

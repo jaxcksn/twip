@@ -7,7 +7,7 @@ import type { RulerView } from '../services/ruler.js';
 import { Method } from '../transport/protocol.js';
 import type { ClientPoint } from '../types.js';
 import { startA11y } from './a11y.js';
-import { type Chrome, startChrome, startPopovers } from './chrome.js';
+import { type Chrome, startChrome } from './chrome.js';
 import { startClipboard, type Clipboard } from './clipboard.js';
 import { createDom, Ledger } from './dom.js';
 import { startFrames } from './frames.js';
@@ -66,7 +66,6 @@ export async function mountHost(container: HTMLElement, s: Session, options: Mou
   chrome = startChrome(s, dom, ledger, frames, report, toViewport);
   const input = startInput(s, dom, ledger, report, claims);
   startIme(s, input.element, ledger, report);
-  startPopovers(s, dom, ledger, report, input.focus);
   const clipboard = startClipboard(s, dom, input.element, ledger, report, toViewport);
   const balloons = chrome.balloonLayer;
   startPointer(s, dom, ledger, scroll, report, input.focus, (t) => t instanceof Node && balloons.contains(t) && t !== balloons);

@@ -229,12 +229,14 @@ public sealed class SessionTests : IDisposable
     }
 
     [Fact]
-    public async Task TheTabTypePickerIsRequestedAndAnswered()
+    public async Task TheTabTypePickerIsRequestedAnsweredAndClosed()
     {
         Native.Require();
         await using var session = new EditorSession();
         var requested = new TaskCompletionSource<Popover>(TaskCreationOptions.RunContinuationsAsynchronously);
         session.PopoverRequested += (_, e) => requested.TrySetResult(e.Popover);
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.PopoverClosed += (_, _) => closed.TrySetResult();
         await session.Commands.ShowTabTypesAsync(Ct);
         var picker = Assert.IsType<Popover.TabType>(await requested.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct));
         Assert.Equal(TabSelector.Left, picker.Current);
@@ -244,6 +246,14 @@ public sealed class SessionTests : IDisposable
         await session.Commands.SetRulerTabTypeAsync(TabSelector.Decimal, Ct);
         Assert.Equal(TabSelector.Decimal, session.State.View.TabSelector);
         Assert.Equal("decimal", session.State.Commands[CommandId.SetRulerTabType].Value);
+        await closed.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        // The application closes its own: the engine's closes too, and with none open nothing happens.
+        closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await session.Commands.ShowTabTypesAsync(Ct);
+        await session.Commands.ClosePopoverAsync(Ct);
+        await closed.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+        await session.Commands.ClosePopoverAsync(Ct);
     }
 
     [Fact]

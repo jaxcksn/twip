@@ -153,8 +153,6 @@ export class Session {
   readonly hostListeners = new Set<(message: Message) => void>();
   /** A mounted host's view of an engine event before it is emitted: its viewport points become client points. */
   adjust: ((type: keyof TwipEvents, event: unknown) => unknown) | undefined;
-  /** A mounted host's own handling of an event the application doesn't listen to (its popovers). */
-  readonly fallbacks = new Map<keyof TwipEvents, (event: never) => void>();
   /** Run once on destroy, last added first. */
   readonly disposers: (() => void)[] = [];
   #closing: Promise<void> | undefined;
@@ -255,8 +253,6 @@ export class Session {
   emit<K extends keyof TwipEvents>(type: K, event: TwipEvents[K]): void {
     const listeners = [...(this.#listeners.get(type) ?? [])];
     if (type === 'error' && !listeners.length) console.error(event);
-    const fallback = listeners.length ? undefined : this.fallbacks.get(type);
-    if (fallback) this.#isolate(() => fallback(event as never));
     for (const listener of listeners) {
       if (this.destroyed) return;
       if (type === 'error') {

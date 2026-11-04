@@ -15,7 +15,7 @@ export interface View {
    */
   setBackground(color: Color | null): Promise<void>;
   /**
-   * The chrome's colour scheme (the desk, rulers, handles, guides, readouts and the editor's popovers), and its accent
+   * The chrome's colour scheme (the desk, rulers, handles, guides and readouts), and its accent
    * when given. Under the platform's forced-colours mode the editor keeps the high-contrast scheme and applies this
    * once the mode ends. `setViewOptions` with `theme` and `accent`.
    */
@@ -105,8 +105,8 @@ export type ObjectGrid = 'off' | 'whileDragging' | 'always';
 
 /**
  * The `popoverRequested` event: a popover to show by `anchor` (client px), and what answers it. One is open at a
- * time; `popoverClosed` says the engine dismissed it, and `closePopover` dismisses it from the application. A mounted
- * editor shows its own unless the application listens.
+ * time; `popoverClosed` says the engine dismissed it, and `closePopover` dismisses it from the application. The
+ * application draws it: the editor draws none.
  */
 export type Popover =
   | {

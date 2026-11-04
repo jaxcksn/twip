@@ -5,7 +5,7 @@ sidebar_position: 11
 
 # Appearance
 
-The editor's chrome (the desk around the pages, the rulers, handles, guides, readouts and popovers) has a light and a
+The editor's chrome (the desk around the pages, the rulers, handles, guides and readouts) has a light and a
 dark theme, an accent colour, and a high-contrast theme for the platform's high contrast mode. The page itself has its
 own setting, dark mode. None of it reaches the document: saving, PDF export and printing always use the document's
 colours.
@@ -19,8 +19,8 @@ colours.
 ## Theme and accent
 
 `setViewOptions({ theme, accent })` sets the chrome's scheme, `light` (the default) or `dark`, and its accent. The
-accent is any colour; the default is azure, `#0A74E4`. It colours the selection, handles, guides, active markers and
-the popovers' current choices. The dark theme draws a lighter, less saturated variant of it so it holds against dark
+accent is any colour; the default is azure, `#0A74E4`. It colours the selection, handles, guides and active markers.
+The dark theme draws a lighter, less saturated variant of it so it holds against dark
 surfaces, and the state reports what's drawn: `view.accent`, and `view.accentOn` for text on it. Use those two for
 chrome of your own that should match the editor's.
 
@@ -75,10 +75,9 @@ and text on it `highlightText`.
 ## Popovers
 
 The tab type picker, a tab stop's options and the AutoCorrect menu are popovers the engine asks for with
-`popoverRequested`: a `kind`, the anchor rectangle (client px on the web), and what the popover offers. The ready-made
-editors show them in the chrome's colours, keyboard-reachable (arrows, Enter, Esc) and announced as menus. An
-application that listens for `popoverRequested` shows its own instead, the same rule as the context menu. It answers
-with commands:
+`popoverRequested`: a `kind`, the anchor rectangle (client px on the web), and what the popover offers. Your
+application draws them, as it does the context menu: the editor draws none. Make them keyboard-reachable (arrows,
+Enter, Esc) and announce them as menus, in `view.accent` and `view.accentOn` to match the chrome. Answer with commands:
 
 | Popover | Offers | Answered with |
 |---|---|---|

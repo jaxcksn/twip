@@ -10,10 +10,11 @@ use super::{ChromeFace, chrome_typeface};
 use crate::api::services::{Popover, RulerView, TabSelector};
 use crate::api::value::TabAlignment;
 use crate::editing::view::{RulerMeasure, Tone};
-use crate::services::ruler::{BAND, Bands, HINT_Y, Marker, SELECTOR, marks};
+use crate::services::ruler::{BAND, Bands, HINT_Y, INSET, Marker, SELECTOR, marks};
 
-/// The vertical ruler's paper strip, CSS px wide, along the band's left edge.
-const STRIP: f32 = 18.0;
+/// A ruler's paper strip, from `S0` to `S1` across its band (CSS px): it floats on the desk.
+const S0: f32 = INSET as f32;
+const S1: f32 = (BAND - INSET) as f32;
 
 /// A marker a drag moves: where the drag puts it (page points along its ruler), and whether the release removes it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -173,9 +174,9 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
         for i in lo..=hi {
             let p = at(zero + i as f64 * minor).round();
             if i % steps == 0 {
-                tick(p, 10.0, &unit);
+                tick(p, 8.0, &unit);
             } else if steps % 2 == 0 && i % (steps / 2) == 0 {
-                tick(p, 6.0, &fine);
+                tick(p, 5.0, &fine);
             } else {
                 tick(p, 3.0, &fine);
             }
@@ -198,30 +199,30 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
         let start = moved(Marker::TextStart, r.text.start.0);
         let end = moved(Marker::TextEnd, r.text.end.0);
         let (page_l, page_r) = (x(0.0), x(r.page_width.0));
-        let paper = Rect::new(page_l, 0.0, page_r, band);
+        let paper = Rect::new(page_l, S0, page_r, S1);
         canvas.draw_rrect(RRect::new_rect_xy(paper, 2.0, 2.0), &fill(t.paper));
         canvas.draw_rrect(RRect::new_rect_xy(paper.with_outset((0.5, 0.5)), 2.5, 2.5), &stroke(t.line));
-        hatch(canvas, Rect::new(page_l, 0.0, x(start), band), 5.0, t.line);
-        hatch(canvas, Rect::new(x(end), 0.0, page_r, band), 5.0, t.line);
+        hatch(canvas, Rect::new(page_l, S0, x(start), S1), 5.0, t.line);
+        hatch(canvas, Rect::new(x(end), S0, page_r, S1), 5.0, t.line);
         for c in r.columns.windows(2) {
-            hatch(canvas, Rect::new(x(c[0].end.0), 0.0, x(c[1].start.0), band), 5.0, t.line);
+            hatch(canvas, Rect::new(x(c[0].end.0), S0, x(c[1].start.0), S1), 5.0, t.line);
         }
-        ticks(start, r.page_width.0, &|pt| x(pt), &|px, len, paint| rect(canvas, px, band - len, px + 1.0, band, paint), &|px, n| {
+        ticks(start, r.page_width.0, &|pt| x(pt), &|px, len, paint| rect(canvas, px, S1 - len, px + 1.0, S1, paint), &|px, n| {
             if let Some(font) = &numbers {
                 let (tw, _) = font.measure_str(n, None);
-                label(canvas, font, n, px - tw / 2.0 - 2.0, 3.0, 2.0, 0.0, Some((t.paper, 0.0)), t.ink);
+                label(canvas, font, n, px - tw / 2.0 - 2.0, S0 + 2.0, 2.0, 0.0, Some((t.paper, 0.0)), t.ink);
             }
         });
         // The margins' handles tint while hovered.
         for m in [Marker::TextStart, Marker::TextEnd].into_iter().filter(|m| f.hover == Some(*m)) {
             let at = x(if m == Marker::TextStart { start } else { end });
-            rect(canvas, at - 4.0, 0.0, at + 4.0, band, &fill(theme.accent.soft));
+            rect(canvas, at - 4.0, S0, at + 4.0, S1, &fill(theme.accent.soft));
         }
         // Table column markers: hatched boxes, accent while dragged.
         for (i, b) in r.table_columns.iter().enumerate() {
             let m = Marker::TableColumn(i as u32);
             let at = x(moved(m, b.0));
-            let cell = Rect::new(at - 4.0, 0.0, at + 4.0, band);
+            let cell = Rect::new(at - 4.0, S0, at + 4.0, S1);
             if dragged(m).is_some() {
                 canvas.draw_rect(cell, &fill(accent));
             } else {
@@ -240,9 +241,10 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
             let d = dragged(m);
             let on = d.is_some() || open.is_some_and(|p| (p - s.position.0).abs() < 0.5);
             let paint = faded(if on { accent } else { t.ink }, if d.is_some_and(|d| d.removing) { 0.25 } else { 1.0 });
-            tab_glyph(canvas, s.alignment, x(moved(m, start + s.position.0)), 10.0, &paint);
+            tab_glyph(canvas, s.alignment, x(moved(m, start + s.position.0)), S1 - 12.0, &paint);
         }
-        // The indent markers: first line at the top, hanging (with the left indent) and right at the bottom.
+        // The indent markers on the strip's edges: first line at the top, hanging (with the left indent) and right at
+        // the bottom.
         let left = match f.drag {
             Some(d) if matches!(d.marker, Marker::Hanging | Marker::Left) => d.at,
             _ => start + r.indents.left.0,
@@ -254,15 +256,15 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
         };
         let right = moved(Marker::Right, end - r.indents.right.0);
         let on = |ms: &[Marker]| f.drag.is_some_and(|d| ms.contains(&d.marker));
-        indent(canvas, x(first), 0.0, true, &colour(on(&[Marker::FirstLine, Marker::Left])));
-        indent(canvas, x(left), 12.0, false, &colour(on(&[Marker::Hanging, Marker::Left])));
-        indent(canvas, x(right), 12.0, false, &colour(on(&[Marker::Right])));
+        indent(canvas, x(first), S0 - 2.0, true, &colour(on(&[Marker::FirstLine, Marker::Left])));
+        indent(canvas, x(left), S1 - 10.0, false, &colour(on(&[Marker::Hanging, Marker::Left])));
+        indent(canvas, x(right), S1 - 10.0, false, &colour(on(&[Marker::Right])));
         // The ghost of the stop a click adds.
         if let Some((g, a)) = f.ghost.zip(alignment(f.selector)) {
-            tab_glyph(canvas, a, x(g), 10.0, &faded(accent, 0.5));
+            tab_glyph(canvas, a, x(g), S1 - 12.0, &faded(accent, 0.5));
         }
         if let Some((true, at)) = f.guide {
-            rect(canvas, at as f32, 0.0, at as f32 + 1.0, band, &fill(accent));
+            rect(canvas, at as f32, S0, at as f32 + 1.0, S1, &fill(accent));
         }
         canvas.restore();
         // The tab type box in the corner: the type a click adds; accent while its picker is open.
@@ -271,9 +273,9 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
         canvas.draw_rrect(RRect::new_rect_xy(b, 2.0, 2.0), &fill(t.paper));
         canvas.draw_rrect(RRect::new_rect_xy(b.with_inset((0.5, 0.5)), 1.5, 1.5), &stroke(if picking { accent } else { t.ink3 }));
         match (alignment(f.selector), f.selector) {
-            (Some(a), _) => tab_glyph(canvas, a, b.left + 8.0, b.top, &ink),
-            (None, TabSelector::FirstLineIndent) => indent(canvas, b.left + 9.0, b.top + 3.0, true, &ink),
-            (None, _) => indent(canvas, b.left + 9.0, b.top + 3.0, false, &ink),
+            (Some(a), _) => tab_glyph(canvas, a, b.left + 8.0, b.top + 1.0, &ink),
+            (None, TabSelector::FirstLineIndent) => indent(canvas, b.left + 8.0, b.top + 2.0, true, &ink),
+            (None, _) => indent(canvas, b.left + 8.0, b.top + 2.0, false, &ink),
         }
     }
 
@@ -288,24 +290,35 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
         let top = moved(Marker::Top, r.text.start.0);
         let bottom = moved(Marker::Bottom, r.text.end.0);
         let (page_t, page_b) = (y(0.0), y(r.page_height.0));
-        let paper = Rect::new(0.0, page_t, STRIP, page_b);
+        let paper = Rect::new(S0, page_t, S1, page_b);
         canvas.draw_rrect(RRect::new_rect_xy(paper, 2.0, 2.0), &fill(t.paper));
         canvas.draw_rrect(RRect::new_rect_xy(paper.with_outset((0.5, 0.5)), 2.5, 2.5), &stroke(t.line));
-        hatch(canvas, Rect::new(0.0, page_t, STRIP, y(top)), 5.0, t.line);
-        hatch(canvas, Rect::new(0.0, y(bottom), STRIP, page_b), 5.0, t.line);
-        ticks(top, r.page_height.0, &|pt| y(pt), &|py, len, paint| rect(canvas, STRIP - len, py, STRIP, py + 1.0, paint), &|py, n| {
+        hatch(canvas, Rect::new(S0, page_t, S1, y(top)), 5.0, t.line);
+        hatch(canvas, Rect::new(S0, y(bottom), S1, page_b), 5.0, t.line);
+        ticks(top, r.page_height.0, &|pt| y(pt), &|py, len, paint| rect(canvas, S1 - len, py, S1, py + 1.0, paint), &|py, n| {
             if let Some(font) = &numbers {
-                label(canvas, font, n, 2.0, py - font.size() / 2.0 - 2.0, 0.0, 2.0, Some((t.paper, 0.0)), t.ink);
+                let (tw, _) = font.measure_str(n, None);
+                label(
+                    canvas,
+                    font,
+                    n,
+                    S0 + 2.0 + ((S1 - S0 - 4.0) - tw).max(0.0) / 2.0,
+                    py - font.size() / 2.0 - 2.0,
+                    0.0,
+                    2.0,
+                    Some((t.paper, 0.0)),
+                    t.ink,
+                );
             }
         });
         for m in [Marker::Top, Marker::Bottom].into_iter().filter(|m| f.hover == Some(*m)) {
             let at = y(if m == Marker::Top { top } else { bottom });
-            rect(canvas, 0.0, at - 4.0, STRIP, at + 4.0, &fill(theme.accent.soft));
+            rect(canvas, S0, at - 4.0, S1, at + 4.0, &fill(theme.accent.soft));
         }
         for (i, b) in r.table_rows.iter().enumerate() {
             let m = Marker::TableRow(i as u32);
             let at = y(moved(m, b.0));
-            let cell = Rect::new(0.0, at - 4.0, STRIP, at + 4.0);
+            let cell = Rect::new(S0, at - 4.0, S1, at + 4.0);
             if dragged(m).is_some() {
                 canvas.draw_rect(cell, &fill(accent));
             } else {
@@ -315,7 +328,7 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
             }
         }
         if let Some((false, at)) = f.guide {
-            rect(canvas, 0.0, at as f32, STRIP, at as f32 + 1.0, &fill(accent));
+            rect(canvas, S0, at as f32, S1, at as f32 + 1.0, &fill(accent));
         }
         canvas.restore();
     }
@@ -441,22 +454,27 @@ mod tests {
     fn the_rulers_draw_on_the_paper_with_hatched_margins() {
         let theme = Theme::default();
         let p = draw(&theme, &frame(&[], None));
-        // The text area is the paper; the band past the page is the desk; the document below is untouched.
-        assert_eq!(at(&p, 24 + 300, 4), [255, 255, 255, 255]);
-        assert_eq!(at(&p, 21, 1)[..3], [0xe8, 0xe7, 0xe3]);
+        // The text area is the paper strip, 3 to 19 px down the band, floating on the desk; the document below is
+        // untouched.
+        let desk = [0xe8, 0xe7, 0xe3];
+        assert_eq!(at(&p, 24 + 300, 6), [255, 255, 255, 255]);
+        assert_eq!(at(&p, 24 + 300, 1)[..3], desk, "the desk above the strip");
+        assert_eq!(at(&p, 24 + 300, 20)[..3], desk, "and below it");
+        assert_eq!(at(&p, 21, 1)[..3], desk);
         assert_eq!(at(&p, 300, 150), [0x80, 0x80, 0x80, 255]);
-        // The margins are hatched: some pixels of the left margin's band are darker than the paper.
-        assert!((30..90).any(|x| at(&p, x, 6)[0] < 0xf8), "hatched margin");
-        // The vertical ruler's text area is the paper, its strip 18 px wide on the desk.
+        // The margins are hatched: some pixels of the left margin's strip are darker than the paper.
+        assert!((30..90).any(|x| at(&p, x, 8)[0] < 0xf8), "hatched margin");
+        // The vertical ruler's text area is the paper, its strip 3 to 19 px across the desk.
         assert_eq!(at(&p, 10, 200)[..3], [255, 255, 255]);
-        assert_eq!(at(&p, 21, 200)[..3], [0xe8, 0xe7, 0xe3]);
-        // The guide is accent in the band.
-        assert_eq!(at(&p, 200, 5)[..3], [0x0a, 0x74, 0xe4]);
-        // A unit tick, 10 px at the band's bottom, one inch from the text start.
-        assert_eq!(at(&p, 24 + 72 + 72, 20)[..3], [0x62, 0x65, 0x6c]);
+        assert_eq!(at(&p, 1, 200)[..3], desk);
+        assert_eq!(at(&p, 20, 200)[..3], desk);
+        // The guide is accent on the strip.
+        assert_eq!(at(&p, 200, 8)[..3], [0x0a, 0x74, 0xe4]);
+        // A unit tick, 8 px up from the strip's bottom, one inch from the text start.
+        assert_eq!(at(&p, 24 + 72 + 72, 17)[..3], [0x62, 0x65, 0x6c]);
         // The dark theme draws dark rulers.
         let dark = draw(&Theme::new(Scheme::Dark, AZURE), &frame(&[], None));
-        assert_eq!(at(&dark, 24 + 300, 4)[..3], [0x22, 0x23, 0x27]);
+        assert_eq!(at(&dark, 24 + 300, 6)[..3], [0x22, 0x23, 0x27]);
     }
 
     #[test]
@@ -464,8 +482,8 @@ mod tests {
         let theme = Theme::default();
         let drag = Dragged { marker: Marker::Tab(144.0), at: 72.0 + 198.0, removing: false };
         let p = draw(&theme, &frame(&[], Some(drag)));
-        // The centre tab's stem, 2 px wide at the stop, from 13 to 22 px.
-        let stem = |p: &[u8], x: usize| at(p, x, 17);
+        // The centre tab's stem, 2 px wide at the stop, from 10 to 19 px.
+        let stem = |p: &[u8], x: usize| at(p, x, 14);
         assert_eq!(stem(&p, 24 + 270)[..3], [0x0a, 0x74, 0xe4], "at the drag, accent");
         assert_ne!(stem(&p, 24 + 216)[..3], [0x1c, 0x1d, 0x1f], "no longer where it was");
         let removing = draw(&theme, &frame(&[], Some(Dragged { removing: true, ..drag })));
@@ -491,6 +509,6 @@ mod tests {
         let mono = chrome_typeface(ChromeFace::Mono500).expect("the chips' face");
         assert!(['—', '″', 'Δ', '·', '−'].iter().all(|c| mono.unichar_to_glyph(*c as i32) != 0));
         // The hint's dark chip under the band.
-        assert_eq!(at(&p, 102, 24 + 16 + 1)[..3], [0x1c, 0x1d, 0x1f]);
+        assert_eq!(at(&p, 102, 22 + 16 + 1)[..3], [0x1c, 0x1d, 0x1f]);
     }
 }

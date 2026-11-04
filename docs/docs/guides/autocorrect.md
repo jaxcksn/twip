@@ -60,5 +60,4 @@ menu: `popoverRequested` with `kind: 'autoCorrect'`, `from` (what was typed) and
 The commands are available while there's a correction to act on (`state.commands.revertAutoCorrect.enabled`). The
 mark goes once you type on or move away.
 
-The ready-made editors show the menu in the chrome's colours (see [Appearance](appearance.md#popovers)). An
-application that listens for `popoverRequested` shows its own.
+Your application draws the menu (see [Appearance](appearance.md#popovers)); the editor draws none.

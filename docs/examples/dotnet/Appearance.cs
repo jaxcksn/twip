@@ -44,11 +44,15 @@ static class AppearanceExample
         await session.Commands.RevertAutoCorrectAsync();
         await session.Commands.NeverAutoCorrectAsync();
 
-        // Handling PopoverRequested replaces DocumentEditor's own popovers with yours.
+        // The application draws the popovers; closed on its own, it closes the engine's too.
         session.PopoverRequested += (_, e) =>
         {
             if (e.Popover is not Popover.AutoCorrect ac) return;
             var menu = new ContextMenuStrip();
+            menu.Closed += async (_, c) =>
+            {
+                if (c.CloseReason != ToolStripDropDownCloseReason.ItemClicked) await session.Commands.ClosePopoverAsync();
+            };
             menu.Items.Add($"Revert to {ac.From}", null, async (_, _) => await session.Commands.RevertAutoCorrectAsync());
             menu.Items.Add($"Never correct {ac.From}", null, async (_, _) => await session.Commands.NeverAutoCorrectAsync());
             menu.Show(owner, Point.Round(new PointF(ac.Anchor.Left, ac.Anchor.Bottom)));

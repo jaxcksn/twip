@@ -1511,13 +1511,13 @@ mod tests {
             click(s, x(144.0), 10.0);
             // 29 px below the band, it moves.
             at(s, K::Down, x(144.0), 15.0, false);
-            at(s, K::Move, x(162.0), 24.0 + 29.0, false);
+            at(s, K::Move, x(162.0), 22.0 + 29.0, false);
             assert_eq!(labels(s), ["Left tab 2.25″"]);
-            at(s, K::Up, x(162.0), 24.0 + 29.0, false);
+            at(s, K::Up, x(162.0), 22.0 + 29.0, false);
             assert_eq!(tabs(s).iter().map(|t| t.0).collect::<Vec<_>>(), [162.0]);
             // Further down it fades and says so; dragged back up in the same drag, it stays.
             at(s, K::Down, x(162.0), 15.0, false);
-            at(s, K::Move, x(162.0), 24.0 + 31.0, false);
+            at(s, K::Move, x(162.0), 22.0 + 31.0, false);
             assert_eq!(labels(s), ["Release to remove tab stop"]);
             assert!(s.presentation.ruler_drag.as_ref().is_some_and(|d| d.removing && d.guide().is_none()));
             at(s, K::Move, x(162.0), 15.0, false);
@@ -1525,8 +1525,8 @@ mod tests {
             assert_eq!(tabs(s).len(), 1);
             // Released down there, it goes.
             at(s, K::Down, x(162.0), 15.0, false);
-            at(s, K::Move, x(162.0), 24.0 + 31.0, false);
-            at(s, K::Up, x(162.0), 24.0 + 31.0, false);
+            at(s, K::Move, x(162.0), 22.0 + 31.0, false);
+            at(s, K::Up, x(162.0), 22.0 + 31.0, false);
             assert!(tabs(s).is_empty());
             assert_eq!(s.state().history.undo_label.as_deref(), Some("Delete Tab Stop"));
         }
@@ -1538,7 +1538,7 @@ mod tests {
             click(s, 5.0, 5.0);
             let shown = popovers(&events);
             let Some(Some(Popover::TabType { anchor, current, choices })) = shown.first() else { panic!("{shown:?}") };
-            assert_eq!((*anchor, *current), (ClientRect { left: 0.0, top: 3.0, width: 18.0, height: 18.0 }, TabSelector::Left));
+            assert_eq!((*anchor, *current), (ClientRect { left: 3.0, top: 3.0, width: 16.0, height: 16.0 }, TabSelector::Left));
             let named: Vec<(TabSelector, &str, &str)> = choices.iter().map(|c| (c.value, c.name.as_str(), c.description.as_str())).collect();
             assert_eq!(
                 named,
