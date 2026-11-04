@@ -55,10 +55,10 @@ namespace Twip
     /// <param name="Leaders">The markup pane's leader lines.</param>
     public sealed record OverlayColors(Color Caret, Color Selection, Color Object, Color Drop, Color Marks, Color Leaders)
     {
-        /// <summary>The engine's colours: each at least 3:1 against the page, except the selection, a system text selection's light blue (black text over it at least 4.5:1).</summary>
+        /// <summary>The light theme's colours with the default accent: each at least 3:1 against the page, except the selection, the accent's light tint (black text over it at least 4.5:1).</summary>
         public static OverlayColors Default { get; } = new(
-            Color.Black, Color.FromArgb(0xB3, 0xD7, 0xFF), Color.FromArgb(0x60, 0x60, 0x60), Color.FromArgb(0x40, 0x40, 0x40),
-            Color.FromArgb(0x2F, 0x6F, 0xB5), Color.FromArgb(0x76, 0x76, 0x76));
+            Color.FromArgb(0x1C, 0x1D, 0x1F), Color.FromArgb(0x9D, 0xC7, 0xF4), Color.FromArgb(0x0A, 0x74, 0xE4), Color.FromArgb(0x62, 0x65, 0x6C),
+            Color.FromArgb(0x0A, 0x74, 0xE4), Color.FromArgb(0x62, 0x65, 0x6C));
     }
 
     /// <summary>The memory the editor keeps pages' drawing in; past it, what was drawn longest ago goes first.</summary>

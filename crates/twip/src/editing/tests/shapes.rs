@@ -173,12 +173,12 @@ fn shape_of(e: &Editor) -> crate::drawing::Shape {
 #[test]
 fn the_rotate_handle_turns_a_shape_and_shift_snaps_it() {
     use super::super::commands::Command;
-    // A 100 x 100 pt square at (200, 300): centre (250, 350), rotate handle 18 px (13.5 pt) above the top.
+    // A 100 x 100 pt square at (200, 300): centre (250, 350), the rotate knob's centre 24 px (18 pt) above the top.
     let square = sp(0, 0, 100, 100, "rect", "", "0000FF");
     let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(200, 300, 100, 100, 1, false, 1, &square)));
     click(&mut e, 250.0, 350.0);
     let frame = e.view(0..1).shapes.first().cloned().expect("a shape frame");
-    assert!((frame.rotate[0] - 250.0).abs() < 1e-6 && (frame.rotate[1] - (300.0 - 13.5)).abs() < 1e-6, "{frame:?}");
+    assert!((frame.rotate[0] - 250.0).abs() < 1e-6 && (frame.rotate[1] - (300.0 - 18.0)).abs() < 1e-6, "{frame:?}");
     // From the handle to the right of the centre: a quarter turn clockwise (a little short; Shift snaps it to 90).
     drag(&mut e, frame.rotate, [350.0, 345.0], Mods { shift: true, ..Mods::default() });
     assert_eq!(shape_of(&e).xfrm.rot.0, 90 * 60000);
@@ -484,8 +484,9 @@ fn dragging_a_group_child_moves_it_alone_and_grows_the_group() {
     click(&mut e, 100.0, 330.0);
     assert_eq!(e.selected_child(), Some(&[0u16][..]));
     let other = [1920, 3000, 2720, 3800];
-    // Inside the group: only the child moves, and the group keeps its box.
-    drag(&mut e, [100.0, 330.0], [120.0, 340.0], Mods::default());
+    // Inside the group: only the child moves, and the group keeps its box (Alt: where the pointer puts it).
+    let free = Mods { alt: true, ..Mods::default() };
+    drag(&mut e, [100.0, 330.0], [120.0, 340.0], free);
     assert_eq!(e.selected_child(), Some(&[0u16][..]), "the child stays selected");
     let boxes = drawn_boxes(&mut e);
     assert!(boxes.contains(&[920, 3100, 1720, 3900]) && boxes.contains(&other), "{boxes:?}");
@@ -493,7 +494,7 @@ fn dragging_a_group_child_moves_it_alone_and_grows_the_group() {
     assert_eq!(frame.rect.map(|v| (v * 10.0).round() as i64), [920, 3100, 1720, 3900]);
     same_as_full(&mut e);
     // Past the group's bottom: the group grows to hold it, the other child stays put.
-    drag(&mut e, [130.0, 350.0], [130.0, 380.0], Mods::default());
+    drag(&mut e, [130.0, 350.0], [130.0, 380.0], free);
     let boxes = drawn_boxes(&mut e);
     assert!(boxes.contains(&[920, 3400, 1720, 4200]) && boxes.contains(&other), "{boxes:?}");
     let g = shape_of(&e);

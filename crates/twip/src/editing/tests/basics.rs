@@ -1084,7 +1084,7 @@ fn an_object_drag_shows_a_ghost_and_the_anchor_it_would_take() {
     r.step(&json!({ "press": { "float": 1 } }));
     // A press that hasn't moved is no drag yet: the handles stay.
     assert!(matches!(r.e.view(0..3).selection, super::super::view::SelectionView::Object(_, true)), "handles on a press");
-    r.step(&json!({ "move_to": { "float": 1, "dy": -150 } }));
+    r.step(&json!({ "move_to": { "float": 1, "dy": -150 }, "mods": { "alt": true } }));
     let v = r.e.view(0..3);
     let g = v.ghost.expect("a ghost");
     assert!(g.from.iter().zip(&was).all(|(a, b)| (a - b).abs() < 0.01), "{g:?}");
@@ -1127,14 +1127,14 @@ fn live_layout_lays_the_dragged_float_out_where_the_pointer_is() {
     let (top, lines) = drawn(&mut r.e);
     let depth = undo(&mut r.e);
     r.step(&json!({ "press": { "float": 1 } }));
-    r.step(&json!({ "move_to": { "float": 1, "dy": -150 } }));
+    r.step(&json!({ "move_to": { "float": 1, "dy": -150 }, "mods": { "alt": true } }));
     let (mid, mid_lines) = drawn(&mut r.e);
     assert!((mid - (top - 150.0)).abs() < 0.5, "laid out where the pointer is: {top} -> {mid}");
     assert_ne!(mid_lines, lines, "the text wraps around it there");
     assert!(r.e.view(0..3).ghost.is_none());
     assert_eq!(body_floats(&r.e), was, "the document is unchanged until the release");
     assert_eq!(undo(&mut r.e), depth);
-    r.step(&json!({ "release": { "float": 1 } }));
+    r.step(&json!({ "release": { "float": 1 }, "mods": { "alt": true } }));
     assert_ne!(body_floats(&r.e), was);
     let (after, after_lines) = drawn(&mut r.e);
     let differ: Vec<_> = after_lines.as_array().unwrap().iter().zip(mid_lines.as_array().unwrap()).filter(|(a, b)| a != b).take(2).collect();

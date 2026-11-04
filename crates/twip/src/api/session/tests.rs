@@ -77,7 +77,7 @@ fn export_captures_the_revision_and_clears_modified() {
 }
 
 #[test]
-fn a_typical_state_is_under_9_kb() {
+fn a_typical_state_is_under_10_kb() {
     let (mut engine, _) = engine();
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
@@ -89,7 +89,7 @@ fn a_typical_state_is_under_9_kb() {
     let text = state.selection.text.take().expect("a short selection's text");
     assert!(text.contains('\n'), "{text:?}");
     let json = serde_json::to_string(&state).expect("serializes");
-    assert!(json.len() < 9 * 1024, "{} bytes", json.len());
+    assert!(json.len() < 10 * 1024, "{} bytes", json.len());
 }
 
 #[test]
@@ -174,6 +174,153 @@ fn a_pdf_export_keeps_modified_and_warns_of_fallbacks() {
     assert_eq!(pdf.revision, s.state().revision);
     assert!(s.state().modified, "a PDF doesn't save the document");
     assert_eq!(pdf.warnings.iter().map(|w| w.code).collect::<Vec<_>>(), [crate::api::warning::WarningCode::PdfFontFallback]);
+}
+
+#[test]
+fn dark_mode_changes_neither_the_pdf_nor_the_layout() {
+    // DRAW-27: the dark page is drawn on screen only.
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Dark and light".into())).expect("types");
+    s.run(Command::SelectAll).expect("selects");
+    s.run(Command::SetFontColor(crate::api::value::AutoOr::Value(crate::api::value::Color(0x1F3864)))).expect("colours");
+    let export = |s: &mut crate::api::session::Session| {
+        let mut b = s.export(&ExportOptions { format: ExportFormat::Pdf }).expect("exports").bytes.0;
+        // Two exports differ in their creation time and their XMP packet's and trailer's random ids: cut those out.
+        let find = |b: &[u8], n: &[u8]| b.windows(n.len()).position(|w| w == n);
+        for (from, to) in [(&b"<?xpacket begin"[..], &b"<?xpacket end"[..]), (b"/ID [", b"]")] {
+            if let Some(i) = find(&b, from)
+                && let Some(j) = find(&b[i..], to)
+            {
+                b.drain(i..i + j);
+            }
+        }
+        b.into_iter().filter(|c| !c.is_ascii_digit()).collect::<Vec<u8>>()
+    };
+    let light = export(s);
+    assert_eq!(export(s), light, "two exports compare equal");
+    let pages = s.state().pages.clone();
+    let dark = crate::api::command::ViewOptions { appearance: Some(crate::api::services::DocumentAppearance::Dark), ..Default::default() };
+    s.run(Command::SetViewOptions(dark)).expect("dark");
+    assert_eq!(s.state().view.appearance, crate::api::services::DocumentAppearance::Dark);
+    assert_eq!(export(s), light, "the PDF keeps the document's colours");
+    assert_eq!(s.state().pages, pages, "nothing moves");
+}
+
+/// The body's paragraphs as text.
+fn paragraphs(s: &crate::api::session::Session) -> Vec<String> {
+    s.editor
+        .document()
+        .sections
+        .iter()
+        .flat_map(|sec| &sec.blocks)
+        .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(crate::editing::text::UnitText::of(p).text) } else { None })
+        .collect()
+}
+
+fn typed(s: &mut crate::api::session::Session, text: &str) {
+    for c in text.chars() {
+        s.text(&c.to_string());
+    }
+}
+
+#[test]
+fn typing_corrects_what_it_finishes_and_one_undo_takes_the_correction_back() {
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    typed(s, "Word teh ");
+    assert_eq!(paragraphs(s)[0], "Word the ");
+    // Right after it, an undo takes back only the correction.
+    s.run(Command::Undo).expect("undoes");
+    assert_eq!(paragraphs(s)[0], "Word teh ");
+    typed(s, "(c)");
+    assert_eq!(paragraphs(s)[0], "Word teh \u{a9}");
+    s.run(Command::Undo).expect("undoes");
+    assert_eq!(paragraphs(s)[0], "Word teh (c)");
+    // An ordinal's suffix is raised.
+    s.run(Command::SelectAll).expect("selects");
+    typed(s, "Word 1st ");
+    let p = s.editor.document().sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.clone()) } else { None })
+        .expect("a paragraph");
+    let raised: String = p
+        .inlines
+        .iter()
+        .filter_map(|i| {
+            if let crate::docx::Inline::Text(t, r) = i {
+                (r.vert_align == crate::docx::props::VertAlign::Superscript).then(|| t.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(raised, "st");
+    // Text the API inserts isn't corrected.
+    s.run(Command::SelectAll).expect("selects");
+    s.run(Command::InsertText("Word teh ".into())).expect("inserts");
+    assert_eq!(paragraphs(s)[0], "Word teh ");
+}
+
+#[test]
+fn enter_corrects_the_paragraph_it_ends_and_tracking_marks_corrections() {
+    use crate::api::input::{Key, Modifiers};
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    typed(s, "Word word--");
+    s.key(Key::Enter, Modifiers::default());
+    assert_eq!(paragraphs(s)[0], "Word word\u{2014}");
+    s.run(Command::SetTrackChanges(true)).expect("tracks");
+    typed(s, "Word teh ");
+    // The correction replaces the author's own insertion: the corrected word is an insertion too.
+    let inserted = s.editor.document().sections[0].blocks.iter().any(|b| {
+        matches!(b, crate::docx::Block::Para(p) if p.inlines.iter().any(|i| matches!(i, crate::docx::Inline::Text(t, r) if t.contains("the") && r.rev.ins.is_some())))
+    });
+    assert!(inserted, "the correction is tracked");
+}
+
+#[test]
+fn a_correction_offers_its_options_and_never_correct_stops_it() {
+    use crate::api::command::CommandId;
+    use crate::api::event::Event;
+    use crate::api::services::Popover;
+    let mut engine = Engine::new(FontLibrary::system());
+    let events: std::rc::Rc<std::cell::RefCell<Vec<Event>>> = Default::default();
+    let sink = events.clone();
+    engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.host().set_size(800.0, 600.0, 1.0);
+    assert!(!s.state().commands.get(&CommandId::RevertAutoCorrect).is_some_and(|c| c.enabled), "nothing corrected yet");
+    typed(s, "Word teh ");
+    assert!(s.state().commands.get(&CommandId::RevertAutoCorrect).is_some_and(|c| c.enabled));
+    // The mark and its button show while the caret is just after it.
+    let view = s.editor.correction_view(0..1).expect("a mark");
+    assert!(!view.rects.is_empty() && view.button.is_some());
+    events.borrow_mut().clear();
+    s.run(Command::ShowAutoCorrectOptions).expect("shows");
+    let asked = events.borrow().iter().find_map(|e| if let Event::PopoverRequested(p) = e { Some(p.clone()) } else { None });
+    assert!(matches!(asked, Some(Popover::AutoCorrect { ref from, ref to, .. }) if from == "teh" && to == "the"), "{asked:?}");
+    // Never correct puts it back, says so, and keeps it from happening again.
+    s.run(Command::NeverAutoCorrect).expect("never");
+    assert_eq!(paragraphs(s)[0], "Word teh ");
+    assert!(events.borrow().iter().any(|e| matches!(e, Event::Announcement { text } if text.contains("teh"))));
+    assert_eq!(s.state().auto_correct.never, ["teh"]);
+    typed(s, "teh ");
+    assert_eq!(paragraphs(s)[0], "Word teh teh ");
+    // Typing on past the mark drops it.
+    typed(s, "(c) ");
+    typed(s, "and more words here ");
+    assert!(s.editor.correction().is_none(), "typed past");
+    // setAutoCorrect switches a rule off.
+    s.run(Command::SetAutoCorrect(crate::api::services::AutoCorrectChange { replace_text: Some(false), ..Default::default() })).expect("sets");
+    assert!(!s.state().auto_correct.replace_text);
+    typed(s, "adn ");
+    assert!(paragraphs(s)[0].ends_with("adn "));
 }
 
 #[test]
@@ -451,6 +598,52 @@ fn formatting_marks_and_text_boundaries_draw_when_shown() {
 }
 
 #[test]
+fn dark_frames_from_retained_pages_equal_frames_drawn_from_scratch_and_switching_records_again() {
+    // DRAW-27: the appearance is a recording input, so a switch redraws each page once and never replays a stale one.
+    use crate::api::command::ViewOptions;
+    use crate::api::services::{ChromeTheme, DocumentAppearance};
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/objects.docx");
+    s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+    s.host().set_verify_frames(true);
+    let (w, h) = (700u32, 500u32);
+    s.host().set_size(f64::from(w), f64::from(h), 1.0);
+    let mut light = vec![0u8; (w * h * 4) as usize];
+    s.host().frame_rgba(&mut light, w, h).expect("a frame");
+    for appearance in [DocumentAppearance::Dark, DocumentAppearance::DarkWithLightPage, DocumentAppearance::Dark] {
+        let options = ViewOptions { appearance: Some(appearance), theme: Some(ChromeTheme::Dark), ..ViewOptions::default() };
+        s.run(Command::SetViewOptions(options)).expect("dark");
+        let mut pixels = vec![0u8; (w * h * 4) as usize];
+        s.host().frame_rgba(&mut pixels, w, h).expect("a frame");
+        assert_ne!(pixels, light, "{appearance:?} draws differently");
+    }
+    assert_eq!(s.host().verify_failures(), 0, "retained dark pages draw as pages drawn from scratch");
+}
+
+#[test]
+fn a_new_accent_draws_without_recording_the_pages_again() {
+    // The accent colours only what's drawn over the pages.
+    use crate::api::command::ViewOptions;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Accent".into())).expect("types");
+    s.run(Command::SelectAll).expect("selects");
+    let (w, h) = (400u32, 300u32);
+    s.host().set_size(f64::from(w), f64::from(h), 1.0);
+    let mut before = vec![0u8; (w * h * 4) as usize];
+    s.host().frame_rgba(&mut before, w, h).expect("a frame");
+    let recorded = s.host().frame_stats().pages_recorded;
+    s.run(Command::SetViewOptions(ViewOptions { accent: Some(crate::api::value::Color(0xC0_2060)), ..ViewOptions::default() })).expect("accent");
+    let mut after = vec![0u8; (w * h * 4) as usize];
+    s.host().frame_rgba(&mut after, w, h).expect("a frame");
+    assert_ne!(before, after, "the selection takes the new accent");
+    assert_eq!(s.host().frame_stats().pages_recorded, recorded, "no page drawn again");
+}
+
+#[test]
 fn frames_from_retained_pages_equal_frames_drawn_from_scratch() {
     use crate::api::command::Zoom;
     let mut engine = Engine::new(FontLibrary::system());
@@ -585,7 +778,7 @@ fn leaders_draw_over_the_frame_until_cleared() {
     let mut lined = vec![0u8; 400 * 300 * 4];
     s.host().frame_rgba(&mut lined, 400, 300).expect("a frame");
     let px = |b: &[u8], x: usize, y: usize| [b[(y * 400 + x) * 4], b[(y * 400 + x) * 4 + 1], b[(y * 400 + x) * 4 + 2]];
-    assert_eq!(px(&lined, 200, 150), [0x76, 0x76, 0x76], "the palette's leader colour");
+    assert_eq!(px(&lined, 200, 150), [0x62, 0x65, 0x6c], "the palette's leader colour");
     s.host().set_leaders(Vec::new());
     s.host().frame_rgba(&mut lined, 400, 300).expect("a frame");
     assert_eq!(plain, lined, "cleared: the frame as before");
@@ -618,4 +811,24 @@ fn an_inserted_shape_is_the_selected_object() {
     let o = s.state().selection.object.clone();
     assert!(o.is_some(), "{:?}", s.state().selection);
     assert_eq!(o.and_then(|o| o.shape).and_then(|s| s.preset), Some(preset));
+}
+
+#[test]
+fn the_detail_and_object_grid_options_reach_the_editors_drag_feedback() {
+    use crate::api::command::ViewOptions;
+    use crate::api::services::{MeasureDetail, ObjectGrid};
+    let mut engine = Engine::new(FontLibrary::empty());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::SetViewOptions(ViewOptions {
+        detail: Some(MeasureDetail::Full),
+        object_grid: Some(ObjectGrid::Always),
+        ..ViewOptions::default()
+    }))
+    .expect("sets the options");
+    s.host().set_size(200.0, 200.0, 1.0);
+    let mut px = vec![0u8; 200 * 200 * 4];
+    s.host().frame_rgba(&mut px, 200, 200).expect("a frame");
+    let v = s.editor.view_settings;
+    assert_eq!((v.detail, v.object_grid), (MeasureDetail::Full, ObjectGrid::Always));
 }

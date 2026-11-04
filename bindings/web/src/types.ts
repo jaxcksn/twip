@@ -47,19 +47,19 @@ export interface ClientPoint {
   clientY: number;
 }
 
-/** The colours of what the editor draws over the document (`view.setOverlayColors`). */
+/** The colours of what the editor draws over the document (`view.setOverlayColors`). The defaults are the light theme's; each theme has its own. */
 export interface OverlayColors {
-  /** The caret. Default black. */
+  /** The caret. Default `'#1C1D1F'`, the light theme's ink. */
   caret: Color;
-  /** The selection, blended under the text (multiply), so black text stays black. Default `'#B3D7FF'`, a system text selection's light blue. */
+  /** The selection, blended under the text (multiply), so black text stays black. Default `'#9DC7F4'`, the accent's light tint. */
   selection: Color;
-  /** A selected object's outline and handles. Default `'#606060'`. */
+  /** A selected object's outline and handles. Default `'#0A74E4'`, the accent. */
   object: Color;
-  /** The drop caret of a drag. Default `'#404040'`. */
+  /** The drop caret of a drag. Default `'#62656C'`. */
   drop: Color;
-  /** Formatting marks and text boundaries. Default `'#2F6FB5'`. */
+  /** Formatting marks and text boundaries. Default `'#0A74E4'`. */
   marks: Color;
-  /** The markup pane's leader lines. Default `'#767676'`. */
+  /** The markup pane's leader lines. Default `'#62656C'`. */
   leaders: Color;
 }
 

@@ -868,6 +868,8 @@ pub struct Document {
     /// The theme's colour and format schemes (DRAW-7, DRAW-8) and the settings' colour mapping.
     pub theme: Rc<crate::drawing::theme::Theme>,
     pub colour_map: crate::drawing::theme::ColourMap,
+    /// `w:background`'s colour (PAGE-12), drawn on screen only.
+    pub page_colour: Option<u32>,
     /// Headers and footers by part name, in name order (the editor addresses them by place in it).
     pub stories: std::collections::BTreeMap<String, Vec<Block>>,
     pub footnotes: HashMap<i64, Vec<Block>>,

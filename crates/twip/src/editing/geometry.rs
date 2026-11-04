@@ -171,8 +171,12 @@ pub enum Zone {
     Row(TableId, usize),
     /// Just inside the top of a table's first row: selects the column of that cell.
     Column(TableId, usize, usize),
-    /// The move handle just above and left of a table's top left corner: selects the table.
+    /// The move handle above and left of a table's top left corner: selects or moves the table.
     Table(TableId),
+    /// Above grid boundary `k` of the table the pointer is over: inserts a column there.
+    InsertColumn(TableId, usize),
+    /// Left of the bottom border of row `k` − 1 of the table the pointer is over: inserts a row there.
+    InsertRow(TableId, usize),
 }
 
 /// A text position under a point.
@@ -535,9 +539,20 @@ impl PageGeometry {
 
     /// The table selection zone under a point, sizes in points (`px`: one pixel at the zoom): a cell's zone is 2 to
     /// 8 px right of its left border, a row's from 3 px left of its table across the margin, a column's the top 4 px
-    /// inside the first row. The innermost table's zones win.
-    pub fn zone(&self, x: f64, y: f64, px: f64) -> Option<Zone> {
+    /// inside the first row. The innermost table's zones win. The move handle is the 15 px square ending 5 px above
+    /// and left of a table's top left corner. Around `hovered`, the table the pointer is over: up to 22 px above its
+    /// first row, the insert zones within 7 px of each column border; up to 24 px left of it, the insert zones within
+    /// 7 px of each row's bottom border.
+    pub fn zone(&self, x: f64, y: f64, px: f64, hovered: Option<TableId>) -> Option<Zone> {
         let deepest = |v: &mut Vec<(usize, Zone)>| v.iter().max_by_key(|(d, _)| *d).map(|(_, z)| *z);
+        // A row's left: its leftmost cell's.
+        let row_left = |r: &GRow| {
+            self.cells
+                .iter()
+                .filter(|c| c.chain.last().is_some_and(|k| k.0 == r.table && k.1 == r.row))
+                .map(|c| c.rect[0])
+                .fold(f64::INFINITY, f64::min)
+        };
         let mut found: Vec<(usize, Zone)> = Vec::new();
         for c in &self.cells {
             let Some(&(t, row, cell)) = c.chain.last() else { continue };
@@ -554,27 +569,35 @@ impl PageGeometry {
         if let Some(z) = deepest(&mut found) {
             return Some(z);
         }
-        // The move handle: up to 12 px above a table's first row and from 12 px left of its left edge to 2 px in.
         for r in self.rows.iter().filter(|r| r.row == 0 && !r.repeat) {
             let [x0, y0, ..] = r.rect;
-            if y < y0 && y >= y0 - 12.0 * px && x >= x0 - 12.0 * px && x < x0 + 2.0 * px {
+            if (x0 - 20.0 * px..=x0 - 5.0 * px).contains(&x) && (y0 - 20.0 * px..=y0 - 5.0 * px).contains(&y) {
                 found.push((r.outer.len(), Zone::Table(r.table)));
             }
         }
         if let Some(z) = deepest(&mut found) {
             return Some(z);
         }
+        for r in self.rows.iter().filter(|r| Some(r.table) == hovered && !r.repeat) {
+            let [_, y0, _, y1] = r.rect;
+            if r.row == 0
+                && y >= y0 - 22.0 * px
+                && y < y0
+                && let Some(&(_, k)) = r.edges.iter().find(|(ex, _)| (x - ex).abs() <= 7.0 * px)
+            {
+                return Some(Zone::InsertColumn(r.table, k));
+            }
+            let left = row_left(r);
+            if x >= left - 24.0 * px && x < left && (y - y1).abs() <= 7.0 * px {
+                return Some(Zone::InsertRow(r.table, r.row + 1));
+            }
+        }
         // Row zones: left of a row's table (its leftmost cell), down to the story's or containing cell's left.
         for r in &self.rows {
             if y < r.rect[1] || y >= r.rect[3] {
                 continue;
             }
-            let left = self
-                .cells
-                .iter()
-                .filter(|c| c.chain.last().is_some_and(|k| k.0 == r.table && k.1 == r.row))
-                .map(|c| c.rect[0])
-                .fold(f64::INFINITY, f64::min);
+            let left = row_left(r);
             if !left.is_finite() || x > left - 3.0 * px {
                 continue;
             }

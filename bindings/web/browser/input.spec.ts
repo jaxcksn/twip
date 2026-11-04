@@ -39,7 +39,7 @@ test('typing', async ({ page }) => {
 
 test('selecting with the mouse and the keyboard', async ({ page }) => {
   await mount(page);
-  await typed(page, 'alpha beta gamma');
+  await typed(page, 'Alpha beta gamma');
   const start = await caretAfter(page, 'Home');
   // A double-click selects the word, which typing replaces.
   await page.mouse.dblclick(start.x + 8, start.y + start.height / 2);
@@ -72,27 +72,27 @@ test('IME composition', async ({ page }) => {
 
 test('copy, cut and paste', async ({ page }) => {
   await mount(page);
-  await typed(page, 'one two');
+  await typed(page, 'One two');
   await page.keyboard.press('Control+Shift+ArrowLeft');
   await page.keyboard.press('Control+C');
   await clipboard(page).toBe('two');
   await page.keyboard.press('End');
   await page.keyboard.press('Control+V');
-  await expect.poll(() => text(page)).toMatch(/^one two ?two$/);
+  await expect.poll(() => text(page)).toMatch(/^One two ?two$/);
   await page.evaluate(() => navigator.clipboard.writeText(''));
   await page.keyboard.press('Control+Shift+ArrowLeft');
   await page.keyboard.press('Control+X');
-  await expect.poll(() => text(page)).toMatch(/^one two ?$/);
+  await expect.poll(() => text(page)).toMatch(/^One two ?$/);
   await clipboard(page).toBe('two');
   await page.keyboard.press('Home');
   await page.keyboard.press('Control+V');
-  await expect.poll(() => text(page)).toMatch(/^two ?one two ?$/);
+  await expect.poll(() => text(page)).toMatch(/^two ?One two ?$/);
 });
 
 test("without ClipboardItem, a copy is the selection's text from the state", async ({ page }) => {
   await page.evaluate(() => delete (globalThis as { ClipboardItem?: unknown }).ClipboardItem);
   await mount(page);
-  await typed(page, 'one two');
+  await typed(page, 'One two');
   await page.evaluate(() => navigator.clipboard.writeText(''));
   await page.keyboard.press('Control+Shift+ArrowLeft');
   await expect.poll(async () => (await state(page)).selection.text).toBe('two');
@@ -132,7 +132,7 @@ test('after a font arrives, the input element is at the caret and a click places
 
 test('dragging text', async ({ page }) => {
   await mount(page);
-  await typed(page, 'first second');
+  await typed(page, 'First second');
   const start = await caretAfter(page, 'Home');
   const end = await caretAfter(page, 'End');
   const y = start.y + start.height / 2;
@@ -144,7 +144,7 @@ test('dragging text', async ({ page }) => {
   await page.mouse.down();
   await page.mouse.move(end.x + 2, y, { steps: 10 });
   await page.mouse.up();
-  await expect.poll(() => text(page)).toMatch(/^ ?second ?first ?$/);
+  await expect.poll(() => text(page)).toMatch(/^ ?second ?First ?$/);
 });
 
 test('scrolling, Ctrl+wheel zoom and resizing the container', async ({ page }) => {
@@ -246,7 +246,7 @@ test('Ctrl+D asks for the font dialog, and the browser’s bookmark dialog stays
 
 test('text and images dropped from outside the editor paste at the drop point', async ({ page }) => {
   await mount(page);
-  await typed(page, 'drop here');
+  await typed(page, 'Drop here');
   const end = await caret(page);
   await page.evaluate(async ({ x, y }) => {
     const target = document.querySelector('#editor canvas')!;
@@ -262,7 +262,7 @@ test('text and images dropped from outside the editor paste at the drop point', 
     drag('dragover', image);
     drag('drop', image);
   }, { x: end.x + 1, y: end.y + end.height / 2 });
-  await expect.poll(() => text(page)).toBe('drop here text');
+  await expect.poll(() => text(page)).toBe('Drop here text');
   const docx = await page.evaluate(async () => [...(await (window as any).editor.export({ format: 'docx' })).bytes]);
   expect(docxXml(Buffer.from(docx))).toContain('<w:drawing>');
 });

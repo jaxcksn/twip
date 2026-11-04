@@ -28,7 +28,7 @@ const eventTypes: Record<keyof TwipEvents, true> = {
   dialogRequested: true, hostCommand: true, shortcut: true, gesture: true, wordAdded: true, fontsChanged: true,
   elementActivated: true, elementsChanged: true, fieldsUpdateRequested: true, revisionsChanged: true,
   commentsChanged: true, commentAnchors: true, balloonsLaidOut: true, rulerChanged: true, tooltip: true,
-  announcement: true, warning: true, error: true,
+  announcement: true, popoverRequested: true, popoverClosed: true, warning: true, error: true,
 };
 
 /** A step that sends input: a headless editor takes none, so scripts with one don't run here. */

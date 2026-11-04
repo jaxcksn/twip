@@ -374,6 +374,20 @@ public sealed record TableWidth(TableWidthKind Kind, [property: JsonIgnore(Condi
     public static TableWidth FromPercent(double percent) => new(TableWidthKind.Percent, percent);
 }
 
+/// <summary>
+/// A positioned table's place (<see cref="EditorCommands.SetTablePositionAsync"/>): each axis as an object's, and its
+/// distance from the text around it. A table is measured from the column, the margin or the page across, and from the
+/// paragraph, the margin or the page down; another reference is an invalid argument. Given to the command, what isn't
+/// set is kept; as the command's state value, every property is set.
+/// </summary>
+/// <param name="Horizontal">The horizontal place: an alignment or an offset.</param>
+/// <param name="Vertical">The vertical place: an alignment or an offset.</param>
+/// <param name="WrapDistance">How far the text around it keeps, 0 to 1584 pt.</param>
+public sealed record TablePosition(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] HorizontalPosition? Horizontal = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VerticalPosition? Vertical = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDistance? WrapDistance = null);
+
 /// <summary>How line spacing is measured.</summary>
 public enum LineSpacingRule
 {
@@ -709,3 +723,124 @@ public enum TextDirection
     /// <summary>Letters stacked, right to left.</summary>
     StackedRightToLeft,
 }
+
+/// <summary>
+/// The editor chrome's colour scheme: the desk, rulers, handles, guides and readouts. <see cref="Light"/>,
+/// <see cref="Dark"/>, or <see cref="HighContrast"/> from the platform's colours.
+/// </summary>
+[JsonConverter(typeof(ChromeThemeConverter))]
+public sealed record ChromeTheme
+{
+    private ChromeTheme(ChromeThemeKind kind, HighContrastColors? colors) => (Kind, Colors) = (kind, colors);
+
+    /// <summary>Light chrome (the default).</summary>
+    public static ChromeTheme Light { get; } = new(ChromeThemeKind.Light, null);
+
+    /// <summary>Dark chrome.</summary>
+    public static ChromeTheme Dark { get; } = new(ChromeThemeKind.Dark, null);
+
+    /// <summary>The platform's high contrast colours. The editor controls set this themselves while the platform is in high contrast mode.</summary>
+    /// <param name="colors">The platform's colours.</param>
+    /// <returns>The scheme.</returns>
+    public static ChromeTheme HighContrast(HighContrastColors colors) =>
+        new(ChromeThemeKind.HighContrast, colors ?? throw new ArgumentNullException(nameof(colors)));
+
+    /// <summary>Which scheme this is.</summary>
+    public ChromeThemeKind Kind { get; }
+
+    /// <summary>The platform's colours, for <see cref="ChromeThemeKind.HighContrast"/>; otherwise null.</summary>
+    public HighContrastColors? Colors { get; }
+}
+
+/// <summary>The kinds of <see cref="ChromeTheme"/>.</summary>
+public enum ChromeThemeKind
+{
+    /// <summary>Light chrome.</summary>
+    Light,
+    /// <summary>Dark chrome.</summary>
+    Dark,
+    /// <summary>The platform's high contrast colours.</summary>
+    HighContrast,
+}
+
+/// <summary>The platform's colours in high contrast mode.</summary>
+/// <param name="Canvas">The window background.</param>
+/// <param name="CanvasText">Text on it.</param>
+/// <param name="Highlight">Selected items' background.</param>
+/// <param name="HighlightText">Text on it.</param>
+/// <param name="GrayText">Disabled and secondary text.</param>
+public sealed record HighContrastColors(ColorValue Canvas, ColorValue CanvasText, ColorValue Highlight, ColorValue HighlightText, ColorValue GrayText);
+
+/// <summary>How the document's page is drawn on screen. Saving, PDF export and printing always use the document's colours.</summary>
+public enum DocumentAppearance
+{
+    /// <summary>In the document's colours.</summary>
+    Light,
+    /// <summary>Dark mode: a dark page, with the document's colours adjusted to it.</summary>
+    Dark,
+    /// <summary>Dark mode with the page shown in its own colours (the chrome stays dark).</summary>
+    DarkWithLightPage,
+}
+
+/// <summary>How much the editor measures while you drag and hover.</summary>
+public enum MeasureDetail
+{
+    /// <summary>A chip with the value only.</summary>
+    Quiet,
+    /// <summary>Dimension lines with the value; the full set while Alt is held (the default).</summary>
+    Standard,
+    /// <summary>Everything: changes from the start, table sizes and status lines.</summary>
+    Full,
+}
+
+/// <summary>When the dot grid objects snap to shows.</summary>
+public enum ObjectGrid
+{
+    /// <summary>Never.</summary>
+    Off,
+    /// <summary>While an object is dragged (the default).</summary>
+    WhileDragging,
+    /// <summary>Always.</summary>
+    Always,
+}
+
+/// <summary>
+/// A popover the engine asks the application to show by its anchor, with what it offers. Only one is open at a time;
+/// <see cref="EditorSession.PopoverClosed"/> says the engine dismissed it.
+/// </summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(TabType), "tabType")]
+[JsonDerivedType(typeof(TabStop), "tabStop")]
+[JsonDerivedType(typeof(AutoCorrect), "autoCorrect")]
+public abstract record Popover
+{
+    private protected Popover() { }
+
+    /// <summary>The tab type picker: answered with <see cref="EditorCommands.SetRulerTabTypeAsync"/>.</summary>
+    /// <param name="Anchor">The tab type box, in client pixels.</param>
+    /// <param name="Current">The type a click on the ruler adds now.</param>
+    /// <param name="Choices">Every type, in order, with its name and what it does.</param>
+    public sealed record TabType(RectangleF Anchor, TabSelector Current, IReadOnlyList<TabTypeChoice> Choices) : Popover;
+
+    /// <summary>
+    /// One tab stop's options: <see cref="EditorCommands.AddTabStopAsync"/> at its position changes the alignment or
+    /// leader, <see cref="EditorCommands.DeleteTabStopAsync"/> clears it.
+    /// </summary>
+    /// <param name="Anchor">The stop's mark on the ruler, in client pixels.</param>
+    /// <param name="Position">Its position, from the paragraph's left text edge.</param>
+    /// <param name="Alignment">Its alignment.</param>
+    /// <param name="Leader">Its leader.</param>
+    public sealed record TabStop(RectangleF Anchor, Length Position, TabAlignment Alignment, TabLeader Leader) : Popover;
+
+    /// <summary>The options of the correction just made.</summary>
+    /// <param name="Anchor">The corrected text, in client pixels.</param>
+    /// <param name="From">What was typed.</param>
+    /// <param name="To">What it became.</param>
+    public sealed record AutoCorrect(RectangleF Anchor, string From, string To) : Popover;
+}
+
+/// <summary>One entry of the tab type picker.</summary>
+/// <param name="Value">The type.</param>
+/// <param name="Name">Its name (<c>Decimal</c>).</param>
+/// <param name="Description">What it does, in one line (<c>Numbers line up on the decimal point</c>).</param>
+public sealed record TabTypeChoice(TabSelector Value, string Name, string Description);

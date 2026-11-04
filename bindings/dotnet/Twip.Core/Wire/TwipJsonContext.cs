@@ -26,6 +26,9 @@ namespace Twip.Wire;
         typeof(CamelEnum<ControlLock>),
         typeof(CamelEnum<DeleteUnit>),
         typeof(CamelEnum<DialogKind>),
+        typeof(CamelEnum<DocumentAppearance>),
+        typeof(CamelEnum<MeasureDetail>),
+        typeof(CamelEnum<ObjectGrid>),
         typeof(CamelEnum<Direction>),
         typeof(CamelEnum<EditorCursor>),
         typeof(CamelEnum<EditorMode>),
@@ -311,6 +314,19 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(MarginOptions))]
 [JsonSerializable(typeof(MarkSeverity))]
 [JsonSerializable(typeof(MarkupView))]
+[JsonSerializable(typeof(AutoCorrectChange))]
+[JsonSerializable(typeof(AutoCorrectEntry))]
+[JsonSerializable(typeof(AutoCorrectOptions))]
+[JsonSerializable(typeof(ChromeTheme))]
+[JsonSerializable(typeof(HighContrastColors))]
+[JsonSerializable(typeof(DocumentAppearance))]
+[JsonSerializable(typeof(MeasureDetail))]
+[JsonSerializable(typeof(ObjectGrid))]
+[JsonSerializable(typeof(Popover))]
+[JsonSerializable(typeof(Popover.TabType), TypeInfoPropertyName = "Popover_TabType")]
+[JsonSerializable(typeof(Popover.TabStop), TypeInfoPropertyName = "Popover_TabStop")]
+[JsonSerializable(typeof(Popover.AutoCorrect), TypeInfoPropertyName = "Popover_AutoCorrect")]
+[JsonSerializable(typeof(TabTypeChoice))]
 [JsonSerializable(typeof(MatchId))]
 [JsonSerializable(typeof(MenuAction))]
 [JsonSerializable(typeof(MenuInvocation))]
@@ -434,6 +450,7 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(TableSelection))]
 [JsonSerializable(typeof(TableStyleOptions))]
 [JsonSerializable(typeof(TableStyleOptionsUpdate))]
+[JsonSerializable(typeof(TablePosition))]
 [JsonSerializable(typeof(TableWidth))]
 [JsonSerializable(typeof(TableWidthKind))]
 [JsonSerializable(typeof(TabsDialogAction))]

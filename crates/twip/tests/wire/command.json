@@ -474,6 +474,25 @@
     "type": "setTableStyleOptions"
   },
   {
+    "type": "setTablePosition",
+    "value": {
+      "horizontal": {
+        "offset": 72.5,
+        "relativeTo": "margin"
+      },
+      "vertical": {
+        "offset": 36.5,
+        "relativeTo": "paragraph"
+      },
+      "wrapDistance": {
+        "bottom": 0.0,
+        "left": 9.0,
+        "right": 9.0,
+        "top": 0.0
+      }
+    }
+  },
+  {
     "height": 72.5,
     "lockAspect": true,
     "type": "setObjectSize",
@@ -863,14 +882,51 @@
     "value": "wholePage"
   },
   {
+    "accent": "#0A74E4",
+    "appearance": "darkWithLightPage",
+    "detail": "full",
     "formattingMarks": true,
     "gridlines": false,
     "liveLayout": false,
+    "objectGrid": "always",
     "textBoundaries": true,
+    "theme": "dark",
     "type": "setViewOptions"
   },
   {
     "type": "setMode",
     "value": "design"
+  },
+  {
+    "type": "setRulerTabType",
+    "value": "decimal"
+  },
+  {
+    "type": "showTabTypes"
+  },
+  {
+    "type": "showTabStop"
+  },
+  {
+    "entries": [
+      {
+        "from": "adn",
+        "to": "and"
+      }
+    ],
+    "smartQuotes": false,
+    "type": "setAutoCorrect"
+  },
+  {
+    "type": "revertAutoCorrect"
+  },
+  {
+    "type": "neverAutoCorrect"
+  },
+  {
+    "type": "showAutoCorrectOptions"
+  },
+  {
+    "type": "closePopover"
   }
 ]

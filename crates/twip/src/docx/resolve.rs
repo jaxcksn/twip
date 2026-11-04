@@ -263,7 +263,7 @@ impl Resolver {
     /// A run resolved from its direct `w:rPr` as written (namespaces as `cx` names them) over `base`: what an edit of
     /// a run's direct formatting gives.
     pub fn run_from_xml(&self, base: &RunProps, rpr: Option<&str>, cx: &Cx) -> Run {
-        let direct = rpr.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el)))).unwrap_or_default();
+        let direct = rpr.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &self.styles.colours))).unwrap_or_default();
         let mut s = (*self.run_style(&self.run_props(base, &direct))).clone();
         s.direct = Raw(rpr.map(Rc::from));
         Rc::new(s)
@@ -273,7 +273,7 @@ impl Resolver {
     /// Hyperlink character style, as the reader resolved it.
     pub fn rerun(&self, base: &RunProps, run: &RunStyle, cx: &Cx) -> Run {
         let rpr = run.direct.0.as_deref();
-        let mut direct = rpr.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el)))).unwrap_or_default();
+        let mut direct = rpr.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &self.styles.colours))).unwrap_or_default();
         if run.toc && direct.style.as_deref() == Some("Hyperlink") {
             direct.style = None;
         }
@@ -285,7 +285,7 @@ impl Resolver {
 
     /// A paragraph resolved from its direct `w:pPr` as written, in `region` when it is in a cell.
     pub fn para_from_xml(&self, ppr: Option<&str>, region: Option<&Region>, cx: &Cx) -> ParaResolved {
-        let direct = ppr.and_then(|x| cx.parse(x, |_, el| ParaProps::parse(Some(el)))).unwrap_or_default();
+        let direct = ppr.and_then(|x| cx.parse(x, |_, el| ParaProps::parse(Some(el), &self.styles.colours))).unwrap_or_default();
         let mut r = self.paragraph(&direct, region);
         r.style.direct = Raw(ppr.map(Rc::from));
         r
@@ -433,7 +433,7 @@ mod tests {
                 sz(normal),
                 sz(normal)
             );
-            let mut styles = Styles::parse(Some(&xml));
+            let mut styles = Styles::parse(Some(&xml), Default::default());
             styles.compat = if compat15 { Compat::Generic } else { Compat::Legacy };
             let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
             let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
@@ -464,7 +464,7 @@ mod tests {
             let xml = format!(
                 r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="{dd}"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0"><w:rPr><w:sz w:val="{normal}"/></w:rPr></w:style><w:style w:type="table" w:default="1" w:styleId="T0"/><w:style w:type="table" w:styleId="T1"><w:basedOn w:val="T0"/></w:style></w:styles>"#
             );
-            let mut styles = Styles::parse(Some(&xml));
+            let mut styles = Styles::parse(Some(&xml), Default::default());
             styles.compat = if compat15 { Compat::Generic } else { Compat::Legacy };
             let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
             let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
@@ -489,7 +489,7 @@ mod tests {
             let xml = format!(
                 r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts {dd}/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0"><w:rPr><w:rFonts {normal}/></w:rPr></w:style></w:styles>"#
             );
-            let res = Resolver::new(Styles::parse(Some(&xml)), Numbering::default(), ThemeFonts::default());
+            let res = Resolver::new(Styles::parse(Some(&xml), Default::default()), Numbering::default(), ThemeFonts::default());
             let base = res.paragraph(&ParaProps::default(), None).base;
             let direct = RunProps { east_asia: Some(FontRef::Name("Times New Roman".into())), ..RunProps::default() };
             res.run_style(&res.run_props(&base, &direct)).east_asia_unset

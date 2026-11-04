@@ -148,6 +148,26 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     /// <returns>Completes when the setting applies.</returns>
     public Task SetModeAsync(EditorMode mode) => CallAsync(Method.SetMode, WireJson.ToUtf8(mode), default);
 
+    /// <summary>Sets the chrome's colour scheme, and optionally its accent. A wrapper over <see cref="EditorCommands.SetViewOptionsAsync"/>.</summary>
+    /// <param name="theme">The scheme: <see cref="ChromeTheme.Light"/>, <see cref="ChromeTheme.Dark"/> or <see cref="ChromeTheme.HighContrast"/>.</param>
+    /// <param name="accent">The accent for selection, handles, guides and active markers; null keeps it. The dark scheme lightens it.</param>
+    /// <returns>Completes when the setting applies.</returns>
+    public Task SetThemeAsync(ChromeTheme theme, ColorValue? accent = null)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        return Commands.SetViewOptionsAsync(theme: theme, accent: accent);
+    }
+
+    /// <summary>Sets how the page is drawn on screen (dark mode). Saving, PDF export and printing keep the document's colours. A wrapper over <see cref="EditorCommands.SetViewOptionsAsync"/>.</summary>
+    /// <param name="appearance">The appearance.</param>
+    /// <returns>Completes when the setting applies.</returns>
+    public Task SetAppearanceAsync(DocumentAppearance appearance) => Commands.SetViewOptionsAsync(appearance: appearance);
+
+    /// <summary>Sets how much the editor measures while you drag and hover. A wrapper over <see cref="EditorCommands.SetViewOptionsAsync"/>.</summary>
+    /// <param name="detail">The detail level.</param>
+    /// <returns>Completes when the setting applies.</returns>
+    public Task SetDetailAsync(MeasureDetail detail) => Commands.SetViewOptionsAsync(detail: detail);
+
     /// <summary>Sets the author of later edits, revisions and comments.</summary>
     /// <param name="author">The author.</param>
     /// <returns>Completes when the setting applies.</returns>
@@ -241,6 +261,21 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
 
     /// <summary>The user asked for a dialog.</summary>
     public event EventHandler<DialogRequestedEventArgs>? DialogRequested;
+
+    /// <summary>
+    /// A click or command asked for a popover: show it at its anchor and answer it with its commands. Attached only.
+    /// While nothing handles it, <c>DocumentEditor</c> shows its own.
+    /// </summary>
+    public event EventHandler<PopoverRequestedEventArgs>? PopoverRequested;
+
+    /// <summary>The engine dismissed the open popover: Esc, a press elsewhere, or its target gone. Close yours.</summary>
+    public event EventHandler? PopoverClosed;
+
+    /// <summary>The popovers no <see cref="PopoverRequested"/> handler takes: the editor control's own.</summary>
+    internal event EventHandler<PopoverRequestedEventArgs>? UnhandledPopover;
+
+    /// <summary>A popover's entry asked for a dialog (AutoCorrect rules…), as the engine's requests do.</summary>
+    internal void RequestDialog(DialogKind kind) => Notify(() => Raise(DialogRequested, new DialogRequestedEventArgs(kind, _state)));
 
     /// <summary>The user pressed a key the application owns.</summary>
     public event EventHandler<HostCommandEventArgs>? HostCommandRequested;
@@ -542,6 +577,14 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
             case "dialogRequested":
                 var dialog = root.Deserialize(ctx.DialogRequestedPayload)!;
                 Notify(() => Raise(DialogRequested, new DialogRequestedEventArgs(dialog.Kind, snapshot)));
+                break;
+            case "popoverRequested":
+                var popover = root.Deserialize(ctx.Popover)!;
+                if (_host is { } popoverHost) popover = popoverHost.ToClient(popover);
+                Notify(() => Raise(PopoverRequested ?? UnhandledPopover, new PopoverRequestedEventArgs(popover, snapshot)));
+                break;
+            case "popoverClosed":
+                Notify(() => Raise(PopoverClosed, EventArgs.Empty));
                 break;
             case "hostCommand":
                 var command = root.Deserialize(ctx.HostCommandPayload)!;

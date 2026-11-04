@@ -44,6 +44,16 @@ public class DocumentEditor : Control
     private TabSelector _tabSelector;
     private int _markupPaneWidth;
     private (double X, double Y)? _scrolled; // what the engine was last told
+    private ChromeTheme _theme = ChromeTheme.Light;
+    private Color _accent = DefaultAccent;
+    private DocumentAppearance _appearance;
+    private MeasureDetail _detail = MeasureDetail.Standard;
+    private bool _highContrast; // the look last sent was Windows' high contrast
+    private bool _themeSet;
+    private bool _backColorSet; // the application set BackColor; until then it follows the theme's desk
+    private bool _followingDesk;
+    private PopoverDropDown? _popover;
+    private static readonly Color DefaultAccent = Color.FromArgb(0x0A, 0x74, 0xE4);
 
     /// <summary>Creates an editor with its own session over a blank document. Designer-safe.</summary>
     public DocumentEditor() : this(new EditorSession(), ownsSession: true) { }
@@ -63,7 +73,7 @@ public class DocumentEditor : Control
         State = new DocumentEditorState(session.State);
         _readOnly = session.State.ReadOnly;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.Selectable | ControlStyles.ResizeRedraw, true);
-        BackColor = Color.FromArgb(0xE6, 0xE6, 0xE6);
+        FollowDesk(Color.FromArgb(0xE8, 0xE7, 0xE3));
         _vertical.Visible = !_designTime;
         _vertical.ValueChanged += OnScrollbar;
         _horizontal.ValueChanged += OnScrollbar;
@@ -71,6 +81,8 @@ public class DocumentEditor : Control
         Controls.Add(_vertical);
         session.StateChanged += OnStateChanged;
         session.CommentAnchorsChanged += OnCommentAnchorsChanged;
+        session.UnhandledPopover += OnPopoverRequested;
+        session.PopoverClosed += OnPopoverClosed;
         if (!_designTime) Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
     }
 
@@ -153,6 +165,77 @@ public class DocumentEditor : Control
     {
         get => _tabSelector;
         set { _tabSelector = value; if (_host is { } h) h.TabSelector = value; }
+    }
+
+    /// <summary>
+    /// The chrome's colour scheme: the desk, rulers, handles, guides, readouts and popovers. While Windows' high
+    /// contrast is on, the editor uses the system colours instead (<see cref="ChromeTheme.HighContrast"/>).
+    /// </summary>
+    [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public ChromeTheme Theme
+    {
+        get => _theme;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            (_theme, _themeSet) = (value, true);
+            ApplyLook();
+        }
+    }
+
+    /// <summary>The chrome's accent: selection, handles, guides and active markers. The dark scheme lightens it.</summary>
+    public Color Accent
+    {
+        get => _accent;
+        set
+        {
+            _accent = value;
+            if (!_designTime) Observe(Session.Commands.SetViewOptionsAsync(accent: value));
+        }
+    }
+
+    private bool ShouldSerializeAccent() => _accent.ToArgb() != DefaultAccent.ToArgb();
+
+    private void ResetAccent() => Accent = DefaultAccent;
+
+    /// <summary>
+    /// How the page is drawn on screen (dark mode). Saving, PDF export and printing keep the document's colours. While
+    /// Windows' high contrast is on, the page stays light.
+    /// </summary>
+    [DefaultValue(DocumentAppearance.Light)]
+    public DocumentAppearance Appearance
+    {
+        get => _appearance;
+        set
+        {
+            _appearance = value;
+            ApplyLook();
+        }
+    }
+
+    /// <summary>How much the editor measures while you drag and hover.</summary>
+    [DefaultValue(MeasureDetail.Standard)]
+    public MeasureDetail MeasureDetail
+    {
+        get => _detail;
+        set
+        {
+            _detail = value;
+            if (!_designTime) Observe(Session.SetDetailAsync(value));
+        }
+    }
+
+    /// <summary>Sends the theme and appearance: the application's, or Windows' high contrast colours and a light page.</summary>
+    private void ApplyLook()
+    {
+        if (_designTime) return;
+        var was = _highContrast;
+        _highContrast = SystemInformation.HighContrast;
+        // Until the application or high contrast sets a scheme, the engine's own choice (from the background) stands.
+        var theme = _highContrast
+            ? ChromeTheme.HighContrast(new HighContrastColors(SystemColors.Window, SystemColors.WindowText, SystemColors.Highlight, SystemColors.HighlightText, SystemColors.GrayText))
+            : _themeSet || was ? _theme : null;
+        Observe(Session.Commands.SetViewOptionsAsync(theme: theme, appearance: _highContrast ? DocumentAppearance.Light : _appearance));
     }
 
     /// <summary>The room beside the pages for comment balloons, in pixels.</summary>
@@ -249,6 +332,13 @@ public class DocumentEditor : Control
         }
     }
 
+    /// <summary>Puts back the engine's overlay colours, which follow the theme again.</summary>
+    public void ResetOverlayColors()
+    {
+        _overlayColors = null;
+        _host?.ResetOverlayColors();
+    }
+
     private static OverlayColors SystemOverlayColors() => SystemInformation.HighContrast
         ? new OverlayColors(SystemColors.WindowText, SystemColors.Highlight, SystemColors.WindowText, SystemColors.WindowText, SystemColors.GrayText, SystemColors.GrayText)
         : OverlayColors.Default;
@@ -262,7 +352,8 @@ public class DocumentEditor : Control
         BeginInvoke(() =>
         {
             if (!_caretBlinkSet) h.CaretBlink = SystemCaretBlink();
-            if (_overlayColors is null) h.OverlayColors = SystemOverlayColors();
+            // High contrast on or off: its theme carries the overlay colours.
+            if (SystemInformation.HighContrast != _highContrast) ApplyLook();
         });
     }
 
@@ -308,17 +399,19 @@ public class DocumentEditor : Control
         base.OnHandleCreated(e);
         if (_designTime) return;
         _host = Session.Attach(new WinFormsAdapter(this));
-        (_host.HorizontalRuler, _host.VerticalRuler, _host.RulerUnit, _host.TabSelector, _host.MarkupPaneWidth, _host.Background) =
-            (_horizontalRuler, _verticalRuler, _rulerUnit, _tabSelector, _markupPaneWidth, BackColor);
+        (_host.HorizontalRuler, _host.VerticalRuler, _host.RulerUnit, _host.TabSelector, _host.MarkupPaneWidth) =
+            (_horizontalRuler, _verticalRuler, _rulerUnit, _tabSelector, _markupPaneWidth);
+        if (_backColorSet) _host.Background = BackColor;
         SendSize();
         _scrolled = null;
         SendScroll();
         _host.OnVisible(Visible);
         if (Focused) _host.OnFocus(true);
-        State.Update(Session.State);
+        Follow(Session.State);
         _host.GpuLost += () => BeginInvoke(OnGpuLost);
         _host.CaretBlink = CaretBlink;
-        if (_overlayColors is not null || SystemInformation.HighContrast) _host.OverlayColors = OverlayColors;
+        if (_overlayColors is not null) _host.OverlayColors = _overlayColors;
+        if (SystemInformation.HighContrast || _highContrast) ApplyLook();
         AttachGpu();
     }
 
@@ -471,7 +564,19 @@ public class DocumentEditor : Control
     protected override void OnBackColorChanged(EventArgs e)
     {
         base.OnBackColorChanged(e);
+        if (_followingDesk) return;
+        _backColorSet = true;
         if (_host is { } h) h.Background = BackColor;
+    }
+
+    /// <summary>Puts back the theme's desk colour, which <see cref="Control.BackColor"/> follows again.</summary>
+    public override void ResetBackColor()
+    {
+        _backColorSet = false;
+        _followingDesk = true;
+        try { base.ResetBackColor(); }
+        finally { _followingDesk = false; }
+        _host?.ResetBackground();
     }
 
     /// <inheritdoc/>
@@ -570,6 +675,67 @@ public class DocumentEditor : Control
         ((DocumentAccessibleObject)AccessibilityObject).Update(tree);
         AccessibilityNotifyClients(AccessibleEvents.Reorder, -1);
     }
+
+    /// <summary>Until the application sets <see cref="Control.BackColor"/>, it follows the theme's desk.</summary>
+    private void FollowDesk(Color desk)
+    {
+        if (_backColorSet || desk.ToArgb() == BackColor.ToArgb()) return;
+        _followingDesk = true;
+        try { BackColor = desk; }
+        finally { _followingDesk = false; }
+    }
+
+    private void Follow(EditorState state)
+    {
+        State.Update(state);
+        if (state.View.Background.Color is { } desk) FollowDesk(desk);
+    }
+
+    // Popovers: shown here unless the application handles EditorSession.PopoverRequested.
+
+    private void OnPopoverRequested(object? sender, PopoverRequestedEventArgs e)
+    {
+        if (InvokeRequired || IsDisposed || !IsHandleCreated) return;
+        ShowPopover(e.Popover);
+    }
+
+    private void OnPopoverClosed(object? sender, EventArgs e)
+    {
+        if (InvokeRequired || IsDisposed) return;
+        ClosePopover();
+    }
+
+    /// <summary>The popover open now, for tests.</summary>
+    internal PopoverDropDown? OpenPopover => _popover;
+
+    internal void ShowPopover(Popover popover)
+    {
+        ClosePopover();
+        var dropDown = new PopoverDropDown(this, popover);
+        dropDown.Closed += (_, _) =>
+        {
+            // Closed on its own (Esc, a click elsewhere): the engine's closes too.
+            if (_popover == dropDown)
+            {
+                _popover = null;
+                Observe(Session.Commands.ClosePopoverAsync());
+            }
+            BeginInvoke(dropDown.Dispose);
+        };
+        _popover = dropDown;
+        dropDown.ShowAt();
+    }
+
+    internal void ClosePopover()
+    {
+        if (_popover is not { } dropDown) return;
+        _popover = null;
+        if (dropDown.Visible) dropDown.Close(ToolStripDropDownCloseReason.CloseCalled); // Closed disposes it
+        else BeginInvoke(dropDown.Dispose);
+    }
+
+    /// <summary>The tab type picker's answer: <see cref="TabSelector"/> follows it.</summary>
+    internal void TabSelectorPicked(TabSelector value) => _tabSelector = value;
 
     internal void Announce(string text) => ((DocumentAccessibleObject)AccessibilityObject).Announce(text);
 
@@ -693,6 +859,7 @@ public class DocumentEditor : Control
     /// Ctrl).</summary>
     private void ModifierChanged(KeyEventArgs e)
     {
+        if (_host is not null && e.KeyCode == Keys.Menu) _host.OnModifiers(KeyMap.Modifiers(ModifierKeys));
         if (_host is null || e.KeyCode is not (Keys.ControlKey or Keys.ShiftKey or Keys.LWin or Keys.RWin)) return;
         var at = PointToClient(MousePosition);
         if (!ClientRectangle.Contains(at)) return;
@@ -809,11 +976,11 @@ public class DocumentEditor : Control
     {
         // Attached, this runs on the UI thread. Before the handle exists, OnHandleCreated catches up instead.
         if (!IsHandleCreated || IsDisposed) return;
-        if (InvokeRequired) BeginInvoke(() => State.Update(Session.State));
-        else State.Update(e.Snapshot);
+        if (InvokeRequired) BeginInvoke(() => Follow(Session.State));
+        else Follow(e.Snapshot);
     }
 
-    private static void Observe(Task task) => task.ContinueWith(static t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+    internal static void Observe(Task task) => task.ContinueWith(static t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
 
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)
@@ -822,6 +989,9 @@ public class DocumentEditor : Control
         {
             Session.StateChanged -= OnStateChanged;
             Session.CommentAnchorsChanged -= OnCommentAnchorsChanged;
+            Session.UnhandledPopover -= OnPopoverRequested;
+            Session.PopoverClosed -= OnPopoverClosed;
+            _popover?.Dispose();
             Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _caret.Destroy();
             _host?.Dispose();

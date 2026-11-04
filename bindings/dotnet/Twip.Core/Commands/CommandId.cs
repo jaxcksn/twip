@@ -353,4 +353,22 @@ public enum CommandId
     SetViewOptions,
     /// <summary>Switches between editing and design mode.</summary>
     SetMode,
+    /// <summary>Sets what a click on the ruler adds; answers the tab type picker. A view setting.</summary>
+    SetRulerTabType,
+    /// <summary>Asks for the tab type picker.</summary>
+    ShowTabTypes,
+    /// <summary>Asks for the options of the tab stop nearest the caret.</summary>
+    ShowTabStop,
+    /// <summary>Switches AutoCorrect rules on or off, and replaces its lists. A session setting.</summary>
+    SetAutoCorrect,
+    /// <summary>Puts back what was typed before the correction at the caret.</summary>
+    RevertAutoCorrect,
+    /// <summary>Reverts the correction at the caret, and never makes it again.</summary>
+    NeverAutoCorrect,
+    /// <summary>Asks for the options of the correction at the caret.</summary>
+    ShowAutoCorrectOptions,
+    /// <summary>Positions the caret's table so text wraps around it, or puts it back in the text. Unset values are kept.</summary>
+    SetTablePosition,
+    /// <summary>Dismisses the popover asked for; with none open, nothing.</summary>
+    ClosePopover,
 }

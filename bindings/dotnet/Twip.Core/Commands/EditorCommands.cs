@@ -705,6 +705,17 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetTableStyleOptionsAsync(TableStyleOptionsUpdate options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTableStyleOptions(options), ct);
 
+    /// <summary>
+    /// Positions the caret's table so text wraps around it, as dragging its move handle does: a table without a
+    /// position gets one across from the margin and down from the paragraph, and each axis given is aligned, offset, or
+    /// (with neither) kept where it is and measured from its new reference. Unset values are kept; null puts the table
+    /// back in the text.
+    /// </summary>
+    /// <param name="position">The position, or null for a table in the text.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetTablePositionAsync(TablePosition? position, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTablePosition(position), ct);
+
     /// <summary>Resizes the selected picture or text box. Unset values are kept.</summary>
     /// <param name="width">The width, 1 to 1584 pt.</param>
     /// <param name="height">The height, 1 to 1584 pt.</param>
@@ -1086,18 +1097,69 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetZoomAsync(ZoomLevel zoom, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetZoom(zoom), ct);
 
-    /// <summary>Shows or hides formatting marks, gridlines and text boundaries. Unset values are kept.</summary>
+    /// <summary>Sets the view options: formatting marks, gridlines, text boundaries, the chrome's theme and accent, dark mode, the measuring detail and the object grid. Unset values are kept.</summary>
     /// <param name="formattingMarks">Formatting marks.</param>
     /// <param name="gridlines">Table gridlines.</param>
     /// <param name="textBoundaries">Text boundaries.</param>
     /// <param name="liveLayout">Text wraps around an object again as it is dragged; otherwise a preview shows until the release.</param>
+    /// <param name="theme">The chrome's colour scheme.</param>
+    /// <param name="accent">The chrome's accent: selection, handles, guides and active markers. Any colour; the dark scheme lightens it.</param>
+    /// <param name="appearance">How the page is drawn on screen (dark mode).</param>
+    /// <param name="detail">How much the editor measures while you drag and hover.</param>
+    /// <param name="objectGrid">When the dot grid objects snap to shows (unrelated to <paramref name="gridlines"/>).</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout), ct);
+    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid), ct);
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetModeAsync(EditorMode mode, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetMode(mode), ct);
+
+    /// <summary>Sets what a click on the ruler adds; answers the tab type picker. A view setting.</summary>
+    /// <param name="value">The tab type or indent marker.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetRulerTabTypeAsync(TabSelector value, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetRulerTabType(value), ct);
+
+    /// <summary>Asks for the tab type picker (<see cref="EditorSession.PopoverRequested"/>), as a click on the ruler's tab type box does.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the command has run.</returns>
+    public Task ShowTabTypesAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.ShowTabTypes(), ct);
+
+    /// <summary>Asks for the options of the tab stop nearest the caret (<see cref="EditorSession.PopoverRequested"/>).</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the command has run.</returns>
+    public Task ShowTabStopAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.ShowTabStop(), ct);
+
+    /// <summary>Switches AutoCorrect rules on or off, and replaces its lists. A session setting, not an undo step.</summary>
+    /// <param name="change">The rules and lists to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the setting applies and <see cref="EditorSession.State"/> shows it.</returns>
+    public Task SetAutoCorrectAsync(AutoCorrectChange change, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        return _session.RunAsync(EditorOperation.SetAutoCorrect(change), ct);
+    }
+
+    /// <summary>Puts back what was typed before the correction at the caret. Undoes the correction when it is the last step, otherwise one step of its own.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task RevertAutoCorrectAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.RevertAutoCorrect(), ct);
+
+    /// <summary>Reverts the correction at the caret, and never makes it again.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task NeverAutoCorrectAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.NeverAutoCorrect(), ct);
+
+    /// <summary>Asks for the options of the correction at the caret (<see cref="EditorSession.PopoverRequested"/>, Alt+Shift+F10).</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the command has run.</returns>
+    public Task ShowAutoCorrectOptionsAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.ShowAutoCorrectOptions(), ct);
+
+    /// <summary>Dismisses the popover asked for (<see cref="EditorSession.PopoverClosed"/>), for an application that closes its own on Esc or a click elsewhere; with none open, nothing.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the command has run.</returns>
+    public Task ClosePopoverAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.ClosePopover(), ct);
 }

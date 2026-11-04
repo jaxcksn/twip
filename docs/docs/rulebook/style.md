@@ -101,3 +101,9 @@ Example: a style with stops at 1in and 3in, and direct `w:tab w:val="clear" w:po
 ### STYLE-10. Several w:rPr in a run {#style-10}
 
 A run's children are read in order. The `w:rPr` elements before its first content merge into its direct formatting; a `w:rPr` after some content adds its properties for the content after it, as a later layer; one after the last content does nothing. Content before any `w:rPr` has no direct formatting.
+
+### STYLE-11. Theme colours {#style-11}
+
+A colour attribute that has a theme form takes the theme form when it names a theme colour: `w:color`'s `w:themeColor` (over `w:val`), `w:shd`'s `w:themeFill` (over `w:fill`) and `w:themeColor` (over `w:color`), and a border's `w:themeColor` (over `w:color`). The names `dark1`, `light1`, `dark2`, `light2`, `accent1` … `accent6`, `hyperlink` and `followedHyperlink` are the theme's colours; `background1`, `text1`, `background2` and `text2` go through the settings' colour mapping first ([DRAW-7](draw#draw-7)). A tint (`w:themeTint`, `w:themeFillTint`, two hex digits *t* / 255) moves the colour's HSL luminance toward white, *L* · *t* + 1 − *t*; a shade (`w:themeShade`, `w:themeFillShade`) toward black, *L* · *s*; with both, only the tint applies. The RGB attribute is used when the theme name is missing or unknown.
+
+Example: `<w:color w:val="1F3864" w:themeColor="accent1" w:themeShade="80"/>` with the default theme's accent1 `156082` is drawn in `156082` at half its luminance, `0B3041`.

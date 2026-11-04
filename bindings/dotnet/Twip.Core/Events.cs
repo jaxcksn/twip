@@ -119,6 +119,20 @@ public enum DialogKind
     Tabs,
     /// <summary>The accessibility check.</summary>
     Accessibility,
+    /// <summary>The AutoCorrect rules.</summary>
+    AutoCorrect,
+}
+
+/// <summary>
+/// A click or command asked for a popover. Show it at the popover's anchor, or let <c>DocumentEditor</c> show its own
+/// when nothing handles this event. Opening one closes the one open.
+/// </summary>
+public sealed class PopoverRequestedEventArgs : EditorEventArgs
+{
+    internal PopoverRequestedEventArgs(Popover popover, EditorState snapshot) : base(snapshot) => Popover = popover;
+
+    /// <summary>The popover, its anchor in control client pixels.</summary>
+    public Popover Popover { get; }
 }
 
 /// <summary>The user asked for a dialog (Ctrl+D, a double-click on the ruler). Open it through <see cref="EditorSession.Dialogs"/>.</summary>

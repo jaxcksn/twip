@@ -41,7 +41,7 @@ pub struct Numbering {
 }
 
 impl Numbering {
-    pub fn parse(xml: Option<&str>) -> Numbering {
+    pub fn parse(xml: Option<&str>, colours: &super::props::ThemeColours) -> Numbering {
         let mut n = Numbering::default();
         let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return n };
         let root = doc.root_element();
@@ -63,8 +63,8 @@ impl Numbering {
                     is_lgl: child(l, "isLgl").map(on_off).unwrap_or(false),
                     restart: child(l, "lvlRestart").and_then(|s| int(val(s))),
                     pstyle: v("pStyle"),
-                    ppr: ParaProps::parse(child(l, "pPr")),
-                    rpr: RunProps::parse(child(l, "rPr")),
+                    ppr: ParaProps::parse(child(l, "pPr"), colours),
+                    rpr: RunProps::parse(child(l, "rPr"), colours),
                 });
             }
             n.abstracts.insert(id, AbstractNum { levels, num_style_link: child(a, "numStyleLink").and_then(val).map(str::to_string) });

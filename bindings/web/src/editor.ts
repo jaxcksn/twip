@@ -52,7 +52,7 @@ export interface MountOptions extends SessionOptions {
   markupPaneWidth?: number;
   /** The zoom. Default 100. */
   zoom?: number | 'pageWidth' | 'wholePage';
-  /** The background around the pages. Default `'#E6E6E6'`; the paper stays white. */
+  /** The background around the pages. Default: the theme's desk colour. */
   background?: Color;
   /**
    * The caret's blink: ms per phase, 0 for a steady caret. Default 530, or steady while the platform asks for reduced
@@ -153,6 +153,8 @@ export class Session {
   readonly hostListeners = new Set<(message: Message) => void>();
   /** A mounted host's view of an engine event before it is emitted: its viewport points become client points. */
   adjust: ((type: keyof TwipEvents, event: unknown) => unknown) | undefined;
+  /** A mounted host's own handling of an event the application doesn't listen to (its popovers). */
+  readonly fallbacks = new Map<keyof TwipEvents, (event: never) => void>();
   /** Run once on destroy, last added first. */
   readonly disposers: (() => void)[] = [];
   #closing: Promise<void> | undefined;
@@ -253,6 +255,8 @@ export class Session {
   emit<K extends keyof TwipEvents>(type: K, event: TwipEvents[K]): void {
     const listeners = [...(this.#listeners.get(type) ?? [])];
     if (type === 'error' && !listeners.length) console.error(event);
+    const fallback = listeners.length ? undefined : this.fallbacks.get(type);
+    if (fallback) this.#isolate(() => fallback(event as never));
     for (const listener of listeners) {
       if (this.destroyed) return;
       if (type === 'error') {

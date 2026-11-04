@@ -15,6 +15,9 @@ const editingKeys = new Set([
 /** The clipboard's keys: the browser turns them into `copy`, `cut` and `paste` events (host/clipboard.ts). */
 const clipboardKeys = new Set(['ctrl+c', 'ctrl+x', 'ctrl+v', 'ctrl+shift+v', 'ctrl+insert', 'shift+insert', 'shift+delete']);
 
+/** The modifier keys, by `KeyboardEvent.key`. */
+const modifierKeys = new Set(['Alt', 'Control', 'Shift', 'Meta']);
+
 /** The keys that ask for a dialog (`dialogRequested`): the engine's, though `shortcuts.lookup` names none of them. */
 const dialogKeys = new Set(['ctrl+d']);
 
@@ -57,8 +60,15 @@ export function startInput(s: Session, dom: Dom, ledger: Ledger, report: (e: unk
     'position:absolute;left:0;top:0;width:1px;height:1em;opacity:0;border:0;padding:0;margin:0;resize:none;overflow:hidden;' +
     'white-space:pre;outline:none;caret-color:transparent;pointer-events:none;';
 
+  // A modifier pressed or let go alone (Alt mid-drag): the engine runs the drag or hover again with it.
+  const modifier = (e: KeyboardEvent) => {
+    if (!modifierKeys.has(e.key) || e.repeat) return false;
+    s.input({ type: 'modifiers', mods: modsOf(e) }).catch(report);
+    return true;
+  };
+  ledger.listen(input, 'keyup', modifier);
   ledger.listen(input, 'keydown', (e: KeyboardEvent) => {
-    if (e.isComposing || e.keyCode === 229) return;
+    if (e.isComposing || e.keyCode === 229 || modifier(e)) return;
     const key = keyNumber(e.code);
     if (!key) return;
     const all = chords(e);

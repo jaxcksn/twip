@@ -293,9 +293,30 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("paragraph-formatting", ParagraphFormatting, vec![paragraph()]),
         fixture!("page-formatting", PageFormatting, vec![page()]),
         fixture!("view-state", ViewState, vec![ViewState::default()]),
+        fixture!(
+            "chrome-theme",
+            ChromeTheme,
+            vec![
+                ChromeTheme::Light,
+                ChromeTheme::Dark,
+                ChromeTheme::HighContrast(SystemColors {
+                    canvas: Color(0x000000),
+                    canvas_text: Color(0xFFFFFF),
+                    highlight: Color(0x1AEBFF),
+                    highlight_text: Color(0x000000),
+                    gray_text: Color(0x3FF23F),
+                }),
+            ]
+        ),
+        fixture!("document-appearance", DocumentAppearance, all()),
+        fixture!("measure-detail", MeasureDetail, all()),
+        fixture!("object-grid", ObjectGrid, all()),
         fixture!("review-state", ReviewState, vec![review_state()]),
         // events
         fixture!("event", Event, events()),
+        fixture!("popover-tab-type", Popover, vec![popovers()[0].clone()]),
+        fixture!("popover-tab-stop", Popover, vec![popovers()[1].clone()]),
+        fixture!("popover-autocorrect", Popover, vec![popovers()[2].clone()]),
         fixture!(
             "key-outcome",
             KeyOutcome,
@@ -642,6 +663,7 @@ fn commands() -> Vec<Command> {
             banded_rows: Some(true),
             banded_columns: Some(false),
         }),
+        Command::SetTablePosition(Some(table_position())),
         Command::SetObjectSize(ObjectSize { width: Some(Points(144.5)), height: Some(Points(72.5)), lock_aspect: Some(true) }),
         Command::ResetObjectSize,
         Command::SetObjectWrap(ObjectWrap::Square),
@@ -753,8 +775,42 @@ fn commands() -> Vec<Command> {
             gridlines: Some(false),
             text_boundaries: Some(true),
             live_layout: Some(false),
+            theme: Some(ChromeTheme::Dark),
+            accent: Some(Color(0x0A74E4)),
+            appearance: Some(DocumentAppearance::DarkWithLightPage),
+            detail: Some(MeasureDetail::Full),
+            object_grid: Some(ObjectGrid::Always),
         }),
         Command::SetMode(Mode::Design),
+        Command::SetRulerTabType(TabSelector::Decimal),
+        Command::ShowTabTypes,
+        Command::ShowTabStop,
+        Command::SetAutoCorrect(AutoCorrectChange {
+            smart_quotes: Some(false),
+            entries: Some(vec![AutoCorrectEntry { from: "adn".into(), to: "and".into() }]),
+            ..AutoCorrectChange::default()
+        }),
+        Command::RevertAutoCorrect,
+        Command::NeverAutoCorrect,
+        Command::ShowAutoCorrectOptions,
+        Command::ClosePopover,
+    ]
+}
+
+fn popovers() -> [Popover; 3] {
+    let anchor = ClientRect { left: 120.5, top: 10.0, width: 14.0, height: 14.0 };
+    let choice = |value, name: &str, description: &str| TabTypeChoice { value, name: name.into(), description: description.into() };
+    [
+        Popover::TabType {
+            anchor: ClientRect { left: 0.0, top: 3.0, width: 18.0, height: 18.0 },
+            current: TabSelector::Left,
+            choices: vec![
+                choice(TabSelector::Left, "Left", "Text starts at the stop"),
+                choice(TabSelector::Decimal, "Decimal", "Numbers line up on the decimal point"),
+            ],
+        },
+        Popover::TabStop { anchor, position: Points(198.5), alignment: TabAlignment::Right, leader: TabLeader::Dots },
+        Popover::AutoCorrect { anchor, from: "(c)".into(), to: "©".into() },
     ]
 }
 
@@ -800,7 +856,17 @@ fn command_values() -> Vec<CommandValue> {
         CommandValue::Alignment(Tri::Uniform(Alignment::Center)),
         CommandValue::LineSpacing(Tri::Uniform(LineSpacing::AtLeast { size: Points(12.5) })),
         CommandValue::Toggle(Tri::Unavailable),
+        CommandValue::TabType(TabSelector::Decimal),
+        CommandValue::TablePosition(table_position()),
     ]
+}
+
+fn table_position() -> TablePosition {
+    TablePosition {
+        horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align: None, offset: Some(Points(72.5)) }),
+        vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(36.5)) }),
+        wrap_distance: Some(TextDistance { top: Points(0.0), bottom: Points(0.0), left: Points(9.0), right: Points(9.0) }),
+    }
 }
 
 fn selection() -> SelectionSummary {
@@ -972,6 +1038,7 @@ fn state() -> State {
         ruler: ruler(),
         format_painter: false,
         theme_colours: vec![Color(0x000000), Color(0xFFFFFF)],
+        auto_correct: AutoCorrectOptions { never: vec!["teh".into()], ..AutoCorrectOptions::default() },
     }
 }
 
@@ -1389,6 +1456,8 @@ fn events() -> Vec<Event> {
         Event::LinkActivated { address: "https://example.com".into(), via: LinkVia::CtrlClick },
         Event::PlaceholderActivated(PlaceholderInfo { key: "logo".into(), element: None }),
         Event::ContextMenu(ContextMenuEvent { menu: menu(), at: at(), via: MenuVia::Pointer }),
+        Event::PopoverRequested(popovers()[1].clone()),
+        Event::PopoverClosed,
         Event::DialogRequested { kind: DialogKind::Tabs },
         Event::HostCommand { command: HostCommand::Save },
         Event::Shortcut { id: "insertSignature".into() },

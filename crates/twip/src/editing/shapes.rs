@@ -5,6 +5,7 @@ use crate::layout::fragment::{Item, ShapeItem};
 
 use super::Editor;
 use super::selection::ObjectRef;
+use super::snap::SnapLine;
 use super::view::ShapeFrame;
 
 /// A handle of the selected shape other than the eight resize handles.
@@ -36,19 +37,22 @@ impl Editor {
         })
     }
 
-    /// The selected shape's frame on each of `pages`: its box and rotation, its rotate handle 18 px above the
+    /// The selected shape's frame on each of `pages`: its box and rotation, its rotate knob's centre 24 px above the
     /// top's middle and its adjust handles, all turned with it. A group's frame is its box. None for a
-    /// multi-selection, an object that can't change, one without a shape tree, or while it is dragged.
+    /// multi-selection, an object that can't change, one without a shape tree (a frame), or while it is dragged.
+    // shortcut: inline pictures have no rotate knob; turning one needs an inline picture's shape tree and a turned
+    // inline layout, which the inline picture path doesn't have.
     pub(super) fn shape_frames(&mut self, pages: std::ops::Range<usize>) -> Vec<ShapeFrame> {
         let floats = self.selected_floats();
         let [f] = floats[..] else { return Vec::new() };
         if self.object_fixed(ObjectRef::Floating(f))
             || self.object_drag.is_some_and(|d| d.now != d.start)
+            || self.shape_drag.is_some()
             || self.float_of(f).is_none_or(|fl| fl.shape.is_none())
         {
             return Vec::new();
         }
-        let up = 18.0 * 0.75 / self.viewport.zoom.max(0.1);
+        let up = KNOB * 0.75 / self.viewport.zoom.max(0.1);
         let mut out = Vec::new();
         for page in pages {
             let (rect, rot, adjust) = match self.selected_shape(f, page) {
@@ -85,6 +89,9 @@ impl Editor {
     }
 }
 
+/// The rotate knob's centre above the top's middle, px.
+const KNOB: f64 = 24.0;
+
 /// A rotate or adjust handle (or a group child) being dragged.
 #[derive(Clone, Debug)]
 pub(super) struct ShapeDrag {
@@ -92,15 +99,45 @@ pub(super) struct ShapeDrag {
     /// The float's shape box on the press's page (its own box, unturned).
     root: [f64; 4],
     child: crate::drawing::ChildPath,
-    handle: ShapeHandle,
+    pub handle: ShapeHandle,
     /// The shape as drawn when the press was.
-    item: std::rc::Rc<ShapeItem>,
-    /// Where the press was and where the pointer is, in the press's page's coordinates.
+    pub item: std::rc::Rc<ShapeItem>,
+    /// Where the press was and where the pointer is (a moved child's: snapped), in the press's page's coordinates.
     start: [f64; 2],
-    now: [f64; 2],
-    page: usize,
+    pub now: [f64; 2],
+    pub page: usize,
     shift: bool,
     previewed: Option<crate::layout::ParaId>,
+    /// The line each axis of a moved child snapped to.
+    pub snapped: [Option<SnapLine>; 2],
+}
+
+impl ShapeDrag {
+    fn new(
+        f: FloatId,
+        root: [f64; 4],
+        child: crate::drawing::ChildPath,
+        handle: ShapeHandle,
+        item: std::rc::Rc<ShapeItem>,
+        at: [f64; 2],
+        page: usize,
+    ) -> ShapeDrag {
+        ShapeDrag { f, root, child, handle, item, start: at, now: at, page, shift: false, previewed: None, snapped: [None; 2] }
+    }
+
+    /// The angle a rotation turns the shape to as drawn, degrees: settled on a right angle within 4° of one, or with
+    /// Shift on a multiple of 15°.
+    pub fn angle(&self) -> f64 {
+        let [x0, y0, x1, y1] = self.item.rect;
+        let c = [(x0 + x1) / 2.0, (y0 + y1) / 2.0];
+        let angle = |p: [f64; 2]| (p[1] - c[1]).atan2(p[0] - c[0]).to_degrees();
+        let total = self.item.rot + angle(self.now) - angle(self.start);
+        if self.shift {
+            return (total / SNAP).round() * SNAP;
+        }
+        let right = (total / 90.0).round() * 90.0;
+        if (total - right).abs() < SETTLE { right } else { total }
+    }
 }
 
 /// Shape insert mode: the kind the next press inserts, and the drag sizing it.
@@ -198,6 +235,8 @@ pub use crate::api::drawing::Arrange;
 
 /// Shift snaps a rotation to 15°.
 const SNAP: f64 = 15.0;
+/// A rotation settles on a right angle this near it, degrees.
+const SETTLE: f64 = 4.0;
 
 impl Editor {
     /// A press on the selected shape's rotate or adjust handle starts its drag. True when handled.
@@ -207,8 +246,7 @@ impl Editor {
         let child = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
         let Some(item) = self.selected_shape(f, frame.page).or_else(|| self.group_item(f, frame.page)) else { return false };
         let Some(root) = self.shape_root(f, frame.page) else { return false };
-        self.shape_drag =
-            Some(ShapeDrag { f, root, child, handle, item, start: [px, py], now: [px, py], page: frame.page, shift: false, previewed: None });
+        self.shape_drag = Some(ShapeDrag::new(f, root, child, handle, item, [px, py], frame.page));
         self.requests.push(super::input::Request::CapturePointer);
         true
     }
@@ -218,8 +256,8 @@ impl Editor {
     pub(super) fn child_move_press(&mut self, f: FloatId, page: usize, px: f64, py: f64) -> bool {
         let Some(child) = self.selected_child().map(<[u16]>::to_vec) else { return false };
         let (Some(item), Some(root)) = (self.selected_shape(f, page), self.shape_root(f, page)) else { return false };
-        self.shape_drag =
-            Some(ShapeDrag { f, root, child, handle: ShapeHandle::Move, item, start: [px, py], now: [px, py], page, shift: false, previewed: None });
+        self.shape_drag = Some(ShapeDrag::new(f, root, child, ShapeHandle::Move, item, [px, py], page));
+        self.build_snaps(page, super::objects::Dragged::Float(f));
         self.requests.push(super::input::Request::CapturePointer);
         true
     }
@@ -259,15 +297,8 @@ impl Editor {
         let s = n.shape.as_deref_mut()?.at_mut(&d.child)?;
         match d.handle {
             ShapeHandle::Rotate => {
-                let [x0, y0, x1, y1] = d.item.rect;
-                let c = [(x0 + x1) / 2.0, (y0 + y1) / 2.0];
-                let angle = |p: [f64; 2]| (p[1] - c[1]).atan2(p[0] - c[0]).to_degrees();
-                let mut total = d.item.rot + angle(d.now) - angle(d.start);
-                if d.shift {
-                    total = (total / SNAP).round() * SNAP;
-                }
                 // The shape's own rotation changes by as much as the drawn one (a child's composes with its groups').
-                let own = s.xfrm.rot.degrees() + total - d.item.rot;
+                let own = s.xfrm.rot.degrees() + d.angle() - d.item.rot;
                 rotate_to(&mut n, &d.child, own, compat);
             }
             ShapeHandle::Adjust(i) => {
@@ -283,11 +314,18 @@ impl Editor {
     }
 
     /// A pointer move during a handle drag: the float is laid out as the release would leave it.
-    pub(super) fn shape_move(&mut self, x: f64, y: f64, shift: bool) {
+    pub(super) fn shape_move(&mut self, x: f64, y: f64, mods: super::keymap::Mods) {
         let Some(mut d) = self.shape_drag.take() else { return };
         // Taken on the press's page, wherever the pointer is.
         let (ox, oy) = self.stack().to_doc(d.page, 0.0, 0.0).unwrap_or((0.0, 0.0));
-        (d.now, d.shift) = ([x - ox, y - oy], shift);
+        (d.now, d.shift, d.snapped) = ([x - ox, y - oy], mods.shift, [None; 2]);
+        // A moved child snaps by its bounds, unless Alt is held.
+        if d.handle == ShapeHandle::Move && !mods.alt {
+            let [x0, y0, x1, y1] = super::snap::turned_bounds(d.item.rect, d.item.rot);
+            let (dx, dy) = (d.now[0] - d.start[0], d.now[1] - d.start[1]);
+            let (off, hit) = super::snap::snap([x0 + dx, y0 + dy, x1 + dx, y1 + dy], &self.snaps, self.snap_threshold());
+            (d.now, d.snapped) = ([d.now[0] + off[0], d.now[1] + off[1]], hit);
+        }
         let preview = self.dragged_float(&d).and_then(|float| Some(crate::layout::Preview { float, anchor: self.index.float_anchor(d.f)? }));
         let at = preview.as_ref().map(|p| p.anchor);
         self.preview_layout(d.f, preview, d.previewed);

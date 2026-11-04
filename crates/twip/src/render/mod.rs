@@ -4,10 +4,12 @@
 
 use std::collections::HashMap;
 
+pub mod appearance;
 mod overlay;
 pub mod retained;
 pub mod ruler;
 mod shape;
+pub mod theme;
 #[cfg(target_os = "emscripten")]
 pub mod web;
 #[cfg(twip_dawn)]
@@ -56,7 +58,18 @@ pub struct Renderer {
     pub retained: retained::Retained,
     /// Draw everything from scratch, past any retained page content: what a verified frame is compared with.
     pub direct: bool,
+    /// The overlay colours: the theme's, or the host's ([`Renderer::overlay_colours`]).
     pub palette: Palette,
+    /// The chrome's colours.
+    pub theme: theme::Theme,
+    /// Overlay colours the host set; they win over the theme's.
+    pub overlay_colours: Option<Palette>,
+    /// How the document's colours are drawn (DRAW-27).
+    pub appearance: appearance::Appearance,
+    /// The document's page colour (PAGE-12), on screen only.
+    pub page_colour: Option<u32>,
+    /// The item being drawn is inside a shape with a fill: it keeps its colours (DRAW-27).
+    own_colours: bool,
 }
 
 /// The colours of the overlays the host can set. By default the lines and marks are at least 3:1 against the page,
@@ -74,15 +87,28 @@ pub struct Palette {
 
 impl Default for Palette {
     fn default() -> Palette {
-        Palette {
-            caret: Color::BLACK,
-            selection: Color::from_rgb(0xB3, 0xD7, 0xFF),
-            object: Color::from_rgb(0x60, 0x60, 0x60),
-            drop: Color::from_rgb(0x40, 0x40, 0x40),
-            marks: Color::from_rgb(0x2F, 0x6F, 0xB5),
-            leaders: Color::from_rgb(0x76, 0x76, 0x76),
-        }
+        theme::Theme::default().palette()
     }
+}
+
+/// The chrome's typefaces: subsets of JetBrains Mono (labels, numbers, hints and readouts) that ship with the engine
+/// (`twip-tools chrome-fonts`), the same on every target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChromeFace {
+    Mono500,
+    Mono600,
+}
+
+/// A chrome typeface, made once per thread.
+pub fn chrome_typeface(face: ChromeFace) -> Option<Typeface> {
+    thread_local! {
+        static FACES: [Option<Typeface>; 2] = [
+            &include_bytes!("chrome_fonts/jetbrains-mono-500.ttf")[..],
+            include_bytes!("chrome_fonts/jetbrains-mono-600.ttf"),
+        ]
+        .map(|b| FontMgr::new().new_from_data(Data::new_copy(b), 0));
+    }
+    FACES.with(|f| f[face as usize].clone())
 }
 
 pub fn rgb(c: u32) -> Color {
@@ -93,6 +119,17 @@ impl Renderer {
     /// A renderer for the screen: it keeps each page's content ([`retained`]).
     pub fn retaining() -> Renderer {
         Renderer { retain: true, ..Renderer::default() }
+    }
+
+    /// Sets the chrome's theme; the overlay colours follow it unless the host set its own.
+    pub fn set_theme(&mut self, theme: theme::Theme) {
+        self.theme = theme;
+        self.palette = self.overlay_colours.unwrap_or_else(|| theme.palette());
+    }
+
+    /// The colour document colour `c` is drawn in (DRAW-27).
+    pub(super) fn ink(&self, c: u32) -> Color {
+        rgb(if self.own_colours { c } else { self.appearance.map(c) })
     }
 
     /// Forgets decoded pictures (a new document).
@@ -145,15 +182,18 @@ impl Renderer {
 
     /// Draws a frame: the visible pages, then the view's overlays over them.
     pub fn draw(&mut self, canvas: &Canvas, view: &View, images: &[Vec<u8>], f: &Frame) {
-        canvas.clear(self.background.unwrap_or(Color::from_rgb(0xf3, 0xf3, 0xf3)));
+        canvas.clear(self.background.unwrap_or(self.theme.tokens.desk));
         canvas.save();
         canvas.scale((f.dpr as f32, f.dpr as f32));
         canvas.translate((f.origin_x as f32, f.origin_y as f32));
         let k = f.px_per_pt;
         let mut shadow = Paint::default();
         shadow.set_anti_alias(true);
-        let mut white = Paint::default();
-        white.set_color(Color::WHITE);
+        // PAGE-12, DRAW-27: the page in its colour.
+        self.own_colours = false;
+        let mut paper = Paint::default();
+        paper.set_color(self.ink(self.page_colour.unwrap_or(0xFF_FFFF)));
+        let shadow_k = self.theme.tokens.shadow;
         for i in view.pages_visible.clone() {
             let Some(page) = view.snapshot.pages().get(i) else { continue };
             let [x, y, w, h] = view.stack.pages[i];
@@ -162,24 +202,32 @@ impl Renderer {
             canvas.save();
             canvas.clip_rect(r, skia_safe::ClipOp::Difference, false);
             for (inflate, drop, alpha) in [(4.0, 3.0, 6), (3.0, 2.5, 10), (2.0, 2.0, 14), (1.0, 1.0, 22)] {
-                shadow.set_color(Color::from_argb(alpha, 0, 0, 0));
+                shadow.set_color(Color::from_argb((alpha as f32 * shadow_k).min(255.0) as u8, 0, 0, 0));
                 let s = Rect::new(r.left - inflate, r.top - inflate + drop, r.right + inflate, r.bottom + inflate + drop);
                 canvas.draw_rrect(RRect::new_rect_xy(s, inflate + 2.0, inflate + 2.0), &shadow);
             }
             canvas.restore();
-            canvas.draw_rect(r, &white);
+            canvas.draw_rect(r, &paper);
             canvas.save();
             canvas.translate((r.left, r.top));
             canvas.scale((k as f32, k as f32));
             if self.retain && !self.direct {
                 let mut kept = std::mem::take(&mut self.retained);
-                kept.draw(canvas, page, retained::Inputs { gridlines: self.gridlines }, (w, h), |c| {
-                    paint(page, &mut |p| self.item(c, &p.absolute(), images));
+                let inputs = retained::Inputs { gridlines: self.gridlines, appearance: self.appearance };
+                kept.draw(canvas, page, inputs, (w, h), |c| {
+                    paint(page, &mut |p| {
+                        self.own_colours = p.own_colours;
+                        self.item(c, &p.absolute(), images)
+                    });
                 });
                 self.retained = kept;
             } else {
-                paint(page, &mut |p| self.item(canvas, &p.absolute(), images));
+                paint(page, &mut |p| {
+                    self.own_colours = p.own_colours;
+                    self.item(canvas, &p.absolute(), images)
+                });
             }
+            self.own_colours = false;
             self.overlays(canvas, view, images, i, f);
             canvas.restore();
         }
@@ -196,7 +244,7 @@ impl Renderer {
         let r = Rect::new(x0, y0, x1, y1);
         let (a, rr, g, b) = ((ph.color >> 24) as u8, (ph.color >> 16) as u8, (ph.color >> 8) as u8, ph.color as u8);
         let mut fill = Paint::default();
-        fill.set_color(Color::from_argb(255, 255, 255, 255));
+        fill.set_color(self.ink(0xFF_FFFF));
         canvas.draw_rect(r, &fill);
         fill.set_color(Color::from_argb(a, rr, g, b));
         canvas.draw_rect(r, &fill);
@@ -256,7 +304,7 @@ impl Renderer {
         paint.set_anti_alias(true);
         match item {
             Item::Rect { rect: [x0, y0, x1, y1], colour } => {
-                paint.set_color(rgb(*colour));
+                paint.set_color(self.ink(*colour));
                 canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &paint);
             }
             Item::Glyphs(r) => {
@@ -269,7 +317,7 @@ impl Renderer {
                 if r.face.sim_italic {
                     font.set_skew_x(-0.2);
                 }
-                paint.set_color(rgb(r.colour.unwrap_or(0)));
+                paint.set_color(self.ink(r.colour.unwrap_or(0)));
                 if self.with_text && draw_text(canvas, r, &font, &paint) {
                     return;
                 }
@@ -281,7 +329,7 @@ impl Renderer {
                 if !self.gridlines {
                     return;
                 }
-                paint.set_color(Color::from_rgb(0x9d, 0xc3, 0xe6)).set_style(skia_safe::PaintStyle::Stroke).set_stroke_width(0.75);
+                paint.set_color(self.ink(0x9D_C3E6)).set_style(skia_safe::PaintStyle::Stroke).set_stroke_width(0.75);
                 paint.set_path_effect(skia_safe::PathEffect::dash(&[2.25, 1.5], 0.0));
                 canvas.draw_line((*x0 as f32, *y0 as f32), (*x1 as f32, *y1 as f32), &paint);
             }
@@ -308,7 +356,7 @@ impl Renderer {
                     None => {
                         // A picture Skia can't decode (EMF/WMF), or a placeholder without data: a light frame.
                         let mut frame = Paint::default();
-                        frame.set_color(Color::from_rgb(0xc8, 0xc8, 0xc8)).set_style(skia_safe::PaintStyle::Stroke);
+                        frame.set_color(self.ink(0xC8_C8C8)).set_style(skia_safe::PaintStyle::Stroke);
                         canvas.draw_rect(dst, &frame);
                     }
                 }
@@ -390,6 +438,39 @@ mod tests {
             if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
         };
         0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b())
+    }
+
+    #[test]
+    fn marks_on_a_dark_page_hold_against_it() {
+        // DRAW-27: overlays drawn on the page take its colours, so they keep their contrast with the dark page.
+        let r = Renderer { appearance: appearance::Appearance::Dark { page: appearance::PageMode::Dark }, ..Renderer::default() };
+        let page = r.ink(0xFF_FFFF);
+        for c in [0xE6_0000, 0x00_78D4, 0xD1_3438, 0xC1_9C00] {
+            assert!(theme::contrast(r.ink(c), page) >= 3.0, "{c:06X} on the dark page");
+        }
+    }
+
+    #[test]
+    fn overlay_colours_the_host_set_outlast_a_theme_change() {
+        let mut r = Renderer::default();
+        let mine = Palette { caret: Color::RED, ..Palette::default() };
+        r.overlay_colours = Some(mine);
+        r.set_theme(theme::Theme::new(theme::Scheme::Dark, theme::AZURE));
+        assert_eq!(r.palette, mine, "the host's colours stay");
+        assert_eq!(r.theme.tokens.desk, theme::Tokens::of(theme::Scheme::Dark).desk, "the rest follows the theme");
+        r.overlay_colours = None;
+        r.set_theme(theme::Theme::new(theme::Scheme::Dark, theme::AZURE));
+        assert_eq!(r.palette, r.theme.palette());
+    }
+
+    #[test]
+    fn the_chrome_faces_load_and_draw_their_symbols() {
+        for face in [ChromeFace::Mono500, ChromeFace::Mono600] {
+            let tf = chrome_typeface(face).unwrap_or_else(|| panic!("{face:?} loads"));
+            for c in ['0', 'A', 'z', '″', '×', 'Δ', '→', '·', '−', '°', '▾'] {
+                assert_ne!(tf.unichar_to_glyph(c as i32), 0, "{face:?} has {c}");
+            }
+        }
     }
 
     #[test]

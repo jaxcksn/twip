@@ -77,7 +77,9 @@ fn moving(bencher: Bencher, name: &str, border: Border) {
 }
 
 /// Dragging a shape with live layout on a page of 100 shapes (`shapes_doc`): one pointer move of the pressed shape,
-/// alternating 10 and 30 px from the press, with the frame that shows it. Budget: 16 ms per frame.
+/// alternating 10 and 30 px from the press, with the frame that shows it; snapping is on (the default), so each move
+/// also snaps against the 99 other shapes' edges and centres, the margins and the grid, and draws the guides and
+/// readouts. Budget: 16 ms per frame.
 #[divan::bench(sample_size = 1)]
 fn shape_live(bencher: Bencher) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];

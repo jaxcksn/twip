@@ -104,6 +104,8 @@ pub struct TableProps {
     pub borders: [Option<crate::docx::props::Border>; 6],
     /// Rows and columns per style band (`w:tblStyleRowBandSize`, `w:tblStyleColBandSize`).
     pub bands: (i64, i64),
+    /// Its position (`w:tblpPr`), when it is placed out of the text.
+    pub floating: Option<crate::docx::props::TablePos>,
 }
 
 impl Step {
@@ -275,7 +277,16 @@ impl Targets {
 
 impl TableProps {
     pub fn of(t: &crate::docx::Table) -> TableProps {
-        TableProps { style_id: t.style_id.clone(), look: t.look, width: t.width, jc: t.jc, ind: t.ind, borders: t.borders.clone(), bands: t.bands }
+        TableProps {
+            style_id: t.style_id.clone(),
+            look: t.look,
+            width: t.width,
+            jc: t.jc,
+            ind: t.ind,
+            borders: t.borders.clone(),
+            bands: t.bands,
+            floating: t.floating,
+        }
     }
 }
 
@@ -879,8 +890,8 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.borders, t.bands) =
-                    (props.style_id, props.look, props.width, props.jc, props.ind, props.borders, props.bands);
+                (t.style_id, t.look, t.width, t.jc, t.ind, t.borders, t.bands, t.floating) =
+                    (props.style_id, props.look, props.width, props.jc, props.ind, props.borders, props.bands, props.floating);
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
                     section,

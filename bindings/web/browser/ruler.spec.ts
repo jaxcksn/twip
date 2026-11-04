@@ -80,12 +80,14 @@ test.describe('rulers', () => {
     await expect.poll(async () => (await tabs(page)).length).toBe(before);
   });
 
-  test('the corner box cycles the tab selector, and a double-click asks for the Tabs dialog', async ({ page }) => {
+  test('the corner box picks the tab type, and a double-click asks for the Tabs dialog', async ({ page }) => {
     const box = (await canvas(page).boundingBox())!;
     await page.mouse.click(box.x + BAND / 2, box.y + BAND / 2);
-    const at = await onTab(page, 288);
+    await page.getByRole('menuitemradio', { name: /^Center/ }).click();
+    const at = await onTab(page, 252);
     await page.mouse.click(at.x, at.y);
-    await expect.poll(async () => (await tabs(page)).find((t: { position: number }) => Math.abs(t.position - 288) < 0.01)?.alignment).toBe('center');
+    await expect.poll(async () => (await tabs(page)).find((t: { position: number }) => Math.abs(t.position - 252) < 0.01)?.alignment).toBe('center');
+    await page.waitForTimeout(500);
     await page.evaluate(() => {
       const w = window as any;
       w.dialogs = [];

@@ -254,6 +254,8 @@ pub enum DialogKind {
     Tabs,
     /// The accessibility checker.
     Accessibility,
+    /// The AutoCorrect rules.
+    AutoCorrect,
 }
 
 /// An open dialog: its values for the selection, and each field's label and state.
@@ -1279,6 +1281,173 @@ pub struct GestureEvent {
 
 // ---------------- rulers, view, hit testing ----------------
 
+/// What typing corrects (AutoCorrect): each rule on or off, and the texts never corrected again.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutoCorrectOptions {
+    /// THe → The.
+    pub two_initial_capitals: bool,
+    /// The first letter of a sentence.
+    pub sentence_capitals: bool,
+    /// The first letter of a table cell.
+    pub cell_capitals: bool,
+    /// monday → Monday.
+    pub day_names: bool,
+    /// The replacement list and the symbols ((c) → ©).
+    pub replace_text: bool,
+    /// Straight quotes to curly ones.
+    pub smart_quotes: bool,
+    /// 1st with the suffix raised.
+    pub ordinals: bool,
+    /// 1/2 → ½.
+    pub fractions: bool,
+    /// Hyphens to en and em dashes.
+    pub dashes: bool,
+    /// Texts Never correct added: never corrected again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub never: Vec<String>,
+}
+
+impl Default for AutoCorrectOptions {
+    fn default() -> AutoCorrectOptions {
+        AutoCorrectOptions {
+            two_initial_capitals: true,
+            sentence_capitals: true,
+            cell_capitals: true,
+            day_names: true,
+            replace_text: true,
+            smart_quotes: true,
+            ordinals: true,
+            fractions: true,
+            dashes: true,
+            never: Vec::new(),
+        }
+    }
+}
+
+/// `setAutoCorrect`'s change: the rules given switch, the lists given replace the shipped ones.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutoCorrectChange {
+    /// THe → The.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub two_initial_capitals: Option<bool>,
+    /// The first letter of a sentence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentence_capitals: Option<bool>,
+    /// The first letter of a table cell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_capitals: Option<bool>,
+    /// Day names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub day_names: Option<bool>,
+    /// The replacement list and the symbols.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replace_text: Option<bool>,
+    /// Smart quotes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smart_quotes: Option<bool>,
+    /// Ordinals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordinals: Option<bool>,
+    /// Fractions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fractions: Option<bool>,
+    /// Dashes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dashes: Option<bool>,
+    /// The replacement list, in place of the shipped one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entries: Option<Vec<AutoCorrectEntry>>,
+    /// Abbreviations after which a sentence doesn't start (`e.g.`), in place of the shipped ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_letter_exceptions: Option<Vec<String>>,
+    /// Words whose two initial capitals stay (`IDs`), in place of the shipped ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_caps_exceptions: Option<Vec<String>>,
+    /// The texts never corrected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub never: Option<Vec<String>>,
+}
+
+/// One replacement-list entry.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutoCorrectEntry {
+    /// What's typed.
+    pub from: String,
+    /// What it becomes.
+    pub to: String,
+}
+
+/// The editor chrome's colour scheme: the desk, rulers, handles, guides and readouts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChromeTheme {
+    /// Light chrome.
+    #[default]
+    Light,
+    /// Dark chrome.
+    Dark,
+    /// The platform's high contrast colours (the SDKs set this when the platform is in high contrast mode).
+    HighContrast(SystemColors),
+}
+
+/// The platform's colours in high contrast mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SystemColors {
+    /// The window background.
+    pub canvas: Color,
+    /// Text on it.
+    pub canvas_text: Color,
+    /// Selected items' background.
+    pub highlight: Color,
+    /// Text on it.
+    pub highlight_text: Color,
+    /// Disabled and secondary text.
+    pub gray_text: Color,
+}
+
+/// How the document's page is drawn on screen. Saving, PDF export and printing always use the document's colours.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DocumentAppearance {
+    /// In the document's colours.
+    #[default]
+    Light,
+    /// Dark mode: a dark page, with the document's colours adjusted to it.
+    Dark,
+    /// Dark mode with the page shown in its own colours (the chrome stays dark).
+    DarkWithLightPage,
+}
+
+/// How much the editor measures while you drag and hover.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MeasureDetail {
+    /// A chip with the value only.
+    Quiet,
+    /// Dimension lines with the value; the full set while Alt is held.
+    #[default]
+    Standard,
+    /// Everything: changes from the start, table sizes and status lines.
+    Full,
+}
+
+/// When the dot grid objects snap to shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ObjectGrid {
+    /// Never.
+    Off,
+    /// While an object is dragged.
+    #[default]
+    WhileDragging,
+    /// Always.
+    Always,
+}
+
 /// The unit rulers show.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1315,6 +1484,54 @@ pub enum TabSelector {
     FirstLineIndent,
     /// Sets the hanging indent.
     HangingIndent,
+}
+
+/// A popover the engine asks the application to show by `anchor`, with what it offers and the commands that answer
+/// it. Only one is open at a time; `popoverClosed` says the engine dismissed it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum Popover {
+    /// The tab type picker: answered with `setRulerTabType`.
+    TabType {
+        /// The tab type box.
+        anchor: ClientRect,
+        /// The type a click on the ruler adds now.
+        current: TabSelector,
+        /// Every type, in order, with its name and what it does.
+        choices: Vec<TabTypeChoice>,
+    },
+    /// One tab stop's options: `addTabStop` at its position changes the alignment or leader, `deleteTabStop` clears it.
+    TabStop {
+        /// The stop's mark on the ruler.
+        anchor: ClientRect,
+        /// Its position, from the paragraph's left text edge.
+        position: Points,
+        /// Its alignment.
+        alignment: TabAlignment,
+        /// Its leader.
+        leader: TabLeader,
+    },
+    /// The options of the correction just made.
+    AutoCorrect {
+        /// The corrected text.
+        anchor: ClientRect,
+        /// What was typed.
+        from: String,
+        /// What it became.
+        to: String,
+    },
+}
+
+/// One entry of the tab type picker.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TabTypeChoice {
+    /// The type.
+    pub value: TabSelector,
+    /// Its name (`Decimal`).
+    pub name: String,
+    /// What it does, in one line (`Numbers line up on the decimal point`).
+    pub description: String,
 }
 
 /// A span along a ruler.

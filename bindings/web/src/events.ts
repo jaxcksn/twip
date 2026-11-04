@@ -4,7 +4,7 @@ import type { DialogKind } from './services/dialogs.js';
 import type { ElementInfo } from './services/elements.js';
 import type { ContextMenuEvent } from './services/menus.js';
 import type { RulerView } from './services/ruler.js';
-import type { GestureEvent } from './services/view.js';
+import type { GestureEvent, Popover } from './services/view.js';
 import type { SelectionSummary } from './state.js';
 import type { Author, ClientPoint, ClientRect, CommentId, ElementId, RevisionId, Warning } from './types.js';
 
@@ -20,6 +20,13 @@ export interface TwipEvents {
   placeholderActivated: { key: string; element: ElementId | null };
   /** The user asked for a context menu. */
   contextMenu: ContextMenuEvent;
+  /**
+   * A click or command asked for a popover by its anchor; opening one closes the one open. A mounted editor shows its
+   * own unless the application listens.
+   */
+  popoverRequested: Popover;
+  /** The engine dismissed the open popover: Esc, a press elsewhere, or its target gone. */
+  popoverClosed: {};
   /** A key or gesture asked for a dialog. */
   dialogRequested: { kind: DialogKind };
   /** A key the application owns was pressed. */

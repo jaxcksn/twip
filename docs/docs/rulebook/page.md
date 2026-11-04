@@ -108,3 +108,7 @@ Example: after 12pt and before 2pt, the next section's first line is 12pt lower 
 A line that holds only a page break and isn't its paragraph's last line with content (`<w:br w:type="page"/>Next` at the start of a paragraph) takes its break on the current page even when it doesn't fit there ([PAGE-1](page#page-1)): the rest of the paragraph follows on the next page, and no page is left empty. A paragraph holding only a page break (its mark joins the break line) is an ordinary line and moves when it doesn't fit, which leaves an empty page. Lines beside floats too; both modes.
 
 Example: a paragraph ends at y 716 above a bottom of 720, and the next paragraph is a page break followed by a heading. The break line doesn't fit, but the heading starts the next page, not the one after it.
+
+### PAGE-12. Page colour {#page-12}
+
+`w:background/@w:color` (or `@w:themeColor`, resolved as [DRAW-7](draw#draw-7) resolves a theme colour) is the page's colour on screen: every page is filled with it before anything is drawn. Exported and printed output leave it out and keep the page white. A `w:background` with a fill effect (a VML `v:background` child) is drawn as its colour, or white when it has none. On a dark page the colour is drawn as [DRAW-27](draw#draw-27) says.

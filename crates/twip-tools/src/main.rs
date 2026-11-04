@@ -1,4 +1,4 @@
-//! The developer tools: `twip-tools <command> ...` (golden, dump, dumpdiff, roundtrip, render, pdf, presets, ...). Native only; the
+//! The developer tools: `twip-tools <command> ...` (golden, dump, dumpdiff, roundtrip, render, pdf, presets, chrome-fonts, autocorrect-list, ...). Native only; the
 //! browser module is `twip-wasm`. Speed is measured by the engine's Divan benchmarks (`cargo bench -p twip`).
 
 #[cfg(target_os = "emscripten")]
@@ -66,6 +66,22 @@ fn main() {
                 return exit_on_error(Err("usage: pdf <docx> <out.pdf>".into()));
             };
             return exit_on_error(cli::pdf::run(std::path::Path::new(docx), std::path::Path::new(out)));
+        }
+        Some("autocorrect-list") => {
+            // twip autocorrect-list <dir> <out dir>: the shipped AutoCorrect lists (cli/autocorrect.rs).
+            let a: Vec<String> = args.skip(1).collect();
+            let (Some(xml), Some(out)) = (a.first(), a.get(1)) else {
+                return exit_on_error(Err("usage: autocorrect-list <dir> <out dir>".into()));
+            };
+            return exit_on_error(cli::autocorrect::run(std::path::Path::new(xml), std::path::Path::new(out)));
+        }
+        Some("chrome-fonts") => {
+            // twip chrome-fonts <dir> <out dir>: the bundled chrome typeface subsets (cli/fonts.rs).
+            let a: Vec<String> = args.skip(1).collect();
+            let (Some(dir), Some(out)) = (a.first(), a.get(1)) else {
+                return exit_on_error(Err("usage: chrome-fonts <dir> <out dir>".into()));
+            };
+            return exit_on_error(cli::fonts::run(std::path::Path::new(dir), std::path::Path::new(out)));
         }
         Some("presets") => {
             // twip presets <presetShapeDefinitions.xml> <out.rs>: the engine's preset geometry table (cli/presets.rs).
@@ -136,14 +152,22 @@ fn main() {
     if args.peek().map(String::as_str) == Some("render") {
         // twip render <doc.docx> <out.png> [zoom] [text] [--vulkan]: the editor's view of a document (CPU raster, or
         // Graphite on the first Vulkan device), with `text` typed at the start of the first paragraph.
+        // `--appearance=dark|darkWithLightPage|light` and `--theme=dark|light` set the view options of the same names.
         let a: Vec<String> = args.skip(1).collect();
         let gpu = a.iter().any(|x| x == "--vulkan");
-        let a: Vec<String> = a.into_iter().filter(|x| x != "--vulkan").collect();
+        let flag = |name: &str| a.iter().find_map(|x| x.strip_prefix(&format!("--{name}="))).map(|v| format!("\"{v}\""));
+        let options = twip::api::command::ViewOptions {
+            appearance: flag("appearance").map(|v| serde_json::from_str(&v).expect("an appearance: light, dark or darkWithLightPage")),
+            theme: flag("theme").map(|v| serde_json::from_str(&v).expect("a theme: light or dark")),
+            ..Default::default()
+        };
+        let a: Vec<String> = a.into_iter().filter(|x| x != "--vulkan" && !x.starts_with("--")).collect();
         use twip::api::input::{Key, Modifiers};
         let mut engine = twip::api::engine::Engine::new(twip::api::fonts::FontLibrary::system());
         let id = engine.create_session(Default::default());
         let e = engine.session(id).expect("a session");
         println!("warnings {:?}", e.open(&std::fs::read(&a[0]).expect("read document")).expect("open document"));
+        e.run(twip::api::command::Command::SetViewOptions(options)).expect("view options");
         let zoom = a.get(2).and_then(|z| z.parse::<f64>().ok()).unwrap_or(1.0);
         e.run(twip::api::command::Command::SetZoom(twip::api::command::Zoom::Percent(zoom * 100.0))).expect("zoom");
         // Every page, not only the first ones laid out at open: counting lines lays out the rest.

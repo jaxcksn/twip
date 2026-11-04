@@ -283,7 +283,7 @@ impl Run {
             r.send(json!({ "type": "pointer", "kind": "down", "x": a.0, "y": a.1, "clicks": 1, "mods": m }));
             for k in 1..=12 {
                 let t = k as f64 / 12.0;
-                r.send(json!({ "type": "pointer", "kind": "move", "x": a.0 + (b.0 - a.0) * t, "y": a.1 + (b.1 - a.1) * t }));
+                r.send(json!({ "type": "pointer", "kind": "move", "x": a.0 + (b.0 - a.0) * t, "y": a.1 + (b.1 - a.1) * t, "mods": m }));
             }
             r.send(json!({ "type": "pointer", "kind": "up", "x": b.0, "y": b.1 }));
         } else if let Some(t) = step.get("press") {
@@ -297,16 +297,17 @@ impl Run {
             let (dx, dy) = (step["dx"].as_f64().unwrap_or(0.0), step["dy"].as_f64().unwrap_or(0.0));
             let b = r.point(t, dx, dy);
             let a = r.last.unwrap_or(b);
+            // Its `mods` are held as it moves (Alt: no snapping).
             for k in 1..=12 {
                 let f = k as f64 / 12.0;
-                r.send(json!({ "type": "pointer", "kind": "move", "x": a.0 + (b.0 - a.0) * f, "y": a.1 + (b.1 - a.1) * f }));
+                r.send(json!({ "type": "pointer", "kind": "move", "x": a.0 + (b.0 - a.0) * f, "y": a.1 + (b.1 - a.1) * f, "mods": mods }));
             }
             r.last = Some(b);
         } else if let Some(t) = step.get("release") {
             // `outside`: far up and left of the pages, as a release over the host's command bar is.
             let b =
                 if t == "outside" { (-1000.0, -1000.0) } else { r.point(t, step["dx"].as_f64().unwrap_or(0.0), step["dy"].as_f64().unwrap_or(0.0)) };
-            r.send(json!({ "type": "pointer", "kind": "move", "x": b.0, "y": b.1 }));
+            r.send(json!({ "type": "pointer", "kind": "move", "x": b.0, "y": b.1, "mods": mods }));
             r.send(json!({ "type": "pointer", "kind": "up", "x": b.0, "y": b.1 }));
             r.last = None;
         } else if let Some(c) = step.get("clipboard").and_then(Value::as_str) {

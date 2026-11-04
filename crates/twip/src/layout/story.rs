@@ -822,6 +822,18 @@ const MITER_PRESETS: &[&str] = &[
     "upDownArrowCallout",
 ];
 
+/// A shape's fill when it is one opaque colour (its own or its style's), as its text sees it.
+// shortcut: gradient, pattern and picture fills give no backdrop; automatic text over them stays black.
+fn solid_fill(shape: &crate::drawing::Shape, env: &StoryEnv) -> Option<u32> {
+    use crate::drawing::paint::{self, Paint};
+    let sp = shape.sp()?;
+    let palette = paint::Palette { theme: &env.ctx.env.text.theme, map: &env.ctx.env.text.colour_map };
+    match paint::resolve_fill(sp.fill.as_ref(), sp.style.as_ref(), palette, &Paint::None) {
+        Paint::Solid(c) if c.a == 255 => Some((u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b)),
+        _ => None,
+    }
+}
+
 /// FLOAT-17: a shape's text: laid out in its unturned frame (`rect`, the shape's own box) and drawn turned about the
 /// box's centre by the shape's rotation `deg` plus `bodyPr/@rot`, 180° more with `flipV` (`flipH` changes nothing).
 /// `bodyPr/@upright` with the shape turned a quarter (45° to 135° mod 180°) lays the text out level in the frame turned
@@ -837,6 +849,16 @@ fn turned_text(
     groups: &mut Vec<Child>,
     memos: &mut Memos,
 ) -> Result<(), Yield> {
+    // FONT-15: automatic text is white over a shape's dark solid fill.
+    let (dark_text, dark_env);
+    let env = match shape.and_then(|s| solid_fill(s, env)).filter(|c| super::env::is_dark(*c)) {
+        Some(fill) => {
+            dark_text = super::LayoutEnv { text: super::env::TextEnv { backdrop: Some(fill), ..env.ctx.env.text.clone() }, ..env.ctx.env.clone() };
+            dark_env = StoryEnv { ctx: LayoutCtx { env: &dark_text, ..env.ctx }, ..*env };
+            &dark_env
+        }
+        None => env,
+    };
     let body = shape.and_then(|s| s.sp()).map(|s| &s.body);
     let turn = (deg + body.map_or(0.0, |b| b.rot.degrees()) + if flip_v { 180.0 } else { 0.0 }).rem_euclid(360.0);
     let mut frame = layout_frame(tb, shape, rect);
@@ -889,7 +911,7 @@ fn outline(o: f64, rect: [f64; 4], groups: &mut Vec<Child>) {
     let [x0, y0, x1, y1] = rect;
     let h = o / 2.0;
     let outline = [[x0 - h, y0 - h, x1 + h, y0 + h], [x0 - h, y1 - h, x1 + h, y1 + h], [x0 - h, y0, x0 + h, y1], [x1 - h, y0, x1 + h, y1]];
-    groups.push(Child::Items(outline.iter().map(|r| Item::Rect { rect: *r, colour: 0 }).collect()));
+    groups.push(Child::Items(outline.iter().map(|r| Item::rect(*r, 0)).collect()));
 }
 
 /// FLOAT-10: how far the text rectangle of `shape`'s geometry (DRAW-1) lies inside its `w` × `h` box: left, top,

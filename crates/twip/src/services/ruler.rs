@@ -2,14 +2,30 @@
 //! over. The engine draws the built-in rulers from this alone (`render::ruler`); an application drawing its own reads
 //! the same model.
 
-use crate::api::services::{HorizontalRuler, RulerIndents, RulerModel, RulerUnit, RulerView, Span, VerticalRuler};
-use crate::api::value::Points;
+use crate::api::catalog::ruler as words;
+use crate::api::services::{
+    ClientRect, HorizontalRuler, MeasureDetail, RulerIndents, RulerModel, RulerUnit, RulerView, Span, TabSelector, VerticalRuler,
+};
+use crate::api::value::{Points, TabAlignment};
 use crate::docx::Section;
 use crate::editing::Editor;
 use crate::editing::position::StoryId;
+use crate::editing::view::{RulerMeasure, Tone};
 
 /// A ruler band's thickness, CSS px.
-pub const BAND: f64 = 20.0;
+pub const BAND: f64 = 24.0;
+
+/// Below the horizontal ruler's band, CSS px: a hover hint's top, a quiet drag's chip's top, and a drag's dimension
+/// line.
+pub const HINT_Y: f64 = 16.0;
+const CHIP_Y: f64 = 38.0;
+const DIMENSION_Y: f64 = 51.0;
+
+/// How far below the band a dragged tab stop is removed, CSS px.
+const REMOVE_BELOW: f64 = 30.0;
+
+/// The tab type box in the rulers' corner, CSS px.
+pub const SELECTOR: ClientRect = ClientRect { left: 0.0, top: 3.0, width: 18.0, height: 18.0 };
 
 /// A section's text columns between `left` and `right` (page points).
 fn columns(s: &Section, left: f64, right: f64) -> Vec<Span> {
@@ -125,10 +141,48 @@ pub fn marks(unit: RulerUnit) -> (f64, f64, f64) {
     }
 }
 
-/// `v` snapped to the unit's minor marks counted from `origin`.
+/// The step drags and clicks snap to, in points: a sixteenth of an inch, a quarter centimetre, a millimetre, or the
+/// minor mark.
+pub fn step(unit: RulerUnit) -> f64 {
+    match unit {
+        RulerUnit::Inches => 4.5,
+        RulerUnit::Centimeters | RulerUnit::Millimeters | RulerUnit::Points | RulerUnit::Picas => marks(unit).1,
+    }
+}
+
+/// `v` snapped to the unit's step counted from `origin`.
 pub fn snap(v: f64, origin: f64, unit: RulerUnit) -> f64 {
-    let minor = marks(unit).1;
-    origin + ((v - origin) / minor).round() * minor
+    let step = step(unit);
+    origin + ((v - origin) / step).round() * step
+}
+
+/// A length in the unit with its decimals and no suffix: `0.50`.
+pub fn number(pt: f64, unit: RulerUnit) -> String {
+    let cm = 72.0 / 2.54;
+    match unit {
+        RulerUnit::Inches => format!("{:.2}", pt / 72.0),
+        RulerUnit::Centimeters => format!("{:.2}", pt / cm),
+        RulerUnit::Millimeters => format!("{:.1}", pt / cm * 10.0),
+        RulerUnit::Points => format!("{pt:.1}"),
+        RulerUnit::Picas => format!("{:.2}", pt / 12.0),
+    }
+}
+
+/// A length in the unit with its suffix: `0.50″`, `1.27 cm`.
+pub fn length(pt: f64, unit: RulerUnit) -> String {
+    let suffix = match unit {
+        RulerUnit::Inches => "″",
+        RulerUnit::Centimeters => " cm",
+        RulerUnit::Millimeters => " mm",
+        RulerUnit::Points => " pt",
+        RulerUnit::Picas => " pi",
+    };
+    number(pt, unit) + suffix
+}
+
+/// A change in the unit, signed: `+0.25″`, `−0.25″`.
+pub(crate) fn change(pt: f64, unit: RulerUnit) -> String {
+    format!("{}{}", if pt >= 0.0 { '+' } else { '−' }, length(pt.abs(), unit))
 }
 
 /// Which rulers show: they sit along the viewport's top and left edges.
@@ -170,6 +224,188 @@ impl Marker {
     }
 }
 
+impl Marker {
+    /// Where it is now along its ruler, page points (none: the model has no such marker).
+    pub fn position(self, m: &RulerModel) -> Option<f64> {
+        let (h, v) = (&m.horizontal, &m.vertical);
+        let (start, left) = (h.text.start.0, h.indents.left.0);
+        Some(match self {
+            Marker::Tab(p) => start + p,
+            Marker::FirstLine => start + left + h.indents.first_line.0,
+            Marker::Hanging | Marker::Left => start + left,
+            Marker::Right => h.text.end.0 - h.indents.right.0,
+            Marker::TextStart => start,
+            Marker::TextEnd => h.text.end.0,
+            Marker::Column(k) => h.columns.get(k as usize)?.end.0,
+            Marker::TableColumn(k) => h.table_columns.get(k as usize)?.0,
+            Marker::Top => v.text.start.0,
+            Marker::Bottom => v.text.end.0,
+            Marker::TableRow(k) => v.table_rows.get(k as usize)?.0,
+        })
+    }
+
+    /// What it's called, what it measures with it at `at` (page points along its ruler), and the span measured.
+    fn reading(self, m: &RulerModel, at: f64) -> Option<(String, f64, (f64, f64))> {
+        let (h, v) = (&m.horizontal, &m.vertical);
+        let (start, end) = (h.text.start.0, h.text.end.0);
+        let name = |n: &str| n.to_string();
+        Some(match self {
+            Marker::Tab(p) => {
+                let stop = h.tabs.iter().find(|t| (t.position.0 - p).abs() < 0.5)?;
+                (format!("{} {}", tab_name(stop.alignment), words::TAB), at - start, (start, at))
+            }
+            Marker::FirstLine => (name(words::FIRST_LINE), at - start, (start, at)),
+            Marker::Hanging => (name(words::HANGING), at - start, (start, at)),
+            Marker::Left => (name(words::LEFT_INDENT), at - start, (start, at)),
+            Marker::Right => (name(words::RIGHT_INDENT), end - at, (at, end)),
+            Marker::TextStart => (name(words::LEFT_MARGIN), at, (0.0, at)),
+            Marker::TextEnd => (name(words::RIGHT_MARGIN), h.page_width.0 - at, (at, h.page_width.0)),
+            Marker::Column(k) => {
+                let from = h.columns.get(k as usize)?.start.0;
+                (name(words::COLUMN_WIDTH), at - from, (from, at))
+            }
+            Marker::TableColumn(k) => {
+                let from = h.table_columns.get((k as usize).checked_sub(1)?)?.0;
+                (name(words::COLUMN_WIDTH), at - from, (from, at))
+            }
+            Marker::Top => (name(words::TOP_MARGIN), at, (0.0, at)),
+            Marker::Bottom => (name(words::BOTTOM_MARGIN), v.page_height.0 - at, (at, v.page_height.0)),
+            Marker::TableRow(k) => {
+                let from = v.table_rows.get((k as usize).checked_sub(1)?)?.0;
+                (name(words::ROW_HEIGHT), at - from, (from, at))
+            }
+        })
+    }
+}
+
+/// A tab alignment's name: `Left`.
+fn tab_name(a: TabAlignment) -> &'static str {
+    words::tab_type(match a {
+        TabAlignment::Left => TabSelector::Left,
+        TabAlignment::Center => TabSelector::Center,
+        TabAlignment::Right => TabSelector::Right,
+        TabAlignment::Decimal => TabSelector::Decimal,
+        TabAlignment::Bar => TabSelector::Bar,
+    })
+    .0
+}
+
+/// Whether a tab stop dragged to viewport `y` (CSS px) is removed on release: more than the removal distance below
+/// the band.
+pub fn removing(y: f64) -> bool {
+    y > BAND + REMOVE_BELOW
+}
+
+/// Where a click on the empty ruler at `pt` (page points) adds a stop: snapped unless `free`, and inside the text
+/// area (none at or past its edges).
+pub fn ghost(view: &RulerView, pt: f64, free: bool) -> Option<f64> {
+    let (start, end) = (view.model.horizontal.text.start.0, view.model.horizontal.text.end.0);
+    let at = if free { pt } else { snap(pt, start, view.unit) };
+    (at > start && at < end).then_some(at)
+}
+
+/// A tab stop's mark on the horizontal ruler, CSS px.
+pub fn tab_anchor(view: &RulerView, position: f64) -> ClientRect {
+    let x = view.horizontal.origin + (view.model.horizontal.text.start.0 + position) * view.horizontal.scale;
+    ClientRect { left: x - 7.0, top: 10.0, width: 14.0, height: 14.0 }
+}
+
+/// What a drag of `marker` to `at` (page points along its ruler) measures: a dimension line from where the value is
+/// counted to the marker, labelled with its name and value, and with Alt or at the full level the change since the
+/// press; at the quiet level a chip with the value only. A tab stop being removed says so instead. A table column
+/// border measures the columns either side, over the table.
+pub fn drag_measures(view: &RulerView, marker: Marker, at: f64, removing: bool, detail: MeasureDetail, alt: bool) -> Vec<RulerMeasure> {
+    let (m, unit) = (&view.model, view.unit);
+    let full = detail == MeasureDetail::Full || (detail == MeasureDetail::Standard && alt);
+    let quiet = detail == MeasureDetail::Quiet;
+    let (h, v) = (view.horizontal, view.vertical);
+    if let Marker::TableColumn(k) = marker {
+        let b = &m.horizontal.table_columns;
+        let k = k as usize;
+        let top = m.vertical.table_rows.first().map_or(BAND + DIMENSION_Y, |t| v.origin + t.0 * v.scale);
+        let widths = [k.checked_sub(1).and_then(|i| b.get(i)).map(|l| (l.0, at)), b.get(k + 1).map(|r| (at, r.0))];
+        if quiet {
+            let (a, z) = widths.into_iter().flatten().next().unwrap_or((at, at));
+            return vec![RulerMeasure::Chip { at: [h.origin + at * h.scale + 8.0, top - 24.0], label: length(z - a, unit) }];
+        }
+        let y = (top - 12.0 - v.origin) / v.scale.max(1e-9);
+        return widths
+            .into_iter()
+            .flatten()
+            .map(|(a, z)| RulerMeasure::Dimension { from: [a, y], to: [z, y], label: number(z - a, unit), tone: Tone::Accent })
+            .collect();
+    }
+    let Some((name, value, (a, z))) = marker.reading(m, at) else { return Vec::new() };
+    let was = marker.position(m).and_then(|p| marker.reading(m, p)).map_or(value, |r| r.1);
+    let horizontal = marker.horizontal();
+    let guide = if horizontal { h.origin + at * h.scale } else { v.origin + at * v.scale };
+    if quiet {
+        let label = if removing { words::REMOVE.to_string() } else { format!("{name} {}", length(value.abs(), unit)) };
+        let at = if horizontal { [guide + 8.0, BAND + CHIP_Y] } else { [BAND + CHIP_Y, guide + 8.0] };
+        return vec![RulerMeasure::Chip { at, label }];
+    }
+    let label = if removing {
+        words::RELEASE_TO_REMOVE.to_string()
+    } else {
+        let delta = value - was;
+        let shows = full && number(delta.abs(), unit) != number(0.0, unit);
+        let change = if shows { format!("  Δ {}", change(delta, unit)) } else { String::new() };
+        format!("{name} {}{change}", length(value.abs(), unit))
+    };
+    let (from, to) = if horizontal {
+        let y = (BAND + DIMENSION_Y - v.origin) / v.scale.max(1e-9);
+        ([a, y], [z, y])
+    } else {
+        let x = (BAND + DIMENSION_Y - h.origin) / h.scale.max(1e-9);
+        ([x, a], [x, z])
+    };
+    vec![RulerMeasure::Dimension { from, to, label, tone: Tone::Accent }]
+}
+
+/// What hovering `on` says: the marker's name, its value and what a click or drag does; over the empty ruler, where a
+/// click adds the box's type (`free`: Alt is down, no snapping). Under the horizontal ruler the hint's x stays in the
+/// viewport `width` wide; a vertical ruler marker's hint is a chip beside it.
+pub fn hint(view: &RulerView, on: Hit, selector: TabSelector, free: bool, width: f64) -> Option<RulerMeasure> {
+    let (m, unit) = (&view.model, view.unit);
+    let (h, v) = (view.horizontal, view.vertical);
+    let (x, label) = match on {
+        Hit::Ruler => return None,
+        Hit::Selector => (BAND + 6.0, format!("{} {} — {}", words::TAB_TYPE, words::tab_type(selector).0, words::TAB_TYPE_DOES)),
+        Hit::Text(pt) => {
+            let at = ghost(view, pt, free)?;
+            let name = words::tab_type(selector).0.to_lowercase();
+            let what = match selector {
+                TabSelector::FirstLineIndent | TabSelector::HangingIndent => format!("{} {name}", words::CLICK_TO_SET),
+                TabSelector::Left | TabSelector::Center | TabSelector::Right | TabSelector::Decimal | TabSelector::Bar => {
+                    format!("{} {name} {}", words::CLICK_TO_ADD, words::TAB)
+                }
+            };
+            (h.origin + at * h.scale, format!("{what} · {}", length(at - m.horizontal.text.start.0, unit)))
+        }
+        Hit::Marker(marker) => {
+            let at = marker.position(m)?;
+            let reading = || marker.reading(m, at).map(|(name, value, _)| format!("{name} · {}", length(value.abs(), unit)));
+            let label = match marker {
+                Marker::FirstLine => format!("{} — {}", reading()?, words::FIRST_LINE_DOES),
+                Marker::Hanging => format!("{} — {}", reading()?, words::HANGING_DOES),
+                Marker::Left => format!("{} — {}", reading()?, words::LEFT_INDENT_DOES),
+                Marker::Right => reading()?,
+                Marker::Tab(_) => format!("{} — {}", reading()?, words::TAB_DOES),
+                Marker::TextStart | Marker::TextEnd | Marker::Top | Marker::Bottom => format!("{} — {}", reading()?, words::MARGIN_DOES),
+                Marker::Column(_) => words::COLUMN_SPACING.to_string(),
+                Marker::TableColumn(_) => words::COLUMN_BORDER.to_string(),
+                Marker::TableRow(_) => words::ROW_BORDER.to_string(),
+            };
+            if !marker.horizontal() {
+                return Some(RulerMeasure::Chip { at: [BAND + 6.0, v.origin + at * v.scale + 6.0], label });
+            }
+            (h.origin + at * h.scale, label)
+        }
+    };
+    // ponytail: a fixed width for the longest hint keeps it on screen; measure the label if hints get longer.
+    Some(RulerMeasure::Hint { at: (x - 6.0).min(width - 340.0).max(0.0), label })
+}
+
 /// What a point on the rulers is over.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Hit {
@@ -196,29 +432,29 @@ pub fn hit(view: &RulerView, bands: Bands, x: f64, y: f64) -> Option<Hit> {
         let (start, end) = (r.text.start.0, r.text.end.0);
         let left = start + r.indents.left.0;
         let f = y / BAND;
-        if f < 0.4 && near(x, left + r.indents.first_line.0, 5.0) {
+        if f < 0.5 && near(x, left + r.indents.first_line.0, 6.0) {
             return Some(Hit::Marker(Marker::FirstLine));
         }
-        if f >= 0.5 && near(x, left, 5.0) {
+        if f >= 0.5 && near(x, left, 6.0) {
             return Some(Hit::Marker(if f < 0.75 { Marker::Hanging } else { Marker::Left }));
         }
-        if f >= 0.5 && near(x, end - r.indents.right.0, 5.0) {
+        if f >= 0.5 && near(x, end - r.indents.right.0, 6.0) {
             return Some(Hit::Marker(Marker::Right));
         }
         if let Some(t) = r.tabs.iter().find(|t| near(x, start + t.position.0, 4.0)) {
             return Some(Hit::Marker(Marker::Tab(t.position.0)));
         }
-        if let Some(k) = r.table_columns.iter().position(|b| near(x, b.0, 3.0)) {
+        if let Some(k) = r.table_columns.iter().position(|b| near(x, b.0, 4.0)) {
             return Some(Hit::Marker(Marker::TableColumn(k as u32)));
         }
         if let Some(k) = r.columns.windows(2).position(|c| near(x, c[0].end.0, 3.0) || near(x, c[1].start.0, 3.0)) {
             return Some(Hit::Marker(Marker::Column(k as u32)));
         }
         if r.table_columns.is_empty() {
-            if near(x, start, 3.0) {
+            if near(x, start, 4.0) {
                 return Some(Hit::Marker(Marker::TextStart));
             }
-            if near(x, end, 3.0) {
+            if near(x, end, 4.0) {
                 return Some(Hit::Marker(Marker::TextEnd));
             }
         }
@@ -352,10 +588,144 @@ mod tests {
     }
 
     #[test]
-    fn drags_snap_to_the_minor_marks() {
-        assert_eq!(snap(72.0 + 40.0, 72.0, RulerUnit::Inches), 72.0 + 36.0);
+    fn drags_snap_to_a_sixteenth_inch_or_a_quarter_centimetre() {
+        assert_eq!(snap(72.0 + 40.0, 72.0, RulerUnit::Inches), 72.0 + 40.5);
+        assert_eq!(snap(72.0 + 19.44, 72.0, RulerUnit::Inches), 72.0 + 18.0, "0.27 in snaps to 0.25 in");
         assert!((snap(100.0, 0.0, RulerUnit::Centimeters) - 72.0 / 2.54 * 3.5).abs() < 1e-9);
         assert_eq!(default_unit("en-US"), RulerUnit::Inches);
         assert_eq!(default_unit("de-DE"), RulerUnit::Centimeters);
+    }
+
+    #[test]
+    fn lengths_read_in_the_ruler_unit_with_two_decimals() {
+        assert_eq!(length(36.0, RulerUnit::Inches), "0.50″");
+        assert_eq!(length(36.0, RulerUnit::Centimeters), "1.27 cm");
+        assert_eq!(number(144.0, RulerUnit::Inches), "2.00");
+        assert_eq!(change(-18.0, RulerUnit::Inches), "−0.25″");
+        assert_eq!(change(36.0, RulerUnit::Centimeters), "+1.27 cm");
+        assert!(!removing(BAND + 30.0) && removing(BAND + 31.0), "more than 30 px below the band");
+    }
+
+    /// [`view`] on a letter page, with a table of three columns whose row is 100 to 130 pt down.
+    fn page() -> RulerView {
+        let mut v = view();
+        v.model.horizontal.page_width = Points(612.0);
+        v.model.vertical.page_height = Points(792.0);
+        v
+    }
+
+    fn labels(m: &[RulerMeasure]) -> Vec<&str> {
+        m.iter()
+            .map(|m| match m {
+                RulerMeasure::Dimension { label, .. }
+                | RulerMeasure::Chip { label, .. }
+                | RulerMeasure::Hint { label, .. }
+                | RulerMeasure::Status { label, .. } => label.as_str(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_drag_measures_from_the_margin_to_the_marker() {
+        let v = page();
+        let (s, q, f) = (MeasureDetail::Standard, MeasureDetail::Quiet, MeasureDetail::Full);
+        let d = |m, at, removing, detail, alt| drag_measures(&v, m, at, removing, detail, alt);
+        // The dimension line is 51 px below the band, from the text start to the marker.
+        assert_eq!(
+            d(Marker::FirstLine, 108.0, false, s, false),
+            [RulerMeasure::Dimension { from: [72.0, 45.0], to: [108.0, 45.0], label: "First line 0.50″".into(), tone: Tone::Accent }]
+        );
+        // Alt, or the full level, adds the change since the press (the first line was 0.75 in).
+        assert_eq!(labels(&d(Marker::FirstLine, 108.0, false, s, true)), ["First line 0.50″  Δ −0.25″"]);
+        assert_eq!(labels(&d(Marker::FirstLine, 108.0, false, f, false)), ["First line 0.50″  Δ −0.25″"]);
+        assert_eq!(labels(&d(Marker::FirstLine, 126.0, false, f, false)), ["First line 0.75″"], "no change, no Δ");
+        assert_eq!(labels(&d(Marker::Hanging, 90.0, false, f, false)), ["Hanging indent 0.25″  Δ −0.25″"]);
+        assert_eq!(labels(&d(Marker::Right, 532.8, false, s, true)), ["Right indent 0.10″  Δ +0.10″"]);
+        assert_eq!(labels(&d(Marker::Tab(144.0), 270.0, false, s, true)), ["Left tab 2.75″  Δ +0.75″"]);
+        assert_eq!(labels(&d(Marker::TextStart, 90.0, false, s, false)), ["Left margin 1.25″"]);
+        assert_eq!(
+            d(Marker::TextEnd, 540.0, false, s, false),
+            [RulerMeasure::Dimension { from: [540.0, 45.0], to: [612.0, 45.0], label: "Right margin 1.00″".into(), tone: Tone::Accent }]
+        );
+        // A stop dragged off the ruler says what the release does.
+        assert_eq!(labels(&d(Marker::Tab(144.0), 270.0, true, s, false)), ["Release to remove tab stop"]);
+        // Quiet: a chip by the guide with the value only.
+        assert_eq!(
+            d(Marker::FirstLine, 108.0, false, q, true),
+            [RulerMeasure::Chip { at: [30.0 + 108.0 + 8.0, BAND + 38.0], label: "First line 0.50″".into() }]
+        );
+        assert_eq!(labels(&d(Marker::Tab(144.0), 270.0, true, q, false)), ["Remove tab stop"]);
+        // In centimetres.
+        let mut cm = page();
+        cm.unit = RulerUnit::Centimeters;
+        assert_eq!(labels(&drag_measures(&cm, Marker::FirstLine, 99.0, false, s, true)), ["First line 0.95 cm  Δ −0.95 cm"]);
+        assert_eq!(labels(&drag_measures(&cm, Marker::Tab(144.0), 288.0, false, s, false)), ["Left tab 7.62 cm"]);
+    }
+
+    #[test]
+    fn a_table_column_drag_measures_the_columns_either_side_over_the_table() {
+        let mut v = page();
+        v.model.horizontal.table_columns = [72.0, 228.0, 384.0, 540.0].map(Points).to_vec();
+        v.model.vertical.table_rows = [100.0, 130.0].map(Points).to_vec();
+        // 12 px over the table's top.
+        let y = 30.0 + 100.0 - 12.0 - 30.0;
+        assert_eq!(
+            drag_measures(&v, Marker::TableColumn(1), 216.0, false, MeasureDetail::Standard, false),
+            [
+                RulerMeasure::Dimension { from: [72.0, y], to: [216.0, y], label: "2.00".into(), tone: Tone::Accent },
+                RulerMeasure::Dimension { from: [216.0, y], to: [384.0, y], label: "2.33".into(), tone: Tone::Accent },
+            ]
+        );
+        assert_eq!(labels(&drag_measures(&v, Marker::TableColumn(0), 90.0, false, MeasureDetail::Standard, false)), ["1.92"]);
+        assert_eq!(
+            drag_measures(&v, Marker::TableColumn(1), 216.0, false, MeasureDetail::Quiet, false),
+            [RulerMeasure::Chip { at: [30.0 + 216.0 + 8.0, 30.0 + 100.0 - 24.0], label: "2.00″".into() }]
+        );
+    }
+
+    #[test]
+    fn hovering_a_marker_names_it_with_its_value_and_what_it_does() {
+        let v = page();
+        let h = |on| hint(&v, Hit::Marker(on), TabSelector::Left, false, 1000.0);
+        let text = |m: Option<RulerMeasure>| match m {
+            Some(RulerMeasure::Hint { label, .. } | RulerMeasure::Chip { label, .. }) => label,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            h(Marker::FirstLine),
+            Some(RulerMeasure::Hint { at: 30.0 + 126.0 - 6.0, label: "First line · 0.75″ — indents only the first line".into() })
+        );
+        assert_eq!(text(h(Marker::Hanging)), "Hanging indent · 0.50″ — where wrapped lines start");
+        assert_eq!(text(h(Marker::Left)), "Left indent · 0.50″ — moves the first line with it");
+        assert_eq!(text(h(Marker::Right)), "Right indent · 0.00″");
+        assert_eq!(text(h(Marker::Tab(144.0))), "Left tab · 2.00″ — click for options, drag down to remove");
+        assert_eq!(text(h(Marker::TextStart)), "Left margin · 1.00″ — drag to change");
+        assert_eq!(text(h(Marker::TextEnd)), "Right margin · 1.00″ — drag to change");
+        let mut table = page();
+        table.model.horizontal.table_columns = vec![Points(72.0), Points(300.0)];
+        assert_eq!(text(hint(&table, Hit::Marker(Marker::TableColumn(1)), TabSelector::Left, false, 1000.0)), "Column border — drag to resize");
+        // A vertical ruler marker's hint is a chip beside it.
+        assert_eq!(
+            h(Marker::Top),
+            Some(RulerMeasure::Chip { at: [BAND + 6.0, 30.0 + 72.0 + 6.0], label: "Top margin · 1.00″ — drag to change".into() })
+        );
+        // Over the empty ruler: where a click adds the box's type, snapped unless Alt is down.
+        let empty = |selector, free| text(hint(&v, Hit::Text(163.0), selector, free, 1000.0));
+        assert_eq!(empty(TabSelector::Decimal, false), "Click to add a decimal tab · 1.25″");
+        assert_eq!(empty(TabSelector::Decimal, true), "Click to add a decimal tab · 1.26″");
+        assert_eq!(empty(TabSelector::FirstLineIndent, false), "Click to set the first line indent · 1.25″");
+        assert_eq!(hint(&v, Hit::Text(73.0), TabSelector::Left, false, 1000.0), None, "no stop at the margin");
+        // The box says its type.
+        assert_eq!(
+            hint(&v, Hit::Selector, TabSelector::Left, false, 1000.0),
+            Some(RulerMeasure::Hint { at: BAND, label: "Tab type: Left — click to change".into() })
+        );
+        assert_eq!(hint(&v, Hit::Ruler, TabSelector::Left, false, 1000.0), None);
+        // A hint near the right end stays in the viewport.
+        assert_eq!(
+            hint(&v, Hit::Marker(Marker::TextEnd), TabSelector::Left, false, 600.0)
+                .map(|m| matches!(m, RulerMeasure::Hint { at, .. } if at == 260.0)),
+            Some(true)
+        );
     }
 }

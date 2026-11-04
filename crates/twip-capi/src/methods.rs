@@ -147,7 +147,7 @@ methods! {
     FontSetDefault = 50,
     /// `FontRequest` → `null` (any session).
     FontMarkUnresolved = 51,
-    /// `Color` → `null`.
+    /// `Color` → `null`; `null` puts back the theme's desk.
     HostSetBackground = 52,
     /// `number` (CSS px) → `null`.
     HostSetMarkupPaneWidth = 53,
@@ -191,7 +191,7 @@ methods! {
     HostSetCaretBlink = 71,
     /// → `FrameStats`: what the frames have cost so far.
     HostFrameStats = 72,
-    /// `OverlayPalette` (colours `#RRGGBB`) → `null`.
+    /// `OverlayPalette` (colours `#RRGGBB`) → `null`; `null` puts back the theme's.
     HostSetOverlayPalette = 73,
     /// `{ recordings }` (`PaintBudget`, bytes) → `null`.
     HostSetPaintBudget = 74,
@@ -501,7 +501,10 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
             Ok(none)
         }
         Method::HostSetBackground => {
-            s.host().set_background(request::<Color>(json)?);
+            match request::<Option<Color>>(json)? {
+                Some(c) => s.host().set_background(c),
+                None => s.host().reset_background(),
+            }
             Ok(none)
         }
         Method::HostSetMarkupPaneWidth => {
@@ -551,7 +554,10 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
             Ok(none)
         }
         Method::HostSetOverlayPalette => {
-            s.host().set_overlay_palette(request(json)?);
+            match request(json)? {
+                Some(p) => s.host().set_overlay_palette(p),
+                None => s.host().reset_overlay_palette(),
+            }
             Ok(none)
         }
         Method::HostSetCaretBlink => {

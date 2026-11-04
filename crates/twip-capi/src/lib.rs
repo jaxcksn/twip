@@ -614,6 +614,18 @@ pub unsafe extern "C" fn twip_pointer(engine: *mut TwipEngine, session: u32, kin
     });
 }
 
+/// The modifier keys changed with no other input (Alt pressed or released mid-drag): `mods` as for twip_key.
+///
+/// # Safety
+/// `engine` is from twip_engine_new.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twip_modifiers(engine: *mut TwipEngine, session: u32, mods: u32) {
+    let _ = guard(engine, session, |e| {
+        e.session(session)?.modifiers(Modifiers::from_bits(mods));
+        Ok(())
+    });
+}
+
 /// A wheel or trackpad scroll, CSS px.
 ///
 /// # Safety

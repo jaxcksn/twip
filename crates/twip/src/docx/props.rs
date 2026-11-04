@@ -98,7 +98,7 @@ fn font_ref(n: Node, name: &str) -> Option<FontRef> {
 }
 
 impl RunProps {
-    pub fn parse(rpr: Option<Node>) -> RunProps {
+    pub fn parse(rpr: Option<Node>, tc: &ThemeColours) -> RunProps {
         let mut p = RunProps::default();
         let Some(rpr) = rpr else { return p };
         for e in rpr.children().filter(|c| c.is_element()) {
@@ -151,14 +151,14 @@ impl RunProps {
                 "sz" => p.size = half_points(val(e)),
                 "dstrike" => p.dstrike = Some(on_off(e)),
                 "u" => p.underline = Some(val(e).unwrap_or("single").to_string()),
-                "color" => p.color = Some(color(val(e))),
+                "color" => p.color = Some(tc.colour(e, "val", "themeColor", "themeTint", "themeShade")),
                 "highlight" => {
                     p.highlight = Some(match val(e) {
                         Some("none") | None => None,
                         Some(v) => highlight(v),
                     })
                 }
-                "shd" => p.shading = Some(shading_fill(e)),
+                "shd" => p.shading = Some(shading_fill(e, tc)),
                 "em" => p.em = Some(val(e).unwrap_or("none").to_string()),
                 "vertAlign" => {
                     p.vert_align = Some(match val(e) {
@@ -245,6 +245,95 @@ fn val_any<'a>(n: Node<'a, '_>) -> Option<&'a str> {
     n.attribute((W14, "val")).or_else(|| val(n))
 }
 
+/// The colours `w:themeColor` and `w:themeFill` name, resolved through the document's theme and colour mapping
+/// (DRAW-7): `dark1`, `light1`, `dark2`, `light2`, `accent1`-`accent6`, `hyperlink`, `followedHyperlink`,
+/// `background1`, `text1`, `background2`, `text2` (STYLE-11).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ThemeColours([u32; 16]);
+
+const THEME_COLOUR_NAMES: [&str; 16] = [
+    "dark1",
+    "light1",
+    "dark2",
+    "light2",
+    "accent1",
+    "accent2",
+    "accent3",
+    "accent4",
+    "accent5",
+    "accent6",
+    "hyperlink",
+    "followedHyperlink",
+    "background1",
+    "text1",
+    "background2",
+    "text2",
+];
+
+impl Default for ThemeColours {
+    fn default() -> ThemeColours {
+        ThemeColours::new(&crate::drawing::theme::Theme::default(), &crate::drawing::theme::ColourMap::default())
+    }
+}
+
+impl ThemeColours {
+    pub fn new(theme: &crate::drawing::theme::Theme, map: &crate::drawing::theme::ColourMap) -> ThemeColours {
+        use crate::drawing::colour::SchemeSlot::*;
+        let slots = [Dk1, Lt1, Dk2, Lt2, Accent(1), Accent(2), Accent(3), Accent(4), Accent(5), Accent(6), Hlink, FolHlink, Bg1, Tx1, Bg2, Tx2];
+        ThemeColours(slots.map(|s| {
+            let c = theme.colour(map.map(s));
+            (u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b)
+        }))
+    }
+
+    /// The colour of `e`: its theme colour (`theme`, with `tint` and `shade`) when it names one, else its RGB `hex`
+    /// attribute (`None`: automatic) (STYLE-11).
+    pub fn colour(&self, e: Node, hex: &str, theme: &str, tint: &str, shade: &str) -> Option<u32> {
+        let Some(c) = attr(e, theme).and_then(|t| THEME_COLOUR_NAMES.iter().position(|n| *n == t)).map(|i| self.0[i]) else {
+            return color(attr(e, hex));
+        };
+        let byte = |a: &str| attr(e, a).and_then(|v| u8::from_str_radix(v, 16).ok()).map(|v| f64::from(v) / 255.0);
+        Some(match (byte(tint), byte(shade)) {
+            (Some(t), _) => with_luminance(c, |l| l * t + (1.0 - t)),
+            (None, Some(s)) => with_luminance(c, |l| l * s),
+            (None, None) => c,
+        })
+    }
+}
+
+/// `c` with its HSL luminance changed by `f`.
+fn with_luminance(c: u32, f: impl Fn(f64) -> f64) -> u32 {
+    let [r, g, b] = [16, 8, 0].map(|s| f64::from((c >> s) & 0xFF) / 255.0);
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    let sat = if d == 0.0 { 0.0 } else { d / (1.0 - (2.0 * l - 1.0).abs()) };
+    let hue = if d == 0.0 {
+        0.0
+    } else if max == r {
+        ((g - b) / d).rem_euclid(6.0)
+    } else if max == g {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    };
+    let l = f(l).clamp(0.0, 1.0);
+    let ch = (1.0 - (2.0 * l - 1.0).abs()) * sat;
+    let x = ch * (1.0 - (hue.rem_euclid(2.0) - 1.0).abs());
+    let (r1, g1, b1) = match hue as u32 {
+        0 => (ch, x, 0.0),
+        1 => (x, ch, 0.0),
+        2 => (0.0, ch, x),
+        3 => (0.0, x, ch),
+        4 => (x, 0.0, ch),
+        _ => (ch, 0.0, x),
+    };
+    let m = l - ch / 2.0;
+    let to = |v: f64| ((v + m).clamp(0.0, 1.0) * 255.0).round() as u32;
+    (to(r1) << 16) | (to(g1) << 8) | to(b1)
+}
+
+/// A `w:highlight` name's colour as it is drawn (FONT-15).
 pub fn highlight(v: &str) -> Option<u32> {
     Some(match v {
         "yellow" => 0xFFFF00,
@@ -253,14 +342,14 @@ pub fn highlight(v: &str) -> Option<u32> {
         "magenta" => 0xFF00FF,
         "blue" => 0x0000FF,
         "red" => 0xFF0000,
-        "darkBlue" => 0x000080,
-        "darkCyan" => 0x008080,
-        "darkGreen" => 0x008000,
+        "darkBlue" => 0x00008B,
+        "darkCyan" => 0x008B8B,
+        "darkGreen" => 0x006400,
         "darkMagenta" => 0x800080,
-        "darkRed" => 0x800000,
+        "darkRed" => 0x8B0000,
         "darkYellow" => 0x808000,
-        "darkGray" => 0x808080,
-        "lightGray" => 0xC0C0C0,
+        "darkGray" => 0xA9A9A9,
+        "lightGray" => 0xD3D3D3,
         "black" => 0x000000,
         "white" => 0xFFFFFF,
         _ => return None,
@@ -268,14 +357,15 @@ pub fn highlight(v: &str) -> Option<u32> {
 }
 
 /// `w:shd` → the visible fill (patterns `pctNN` blend the pattern colour over the fill).
-pub fn shading_fill(e: Node) -> Option<u32> {
-    let fill = color(attr(e, "fill"));
+pub fn shading_fill(e: Node, tc: &ThemeColours) -> Option<u32> {
+    let fill = tc.colour(e, "fill", "themeFill", "themeFillTint", "themeFillShade");
+    let pattern = || tc.colour(e, "color", "themeColor", "themeTint", "themeShade");
     match val(e) {
         None | Some("clear" | "nil") => fill,
-        Some("solid") => Some(color(attr(e, "color")).unwrap_or(0)),
+        Some("solid") => Some(pattern().unwrap_or(0)),
         Some(p) if p.starts_with("pct") => {
             let pct: u32 = p[3..].parse().ok()?;
-            let fg = color(attr(e, "color")).unwrap_or(0);
+            let fg = pattern().unwrap_or(0);
             let bg = fill.unwrap_or(0xFFFFFF);
             let mix = |s: u32| {
                 let (a, b) = ((fg >> s) & 255, (bg >> s) & 255);
@@ -316,13 +406,13 @@ pub struct Border {
 }
 
 impl Border {
-    pub fn parse(e: Node) -> Border {
+    pub fn parse(e: Node, tc: &ThemeColours) -> Border {
         let style = val(e).unwrap_or("none").to_string();
         Border {
             width: num(attr(e, "sz")).unwrap_or(4.0) / 8.0,
             space: num(attr(e, "space")).unwrap_or(0.0),
             shadow: matches!(attr(e, "shadow"), Some("1" | "true" | "on")),
-            color: color(attr(e, "color")),
+            color: tc.colour(e, "color", "themeColor", "themeTint", "themeShade"),
             style,
         }
     }
@@ -421,7 +511,7 @@ pub struct ParaProps {
 }
 
 impl ParaProps {
-    pub fn parse(ppr: Option<Node>) -> ParaProps {
+    pub fn parse(ppr: Option<Node>, tc: &ThemeColours) -> ParaProps {
         let mut p = ParaProps::default();
         let Some(ppr) = ppr else { return p };
         for e in ppr.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
@@ -491,14 +581,14 @@ impl ParaProps {
                     p.ilvl = child(e, "ilvl").and_then(|n| int(val(n)));
                 }
                 "pBdr" => {
-                    let b = |name| child(e, name).map(Border::parse);
+                    let b = |name| child(e, name).map(|n| Border::parse(n, tc));
                     p.border_top = b("top");
                     p.border_bottom = b("bottom");
                     p.border_left = b("left").or_else(|| b("start"));
                     p.border_right = b("right").or_else(|| b("end"));
                     p.border_between = b("between");
                 }
-                "shd" => p.shading = Some(shading_fill(e)),
+                "shd" => p.shading = Some(shading_fill(e, tc)),
                 "framePr" => {
                     let a = |n| attr(e, n).map(str::to_string);
                     let mut key: Vec<String> = e.attributes().map(|a| format!("{}={}", a.name(), a.value())).collect();
@@ -672,8 +762,8 @@ pub struct Borders {
 }
 
 impl Borders {
-    fn parse(e: Node) -> Borders {
-        let b = |n| child(e, n).map(Border::parse);
+    fn parse(e: Node, tc: &ThemeColours) -> Borders {
+        let b = |n| child(e, n).map(|n| Border::parse(n, tc));
         Borders {
             top: b("top"),
             left: b("left").or_else(|| b("start")),
@@ -750,7 +840,7 @@ pub struct TablePos {
 }
 
 impl TblProps {
-    pub fn parse(e: Option<Node>) -> TblProps {
+    pub fn parse(e: Option<Node>, tc: &ThemeColours) -> TblProps {
         let mut p = TblProps::default();
         let Some(e) = e else { return p };
         for c in e.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
@@ -766,7 +856,7 @@ impl TblProps {
                     })
                 }
                 "tblInd" => p.ind = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
-                "tblBorders" => p.borders = Borders::parse(c),
+                "tblBorders" => p.borders = Borders::parse(c, tc),
                 "tblCellMar" => p.margins = Margins::parse(c),
                 "tblLayout" => p.fixed = Some(attr(c, "type") == Some("fixed")),
                 "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
@@ -818,7 +908,7 @@ impl TblProps {
                         f.never_overlap = val(c) == Some("never");
                     }
                 }
-                "shd" => p.shading = Some(shading_fill(c)),
+                "shd" => p.shading = Some(shading_fill(c, tc)),
                 "tblLook" => {
                     let bit = |name: &str, mask: i64| match attr(c, name) {
                         Some(v) => on_off_str(Some(v)),
@@ -866,7 +956,7 @@ pub struct TcProps {
 }
 
 impl TcProps {
-    pub fn parse(e: Option<Node>) -> TcProps {
+    pub fn parse(e: Option<Node>, tc: &ThemeColours) -> TcProps {
         let mut p = TcProps::default();
         let Some(e) = e else { return p };
         for c in e.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
@@ -875,8 +965,8 @@ impl TcProps {
                 "gridSpan" => p.grid_span = int(val(c)),
                 "vMerge" => p.v_merge = Some(val(c) == Some("restart")),
                 "hMerge" => p.h_merge = Some(val(c) == Some("restart")),
-                "tcBorders" => p.borders = Borders::parse(c),
-                "shd" => p.shading = Some(shading_fill(c)),
+                "tcBorders" => p.borders = Borders::parse(c, tc),
+                "shd" => p.shading = Some(shading_fill(c, tc)),
                 "tcMar" => p.margins = Margins::parse(c),
                 "vAlign" => p.v_align = val(c).map(str::to_string),
                 "textDirection" => p.text_direction = val(c).map(str::to_string),
@@ -953,11 +1043,28 @@ mod tests {
     use super::{RunProps, toggle};
 
     #[test]
+    fn theme_colours_win_over_rgb_with_their_tint_or_shade() {
+        // STYLE-11: the default theme's accent1 is 156082; a shade of 80 halves its luminance.
+        let rpr = |x: &str| {
+            let xml = format!(r#"<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{x}</w:rPr>"#);
+            RunProps::parse(Some(roxmltree::Document::parse(&xml).unwrap().root_element()), &super::ThemeColours::default())
+        };
+        assert_eq!(rpr(r#"<w:color w:val="1F3864" w:themeColor="accent1" w:themeShade="80"/>"#).color, Some(Some(0x0B3041)));
+        assert_eq!(rpr(r#"<w:color w:val="1F3864" w:themeColor="accent1"/>"#).color, Some(Some(0x156082)));
+        assert_eq!(rpr(r#"<w:color w:val="1F3864" w:themeColor="nonsense"/>"#).color, Some(Some(0x1F3864)));
+        assert_eq!(rpr(r#"<w:color w:val="auto" w:themeColor="text1"/>"#).color, Some(Some(0x000000)));
+        // A tint moves toward white: background1 (FFFFFF) stays white, dark1 at tint 80 is a mid grey.
+        assert_eq!(rpr(r#"<w:color w:themeColor="dark1" w:themeTint="80"/>"#).color, Some(Some(0x7F7F7F)));
+        let shd = rpr(r#"<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF" w:themeFill="accent2"/>"#);
+        assert_eq!(shd.shading, Some(Some(0xE97132)));
+    }
+
+    #[test]
     fn the_nearest_style_in_a_chain_decides_a_toggle() {
         // STYLE-3: b=0 based on bold isn't bold, bold again above it is; levels then XOR the toggles they turn on.
         let rpr = |x: &str| {
             let xml = format!(r#"<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{x}</w:rPr>"#);
-            RunProps::parse(Some(roxmltree::Document::parse(&xml).unwrap().root_element()))
+            RunProps::parse(Some(roxmltree::Document::parse(&xml).unwrap().root_element()), &super::ThemeColours::default())
         };
         let (on, off, none) = (rpr("<w:b/>"), rpr(r#"<w:b w:val="0"/>"#), rpr(""));
         let bold = |chain: &[&RunProps]| RunProps::fold_chain(chain.iter().copied()).toggle(toggle::B);

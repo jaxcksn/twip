@@ -508,6 +508,8 @@ public sealed class ContractTests
             _session.DialogRequested += (_, e) => Record("dialogRequested", new JsonObject { ["kind"] = WireJson.ToNode(e.Kind) });
             _session.LinkActivated += (_, e) => Record("linkActivated", new JsonObject { ["address"] = e.Address, ["via"] = WireJson.ToNode(e.Via) });
             _session.ContextMenuRequested += (_, e) => Record("contextMenu", new JsonObject { ["menu"] = WireJson.ToNode(e.Menu), ["via"] = WireJson.ToNode(e.Via) });
+            _session.PopoverRequested += (_, e) => Record("popoverRequested", JsonSerializer.SerializeToNode(e.Popover, Ctx.Popover));
+            _session.PopoverClosed += (_, _) => Record("popoverClosed", null);
             _session.WordAdded += (_, e) => Record("wordAdded", new JsonObject { ["word"] = e.Word, ["language"] = e.Language });
             _session.FontsChanged += (_, e) => Record("fontsChanged", new JsonObject { ["pending"] = WireJson.ToNode(e.Pending), ["unresolved"] = WireJson.ToNode(e.Unresolved) });
             _session.ElementActivated += (_, e) => Record("elementActivated", new JsonObject { ["id"] = e.Id.Value });

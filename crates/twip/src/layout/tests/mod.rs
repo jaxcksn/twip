@@ -2,6 +2,7 @@
 //! that need fixtures or system fonts skip themselves when those are missing.
 
 mod attempts;
+mod auto_colour;
 mod breaking;
 mod cache_keys;
 mod col_separators;

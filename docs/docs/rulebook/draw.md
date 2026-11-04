@@ -52,6 +52,16 @@ Clamp each channel and the opacity to their range after every transform. `a:sysC
 
 `a:schemeClr` names a colour of the theme's `a:clrScheme`: `dk1`, `lt1`, `dk2`, `lt2`, `accent1`–`accent6`, `hlink`, `folHlink` directly; `bg1`, `tx1`, `bg2`, `tx2` (and the accents and links) through the settings' `w:clrSchemeMapping`, whose `w:bg1`, `w:t1`, `w:bg2`, `w:t2`, `w:accent1`… attributes name `light1`, `dark1`, `light2`, `dark2`, `accent1`… Without a mapping, `bg1` is `lt1`, `tx1` is `dk1`, `bg2` is `lt2` and `tx2` is `dk2`. Without a theme part, the scheme is dk1 000000, lt1 FFFFFF, dk2 0E2841, lt2 E8E8E8, accents 156082, E97132, 196B24, 0F9ED5, A02B93, 4EA72E, hlink 467886, folHlink 96607D.
 
+### DRAW-27. Colours on a dark page {#draw-27}
+
+On a dark page the document keeps its layout and its file; only the colours it's drawn in change, and only on screen (exported and printed output keep the document's colours). Each colour is resolved as on a light page first (automatic text white on a dark highlight or shading, a revision's colour, a theme colour), then drawn in its dark-page colour:
+
+- **Text, highlights, paragraph and cell shading, borders, underlines and the page itself** (white, or the page colour of [PAGE-12](page#page-12)) take the colour the dark-page table gives: a table of 17 levels per sRGB channel (level *i* is round(*i* · 255 / 16)), read between its points by tetrahedral interpolation (the cube cell is split along its diagonal into the tetrahedron the colour's channel fractions order). The table is [`dark-page.txt`](https://github.com/jaxcksn/twip/blob/main/crates/twip/src/render/dark-page.txt): line 17 · *r* + *g* lists *b* = 0 … 16. White becomes `262626`, black `F6F6F6`; mid greys about `909090` stay as they are, and a colour whose relative luminance is about 0.26 keeps its colour whatever its hue. Highlights go through the table in the colours [FONT-15](font#font-15) draws them in (yellow `FFFF00` becomes `515100`).
+- **Pure blues** (`0000xx`) step at `00008E`: from `000080` to `00008D` they run from `D0D0FF` to `CBCBFF`, from `00008E` to `000090` from `49D1FF` to `48D1FF` (dark blue highlight `00008B` becomes `CCCCFF`).
+- **Shapes and pictures keep their colours**: a shape's fill, line, effects and gradients, and a picture's pixels. A shape with a fill keeps its text's colours and the shading in its text too; a shape without a fill (a text box over the page) has its text drawn as the page's.
+
+A page shown in its own colours while the editor around it is dark draws every colour as it is.
+
 ## Paint
 
 ### DRAW-8. Style references {#draw-8}

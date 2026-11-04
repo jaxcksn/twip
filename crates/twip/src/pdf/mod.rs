@@ -220,6 +220,14 @@ pub fn export(doc: &Document, snapshot: &Snapshot, title: &str) -> Vec<u8> {
     out
 }
 
+/// `data` (a single-face TrueType file) with only the outlines of `chars`' glyphs: the bundled chrome fonts
+/// (`twip-tools chrome-fonts`). `None` for a file Skia can't read or a CFF face.
+pub fn subset_chars(data: &[u8], chars: &str) -> Option<Vec<u8>> {
+    let face = skia_safe::FontMgr::new().new_from_data(skia_safe::Data::new_copy(data), 0)?;
+    let used: BTreeSet<u16> = chars.chars().map(|c| face.unichar_to_glyph(c as i32)).filter(|&g| g != 0).collect();
+    subset(data, 0, &used)
+}
+
 /// A single-face TrueType file with `face`'s glyph ids but only the `used` glyphs' outlines (and their components),
 /// without shaping and hinting tables: what a PDF embeds (Skia's own subsetting needs its HarfBuzz build). `None` for
 /// CFF faces and unreadable files, which embed whole.

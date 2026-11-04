@@ -199,7 +199,7 @@ fn rects(d: &Document, fonts: &Fonts) -> Vec<([f64; 4], u32)> {
     let snapshot = crate::layout::layout(d, fonts);
     let mut out = Vec::new();
     paint(&snapshot.pages()[0], &mut |p| {
-        if let Item::Rect { rect, colour } = p.absolute() {
+        if let Item::Rect { rect, colour, .. } = p.absolute() {
             out.push((rect, colour));
         }
     });
