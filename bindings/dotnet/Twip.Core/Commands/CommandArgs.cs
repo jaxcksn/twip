@@ -744,6 +744,8 @@ public enum MarkupView
 /// <param name="Ordinals">Ordinals.</param>
 /// <param name="Fractions">Fractions.</param>
 /// <param name="Dashes">Dashes.</param>
+/// <param name="NumberedLists">Automatic numbered lists: <c>1.</c> then a space at a paragraph's start.</param>
+/// <param name="BulletedLists">Automatic bulleted lists: <c>*</c> then a space at a paragraph's start.</param>
 /// <param name="Entries">The replacement list, in place of the shipped one.</param>
 /// <param name="FirstLetterExceptions">Abbreviations after which a sentence doesn't start (<c>e.g.</c>), in place of the shipped ones.</param>
 /// <param name="InitialCapsExceptions">Words whose two initial capitals stay (<c>IDs</c>), in place of the shipped ones.</param>
@@ -758,6 +760,8 @@ public sealed record AutoCorrectChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Ordinals = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Fractions = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Dashes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? NumberedLists = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BulletedLists = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AutoCorrectEntry>? Entries = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? FirstLetterExceptions = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? InitialCapsExceptions = null,

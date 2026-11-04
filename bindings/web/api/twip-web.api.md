@@ -66,11 +66,13 @@ export interface AutoCorrectEntry {
 
 // @public
 export interface AutoCorrectOptions {
+    bulletedLists: boolean;
     cellCapitals: boolean;
     dashes: boolean;
     dayNames: boolean;
     fractions: boolean;
     never?: string[];
+    numberedLists: boolean;
     ordinals: boolean;
     replaceText: boolean;
     sentenceCapitals: boolean;
@@ -1569,7 +1571,6 @@ export type OpArgs<K extends CommandId> = Parameters<Commands[K]> extends [] ? {
 
 // @public
 export interface OverlayColors {
-    caret: Color;
     drop: Color;
     leaders: Color;
     marks: Color;

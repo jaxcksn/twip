@@ -109,6 +109,12 @@ public sealed record AutoCorrectOptions
     /// <summary>Hyphens become en and em dashes.</summary>
     public bool Dashes { get; init; } = true;
 
+    /// <summary><c>1.</c> or <c>1)</c> then a space or tab at a paragraph's start makes it a numbered list.</summary>
+    public bool NumberedLists { get; init; } = true;
+
+    /// <summary><c>*</c> or <c>-</c> then a space or tab at a paragraph's start makes it a bulleted list.</summary>
+    public bool BulletedLists { get; init; } = true;
+
     /// <summary>The texts Never correct added: never corrected again.</summary>
     [JsonIgnore]
     public IReadOnlyList<string> Never { get; init; } = [];

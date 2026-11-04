@@ -324,6 +324,40 @@ fn a_correction_offers_its_options_and_never_correct_stops_it() {
 }
 
 #[test]
+fn a_typed_list_start_begins_a_list_and_one_undo_puts_it_back() {
+    use crate::api::input::{Key, Modifiers};
+    use crate::api::state::{ListState, Tri};
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    typed(s, "1. ");
+    assert_eq!(paragraphs(s)[0], "");
+    assert_eq!(s.state().paragraph.list, Tri::Uniform(ListState::Numbered));
+    typed(s, "First");
+    s.key(Key::Enter, Modifiers::default());
+    typed(s, "Second");
+    assert_eq!(s.state().paragraph.list, Tri::Uniform(ListState::Numbered), "Enter continues the list");
+    // One undo takes back the list, with the marker as typed.
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    typed(s, "* ");
+    assert_eq!(s.state().paragraph.list, Tri::Uniform(ListState::Bullet));
+    s.run(Command::Undo).expect("undoes");
+    assert_eq!(paragraphs(s)[0], "* ");
+    assert_eq!(s.state().paragraph.list, Tri::Uniform(ListState::None));
+    // Not inside a paragraph's text, nor when the rule is off.
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    typed(s, "Step 1. ");
+    assert_eq!(s.state().paragraph.list, Tri::Uniform(ListState::None));
+    s.key(Key::Enter, Modifiers::default());
+    s.run(Command::SetAutoCorrect(crate::api::services::AutoCorrectChange { numbered_lists: Some(false), ..Default::default() })).expect("sets");
+    typed(s, "1. ");
+    assert_eq!(paragraphs(s)[1], "1. ");
+    assert_eq!(s.state().paragraph.list, Tri::Uniform(ListState::None));
+}
+
+#[test]
 fn copies_paste_formatted_in_any_session_and_as_text() {
     let (mut engine, _) = engine();
     let (a, b) = (engine.create_session(SessionOptions::default()), engine.create_session(SessionOptions::default()));

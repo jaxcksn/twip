@@ -47,10 +47,8 @@ export interface ClientPoint {
   clientY: number;
 }
 
-/** The colours of what the editor draws over the document (`view.setOverlayColors`). The defaults are the light theme's; each theme has its own. */
+/** The colours of what the editor draws over the document (`view.setOverlayColors`). The defaults are the light theme's; each theme has its own. The caret is always black or white, whichever stands out more on the page. */
 export interface OverlayColors {
-  /** The caret. Default `'#1C1D1F'`, the light theme's ink. */
-  caret: Color;
   /** The selection, blended under the text (multiply), so black text stays black. Default `'#9DC7F4'`, the accent's light tint. */
   selection: Color;
   /** A selected object's outline and handles. Default `'#0A74E4'`, the accent. */

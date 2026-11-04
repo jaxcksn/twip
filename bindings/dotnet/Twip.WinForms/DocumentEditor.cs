@@ -337,7 +337,7 @@ public class DocumentEditor : Control
     }
 
     private static OverlayColors SystemOverlayColors() => SystemInformation.HighContrast
-        ? new OverlayColors(SystemColors.WindowText, SystemColors.Highlight, SystemColors.WindowText, SystemColors.WindowText, SystemColors.GrayText, SystemColors.GrayText)
+        ? new OverlayColors(SystemColors.Highlight, SystemColors.WindowText, SystemColors.WindowText, SystemColors.GrayText, SystemColors.GrayText)
         : OverlayColors.Default;
 
     /// <summary>Windows' caret blink: <c>GetCaretBlinkTime</c>, which is -1 (INFINITE) when the caret doesn't blink.</summary>

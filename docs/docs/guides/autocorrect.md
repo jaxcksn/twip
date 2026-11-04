@@ -31,8 +31,13 @@ Every rule is on by default. `state.autoCorrect` reports them.
 | `ordinals` | `1st` with the suffix raised |
 | `fractions` | `1/2` → `½` |
 | `dashes` | hyphens to en and em dashes |
+| `numberedLists` | `1.` or `1)` then a space or Tab at a paragraph's start: a numbered list |
+| `bulletedLists` | `*` or `-` then a space or Tab at a paragraph's start: a bulleted list |
 
 A correction runs when you finish what it corrects: a space, punctuation, Tab or Enter after it.
+
+A list's start works only in a paragraph that isn't in a list yet. The marker goes, and the paragraph continues the list
+right before it when that list is the same kind, or starts a new one. One undo puts the marker back as typed.
 
 ## Options
 

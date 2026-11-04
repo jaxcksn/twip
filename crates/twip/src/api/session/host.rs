@@ -108,12 +108,11 @@ pub struct FrameInfo {
 
 /// The colours of what the editor draws over the document ([`HostSurface::set_overlay_palette`]). Setting them wins
 /// over the chrome theme's; the defaults are the light theme's with the default accent: lines and marks at least 3:1
-/// against the page, and the selection a light tint black text keeps at least 4.5:1 over.
+/// against the page, and the selection a light tint black text keeps at least 4.5:1 over. The caret is always black
+/// or white, whichever stands out more on the page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OverlayPalette {
-    /// The caret. Default `#1C1D1F`.
-    pub caret: Color,
     /// The selection, blended under the content (multiply), so black text stays black over it. Default `#9DC7F4`,
     /// the accent's light tint.
     pub selection: Color,
@@ -131,14 +130,7 @@ impl Default for OverlayPalette {
     fn default() -> OverlayPalette {
         let p = crate::render::Palette::default();
         let c = |c: skia_safe::Color| Color((u32::from(c.r()) << 16) | (u32::from(c.g()) << 8) | u32::from(c.b()));
-        OverlayPalette {
-            caret: c(p.caret),
-            selection: c(p.selection),
-            object: c(p.object),
-            drop: c(p.drop),
-            marks: c(p.marks),
-            leaders: c(p.leaders),
-        }
+        OverlayPalette { selection: c(p.selection), object: c(p.object), drop: c(p.drop), marks: c(p.marks), leaders: c(p.leaders) }
     }
 }
 
@@ -503,6 +495,8 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
         ordinals: a.ordinals,
         fractions: a.fractions,
         dashes: a.dashes,
+        numbered_lists: a.numbered_lists,
+        bulleted_lists: a.bulleted_lists,
         never: a.never.clone(),
     };
     state.view.formatting_marks = s.formatting_marks;
@@ -1071,6 +1065,7 @@ impl HostSurface<'_> {
                 hover: s.ruler_hovered(&ruler),
                 popover: p.popover.as_ref(),
                 measures: &measures,
+                page: p.renderer.page_tokens(),
             };
             crate::render::ruler::paint(&ruler, &p.renderer.theme, canvas, &frame);
         }
@@ -1178,7 +1173,6 @@ impl HostSurface<'_> {
         let c = |c: Color| crate::render::rgb(c.0);
         let r = &mut self.session.presentation.renderer;
         r.overlay_colours = Some(crate::render::Palette {
-            caret: c(palette.caret),
             selection: c(palette.selection),
             object: c(palette.object),
             drop: c(palette.drop),
@@ -1621,7 +1615,7 @@ mod tests {
             assert_eq!(s.state().view.theme, ChromeTheme::Dark, "a dark background darkens the chrome");
             s.host().reset_background();
             assert_eq!((s.state().view.background, s.state().view.theme), (desk, ChromeTheme::Light));
-            s.host().set_overlay_palette(OverlayPalette { caret: Color(0xFF0000), ..OverlayPalette::default() });
+            s.host().set_overlay_palette(OverlayPalette { marks: Color(0xFF0000), ..OverlayPalette::default() });
             assert_ne!(s.presentation.renderer.palette, theme);
             s.host().reset_overlay_palette();
             assert_eq!(s.presentation.renderer.palette, theme);
@@ -1649,8 +1643,8 @@ mod tests {
             set(s, Some(ChromeTheme::Dark), None);
             assert_eq!((s.state().view.background, ink(s)), (Color(0x1B1F27), crate::render::rgb(0xE6EDF3)));
             assert_eq!(s.state().view.theme_colors.dark, Some(dark));
-            // Caret follows the text colour.
-            assert_eq!(s.presentation.renderer.palette.caret, crate::render::rgb(0xE6EDF3));
+            // The caret stays black on the white page.
+            assert_eq!(s.presentation.renderer.caret(), skia_safe::Color::BLACK);
             // High contrast takes the platform's.
             let hc = SystemColors {
                 canvas: Color(0),

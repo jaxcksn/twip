@@ -1,6 +1,7 @@
 [
   {
     "autoCorrect": {
+      "bulletedLists": true,
       "cellCapitals": true,
       "dashes": true,
       "dayNames": true,
@@ -8,6 +9,7 @@
       "never": [
         "teh"
       ],
+      "numberedLists": true,
       "ordinals": true,
       "replaceText": true,
       "sentenceCapitals": true,

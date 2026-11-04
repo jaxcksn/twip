@@ -28,13 +28,13 @@ impl Renderer {
         outline.set_color(palette.object);
         outline.set_style(skia_safe::paint::Style::Stroke);
         outline.set_stroke_width(0.75);
-        // Object chrome: 1 px lines, the paper token behind handles.
+        // Object chrome: 1 px lines, the page's colour behind handles.
         let mut hair = outline.clone();
         hair.set_anti_alias(true);
         hair.set_stroke_width((1.0 / k) as f32);
         let mut paper = Paint::default();
         paper.set_anti_alias(true);
-        paper.set_color(self.theme.tokens.paper);
+        paper.set_color(self.page());
         for (_, [x0, y0, x1, y1]) in view.fade.iter().filter(|(pg, _)| *pg == i) {
             canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &fade);
         }
@@ -128,7 +128,7 @@ impl Renderer {
             if let Some((_, [x0, y0, x1, y1])) = c.button.filter(|(pg, _)| *pg == i) {
                 let r = Rect::new(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
                 let mut fill = Paint::default();
-                fill.set_color(self.theme.tokens.paper);
+                fill.set_color(self.page());
                 canvas.draw_rect(r, &fill);
                 let mut edge = Paint::default();
                 edge.set_anti_alias(true);
@@ -237,7 +237,7 @@ impl Renderer {
                 }
             }
             SelectionView::Object(rects, handles) => {
-                // A 1 px outline and eight 8 px handles, paper filled with a 1 px border.
+                // A 1 px outline and eight 8 px handles, filled with the page's colour, with a 1 px border.
                 for (_, [x0, y0, x1, y1]) in rects.iter().filter(|(pg, _)| *pg == i) {
                     canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &hair);
                     if !handles {
@@ -254,7 +254,7 @@ impl Renderer {
             }
             SelectionView::None => {}
         }
-        // A selected shape: its turned outline, its rotate knob (10 px, paper filled) on a 20 px stem from its top,
+        // A selected shape: its turned outline, its rotate knob (10 px, in the page's colour) on a 20 px stem from its top,
         // its adjust handles as yellow diamonds.
         for s in view.shapes.iter().filter(|s| s.page == i) {
             let [x0, y0, x1, y1] = s.rect;
@@ -293,7 +293,7 @@ impl Renderer {
         // The caret: a bar at the insertion point, at least one device pixel wide, last so nothing covers it.
         if let Some(c) = view.caret.as_ref().filter(|c| f.caret && c.page == i && matches!(view.selection, SelectionView::None)) {
             let mut bar = Paint::default();
-            bar.set_color(palette.caret);
+            bar.set_color(self.caret());
             let width = f.dpr.round().max(1.0) / (k * f.dpr);
             canvas.draw_rect(Rect::new(c.x as f32, c.top as f32, (c.x + width) as f32, c.bottom as f32), &bar);
         }
@@ -304,7 +304,7 @@ impl Renderer {
     fn object_feedback(&mut self, canvas: &Canvas, view: &View, i: usize, f: &Frame) {
         use crate::editing::view::{Axis, Measure, Tone};
         let u = 1.0 / f.px_per_pt.max(0.01);
-        let (t, accent) = (self.theme.tokens, self.palette.object);
+        let (t, accent) = (self.page_tokens(), self.palette.object);
         let line = |c: Color, dash: Option<[f64; 2]>| {
             let mut p = Paint::default();
             p.set_anti_alias(true);
@@ -360,9 +360,9 @@ impl Renderer {
             return;
         };
         let (chip_font, label_font) = (Font::from_typeface(mono5, (10.0 * u) as f32), Font::from_typeface(mono6, (10.0 * u) as f32));
-        let tone = |t: Tone| match t {
+        let tone = |tone: Tone| match tone {
             Tone::Accent => accent,
-            Tone::Muted => self.theme.tokens.ink2,
+            Tone::Muted => t.ink2,
         };
         for (_, m) in view.measures.iter().filter(|(p, _)| *p == i) {
             match m {
@@ -397,14 +397,14 @@ impl Renderer {
     }
 
     /// Page `i`'s table affordances: a resize's or move's new box (dashed, the accent's soft tint inside); the shown
-    /// table's move handle (14 px, paper filled, a four-way arrow) 20 px above and left of it and its resize handle (7 px)
-    /// at its lower right, both with a 1 px accent border; under the pointer, a "+" (14 px, accent filled) with a dashed
+    /// table's move handle (14 px, a four-way arrow) 20 px above and left of it and its resize handle (7 px)
+    /// at its lower right, both with a 1 px accent border; under the pointer, a "+" (14 px, an accent border and cross) with a dashed
     /// line where the column or row goes, an accent arrow (10 × 7 px) at a column or row it selects, or a dashed line
     /// down a column border. The canvas is in page points; sizes are CSS px.
     fn table_affordances(&mut self, canvas: &Canvas, view: &View, i: usize, f: &Frame) {
         use crate::editing::view::TableMark;
         let u = 1.0 / f.px_per_pt.max(0.01);
-        let (accent, solid, paper) = (self.theme.accent, self.palette.object, self.theme.tokens.paper);
+        let (accent, solid) = (self.theme.accent, self.palette.object);
         let paint = |c: Color, stroke: bool| {
             let mut p = Paint::default();
             p.set_anti_alias(true);
@@ -418,16 +418,15 @@ impl Renderer {
         let mut dashed = paint(solid, true);
         dashed.set_path_effect(skia_safe::PathEffect::dash(&[(3.0 * u) as f32, (3.0 * u) as f32], 0.0));
         let line = |a: (f64, f64), b: (f64, f64), p: &Paint| canvas.draw_line((a.0 as f32, a.1 as f32), (b.0 as f32, b.1 as f32), p);
-        // A box `s` px square at a page point, paper filled with an accent border.
+        // A box `s` px square at a page point: an accent border, the page showing through.
         let boxed = |x: f64, y: f64, s: f64| {
             let r = Rect::from_xywh(x as f32, y as f32, (s * u) as f32, (s * u) as f32);
-            canvas.draw_rect(r, &paint(paper, false));
             canvas.draw_rect(r, &paint(solid, true));
         };
-        // The "+" button: accent filled, its cross in the colour drawn on the accent.
+        // The "+" button: an accent border and cross, the page showing through.
         let plus = |x: f64, y: f64| {
-            canvas.draw_rect(Rect::from_xywh(x as f32, y as f32, (14.0 * u) as f32, (14.0 * u) as f32), &paint(solid, false));
-            let mut cross = paint(accent.on, true);
+            canvas.draw_rect(Rect::from_xywh(x as f32, y as f32, (14.0 * u) as f32, (14.0 * u) as f32), &paint(solid, true));
+            let mut cross = paint(solid, true);
             cross.set_stroke_width((1.5 * u) as f32);
             let (cx, cy) = (x + 7.0 * u, y + 7.0 * u);
             line((cx - 3.5 * u, cy), (cx + 3.5 * u, cy), &cross);

@@ -4014,9 +4014,7 @@ Twip.Hosting.EditorHost.OverlayColors.get -> Twip.OverlayColors!
 Twip.Hosting.EditorHost.OverlayColors.set -> void
 Twip.OverlayColors
 Twip.OverlayColors.<Clone>$() -> Twip.OverlayColors!
-Twip.OverlayColors.Caret.get -> System.Drawing.Color
-Twip.OverlayColors.Caret.init -> void
-Twip.OverlayColors.Deconstruct(out System.Drawing.Color Caret, out System.Drawing.Color Selection, out System.Drawing.Color Object, out System.Drawing.Color Drop, out System.Drawing.Color Marks, out System.Drawing.Color Leaders) -> void
+Twip.OverlayColors.Deconstruct(out System.Drawing.Color Selection, out System.Drawing.Color Object, out System.Drawing.Color Drop, out System.Drawing.Color Marks, out System.Drawing.Color Leaders) -> void
 Twip.OverlayColors.Drop.get -> System.Drawing.Color
 Twip.OverlayColors.Drop.init -> void
 Twip.OverlayColors.Equals(Twip.OverlayColors? other) -> bool
@@ -4026,7 +4024,7 @@ Twip.OverlayColors.Marks.get -> System.Drawing.Color
 Twip.OverlayColors.Marks.init -> void
 Twip.OverlayColors.Object.get -> System.Drawing.Color
 Twip.OverlayColors.Object.init -> void
-Twip.OverlayColors.OverlayColors(System.Drawing.Color Caret, System.Drawing.Color Selection, System.Drawing.Color Object, System.Drawing.Color Drop, System.Drawing.Color Marks, System.Drawing.Color Leaders) -> void
+Twip.OverlayColors.OverlayColors(System.Drawing.Color Selection, System.Drawing.Color Object, System.Drawing.Color Drop, System.Drawing.Color Marks, System.Drawing.Color Leaders) -> void
 Twip.OverlayColors.Selection.get -> System.Drawing.Color
 Twip.OverlayColors.Selection.init -> void
 override Twip.OverlayColors.Equals(object? obj) -> bool
@@ -4897,14 +4895,14 @@ virtual Twip.Popover.Equals(Twip.Popover? other) -> bool
 virtual Twip.Popover.PrintMembers(System.Text.StringBuilder! builder) -> bool
 Twip.AutoCorrectChange
 Twip.AutoCorrectChange.<Clone>$() -> Twip.AutoCorrectChange!
-Twip.AutoCorrectChange.AutoCorrectChange(bool? TwoInitialCapitals = null, bool? SentenceCapitals = null, bool? CellCapitals = null, bool? DayNames = null, bool? ReplaceText = null, bool? SmartQuotes = null, bool? Ordinals = null, bool? Fractions = null, bool? Dashes = null, System.Collections.Generic.IReadOnlyList<Twip.AutoCorrectEntry!>? Entries = null, System.Collections.Generic.IReadOnlyList<string!>? FirstLetterExceptions = null, System.Collections.Generic.IReadOnlyList<string!>? InitialCapsExceptions = null, System.Collections.Generic.IReadOnlyList<string!>? Never = null) -> void
+Twip.AutoCorrectChange.AutoCorrectChange(bool? TwoInitialCapitals = null, bool? SentenceCapitals = null, bool? CellCapitals = null, bool? DayNames = null, bool? ReplaceText = null, bool? SmartQuotes = null, bool? Ordinals = null, bool? Fractions = null, bool? Dashes = null, bool? NumberedLists = null, bool? BulletedLists = null, System.Collections.Generic.IReadOnlyList<Twip.AutoCorrectEntry!>? Entries = null, System.Collections.Generic.IReadOnlyList<string!>? FirstLetterExceptions = null, System.Collections.Generic.IReadOnlyList<string!>? InitialCapsExceptions = null, System.Collections.Generic.IReadOnlyList<string!>? Never = null) -> void
 Twip.AutoCorrectChange.CellCapitals.get -> bool?
 Twip.AutoCorrectChange.CellCapitals.init -> void
 Twip.AutoCorrectChange.Dashes.get -> bool?
 Twip.AutoCorrectChange.Dashes.init -> void
 Twip.AutoCorrectChange.DayNames.get -> bool?
 Twip.AutoCorrectChange.DayNames.init -> void
-Twip.AutoCorrectChange.Deconstruct(out bool? TwoInitialCapitals, out bool? SentenceCapitals, out bool? CellCapitals, out bool? DayNames, out bool? ReplaceText, out bool? SmartQuotes, out bool? Ordinals, out bool? Fractions, out bool? Dashes, out System.Collections.Generic.IReadOnlyList<Twip.AutoCorrectEntry!>? Entries, out System.Collections.Generic.IReadOnlyList<string!>? FirstLetterExceptions, out System.Collections.Generic.IReadOnlyList<string!>? InitialCapsExceptions, out System.Collections.Generic.IReadOnlyList<string!>? Never) -> void
+Twip.AutoCorrectChange.Deconstruct(out bool? TwoInitialCapitals, out bool? SentenceCapitals, out bool? CellCapitals, out bool? DayNames, out bool? ReplaceText, out bool? SmartQuotes, out bool? Ordinals, out bool? Fractions, out bool? Dashes, out bool? NumberedLists, out bool? BulletedLists, out System.Collections.Generic.IReadOnlyList<Twip.AutoCorrectEntry!>? Entries, out System.Collections.Generic.IReadOnlyList<string!>? FirstLetterExceptions, out System.Collections.Generic.IReadOnlyList<string!>? InitialCapsExceptions, out System.Collections.Generic.IReadOnlyList<string!>? Never) -> void
 Twip.AutoCorrectChange.Entries.get -> System.Collections.Generic.IReadOnlyList<Twip.AutoCorrectEntry!>?
 Twip.AutoCorrectChange.Entries.init -> void
 Twip.AutoCorrectChange.Equals(Twip.AutoCorrectChange? other) -> bool
@@ -5051,3 +5049,11 @@ override Twip.ChromeColors.ToString() -> string!
 static Twip.ChromeColors.operator !=(Twip.ChromeColors? left, Twip.ChromeColors? right) -> bool
 static Twip.ChromeColors.operator ==(Twip.ChromeColors? left, Twip.ChromeColors? right) -> bool
 Twip.EditorSession.SetThemeColorsAsync(Twip.ThemeColors! colors) -> System.Threading.Tasks.Task!
+Twip.AutoCorrectChange.NumberedLists.get -> bool?
+Twip.AutoCorrectChange.NumberedLists.init -> void
+Twip.AutoCorrectChange.BulletedLists.get -> bool?
+Twip.AutoCorrectChange.BulletedLists.init -> void
+Twip.AutoCorrectOptions.NumberedLists.get -> bool
+Twip.AutoCorrectOptions.NumberedLists.init -> void
+Twip.AutoCorrectOptions.BulletedLists.get -> bool
+Twip.AutoCorrectOptions.BulletedLists.init -> void

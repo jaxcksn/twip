@@ -578,6 +578,10 @@ export interface AutoCorrectOptions {
   fractions: boolean;
   /** Hyphens to en and em dashes. */
   dashes: boolean;
+  /** `1.` or `1)` then a space or tab at a paragraph's start makes it a numbered list. */
+  numberedLists: boolean;
+  /** `*` or `-` then a space or tab at a paragraph's start makes it a bulleted list. */
+  bulletedLists: boolean;
   /** The texts Never correct added (or `setAutoCorrect` set): never corrected again. Absent when empty. */
   never?: string[];
 }

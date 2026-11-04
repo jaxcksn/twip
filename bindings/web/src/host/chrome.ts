@@ -89,7 +89,7 @@ export function startChrome(
   }
 
   // The overlay colours: the theme's until the application sets them (the light theme's are the base it changes).
-  const THEME: OverlayColors = { caret: '#1C1D1F', selection: '#9DC7F4', object: '#0A74E4', drop: '#62656C', marks: '#0A74E4', leaders: '#62656C' };
+  const THEME: OverlayColors = { selection: '#9DC7F4', object: '#0A74E4', drop: '#62656C', marks: '#0A74E4', leaders: '#62656C' };
   let overlay = THEME;
   const system = (css: string): Color => {
     const probe = Object.assign(document.createElement('span'), { hidden: true });

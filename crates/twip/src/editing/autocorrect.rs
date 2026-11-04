@@ -1,7 +1,8 @@
 //! AutoCorrect as you type: after text is typed (or a paragraph ended), the words just finished are corrected in one
 //! step of their own, so an undo right after it takes back only the correction. The rules: the replacement list,
 //! symbols, smart quotes, dashes, fractions, ordinals, and capitals (two initial capitals, day names, the first letter
-//! of a sentence or of a table cell). Only typing corrects: pasted and inserted text never do.
+//! of a sentence or of a table cell), and lists a paragraph's start begins (`1.` or `*` then a space). Only typing
+//! corrects: pasted and inserted text never do.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -28,6 +29,10 @@ pub struct AutoCorrect {
     pub ordinals: bool,
     pub fractions: bool,
     pub dashes: bool,
+    /// `1.` or `1)` then a space or tab starts a numbered list.
+    pub numbered_lists: bool,
+    /// `*` or `-` then a space or tab starts a bulleted list.
+    pub bulleted_lists: bool,
     /// The replacement list; `None`: the shipped one.
     pub entries: Option<HashMap<String, String>>,
     /// Abbreviations after which a sentence doesn't start (`e.g.`); `None`: the shipped list.
@@ -50,6 +55,8 @@ impl Default for AutoCorrect {
             ordinals: true,
             fractions: true,
             dashes: true,
+            numbered_lists: true,
+            bulleted_lists: true,
             entries: None,
             first_letter_exceptions: None,
             initial_caps_exceptions: None,
@@ -119,6 +126,20 @@ pub struct Fix {
     pub superscript: Option<Range<usize>>,
     /// What was typed, for Revert and Never correct.
     pub from: String,
+}
+
+/// The list a paragraph's typed start begins, `true` for bullets: `1.` or `1)` then a space or tab a numbered one, `*`
+/// or `-` then one a bulleted one.
+fn list_start(before: &[char], ac: &AutoCorrect) -> Option<bool> {
+    let (last, marker) = before.split_last()?;
+    if !matches!(last, ' ' | '\t') {
+        return None;
+    }
+    match marker {
+        ['1', '.' | ')'] if ac.numbered_lists => Some(false),
+        ['*' | '-'] if ac.bulleted_lists => Some(true),
+        _ => None,
+    }
 }
 
 /// Whether typing `c` can finish something to correct: a word's end, a quote, a symbol's last character.
@@ -348,6 +369,24 @@ impl Editor {
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let text = super::text::UnitText::of(p);
         let before: Vec<char> = text.text.chars().take(at.0 as usize).collect();
+        // A list's start typed at a paragraph's start: the marker goes and the paragraph joins a list, one step.
+        if trigger == Trigger::Typed
+            && let Some(bullet) = list_start(&before, ac)
+            && self.para_list(para).is_none()
+        {
+            let label = if bullet { "Automatic Bullets" } else { "Automatic Numbering" };
+            let n = Unit(before.len() as u32);
+            return self.joined(label, fonts, |e| {
+                let mut tx = e.begin(label);
+                if e.step(&mut tx, Step::Text { para, range: Unit(0)..n, with: Vec::new(), edges: Default::default() }).is_err() {
+                    e.abort(tx);
+                    return Outcome::Unchanged("the marker stayed");
+                }
+                e.selection = Selection::Caret(Position::text(caret.story, para, Unit(0)));
+                e.commit(tx, None, fonts);
+                e.toggle_list(bullet, fonts)
+            });
+        }
         let cell_start = self.index.para_slot(para).is_some_and(|s| matches!(s.container, super::index::Container::Cell { .. }) && s.block == 0);
         let Some(fix) = correction(&before, trigger, cell_start, ac) else { return Outcome::Unchanged("nothing to correct") };
         let (a, b) = (Unit(fix.range.start as u32), Unit(fix.range.end as u32));

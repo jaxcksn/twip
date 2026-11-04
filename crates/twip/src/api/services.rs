@@ -1303,6 +1303,10 @@ pub struct AutoCorrectOptions {
     pub fractions: bool,
     /// Hyphens to en and em dashes.
     pub dashes: bool,
+    /// `1.` or `1)` then a space or tab at a paragraph's start makes it a numbered list.
+    pub numbered_lists: bool,
+    /// `*` or `-` then a space or tab at a paragraph's start makes it a bulleted list.
+    pub bulleted_lists: bool,
     /// Texts Never correct added: never corrected again.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub never: Vec<String>,
@@ -1320,6 +1324,8 @@ impl Default for AutoCorrectOptions {
             ordinals: true,
             fractions: true,
             dashes: true,
+            numbered_lists: true,
+            bulleted_lists: true,
             never: Vec::new(),
         }
     }
@@ -1356,6 +1362,12 @@ pub struct AutoCorrectChange {
     /// Dashes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dashes: Option<bool>,
+    /// Automatic numbered lists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numbered_lists: Option<bool>,
+    /// Automatic bulleted lists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bulleted_lists: Option<bool>,
     /// The replacement list, in place of the shipped one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entries: Option<Vec<AutoCorrectEntry>>,
@@ -1429,10 +1441,10 @@ pub struct ChromeColors {
     /// Around the pages and the rulers' strips (a background the host sets wins around the pages).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub desk: Option<Color>,
-    /// The rulers' strips, handle fills, the AutoCorrect options button, and the readouts' and labels' backgrounds.
+    /// The rulers' strips, and the readouts' and labels' backgrounds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<Color>,
-    /// Text, ruler numbers and markers, and the caret.
+    /// Text, and the ruler numbers and markers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<Color>,
     /// The rulers' unit ticks, and secondary text.

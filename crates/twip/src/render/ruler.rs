@@ -5,7 +5,7 @@
 
 use skia_safe::{Canvas, Color, Font, Paint, PathEffect, RRect, Rect};
 
-use super::theme::Theme;
+use super::theme::{Theme, Tokens};
 use super::{ChromeFace, chrome_typeface};
 use crate::api::services::{Popover, RulerView, TabSelector};
 use crate::api::value::TabAlignment;
@@ -39,6 +39,8 @@ pub struct RulerFrame<'a> {
     pub hover: Option<Marker>,
     pub popover: Option<&'a Popover>,
     pub measures: &'a [RulerMeasure],
+    /// The colours the measurements over the page take ([`super::Renderer::page_tokens`]).
+    pub page: Tokens,
 }
 
 fn fill(c: Color) -> Paint {
@@ -344,17 +346,16 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
             canvas.draw_line((band, at), (w, at), &guide);
         }
     }
-    measures(view, theme, canvas, f.measures);
+    measures(view, theme, &f.page, canvas, f.measures);
     canvas.restore();
 }
 
-/// Draws the measurements: dimension lines with end ticks and their label on the paper colour, dark chips and hints,
-/// and status lines; dimension and status points are the ruler page's, mapped by `view`.
-fn measures(view: &RulerView, theme: &Theme, canvas: &Canvas, measures: &[RulerMeasure]) {
+/// Draws the measurements in the page's colours `t`: dimension lines with end ticks and their label on the paper
+/// colour, dark chips and hints, and status lines; dimension and status points are the ruler page's, mapped by `view`.
+fn measures(view: &RulerView, theme: &Theme, t: &Tokens, canvas: &Canvas, measures: &[RulerMeasure]) {
     if measures.is_empty() {
         return;
     }
-    let t = &theme.tokens;
     let (Some(value), Some(chip)) = (face(ChromeFace::Mono600, 10.0), face(ChromeFace::Mono500, 10.0)) else { return };
     let (h, v) = (view.horizontal, view.vertical);
     let client = |p: [f64; 2]| ((h.origin + p[0] * h.scale) as f32, (v.origin + p[1] * v.scale) as f32);
@@ -432,6 +433,7 @@ mod tests {
             hover: None,
             popover: None,
             measures,
+            page: Theme::default().tokens,
         }
     }
 

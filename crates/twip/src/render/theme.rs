@@ -27,8 +27,8 @@ pub enum Scheme {
 pub struct Tokens {
     /// Around the pages.
     pub desk: Color,
-    /// Chrome surfaces next to the page: the rulers' strip, handle fills, the options button, chips' and labels'
-    /// backgrounds.
+    /// Chrome surfaces next to the page: the rulers' strip, and chips' and labels' backgrounds. What's drawn on the
+    /// page (handles, the options button) takes the page's colour instead.
     pub paper: Color,
     /// Text and markers, strongest to faintest.
     pub ink: Color,
@@ -139,7 +139,6 @@ impl Theme {
     pub fn palette(&self) -> super::Palette {
         let (t, a) = (&self.tokens, &self.accent);
         super::Palette {
-            caret: t.ink,
             // Light: an opaque tint multiplied under the content, so text keeps its colour; dark: the accent over it.
             selection: if self.is_dark() { a.mid } else { mix(Color::WHITE, a.solid, 0.4) },
             object: a.solid,

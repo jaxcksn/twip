@@ -46,18 +46,17 @@ namespace Twip
     /// <param name="Bounds">Its bounds, in control client pixels.</param>
     public sealed record PageRect(int Page, [property: JsonPropertyName("rect")] RectangleF Bounds);
 
-    /// <summary>The colours of what the editor draws over the document.</summary>
-    /// <param name="Caret">The caret.</param>
+    /// <summary>The colours of what the editor draws over the document. The caret is always black or white, whichever stands out more on the page.</summary>
     /// <param name="Selection">The selection, blended under the text (multiply), so black text stays black.</param>
     /// <param name="Object">A selected object's outline and handles.</param>
     /// <param name="Drop">The drop caret of a drag.</param>
     /// <param name="Marks">Formatting marks and text boundaries.</param>
     /// <param name="Leaders">The markup pane's leader lines.</param>
-    public sealed record OverlayColors(Color Caret, Color Selection, Color Object, Color Drop, Color Marks, Color Leaders)
+    public sealed record OverlayColors(Color Selection, Color Object, Color Drop, Color Marks, Color Leaders)
     {
         /// <summary>The light theme's colours with the default accent: each at least 3:1 against the page, except the selection, the accent's light tint (black text over it at least 4.5:1).</summary>
         public static OverlayColors Default { get; } = new(
-            Color.FromArgb(0x1C, 0x1D, 0x1F), Color.FromArgb(0x9D, 0xC7, 0xF4), Color.FromArgb(0x0A, 0x74, 0xE4), Color.FromArgb(0x62, 0x65, 0x6C),
+            Color.FromArgb(0x9D, 0xC7, 0xF4), Color.FromArgb(0x0A, 0x74, 0xE4), Color.FromArgb(0x62, 0x65, 0x6C),
             Color.FromArgb(0x0A, 0x74, 0xE4), Color.FromArgb(0x62, 0x65, 0x6C));
     }
 

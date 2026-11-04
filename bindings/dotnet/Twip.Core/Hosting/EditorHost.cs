@@ -409,7 +409,6 @@ public sealed class EditorHost : IDisposable
             SendAndDraw(Method.HostSetOverlayPalette, Json(w =>
             {
                 w.WriteStartObject();
-                w.WriteString("caret", Hex(value.Caret));
                 w.WriteString("selection", Hex(value.Selection));
                 w.WriteString("object", Hex(value.Object));
                 w.WriteString("drop", Hex(value.Drop));

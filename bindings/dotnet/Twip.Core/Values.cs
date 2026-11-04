@@ -784,8 +784,8 @@ public sealed record ThemeColors(
 
 /// <summary>Chrome colours in place of a scheme's own; each one left null keeps the scheme's.</summary>
 /// <param name="Desk">Around the pages and the rulers' strips (a background the host sets wins around the pages).</param>
-/// <param name="Surface">The rulers' strips, handle fills, the AutoCorrect options button, and the readouts' and labels' backgrounds.</param>
-/// <param name="Text">Text, ruler numbers and markers, and the caret.</param>
+/// <param name="Surface">The rulers' strips, and the readouts' and labels' backgrounds.</param>
+/// <param name="Text">Text, and the ruler numbers and markers.</param>
 /// <param name="SecondaryText">The rulers' unit ticks, and secondary text.</param>
 /// <param name="FaintText">The rulers' fine ticks, the object grid, and faint text.</param>
 /// <param name="Line">The rulers' outlines and the margins' hatching.</param>

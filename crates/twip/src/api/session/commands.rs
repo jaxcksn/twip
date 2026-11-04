@@ -245,6 +245,8 @@ impl Session {
         set(&mut a.ordinals, c.ordinals);
         set(&mut a.fractions, c.fractions);
         set(&mut a.dashes, c.dashes);
+        set(&mut a.numbered_lists, c.numbered_lists);
+        set(&mut a.bulleted_lists, c.bulleted_lists);
         if let Some(e) = &c.entries {
             a.entries = Some(e.iter().map(|e| (e.from.clone(), e.to.clone())).collect());
         }

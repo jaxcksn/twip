@@ -76,7 +76,6 @@ pub struct Renderer {
 /// and the selection is the light blue of a system text selection, black text over it at least 4.5:1.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
-    pub caret: Color,
     /// Blended under the content (multiply), so text over it keeps its contrast.
     pub selection: Color,
     pub object: Color,
@@ -125,6 +124,29 @@ impl Renderer {
     pub fn set_theme(&mut self, theme: theme::Theme) {
         self.theme = theme;
         self.palette = self.overlay_colours.unwrap_or_else(|| theme.palette());
+    }
+
+    /// The caret's colour: black or white, whichever stands out more on the page as drawn. Neither the theme's
+    /// colours nor the host's change it.
+    pub fn caret(&self) -> Color {
+        let page = self.page();
+        if theme::contrast(Color::WHITE, page) > theme::contrast(Color::BLACK, page) { Color::WHITE } else { Color::BLACK }
+    }
+
+    /// The page's colour as drawn: what handles and buttons on the page are filled with, whatever the chrome's theme.
+    pub(super) fn page(&self) -> Color {
+        rgb(self.appearance.map(self.page_colour.unwrap_or(0xFF_FFFF)))
+    }
+
+    /// The colours of what's drawn over the page (measurements, the object grid): the chrome's when its scheme
+    /// matches the page, else the matching scheme's, so a light page under dark chrome gets light readouts.
+    pub fn page_tokens(&self) -> theme::Tokens {
+        let dark = theme::luminance(self.page()) < 0.2;
+        match self.theme.scheme {
+            theme::Scheme::HighContrast(_) => self.theme.tokens,
+            _ if dark == self.theme.is_dark() => self.theme.tokens,
+            _ => theme::Tokens::of(if dark { theme::Scheme::Dark } else { theme::Scheme::Light }),
+        }
     }
 
     /// The colour document colour `c` is drawn in (DRAW-27).
@@ -451,9 +473,35 @@ mod tests {
     }
 
     #[test]
+    fn the_caret_is_black_or_white_against_the_page() {
+        let mut r = Renderer::default();
+        let mut dark = theme::Theme::new(theme::Scheme::Dark, theme::AZURE);
+        dark.tokens.ink = Color::from_rgb(0xE6, 0xED, 0xF3);
+        r.set_theme(dark);
+        assert_eq!(r.caret(), Color::BLACK, "on the white page, whatever the chrome's text colour");
+        r.appearance = appearance::Appearance::Dark { page: appearance::PageMode::Dark };
+        assert_eq!(r.caret(), Color::WHITE, "on the dark page");
+        r.appearance = appearance::Appearance::Light;
+        r.page_colour = Some(0x10_2030);
+        assert_eq!(r.caret(), Color::WHITE, "on a dark page colour");
+        r.overlay_colours = Some(Palette { marks: Color::RED, ..Palette::default() });
+        assert_eq!(r.caret(), Color::WHITE, "whatever the host's overlay colours");
+    }
+
+    #[test]
+    fn what_is_drawn_over_the_page_takes_the_pages_scheme() {
+        let mut r = Renderer::default();
+        r.set_theme(theme::Theme::new(theme::Scheme::Dark, theme::AZURE));
+        let light = theme::Tokens::of(theme::Scheme::Light);
+        assert_eq!((r.page_tokens(), r.page()), (light, Color::WHITE), "a light page under dark chrome");
+        r.appearance = appearance::Appearance::Dark { page: appearance::PageMode::Dark };
+        assert_eq!(r.page_tokens(), r.theme.tokens, "the dark page: the chrome's own");
+    }
+
+    #[test]
     fn overlay_colours_the_host_set_outlast_a_theme_change() {
         let mut r = Renderer::default();
-        let mine = Palette { caret: Color::RED, ..Palette::default() };
+        let mine = Palette { marks: Color::RED, ..Palette::default() };
         r.overlay_colours = Some(mine);
         r.set_theme(theme::Theme::new(theme::Scheme::Dark, theme::AZURE));
         assert_eq!(r.palette, mine, "the host's colours stay");
@@ -478,7 +526,7 @@ mod tests {
         // The selection is a light fill text sits on, not a line or mark: its check is black text's contrast over it
         // (`the_default_selection_keeps_black_text_readable`).
         let p = Palette::default();
-        for (name, c) in [("caret", p.caret), ("object", p.object), ("drop", p.drop), ("marks", p.marks), ("leaders", p.leaders)] {
+        for (name, c) in [("object", p.object), ("drop", p.drop), ("marks", p.marks), ("leaders", p.leaders)] {
             for back in [Color::WHITE, Color::from_rgb(0xf3, 0xf3, 0xf3)] {
                 let (a, b) = (luminance(c), luminance(back));
                 let ratio = (a.max(b) + 0.05) / (a.min(b) + 0.05);

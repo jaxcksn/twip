@@ -94,9 +94,9 @@ export interface ThemeColors {
 export interface ChromeColors {
   /** Around the pages and the rulers' strips (`setBackground` wins around the pages). */
   desk?: Color;
-  /** The rulers' strips, handle fills, the AutoCorrect options button, and the readouts' and labels' backgrounds. */
+  /** The rulers' strips, and the readouts' and labels' backgrounds. */
   surface?: Color;
-  /** Text, ruler numbers and markers, and the caret. */
+  /** Text, and the ruler numbers and markers. */
   text?: Color;
   /** The rulers' unit ticks, and secondary text. */
   secondaryText?: Color;
