@@ -318,6 +318,7 @@ pub(super) struct Presentation {
     pub(super) chrome: crate::api::services::ChromeTheme,
     pub(super) chrome_set: bool,
     pub(super) accent: Option<Color>,
+    pub(super) theme_colors: crate::api::services::ThemeColors,
     pub(super) appearance: crate::api::services::DocumentAppearance,
     pub(super) detail: crate::api::services::MeasureDetail,
     pub(super) object_grid: crate::api::services::ObjectGrid,
@@ -355,6 +356,7 @@ impl Default for Presentation {
             chrome: Default::default(),
             chrome_set: false,
             accent: None,
+            theme_colors: Default::default(),
             appearance: Default::default(),
             detail: Default::default(),
             object_grid: Default::default(),
@@ -380,7 +382,28 @@ impl Presentation {
                 gray_text: c(s.gray_text),
             }),
         };
-        self.renderer.set_theme(Theme::new(scheme, self.accent.map_or(AZURE, c)));
+        let mut theme = Theme::new(scheme, self.accent.map_or(AZURE, c));
+        let own = match scheme {
+            Scheme::Light => self.theme_colors.light,
+            Scheme::Dark => self.theme_colors.dark,
+            Scheme::HighContrast(_) => None,
+        };
+        if let Some(o) = own {
+            let t = &mut theme.tokens;
+            for (to, from) in [
+                (&mut t.desk, o.desk),
+                (&mut t.paper, o.surface),
+                (&mut t.ink, o.text),
+                (&mut t.ink2, o.secondary_text),
+                (&mut t.ink3, o.faint_text),
+                (&mut t.line, o.line),
+            ] {
+                if let Some(v) = from {
+                    *to = c(v);
+                }
+            }
+        }
+        self.renderer.set_theme(theme);
         self.renderer.appearance = match self.appearance {
             DocumentAppearance::Light => Appearance::Light,
             DocumentAppearance::Dark => Appearance::Dark { page: PageMode::Dark },
@@ -488,6 +511,7 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
     let (t, rgb) = (&p.renderer.theme, |c: skia_safe::Color| Color((u32::from(c.r()) << 16) | (u32::from(c.g()) << 8) | u32::from(c.b())));
     state.view.background = rgb(p.renderer.background.unwrap_or(t.tokens.desk));
     state.view.theme = p.chrome;
+    state.view.theme_colors = p.theme_colors;
     state.view.accent = rgb(t.accent.solid);
     state.view.accent_on = rgb(t.accent.on);
     state.view.appearance = p.appearance;
@@ -1511,13 +1535,13 @@ mod tests {
             click(s, x(144.0), 10.0);
             // 29 px below the band, it moves.
             at(s, K::Down, x(144.0), 15.0, false);
-            at(s, K::Move, x(162.0), 22.0 + 29.0, false);
+            at(s, K::Move, x(162.0), 18.0 + 29.0, false);
             assert_eq!(labels(s), ["Left tab 2.25″"]);
-            at(s, K::Up, x(162.0), 22.0 + 29.0, false);
+            at(s, K::Up, x(162.0), 18.0 + 29.0, false);
             assert_eq!(tabs(s).iter().map(|t| t.0).collect::<Vec<_>>(), [162.0]);
             // Further down it fades and says so; dragged back up in the same drag, it stays.
             at(s, K::Down, x(162.0), 15.0, false);
-            at(s, K::Move, x(162.0), 22.0 + 31.0, false);
+            at(s, K::Move, x(162.0), 18.0 + 31.0, false);
             assert_eq!(labels(s), ["Release to remove tab stop"]);
             assert!(s.presentation.ruler_drag.as_ref().is_some_and(|d| d.removing && d.guide().is_none()));
             at(s, K::Move, x(162.0), 15.0, false);
@@ -1525,8 +1549,8 @@ mod tests {
             assert_eq!(tabs(s).len(), 1);
             // Released down there, it goes.
             at(s, K::Down, x(162.0), 15.0, false);
-            at(s, K::Move, x(162.0), 22.0 + 31.0, false);
-            at(s, K::Up, x(162.0), 22.0 + 31.0, false);
+            at(s, K::Move, x(162.0), 18.0 + 31.0, false);
+            at(s, K::Up, x(162.0), 18.0 + 31.0, false);
             assert!(tabs(s).is_empty());
             assert_eq!(s.state().history.undo_label.as_deref(), Some("Delete Tab Stop"));
         }
@@ -1538,7 +1562,7 @@ mod tests {
             click(s, 5.0, 5.0);
             let shown = popovers(&events);
             let Some(Some(Popover::TabType { anchor, current, choices })) = shown.first() else { panic!("{shown:?}") };
-            assert_eq!((*anchor, *current), (ClientRect { left: 3.0, top: 3.0, width: 16.0, height: 16.0 }, TabSelector::Left));
+            assert_eq!((*anchor, *current), (ClientRect { left: 2.0, top: 2.0, width: 14.0, height: 14.0 }, TabSelector::Left));
             let named: Vec<(TabSelector, &str, &str)> = choices.iter().map(|c| (c.value, c.name.as_str(), c.description.as_str())).collect();
             assert_eq!(
                 named,
@@ -1605,6 +1629,41 @@ mod tests {
             s.run(Command::SetViewOptions(ViewOptions { theme: Some(ChromeTheme::Dark), ..ViewOptions::default() })).expect("sets");
             assert_eq!(s.presentation.renderer.palette, s.presentation.renderer.theme.palette());
             assert_ne!(s.state().view.background, desk);
+        }
+
+        #[test]
+        fn the_hosts_colours_replace_each_schemes_own() {
+            use crate::api::command::ViewOptions;
+            use crate::api::services::{ChromeColors, ChromeTheme, SystemColors, ThemeColors};
+            use crate::api::value::Color;
+            let (mut engine, id, _) = ruled();
+            let s = engine.session(id).expect("a session");
+            let set = |s: &mut Session, theme: Option<ChromeTheme>, colors: Option<ThemeColors>| {
+                s.run(Command::SetViewOptions(ViewOptions { theme, theme_colors: colors, ..ViewOptions::default() })).expect("sets");
+            };
+            let ink = |s: &Session| s.presentation.renderer.theme.tokens.ink;
+            let built_in = ink(s);
+            let dark = ChromeColors { desk: Some(Color(0x1B1F27)), text: Some(Color(0xE6EDF3)), ..ChromeColors::default() };
+            set(s, None, Some(ThemeColors { light: None, dark: Some(dark) }));
+            assert_eq!(ink(s), built_in, "the light scheme keeps its own");
+            set(s, Some(ChromeTheme::Dark), None);
+            assert_eq!((s.state().view.background, ink(s)), (Color(0x1B1F27), crate::render::rgb(0xE6EDF3)));
+            assert_eq!(s.state().view.theme_colors.dark, Some(dark));
+            // Caret follows the text colour.
+            assert_eq!(s.presentation.renderer.palette.caret, crate::render::rgb(0xE6EDF3));
+            // High contrast takes the platform's.
+            let hc = SystemColors {
+                canvas: Color(0),
+                canvas_text: Color(0xFFFFFF),
+                highlight: Color(0x1AEBFF),
+                highlight_text: Color(0),
+                gray_text: Color(0x3FF23F),
+            };
+            set(s, Some(ChromeTheme::HighContrast(hc)), None);
+            assert_eq!(s.state().view.background, Color(0));
+            // `{}` puts the scheme's own back.
+            set(s, Some(ChromeTheme::Dark), Some(ThemeColors { light: None, dark: Some(ChromeColors::default()) }));
+            assert_ne!(s.state().view.background, Color(0x1B1F27));
         }
 
         #[test]

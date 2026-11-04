@@ -1,5 +1,5 @@
-//! The editor chrome's colours: a light or dark scheme's tokens (the desk, the paper-side surfaces, three inks, lines,
-//! popovers) and an accent the host chooses. Everything the engine draws around and over the document takes its
+//! The editor chrome's colours: a light or dark scheme's tokens (the desk, the paper-side surfaces, three inks and
+//! lines) and an accent the host chooses. Everything the engine draws around and over the document takes its
 //! colours from here; the document's own colours are [`super::appearance`]'s.
 
 use skia_safe::Color;
@@ -27,19 +27,15 @@ pub enum Scheme {
 pub struct Tokens {
     /// Around the pages.
     pub desk: Color,
-    /// Panels drawn on the desk.
-    pub sheet: Color,
-    /// Chrome surfaces next to the page: the rulers' band, handle fills, chips' and labels' backgrounds.
+    /// Chrome surfaces next to the page: the rulers' strip, handle fills, the options button, chips' and labels'
+    /// backgrounds.
     pub paper: Color,
     /// Text and markers, strongest to faintest.
     pub ink: Color,
     pub ink2: Color,
     pub ink3: Color,
-    /// Hairlines and hatching, and a fainter tint (both with alpha).
+    /// Hairlines and hatching (with alpha).
     pub line: Color,
-    pub line2: Color,
-    /// Popovers and the options button.
-    pub pop: Color,
     /// How dark the page shadow is: a factor on the light scheme's alphas.
     pub shadow: f32,
 }
@@ -49,40 +45,25 @@ impl Tokens {
         match scheme {
             Scheme::Light => Tokens {
                 desk: rgb(0xe8e7e3),
-                sheet: rgb(0xf5f4f1),
                 paper: rgb(0xffffff),
                 ink: rgb(0x1c1d1f),
                 ink2: rgb(0x62656c),
                 ink3: rgb(0xa4a6ac),
                 line: Color::from_argb(31, 20, 22, 26),
-                line2: Color::from_argb(13, 20, 22, 26),
-                pop: rgb(0xffffff),
                 shadow: 1.0,
             },
             Scheme::Dark => Tokens {
                 desk: rgb(0x111214),
-                sheet: rgb(0x18191c),
                 paper: rgb(0x222327),
                 ink: rgb(0xe7e7ea),
                 ink2: rgb(0xa0a3aa),
                 ink3: rgb(0x5f626a),
                 line: Color::from_argb(31, 255, 255, 255),
-                line2: Color::from_argb(11, 255, 255, 255),
-                pop: rgb(0x2b2c31),
                 shadow: 4.0,
             },
-            Scheme::HighContrast(s) => Tokens {
-                desk: s.canvas,
-                sheet: s.canvas,
-                paper: s.canvas,
-                ink: s.text,
-                ink2: s.text,
-                ink3: s.gray_text,
-                line: s.text,
-                line2: s.gray_text,
-                pop: s.canvas,
-                shadow: 0.0,
-            },
+            Scheme::HighContrast(s) => {
+                Tokens { desk: s.canvas, paper: s.canvas, ink: s.text, ink2: s.text, ink3: s.gray_text, line: s.text, shadow: 0.0 }
+            }
         }
     }
 }

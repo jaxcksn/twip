@@ -722,6 +722,8 @@ pub struct ViewState {
     pub background: Color,
     /// The chrome's colour scheme.
     pub theme: super::services::ChromeTheme,
+    /// The host's colours for the light and dark schemes.
+    pub theme_colors: super::services::ThemeColors,
     /// The chrome's accent as drawn (the dark scheme's is lightened): for popovers and other host chrome that matches
     /// the editor's.
     pub accent: Color,
@@ -750,6 +752,7 @@ impl Default for ViewState {
             markup_pane_width: 0.0,
             background: Color(0xE8E7E3),
             theme: super::services::ChromeTheme::Light,
+            theme_colors: super::services::ThemeColors::default(),
             accent: Color(0x0A74E4),
             accent_on: Color(0xFFFFFF),
             appearance: super::services::DocumentAppearance::Light,

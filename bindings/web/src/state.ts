@@ -2,7 +2,7 @@ import type { CommandId } from './commands.js';
 import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind } from './services/elements.js';
 import type { RulerModel, RulerUnit, TabSelector } from './services/ruler.js';
-import type { ChromeTheme, DocumentAppearance, MeasureDetail, ObjectGrid } from './services/view.js';
+import type { ChromeTheme, DocumentAppearance, MeasureDetail, ObjectGrid, ThemeColors } from './services/view.js';
 import type { Color, CommentId, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
 
 /** An on/off value over the selection: `'mixed'` where it differs, `null` where it doesn't apply. */
@@ -528,6 +528,8 @@ export interface ViewState {
   background: Color;
   /** The chrome's colour scheme. */
   theme: ChromeTheme;
+  /** The application's colours for the light and dark schemes. */
+  themeColors: ThemeColors;
   /** The chrome's accent as drawn (the dark scheme lightens it): for popovers and other chrome that matches the editor's. */
   accent: Color;
   /** Text and glyphs drawn on the accent. */

@@ -891,6 +891,13 @@
     "objectGrid": "always",
     "textBoundaries": true,
     "theme": "dark",
+    "themeColors": {
+      "dark": {
+        "desk": "#1B1F27",
+        "surface": "#252A33",
+        "text": "#E6EDF3"
+      }
+    },
     "type": "setViewOptions"
   },
   {

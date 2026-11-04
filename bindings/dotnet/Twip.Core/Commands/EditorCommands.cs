@@ -1107,9 +1107,10 @@ public sealed class EditorCommands
     /// <param name="appearance">How the page is drawn on screen (dark mode).</param>
     /// <param name="detail">How much the editor measures while you drag and hover.</param>
     /// <param name="objectGrid">When the dot grid objects snap to shows (unrelated to <paramref name="gridlines"/>).</param>
+    /// <param name="themeColors">The application's colours for the light and dark schemes, to match its own UI.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid), ct);
+    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid, themeColors), ct);
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>

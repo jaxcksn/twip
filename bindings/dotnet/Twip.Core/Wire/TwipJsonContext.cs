@@ -318,6 +318,8 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(AutoCorrectEntry))]
 [JsonSerializable(typeof(AutoCorrectOptions))]
 [JsonSerializable(typeof(ChromeTheme))]
+[JsonSerializable(typeof(ThemeColors))]
+[JsonSerializable(typeof(ChromeColors))]
 [JsonSerializable(typeof(HighContrastColors))]
 [JsonSerializable(typeof(DocumentAppearance))]
 [JsonSerializable(typeof(MeasureDetail))]

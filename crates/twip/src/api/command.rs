@@ -1629,6 +1629,9 @@ pub struct ViewOptions {
     /// The chrome's colour scheme.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<super::services::ChromeTheme>,
+    /// The host's colours for the light and dark schemes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_colors: Option<super::services::ThemeColors>,
     /// The chrome's accent: selection, handles, guides and active markers. Any colour; the dark scheme lightens it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<Color>,

@@ -10,6 +10,11 @@ export async function appearance(editor: Editor) {
   await editor.view.setDetail('full');
   // The same settings in one command, with the object grid shown always.
   await editor.commands.setViewOptions({ theme: 'light', appearance: 'light', detail: 'standard', objectGrid: 'always' });
+  // The application's own colours for the rulers, desk and handles, per scheme; the ones left out keep the scheme's.
+  await editor.view.setThemeColors({
+    light: { desk: '#F3F4F6', surface: '#FFFFFF', text: '#111827' },
+    dark: { desk: '#0D1117', surface: '#161B22', text: '#E6EDF3', secondaryText: '#8B949E' },
+  });
 
   // The state reports the accent as drawn and the text colour on it, for chrome that matches the editor's.
   const { theme, accent, accentOn } = editor.getState().view;

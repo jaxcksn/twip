@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { fixture, mount, open, pixels } from './helpers.ts';
 
 /** How deep the rulers' bands are, CSS px: the horizontal one along the top, the vertical one left. */
-const BAND = 22;
+const BAND = 18;
 
 const state = (page: Page) => page.evaluate(() => (window as any).editor.getState());
 const view = (page: Page) => page.evaluate(() => (window as any).editor.ruler.view());

@@ -19,6 +19,7 @@
     "tabSelector": "left",
     "textBoundaries": false,
     "theme": "light",
+    "themeColors": {},
     "zoom": 100.0
   }
 ]

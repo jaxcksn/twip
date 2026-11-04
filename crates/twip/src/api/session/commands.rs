@@ -295,6 +295,10 @@ impl Session {
                 if let Some(t) = v.theme {
                     (p.chrome, p.chrome_set) = (t, true);
                 }
+                if let Some(c) = v.theme_colors {
+                    p.theme_colors.light = c.light.or(p.theme_colors.light);
+                    p.theme_colors.dark = c.dark.or(p.theme_colors.dark);
+                }
                 if let Some(a) = v.accent {
                     p.accent = Some(a);
                 }
@@ -307,7 +311,7 @@ impl Session {
                 if let Some(g) = v.object_grid {
                     p.object_grid = g;
                 }
-                if v.theme.is_some() || v.accent.is_some() || v.appearance.is_some() {
+                if v.theme.is_some() || v.theme_colors.is_some() || v.accent.is_some() || v.appearance.is_some() {
                     p.apply_look();
                 }
             }

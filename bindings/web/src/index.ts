@@ -109,6 +109,7 @@ export type {
   TabSelector,
 } from './services/ruler.js';
 export type {
+  ChromeColors,
   ChromeTheme,
   DocumentAppearance,
   GestureAction,
@@ -121,6 +122,7 @@ export type {
   Popover,
   SystemColors,
   TabTypeChoice,
+  ThemeColors,
   View,
   ViewOptions,
 } from './services/view.js';

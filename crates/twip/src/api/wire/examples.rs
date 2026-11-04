@@ -776,6 +776,15 @@ fn commands() -> Vec<Command> {
             text_boundaries: Some(true),
             live_layout: Some(false),
             theme: Some(ChromeTheme::Dark),
+            theme_colors: Some(ThemeColors {
+                light: None,
+                dark: Some(ChromeColors {
+                    desk: Some(Color(0x1B1F27)),
+                    surface: Some(Color(0x252A33)),
+                    text: Some(Color(0xE6EDF3)),
+                    ..ChromeColors::default()
+                }),
+            }),
             accent: Some(Color(0x0A74E4)),
             appearance: Some(DocumentAppearance::DarkWithLightPage),
             detail: Some(MeasureDetail::Full),

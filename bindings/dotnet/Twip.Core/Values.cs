@@ -771,6 +771,32 @@ public enum ChromeThemeKind
 /// <param name="GrayText">Disabled and secondary text.</param>
 public sealed record HighContrastColors(ColorValue Canvas, ColorValue CanvasText, ColorValue Highlight, ColorValue HighlightText, ColorValue GrayText);
 
+/// <summary>
+/// The application's colours for the light and dark chrome schemes, to match its own UI. Each scheme given replaces the
+/// last one set for it, and an empty <see cref="ChromeColors"/> puts its own colours back. The high contrast scheme
+/// always takes the platform's.
+/// </summary>
+/// <param name="Light">For the light scheme; null keeps the last one set.</param>
+/// <param name="Dark">For the dark scheme; null keeps the last one set.</param>
+public sealed record ThemeColors(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ChromeColors? Light = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ChromeColors? Dark = null);
+
+/// <summary>Chrome colours in place of a scheme's own; each one left null keeps the scheme's.</summary>
+/// <param name="Desk">Around the pages and the rulers' strips (a background the host sets wins around the pages).</param>
+/// <param name="Surface">The rulers' strips, handle fills, the AutoCorrect options button, and the readouts' and labels' backgrounds.</param>
+/// <param name="Text">Text, ruler numbers and markers, and the caret.</param>
+/// <param name="SecondaryText">The rulers' unit ticks, and secondary text.</param>
+/// <param name="FaintText">The rulers' fine ticks, the object grid, and faint text.</param>
+/// <param name="Line">The rulers' outlines and the margins' hatching.</param>
+public sealed record ChromeColors(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Desk = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Surface = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Text = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? SecondaryText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? FaintText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Line = null);
+
 /// <summary>How the document's page is drawn on screen. Saving, PDF export and printing always use the document's colours.</summary>
 public enum DocumentAppearance
 {

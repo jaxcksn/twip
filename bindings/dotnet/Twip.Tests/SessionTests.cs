@@ -223,6 +223,13 @@ public sealed class SessionTests : IDisposable
         Assert.Equal(MeasureDetail.Quiet, view.Detail);
         Assert.Equal(ObjectGrid.Always, view.ObjectGrid);
 
+        // The application's colours for the dark scheme, which is on.
+        var dark = new ChromeColors(Desk: ColorValue.FromRgb(0x1B, 0x1F, 0x27), Text: ColorValue.FromRgb(0xE6, 0xED, 0xF3));
+        await session.SetThemeColorsAsync(new ThemeColors(Dark: dark));
+        Assert.Equal(dark, session.State.View.ThemeColors.Dark);
+        Assert.Null(session.State.View.ThemeColors.Light);
+        Assert.Equal(ColorValue.FromRgb(0x1B, 0x1F, 0x27), session.State.View.Background);
+
         var colors = new HighContrastColors(System.Drawing.Color.Black, System.Drawing.Color.White, ColorValue.FromRgb(0x1A, 0xEB, 0xFF), System.Drawing.Color.Black, ColorValue.FromRgb(0x3F, 0xF2, 0x3F));
         await session.SetThemeAsync(ChromeTheme.HighContrast(colors), ColorValue.FromRgb(0x7A, 0x3E, 0xC8));
         Assert.Equal(colors, session.State.View.Theme.Colors);

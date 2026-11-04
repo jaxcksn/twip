@@ -174,11 +174,11 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
         for i in lo..=hi {
             let p = at(zero + i as f64 * minor).round();
             if i % steps == 0 {
-                tick(p, 8.0, &unit);
+                tick(p, 6.0, &unit);
             } else if steps % 2 == 0 && i % (steps / 2) == 0 {
-                tick(p, 5.0, &fine);
+                tick(p, 4.0, &fine);
             } else {
-                tick(p, 3.0, &fine);
+                tick(p, 2.0, &fine);
             }
         }
         for i in lo..=hi {
@@ -210,7 +210,7 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
         ticks(start, r.page_width.0, &|pt| x(pt), &|px, len, paint| rect(canvas, px, S1 - len, px + 1.0, S1, paint), &|px, n| {
             if let Some(font) = &numbers {
                 let (tw, _) = font.measure_str(n, None);
-                label(canvas, font, n, px - tw / 2.0 - 2.0, S0 + 2.0, 2.0, 0.0, Some((t.paper, 0.0)), t.ink);
+                label(canvas, font, n, px - tw / 2.0 - 2.0, S0 + 1.0, 2.0, 0.0, Some((t.paper, 0.0)), t.ink);
             }
         });
         // The margins' handles tint while hovered.
@@ -273,9 +273,9 @@ pub fn paint(view: &RulerView, theme: &Theme, canvas: &Canvas, f: &RulerFrame) {
         canvas.draw_rrect(RRect::new_rect_xy(b, 2.0, 2.0), &fill(t.paper));
         canvas.draw_rrect(RRect::new_rect_xy(b.with_inset((0.5, 0.5)), 1.5, 1.5), &stroke(if picking { accent } else { t.ink3 }));
         match (alignment(f.selector), f.selector) {
-            (Some(a), _) => tab_glyph(canvas, a, b.left + 8.0, b.top + 1.0, &ink),
-            (None, TabSelector::FirstLineIndent) => indent(canvas, b.left + 8.0, b.top + 2.0, true, &ink),
-            (None, _) => indent(canvas, b.left + 8.0, b.top + 2.0, false, &ink),
+            (Some(a), _) => tab_glyph(canvas, a, b.center_x(), b.top, &ink),
+            (None, TabSelector::FirstLineIndent) => indent(canvas, b.center_x(), b.top + 1.0, true, &ink),
+            (None, _) => indent(canvas, b.center_x(), b.top + 1.0, false, &ink),
         }
     }
 
@@ -454,24 +454,24 @@ mod tests {
     fn the_rulers_draw_on_the_paper_with_hatched_margins() {
         let theme = Theme::default();
         let p = draw(&theme, &frame(&[], None));
-        // The text area is the paper strip, 3 to 19 px down the band, floating on the desk; the document below is
+        // The text area is the paper strip, 2 to 16 px down the band, floating on the desk; the document below is
         // untouched.
         let desk = [0xe8, 0xe7, 0xe3];
         assert_eq!(at(&p, 24 + 300, 6), [255, 255, 255, 255]);
-        assert_eq!(at(&p, 24 + 300, 1)[..3], desk, "the desk above the strip");
-        assert_eq!(at(&p, 24 + 300, 20)[..3], desk, "and below it");
-        assert_eq!(at(&p, 21, 1)[..3], desk);
+        assert_eq!(at(&p, 24 + 300, 0)[..3], desk, "the desk above the strip");
+        assert_eq!(at(&p, 24 + 300, 17)[..3], desk, "and below it");
+        assert_eq!(at(&p, 21, 0)[..3], desk);
         assert_eq!(at(&p, 300, 150), [0x80, 0x80, 0x80, 255]);
         // The margins are hatched: some pixels of the left margin's strip are darker than the paper.
         assert!((30..90).any(|x| at(&p, x, 8)[0] < 0xf8), "hatched margin");
-        // The vertical ruler's text area is the paper, its strip 3 to 19 px across the desk.
+        // The vertical ruler's text area is the paper, its strip 2 to 16 px across the desk.
         assert_eq!(at(&p, 10, 200)[..3], [255, 255, 255]);
-        assert_eq!(at(&p, 1, 200)[..3], desk);
-        assert_eq!(at(&p, 20, 200)[..3], desk);
+        assert_eq!(at(&p, 0, 200)[..3], desk);
+        assert_eq!(at(&p, 17, 200)[..3], desk);
         // The guide is accent on the strip.
         assert_eq!(at(&p, 200, 8)[..3], [0x0a, 0x74, 0xe4]);
-        // A unit tick, 8 px up from the strip's bottom, one inch from the text start.
-        assert_eq!(at(&p, 24 + 72 + 72, 17)[..3], [0x62, 0x65, 0x6c]);
+        // A unit tick, 6 px up from the strip's bottom, one inch from the text start.
+        assert_eq!(at(&p, 24 + 72 + 72, 15)[..3], [0x62, 0x65, 0x6c]);
         // The dark theme draws dark rulers.
         let dark = draw(&Theme::new(Scheme::Dark, AZURE), &frame(&[], None));
         assert_eq!(at(&dark, 24 + 300, 6)[..3], [0x22, 0x23, 0x27]);
@@ -482,8 +482,8 @@ mod tests {
         let theme = Theme::default();
         let drag = Dragged { marker: Marker::Tab(144.0), at: 72.0 + 198.0, removing: false };
         let p = draw(&theme, &frame(&[], Some(drag)));
-        // The centre tab's stem, 2 px wide at the stop, from 10 to 19 px.
-        let stem = |p: &[u8], x: usize| at(p, x, 14);
+        // The centre tab's stem, 2 px wide at the stop, from 7 to 16 px.
+        let stem = |p: &[u8], x: usize| at(p, x, 12);
         assert_eq!(stem(&p, 24 + 270)[..3], [0x0a, 0x74, 0xe4], "at the drag, accent");
         assert_ne!(stem(&p, 24 + 216)[..3], [0x1c, 0x1d, 0x1f], "no longer where it was");
         let removing = draw(&theme, &frame(&[], Some(Dragged { removing: true, ..drag })));
@@ -509,6 +509,6 @@ mod tests {
         let mono = chrome_typeface(ChromeFace::Mono500).expect("the chips' face");
         assert!(['—', '″', 'Δ', '·', '−'].iter().all(|c| mono.unichar_to_glyph(*c as i32) != 0));
         // The hint's dark chip under the band.
-        assert_eq!(at(&p, 102, 22 + 16 + 1)[..3], [0x1c, 0x1d, 0x1f]);
+        assert_eq!(at(&p, 102, 18 + 16 + 1)[..3], [0x1c, 0x1d, 0x1f]);
     }
 }

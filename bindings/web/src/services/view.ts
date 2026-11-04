@@ -21,6 +21,11 @@ export interface View {
    */
   setTheme(theme: ChromeTheme, accent?: Color): Promise<void>;
   /**
+   * The application's colours for the light and dark schemes, to match its own UI: each scheme given replaces the
+   * last one set for it, and `{}` puts its own colours back. `setViewOptions` with `themeColors`.
+   */
+  setThemeColors(colors: ThemeColors): Promise<void>;
+  /**
    * How the page is drawn on screen: in the document's colours, dark, or dark chrome around a page in its own
    * colours. Saving, export and printing always use the document's colours. Under forced colours the page stays light
    * until the mode ends. `setViewOptions` with `appearance`.
@@ -56,6 +61,8 @@ export interface ViewOptions {
   liveLayout?: boolean;
   /** The chrome's colour scheme. */
   theme?: ChromeTheme;
+  /** The application's colours for the light and dark schemes. */
+  themeColors?: ThemeColors;
   /** The chrome's accent: selection, handles, guides and active markers. Any colour; the dark scheme lightens it. */
   accent?: Color;
   /** How the page is drawn on screen. */
@@ -71,6 +78,33 @@ export interface ViewOptions {
  * platform's colours; a mounted editor sets it itself under forced colours.
  */
 export type ChromeTheme = 'light' | 'dark' | { highContrast: SystemColors };
+
+/**
+ * The application's colours for the light and dark chrome schemes, to match its own UI. The high-contrast scheme
+ * always takes the platform's.
+ */
+export interface ThemeColors {
+  /** For the light scheme. */
+  light?: ChromeColors;
+  /** For the dark scheme. */
+  dark?: ChromeColors;
+}
+
+/** Chrome colours in place of a scheme's own; each one left out keeps the scheme's. */
+export interface ChromeColors {
+  /** Around the pages and the rulers' strips (`setBackground` wins around the pages). */
+  desk?: Color;
+  /** The rulers' strips, handle fills, the AutoCorrect options button, and the readouts' and labels' backgrounds. */
+  surface?: Color;
+  /** Text, ruler numbers and markers, and the caret. */
+  text?: Color;
+  /** The rulers' unit ticks, and secondary text. */
+  secondaryText?: Color;
+  /** The rulers' fine ticks, the object grid, and faint text. */
+  faintText?: Color;
+  /** The rulers' outlines and the margins' hatching. */
+  line?: Color;
+}
 
 /** The platform's colours in high contrast mode, as the CSS system colours name them. */
 export interface SystemColors {

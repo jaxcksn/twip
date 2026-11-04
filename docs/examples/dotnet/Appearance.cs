@@ -19,6 +19,11 @@ static class AppearanceExample
         // How much the editor measures while you drag and hover.
         await session.SetDetailAsync(MeasureDetail.Quiet);
 
+        // The application's own colours for the rulers, desk and handles, per scheme; the ones left null keep the scheme's.
+        await session.SetThemeColorsAsync(new ThemeColors(
+            Light: new ChromeColors(Desk: ColorValue.FromRgb(0xF3, 0xF4, 0xF6), Text: ColorValue.FromRgb(0x11, 0x18, 0x27)),
+            Dark: new ChromeColors(Desk: ColorValue.FromRgb(0x0D, 0x11, 0x17), Surface: ColorValue.FromRgb(0x16, 0x1B, 0x22))));
+
         // The state reports the accent as drawn, and the text colour on it, for chrome of your own.
         var view = session.State.View;
         Console.WriteLine($"{view.Theme.Kind} {view.Accent} on {view.AccentOn}, page {view.Appearance}");

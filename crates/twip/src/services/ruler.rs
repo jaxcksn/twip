@@ -13,10 +13,10 @@ use crate::editing::position::StoryId;
 use crate::editing::view::{RulerMeasure, Tone};
 
 /// A ruler band's thickness, CSS px: the paper strip and the desk on both sides of it.
-pub const BAND: f64 = 22.0;
+pub const BAND: f64 = 18.0;
 
 /// The desk between a band's edges and its paper strip, CSS px.
-pub const INSET: f64 = 3.0;
+pub const INSET: f64 = 2.0;
 
 /// Below the horizontal ruler's band, CSS px: a hover hint's top, a quiet drag's chip's top, and a drag's dimension
 /// line.
@@ -509,10 +509,10 @@ mod tests {
         let (v, b) = (view(), Bands { horizontal: true, vertical: true });
         assert_eq!(hit(&v, b, 5.0, 5.0), Some(Hit::Selector));
         assert_eq!(hit(&v, b, 30.0 + 126.0, 2.0), Some(Hit::Marker(Marker::FirstLine)));
-        assert_eq!(hit(&v, b, 30.0 + 108.0, 12.0), Some(Hit::Marker(Marker::Hanging)));
-        assert_eq!(hit(&v, b, 30.0 + 108.0, 18.0), Some(Hit::Marker(Marker::Left)));
-        assert_eq!(hit(&v, b, 30.0 + 540.0, 15.0), Some(Hit::Marker(Marker::Right)));
-        assert_eq!(hit(&v, b, 30.0 + 216.0, 15.0), Some(Hit::Marker(Marker::Tab(144.0))));
+        assert_eq!(hit(&v, b, 30.0 + 108.0, 10.0), Some(Hit::Marker(Marker::Hanging)));
+        assert_eq!(hit(&v, b, 30.0 + 108.0, 15.0), Some(Hit::Marker(Marker::Left)));
+        assert_eq!(hit(&v, b, 30.0 + 540.0, 12.0), Some(Hit::Marker(Marker::Right)));
+        assert_eq!(hit(&v, b, 30.0 + 216.0, 12.0), Some(Hit::Marker(Marker::Tab(144.0))));
         assert_eq!(hit(&v, b, 30.0 + 72.0, 10.0), Some(Hit::Marker(Marker::TextStart)));
         assert_eq!(hit(&v, b, 30.0 + 300.0, 10.0), Some(Hit::Text(300.0)));
         assert_eq!(hit(&v, b, 30.0 + 20.0, 10.0), Some(Hit::Ruler));
@@ -636,7 +636,7 @@ mod tests {
         // The dimension line is 51 px below the band, from the text start to the marker.
         assert_eq!(
             d(Marker::FirstLine, 108.0, false, s, false),
-            [RulerMeasure::Dimension { from: [72.0, 43.0], to: [108.0, 43.0], label: "First line 0.50″".into(), tone: Tone::Accent }]
+            [RulerMeasure::Dimension { from: [72.0, 39.0], to: [108.0, 39.0], label: "First line 0.50″".into(), tone: Tone::Accent }]
         );
         // Alt, or the full level, adds the change since the press (the first line was 0.75 in).
         assert_eq!(labels(&d(Marker::FirstLine, 108.0, false, s, true)), ["First line 0.50″  Δ −0.25″"]);
@@ -648,7 +648,7 @@ mod tests {
         assert_eq!(labels(&d(Marker::TextStart, 90.0, false, s, false)), ["Left margin 1.25″"]);
         assert_eq!(
             d(Marker::TextEnd, 540.0, false, s, false),
-            [RulerMeasure::Dimension { from: [540.0, 43.0], to: [612.0, 43.0], label: "Right margin 1.00″".into(), tone: Tone::Accent }]
+            [RulerMeasure::Dimension { from: [540.0, 39.0], to: [612.0, 39.0], label: "Right margin 1.00″".into(), tone: Tone::Accent }]
         );
         // A stop dragged off the ruler says what the release does.
         assert_eq!(labels(&d(Marker::Tab(144.0), 270.0, true, s, false)), ["Release to remove tab stop"]);

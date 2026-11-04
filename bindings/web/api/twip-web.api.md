@@ -124,6 +124,16 @@ export interface CharacterFormatting {
 }
 
 // @public
+export interface ChromeColors {
+    desk?: Color;
+    faintText?: Color;
+    line?: Color;
+    secondaryText?: Color;
+    surface?: Color;
+    text?: Color;
+}
+
+// @public
 export type ChromeTheme = 'light' | 'dark' | {
     highContrast: SystemColors;
 };
@@ -2079,6 +2089,12 @@ export interface TextDistance {
 }
 
 // @public
+export interface ThemeColors {
+    dark?: ChromeColors;
+    light?: ChromeColors;
+}
+
+// @public
 export type ThemeColour = 'text1' | 'background1' | 'text2' | 'background2' | 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6' | 'hyperlink' | 'followedHyperlink';
 
 // @public
@@ -2196,6 +2212,7 @@ export interface View {
     setDetail(detail: MeasureDetail): Promise<void>;
     setOverlayColors(colors: Partial<OverlayColors> | null): Promise<void>;
     setTheme(theme: ChromeTheme, accent?: Color): Promise<void>;
+    setThemeColors(colors: ThemeColors): Promise<void>;
     visiblePages(): {
         page: number;
         rect: ClientRect_2;
@@ -2213,6 +2230,7 @@ export interface ViewOptions {
     objectGrid?: ObjectGrid;
     textBoundaries?: boolean;
     theme?: ChromeTheme;
+    themeColors?: ThemeColors;
 }
 
 // @public
@@ -2236,6 +2254,7 @@ export interface ViewState {
     tabSelector: TabSelector;
     textBoundaries: boolean;
     theme: ChromeTheme;
+    themeColors: ThemeColors;
     zoom: number;
 }
 

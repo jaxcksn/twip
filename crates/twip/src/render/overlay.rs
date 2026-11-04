@@ -128,7 +128,7 @@ impl Renderer {
             if let Some((_, [x0, y0, x1, y1])) = c.button.filter(|(pg, _)| *pg == i) {
                 let r = Rect::new(x0 as f32, y0 as f32, x1 as f32, y1 as f32);
                 let mut fill = Paint::default();
-                fill.set_color(self.theme.tokens.pop);
+                fill.set_color(self.theme.tokens.paper);
                 canvas.draw_rect(r, &fill);
                 let mut edge = Paint::default();
                 edge.set_anti_alias(true);

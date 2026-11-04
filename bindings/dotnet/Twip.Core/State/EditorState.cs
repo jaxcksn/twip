@@ -817,6 +817,9 @@ public sealed record ViewState
     /// <summary>The chrome's colour scheme.</summary>
     public ChromeTheme Theme { get; init; } = ChromeTheme.Light;
 
+    /// <summary>The application's colours for the light and dark schemes.</summary>
+    public ThemeColors ThemeColors { get; init; } = new();
+
     /// <summary>The chrome's accent as drawn (the dark scheme's is lightened): for popovers and other chrome that matches the editor's.</summary>
     public ColorValue Accent { get; init; } = ColorValue.FromRgb(0x0A, 0x74, 0xE4);
 

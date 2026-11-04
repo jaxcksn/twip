@@ -27,6 +27,19 @@ chrome of your own that should match the editor's.
 On the web, `editor.view.setTheme(theme, accent?)` is the same command. In .NET it's `EditorSession.SetThemeAsync`, or
 the `Theme` and `Accent` properties of `DocumentEditor`.
 
+## Theme colours
+
+To match the chrome to your own UI, `setViewOptions({ themeColors: { light, dark } })` gives your colours for either
+scheme: `desk` (around the pages and the rulers' strips), `surface` (the rulers' strips, handle fills and the readouts'
+backgrounds), `text` (text, ruler numbers, markers and the caret), `secondaryText` (unit ticks), `faintText` (fine ticks
+and the object grid) and `line` (the rulers' outlines and the margins' hatching). Each colour left out keeps the
+scheme's. A scheme given replaces the last one set for it, so `{ dark: {} }` puts back the dark scheme's own colours;
+a scheme left out keeps what it had. The colours apply whenever that scheme is on, so set both once and switch with
+`theme`. The high-contrast theme always takes the platform's colours. `view.themeColors` in the state reports them.
+
+On the web, `editor.view.setThemeColors(colors)` is the same command. In .NET it's `EditorSession.SetThemeColorsAsync`
+with `ThemeColors` and `ChromeColors`.
+
 The theme also gives the overlay colours (caret, selection, object outline, drop caret, formatting marks and leader
 lines) and the desk colour. `setBackground` and `setOverlayColors` still override them. A background set that way
 stays when the theme changes, and so do overlay colours: set all six for a dark theme. Until the application sets a

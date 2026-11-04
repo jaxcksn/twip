@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { fixture, mount, open, text } from './helpers.ts';
 
 /** How deep the rulers' bands are, CSS px. */
-const BAND = 22;
+const BAND = 18;
 
 const state = (page: Page) => page.evaluate(() => (window as any).editor.getState());
 const canvas = (page: Page) => page.locator('#editor canvas');
@@ -32,7 +32,7 @@ test.describe('popovers', () => {
     await page.mouse.click(box.x + BAND / 2, box.y + BAND / 2);
     const p = await anchor;
     expect(p.kind).toBe('tabType');
-    expect(p.anchor.left).toBeCloseTo(box.x + 3, 0);
+    expect(p.anchor.left).toBeCloseTo(box.x + 2, 0);
     expect(p.choices).toHaveLength(7);
     expect(await page.locator('[data-twip="popover"]').count()).toBe(0);
     // The answer closes it.

@@ -140,6 +140,7 @@ export function startChrome(
       dom.scroller.style.background = color ?? s.state.view.background;
     },
     setTheme: (theme, accent) => setLook({ theme, ...(accent && { accent }) }),
+    setThemeColors: (themeColors) => setLook({ themeColors }),
     setAppearance: (appearance) => setLook({ appearance }),
     setDetail: (detail) => setLook({ detail }),
     visiblePages: () => {

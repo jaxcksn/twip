@@ -158,6 +158,19 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
         return Commands.SetViewOptionsAsync(theme: theme, accent: accent);
     }
 
+    /// <summary>
+    /// Sets the application's colours for the light and dark schemes, to match its own UI: each scheme given replaces
+    /// the last one set for it, and an empty <see cref="ChromeColors"/> puts its own colours back. A wrapper over
+    /// <see cref="EditorCommands.SetViewOptionsAsync"/>.
+    /// </summary>
+    /// <param name="colors">The colours.</param>
+    /// <returns>Completes when the setting applies.</returns>
+    public Task SetThemeColorsAsync(ThemeColors colors)
+    {
+        ArgumentNullException.ThrowIfNull(colors);
+        return Commands.SetViewOptionsAsync(themeColors: colors);
+    }
+
     /// <summary>Sets how the page is drawn on screen (dark mode). Saving, PDF export and printing keep the document's colours. A wrapper over <see cref="EditorCommands.SetViewOptionsAsync"/>.</summary>
     /// <param name="appearance">The appearance.</param>
     /// <returns>Completes when the setting applies.</returns>

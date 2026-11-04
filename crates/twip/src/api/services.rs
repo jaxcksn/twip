@@ -1409,6 +1409,43 @@ pub struct SystemColors {
     pub gray_text: Color,
 }
 
+/// The host's colours for the light and the dark chrome scheme, to match its own UI: each scheme given replaces the
+/// last one set for it (`{}` puts its own colours back). The high contrast scheme always takes the platform's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ThemeColors {
+    /// For the light scheme.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub light: Option<ChromeColors>,
+    /// For the dark scheme.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dark: Option<ChromeColors>,
+}
+
+/// Chrome colours in place of a scheme's own; each one left out keeps the scheme's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChromeColors {
+    /// Around the pages and the rulers' strips (a background the host sets wins around the pages).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desk: Option<Color>,
+    /// The rulers' strips, handle fills, the AutoCorrect options button, and the readouts' and labels' backgrounds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<Color>,
+    /// Text, ruler numbers and markers, and the caret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<Color>,
+    /// The rulers' unit ticks, and secondary text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_text: Option<Color>,
+    /// The rulers' fine ticks, the object grid, and faint text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub faint_text: Option<Color>,
+    /// The rulers' outlines and the margins' hatching.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<Color>,
+}
+
 /// How the document's page is drawn on screen. Saving, PDF export and printing always use the document's colours.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
