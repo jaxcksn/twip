@@ -1336,3 +1336,33 @@ fn sub_template_cards_and_tabs_never_reach_the_output() {
     assert_eq!(export(s, ExportFormat::Docx), docx, "cards");
     assert_eq!(export(s, ExportFormat::Pdf), pdf, "cards");
 }
+
+#[test]
+#[ignore = "a timing probe: cargo test --release -p twip --lib -- frame_stages --ignored --nocapture"]
+fn frame_stages() {
+    use crate::api::command::{InsertField, ViewOptions};
+    use crate::api::state::Mode;
+    for on in [false, true] {
+        let mut engine = Engine::new(FontLibrary::system());
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        for k in 0..100 {
+            s.run(Command::InsertText(format!(" Item {k}: "))).expect("types");
+            s.run(Command::InsertField(InsertField { code: format!("MERGEFIELD Item.Field_{k}"), display: None, show_code: None })).expect("a field");
+        }
+        s.run(Command::SetMode(Mode::Design)).expect("design mode");
+        s.run(Command::SetViewOptions(ViewOptions { placeholder_ui: Some(on), ..ViewOptions::default() })).expect("the option");
+        s.host().set_size(1000.0, 800.0, 1.0);
+        s.host().set_focus(true);
+        while s.host().idle() {}
+        let mut pixels = vec![0u8; 1000 * 800 * 4];
+        s.host().frame_rgba(&mut pixels, 1000, 800).expect("a frame");
+        crate::prof::take();
+        for _ in 0..200 {
+            s.host().frame_rgba(&mut pixels, 1000, 800).expect("a frame");
+        }
+        for (name, ms, n) in crate::prof::take() {
+            eprintln!("on {on}: {name:18} {:8.1} us/frame ({n} calls)", ms * 1000.0 / 200.0);
+        }
+    }
+}

@@ -1148,18 +1148,18 @@ impl HostSurface<'_> {
         // Lay out the visible pages first (they may be provisional), then build the frame's view from that snapshot.
         let visible = Renderer::visible(&s.editor.stack(), &f);
         if visible.end > 0 {
-            s.editor.ensure_page(visible.end - 1, &fonts);
+            crate::prof::time("frame:ensure", || s.editor.ensure_page(visible.end - 1, &fonts));
         }
         let marks = s.services.spelling.squiggles(&mut s.editor, visible.clone(), &s.language);
         let formatting_marks = if s.formatting_marks { s.editor.formatting_marks(visible.clone()) } else { Vec::new() };
         let boundaries = if s.text_boundaries { s.editor.text_boundaries(visible.clone()) } else { Vec::new() };
-        let mut view = s.editor.view(visible);
+        let mut view = crate::prof::time("frame:view", || s.editor.view(visible));
         view.spelling = marks;
         view.formatting_marks = formatting_marks;
         view.boundaries = boundaries;
         p.renderer.gridlines = s.gridlines;
         p.renderer.page_colour = s.editor.document().page_colour;
-        p.renderer.draw(canvas, &view, &s.editor.document().images, &f);
+        crate::prof::time("frame:draw", || p.renderer.draw(canvas, &view, &s.editor.document().images, &f));
         if p.markup_pane > 0.0 {
             let left = (view.stack.width * f.px_per_pt + f.origin_x) * f.dpr;
             let r = skia_safe::Rect::from_xywh(left as f32, 0.0, (p.markup_pane * f.dpr) as f32, height as f32);
@@ -1212,7 +1212,7 @@ impl HostSurface<'_> {
         let stack = s.editor.stack();
         s.set_comment_anchors(&view, &stack, f.px_per_pt);
         // The pages just laid out may have placed the caret.
-        s.deliver_requests();
+        crate::prof::time("frame:deliver", || s.deliver_requests());
     }
 
     /// The document's size and the caret after the last frame: `caret_visible` is whether the frame drew the caret

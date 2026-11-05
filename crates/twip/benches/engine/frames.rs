@@ -96,7 +96,8 @@ fn select_line(bencher: Bencher, part: &str) {
 }
 
 /// An unchanged frame of a page with 100 merge fields in design mode, the placeholder affordances off and on (their
-/// marks built and drawn each frame). Budget: on within 5% of off.
+/// marks built and drawn each frame), on the CPU raster. Budget: under 8.3 ms, one 120 Hz frame. Filling the marks'
+/// tint is per pixel here; GPU targets fill it for nearly nothing.
 #[divan::bench(args = [false, true])]
 fn design_marks_100(bencher: Bencher, on: bool) {
     use twip::api::command::{Command, InsertField, ViewOptions};

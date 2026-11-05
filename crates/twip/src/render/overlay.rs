@@ -114,7 +114,7 @@ impl Renderer {
             }
         }
         if let Some(p) = view.snapshot.pages().get(i) {
-            self.affordances(canvas, &view.affordances, i, (p.w, p.h), 1.0 / k.max(0.01));
+            crate::prof::time("draw:affordances", || self.affordances(canvas, &view.affordances, i, (p.w, p.h), 1.0 / k.max(0.01)));
         }
         // The correction just made: a dashed accent underline, and its options button (16 x 12 px) under it.
         if let Some(c) = &view.correction {
