@@ -9,7 +9,7 @@ const port = Number(process.env.PORT ?? 8790);
 const fonts = ['C:/Windows/Fonts/calibri.ttf', 'C:/Windows/Fonts/arial.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'];
 const types = { '.html': 'text/html', '.mjs': 'text/javascript', '.js': 'text/javascript', '.wasm': 'application/wasm', '.docx': 'application/octet-stream', '.ttf': 'font/ttf' };
 
-createServer((req, res) => {
+const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const file = url.pathname === '/font.ttf' ? fonts.find(existsSync) : join(root, normalize(decodeURIComponent(url.pathname)));
   if (!file || !file.startsWith(url.pathname === '/font.ttf' ? '' : root) || !existsSync(file) || statSync(file).isDirectory()) {
@@ -17,4 +17,8 @@ createServer((req, res) => {
     return;
   }
   res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' }).end(readFileSync(file));
-}).listen(port, '127.0.0.1', () => console.log(`serving ${root} on http://127.0.0.1:${port}/`));
+});
+// Idle connections stay open until the browser closes them: with Node's 5 s timeout, a request the browser sends on a
+// connection the server is just closing fails, as a module import does when the test before it took about 5 s.
+server.keepAliveTimeout = 0;
+server.listen(port, '127.0.0.1', () => console.log(`serving ${root} on http://127.0.0.1:${port}/`));
