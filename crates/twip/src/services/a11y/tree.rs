@@ -317,7 +317,10 @@ impl Builder<'_> {
     // its structure.
     fn shown_body(&self, p: &Paragraph) -> Option<AccessibleNode> {
         let (field, r) = self.e.references().by_field.iter().find(|(f, r)| {
-            r.at == ParaId(p.id) && r.row.is_none() && r.resolution == crate::editing::sub_templates::Resolution::Resolved && self.e.reference_expanded(**f)
+            r.at == ParaId(p.id)
+                && r.row.is_none()
+                && r.resolution == crate::editing::sub_templates::Resolution::Resolved
+                && self.e.reference_expanded(**f)
         })?;
         let body = &self.doc.glossary.as_ref()?.parts.get(r.part? as usize)?.body;
         fn texts(list: &[Block], out: &mut Vec<String>) {
