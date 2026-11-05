@@ -21,12 +21,70 @@ pub enum ExportFormat {
     Pdf,
 }
 
-/// What to export.
+/// What to export: the format, and for a PDF what it writes beyond the pages.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "format", rename_all = "camelCase")]
+pub enum ExportOptions {
+    /// Office Open XML.
+    #[default]
+    Docx,
+    /// PDF, laid out completely first.
+    Pdf(PdfOptions),
+}
+
+impl ExportOptions {
+    /// The format written.
+    pub fn format(&self) -> ExportFormat {
+        match self {
+            ExportOptions::Docx => ExportFormat::Docx,
+            ExportOptions::Pdf(_) => ExportFormat::Pdf,
+        }
+    }
+}
+
+impl From<ExportFormat> for ExportOptions {
+    /// The format with default options.
+    fn from(format: ExportFormat) -> ExportOptions {
+        match format {
+            ExportFormat::Docx => ExportOptions::Docx,
+            ExportFormat::Pdf => ExportOptions::Pdf(PdfOptions::default()),
+        }
+    }
+}
+
+/// What a PDF writes beyond the pages. The default writes neither a password nor keywords.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ExportOptions {
-    /// The format to write.
-    pub format: ExportFormat,
+pub struct PdfOptions {
+    /// Encrypts the PDF (AES-256): readers ask for this password before showing anything. Must not be empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_password: Option<String>,
+    /// Written to the PDF's keywords metadata, in order. Blank entries are dropped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keywords: Vec<String>,
+}
+
+impl std::fmt::Debug for PdfOptions {
+    /// Never prints the password.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PdfOptions").field("open_password", &self.open_password.as_ref().map(|_| "***")).field("keywords", &self.keywords).finish()
+    }
+}
+
+impl PdfOptions {
+    /// Fails for an empty open password, which would write a PDF that looks protected and isn't.
+    pub fn validate(&self) -> Result<(), Error> {
+        match &self.open_password {
+            Some(p) if p.is_empty() => Err(Error::invalid("the open password is empty")),
+            _ => Ok(()),
+        }
+    }
+
+    /// The keywords as the PDF writes them: blank ones dropped, the rest joined with ", ". `None` when none are left.
+    pub(crate) fn keywords_line(&self) -> Option<String> {
+        let kept: Vec<&str> = self.keywords.iter().map(String::as_str).filter(|k| !k.trim().is_empty()).collect();
+        (!kept.is_empty()).then(|| kept.join(", "))
+    }
 }
 
 /// An exported document, the revision it captures, and what writing it couldn't keep.
@@ -63,10 +121,7 @@ impl Session {
     /// Reads `bytes` and readies the editor for them without replacing the open document, for an open that may
     /// still be cancelled: all the work that can fail or take long happens here, and committing is a swap.
     pub fn open_prepare(&mut self, bytes: &[u8]) -> Result<OpenToken, Error> {
-        // A compound file: a binary .doc, or an encrypted DOCX.
-        if bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
-            return Err(Error::new(ErrorCode::Unsupported, "binary and encrypted documents can't be opened"));
-        }
+        unsupported_package(bytes)?;
         let document: Document = crate::docx::read_editable(bytes).map_err(|e| Error::new(ErrorCode::ImportFailed, e))?;
         let warnings = document.diagnostics.warnings.clone();
         Ok(OpenToken { editor: Box::new(Editor::with_document(document, &self.fonts.fonts())), warnings })
@@ -109,8 +164,8 @@ impl Session {
     /// nothing, and warns of the text it draws in another font.
     pub fn export(&mut self, options: &ExportOptions) -> Result<Export, Error> {
         let revision = self.editor.revision();
-        match options.format {
-            ExportFormat::Docx => {
+        match options {
+            ExportOptions::Docx => {
                 let bytes = crate::docx::write::save(self.editor.document()).map_err(|e| Error::new(ErrorCode::ExportFailed, e))?;
                 self.editor.mark_saved();
                 if self.state.modified {
@@ -118,31 +173,46 @@ impl Session {
                 }
                 Ok(Export { bytes: Bytes(bytes), revision, warnings: Vec::new() })
             }
-            ExportFormat::Pdf if self.fonts.fonts().face_count() == 0 => {
-                Err(Error::new(ErrorCode::ExportFailed, "the font library has no font to draw text with"))
-            }
-            ExportFormat::Pdf => {
+            ExportOptions::Pdf(pdf) => {
+                pdf.validate()?;
+                if self.fonts.fonts().face_count() == 0 {
+                    return Err(Error::new(ErrorCode::ExportFailed, "the font library has no font to draw text with"));
+                }
                 let fonts = self.fonts.fonts();
-                let bytes = if self.editor.document().review.view == crate::docx::review::MarkupView::NoMarkup
+                let (bytes, written) = if self.editor.document().review.view == crate::docx::review::MarkupView::NoMarkup
                     && !self.editor.shows_expansions()
                     && self.editor.editing_sub_template().is_none()
                 {
                     self.editor.complete(&fonts);
-                    crate::pdf::export(self.editor.document(), &self.editor.snapshot(), "")
+                    crate::pdf::export::export(self.editor.document(), &self.editor.snapshot(), "", pdf, None)?
                 } else {
                     let mut doc = self.editor.document().clone();
                     doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-                    crate::pdf::export(&doc, &crate::layout::layout(&doc, &fonts), "")
+                    crate::pdf::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", pdf, None)?
                 };
-                Ok(Export { bytes: Bytes(bytes), revision, warnings: font_fallbacks(&self.editor, &fonts) })
+                let mut warnings = font_fallbacks(self.editor.document(), self.editor.index(), &fonts);
+                warnings.extend(written);
+                Ok(Export { bytes: Bytes(bytes), revision, warnings })
             }
         }
     }
 }
 
+/// Fails for a compound file: a binary .doc, or an encrypted DOCX.
+pub(crate) fn unsupported_package(bytes: &[u8]) -> Result<(), Error> {
+    if bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
+        return Err(Error::new(ErrorCode::Unsupported, "binary and encrypted documents can't be opened"));
+    }
+    Ok(())
+}
+
+/// As [`font_fallbacks`], for a document no editor holds.
+pub(crate) fn document_font_fallbacks(doc: &Document, fonts: &crate::font::Fonts) -> Vec<Warning> {
+    font_fallbacks(doc, &crate::editing::index::DocIndex::build(doc), fonts)
+}
+
 /// The families the document's text asks for that nothing in the library draws, which a PDF draws in the default.
-fn font_fallbacks(editor: &Editor, fonts: &crate::font::Fonts) -> Vec<Warning> {
-    let (doc, index) = (editor.document(), editor.index());
+pub(crate) fn font_fallbacks(doc: &Document, index: &crate::editing::index::DocIndex, fonts: &crate::font::Fonts) -> Vec<Warning> {
     let mut seen = std::collections::HashSet::new();
     let mut diagnostics = crate::docx::diagnostics::Diagnostics::default();
     for p in index.para_ids().filter_map(|id| index.para(doc, id)) {

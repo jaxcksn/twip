@@ -170,6 +170,8 @@ public enum WarningCode
     SubTemplateTooDeep,
     /// <summary>A sub-template reference whose name matches only in another case; it doesn't resolve.</summary>
     SubTemplateNearMatch,
+    /// <summary>A password-protected PDF, which can't claim PDF/A conformance; the claim was left out.</summary>
+    PdfArchivalClaimDropped,
 }
 
 /// <summary>An import or export approximation, aggregated per code and part.</summary>

@@ -8,6 +8,13 @@ import type { AccessibleId, AccessibleNode } from '../services/accessibility.js'
 import type { Warning } from '../types.js';
 
 /** Structured call numbers: `TwipMethod` in `twip.h`, the C ABI's `Method`. The two lists must match exactly. */
+/** An export's options on the wire: the format, and a PDF's options beside it. */
+export interface WireExportOptions {
+  format: 'docx' | 'pdf';
+  openPassword?: string;
+  keywords?: readonly string[];
+}
+
 export const Method = {
   Run: 1,
   Batch: 2,
@@ -239,7 +246,7 @@ export interface Transport {
   /** Exports the document. */
   export(
     session: number,
-    options: { format: 'docx' | 'pdf' },
+    options: WireExportOptions,
     signal?: AbortSignal,
   ): Promise<{ bytes: Uint8Array; revision: number; warnings: Warning[] }>;
   /** Adds a font to the shared library. */

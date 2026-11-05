@@ -231,7 +231,7 @@ public sealed class ContractTests
                         var result = format switch
                         {
                             "docx" => await _session.SaveAsync(output, ct),
-                            "pdf" => await _session.ExportPdfAsync(output, ct),
+                            "pdf" => await _session.ExportPdfAsync(output, PdfOptionsOf(step["pdf"]), ct),
                             _ => await _session.ExportToStreamAsync(format, output, ct), // the engine rejects it
                         };
                         var now = _session.State.DocumentRevision;
@@ -243,6 +243,11 @@ public sealed class ContractTests
                             ["warnings"] = JsonSerializer.SerializeToNode(result.Warnings, Ctx.IReadOnlyListWarning),
                             ["head"] = head,
                         }, "export", at);
+                        foreach (var want in step["contains"]?.AsArray() ?? [])
+                        {
+                            var text = new string([.. output.ToArray().Select(b => (char)b)]);
+                            if (!text.Contains(want!.GetValue<string>())) Fail(at, $"the export has no \"{want}\"");
+                        }
                         if (format == "docx") _exported = output.ToArray();
                     });
                 case "command":
@@ -460,10 +465,19 @@ public sealed class ContractTests
             catch (Exception e) { _failed = (e, at); }
         }
 
+        /// <summary>A step's <c>pdf</c> options, or null.</summary>
+        private static PdfOptions? PdfOptionsOf(JsonNode? pdf) => pdf is null ? null : new PdfOptions
+        {
+            OpenPassword = pdf["openPassword"]?.GetValue<string>(),
+            Keywords = [.. pdf["keywords"]?.AsArray().Select(k => k!.GetValue<string>()) ?? []],
+        };
+
         private static string CodeOf(Exception e) => e switch
         {
             EditorException ee => JsonSerializer.Serialize(ee.Code, Ctx.EditorErrorCode).Trim('"'),
             OperationCanceledException => "aborted",
+            // The .NET form of an invalid argument the SDK rejects before calling the engine.
+            ArgumentException => "invalid-argument",
             _ => e.GetType().Name,
         };
 

@@ -12,6 +12,10 @@ these types serialize to. Use it to embed the editor in a Rust application or se
 ```rust file=../../../crates/twip/examples/session.rs
 ```
 
+A PDF export is `session.export(&ExportOptions::Pdf(PdfOptions { .. }))`, with an optional open password and keywords.
+To convert documents without a session, on many threads at once, use `twip::pdf` (see
+[PDF conversion](pdf-conversion)).
+
 ## The pieces
 
 - `engine::Engine` owns the font library and the sessions of one thread. `set_listener` receives every session's

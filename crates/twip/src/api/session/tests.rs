@@ -11,31 +11,8 @@ use crate::api::session::{ExportFormat, ExportOptions};
 use crate::api::state::Tri;
 use crate::api::value::Points;
 
-// The PDF's dates and ids come from the export's time: zeroed, so two exports compare.
-pub(super) fn undated(mut b: Vec<u8>) -> Vec<u8> {
-    let digits = |b: &[u8], at: usize, n: usize| b.get(at..at + n).is_some_and(|d| d.iter().all(u8::is_ascii_digit));
-    for i in 0..b.len() {
-        if b[i..].starts_with(b"/ID [") {
-            let end = b[i..].iter().position(|&c| c == b']').map_or(b.len(), |k| i + k);
-            b[i + 5..end].iter_mut().filter(|c| c.is_ascii_hexdigit()).for_each(|c| *c = b'0');
-        }
-        if b[i..].starts_with(b"uuid:") && b.len() >= i + 41 {
-            b[i + 5..i + 41].fill(b'0');
-        }
-        if b[i..].starts_with(b"D:") && digits(&b, i + 2, 14) {
-            b[i + 2..i + 16].fill(b'0');
-        }
-        if digits(&b, i, 4) && b.get(i + 4) == Some(&b'-') && b.get(i + 10) == Some(&b'T') && digits(&b, i + 11, 2) {
-            for k in [0, 5, 8, 11, 14, 17] {
-                let n = if k == 0 { 4 } else { 2 };
-                if digits(&b, i + k, n) {
-                    b[i + k..i + k + n].fill(b'0');
-                }
-            }
-        }
-    }
-    b
-}
+// The PDF's dates and ids come from the export's time: without them, two exports compare.
+use crate::pdf::tests::undated;
 
 fn engine() -> (Engine, Rc<RefCell<Vec<Event>>>) {
     let mut engine = Engine::new(FontLibrary::empty());
@@ -94,7 +71,7 @@ fn export_captures_the_revision_and_clears_modified() {
     let s = engine.session(id).expect("a session");
     s.run(Command::InsertText("Hi".into())).expect("types");
     assert!(s.state().modified);
-    let export = s.export(&ExportOptions { format: ExportFormat::Docx }).expect("exports");
+    let export = s.export(&ExportOptions::Docx).expect("exports");
     assert_eq!(export.revision, s.state().revision);
     assert!(!s.state().modified);
     let warnings = s.open(&export.bytes.0).expect("reads back");
@@ -179,7 +156,7 @@ fn undoing_to_the_save_clears_modified() {
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     s.run(Command::InsertText("Hi".into())).expect("types");
-    s.export(&ExportOptions { format: ExportFormat::Docx }).expect("exports");
+    s.export(&ExportOptions::Docx).expect("exports");
     s.run(Command::SelectAll).expect("selects");
     s.run(Command::SetBold(true)).expect("bolds");
     assert!(s.state().modified);
@@ -195,7 +172,7 @@ fn a_pdf_export_keeps_modified_and_warns_of_fallbacks() {
     s.run(Command::InsertText("Hi".into())).expect("types");
     s.run(Command::SelectAll).expect("selects");
     s.run(Command::SetFont("No Such Family Here".into())).expect("sets the font");
-    let pdf = s.export(&ExportOptions { format: ExportFormat::Pdf }).expect("exports");
+    let pdf = s.export(&ExportOptions::Pdf(Default::default())).expect("exports");
     assert!(pdf.bytes.0.starts_with(b"%PDF"));
     assert_eq!(pdf.revision, s.state().revision);
     assert!(s.state().modified, "a PDF doesn't save the document");
@@ -211,7 +188,7 @@ fn dark_mode_changes_neither_the_pdf_nor_the_layout() {
     s.run(Command::SelectAll).expect("selects");
     s.run(Command::SetFontColor(crate::api::value::AutoOr::Value(crate::api::value::Color(0x1F3864)))).expect("colours");
     let export = |s: &mut crate::api::session::Session| {
-        let mut b = s.export(&ExportOptions { format: ExportFormat::Pdf }).expect("exports").bytes.0;
+        let mut b = s.export(&ExportOptions::Pdf(Default::default())).expect("exports").bytes.0;
         // Two exports differ in their creation time and their XMP packet's and trailer's random ids: cut those out.
         let find = |b: &[u8], n: &[u8]| b.windows(n.len()).position(|w| w == n);
         for (from, to) in [(&b"<?xpacket begin"[..], &b"<?xpacket end"[..]), (b"/ID [", b"]")] {
@@ -915,7 +892,7 @@ fn sub_template_bodies_shown_inline_never_reach_the_output() {
     s.open(&std::fs::read(path).expect("fixture")).expect("opens");
     let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
     s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
-    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions { format: f }).expect("exports").bytes.0);
+    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions::from(f)).expect("exports").bytes.0);
     let (docx, pdf) = (export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf));
     assert!(s.editor.shows_expansions(), "the bodies show");
     s.run(Command::SetSubTemplateView(SubTemplateView { ids: None, expanded: false })).expect("collapses");
@@ -1164,7 +1141,7 @@ fn field_marks_never_reach_the_output() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-PLACEHOLDER-UI.docx");
     s.open(&std::fs::read(path).expect("fixture")).expect("opens");
     s.run(Command::SetMode(Mode::Design)).expect("design mode");
-    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions { format: f }).expect("exports").bytes.0);
+    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions::from(f)).expect("exports").bytes.0);
     let (docx, pdf) = (export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf));
     s.run(Command::SetViewOptions(ViewOptions { placeholder_ui: Some(true), ..ViewOptions::default() })).expect("turns them on");
     assert!(s.state().view.placeholder_ui);
@@ -1328,7 +1305,7 @@ fn sub_template_cards_and_tabs_never_reach_the_output() {
     let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
     s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
     s.run(Command::SetMode(Mode::Design)).expect("design mode");
-    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions { format: f }).expect("exports").bytes.0);
+    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions::from(f)).expect("exports").bytes.0);
     let (docx, pdf) = (export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf));
     s.run(Command::SetViewOptions(ViewOptions { placeholder_ui: Some(true), ..ViewOptions::default() })).expect("turns them on");
     assert!((export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf)) == (docx.clone(), pdf.clone()), "bodies with tabs");

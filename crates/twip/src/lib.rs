@@ -9,7 +9,7 @@ pub(crate) mod editing;
 pub(crate) mod features;
 pub(crate) mod font;
 pub(crate) mod layout;
-pub(crate) mod pdf;
+pub mod pdf;
 pub(crate) mod prof;
 pub(crate) mod render;
 pub(crate) mod services;
@@ -40,7 +40,7 @@ pub mod internal {
         pub use crate::layout::*;
     }
     pub mod pdf {
-        pub use crate::pdf::*;
+        pub use crate::pdf::export::*;
     }
     pub mod prof {
         pub use crate::prof::*;

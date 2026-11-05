@@ -15,7 +15,20 @@ internal sealed record SessionOptionsWire(
 
 internal sealed record EngineOptionsWire(string Fonts);
 
-internal sealed record ExportOptionsWire(string Format);
+internal sealed record ExportOptionsWire(
+    string Format,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? OpenPassword = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords = null);
+
+internal sealed record PdfFontSetWire(
+    bool IncludeSystemFonts, IReadOnlyList<string> FontFiles, IReadOnlyList<SubstitutionRule> Substitutions,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DefaultFamily);
+
+internal sealed record PdfOptionsWire(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? OpenPassword,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords);
+
+internal sealed record PdfConvertMeta(IReadOnlyList<Warning> Warnings);
 
 /// <summary>An export's metadata; the C ABI returns the bytes apart, so <see cref="Bytes"/> is unset there.</summary>
 internal sealed record ExportMeta(

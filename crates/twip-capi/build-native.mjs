@@ -1,19 +1,25 @@
 // Builds the native library the .NET SDK loads (target/release/twip.dll, libtwip.so or libtwip.dylib). On Windows and
 // Apple silicon Macs it first downloads the prebuilt Skia with Graphite on Dawn once (into .native-deps, not target/:
-// CI's rust-cache deletes the files under target/ that aren't cargo's before saving), so the library draws on the GPU;
-// elsewhere it is the plain cargo build. Other cargo commands get the same environment (CI's clippy and tests on
-// Windows).
+// CI's rust-cache deletes the files under target/ that aren't cargo's before saving), so the library draws on the GPU.
+// On Linux with musl (Alpine) it downloads the prebuilt musl Skia the same way (no Dawn there: it draws with the CPU),
+// because skia-safe publishes none. Elsewhere it is the plain cargo build. Other cargo commands get the same
+// environment (CI's clippy and tests on Windows).
 // Usage: node build-native.mjs [cargo arguments]
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-// The prebuilt Skia with Dawn, by platform (jaxcksn/twip-skia-dawn releases from its build-windows and build-macos
-// workflows, built for skia-safe 0.153.3 with the features in crates/twip/Cargo.toml's native skia-safe line).
+// Linux with musl rather than glibc: Node reports no glibc version there.
+const MUSL = process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime;
+// The prebuilt Skia, by platform (jaxcksn/twip-skia-dawn releases from its build-windows, build-macos and build-musl
+// workflows, built for skia-safe 0.153.3 with the features in crates/twip/Cargo.toml's native skia-safe line). The
+// Windows and macOS archives carry Dawn; the musl ones don't.
 const SKIA = {
   'win32-x64': '0.153.3-windows-20ce3e1',
   'darwin-arm64': '0.153.3-macos-34047cc',
-}[`${process.platform}-${process.arch}`];
+  'linux-musl-x64': '0.153.3-musl-x86_64-956ccc4',
+  'linux-musl-arm64': '0.153.3-musl-aarch64-956ccc4',
+}[`${process.platform}${MUSL ? '-musl' : ''}-${process.arch}`];
 // Dawn's combined library in the archive.
 const DAWN_LIB = process.platform === 'win32' ? 'dawn_combined.lib' : 'libdawn_combined.a';
 // Windows' own tar: Git's GNU tar on PATH reads the D: of a path as a remote host.
@@ -42,6 +48,16 @@ if (SKIA) {
     writeFileSync(`${archive}.${process.pid}`, Buffer.from(await res.arrayBuffer()));
     settle(`${archive}.${process.pid}`, archive);
   }
+}
+if (SKIA && MUSL) {
+  // Files only, no Dawn: skia-bindings unpacks it as it is.
+  const archive = join(realpathSync(join(root, '.native-deps')), `skia-${SKIA}.tar.gz`);
+  env.SKIA_BINARIES_URL = `file://${archive}`;
+  // A cdylib on musl links the C runtime dynamically, as the .NET runtime that loads it does.
+  env.RUSTFLAGS = [env.RUSTFLAGS, '-C target-feature=-crt-static'].filter(Boolean).join(' ');
+} else if (SKIA) {
+  const deps = realpathSync(join(root, '.native-deps'));
+  const archive = join(deps, `skia-${SKIA}.tar.gz`);
   // skia-bindings unpacks the archive itself; the Dawn shim needs its headers and Dawn's library.
   const unpacked = join(deps, `skia-${SKIA}`);
   if (!existsSync(join(unpacked, 'skia-binaries', DAWN_LIB))) {

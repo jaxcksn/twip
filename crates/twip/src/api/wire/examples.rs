@@ -20,7 +20,7 @@ use crate::api::record::{Author, ChangeSummary, Identity, Origin, Timestamp, Tra
 use crate::api::review::*;
 use crate::api::services::*;
 use crate::api::session::{
-    CaretBlink, Commit, Cursor, Export, ExportFormat, ExportOptions, FrameInfo, FrameStats, HostRequest, OverlayPalette, PaintBudget,
+    CaretBlink, Commit, Cursor, Export, ExportFormat, ExportOptions, FrameInfo, FrameStats, HostRequest, OverlayPalette, PaintBudget, PdfOptions,
 };
 use crate::api::state::*;
 use crate::api::value::*;
@@ -423,7 +423,15 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("modifiers", Modifiers, vec![Modifiers { ctrl: true, shift: true, alt: false, meta: false }]),
         fixture!("point", Point, vec![Point { x: 120.5, y: 48.5 }]),
         fixture!("clipboard-data", ClipboardData, vec![clipboard(), ClipboardData { text: "plain".into(), html: None, internal: None }]),
-        fixture!("export-options", ExportOptions, vec![ExportOptions { format: ExportFormat::Pdf }]),
+        fixture!(
+            "export-options",
+            ExportOptions,
+            vec![
+                ExportOptions::Docx,
+                ExportOptions::Pdf(PdfOptions::default()),
+                ExportOptions::Pdf(PdfOptions { open_password: Some("secret".into()), keywords: vec!["a".into(), "b".into()] }),
+            ]
+        ),
         fixture!("export", Export, vec![Export { bytes: Bytes(b"PK".to_vec()), revision: 7, warnings: vec![warning()] }]),
         fixture!("frame-info", FrameInfo, vec![frame_info()]),
         fixture!("frame-stats", FrameStats, vec![frame_stats()]),

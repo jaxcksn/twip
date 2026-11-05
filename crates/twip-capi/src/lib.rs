@@ -31,6 +31,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 mod methods;
+#[cfg(not(target_os = "emscripten"))]
+mod pdf;
 
 pub use methods::Method;
 

@@ -30,7 +30,7 @@ pub(crate) mod units;
 #[cfg(test)]
 pub(crate) mod tests;
 
-pub use document::{layout, layout_with};
+pub use document::{layout, layout_until, layout_with};
 pub use ids::{FloatId, FragmentId, LayoutRevision, ParaId, Revision, TableId, Unit};
 pub use incremental::{Change, DocumentLayout, Target};
 pub use job::{Budget, Step};

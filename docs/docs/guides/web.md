@@ -72,6 +72,9 @@ testing) are on `Editor` only.
 ```ts file=../../examples/web/headless.ts
 ```
 
+`export({ format: 'pdf' })` also takes `openPassword` (the PDF is encrypted with AES-256) and `keywords` (written to
+its metadata); see [PDF conversion](pdf-conversion#passwords-and-keywords).
+
 ## Worker mode
 
 By default (`execution: 'auto'`), a mounted editor runs the engine in a worker where the browser supports module

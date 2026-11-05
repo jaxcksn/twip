@@ -4,7 +4,7 @@
 
 mod blink;
 mod commands;
-mod documents;
+pub(crate) mod documents;
 mod edit;
 mod elements;
 mod fonts;
@@ -15,7 +15,7 @@ mod services;
 
 use std::rc::Rc;
 
-pub use documents::{Export, ExportFormat, ExportOptions, OpenToken};
+pub use documents::{Export, ExportFormat, ExportOptions, OpenToken, PdfOptions};
 pub use edit::Commit;
 pub use host::{CaretBlink, Cursor, FrameInfo, FrameStats, HostRequest, HostSurface, OverlayPalette, PaintBudget};
 pub use input::{Gestures, Shortcuts};

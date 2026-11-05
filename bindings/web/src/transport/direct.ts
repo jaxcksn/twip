@@ -19,7 +19,7 @@ import {
   type WebGpuTarget,
 } from '../host/gpu.js';
 import { loadModule, type TwipModule } from './module.js';
-import { type Backend, type FrameInfo, Kind, type Input, type Message, Method, type Transport, unwrap } from './protocol.js';
+import { type Backend, type FrameInfo, Kind, type Input, type Message, Method, type Transport, unwrap, type WireExportOptions } from './protocol.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -160,7 +160,7 @@ export class DirectTransport implements Transport {
     await this.call(session, Method.OpenDiscard, token);
   }
 
-  export(session: number, options: { format: 'docx' | 'pdf' }, signal?: AbortSignal) {
+  export(session: number, options: WireExportOptions, signal?: AbortSignal) {
     return this.#enqueue(() => {
       signal?.throwIfAborted();
       let status = 0;

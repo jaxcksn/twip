@@ -22,6 +22,7 @@ arrives with the state already at its revision.
 | State consistency | the state at every event equals the event's revision; mixed values | every script (the runners' `documentChanged` check), `mixed-formatting` |
 | Transactions | origins (api, undo, redo), batches atomic and rolled back on error, undo grouping, read only | `origins`, `bold-undo-redo`, `batch`, `undo-grouping`, `read-only`, `author` |
 | Documents | failed open keeps the document; abort open and export; export captures its revision; modified and saved | `documents`, `abort`, `open-type-export` |
+| PDF options | an open password encrypts the export, an empty one is rejected; keywords reach the metadata | `export-pdf-protected`, `export-pdf-keywords` |
 | Errors | every error code reachable | `errors`, `invalid-arguments`, `unavailable-commands` |
 | Services | context menu actions, dialog apply and cancel, find and replace counts, spelling add and ignore, the catalog, navigation, the ruler | `context-menu`, `dialogs`, `find-replace`, `spelling`, `catalog`, `navigation`, `ruler` |
 | Review | track, accept and reject; comments add, reply, resolve and delete | `review`, `author` |
@@ -62,7 +63,7 @@ deletes its script's line. `check.py` checks that every listed name is a script 
 | `open { match? }` | opens the script's fixture. `match` is checked against the result, `{ warnings }` |
 | `openBytes { base64 }` | opens the given bytes |
 | `reopen` | opens the bytes of the last `docx` export |
-| `export { format, match? }` | exports `docx` or `pdf`, and records the revision it reports. `match` is checked against `{ revision, warnings, head }`, where `head` is the first four bytes as Latin-1 text (`"%PDF"`) |
+| `export { format, pdf?, match?, contains? }` | exports `docx` or `pdf`, and records the revision it reports. `pdf` holds a PDF's options (`openPassword`, `keywords`). `match` is checked against `{ revision, warnings, head }`, where `head` is the first four bytes as Latin-1 text (`"%PDF"`). `contains` lists Latin-1 strings the bytes must contain (`"/Encrypt"`) |
 | `command { command }` | runs one command and waits for it |
 | `batch { commands, label? }` | runs an atomic batch |
 | `key { key, mods? }`, `text { text }` | input, on surfaces that take it. `key` is a DOM `KeyboardEvent.key` value (`"s"`, `"F7"`, `"ContextMenu"`), and `mods` lists `ctrl`, `shift`, `alt` or `meta` |

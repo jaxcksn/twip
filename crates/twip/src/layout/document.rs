@@ -30,6 +30,20 @@ pub fn layout(doc: &Document, fonts: &Fonts) -> Snapshot {
     layout_with(doc, fonts, &mut cache)
 }
 
+/// Stepped layout, stoppable between steps.
+pub fn layout_until(doc: &Document, fonts: &Fonts, mut stop: impl FnMut() -> bool) -> Option<Snapshot> {
+    let env = LayoutEnv::new(doc);
+    let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions: None };
+    let mut cache = LayoutCache::new();
+    let mut job = LayoutJob::new(doc, Revision(0));
+    while job.run(doc, &ctx, &mut cache, None, Budget::Pages(4)) != Step::Done {
+        if stop() {
+            return None;
+        }
+    }
+    Some(job.finished().expect("a run that reports done completes the job").snapshot(Revision(0), LayoutRevision(0)))
+}
+
 pub fn layout_with(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> Snapshot {
     layout_records(doc, fonts, cache).0
 }

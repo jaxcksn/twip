@@ -90,6 +90,20 @@ export interface MountOptions extends SessionOptions {
   signal?: AbortSignal;
 }
 
+/** What a PDF writes beyond the pages. */
+export interface PdfOptions {
+  /**
+   * Encrypts the PDF with AES-256: readers ask for this password before showing anything. Must not be empty. A protected
+   * PDF doesn't claim PDF/A conformance, and the export warns that the claim was dropped.
+   */
+  openPassword?: string;
+  /** Written to the PDF's keywords metadata, in order. Blank entries are dropped. */
+  keywords?: readonly string[];
+}
+
+/** What {@link HeadlessEditor.export} writes: DOCX, or PDF with its options. */
+export type ExportOptions = { format: 'docx'; signal?: AbortSignal } | ({ format: 'pdf'; signal?: AbortSignal } & PdfOptions);
+
 /** An exported document. */
 export interface ExportResult {
   /** The file. */
@@ -424,12 +438,18 @@ export class HeadlessEditor {
     return sessionOf(this).call(Method.NewDocument);
   }
 
-  /** Exports the document as DOCX or PDF, with the revision it captures. */
-  export(options: { format: 'docx' | 'pdf'; signal?: AbortSignal }): Promise<ExportResult> {
+  /**
+   * Exports the document as DOCX or PDF, with the revision it captures. A PDF can take an open password and keywords;
+   * an empty password rejects with `invalid-argument`.
+   */
+  export(options: ExportOptions): Promise<ExportResult> {
     const s = sessionOf(this);
-    const { format, signal } = options;
+    const { signal, ...wire } = options;
+    if (wire.format === 'pdf' && wire.openPassword === '') {
+      return Promise.reject(new EditorError('invalid-argument', 'the open password is empty'));
+    }
     return s.guard(async () => {
-      const result = await s.transport.export(s.id, { format }, signal);
+      const result = await s.transport.export(s.id, wire, signal);
       if (signal?.aborted) throw aborted();
       return result;
     });

@@ -32,6 +32,11 @@ serde_json = "1.0.154"
 serde = { version = "1", features = ["derive", "rc"] }
 # WOFF and WOFF2 fonts (what web font services serve) decoded to TrueType/OpenType: Brotli and glyf reconstruction.
 wuff = "0.2.9"
+# PDF open passwords (pdf::encrypt): the AES block cipher, SHA-256/384/512 for the password hash, and random keys and
+# salts from the operating system.
+aes = "0.8.4"
+sha2 = { version = "0.10.9", default-features = false }
+getrandom = "0.4.3"
 
 [features]
 # Test inspection surface: the editor's semantic state as JSON. Never in production builds.

@@ -205,7 +205,12 @@ impl Runner {
                 Ok(())
             }
             "export" => {
-                let options: ExportOptions = parse(&json!({ "format": step["format"] })).map_err(Err)?;
+                // A PDF's options sit beside the format on the wire.
+                let mut wire = json!({ "format": step["format"] });
+                if let (Some(o), Some(pdf)) = (wire.as_object_mut(), step.get("pdf").and_then(Value::as_object)) {
+                    o.extend(pdf.clone());
+                }
+                let options: ExportOptions = parse(&wire).map_err(Err)?;
                 let s = self.session().map_err(Ok)?;
                 if abort == Abort::Early {
                     return aborted("export");
@@ -219,7 +224,13 @@ impl Runner {
                 if let Some(want) = step.get("match") {
                     matches(want, &json!({ "revision": export.revision, "warnings": export.warnings, "head": head }), "export").map_err(Err)?;
                 }
-                if options.format == twip::api::session::ExportFormat::Docx {
+                for want in step.get("contains").and_then(Value::as_array).into_iter().flatten() {
+                    let want = want.as_str().unwrap_or_default().as_bytes();
+                    if !export.bytes.0.windows(want.len()).any(|w| w == want) {
+                        return Err(Err(format!("the export has no {:?}", String::from_utf8_lossy(want))));
+                    }
+                }
+                if options == ExportOptions::Docx {
                     self.exported = Some(export.bytes.0);
                 }
                 Ok(())

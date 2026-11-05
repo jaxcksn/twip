@@ -7,6 +7,7 @@ mod drags;
 mod editing;
 mod frames;
 mod layout;
+mod pdf;
 mod review;
 
 use std::fmt::Write as _;

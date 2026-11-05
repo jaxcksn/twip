@@ -7,7 +7,7 @@ import { EditorError, unsupported } from '../errors.js';
 import type { FaceInfo } from '../fonts/library.js';
 import { live } from '../host/dom.js';
 import type { Warning } from '../types.js';
-import { type Backend, type FrameInfo, type Input, type Message, Method, type Transport, toError } from './protocol.js';
+import { type Backend, type FrameInfo, type Input, type Message, Method, type Transport, toError, type WireExportOptions } from './protocol.js';
 
 /** A call to the worker: a {@link Transport} method and its arguments (without the signal), or an abort. */
 export interface Request {
@@ -107,7 +107,7 @@ export class WorkerTransport implements Transport {
     return this.#request('openDiscard', [session, token]);
   }
 
-  export(session: number, options: { format: 'docx' | 'pdf' }, signal?: AbortSignal) {
+  export(session: number, options: WireExportOptions, signal?: AbortSignal) {
     return this.#request<{ bytes: Uint8Array; revision: number; warnings: Warning[] }>('export', [session, options], { signal });
   }
 

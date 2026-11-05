@@ -48,4 +48,9 @@ Native builds use the system's FreeType and Fontconfig. Install the stand-ins ab
 `fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation` on Debian and Ubuntu; Twip uses them for those
 names automatically.
 
+On Alpine, install `fontconfig freetype libstdc++` and a font package such as `font-liberation`.
+
+Headless PDF conversion doesn't use a `FontLibrary`: it takes a font set (`PdfFontSet` in .NET, `twip::pdf::FontSet`
+in Rust) that is fixed once built, so many threads can share it. See [PDF conversion](pdf-conversion).
+
 Font files are licensed separately from Twip. Check that you may ship the fonts you add.

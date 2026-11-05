@@ -59,12 +59,18 @@ fn main() {
             return exit_on_error(cli::roundtrip::run(&a));
         }
         Some("pdf") => {
-            // twip pdf <docx> <out.pdf>: the document's PDF export (cli/pdf.rs).
+            // twip pdf <docx> <out.pdf> [--password <text>] [--keywords <a,b,...>]: the document's PDF export
+            // (cli/pdf.rs).
             let a: Vec<String> = args.skip(1).collect();
             let (Some(docx), Some(out)) = (a.first(), a.get(1)) else {
-                return exit_on_error(Err("usage: pdf <docx> <out.pdf>".into()));
+                return exit_on_error(Err("usage: pdf <docx> <out.pdf> [--password <text>] [--keywords <a,b,...>]".into()));
             };
-            return exit_on_error(cli::pdf::run(std::path::Path::new(docx), std::path::Path::new(out)));
+            let flag = |name: &str| a.iter().position(|x| x == name).and_then(|i| a.get(i + 1)).cloned();
+            let options = twip::api::session::PdfOptions {
+                open_password: flag("--password"),
+                keywords: flag("--keywords").map(|k| k.split(',').map(str::to_string).collect()).unwrap_or_default(),
+            };
+            return exit_on_error(cli::pdf::run(std::path::Path::new(docx), std::path::Path::new(out), &options));
         }
         Some("autocorrect-list") => {
             // twip autocorrect-list <dir> <out dir>: the shipped AutoCorrect lists (cli/autocorrect.rs).

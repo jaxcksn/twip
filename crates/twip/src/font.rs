@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use harfrust::{Buffer, Direction, Feature, ShapeOptions, ShaperFont, Tag};
 
@@ -272,22 +272,37 @@ impl std::fmt::Debug for Face {
     }
 }
 
-/// The fonts layout may use, and how document font names map to faces: the substitution rules first, then the
-/// installed families, then the built-in substitutes, then the default family.
+/// The faces a [`Fonts`] can draw with and how names map to them. Immutable once shared: any number of threads can
+/// read one catalog at the same time.
 #[derive(Default, Clone)]
-pub struct Fonts {
+pub struct Catalog {
     entries: Vec<Entry>,
     by_name: HashMap<String, Vec<usize>>,
     rules: Vec<SubstitutionRule>,
     default: Option<String>,
-    files: RefCell<HashMap<String, Arc<Vec<u8>>>>,
+    /// Each font file's bytes by path, read on first use. A `OnceLock` so a catalog shared between threads loads a file
+    /// once without a lock; faces of one collection share their file's slot.
+    files: HashMap<String, OnceLock<Option<Arc<Vec<u8>>>>>,
+    /// Bumped whenever faces, rules or the default change: part of every layout cache key that used fonts.
+    revision: u64,
+}
+
+const _: () = {
+    const fn shareable<T: Send + Sync>() {}
+    shareable::<Catalog>();
+};
+
+/// The fonts layout may use, and how document font names map to faces: the substitution rules first, then the
+/// installed families, then the built-in substitutes, then the default family. The catalog is shared (an `Arc`, so a
+/// [`fork`](Fonts::fork) on another thread reads the same faces and file bytes); the memos below stay on one thread.
+#[derive(Default, Clone)]
+pub struct Fonts {
+    catalog: Arc<Catalog>,
     faces: RefCell<HashMap<(String, bool, bool), Option<Rc<Face>>>>,
     resolved: RefCell<HashMap<(String, bool, bool), String>>,
     fallbacks: RefCell<HashMap<(char, bool, bool), Option<Rc<Face>>>>,
     /// [`SYMBOL_FALLBACK`]'s face, loaded on first use behind `&self` like the caches above.
     symbol_fallback: std::cell::OnceCell<Option<Rc<Face>>>,
-    /// Bumped whenever faces, rules or the default change: part of every layout cache key that used fonts.
-    revision: u64,
 }
 
 /// The last fallback, shipped so bullets and symbols draw where no installed font has them (the browser, Linux):
@@ -343,6 +358,27 @@ const FALLBACK_FAMILIES: &[&str] = &[
 ];
 
 impl Fonts {
+    /// Fonts drawing from `catalog`, with empty memos.
+    pub fn with_catalog(catalog: Arc<Catalog>) -> Fonts {
+        Fonts { catalog, ..Fonts::default() }
+    }
+
+    /// The same catalog with empty memos: what another thread lays out with, since the memos stay on this one.
+    pub fn fork(&self) -> Fonts {
+        Fonts::with_catalog(Arc::clone(&self.catalog))
+    }
+
+    /// The shared catalog.
+    pub fn catalog(&self) -> &Arc<Catalog> {
+        &self.catalog
+    }
+
+    /// How many of the catalog's files have been read.
+    #[cfg(test)]
+    pub(crate) fn files_read(&self) -> usize {
+        self.catalog.files.values().filter(|f| f.get().is_some()).count()
+    }
+
     /// The operating system's installed fonts, plus Office's cloud font folder (where Aptos and friends are installed).
     pub fn system() -> Fonts {
         let mut f = Fonts::default();
@@ -401,11 +437,11 @@ impl Fonts {
             Some(b"wOF2") => wuff::decompress_woff2(&data).map_err(|e| Error::invalid(format!("not a valid WOFF2 font: {e:?}")))?,
             _ => return Err(Error::invalid("not a TrueType, OpenType or WOFF font")),
         };
-        let from = self.entries.len();
+        let from = self.catalog.entries.len();
         let data = Arc::new(data);
         self.scan(&data.clone(), None, Some(data));
         let faces: Vec<FaceInfo> =
-            self.entries[from..].iter().map(|e| FaceInfo { family: e.family.clone(), bold: e.weight >= 600, italic: e.italic }).collect();
+            self.catalog.entries[from..].iter().map(|e| FaceInfo { family: e.family.clone(), bold: e.weight >= 600, italic: e.italic }).collect();
         if faces.is_empty() {
             return Err(Error::invalid("the font file has no usable faces"));
         }
@@ -416,13 +452,13 @@ impl Fonts {
     /// catalog are recomputed. Unique in the process, so two catalogs (which may hold different face objects) never
     /// share one.
     pub fn revision(&self) -> u64 {
-        self.revision
+        self.catalog.revision
     }
 
     /// A new revision, and the memos made with the old one dropped.
     fn changed(&mut self) {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-        self.revision = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Arc::make_mut(&mut self.catalog).revision = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.faces.borrow_mut().clear();
         self.resolved.borrow_mut().clear();
         self.fallbacks.borrow_mut().clear();
@@ -430,19 +466,23 @@ impl Fonts {
 
     /// The substitution rules, replacing earlier ones.
     pub fn set_rules(&mut self, rules: Vec<SubstitutionRule>) {
-        self.rules = rules;
+        Arc::make_mut(&mut self.catalog).rules = rules;
         self.changed();
     }
 
     /// The family drawn when nothing else resolves a name. Until one is set: Calibri or a metric-compatible family
     /// when installed, else the first font added.
     pub fn set_default(&mut self, family: &str) {
-        self.default = Some(family.to_string());
+        Arc::make_mut(&mut self.catalog).default = Some(family.to_string());
         self.changed();
     }
 
     fn scan(&mut self, d: &[u8], path: Option<String>, data: Option<Arc<Vec<u8>>>) {
-        let before = self.entries.len();
+        let catalog = Arc::make_mut(&mut self.catalog);
+        let before = catalog.entries.len();
+        if let Some(path) = &path {
+            catalog.files.entry(path.clone()).or_default();
+        }
         let count = if d.starts_with(b"ttcf") { u32_at(d, 8) } else { 1 };
         for index in 0..count.min(64) {
             let t = tables(d, index);
@@ -496,42 +536,43 @@ impl Fonts {
                 {
                     continue;
                 }
-                let i = self.entries.len();
+                let i = catalog.entries.len();
                 for n in all.iter().chain(&aliases) {
-                    let list = self.by_name.entry(n.to_lowercase()).or_default();
+                    let list = catalog.by_name.entry(n.to_lowercase()).or_default();
                     if !list.contains(&i) {
                         list.push(i);
                     }
                 }
-                self.entries.push(entry);
+                catalog.entries.push(entry);
             }
         }
-        if self.entries.len() > before {
+        if catalog.entries.len() > before {
             self.changed();
         }
     }
 
     /// How many faces the catalog has.
     pub fn face_count(&self) -> usize {
-        self.entries.len()
+        self.catalog.entries.len()
     }
 
     /// The installed family names, sorted (for a font chooser).
     pub fn families(&self) -> Vec<String> {
-        let mut out: Vec<String> = self.entries.iter().map(|e| e.family.clone()).collect();
+        let mut out: Vec<String> = self.catalog.entries.iter().map(|e| e.family.clone()).collect();
         out.sort_by_key(|f| f.to_lowercase());
         out.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
         out
     }
 
     pub fn is_installed(&self, family: &str) -> bool {
-        self.by_name.contains_key(&family.to_lowercase())
+        self.catalog.by_name.contains_key(&family.to_lowercase())
     }
 
     /// The family a substitution rule draws `name` in, else `name`. Matching is case-insensitive, and a rule with
     /// `bold` or `italic` set applies only to that style.
     pub fn render_family<'a>(&'a self, name: &'a str, bold: bool, italic: bool) -> &'a str {
-        self.rules
+        self.catalog
+            .rules
             .iter()
             .find(|r| r.from.eq_ignore_ascii_case(name) && r.bold.is_none_or(|b| b == bold) && r.italic.is_none_or(|i| i == italic))
             .map_or(name, |r| r.to.as_str())
@@ -567,19 +608,19 @@ impl Fonts {
             .installed_for(target)
             // A rule's family not added yet: the document's family draws meanwhile.
             .or_else(|| if target != name { self.installed_for(name) } else { None })
-            .or_else(|| self.default.clone().filter(|d| self.is_installed(d)))
+            .or_else(|| self.catalog.default.clone().filter(|d| self.is_installed(d)))
             .or_else(|| ["Calibri", "Carlito", "Arial", "Liberation Sans"].iter().find(|f| self.is_installed(f)).map(|s| s.to_string()))
-            .or_else(|| self.entries.first().map(|e| e.family.clone()))
+            .or_else(|| self.catalog.entries.first().map(|e| e.family.clone()))
             .unwrap_or_else(|| name.to_string());
         self.resolved.borrow_mut().insert(key, r.clone());
         r
     }
 
     fn matches(&self, family: &str, bold: bool, italic: bool) -> Option<usize> {
-        let list = self.by_name.get(&family.to_lowercase())?;
+        let list = self.catalog.by_name.get(&family.to_lowercase())?;
         let target = if bold { 700 } else { 400 };
         list.iter().copied().min_by_key(|&i| {
-            let e = &self.entries[i];
+            let e = &self.catalog.entries[i];
             let w = e.weight as i32;
             let wd = if bold {
                 if w >= 600 { (w - target).abs() } else { 400 + target - w }
@@ -600,16 +641,11 @@ impl Fonts {
             return Some(d.clone());
         }
         let path = e.path.as_ref()?;
-        if let Some(d) = self.files.borrow().get(path) {
-            return Some(d.clone());
-        }
-        let d = Arc::new(std::fs::read(path).ok()?);
-        self.files.borrow_mut().insert(path.clone(), d.clone());
-        Some(d)
+        self.catalog.files.get(path)?.get_or_init(|| std::fs::read(path).ok().map(Arc::new)).clone()
     }
 
     fn load(&self, i: usize, requested: &str, bold: bool, italic: bool) -> Option<Rc<Face>> {
-        let e = &self.entries[i];
+        let e = &self.catalog.entries[i];
         let data = self.data(e)?;
         Face::load(e, requested, data, bold && e.weight < 600, italic && !e.italic).map(Rc::new)
     }
@@ -622,7 +658,7 @@ impl Fonts {
         }
         let f = match self.matches(&self.resolve(family, bold, italic), bold, italic) {
             Some(i) => self.load(i, family, bold, italic),
-            None => (!self.entries.is_empty()).then(|| self.load(0, family, bold, italic)).flatten(),
+            None => (!self.catalog.entries.is_empty()).then(|| self.load(0, family, bold, italic)).flatten(),
         };
         self.faces.borrow_mut().insert(key, f.clone());
         f
@@ -928,6 +964,60 @@ mod tests {
         let len = (out.len() as u32).to_be_bytes();
         out[8..12].copy_from_slice(&len);
         out
+    }
+
+    /// The repository's DOCX fixtures, by name.
+    fn docx_fixtures() -> Vec<(String, Vec<u8>)> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let mut out: Vec<(String, Vec<u8>)> = std::fs::read_dir(dir)
+            .expect("the fixtures folder exists")
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "docx"))
+            .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read(&p).unwrap()))
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_fork_lays_out_like_its_original() {
+        let fonts = Fonts::system();
+        let pages = |bytes: &[u8], fonts: &Fonts| {
+            let doc = crate::docx::read_at(bytes, 0).expect("fixtures read");
+            // Ids come from process-wide counters, so integers are masked; every position and size is a float and
+            // is compared as written.
+            let dump = format!("{:?}", crate::layout::layout(&doc, fonts).pages());
+            let bytes = dump.as_bytes();
+            let mut out = Vec::with_capacity(bytes.len());
+            let mut k = 0;
+            while k < bytes.len() {
+                let end = k + bytes[k..].iter().take_while(|b| b.is_ascii_digit()).count();
+                let float = end > k && (bytes.get(end) == Some(&b'.') || (k > 0 && bytes[k - 1] == b'.'));
+                if end > k && !float {
+                    out.push(b'#');
+                    k = end;
+                } else {
+                    let next = end.max(k + 1);
+                    out.extend_from_slice(&bytes[k..next]);
+                    k = next;
+                }
+            }
+            String::from_utf8(out).expect("only ASCII digits were replaced")
+        };
+        let fixtures = docx_fixtures();
+        assert!(!fixtures.is_empty());
+        for (name, bytes) in &fixtures {
+            let original = pages(bytes, &fonts);
+            // The first difference, not two whole dumps.
+            let same = |other: &str, how: &str| {
+                let at = other.bytes().zip(original.bytes()).position(|(a, b)| a != b);
+                assert!(at.is_none() && other.len() == original.len(), "{name}: {how} differs at byte {at:?}");
+            };
+            same(&pages(bytes, &fonts.fork()), "a fork on the same thread");
+            let catalog = Arc::clone(fonts.catalog());
+            same(&std::thread::scope(|s| s.spawn(|| pages(bytes, &Fonts::with_catalog(catalog))).join().unwrap()), "a fork on another thread");
+        }
     }
 
     #[test]
