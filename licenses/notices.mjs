@@ -27,6 +27,10 @@ const native = [
   ['DejaVu Sans (subset)', 'Bitstream-Vera', 'both', 'dejavu-fonts.txt'],
   // The preset shape geometries (drawing/geom/presets.rs), generated from the standard's definitions.
   ['ECMA-376 preset shape definitions', 'LicenseRef-Ecma', 'both', 'ecma-376.txt'],
+  // The editor chrome's typeface, subsets (render/chrome_fonts/).
+  ['JetBrains Mono (subset)', 'OFL-1.1', 'both', 'jetbrains-mono.txt'],
+  // The AutoCorrect replacement list (editing/autocorrect/en-US.tsv).
+  ['LibreOffice AutoCorrect list (en-US)', 'MPL-2.0', 'both', 'libreoffice-autocorrect.txt'],
 ];
 // cargo about refuses to write to a pipe on Windows, so it writes a file.
 const tmp = `${out}.crates`;

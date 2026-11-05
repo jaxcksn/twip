@@ -54,6 +54,8 @@ internal sealed record FontsChangedPayload(IReadOnlyList<string> Pending, IReadO
 
 internal sealed record ElementActivatedPayload(ElementId Id);
 
+internal sealed record EditRefusedPayload(RefusalReason Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementId? Element);
+
 internal sealed record ElementsChangedPayload(IReadOnlyList<ElementInfo> Added, IReadOnlyList<ElementId> Removed, IReadOnlyList<ElementInfo> Changed);
 
 internal sealed record FieldsUpdateRequestedPayload(long Token, IReadOnlyList<FieldUpdateRequest> Fields);
@@ -69,7 +71,7 @@ internal sealed record BalloonPlacement(CommentId Thread, double Top, double Lef
 internal sealed record CaretBlinkWire(int? IntervalMs, int? StopAfterMs);
 
 /// <summary>The overlay colours on the wire, as <c>#RRGGBB</c> (<c>EditorHost.OverlayColors</c> sends them).</summary>
-internal sealed record OverlayPaletteWire(string Caret, string Selection, string Object, string Drop, string Marks, string Leaders);
+internal sealed record OverlayPaletteWire(string Selection, string Object, string Drop, string Marks, string Leaders);
 
 internal sealed record TooltipPayload([property: JsonPropertyName("value")] TooltipWire? Tooltip);
 

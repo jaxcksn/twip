@@ -1,13 +1,16 @@
 import type { RichText } from './review.js';
-import type { ControlKind, ControlOptions, DataBinding } from './services/elements.js';
-import type { TabAlignment, TabLeader } from './services/ruler.js';
+import type { ControlKind, ControlOptions, DataBinding, ReferenceRule } from './services/elements.js';
+import type { TabAlignment, TabLeader, TabSelector } from './services/ruler.js';
+import type { ViewOptions } from './services/view.js';
 import type {
+  AutoCorrectChange,
   HighlightColor,
   HorizontalPosition,
   LineSpacing,
   MarkupView,
   ObjectWrap,
   RowHeight,
+  TablePosition,
   TableWidth,
   UnderlineStyle,
   VerticalPosition,
@@ -327,6 +330,13 @@ export interface Commands {
     bandedRows?: boolean;
     bandedColumns?: boolean;
   }): Promise<void>;
+  /**
+   * Positions the caret's table, so text wraps around it, as dragging its move handle does: a table without a
+   * position gets one across from the margin and down from the paragraph, and each axis given is aligned, offset, or
+   * (with neither) kept where it is and measured from its new reference. Unset fields keep their value; `null` puts
+   * the table back in the text.
+   */
+  setTablePosition(position: TablePosition | null): Promise<void>;
 
   // Objects: the selected object
   /** Sets the object's size, 1 to 1584. */
@@ -396,6 +406,20 @@ export interface Commands {
   showFieldCodes(options: { show: boolean } & FieldTargets): Promise<void>;
   /** What design mode shows for each field code. View. */
   setFieldLabels(options: { labels: Record<string, string>; merge?: boolean }): Promise<void>;
+  /** Which fields are sub-template references: replaces the rules; an empty list turns sub-templates off. View. */
+  setSubTemplateRules(options: { rules: ReferenceRule[] }): Promise<void>;
+  /** Shows references' sub-template bodies in their place, or their fields (default: every reference). View. */
+  setSubTemplateView(options: { ids?: ElementId[]; expanded: boolean }): Promise<void>;
+  /** Edits a sub-template's body in this editor, on its own pages. View. */
+  editSubTemplate(options: { name: string; category?: string }): Promise<void>;
+  /** Back to the template from a sub-template, at the template's selection from before. View. */
+  closeSubTemplate(): Promise<void>;
+  /** A new sub-template, empty or with a DOCX's body (`category`: default the first rule's). */
+  createSubTemplate(options: { name: string; category?: string; from?: Uint8Array }): Promise<void>;
+  /** Renames a sub-template, and with `updateReferences` every reference to it. */
+  renameSubTemplate(options: { name: string; to: string; category?: string; updateReferences?: boolean }): Promise<void>;
+  /** Removes a sub-template; its references no longer resolve. */
+  removeSubTemplate(options: { name: string; category?: string }): Promise<void>;
 
   // Content controls and regions
   /** Inserts a content control, optionally around the selection. */
@@ -492,10 +516,31 @@ export interface Commands {
   // View: never change the document
   /** Sets the zoom: 10 to 500 percent, or a fit. */
   setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
-  /** Shows or hides formatting marks (Ctrl+Shift+8), gridlines and text boundaries. */
-  setViewOptions(options: { formattingMarks?: boolean; gridlines?: boolean; textBoundaries?: boolean; liveLayout?: boolean }): Promise<void>;
+  /**
+   * Sets view options: formatting marks (Ctrl+Shift+8), gridlines, text boundaries, live layout, the chrome's theme
+   * and accent, the page's appearance, the measuring detail and the object grid.
+   */
+  setViewOptions(options: ViewOptions): Promise<void>;
   /** Switches between editing and design mode. */
   setMode(mode: 'editing' | 'design'): Promise<void>;
+  /** Sets what a click on the ruler adds; answers the tab type popover. View. */
+  setRulerTabType(type: TabSelector): Promise<void>;
+  /** Asks for the tab type popover (`popoverRequested`). View. */
+  showTabTypes(): Promise<void>;
+  /** Asks for the options of the tab stop nearest the caret (`popoverRequested`). View. */
+  showTabStop(): Promise<void>;
+
+  // AutoCorrect
+  /** Sets what typing corrects: the rules given switch, the lists given replace the shipped ones. A session setting: no undo. */
+  setAutoCorrect(change: AutoCorrectChange): Promise<void>;
+  /** Puts back what was typed in place of the correction just made: undoes it when it is the last step, else one undo step. */
+  revertAutoCorrect(): Promise<void>;
+  /** Reverts the correction just made, as `revertAutoCorrect` does, and never makes it again (adds it to `autoCorrect.never`). */
+  neverAutoCorrect(): Promise<void>;
+  /** Asks for the options of the correction just made (`popoverRequested`), Alt+Shift+F10. View. */
+  showAutoCorrectOptions(): Promise<void>;
+  /** Dismisses the popover asked for (`popoverClosed`), for an application that closes its own on Esc or a press elsewhere; with none open, nothing. View. */
+  closePopover(): Promise<void>;
   /** Says the formatting at the caret to screen readers (an `announcement` of kind `formatting`). Shift+F1. */
   describeFormatting(): Promise<void>;
 }
@@ -690,6 +735,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setTableIndent: 'value',
   setTableStyle: 'value',
   setTableStyleOptions: 'spread',
+  setTablePosition: 'value',
   setObjectSize: 'spread',
   resetObjectSize: 'none',
   setObjectWrap: 'value',
@@ -718,6 +764,13 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   unlinkFields: 'spread',
   showFieldCodes: 'spread',
   setFieldLabels: 'spread',
+  setSubTemplateRules: 'spread',
+  setSubTemplateView: 'spread',
+  editSubTemplate: 'spread',
+  closeSubTemplate: 'none',
+  createSubTemplate: 'spread',
+  renameSubTemplate: 'spread',
+  removeSubTemplate: 'spread',
   insertControl: 'spread',
   setControl: 'spread',
   removeControl: 'spread',
@@ -751,6 +804,14 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setZoom: 'value',
   setViewOptions: 'spread',
   setMode: 'value',
+  setRulerTabType: 'value',
+  showTabTypes: 'none',
+  showTabStop: 'none',
+  setAutoCorrect: 'spread',
+  revertAutoCorrect: 'none',
+  neverAutoCorrect: 'none',
+  showAutoCorrectOptions: 'none',
+  closePopover: 'none',
   describeFormatting: 'none',
 };
 

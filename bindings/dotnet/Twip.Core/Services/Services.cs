@@ -266,7 +266,78 @@ public sealed record ElementMatch(ElementTextField In, string Text);
 public sealed record ElementFilter(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementKind? Kind = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementMatch? Match = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Story? Story = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Story? Story = null)
+{
+    /// <summary>Only the elements in this sub-template's body.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SubTemplate { get; init; }
+}
+
+/// <summary>A sub-template: a building block in a category the rules declare.</summary>
+/// <param name="Name">Its name.</param>
+/// <param name="Category">Its building block category.</param>
+/// <param name="References">The reference fields naming it in the template's body, headers, footers and notes.</param>
+/// <param name="NestedReferences">The reference fields naming it in other sub-templates' bodies.</param>
+/// <param name="Elements">The fields and controls in its body.</param>
+public sealed record SubTemplateInfo(string Name, string Category, int References, int NestedReferences, IReadOnlyList<ElementInfo> Elements);
+
+/// <summary>
+/// The template's sub-templates, and editing one in this editor. While one is edited, <see cref="EditorState.Editing"/>
+/// names it and every command, query and event concerns its body; <see cref="EditorSession.EditingTargetChanged"/>
+/// is raised on each switch.
+/// </summary>
+public sealed class EditorSubTemplates
+{
+    private readonly EditorSession _session;
+
+    internal EditorSubTemplates(EditorSession session) => _session = session;
+
+    /// <summary>The sub-templates the rules declare, in glossary order.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The sub-templates.</returns>
+    public Task<IReadOnlyList<SubTemplateInfo>> ListAsync(CancellationToken ct = default) =>
+        _session.CallAsync<IReadOnlyList<SubTemplateInfo>>(Method.SubTemplates, [], ct);
+
+    /// <summary>Edits a sub-template's body in this editor, on its own pages.</summary>
+    /// <param name="name">The sub-template.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when the editor is on it.</returns>
+    public Task EditAsync(string name, string? category = null, CancellationToken ct = default) =>
+        _session.RunAsync(EditorOperation.EditSubTemplate(name, category), ct);
+
+    /// <summary>Back to the template, at its selection from before.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when the template shows.</returns>
+    public Task CloseAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.CloseSubTemplate(), ct);
+
+    /// <summary>A new sub-template, empty or with the body of the DOCX <paramref name="from"/>. One undo step.</summary>
+    /// <param name="name">Its name, unique in its category.</param>
+    /// <param name="category">Its building block category; null for the first rule's.</param>
+    /// <param name="from">A DOCX whose body becomes its body.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when it has committed.</returns>
+    public Task CreateAsync(string name, string? category = null, ReadOnlyMemory<byte>? from = null, CancellationToken ct = default) =>
+        _session.RunAsync(EditorOperation.CreateSubTemplate(name, category, from), ct);
+
+    /// <summary>Renames a sub-template, and optionally every reference to it. One undo step.</summary>
+    /// <param name="name">Its name now.</param>
+    /// <param name="to">Its new name.</param>
+    /// <param name="updateReferences">Rename the references too.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when it has committed.</returns>
+    public Task RenameAsync(string name, string to, bool updateReferences = false, string? category = null, CancellationToken ct = default) =>
+        _session.RunAsync(EditorOperation.RenameSubTemplate(name, to, updateReferences, category), ct);
+
+    /// <summary>Removes a sub-template; its references no longer resolve. One undo step.</summary>
+    /// <param name="name">The sub-template.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when it has committed.</returns>
+    public Task RemoveAsync(string name, string? category = null, CancellationToken ct = default) =>
+        _session.RunAsync(EditorOperation.RemoveSubTemplate(name, category), ct);
+}
 
 /// <summary>An element.</summary>
 /// <param name="Id">The element.</param>
@@ -283,7 +354,63 @@ public record ElementInfo(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Code,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Tag,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Title,
-    string Display, Story Story, ElementId? Parent, bool Locked);
+    string Display, Story Story, ElementId? Parent, bool Locked)
+{
+    /// <summary>The sub-template whose body it is in, when <see cref="Story"/> is <see cref="Story.SubTemplate"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SubTemplate { get; init; }
+
+    /// <summary>A sub-template reference field's sub-template.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SubTemplateReference? Reference { get; init; }
+}
+
+/// <summary>
+/// One sub-template reference rule: a field of type <paramref name="FieldType"/> names, in its <see cref="Argument"/>
+/// argument, the building block in <paramref name="Category"/> (and <see cref="Gallery"/>) whose body it shows.
+/// </summary>
+/// <param name="FieldType">The field type (<c>SUBTEMPLATE</c>), compared without case.</param>
+/// <param name="Category">The building block category the name is looked up in.</param>
+public sealed record ReferenceRule(string FieldType, string Category)
+{
+    /// <summary>Which of the field's arguments is the sub-template's name, from 0; null for 0.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Argument { get; init; }
+
+    /// <summary>The building block gallery (<c>custom1</c>), when it matters.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Gallery { get; init; }
+}
+
+/// <summary>Whether a reference's sub-template resolves, or why its body can't show.</summary>
+public enum ReferenceResolution
+{
+    /// <summary>A sub-template has the name.</summary>
+    Resolved,
+    /// <summary>No sub-template has the name.</summary>
+    Missing,
+    /// <summary>Only a name in another case matches.</summary>
+    NearMatch,
+    /// <summary>The sub-template is already being shown around it.</summary>
+    Cycle,
+    /// <summary>More than 16 sub-templates deep.</summary>
+    TooDeep,
+    /// <summary>The field shares its paragraph with other content.</summary>
+    NotAlone,
+    /// <summary>The field is in a header, footer, note or text box.</summary>
+    NotInBody,
+}
+
+/// <summary>What a sub-template reference field names and whether its body shows.</summary>
+/// <param name="Name">The sub-template's name, as the field gives it.</param>
+/// <param name="Resolution">Whether it names a sub-template whose body can show in its place.</param>
+/// <param name="Expanded">Its body shows in its place.</param>
+public sealed record SubTemplateReference(string Name, ReferenceResolution Resolution, bool Expanded)
+{
+    /// <summary>The sub-template's name when only a name in another case matches.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NearMatch { get; init; }
+}
 
 /// <summary>An element in detail.</summary>
 /// <param name="Id">The element.</param>
@@ -520,7 +647,7 @@ public sealed record AccessibleNode(long Id, AccessibleRole Role, IReadOnlyList<
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? Details { get; init; }
 
-    /// <summary>The note a note reference points to.</summary>
+    /// <summary>The note a note reference points to; for a sub-template body shown in place, its reference's paragraph.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? Target { get; init; }
 }

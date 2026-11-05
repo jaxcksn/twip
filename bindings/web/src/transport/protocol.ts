@@ -85,9 +85,10 @@ export const Method = {
   HostSetPaintBudget: 74,
   HostSetLeaders: 75,
   ShapeGallery: 76,
-  AccessibleGo: 77,
-  HostCaretWindowSelect: 78,
-  AnnouncementsSet: 79,
+  SubTemplates: 77,
+  AccessibleGo: 78,
+  HostCaretWindowSelect: 79,
+  AnnouncementsSet: 80,
 } as const;
 
 /** A structured call number. */
@@ -201,6 +202,8 @@ export type Input =
   | { type: 'surface'; width: number; height: number; dpr: number }
   | { type: 'scroll'; x: number; y: number }
   | { type: 'wheel'; dx: number; dy: number; mods: number }
+  // The modifier keys changed with no other input (Alt pressed or released mid-drag).
+  | { type: 'modifiers'; mods: number }
   // kind: down 0, move 1, up 2, cancel 3, leave 4. button: primary 0, secondary 1, middle 2 (DOM `PointerEvent.button`).
   | { type: 'pointer'; kind: number; x: number; y: number; button: number; clicks: number; mods: number };
 

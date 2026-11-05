@@ -11,7 +11,8 @@ draws nothing over the document, so the frame stays on the GPU wherever there is
 
 ## The caret
 
-The caret shows while the editor has the focus and the selection is collapsed. It blinks, and any input shows it
+The caret shows while the editor has the focus and the selection is collapsed. It's black or white, whichever stands
+out more on the page as drawn (white on a dark page), and no theme or overlay colour changes it. It blinks, and any input shows it
 solid at once. The blink follows the platform until you set it:
 
 - In the browser, a steady caret under `prefers-reduced-motion: reduce`, else a 530 ms phase.
@@ -24,7 +25,7 @@ at all.
 
 ## Overlay colours
 
-`OverlayColors` names the colour of each thing drawn over the document: `caret`, `selection`, `object` (a selected
+`OverlayColors` names the colour of each thing drawn over the document: `selection`, `object` (a selected
 object's outline and handles), `drop`, `marks` (formatting marks and text boundaries) and `leaders`. Each default
 has at least 3:1 contrast against the page, except `selection`: the light blue of a system text selection
 (`#B3D7FF`). The selection is blended under the text (multiply), so black text stays black over it.

@@ -10,8 +10,10 @@ use super::commands::Outcome;
 use super::input::Request;
 use super::position::{Position, StoryId};
 use super::selection::{Granularity, ObjectRef, Selection};
+use super::snap::{SnapLine, Snapping};
 use super::step::Step;
 use super::stories::{inline_at, reachable};
+use super::view::{Axis, Grid, GuideLine, Guides, Measure, Outline, Pt, Px, Tone};
 
 impl Editor {
     /// The object a press selects, in paint order, among those of the story being edited: a floating picture anywhere
@@ -220,6 +222,11 @@ pub(super) struct ObjectDrag {
     /// Live layout: the float is laid out where the pointer last put it, anchored in `previewed`.
     pub live: bool,
     pub previewed: Option<crate::layout::ParaId>,
+    /// A move: snapping on, or off while Alt is held; how far snapping moves the box from where the pointer puts it,
+    /// and the line each axis snapped to.
+    pub snapping: Snapping,
+    pub snap: [f64; 2],
+    pub snapped: [Option<SnapLine>; 2],
 }
 
 /// Picture Format commands.
@@ -258,6 +265,25 @@ fn from_ooxml<T: serde::de::DeserializeOwned + Default>(s: &str) -> T {
 const HANDLES: [(f64, f64); 8] = [(-1.0, -1.0), (0.0, -1.0), (1.0, -1.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (-1.0, 0.0)];
 
 impl ObjectDrag {
+    /// A drag pressed at `at`: nothing held or snapped yet.
+    fn new(obj: ObjectRef, handle: Option<usize>, at: (f64, f64), rect: [f64; 4], page: usize, ctrl: bool) -> ObjectDrag {
+        ObjectDrag {
+            obj,
+            handle,
+            start: at,
+            now: at,
+            rect,
+            page,
+            ctrl,
+            shift: false,
+            live: false,
+            previewed: None,
+            snapping: Snapping::On,
+            snap: [0.0; 2],
+            snapped: [None; 2],
+        }
+    }
+
     /// The box the drag shows now: moved by the pointer's travel (with Shift along one axis), or resized (side
     /// handles stretch one dimension; a locked corner, or any with Shift, keeps the ratio, following the axis with the
     /// larger relative change), at least 1 pt.
@@ -268,7 +294,8 @@ impl ObjectDrag {
             if self.shift {
                 if dx.abs() >= dy.abs() { dy = 0.0 } else { dx = 0.0 }
             }
-            return [x0 + dx, y0 + dy, x1 + dx, y1 + dy];
+            let [sx, sy] = self.snap;
+            return [x0 + dx + sx, y0 + dy + sy, x1 + dx + sx, y1 + dy + sy];
         };
         let locked = locked || self.shift;
         let (sx, sy) = HANDLES[k];
@@ -332,8 +359,7 @@ impl Editor {
     /// handled.
     pub(super) fn object_press(&mut self, x: f64, y: f64, ctrl: bool, fonts: &Fonts) -> bool {
         if let Some((obj, rect, page, k)) = self.handle_at(x, y, fonts) {
-            self.object_drag =
-                Some(ObjectDrag { obj, handle: Some(k), start: (x, y), now: (x, y), rect, page, ctrl, shift: false, live: false, previewed: None });
+            self.object_drag = Some(ObjectDrag::new(obj, Some(k), (x, y), rect, page, ctrl));
             self.requests.push(Request::CapturePointer);
             return true;
         }
@@ -368,18 +394,8 @@ impl Editor {
             && !self.object_fixed(obj)
             && let Some(st) = geo.stories.iter().find(|t| t.float == Some(f))
         {
-            self.object_drag = Some(ObjectDrag {
-                obj,
-                handle: None,
-                start: (x, y),
-                now: (x, y),
-                rect: st.rect,
-                page,
-                ctrl,
-                shift: false,
-                live: false,
-                previewed: None,
-            });
+            self.object_drag = Some(ObjectDrag::new(obj, None, (x, y), st.rect, page, ctrl));
+            self.build_snaps(page, Dragged::Float(f));
             self.requests.push(Request::CapturePointer);
         }
         // An inline picture moves as the character it is: drag-and-drop to a new place in the text (Ctrl: a copy).
@@ -417,9 +433,30 @@ impl Editor {
     /// wrapping around it there, while the document keeps it where it was until the release (one step, as without).
     // shortcut: an inline picture's resize shows its ghost, not live layout; previewing it needs the picture's size in
     // its paragraph's shape space as the float's is.
-    pub(super) fn object_move(&mut self, x: f64, y: f64, shift: bool) {
+    pub(super) fn object_move(&mut self, x: f64, y: f64, mods: super::keymap::Mods) {
         let Some(mut d) = self.object_drag else { return };
-        (d.now, d.shift) = ((x, y), shift);
+        (d.now, d.shift) = ((x, y), mods.shift);
+        d.snapping = if mods.alt { Snapping::Free } else { Snapping::On };
+        if d.handle.is_none() {
+            (d.snap, d.snapped) = ([0.0; 2], [None; 2]);
+            if d.snapping == Snapping::On {
+                // Snapped after Shift keeps the move to one axis, along that axis only.
+                let (dx, dy) = (d.now.0 - d.start.0, d.now.1 - d.start.1);
+                let free = if !d.shift {
+                    [true, true]
+                } else if dx.abs() >= dy.abs() {
+                    [true, false]
+                } else {
+                    [false, true]
+                };
+                let (off, hit) = super::snap::snap(d.rect(false), &self.snaps, self.snap_threshold());
+                for k in 0..2 {
+                    if free[k] {
+                        (d.snap[k], d.snapped[k]) = (off[k], hit[k]);
+                    }
+                }
+            }
+        }
         let ObjectRef::Floating(f) = d.obj else {
             self.object_drag = Some(d);
             return;
@@ -1280,5 +1317,211 @@ impl Editor {
         self.selection = Selection::Caret(after);
         self.toggled_checkbox = Some(ToggledCheckbox { face: p, after });
         self.commit(tx, None, fonts)
+    }
+}
+
+/// A length in the ruler unit's numbers, two decimals (`1.25`).
+fn amount(pt: f64, unit: crate::api::services::RulerUnit) -> String {
+    use crate::api::services::RulerUnit as U;
+    let per = match unit {
+        U::Inches => 72.0,
+        U::Centimeters => 72.0 / 2.54,
+        U::Millimeters => 72.0 / 25.4,
+        U::Points => 1.0,
+        U::Picas => 12.0,
+    };
+    format!("{:.2}", pt / per)
+}
+
+/// The ruler unit's name after a size (` in`, ` cm`).
+fn unit_suffix(unit: crate::api::services::RulerUnit) -> &'static str {
+    use crate::api::services::RulerUnit as U;
+    match unit {
+        U::Inches => " in",
+        U::Centimeters => " cm",
+        U::Millimeters => " mm",
+        U::Points => " pt",
+        U::Picas => " pi",
+    }
+}
+
+/// A size chip's label: width × height in the ruler unit (`2.50 × 1.63 in`).
+pub(super) fn size_label(w: f64, h: f64, unit: crate::api::services::RulerUnit) -> String {
+    format!("{} × {}{}", amount(w, unit), amount(h, unit), unit_suffix(unit))
+}
+
+/// A rotation chip's label: whole degrees from -179 to 180 (`30°`).
+pub(super) fn angle_label(deg: f64) -> String {
+    let d = (deg.round() + 180.0).rem_euclid(360.0) - 180.0;
+    format!("{}°", if d == -180.0 { 180.0 } else { d })
+}
+
+/// The object grid's step: a quarter inch, or a quarter centimetre in a metric unit.
+fn grid_step(unit: crate::api::services::RulerUnit) -> f64 {
+    use crate::api::services::RulerUnit as U;
+    match unit {
+        U::Inches | U::Points | U::Picas => 18.0,
+        U::Centimeters | U::Millimeters => 72.0 / 2.54 / 4.0,
+    }
+}
+
+/// What a drag moves, whose own edges offer no snap lines: a floating object, or a table by its handle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Dragged {
+    Float(FloatId),
+    Table(crate::layout::TableId),
+}
+
+/// What object drags show besides the object: by page, the guides and grid and the readouts, and the original box.
+pub(super) type Feedback = (Vec<(usize, Guides)>, Vec<(usize, Measure)>, Option<Outline>);
+
+impl Editor {
+    /// How near a line a dragged edge snaps: 7 px at the zoom, in points.
+    pub(super) fn snap_threshold(&self) -> Pt {
+        Pt(7.0 * 0.75 / self.viewport.zoom.max(0.1))
+    }
+
+    /// A page's size and its section's margins (left, top, right, bottom), page points.
+    fn page_frame(&self, page: usize) -> Option<([f64; 2], [f64; 4])> {
+        let snap = self.snapshot();
+        let p = snap.pages().get(page)?;
+        let s = self.doc.sections.get(snap.info().get(page).map_or(0, |i| i.section))?;
+        let left = s.left + if self.doc.settings.gutter_at_top { 0.0 } else { s.gutter };
+        Some(([p.w, p.h], [left, s.top, p.w - s.right, p.h - s.bottom]))
+    }
+
+    /// The object grid of a page with these margins: from the margins' top left, when the setting shows it.
+    fn grid_from(&self, margins: [f64; 4], dragging: bool) -> Option<Grid> {
+        use crate::api::services::ObjectGrid as G;
+        let shows = match self.view_settings.object_grid {
+            G::Off => false,
+            G::WhileDragging => dragging,
+            G::Always => true,
+        };
+        shows.then(|| Grid { origin: [Pt(margins[0]), Pt(margins[1])], step: Pt(grid_step(self.view_settings.unit)) })
+    }
+
+    /// Builds the snap lines of `page` for a move of `dragged`: the margins and page centre, the tables' edges, the
+    /// other objects' edges and centres (floats and inline pictures and shapes, by their bounds when turned) and the
+    /// grid when it shows.
+    pub(super) fn build_snaps(&mut self, page: usize, dragged: Dragged) {
+        use crate::layout::fragment::Item;
+        let Some((size, margins)) = self.page_frame(page) else { return };
+        let Some(geo) = self.pages.page(page, &self.index) else { return };
+        let mut tables: Vec<(crate::layout::TableId, [f64; 4])> = Vec::new();
+        for r in &geo.rows {
+            let [a0, b0, a1, b1] = r.rect;
+            match tables.iter_mut().find(|t| t.0 == r.table) {
+                Some((_, b)) => *b = [b[0].min(a0), b[1].min(b0), b[2].max(a1), b[3].max(b1)],
+                None => tables.push((r.table, r.rect)),
+            }
+        }
+        let snap = self.snapshot();
+        let items = snap.pages().get(page).map(|p| crate::layout::traverse::paint_items(p)).unwrap_or_default();
+        let shape_bounds = |f: u64| {
+            items.iter().find_map(|it| match it {
+                Item::Shape(s) if s.float == f && s.path.is_empty() => Some(super::snap::turned_bounds(s.rect, s.rot)),
+                _ => None,
+            })
+        };
+        let floats: Vec<[f64; 4]> = geo.stories.iter().filter(|s| s.float.is_some()).map(|s| s.rect).collect();
+        let mut objects: Vec<[f64; 4]> = geo
+            .stories
+            .iter()
+            .filter_map(|s| s.float.filter(|f| Dragged::Float(*f) != dragged).map(|f| shape_bounds(f.0).unwrap_or(s.rect)))
+            .collect();
+        let in_float = |r: &[f64; 4]| floats.iter().any(|f| r[0] >= f[0] - 0.5 && r[1] >= f[1] - 0.5 && r[2] <= f[2] + 0.5 && r[3] <= f[3] + 0.5);
+        for it in &items {
+            match it {
+                Item::Shape(s) if s.float == 0 && s.path.is_empty() => objects.push(super::snap::turned_bounds(s.rect, s.rot)),
+                Item::Image { rect, .. } if !in_float(rect) => objects.push(*rect),
+                // Text, rules and turned content offer no lines.
+                _ => {}
+            }
+        }
+        let tables: Vec<[f64; 4]> = tables.into_iter().filter(|t| Dragged::Table(t.0) != dragged).map(|t| t.1).collect();
+        let grid = self.grid_from(margins, true);
+        self.snaps.fill(&super::snap::Sources { size, margins, tables: &tables, objects: &objects, grid });
+    }
+
+    /// What the object or shape drag under way shows on `visible`: guides where a move snapped, the grid, the margin
+    /// distances and the dotted line from the anchor (`anchor`: the view's anchor); the original box and a size or
+    /// angle chip by the pointer while resized or turned. With the grid always on, every visible page shows it.
+    pub(super) fn object_feedback(&mut self, visible: std::ops::Range<usize>, anchor: Option<(usize, [f64; 2])>) -> Feedback {
+        use crate::api::services::MeasureDetail as D;
+        let (mut guides, mut measures, mut original) = (Vec::new(), Vec::new(), None);
+        let set = self.view_settings;
+        let one = 0.75 / self.viewport.zoom.max(0.1);
+        let chip = |at: [f64; 2], label: String| Measure::Chip { at: [Px::of(Pt(at[0] + 14.0 * one)), Px::of(Pt(at[1] + 18.0 * one))], label };
+        let lines = |snaps: &super::snap::SnapLines, hit: [Option<SnapLine>; 2]| -> Vec<GuideLine> {
+            let [w, h] = snaps.size;
+            let along = [(Axis::X, (Pt(0.0), Pt(h))), (Axis::Y, (Pt(0.0), Pt(w)))];
+            hit.iter()
+                .zip(along)
+                .filter_map(|(l, (axis, span))| l.filter(|l| l.kind != super::snap::SnapKind::Grid).map(|l| GuideLine { axis, at: l.at, span }))
+                .collect()
+        };
+        if let Some(d) = self.object_drag.filter(|d| d.now != d.start) {
+            let (ox, oy) = self.stack().to_doc(d.page, 0.0, 0.0).unwrap_or((0.0, 0.0));
+            match d.handle {
+                None => {
+                    let [x0, y0, x1, y1] = d.rect(false);
+                    let [ml, _, mr, _] = self.snaps.margins;
+                    let anchor_link = anchor.filter(|(p, _)| *p == d.page).and_then(|(_, [ax, ay])| {
+                        let (rx, ry) = ((ax - 18.0 * one).max(10.0 * one) + 6.0 * one, ay + 8.0 * one);
+                        (x0 > rx).then_some([Pt(rx), Pt(ry), Pt(x0), Pt(ry)])
+                    });
+                    guides.push((d.page, Guides { lines: lines(&self.snaps, d.snapped), grid: self.snaps.grid, anchor_link }));
+                    // The distances to the margins at the box's middle: accent when equal; at the standard level only
+                    // then (all of them while Alt is held), always at the full level.
+                    let (left, right) = (x0 - ml, mr - x1);
+                    let equal = (left - right).abs() < 1.5 * one;
+                    let shown = match set.detail {
+                        D::Quiet => false,
+                        D::Standard => equal || d.snapping == Snapping::Free,
+                        D::Full => true,
+                    };
+                    if shown {
+                        let tone = if equal { Tone::Accent } else { Tone::Muted };
+                        let cy = Pt((y0 + y1) / 2.0);
+                        let mut dim = |a: f64, b: f64| {
+                            if b - a > 2.0 * one {
+                                measures
+                                    .push((d.page, Measure::Dimension { from: [Pt(a), cy], to: [Pt(b), cy], label: amount(b - a, set.unit), tone }));
+                            }
+                        };
+                        dim(ml, x0);
+                        dim(x1, mr);
+                    }
+                }
+                Some(_) => {
+                    let [x0, y0, x1, y1] = d.rect(self.object_locked(d.obj));
+                    original = Some(Outline { page: d.page, rect: d.rect, rot: 0.0 });
+                    measures.push((d.page, chip([d.now.0 - ox, d.now.1 - oy], size_label(x1 - x0, y1 - y0, set.unit))));
+                }
+            }
+        }
+        if let Some(d) = &self.shape_drag {
+            match d.handle {
+                super::shapes::ShapeHandle::Rotate => {
+                    original = Some(Outline { page: d.page, rect: d.item.rect, rot: d.item.rot });
+                    measures.push((d.page, chip(d.now, angle_label(d.angle()))));
+                }
+                super::shapes::ShapeHandle::Move => {
+                    guides.push((d.page, Guides { lines: lines(&self.snaps, d.snapped), grid: self.snaps.grid, anchor_link: None }));
+                }
+                super::shapes::ShapeHandle::Adjust(_) => {}
+            }
+        }
+        if set.object_grid == crate::api::services::ObjectGrid::Always {
+            for page in visible {
+                if !guides.iter().any(|(p, _)| *p == page)
+                    && let Some((_, margins)) = self.page_frame(page)
+                {
+                    guides.push((page, Guides { grid: self.grid_from(margins, false), ..Guides::default() }));
+                }
+            }
+        }
+        (guides, measures, original)
     }
 }

@@ -253,8 +253,12 @@ impl Editor {
                     props.style_id = Some(id.clone());
                     // The table's own properties again: the new style's, its direct ones over them.
                     let mut tbl = res.styles.table_region(Some(id), &[]).tbl.clone();
-                    let direct =
-                        t.direct.0.as_deref().and_then(|raw| cx.parse(raw, |_, n| crate::docx::props::TblProps::parse(Some(n)))).unwrap_or_default();
+                    let direct = t
+                        .direct
+                        .0
+                        .as_deref()
+                        .and_then(|raw| cx.parse(raw, |_, n| crate::docx::props::TblProps::parse(Some(n), &res.styles.colours)))
+                        .unwrap_or_default();
                     tbl.merge(&direct);
                     let b = &tbl.borders;
                     props.borders = [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()];

@@ -66,9 +66,11 @@ fn caret_list(e: &Editor) -> Option<((i64, i64), usize)> {
     Some(((list, level), count))
 }
 
-/// A story's name, as the caret enters it.
-fn story_name(e: &Editor, s: StoryId) -> &'static str {
-    match s {
+/// A story's name, as the caret enters it. None for a sub-template's body: the session says which one is edited, and
+/// that the template is back.
+fn story_name(e: &Editor, s: StoryId) -> Option<&'static str> {
+    Some(match s {
+        StoryId::BuildingBlock(_) => return None,
         StoryId::Body => "Body",
         StoryId::HeaderFooter(i) => match e.document().stories.keys().nth(i as usize) {
             Some(name) if name.contains("footer") => "Footer",
@@ -77,7 +79,7 @@ fn story_name(e: &Editor, s: StoryId) -> &'static str {
         StoryId::Footnote(_) => "Footnote",
         StoryId::Endnote(_) => "Endnote",
         StoryId::TextBox(_) => "Text box",
-    }
+    })
 }
 
 /// What the caret's moves call for saying.
@@ -122,8 +124,10 @@ impl Announcer {
         let mut said = Vec::new();
         if was.story != now.story
             && let Some(s) = now.story
+            && !matches!(was.story, Some(StoryId::BuildingBlock(_)))
+            && let Some(name) = story_name(e, s)
         {
-            said.push((AnnouncementKind::Mode, story_name(e, s).to_string()));
+            said.push((AnnouncementKind::Mode, name.to_string()));
         }
         if was.page != now.page
             && let (Some(_), Some(p)) = (was.page, now.page)

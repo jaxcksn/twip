@@ -67,6 +67,36 @@ export interface Author {
 }
 
 // @public
+export interface AutoCorrectChange extends Partial<Omit<AutoCorrectOptions, 'never'>> {
+    entries?: AutoCorrectEntry[];
+    firstLetterExceptions?: string[];
+    initialCapsExceptions?: string[];
+    never?: string[];
+}
+
+// @public
+export interface AutoCorrectEntry {
+    from: string;
+    to: string;
+}
+
+// @public
+export interface AutoCorrectOptions {
+    bulletedLists: boolean;
+    cellCapitals: boolean;
+    dashes: boolean;
+    dayNames: boolean;
+    fractions: boolean;
+    never?: string[];
+    numberedLists: boolean;
+    ordinals: boolean;
+    replaceText: boolean;
+    sentenceCapitals: boolean;
+    smartQuotes: boolean;
+    twoInitialCapitals: boolean;
+}
+
+// @public
 export interface BalloonPlacement {
     leader: ContentPoint[];
     left: number;
@@ -118,6 +148,21 @@ export interface CharacterFormatting {
     superscript: Tri;
     underline: Mixed<UnderlineStyle>;
 }
+
+// @public
+export interface ChromeColors {
+    desk?: Color;
+    faintText?: Color;
+    line?: Color;
+    secondaryText?: Color;
+    surface?: Color;
+    text?: Color;
+}
+
+// @public
+export type ChromeTheme = 'light' | 'dark' | {
+    highContrast: SystemColors;
+};
 
 // @public
 export interface ClientPoint {
@@ -201,8 +246,15 @@ export interface Commands {
     clearFormatting(): Promise<void>;
     clearTabStops(): Promise<void>;
     closeHeaderFooter(): Promise<void>;
+    closePopover(): Promise<void>;
+    closeSubTemplate(): Promise<void>;
     copy(): Promise<void>;
     copyFormatting(): Promise<void>;
+    createSubTemplate(options: {
+        name: string;
+        category?: string;
+        from?: Uint8Array;
+    }): Promise<void>;
     cut(): Promise<void>;
     decreaseIndent(): Promise<void>;
     delete(options: {
@@ -228,6 +280,10 @@ export interface Commands {
     editHyperlink(options: {
         address?: string;
         text?: string;
+    }): Promise<void>;
+    editSubTemplate(options: {
+        name: string;
+        category?: string;
     }): Promise<void>;
     escape(): Promise<void>;
     fillControl(options: {
@@ -337,6 +393,7 @@ export interface Commands {
         to: Points;
     }): Promise<void>;
     moveToCell(direction: 'next' | 'previous'): Promise<void>;
+    neverAutoCorrect(): Promise<void>;
     paste(options?: {
         as?: 'formatted' | 'text';
     }): Promise<void>;
@@ -358,6 +415,16 @@ export interface Commands {
     }): Promise<void>;
     removeElement(id: ElementId): Promise<void>;
     removeHyperlink(): Promise<void>;
+    removeSubTemplate(options: {
+        name: string;
+        category?: string;
+    }): Promise<void>;
+    renameSubTemplate(options: {
+        name: string;
+        to: string;
+        category?: string;
+        updateReferences?: boolean;
+    }): Promise<void>;
     repeat(): Promise<void>;
     replaceInElements(options: {
         find: string;
@@ -379,6 +446,7 @@ export interface Commands {
         id: CommentId;
         done: boolean;
     }): Promise<void>;
+    revertAutoCorrect(): Promise<void>;
     select(unit: 'word' | 'sentence' | 'paragraph' | 'cell' | 'row' | 'column' | 'table'): Promise<void>;
     selectAll(): Promise<void>;
     selectComment(id: CommentId): Promise<void>;
@@ -397,6 +465,7 @@ export interface Commands {
         author: string;
         color: Color;
     }): Promise<void>;
+    setAutoCorrect(change: AutoCorrectChange): Promise<void>;
     setBold(on: boolean): Promise<void>;
     setCellAlignment(vertical: 'top' | 'center' | 'bottom'): Promise<void>;
     setCellBorders(options: {
@@ -532,6 +601,7 @@ export interface Commands {
     }): Promise<void>;
     setRowCanBreak(on: boolean): Promise<void>;
     setRowHeight(height: RowHeight): Promise<void>;
+    setRulerTabType(type: TabSelector): Promise<void>;
     setSelectionMode(mode: 'normal' | 'extend' | 'block'): Promise<void>;
     setShapeAdjust(options: ShapeAdjust): Promise<void>;
     setShapeEffects(change: EffectsChange): Promise<void>;
@@ -542,9 +612,17 @@ export interface Commands {
     setSmallCaps(on: boolean): Promise<void>;
     setStrikethrough(on: boolean): Promise<void>;
     setSubscript(on: boolean): Promise<void>;
+    setSubTemplateRules(options: {
+        rules: ReferenceRule[];
+    }): Promise<void>;
+    setSubTemplateView(options: {
+        ids?: ElementId[];
+        expanded: boolean;
+    }): Promise<void>;
     setSuperscript(on: boolean): Promise<void>;
     setTableAlignment(alignment: 'left' | 'center' | 'right'): Promise<void>;
     setTableIndent(indent: Points): Promise<void>;
+    setTablePosition(position: TablePosition | null): Promise<void>;
     setTableStyle(styleId: StyleId): Promise<void>;
     setTableStyleOptions(options: {
         headerRow?: boolean;
@@ -557,16 +635,14 @@ export interface Commands {
     setTableWidth(width: TableWidth): Promise<void>;
     setTrackChanges(on: boolean): Promise<void>;
     setUnderline(style: UnderlineStyle): Promise<void>;
-    setViewOptions(options: {
-        formattingMarks?: boolean;
-        gridlines?: boolean;
-        textBoundaries?: boolean;
-        liveLayout?: boolean;
-    }): Promise<void>;
+    setViewOptions(options: ViewOptions): Promise<void>;
     setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
+    showAutoCorrectOptions(): Promise<void>;
     showFieldCodes(options: {
         show: boolean;
     } & FieldTargets): Promise<void>;
+    showTabStop(): Promise<void>;
+    showTabTypes(): Promise<void>;
     shrinkFont(): Promise<void>;
     splitCells(options: {
         columns: number;
@@ -641,11 +717,13 @@ export interface CommandValues {
         after: Mixed<Points | 'auto'>;
     };
     setParagraphStyle: Mixed<StyleId>;
+    setRulerTabType: TabSelector;
     setSelectionMode: SelectionSummary['mode'];
     setSmallCaps: Tri;
     setStrikethrough: Tri;
     setSubscript: Tri;
     setSuperscript: Tri;
+    setTablePosition: Required<TablePosition>;
     setTrackChanges: boolean;
     setUnderline: Mixed<UnderlineStyle>;
     setViewOptions: {
@@ -762,7 +840,7 @@ export interface DataParts {
 export type Degrees = number;
 
 // @public
-export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility';
+export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility' | 'autoCorrect';
 
 // @public
 export interface Dialogs {
@@ -797,6 +875,7 @@ export interface DialogValues {
         text: string;
         decorative: boolean;
     };
+    autoCorrect: Record<never, never>;
     font: {
         font: Mixed<string>;
         style: Mixed<'regular' | 'italic' | 'bold' | 'boldItalic'>;
@@ -900,6 +979,18 @@ export interface Dictionary {
 }
 
 // @public
+export type DocumentAppearance = 'light' | 'dark' | 'darkWithLightPage';
+
+// @public
+export type EditingTarget = {
+    kind: 'template';
+} | {
+    kind: 'subTemplate';
+    name: string;
+    category: string;
+};
+
+// @public
 export class Editor extends HeadlessEditor {
     protected constructor();
     readonly container: HTMLElement;
@@ -927,12 +1018,14 @@ export class EditorError extends Error {
 
 // @public
 export interface EditorState {
+    autoCorrect: AutoCorrectOptions;
     commands: {
         readonly [K in CommandId]: CommandState<K>;
     };
     dialogs: {
-        readonly [K in DialogKind]: boolean;
+        readonly [K in Exclude<DialogKind, 'autoCorrect'>]: boolean;
     };
+    editing?: EditingTarget;
     fonts: {
         pending: string[];
         unresolved: string[];
@@ -1020,7 +1113,9 @@ export interface ElementInfo {
     kind: 'field' | ControlKind;
     locked: boolean;
     parent: ElementId | null;
+    reference?: SubTemplateReference;
     story: SelectionSummary['story'];
+    subTemplate?: string;
     tag?: string;
     title?: string;
 }
@@ -1035,6 +1130,7 @@ export interface Elements {
             text: string;
         };
         story?: SelectionSummary['story'];
+        subTemplate?: string;
     }): Promise<ElementInfo[]>;
     placeholders(): Promise<PlaceholderInfo[]>;
     select(id: ElementId, options?: {
@@ -1279,6 +1375,7 @@ export class HeadlessEditor {
     readonly spelling: Spelling;
     readonly styles: Styles;
     subscribe(listener: (state: EditorState) => void): () => void;
+    readonly subTemplates: SubTemplates;
     wordCount(): Promise<WordCount>;
 }
 
@@ -1364,6 +1461,9 @@ export type MarkupView = 'all' | 'simple' | 'noMarkup' | 'original';
 export type MatchId = string & {
     readonly [brand]: 'match';
 };
+
+// @public
+export type MeasureDetail = 'quiet' | 'standard' | 'full';
 
 // @public
 export type MenuAction = {
@@ -1487,6 +1587,9 @@ export type NoArgumentCommandId = {
 }[CommandId];
 
 // @public
+export type ObjectGrid = 'off' | 'whileDragging' | 'always';
+
+// @public
 export type ObjectHorizontalAlignment = 'left' | 'center' | 'right' | 'inside' | 'outside';
 
 // @public
@@ -1541,7 +1644,6 @@ export type OpArgs<K extends CommandId> = Parameters<Commands[K]> extends [] ? {
 
 // @public
 export interface OverlayColors {
-    caret: Color;
     drop: Color;
     leaders: Color;
     marks: Color;
@@ -1647,7 +1749,37 @@ export interface PlaceholderLook {
 export type Points = number;
 
 // @public
+export type Popover = {
+    kind: 'tabType';
+    anchor: ClientRect_2;
+    current: TabSelector;
+    choices: TabTypeChoice[];
+} | {
+    kind: 'tabStop';
+    anchor: ClientRect_2;
+    position: Points;
+    alignment: TabAlignment;
+    leader: TabLeader;
+} | {
+    kind: 'autoCorrect';
+    anchor: ClientRect_2;
+    from: string;
+    to: string;
+};
+
+// @public
 export function pt(n: number): Points;
+
+// @public
+export type ReferenceResolution = 'resolved' | 'missing' | 'nearMatch' | 'cycle' | 'tooDeep' | 'notAlone' | 'notInBody';
+
+// @public
+export interface ReferenceRule {
+    argument?: number;
+    category: string;
+    fieldType: string;
+    gallery?: string;
+}
 
 // @public
 export interface Review {
@@ -1802,7 +1934,7 @@ export interface SelectionSummary {
     object: ObjectSelection | null;
     page: number;
     revision: RevisionId | null;
-    story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox';
+    story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox' | 'subTemplate';
     table: TableSelection | null;
     text: string | null;
 }
@@ -1952,10 +2084,61 @@ export interface SubstitutionRule {
 }
 
 // @public
+export interface SubTemplateInfo {
+    category: string;
+    elements: ElementInfo[];
+    name: string;
+    nestedReferences: number;
+    references: number;
+}
+
+// @public
+export interface SubTemplateReference {
+    expanded: boolean;
+    name: string;
+    nearMatch?: string;
+    resolution: ReferenceResolution;
+}
+
+// @public
+export interface SubTemplates {
+    close(): Promise<void>;
+    create(name: string, options?: {
+        category?: string;
+        from?: Uint8Array;
+    }): Promise<void>;
+    edit(name: string, category?: string): Promise<void>;
+    list(): Promise<SubTemplateInfo[]>;
+    remove(name: string, options?: {
+        category?: string;
+    }): Promise<void>;
+    rename(name: string, to: string, options?: {
+        category?: string;
+        updateReferences?: boolean;
+    }): Promise<void>;
+}
+
+// @public
+export interface SystemColors {
+    canvas: Color;
+    canvasText: Color;
+    grayText: Color;
+    highlight: Color;
+    highlightText: Color;
+}
+
+// @public
 export type TabAlignment = 'left' | 'center' | 'right' | 'decimal' | 'bar';
 
 // @public
 export type TabLeader = 'none' | 'dots' | 'dashes' | 'underline' | 'heavy' | 'middleDot';
+
+// @public
+export interface TablePosition {
+    horizontal?: HorizontalPosition;
+    vertical?: VerticalPosition;
+    wrapDistance?: TextDistance;
+}
 
 // @public
 export interface TableSelection {
@@ -2002,6 +2185,13 @@ export type TableWidth = {
 export type TabSelector = TabAlignment | 'firstLineIndent' | 'hangingIndent';
 
 // @public
+export interface TabTypeChoice {
+    description: string;
+    name: string;
+    value: TabSelector;
+}
+
+// @public
 export type TextAnchor = 'top' | 'middle' | 'bottom';
 
 // @public
@@ -2016,6 +2206,12 @@ export interface TextDistance {
     left: Points;
     right: Points;
     top: Points;
+}
+
+// @public
+export interface ThemeColors {
+    dark?: ChromeColors;
+    light?: ChromeColors;
 }
 
 // @public
@@ -2066,6 +2262,16 @@ export interface TwipEvents {
         kind: DialogKind;
     };
     documentChanged: TransactionRecord;
+    editingTargetChanged: EditingTarget;
+    editRefused: {
+        reason: {
+            kind: 'subTemplate';
+            name: string;
+        } | {
+            kind: 'locked';
+        };
+        element?: ElementId;
+    };
     elementActivated: {
         id: ElementId;
     };
@@ -2098,6 +2304,8 @@ export interface TwipEvents {
         key: string;
         element: ElementId | null;
     };
+    popoverClosed: {};
+    popoverRequested: Popover;
     revisionsChanged: {};
     rulerChanged: RulerView;
     selectionChanged: SelectionSummary;
@@ -2129,9 +2337,13 @@ export type VerticalReference = 'paragraph' | 'line' | 'margin' | 'page' | 'topM
 export interface View {
     frameStats(): Promise<FrameStats>;
     revealSelection(): Promise<void>;
-    setBackground(color: Color): Promise<void>;
+    setAppearance(appearance: DocumentAppearance): Promise<void>;
+    setBackground(color: Color | null): Promise<void>;
     setCaretBlink(ms: number, stopAfterMs?: number): Promise<void>;
-    setOverlayColors(colors: Partial<OverlayColors>): Promise<void>;
+    setDetail(detail: MeasureDetail): Promise<void>;
+    setOverlayColors(colors: Partial<OverlayColors> | null): Promise<void>;
+    setTheme(theme: ChromeTheme, accent?: Color): Promise<void>;
+    setThemeColors(colors: ThemeColors): Promise<void>;
     visiblePages(): {
         page: number;
         rect: ClientRect_2;
@@ -2139,26 +2351,48 @@ export interface View {
 }
 
 // @public
+export interface ViewOptions {
+    accent?: Color;
+    appearance?: DocumentAppearance;
+    detail?: MeasureDetail;
+    formattingMarks?: boolean;
+    gridlines?: boolean;
+    liveLayout?: boolean;
+    objectGrid?: ObjectGrid;
+    textBoundaries?: boolean;
+    theme?: ChromeTheme;
+    themeColors?: ThemeColors;
+}
+
+// @public
 export interface ViewState {
+    accent: Color;
+    accentOn: Color;
+    appearance: DocumentAppearance;
     background: Color;
+    detail: MeasureDetail;
     fieldCodes: boolean;
     formattingMarks: boolean;
     gridlines: boolean;
     liveLayout: boolean;
     markupPaneWidth: number;
+    objectGrid: ObjectGrid;
     rulers: {
         horizontal: boolean;
         vertical: boolean;
     };
     rulerUnit: RulerUnit;
+    subTemplateRules?: ReferenceRule[];
     tabSelector: TabSelector;
     textBoundaries: boolean;
+    theme: ChromeTheme;
+    themeColors: ThemeColors;
     zoom: number;
 }
 
 // @public
 export interface Warning {
-    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'font-substituted' | 'rewritten-content' | 'pdf-font-fallback' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset';
+    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'font-substituted' | 'rewritten-content' | 'pdf-font-fallback' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match';
     count: number;
     location?: {
         part: string;

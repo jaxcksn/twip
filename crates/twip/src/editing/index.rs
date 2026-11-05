@@ -58,6 +58,8 @@ pub struct DocIndex {
     elements: HashMap<ElementId, HashSet<Loc>>,
     /// Header and footer part names; `StoryId::HeaderFooter(k)` names `parts[k]`. Only appended to, so ids stay valid.
     parts: Vec<String>,
+    /// The building block laid out as the main flow (its one section) while it is edited.
+    pub flow: Option<u32>,
 }
 
 /// A float that is a box of a chain of linked text boxes: the chain's id and whether it holds the story.
@@ -105,6 +107,11 @@ impl DocIndex {
         }
         for (id, blocks) in &doc.endnotes {
             idx.add_blocks(Container::Story(StoryId::Endnote(*id)), blocks);
+        }
+        for (k, part) in doc.glossary.iter().flat_map(|g| g.parts.iter().enumerate()) {
+            if part.state != crate::docx::PartState::Removed {
+                idx.add_blocks(Container::Story(StoryId::BuildingBlock(k as u32)), &part.body);
+            }
         }
         idx
     }
@@ -300,6 +307,11 @@ impl DocIndex {
         }
     }
 
+    /// Building block `k`'s body (made, or back by an undo) joins the index.
+    pub fn added_building_block(&mut self, k: u32, body: &[Block]) {
+        self.add_blocks(Container::Story(StoryId::BuildingBlock(k)), body);
+    }
+
     /// A header or footer part taken out: its blocks leave the index (its story number stays reserved).
     pub fn removed_part(&mut self, removed: &[Block]) {
         removed.iter().for_each(|b| self.remove_block(b));
@@ -461,6 +473,7 @@ impl DocIndex {
             StoryId::Footnote(id) => doc.footnotes.get(&id),
             StoryId::Endnote(id) => doc.endnotes.get(&id),
             StoryId::TextBox(f) => self.text_box(doc, f).map(|tb| &tb.blocks),
+            StoryId::BuildingBlock(k) => live_part(doc.glossary.as_ref()?.parts.get(k as usize)?).map(|b| &b.body),
         }
     }
 
@@ -477,6 +490,10 @@ impl DocIndex {
                     Inline::Picture(p, _) => p.text.as_mut().filter(|t| FloatId(t.id) == f).map(|t| &mut t.text_box.blocks),
                     _ => None,
                 })
+            }
+            StoryId::BuildingBlock(k) => {
+                let part = doc.glossary.as_mut()?.parts.get_mut(k as usize)?;
+                (part.state != crate::docx::PartState::Removed).then_some(&mut part.body)
             }
         }
     }
@@ -533,11 +550,13 @@ impl DocIndex {
     pub fn top_block(&self, container: Container, block: usize) -> Option<(usize, usize, Option<usize>)> {
         match container {
             Container::Section(i) => Some((i, block, None)),
+            Container::Story(StoryId::BuildingBlock(k)) if self.flow == Some(k) => Some((0, block, None)),
             Container::Story(_) => None,
             Container::Cell { table, row, .. } => {
                 let s = self.table_slot(table)?;
                 match s.container {
                     Container::Section(i) => Some((i, s.block, Some(row))),
+                    Container::Story(StoryId::BuildingBlock(k)) if self.flow == Some(k) => Some((0, s.block, Some(row))),
                     c => self.top_block(c, s.block),
                 }
             }
@@ -558,6 +577,11 @@ fn inline_elements(inlines: &[Inline]) -> impl Iterator<Item = ElementId> + '_ {
         Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. } => Some(ElementId::Control(*c)),
         _ => None,
     })
+}
+
+/// A building block that hasn't been removed.
+fn live_part(b: &crate::docx::BuildingBlock) -> Option<&crate::docx::BuildingBlock> {
+    (b.state != crate::docx::PartState::Removed).then_some(b)
 }
 
 #[cfg(test)]

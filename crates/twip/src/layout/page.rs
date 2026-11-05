@@ -884,6 +884,9 @@ pub fn layout_body(
             body.extend(super::story::inline_text_box(&pic, rect, para, &senv, memos)?);
         }
     }
+    // Sub-template bodies shown in place of their references, where their lines put them.
+    let shown = super::expansion::shown(&body);
+    body.extend(shown);
     separators(&s.section_in(env.ctx.env.text.review.view).columns, cols, page_top, earlier, &mut body);
     if env.ctx.env.text.review.view.change_bars() {
         change_bars(space, &mut body);
@@ -979,7 +982,7 @@ fn change_bars(space: &BodySpace, body: &mut Vec<Child>) {
         let bottom = next.filter(|&t| t - bottom <= bottom - top).unwrap_or(bottom);
         match bars.last_mut() {
             Some(Item::Rect { rect, .. }) if top <= rect[3] + 0.01 => rect[3] = rect[3].max(bottom),
-            _ => bars.push(Item::Rect { rect: [x, top, x + 0.72, bottom], colour: 0 }),
+            _ => bars.push(Item::rect([x, top, x + 0.72, bottom], 0)),
         }
     }
     body.push(Child::Items(bars.into()));
@@ -1011,7 +1014,7 @@ fn separators(c: &Columns, cols: &[ColumnSpace], top: f64, earlier: &[Rc<BoxFrag
     for k in 1..cols.len() {
         if used[k] {
             let x = (cols[k - 1].x + cols[k - 1].width + cols[k].x) / 2.0;
-            items.push(Item::Rect { rect: [x - 0.36, top, x + 0.36, bottom], colour: 0 });
+            items.push(Item::rect([x - 0.36, top, x + 0.36, bottom], 0));
         }
     }
     if !items.is_empty() {

@@ -12,7 +12,8 @@ use super::drawing::{
     Arrange, Degrees, EffectsChange, FillValue, FlipAxis, LineChange, PictureAdjustChange, ShapeAdjust, ShapeInsert, ShapePreset, ShapeTextChange,
 };
 use super::review::{Body, MarkupView};
-use super::state::Mode;
+use super::services::TabSelector;
+use super::state::{Mode, TextDistance};
 use super::value::{
     Alignment, AutoOr, Bytes, CellAlignment, Color, CommentId, ControlKind, ControlLock, ControlOptions, DataBinding, Direction, ElementId,
     HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, ObjectWrap, Order, Orientation, Points, RevisionId, RowHeight, StyleId,
@@ -304,6 +305,9 @@ commands! {
     SetTableStyle(#[serde(with = "value")] StyleId),
     /// Which parts of the table style apply. Undo: one step.
     SetTableStyleOptions(TableStyleChange),
+    /// Where the table is placed, and what it is measured from: a table without a position becomes positioned (text
+    /// wraps around it); none (`null`) puts it back in the text. Undo: one step.
+    SetTablePosition(#[serde(with = "value")] Option<TablePosition>),
 
     // Objects
     /// The selected object's size (1…1584 pt). Undo: one step.
@@ -366,6 +370,21 @@ commands! {
     ShowFieldCodes(ShowFieldCodes),
     /// What design mode shows for each field code. Undo: view.
     SetFieldLabels(FieldLabels),
+    /// Which fields are sub-template references: replaces the rules; an empty list turns sub-templates off. Undo: view.
+    SetSubTemplateRules(SubTemplateRules),
+    /// Shows references' sub-template bodies in their place, or their fields (default: every reference). Undo: view.
+    SetSubTemplateView(SubTemplateView),
+    /// Edits a sub-template's body in this editor, on its own pages; the template shows again on Close Sub-template.
+    /// Undo: view.
+    EditSubTemplate(SubTemplateName),
+    /// Back to the template from a sub-template, at the template's selection from before. Undo: view.
+    CloseSubTemplate,
+    /// A new sub-template, empty or with a DOCX's body. Undo: one step.
+    CreateSubTemplate(CreateSubTemplate),
+    /// Renames a sub-template, and optionally every reference to it. Undo: one step.
+    RenameSubTemplate(RenameSubTemplate),
+    /// Removes a sub-template; its references no longer resolve. Undo: one step.
+    RemoveSubTemplate(SubTemplateName),
 
     // Content controls and regions
     /// A content control at the selection; result `{ id }`. Undo: one step.
@@ -440,6 +459,23 @@ commands! {
     SetViewOptions(ViewOptions),
     /// Editing or design mode. Undo: view.
     SetMode(#[serde(with = "value")] Mode),
+    /// What a click on the ruler adds; answers the tab type picker. Undo: view.
+    SetRulerTabType(#[serde(with = "value")] TabSelector),
+    /// Asks for the tab type picker (`popoverRequested`). Undo: view.
+    ShowTabTypes,
+    /// Asks for the options of the tab stop nearest the caret (`popoverRequested`). Undo: view.
+    ShowTabStop,
+    /// What typing corrects. Undo: none (a session setting).
+    SetAutoCorrect(super::services::AutoCorrectChange),
+    /// Puts back what was typed in place of the correction just made. Undo: one step.
+    RevertAutoCorrect,
+    /// Reverts the correction just made and never makes it again. Undo: one step (the revert).
+    NeverAutoCorrect,
+    /// Asks for the options of the correction just made (`popoverRequested`). Undo: view.
+    ShowAutoCorrectOptions,
+    /// Dismisses the popover asked for (`popoverClosed`): what an application that closes it itself, on Esc or a
+    /// click elsewhere, sends. With none open it does nothing. Undo: view.
+    ClosePopover,
     /// Says the formatting at the caret to screen readers (paragraph style, font and size, emphasis, colour,
     /// highlight) as an announcement; changes nothing. Undo: view.
     DescribeFormatting,
@@ -1102,6 +1138,23 @@ pub struct ObjectPosition {
     pub layout_in_cell: Option<bool>,
 }
 
+/// `setTablePosition`'s value: a positioned table's place on each axis, as `setObjectPosition` gives an object's, and
+/// its distance from the text around it; what isn't given is kept. A table is measured from the column, the margin or
+/// the page across, and from the paragraph, the margin or the page down.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TablePosition {
+    /// The horizontal place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horizontal: Option<HorizontalPosition>,
+    /// The vertical place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertical: Option<VerticalPosition>,
+    /// How far the text around it keeps (0…1584 pt).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrap_distance: Option<TextDistance>,
+}
+
 /// `setObjectWrapOptions`'s options; what isn't given is kept. Distances are 0…1584 pt.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1198,6 +1251,83 @@ pub struct ShowFieldCodes {
     /// The fields; `None` means the selection's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<ElementId>>,
+}
+
+/// One sub-template reference rule: a field of type `field_type` names, in argument `argument`, the building block
+/// in category `category` (and `gallery`) whose body it shows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReferenceRule {
+    /// The field type (`SUBTEMPLATE`), compared without case.
+    pub field_type: String,
+    /// Which of the field's arguments is the sub-template's name, from 0. Default: 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub argument: Option<u32>,
+    /// The building block category the name is looked up in.
+    pub category: String,
+    /// The building block gallery (`custom1`), when it matters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gallery: Option<String>,
+}
+
+/// A sub-template by name, and its category where several rules name categories.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubTemplateName {
+    /// Its name.
+    pub name: String,
+    /// Its building block category; default: the rules' categories, in order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+}
+
+/// `createSubTemplate`'s options.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateSubTemplate {
+    /// Its name: unique in its category.
+    pub name: String,
+    /// Its building block category; default: the first rule's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// A DOCX whose body becomes its body; default: one empty paragraph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Bytes>,
+}
+
+/// `renameSubTemplate`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenameSubTemplate {
+    /// Its name now.
+    pub name: String,
+    /// Its new name: unique in its category.
+    pub to: String,
+    /// Its building block category, where several rules name categories.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Renames the references too, in the template and in other sub-templates. Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_references: Option<bool>,
+}
+
+/// `setSubTemplateView`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubTemplateView {
+    /// The reference fields; `None` means every reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<ElementId>>,
+    /// Their bodies show in their place (else their fields do).
+    pub expanded: bool,
+}
+
+/// `setSubTemplateRules`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubTemplateRules {
+    /// The rules, replacing those set before.
+    pub rules: Vec<ReferenceRule>,
 }
 
 /// `setFieldLabels`'s options: labels by field code.
@@ -1591,6 +1721,24 @@ pub struct ViewOptions {
     /// Text wraps around an object again as it is dragged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub live_layout: Option<bool>,
+    /// The chrome's colour scheme.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<super::services::ChromeTheme>,
+    /// The host's colours for the light and dark schemes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_colors: Option<super::services::ThemeColors>,
+    /// The chrome's accent: selection, handles, guides and active markers. Any colour; the dark scheme lightens it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<Color>,
+    /// How the page is drawn on screen (dark mode).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<super::services::DocumentAppearance>,
+    /// How much the editor measures while you drag and hover.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<super::services::MeasureDetail>,
+    /// When the dot grid objects snap to shows (unrelated to `gridlines`, the table gridlines).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_grid: Option<super::services::ObjectGrid>,
 }
 
 /// What a command returns besides its commit, for the commands that create something.

@@ -29,7 +29,7 @@ const TEXT: GestureTarget = GestureTarget::Menu(MenuTarget::Text);
 impl Editor {
     /// Whether a table border or an object is being dragged: its guide or box follows the pointer.
     pub fn dragging(&self) -> bool {
-        self.object_drag.is_some() || self.border_drag.is_some()
+        self.object_drag.is_some() || self.border_drag.is_some() || self.table_drag.is_some()
     }
 
     /// Pointer input at a document point, every gesture running its default. In design mode a double-click on a
@@ -170,9 +170,16 @@ impl Editor {
 
     /// The pointer left the view: nothing is hovered, unless a drag holds the pointer.
     pub(crate) fn pointer_leave(&mut self) {
-        if self.drag.is_none() && self.text_drag.is_none() && self.object_drag.is_none() && self.border_drag.is_none() && self.zone_drag.is_none() {
+        if self.drag.is_none()
+            && self.text_drag.is_none()
+            && self.object_drag.is_none()
+            && self.border_drag.is_none()
+            && self.zone_drag.is_none()
+            && self.table_drag.is_none()
+        {
             self.hover = None;
             self.hover_region = None;
+            self.table_hover = None;
         }
     }
 
@@ -524,5 +531,36 @@ mod tests {
         f.drag(from, to);
         assert_eq!(f.s().state().revision, revision + 1);
         assert!(!f.has("Type here."));
+    }
+
+    #[test]
+    fn hovering_a_table_asks_for_frames_and_its_position_is_in_the_state() {
+        use crate::api::command::{CommandId, TablePosition};
+        use crate::api::state::CommandValue;
+        let mut f = Fixture::open("editor/FX-TBL-BASIC.docx");
+        let cell = f.at("T2 R1 C2");
+        let page = f.page();
+        let outside = Point { x: page.left + 4.0, y: page.top + page.height - 4.0 };
+        let s = f.s();
+        s.pointer(PointerKind::Move, outside, PointerButton::Primary, 0, NONE);
+        s.host().take_frame_request();
+        // Onto the table: its handles show.
+        s.pointer(PointerKind::Move, cell, PointerButton::Primary, 0, NONE);
+        assert!(s.host().take_frame_request(), "the handles show");
+        s.pointer(PointerKind::Move, Point { x: cell.x + 1.0, ..cell }, PointerButton::Primary, 0, NONE);
+        assert!(!s.host().take_frame_request(), "nothing new to show");
+        s.pointer(PointerKind::Leave, cell, PointerButton::Primary, 0, NONE);
+        assert!(s.host().take_frame_request(), "the handles go");
+        // The caret is in the table (`at` put it there): positioning it is offered, with no position yet.
+        let state = |s: &mut Session| s.state().commands.get(&CommandId::SetTablePosition).cloned().expect("a state");
+        let st = state(s);
+        assert!(st.enabled && st.value.is_none(), "{st:?}");
+        let to = TablePosition { horizontal: None, vertical: None, wrap_distance: None };
+        s.run(Command::SetTablePosition(Some(to))).expect("positions");
+        let st = state(s);
+        assert!(
+            matches!(st.value, Some(CommandValue::TablePosition(TablePosition { horizontal: Some(_), vertical: Some(_), wrap_distance: Some(_) }))),
+            "{st:?}"
+        );
     }
 }

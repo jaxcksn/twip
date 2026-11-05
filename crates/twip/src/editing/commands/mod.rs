@@ -348,6 +348,7 @@ impl Editor {
             Command::SetTableIndent(i) => self.table_format(&super::table_format::TableFormat::TableIndent(i.0), fonts),
             Command::SetTableStyle(id) => self.set_table_style(id, fonts),
             Command::SetTableStyleOptions(o) => self.set_table_style_options(o, fonts),
+            Command::SetTablePosition(p) => self.set_table_position(p, fonts),
             // Objects
             Command::SetObjectSize(s) => self.set_object_size(s, fonts),
             Command::ResetObjectSize => self.object_cmd(super::objects::ObjectCmd::ResetSize, fonts),
@@ -379,6 +380,20 @@ impl Editor {
             Command::UnlinkFields(ids) => self.unlink_fields(ids.ids.as_deref(), fonts),
             Command::ShowFieldCodes(s) => self.show_field_codes(s.show, s.ids.as_deref()),
             Command::SetFieldLabels(l) => self.set_field_labels(l),
+            Command::SetSubTemplateRules(r) => self.set_sub_template_rules(r),
+            Command::SetSubTemplateView(v) => self.set_sub_template_view(v),
+            Command::EditSubTemplate(n) => self.edit_sub_template(&n, fonts),
+            Command::CreateSubTemplate(c) => self.create_sub_template(c, fonts),
+            Command::RenameSubTemplate(r) => self.rename_sub_template(r, fonts),
+            Command::RemoveSubTemplate(n) => self.remove_sub_template(&n, fonts),
+            Command::CloseSubTemplate => {
+                let out = self.close_sub_template_to(None);
+                if let Outcome::Moved = out {
+                    self.ensure_current(fonts);
+                    self.scroll_to_caret(fonts);
+                }
+                out
+            }
             // Content controls and regions
             Command::InsertControl(c) => self.insert_control(c, fonts),
             Command::SetControl(c) => self.set_control(c, fonts),
@@ -413,7 +428,16 @@ impl Editor {
             Command::SelectComment(id) => self.select_comment(&id, fonts),
             Command::SetAuthorColor(a) => self.set_author_color_by_name(&a.author, a.color.0),
             // View
-            Command::SetZoom(_) | Command::SetViewOptions(_) => Outcome::Moved,
+            Command::SetZoom(_)
+            | Command::SetViewOptions(_)
+            | Command::SetRulerTabType(_)
+            | Command::ShowTabTypes
+            | Command::ShowTabStop
+            | Command::SetAutoCorrect(_)
+            | Command::ShowAutoCorrectOptions
+            | Command::ClosePopover => Outcome::Moved,
+            // The session adds Never correct's word to its settings; the editor reverts.
+            Command::RevertAutoCorrect | Command::NeverAutoCorrect => self.revert_correction(fonts),
             // The session says the formatting; the editor has nothing to do.
             Command::DescribeFormatting => Outcome::Unchanged("described"),
             Command::SetMode(m) => self.set_mode(match m {

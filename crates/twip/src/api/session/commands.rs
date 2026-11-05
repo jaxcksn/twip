@@ -5,6 +5,8 @@ use super::{Commit, Session};
 use crate::api::catalog::{CommandInfo, info};
 use crate::api::command::{Command, CommandId, Zoom, ZoomFit};
 use crate::api::error::{Error, ErrorCode};
+use crate::api::record::Origin;
+use crate::api::services::Popover;
 use crate::api::state::CommandState;
 use crate::api::value::{CommentId, ElementId, LineSpacing, Points, TableWidth};
 
@@ -225,6 +227,39 @@ impl Session {
 
     /// The commands the session keeps, not the document: the zoom, the view options and the mode. `None` for the
     /// others.
+    /// Applies `setAutoCorrect`'s change to the session's AutoCorrect settings.
+    fn set_auto_correct(&mut self, c: &crate::api::services::AutoCorrectChange) {
+        let a = &mut self.autocorrect;
+        let set = |to: &mut bool, from: Option<bool>| {
+            if let Some(v) = from {
+                *to = v;
+            }
+        };
+        set(&mut a.two_initial_capitals, c.two_initial_capitals);
+        set(&mut a.sentence_capitals, c.sentence_capitals);
+        set(&mut a.cell_capitals, c.cell_capitals);
+        set(&mut a.day_names, c.day_names);
+        set(&mut a.replace_text, c.replace_text);
+        set(&mut a.smart_quotes, c.smart_quotes);
+        set(&mut a.ordinals, c.ordinals);
+        set(&mut a.fractions, c.fractions);
+        set(&mut a.dashes, c.dashes);
+        set(&mut a.numbered_lists, c.numbered_lists);
+        set(&mut a.bulleted_lists, c.bulleted_lists);
+        if let Some(e) = &c.entries {
+            a.entries = Some(e.iter().map(|e| (e.from.clone(), e.to.clone())).collect());
+        }
+        if let Some(e) = &c.first_letter_exceptions {
+            a.first_letter_exceptions = Some(e.clone());
+        }
+        if let Some(e) = &c.initial_caps_exceptions {
+            a.initial_caps_exceptions = Some(e.clone());
+        }
+        if let Some(n) = &c.never {
+            a.never = n.clone();
+        }
+    }
+
     pub(super) fn run_view(&mut self, command: &Command) -> Option<Result<Commit, Error>> {
         match command {
             Command::SetZoom(z) => {
@@ -257,8 +292,74 @@ impl Session {
                 if let Some(l) = v.live_layout {
                     self.editor.live_layout = l;
                 }
+                let p = &mut self.presentation;
+                if let Some(t) = v.theme {
+                    (p.chrome, p.chrome_set) = (t, true);
+                }
+                if let Some(c) = v.theme_colors {
+                    p.theme_colors.light = c.light.or(p.theme_colors.light);
+                    p.theme_colors.dark = c.dark.or(p.theme_colors.dark);
+                }
+                if let Some(a) = v.accent {
+                    p.accent = Some(a);
+                }
+                if let Some(a) = v.appearance {
+                    p.appearance = a;
+                }
+                if let Some(d) = v.detail {
+                    p.detail = d;
+                }
+                if let Some(g) = v.object_grid {
+                    p.object_grid = g;
+                }
+                if v.theme.is_some() || v.theme_colors.is_some() || v.accent.is_some() || v.appearance.is_some() {
+                    p.apply_look();
+                }
             }
             Command::SetMode(m) => self.set_mode(*m),
+            Command::SetRulerTabType(t) => {
+                self.presentation.tab_selector = *t;
+                // The picker's answer closes it.
+                if matches!(self.presentation.popover, Some(Popover::TabType { .. })) {
+                    self.close_popover();
+                    return Some(Ok(Commit { record: None, value: None }));
+                }
+            }
+            Command::ClosePopover => {
+                self.close_popover();
+                return Some(Ok(Commit { record: None, value: None }));
+            }
+            Command::ShowTabTypes => {
+                self.show_popover(self.tab_types_popover());
+                return Some(Ok(Commit { record: None, value: None }));
+            }
+            Command::ShowTabStop => {
+                let x = self.host().caret_client_point().client_x;
+                if let Some(p) = self.nearest_tab_stop(x).and_then(|at| self.tab_stop_popover(at)) {
+                    self.show_popover(p);
+                }
+                return Some(Ok(Commit { record: None, value: None }));
+            }
+            Command::SetAutoCorrect(c) => self.set_auto_correct(c),
+            Command::ShowAutoCorrectOptions => {
+                if let Some(p) = self.auto_correct_popover() {
+                    self.show_popover(p);
+                }
+                return Some(Ok(Commit { record: None, value: None }));
+            }
+            Command::RevertAutoCorrect | Command::NeverAutoCorrect => {
+                let never = matches!(command, Command::NeverAutoCorrect);
+                let from = self.editor.correction().map(|c| c.from.clone());
+                self.close_popover();
+                let done = self.apply_with(Origin::Api, |e, fonts| e.revert_correction(fonts));
+                if never && let Some(from) = from {
+                    let text = format!("Won\u{2019}t autocorrect \u{201C}{from}\u{201D} again");
+                    self.autocorrect.never.push(from);
+                    self.services.said.push((crate::api::services::AnnouncementKind::Command, text));
+                    self.changed(Vec::new());
+                }
+                return Some(done);
+            }
             _ => return None,
         }
         self.changed(Vec::new());

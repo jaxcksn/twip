@@ -1,5 +1,21 @@
 [
   {
+    "autoCorrect": {
+      "bulletedLists": true,
+      "cellCapitals": true,
+      "dashes": true,
+      "dayNames": true,
+      "fractions": true,
+      "never": [
+        "teh"
+      ],
+      "numberedLists": true,
+      "ordinals": true,
+      "replaceText": true,
+      "sentenceCapitals": true,
+      "smartQuotes": true,
+      "twoInitialCapitals": true
+    },
     "commands": {
       "setBold": {
         "enabled": true,
@@ -21,6 +37,11 @@
       "pictureSize": false,
       "tableProperties": false,
       "tabs": true
+    },
+    "editing": {
+      "category": "Sub-templates",
+      "kind": "subTemplate",
+      "name": "Violation"
     },
     "fonts": {
       "pending": [
@@ -363,12 +384,17 @@
     ],
     "type": "stateChanged",
     "view": {
-      "background": "#E6E6E6",
+      "accent": "#0A74E4",
+      "accentOn": "#FFFFFF",
+      "appearance": "light",
+      "background": "#E8E7E3",
+      "detail": "standard",
       "fieldCodes": false,
       "formattingMarks": false,
       "gridlines": false,
       "liveLayout": true,
       "markupPaneWidth": 0.0,
+      "objectGrid": "whileDragging",
       "rulerUnit": "inches",
       "rulers": {
         "horizontal": false,
@@ -376,6 +402,8 @@
       },
       "tabSelector": "left",
       "textBoundaries": false,
+      "theme": "light",
+      "themeColors": {},
       "zoom": 100.0
     }
   },
@@ -657,6 +685,22 @@
     "via": "pointer"
   },
   {
+    "alignment": "right",
+    "anchor": {
+      "height": 14.0,
+      "left": 120.5,
+      "top": 10.0,
+      "width": 14.0
+    },
+    "kind": "tabStop",
+    "leader": "dots",
+    "position": 198.5,
+    "type": "popoverRequested"
+  },
+  {
+    "type": "popoverClosed"
+  },
+  {
     "kind": "tabs",
     "type": "dialogRequested"
   },
@@ -839,6 +883,30 @@
       "origin": 80.5,
       "scale": 1.5
     }
+  },
+  {
+    "category": "Sub-templates",
+    "kind": "subTemplate",
+    "name": "Violation",
+    "type": "editingTargetChanged"
+  },
+  {
+    "kind": "template",
+    "type": "editingTargetChanged"
+  },
+  {
+    "element": "field-7",
+    "reason": {
+      "kind": "subTemplate",
+      "name": "Violation"
+    },
+    "type": "editRefused"
+  },
+  {
+    "reason": {
+      "kind": "locked"
+    },
+    "type": "editRefused"
   },
   {
     "type": "tooltip",

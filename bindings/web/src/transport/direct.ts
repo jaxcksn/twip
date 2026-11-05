@@ -207,6 +207,9 @@ export class DirectTransport implements Transport {
         case 'wheel':
           m._twip_wheel(e, session, input.dx, input.dy, input.mods);
           break;
+        case 'modifiers':
+          m._twip_modifiers(e, session, input.mods);
+          break;
         case 'pointer':
           m._twip_pointer(e, session, input.kind, input.x, input.y, input.button, input.clicks, input.mods);
           break;

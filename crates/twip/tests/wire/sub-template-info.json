@@ -1,0 +1,26 @@
+[
+  {
+    "category": "Sub-templates",
+    "elements": [
+      {
+        "code": "SUBTEMPLATE Violation",
+        "display": "",
+        "id": "field-7",
+        "kind": "field",
+        "locked": false,
+        "parent": null,
+        "reference": {
+          "expanded": true,
+          "name": "violation",
+          "nearMatch": "Violation",
+          "resolution": "nearMatch"
+        },
+        "story": "subTemplate",
+        "subTemplate": "Notice"
+      }
+    ],
+    "name": "Notice",
+    "nestedReferences": 1,
+    "references": 2
+  }
+]

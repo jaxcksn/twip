@@ -160,6 +160,16 @@ public enum WarningCode
     CommentReferenceOrphan,
     /// <summary>A shape's preset geometry the engine doesn't define; it draws as a rectangle and is kept on save.</summary>
     UnknownPreset,
+    /// <summary>A glossary building block, or the glossary part, couldn't be read; it is kept as written.</summary>
+    GlossaryUnreadable,
+    /// <summary>Two building blocks share a name in one category; a name finds the first.</summary>
+    DuplicateBuildingBlock,
+    /// <summary>A sub-template reference inside a body already shown around it; it shows its field.</summary>
+    SubTemplateCycle,
+    /// <summary>A sub-template reference more than 16 sub-templates deep; it shows its field.</summary>
+    SubTemplateTooDeep,
+    /// <summary>A sub-template reference whose name matches only in another case; it doesn't resolve.</summary>
+    SubTemplateNearMatch,
 }
 
 /// <summary>An import or export approximation, aggregated per code and part.</summary>

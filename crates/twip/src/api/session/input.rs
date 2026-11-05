@@ -116,6 +116,10 @@ impl Session {
     /// A key press. Application shortcuts emit `shortcut`, keys the application owns `hostCommand`, dialog keys
     /// `dialogRequested`; keys bound to a command run it.
     pub fn key(&mut self, key: Key, mods: Modifiers) -> KeyOutcome {
+        // Esc dismisses an open popover first.
+        if key == Key::Escape && self.close_popover().is_some() {
+            return KeyOutcome::Handled;
+        }
         // Cmd on macOS stands where Ctrl does elsewhere.
         let ctrl = mods.ctrl || mods.meta;
         let chord = (key, ctrl, mods.shift, mods.alt);
@@ -160,6 +164,7 @@ impl Session {
 
     /// A command from input: checked as the API's are, and recorded as the user's.
     fn input(&mut self, command: Command) -> Result<super::Commit, crate::api::error::Error> {
+        use crate::editing::autocorrect::{Trigger, may_trigger};
         if let Err(e) = self.check(&command) {
             // An edit the user tried in a read-only document is said to be refused, as Word does; the API's aren't.
             if e.code == crate::api::error::ErrorCode::ReadOnly {
@@ -170,7 +175,31 @@ impl Session {
         if let Some(done) = self.run_view(&command) {
             return done;
         }
-        self.apply(command, Origin::User)
+        // Typing corrects what it finishes (AutoCorrect), as a step of its own after the typing's.
+        let trigger = match &command {
+            Command::InsertText(t) if t.chars().last().is_some_and(may_trigger) => Some(Trigger::Typed),
+            Command::InsertTab => Some(Trigger::Typed),
+            Command::InsertParagraph => Some(Trigger::ParagraphEnd),
+            _ => None,
+        };
+        let typed = match &command {
+            Command::InsertText(t) => t.chars().count(),
+            _ => 0,
+        };
+        let done = self.apply(command, Origin::User)?;
+        // The correction mark stays through typing after it; anything else that moves the caret away drops it.
+        self.editor.follow_correction(typed);
+        if let Some(trigger) = trigger {
+            let ac = std::mem::take(&mut self.autocorrect);
+            let corrected = self.apply_with(Origin::User, |e, fonts| e.auto_correct(&ac, trigger, fonts));
+            self.autocorrect = ac;
+            if let Ok(c) = corrected
+                && c.record.is_some()
+            {
+                return Ok(c);
+            }
+        }
+        Ok(done)
     }
 
     /// The editor's notices since the last change, as events.
@@ -186,6 +215,14 @@ impl Session {
                 }
                 Notice::Link { address, ctrl } => Event::LinkActivated { address, via: if ctrl { LinkVia::CtrlClick } else { LinkVia::Click } },
                 Notice::Placeholder(key) => Event::PlaceholderActivated(crate::api::services::PlaceholderInfo { key, element: None }),
+                Notice::Warning(code, message) => Event::Warning(crate::docx::diagnostics::Warning { code, message, count: 1, location: None }),
+                Notice::Refused { sub_template, element } => Event::EditRefused {
+                    reason: match sub_template {
+                        Some(name) => crate::api::event::RefusalReason::SubTemplate { name },
+                        None => crate::api::event::RefusalReason::Locked,
+                    },
+                    element: element.map(id),
+                },
             })
             .collect()
     }
@@ -207,13 +244,31 @@ impl Session {
         if self.ruler_pointer(kind, at, button, clicks, mods) {
             return;
         }
+        if kind == PointerKind::Down {
+            self.close_popover();
+        }
         let (x, y) = self.presentation.to_document(at);
+        // The correction mark's options button opens its popover.
+        if kind == PointerKind::Down && self.on_correction_button(x, y) {
+            if let Some(p) = self.auto_correct_popover() {
+                self.show_popover(p);
+            }
+            return;
+        }
         let mods = internal(mods);
+        self.sync_view_settings();
         match (kind, button) {
             (PointerKind::Down, PointerButton::Secondary) => self.context_click(at, x, y),
             // The middle button, and the secondary one's release, do nothing.
             (PointerKind::Down | PointerKind::Up, PointerButton::Secondary | PointerButton::Middle) => {}
-            (PointerKind::Leave, _) => self.editor.pointer_leave(),
+            (PointerKind::Leave, _) => {
+                let hovered = self.editor.table_hover().is_some();
+                self.editor.pointer_leave();
+                // The table's handles go with the pointer.
+                if hovered && self.editor.table_hover().is_none() {
+                    self.presentation.want_frame();
+                }
+            }
             (PointerKind::Down, PointerButton::Primary) => {
                 let pressed = self.editor.press_gesture(x, y, clicks, mods, &self.fonts.fonts());
                 match self.bindings.rebound(pressed) {
@@ -235,66 +290,87 @@ impl Session {
         self.deliver_requests();
     }
 
+    /// The modifier keys changed with no other input (Alt pressed or released): a ruler drag under way, or the hover,
+    /// runs again at the pointer's last position, so its snapping and readouts follow at once.
+    pub fn modifiers(&mut self, mods: Modifiers) {
+        let p = &self.presentation;
+        let at = p.ruler_drag.as_ref().map(|d| d.now).or(p.ruler_hover.map(|h| h.at));
+        if let Some(at) = at {
+            self.ruler_pointer(PointerKind::Move, at, PointerButton::Primary, 0, mods);
+        }
+    }
+
     /// The rulers' gestures: true when the pointer is on a ruler, or dragging from one, and the input was theirs. A
-    /// drag shows a guide line and commits nothing until its release.
-    // shortcut: the dragged marker stays where it was until the release (the guide line shows where it goes).
+    /// drag moves its marker and guide line with the pointer and commits nothing until its release; hovering shows
+    /// what's under the pointer.
     fn ruler_pointer(&mut self, kind: PointerKind, at: Point, button: PointerButton, clicks: u8, mods: Modifiers) -> bool {
-        use crate::services::ruler::{Hit, hit};
+        use crate::services::ruler::{Hit, Marker, hit, removing};
         if let Some(mut d) = self.presentation.ruler_drag.take() {
+            d.moved |= (at.x - d.start.x).abs().max((at.y - d.start.y).abs()) > 2.0;
+            (d.now, d.free) = (at, mods.alt);
+            d.removing = d.moved && matches!(d.marker, Some(Marker::Tab(_))) && removing(at.y);
             match kind {
                 PointerKind::Move => {
-                    d.moved |= (at.x - d.start.x).abs().max((at.y - d.start.y).abs()) > 2.0;
-                    (d.now, d.free) = (at, mods.alt);
-                    let guide = d.moved;
-                    self.presentation.ruler_drag = Some(d);
-                    // The guide line moved: a frame shows it.
-                    if guide {
-                        self.changed(Vec::new());
+                    // The marker, guide and readout moved: a frame shows them.
+                    if d.moved {
+                        self.presentation.want_frame();
                     }
+                    self.presentation.ruler_drag = Some(d);
                 }
                 PointerKind::Up => {
-                    (d.now, d.free) = (at, mods.alt);
                     self.request(super::HostRequest::Release);
+                    self.presentation.want_frame();
                     self.ruler_release(&d, at);
                 }
-                _ => self.request(super::HostRequest::Release),
+                PointerKind::Down | PointerKind::Cancel | PointerKind::Leave => {
+                    self.request(super::HostRequest::Release);
+                    self.presentation.want_frame();
+                }
             }
             return true;
         }
         let view = self.ruler_view();
-        let Some(on) = hit(&view, self.presentation.rulers, at.x, at.y) else { return false };
+        let on = hit(&view, self.presentation.rulers, at.x, at.y);
+        let hover = on.filter(|_| kind == PointerKind::Move).map(|_| super::host::RulerHover { at, free: mods.alt });
+        if hover != self.presentation.ruler_hover {
+            self.presentation.ruler_hover = hover;
+            self.presentation.want_frame();
+        }
+        let Some(on) = on else { return false };
         if (kind, button) != (PointerKind::Down, PointerButton::Primary) {
             return true;
         }
+        // A press closes the open popover; on the box, with the picker open, that's all it does.
+        let open = self.close_popover();
         if clicks >= 2 && on != Hit::Selector {
             self.ruler_gesture(GestureId::RulerDoubleClick, view.page, at, |s| s.emit(Event::DialogRequested { kind: DialogKind::Tabs }));
             return true;
         }
         let marker = match on {
             Hit::Selector => {
-                use crate::api::services::TabSelector as T;
-                const CYCLE: [T; 7] = [T::Left, T::Center, T::Right, T::Decimal, T::Bar, T::FirstLineIndent, T::HangingIndent];
-                let k = CYCLE.iter().position(|&t| t == self.presentation.tab_selector).map_or(0, |k| (k + 1) % CYCLE.len());
-                self.host().set_tab_selector(CYCLE[k]);
+                if !matches!(open, Some(crate::api::services::Popover::TabType { .. })) {
+                    self.show_popover(self.tab_types_popover());
+                }
                 return true;
             }
             Hit::Ruler => return true,
             Hit::Marker(m) => Some(m),
             Hit::Text(_) => None,
         };
-        let drag = super::host::RulerDrag { marker, view, start: at, now: at, moved: false, free: mods.alt };
+        let drag = super::host::RulerDrag { marker, view, start: at, now: at, moved: false, free: mods.alt, removing: false };
         self.presentation.ruler_drag = Some(drag);
         self.request(super::HostRequest::Capture);
         true
     }
 
-    /// A ruler press released: a click on the text area adds what the tab selector says (`rulerClick`); a moved
-    /// marker runs its command (`rulerDrag`), or a tab stop dragged off the ruler is deleted (`rulerDragOff`).
+    /// A ruler press released: a click on the text area adds what the tab selector says (`rulerClick`), and a click on
+    /// a stop asks for its options; a moved marker runs its command (`rulerDrag`), or a tab stop dragged more than the
+    /// removal distance below the ruler is deleted (`rulerDragOff`).
     fn ruler_release(&mut self, d: &super::host::RulerDrag, at: Point) {
         use crate::api::command::{AddTabStop, BoundaryMove, ColumnBoundaryMove, Indents, Margins, MoveTabStop};
         use crate::api::services::TabSelector as T;
         use crate::api::value::{Points, TabAlignment};
-        use crate::services::ruler::{BAND, Marker as M};
+        use crate::services::ruler::Marker as M;
         let (h, v) = (&d.view.model.horizontal, &d.view.model.vertical);
         let (start, end) = (h.text.start.0, h.text.end.0);
         let (left, first) = (h.indents.left.0, h.indents.first_line.0);
@@ -322,8 +398,14 @@ impl Session {
                 };
                 (GestureId::RulerClick, command)
             }
+            Some(M::Tab(pos)) if !d.moved => {
+                if let Some(p) = self.tab_stop_popover(pos) {
+                    self.show_popover(p);
+                }
+                return;
+            }
             Some(_) if !d.moved => return,
-            Some(M::Tab(pos)) if !(-BAND..2.0 * BAND).contains(&d.now.y) => (GestureId::RulerDragOff, Command::DeleteTabStop(Points(pos))),
+            Some(M::Tab(pos)) if d.removing => (GestureId::RulerDragOff, Command::DeleteTabStop(Points(pos))),
             Some(m) => {
                 let margins = &self.state.page.margins;
                 let command = match m {
@@ -369,12 +451,14 @@ impl Session {
             PointerKind::Up => K::Up,
             PointerKind::Cancel | PointerKind::Leave => K::Cancel,
         };
+        let hovered = self.editor.table_hover();
         let _ = self.apply_with(Origin::User, |e, fonts| {
             e.pointer_input(kind, x, y, clicks, mods, fonts);
             Outcome::Unchanged("pointer input")
         });
-        // A border or object drag moves its guide with no new state: a frame shows it.
-        if kind == K::Move && self.editor.dragging() {
+        // A border, object or table drag moves its guide with no new state, and a table's handles follow the
+        // pointer: a frame shows them.
+        if kind == K::Move && (self.editor.dragging() || self.editor.table_hover() != hovered) {
             self.presentation.want_frame();
         }
     }

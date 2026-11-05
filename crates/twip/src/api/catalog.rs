@@ -231,6 +231,7 @@ const ENTRIES: &[Entry] = {
         (C::SetTableIndent, "Table Indent", G::Table, &[], &[], true, true, U::Step),
         (C::SetTableStyle, "Table Style", G::Table, &[], &[], true, true, U::Step),
         (C::SetTableStyleOptions, "Table Style Options", G::Table, &[], &[], true, true, U::Step),
+        (C::SetTablePosition, "Table Position", G::Table, &[], &[], true, true, U::Step),
         (C::SetObjectSize, "Size", G::Object, &[], &[], true, true, U::Step),
         (C::ResetObjectSize, "Reset Size", G::Object, &[], &[], false, true, U::Step),
         (C::SetObjectWrap, "Wrap Text", G::Object, &[], &[], true, true, U::Step),
@@ -259,6 +260,13 @@ const ENTRIES: &[Entry] = {
         (C::UnlinkFields, "Unlink Fields", G::Field, &["Ctrl+Shift+F9"], &["⇧⌘F9"], true, true, U::Step),
         (C::ShowFieldCodes, "Field Codes", G::Field, &["Alt+F9", "Shift+F9"], &["⌥F9", "⇧F9"], true, false, U::View),
         (C::SetFieldLabels, "Field Labels", G::Field, &[], &[], true, false, U::View),
+        (C::SetSubTemplateRules, "Sub-template Rules", G::Field, &[], &[], true, false, U::View),
+        (C::SetSubTemplateView, "Show Sub-templates", G::Field, &[], &[], true, false, U::View),
+        (C::EditSubTemplate, "Edit Sub-template", G::Field, &[], &[], true, false, U::View),
+        (C::CloseSubTemplate, "Close Sub-template", G::Field, &[], &[], false, false, U::View),
+        (C::CreateSubTemplate, "New Sub-template", G::Field, &[], &[], true, true, U::Step),
+        (C::RenameSubTemplate, "Rename Sub-template", G::Field, &[], &[], true, true, U::Step),
+        (C::RemoveSubTemplate, "Remove Sub-template", G::Field, &[], &[], true, true, U::Step),
         (C::InsertControl, "Content Control", G::Control, &[], &[], true, true, U::Step),
         (C::SetControl, "Control Properties", G::Control, &[], &[], true, true, U::Step),
         (C::RemoveControl, "Remove Content Control", G::Control, &[], &[], true, true, U::Step),
@@ -292,6 +300,14 @@ const ENTRIES: &[Entry] = {
         (C::SetZoom, "Zoom", G::View, &[], &[], true, false, U::View),
         (C::SetViewOptions, "Show", G::View, &[], &[], true, false, U::View),
         (C::SetMode, "Mode", G::View, &[], &[], true, false, U::View),
+        (C::SetRulerTabType, "Tab Type", G::Tabs, &[], &[], true, false, U::View),
+        (C::ShowTabTypes, "Tab Types", G::Tabs, &[], &[], false, false, U::View),
+        (C::ShowTabStop, "Tab Stop Options", G::Tabs, &[], &[], false, false, U::View),
+        (C::SetAutoCorrect, "AutoCorrect Options", G::Text, &[], &[], true, false, U::View),
+        (C::RevertAutoCorrect, "Undo AutoCorrect", G::Text, &[], &[], false, true, U::Step),
+        (C::NeverAutoCorrect, "Stop Correcting", G::Text, &[], &[], false, true, U::Step),
+        (C::ShowAutoCorrectOptions, "AutoCorrect Options Button", G::Text, &["Alt+Shift+F10"], &["⌥⇧F10"], false, false, U::View),
+        (C::ClosePopover, "Close Popover", G::View, &[], &[], false, false, U::View),
         (C::DescribeFormatting, "Describe Formatting", G::View, &["Shift+F1"], &["⇧F1"], false, false, U::View),
     ]
 };
@@ -320,4 +336,78 @@ pub fn catalog() -> &'static [CommandInfo] {
 pub fn info(id: CommandId) -> Option<&'static CommandInfo> {
     // The catalog is in declaration order: an id's entry is at its index.
     catalog().get(id as usize).filter(|c| c.id == id)
+}
+
+/// The rulers' words: the markers' names, what hovering one says it does, and the tab types' names and descriptions.
+pub(crate) mod ruler {
+    use crate::api::services::TabSelector;
+
+    pub const FIRST_LINE: &str = "First line";
+    pub const HANGING: &str = "Hanging indent";
+    pub const LEFT_INDENT: &str = "Left indent";
+    pub const RIGHT_INDENT: &str = "Right indent";
+    pub const LEFT_MARGIN: &str = "Left margin";
+    pub const RIGHT_MARGIN: &str = "Right margin";
+    pub const TOP_MARGIN: &str = "Top margin";
+    pub const BOTTOM_MARGIN: &str = "Bottom margin";
+    pub const COLUMN_WIDTH: &str = "Column width";
+    pub const ROW_HEIGHT: &str = "Row height";
+    /// After a tab type's name: `Left tab`.
+    pub const TAB: &str = "tab";
+
+    pub const FIRST_LINE_DOES: &str = "indents only the first line";
+    pub const HANGING_DOES: &str = "where wrapped lines start";
+    pub const LEFT_INDENT_DOES: &str = "moves the first line with it";
+    pub const TAB_DOES: &str = "click for options, drag down to remove";
+    pub const MARGIN_DOES: &str = "drag to change";
+    pub const COLUMN_BORDER: &str = "Column border — drag to resize";
+    pub const COLUMN_SPACING: &str = "Column spacing — drag to resize";
+    pub const ROW_BORDER: &str = "Row border — drag to resize";
+
+    pub const RELEASE_TO_REMOVE: &str = "Release to remove tab stop";
+    pub const REMOVE: &str = "Remove tab stop";
+    /// Before a tab type's name in lower case: `Click to add a left tab`.
+    pub const CLICK_TO_ADD: &str = "Click to add a";
+    /// Before an indent type's name in lower case: `Click to set the hanging indent`.
+    pub const CLICK_TO_SET: &str = "Click to set the";
+    /// Before the box's type: `Tab type: Left`.
+    pub const TAB_TYPE: &str = "Tab type:";
+    pub const TAB_TYPE_DOES: &str = "click to change";
+
+    /// Every tab type, in the picker's order.
+    pub const TAB_TYPES: [TabSelector; 7] = [
+        TabSelector::Left,
+        TabSelector::Center,
+        TabSelector::Right,
+        TabSelector::Decimal,
+        TabSelector::Bar,
+        TabSelector::FirstLineIndent,
+        TabSelector::HangingIndent,
+    ];
+
+    /// A tab type's name and what it does.
+    pub fn tab_type(t: TabSelector) -> (&'static str, &'static str) {
+        match t {
+            TabSelector::Left => ("Left", "Text starts at the stop"),
+            TabSelector::Center => ("Center", "Text centers on the stop"),
+            TabSelector::Right => ("Right", "Text ends at the stop"),
+            TabSelector::Decimal => ("Decimal", "Numbers line up on the decimal point"),
+            TabSelector::Bar => ("Bar", "A vertical line at the stop"),
+            TabSelector::FirstLineIndent => ("First line indent", "A click sets where the first line starts"),
+            TabSelector::HangingIndent => ("Hanging indent", "A click sets where wrapped lines start"),
+        }
+    }
+}
+
+/// The table readouts' words: what a status line names, and what a key does.
+pub(crate) mod table {
+    pub const COLUMN: &str = "col";
+    pub const ROW: &str = "row";
+    pub const TABLE: &str = "table";
+    pub const CELLS: &str = "cells";
+    /// Backspace deletes what is selected.
+    pub const DELETE: &str = "⌫ delete";
+    /// Alt held: a drag moves freely; without it, the key that does.
+    pub const FREE: &str = "free";
+    pub const ALT_FREE: &str = "⌥ free";
 }

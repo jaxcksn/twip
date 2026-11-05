@@ -13,7 +13,7 @@ use crate::api::command::*;
 use crate::api::drawing as dr;
 use crate::api::engine::{Dictionary, SessionId, SessionOptions};
 use crate::api::error::{Error, ErrorCode};
-use crate::api::event::{Event, FieldRequest, HostCommand, KeyOutcome, LinkVia};
+use crate::api::event::{Event, FieldRequest, HostCommand, KeyOutcome, LinkVia, RefusalReason};
 use crate::api::fonts::{FaceInfo, FontRequest, SubstitutionRule};
 use crate::api::input::{ClipboardData, CompositionPhase, Key, Modifiers, Point, PointerButton, PointerKind};
 use crate::api::record::{Author, ChangeSummary, Identity, Origin, Timestamp, TransactionRecord};
@@ -158,6 +158,7 @@ pub fn fixtures() -> Vec<Fixture> {
         "paste-as": PasteAs,
         "pointer-button": PointerButton,
         "pointer-kind": PointerKind,
+        "reference-resolution": ReferenceResolution,
         "revision-kind": RevisionKind,
         "ruler-unit": RulerUnit,
         "section-break-kind": SectionBreakKind,
@@ -294,9 +295,30 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("paragraph-formatting", ParagraphFormatting, vec![paragraph()]),
         fixture!("page-formatting", PageFormatting, vec![page()]),
         fixture!("view-state", ViewState, vec![ViewState::default()]),
+        fixture!(
+            "chrome-theme",
+            ChromeTheme,
+            vec![
+                ChromeTheme::Light,
+                ChromeTheme::Dark,
+                ChromeTheme::HighContrast(SystemColors {
+                    canvas: Color(0x000000),
+                    canvas_text: Color(0xFFFFFF),
+                    highlight: Color(0x1AEBFF),
+                    highlight_text: Color(0x000000),
+                    gray_text: Color(0x3FF23F),
+                }),
+            ]
+        ),
+        fixture!("document-appearance", DocumentAppearance, all()),
+        fixture!("measure-detail", MeasureDetail, all()),
+        fixture!("object-grid", ObjectGrid, all()),
         fixture!("review-state", ReviewState, vec![review_state()]),
         // events
         fixture!("event", Event, events()),
+        fixture!("popover-tab-type", Popover, vec![popovers()[0].clone()]),
+        fixture!("popover-tab-stop", Popover, vec![popovers()[1].clone()]),
+        fixture!("popover-autocorrect", Popover, vec![popovers()[2].clone()]),
         fixture!(
             "key-outcome",
             KeyOutcome,
@@ -333,7 +355,18 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("heading", Heading, vec![Heading { id: HeadingId("h2".into()), level: 2, text: "Terms".into(), page: 3 }]),
         fixture!("style-info", StyleInfo, vec![style_info()]),
         fixture!("element-filter", ElementFilter, vec![element_filter(), ElementFilter::default()]),
-        fixture!("element-info", ElementInfo, vec![element_info()]),
+        fixture!("element-info", ElementInfo, vec![element_info(), reference_info()]),
+        fixture!(
+            "sub-template-info",
+            SubTemplateInfo,
+            vec![SubTemplateInfo {
+                name: "Notice".into(),
+                category: "Sub-templates".into(),
+                references: 2,
+                nested_references: 1,
+                elements: vec![reference_info()]
+            }]
+        ),
         fixture!("element-detail", ElementDetail, vec![element_detail()]),
         fixture!("block", Block, blocks()),
         fixture!("data-part", DataPart, vec![data_part()]),
@@ -652,6 +685,7 @@ fn commands() -> Vec<Command> {
             banded_rows: Some(true),
             banded_columns: Some(false),
         }),
+        Command::SetTablePosition(Some(table_position())),
         Command::SetObjectSize(ObjectSize { width: Some(Points(144.5)), height: Some(Points(72.5)), lock_aspect: Some(true) }),
         Command::ResetObjectSize,
         Command::SetObjectWrap(ObjectWrap::Square),
@@ -695,6 +729,25 @@ fn commands() -> Vec<Command> {
         Command::UnlinkFields(ElementIds { ids: None }),
         Command::ShowFieldCodes(ShowFieldCodes { show: true, ids: None }),
         Command::SetFieldLabels(FieldLabels { labels: BTreeMap::from([("MERGEFIELD Name".into(), "Customer name".into())]), merge: Some(true) }),
+        Command::SetSubTemplateRules(SubTemplateRules {
+            rules: vec![ReferenceRule {
+                field_type: "SUBTEMPLATE".into(),
+                argument: Some(0),
+                category: "Sub-templates".into(),
+                gallery: Some("custom1".into()),
+            }],
+        }),
+        Command::SetSubTemplateView(SubTemplateView { ids: Some(vec![id("field-7")]), expanded: false }),
+        Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: Some("Sub-templates".into()) }),
+        Command::CloseSubTemplate,
+        Command::CreateSubTemplate(CreateSubTemplate { name: "Payment".into(), category: Some("Sub-templates".into()), from: None }),
+        Command::RenameSubTemplate(RenameSubTemplate {
+            name: "Violation".into(),
+            to: "Citation".into(),
+            category: None,
+            update_references: Some(true),
+        }),
+        Command::RemoveSubTemplate(SubTemplateName { name: "Cycle-B".into(), category: None }),
         Command::InsertControl(InsertControl {
             kind: ControlKind::DropDown,
             tag: Some("status".into()),
@@ -763,9 +816,52 @@ fn commands() -> Vec<Command> {
             gridlines: Some(false),
             text_boundaries: Some(true),
             live_layout: Some(false),
+            theme: Some(ChromeTheme::Dark),
+            theme_colors: Some(ThemeColors {
+                light: None,
+                dark: Some(ChromeColors {
+                    desk: Some(Color(0x1B1F27)),
+                    surface: Some(Color(0x252A33)),
+                    text: Some(Color(0xE6EDF3)),
+                    ..ChromeColors::default()
+                }),
+            }),
+            accent: Some(Color(0x0A74E4)),
+            appearance: Some(DocumentAppearance::DarkWithLightPage),
+            detail: Some(MeasureDetail::Full),
+            object_grid: Some(ObjectGrid::Always),
         }),
         Command::SetMode(Mode::Design),
+        Command::SetRulerTabType(TabSelector::Decimal),
+        Command::ShowTabTypes,
+        Command::ShowTabStop,
+        Command::SetAutoCorrect(AutoCorrectChange {
+            smart_quotes: Some(false),
+            entries: Some(vec![AutoCorrectEntry { from: "adn".into(), to: "and".into() }]),
+            ..AutoCorrectChange::default()
+        }),
+        Command::RevertAutoCorrect,
+        Command::NeverAutoCorrect,
+        Command::ShowAutoCorrectOptions,
+        Command::ClosePopover,
         Command::DescribeFormatting,
+    ]
+}
+
+fn popovers() -> [Popover; 3] {
+    let anchor = ClientRect { left: 120.5, top: 10.0, width: 14.0, height: 14.0 };
+    let choice = |value, name: &str, description: &str| TabTypeChoice { value, name: name.into(), description: description.into() };
+    [
+        Popover::TabType {
+            anchor: ClientRect { left: 0.0, top: 3.0, width: 18.0, height: 18.0 },
+            current: TabSelector::Left,
+            choices: vec![
+                choice(TabSelector::Left, "Left", "Text starts at the stop"),
+                choice(TabSelector::Decimal, "Decimal", "Numbers line up on the decimal point"),
+            ],
+        },
+        Popover::TabStop { anchor, position: Points(198.5), alignment: TabAlignment::Right, leader: TabLeader::Dots },
+        Popover::AutoCorrect { anchor, from: "(c)".into(), to: "©".into() },
     ]
 }
 
@@ -811,7 +907,17 @@ fn command_values() -> Vec<CommandValue> {
         CommandValue::Alignment(Tri::Uniform(Alignment::Center)),
         CommandValue::LineSpacing(Tri::Uniform(LineSpacing::AtLeast { size: Points(12.5) })),
         CommandValue::Toggle(Tri::Unavailable),
+        CommandValue::TabType(TabSelector::Decimal),
+        CommandValue::TablePosition(table_position()),
     ]
+}
+
+fn table_position() -> TablePosition {
+    TablePosition {
+        horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align: None, offset: Some(Points(72.5)) }),
+        vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(36.5)) }),
+        wrap_distance: Some(TextDistance { top: Points(0.0), bottom: Points(0.0), left: Points(9.0), right: Points(9.0) }),
+    }
 }
 
 fn selection() -> SelectionSummary {
@@ -963,6 +1069,7 @@ fn state() -> State {
         sequence: 19,
         load: LoadState::Ready,
         mode: Mode::Editing,
+        editing: crate::api::state::EditingTarget::SubTemplate { name: "Violation".into(), category: "Sub-templates".into() },
         read_only: false,
         modified: true,
         selection: selection(),
@@ -983,6 +1090,7 @@ fn state() -> State {
         ruler: ruler(),
         format_painter: false,
         theme_colours: vec![Color(0x000000), Color(0xFFFFFF)],
+        auto_correct: AutoCorrectOptions { never: vec!["teh".into()], ..AutoCorrectOptions::default() },
     }
 }
 
@@ -1227,7 +1335,25 @@ fn element_filter() -> ElementFilter {
     ElementFilter {
         kind: Some(ElementKind::PlainText),
         matches: Some(ElementMatch { field: ElementField::Tag, text: "name".into() }),
-        story: Some(Story::Body),
+        story: Some(Story::SubTemplate),
+        sub_template: Some("Violation".into()),
+    }
+}
+
+fn reference_info() -> ElementInfo {
+    ElementInfo {
+        id: id("field-7"),
+        kind: ElementKind::Field,
+        code: Some("SUBTEMPLATE Violation".into()),
+        story: Story::SubTemplate,
+        sub_template: Some("Notice".into()),
+        reference: Some(SubTemplateReference {
+            name: "violation".into(),
+            resolution: ReferenceResolution::NearMatch,
+            near_match: Some("Violation".into()),
+            expanded: true,
+        }),
+        ..ElementInfo::default()
     }
 }
 
@@ -1240,8 +1366,10 @@ fn element_info() -> ElementInfo {
         title: Some("Name".into()),
         display: "Ada".into(),
         story: Story::Body,
+        sub_template: None,
         parent: Some(id("control-1")),
         locked: false,
+        reference: None,
     }
 }
 
@@ -1254,6 +1382,7 @@ fn element_detail() -> ElementDetail {
         title: Some("Due".into()),
         display: "2026-10-27".into(),
         story: Story::Footer,
+        sub_template: None,
         parent: None,
         locked: true,
         lock: ControlLock::Both,
@@ -1478,6 +1607,8 @@ fn events() -> Vec<Event> {
         Event::LinkActivated { address: "https://example.com".into(), via: LinkVia::CtrlClick },
         Event::PlaceholderActivated(PlaceholderInfo { key: "logo".into(), element: None }),
         Event::ContextMenu(ContextMenuEvent { menu: menu(), at: at(), via: MenuVia::Pointer }),
+        Event::PopoverRequested(popovers()[1].clone()),
+        Event::PopoverClosed,
         Event::DialogRequested { kind: DialogKind::Tabs },
         Event::HostCommand { command: HostCommand::Save },
         Event::Shortcut { id: "insertSignature".into() },
@@ -1492,6 +1623,10 @@ fn events() -> Vec<Event> {
         Event::CommentAnchors(vec![anchor()]),
         Event::BalloonsLaidOut(vec![balloon()]),
         Event::RulerChanged(ruler_view()),
+        Event::EditingTargetChanged(crate::api::state::EditingTarget::SubTemplate { name: "Violation".into(), category: "Sub-templates".into() }),
+        Event::EditingTargetChanged(crate::api::state::EditingTarget::Template),
+        Event::EditRefused { reason: RefusalReason::SubTemplate { name: "Violation".into() }, element: Some(id("field-7")) },
+        Event::EditRefused { reason: RefusalReason::Locked, element: None },
         Event::Tooltip(Some(tooltip())),
         Event::Tooltip(None),
         Event::Announcement { text: "Bold on".into(), kind: AnnouncementKind::Formatting },

@@ -31,6 +31,7 @@ enum Kind {
     Comment,
     Story,
     Region,
+    SubTemplate,
 }
 
 /// The id of a node that is not a paragraph, float or inline shape (those use their own ids, from one process
@@ -163,6 +164,10 @@ pub(crate) fn caret_para(tree: &AccessibleNode, id: AccessibleId) -> Option<Opti
         return None;
     }
     let node = *to.last()?;
+    // In a sub-template body shown in place: its reference's paragraph.
+    if let Some(t) = to.iter().find_map(|n| (n.role == AccessibleRole::TextBox).then_some(n.target).flatten()) {
+        return Some(Some(ParaId(t.0)));
+    }
     Some(match node.role {
         AccessibleRole::Document | AccessibleRole::Region => None,
         AccessibleRole::NoteRef => {
@@ -277,6 +282,10 @@ impl Builder<'_> {
                     while !lists.is_empty() {
                         close(&mut lists, &mut out);
                     }
+                    if let Some(node) = self.shown_body(p) {
+                        out.push(node);
+                        continue;
+                    }
                     let (children, floats) = self.inlines(p, depth);
                     if !children.is_empty() {
                         let level = heading_level(p);
@@ -298,6 +307,56 @@ impl Builder<'_> {
             close(&mut lists, &mut out);
         }
         out
+    }
+
+    /// The sub-template body shown in place of the reference alone in `p`, as the screen sees it: a read-only group
+    /// named for the sub-template, with the body's paragraphs. Its ids come from the reference, so a body shown at
+    /// several references never repeats one.
+    // ponytail: the body's paragraphs as text, without their headings, lists, tables or nested bodies, and a body
+    // shown as a table row reads as the reference; read the body with `blocks` (ids made per reference) if users need
+    // its structure.
+    fn shown_body(&self, p: &Paragraph) -> Option<AccessibleNode> {
+        let (field, r) = self.e.references().by_field.iter().find(|(f, r)| {
+            r.at == ParaId(p.id) && r.row.is_none() && r.resolution == crate::editing::sub_templates::Resolution::Resolved && self.e.reference_expanded(**f)
+        })?;
+        let body = &self.doc.glossary.as_ref()?.parts.get(r.part? as usize)?.body;
+        fn texts(list: &[Block], out: &mut Vec<String>) {
+            for b in list {
+                match b {
+                    Block::Para(p) => out.push(crate::docx::fields::text(p)),
+                    Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| texts(&c.blocks, out)),
+                }
+            }
+        }
+        let mut lines = Vec::new();
+        texts(body, &mut lines);
+        let id = derived(Kind::SubTemplate, field.0, 0);
+        let children = lines
+            .into_iter()
+            .filter(|t| !t.trim().is_empty())
+            .enumerate()
+            .map(|(i, text)| AccessibleNode {
+                id: derived(Kind::SubTemplate, field.0, i as u64 + 1),
+                role: AccessibleRole::Paragraph,
+                children: vec![AccessibleNode {
+                    id: derived(Kind::Text, id.0, i as u64 + 1),
+                    role: AccessibleRole::Text,
+                    text: Some(text),
+                    ..AccessibleNode::default()
+                }],
+                ..AccessibleNode::default()
+            })
+            .collect();
+        // A group, as a text box is. Its target is the reference's paragraph: where activating it, or anything in it,
+        // starts editing (the body itself is read only).
+        Some(AccessibleNode {
+            id,
+            role: AccessibleRole::TextBox,
+            name: Some(format!("Sub-template {}, read only", r.name)),
+            target: Some(AccessibleId(p.id)),
+            children,
+            ..AccessibleNode::default()
+        })
     }
 
     /// A table at nesting `level`: its rows, and their cells with their grid places; a header row's cells are column

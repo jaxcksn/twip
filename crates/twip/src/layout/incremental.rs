@@ -336,6 +336,7 @@ fn row_restart(
     latest: Option<&LatestTable>,
     relaid: &mut Option<LatestTable>,
     preview: Option<&super::Preview>,
+    expansions: Option<&super::expansion::Expansions>,
 ) -> Option<usize> {
     let row = span.row?;
     let blocks = &doc.sections.get(span.section)?.blocks;
@@ -356,7 +357,7 @@ fn row_restart(
     let rec = p.or_else(|| base.iter().position(|pg| inside(pg, span).is_some()))?;
     let width = base[rec].bodies[0].space.columns[0].width;
     let env = LayoutEnv::new(doc);
-    let ctx = LayoutCtx { fonts, env: &env, preview };
+    let ctx = LayoutCtx { fonts, env: &env, preview, expansions };
     let fields = super::text::FieldValues::default();
     let story = super::story::StoryEnv { ctx, fields: &fields, notes };
     // Laid out through the document's cache, without storing the new version (an incremental pass's);
@@ -669,6 +670,8 @@ pub struct DocumentLayout {
     frames: HashMap<FragmentId, Frame>,
     /// Live layout's previewed float ([`LayoutCtx::preview`]).
     preview: Option<Rc<super::Preview>>,
+    /// The sub-template bodies shown in place of their references ([`LayoutCtx::expansions`]).
+    expansions: Option<Rc<super::expansion::Expansions>>,
 }
 
 /// A published page fragment with the numbering and header and footer it was published with.
@@ -694,6 +697,7 @@ impl DocumentLayout {
             reused: (0, 0),
             frames: HashMap::new(),
             preview: None,
+            expansions: None,
         }
     }
 
@@ -721,6 +725,23 @@ impl DocumentLayout {
         }
         if hints.iter().any(Option::is_none) {
             // shortcut: a header or footer float is previewed by a full layout; a story hint would lay out less.
+            self.acc.full = true;
+        }
+        true
+    }
+
+    /// From `revision` on, the document is laid out with `expansions` (the editor's sub-template bodies shown in place of
+    /// their references). Nothing in the document changes. `hints` are the extents of the paragraphs whose expansion
+    /// changed, as for an edit; one without lays everything out again. False when they are the ones already laid out.
+    pub fn set_expansions(&mut self, revision: Revision, expansions: Option<Rc<super::expansion::Expansions>>, hints: &[Option<Change>]) -> bool {
+        if self.expansions == expansions {
+            return false;
+        }
+        self.expansions = expansions;
+        for &h in hints {
+            self.edit(revision, h);
+        }
+        if hints.iter().any(Option::is_none) {
             self.acc.full = true;
         }
         true
@@ -841,7 +862,19 @@ impl DocumentLayout {
                 let notes = job.note_numbers().clone();
                 let latest = b.table.as_ref();
                 crate::prof::time("layout:row-restart", || {
-                    row_restart(base, s, doc, fonts, &notes, &mut self.cache, &mut job.run.memo, latest, &mut relaid, self.preview.as_deref())
+                    row_restart(
+                        base,
+                        s,
+                        doc,
+                        fonts,
+                        &notes,
+                        &mut self.cache,
+                        &mut job.run.memo,
+                        latest,
+                        &mut relaid,
+                        self.preview.as_deref(),
+                        self.expansions.as_deref(),
+                    )
                 })
                 .filter(|&p| p > r)
                 .unwrap_or(r)
@@ -905,7 +938,7 @@ impl DocumentLayout {
             self.job = Some(r);
         }
         let env = LayoutEnv::new(doc);
-        let ctx = LayoutCtx { fonts, env: &env, preview: self.preview.as_deref() };
+        let ctx = LayoutCtx { fonts, env: &env, preview: self.preview.as_deref(), expansions: self.expansions.as_deref() };
         let running = self.job.as_mut().expect("started above");
         let before = running.job.committed().len();
         self.cache.store_tables = !running.incremental;
@@ -930,7 +963,7 @@ impl DocumentLayout {
             Step::Done => self.complete_job(doc, fonts),
             Step::Yielded if progressed => {
                 let env = LayoutEnv::new(doc);
-                let ctx = LayoutCtx { fonts, env: &env, preview: self.preview.as_deref() };
+                let ctx = LayoutCtx { fonts, env: &env, preview: self.preview.as_deref(), expansions: self.expansions.as_deref() };
                 let shown = self.published.pages().len();
                 if let Some(running) = self.job.as_mut() {
                     running.job.compose_committed(doc, &ctx, &mut self.cache, shown);

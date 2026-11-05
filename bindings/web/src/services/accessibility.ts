@@ -70,7 +70,7 @@ export interface AccessibleNode {
   lang?: string;
   /** The comment the text is in the range of. */
   details?: AccessibleId;
-  /** The note a note reference points to. */
+  /** The note a note reference points to; for a sub-template body shown in place, its reference's paragraph. */
   target?: AccessibleId;
   /** Its children. */
   children: AccessibleNode[];

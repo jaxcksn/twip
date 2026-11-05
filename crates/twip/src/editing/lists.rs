@@ -253,7 +253,7 @@ impl Editor {
         let part = format!(
             r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{abstract_xml}<w:num w:numId="{num_id}"><w:abstractNumId w:val="{abstract_id}"/></w:num></w:numbering>"#
         );
-        let parsed = crate::docx::numbering::Numbering::parse(Some(&part));
+        let parsed = crate::docx::numbering::Numbering::parse(Some(&part), &res.styles.colours);
         let mut r = (*res).clone();
         r.numbering.abstracts.extend(parsed.abstracts);
         r.numbering.nums.extend(parsed.nums);
@@ -316,7 +316,13 @@ impl Editor {
                     let Some(level) = res.numbering.level(*id, *ilvl, &res.styles).cloned() else { continue };
                     let region = self.region_of_para(para, &res);
                     let base = res.para_from_xml(p.style.direct.0.as_deref(), region.as_ref(), &cx).base;
-                    let mark = p.mark.direct.0.as_deref().and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el)))).unwrap_or_default();
+                    let mark = p
+                        .mark
+                        .direct
+                        .0
+                        .as_deref()
+                        .and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &res.styles.colours)))
+                        .unwrap_or_default();
                     let mut lp = res.run_props(&base, &mark);
                     lp.merge(&level.rpr);
                     Some(ListLabel { text: text.clone(), run: res.run_style(&lp), jc: level.jc.clone(), suff: level.suff.clone() })

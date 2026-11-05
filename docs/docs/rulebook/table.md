@@ -721,3 +721,14 @@ This applies to left-aligned tables that don't float, whose exceptions also set 
 A cell with `w:tcFitText` lays each paragraph out on one line: it wraps only at line, column and page breaks. The line starts at the left of the cell's content box, whatever the paragraph's alignment, and its characters are spaced so the text ends at the **fit width**: the content box width less the paragraph's left, right and first-line indents (a hanging indent widens it) and 1pt. The line keeps its height. The difference is spread evenly over the line's pieces.
 
 In autofit a fitted cell with a `dxa` width is that wide: its minimum, maximum and hard minimum are all its `w:tcW` ([TABLE-7](#table-7)).
+
+### TABLE-52. A table moved by its handle {#table-52}
+
+Dragging a table's move handle and dropping it positions the table where it was dropped, as a floating table ([TABLE-49](#table-49)):
+
+- A table with no `w:tblpPr` gets one: `w:horzAnchor="margin"`, `w:vertAnchor="text"`, `w:leftFromText` and `w:rightFromText` 180 twips, `w:topFromText` and `w:bottomFromText` 0. It stays in its place among the paragraphs: against the `text`, `tblpY` is from where it stands in the flow, which is now the top of the paragraph after it.
+- `w:tblpX` and `w:tblpY` are the offsets, in whole twips, that draw the table's top left corner at the drop point. A table that had a `w:tblpXSpec` or `w:tblpYSpec` loses it for the offset.
+- Its other position properties (the anchors, the distances, `w:tblOverlap`) stay.
+- A click on the handle without a drag selects the table and changes nothing.
+
+Example: in compat 15, a table with `w:tblInd` 0 dragged 1in right and 0.5in down gets `<w:tblpPr w:leftFromText="180" w:rightFromText="180" w:topFromText="0" w:bottomFromText="0" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="1440" w:tblpY="720"/>`.

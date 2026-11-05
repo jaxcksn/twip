@@ -432,7 +432,7 @@ impl Editor {
     /// Replaces `find` in field `f`'s own code text (the fields nested in it untouched), text inline by text inline;
     /// whether it changed.
     // shortcut: a match spanning two of the code's text inlines (a formatting change inside it) isn't found.
-    fn replace_in_code(&mut self, tx: &mut super::Tx, f: FieldId, find: &str, replace: &str) -> bool {
+    pub(super) fn replace_in_code(&mut self, tx: &mut super::Tx, f: FieldId, find: &str, replace: &str) -> bool {
         let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Field(f)) else { return false };
         let Some(p) = self.index.para(&self.doc, para).cloned() else { return false };
         let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { return false };
@@ -1060,6 +1060,7 @@ impl Editor {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         if self.locked_edit(&a, &b) {
             self.refused = Some("locked");
+            self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
             return true;
         }
         false

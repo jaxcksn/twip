@@ -112,6 +112,38 @@ internal sealed class ColorValueConverter : JsonConverter<ColorValue>
     public override void Write(Utf8JsonWriter writer, ColorValue value, JsonSerializerOptions options) => writer.WriteStringValue(value.ToString());
 }
 
+/// <summary><c>'light' | 'dark' | { highContrast: HighContrastColors }</c>.</summary>
+internal sealed class ChromeThemeConverter : JsonConverter<ChromeTheme>
+{
+    public override ChromeTheme Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            return reader.GetString() switch
+            {
+                "light" => ChromeTheme.Light,
+                "dark" => ChromeTheme.Dark,
+                var other => throw new JsonException($"unknown chrome theme {other}"),
+            };
+        }
+        var o = JsonElement.ParseValue(ref reader);
+        return ChromeTheme.HighContrast(o.GetProperty("highContrast").Deserialize(TwipJsonContext.Default.HighContrastColors) ?? throw new JsonException("high contrast colours can't be null"));
+    }
+
+    public override void Write(Utf8JsonWriter writer, ChromeTheme value, JsonSerializerOptions options)
+    {
+        if (value.Colors is not { } colors)
+        {
+            writer.WriteStringValue(value.Kind == ChromeThemeKind.Dark ? "dark" : "light");
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WritePropertyName("highContrast");
+        JsonSerializer.Serialize(writer, colors, TwipJsonContext.Default.HighContrastColors);
+        writer.WriteEndObject();
+    }
+}
+
 /// <summary><c>T | 'mixed' | null</c>.</summary>
 internal sealed class FormatValueConverter<T> : JsonConverter<FormatValue<T>>
 {

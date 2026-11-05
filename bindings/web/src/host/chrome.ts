@@ -3,7 +3,7 @@
 import type { Op } from '../commands.js';
 import type { Session } from '../editor.js';
 import { stackBalloons, type BalloonPlacement, type CommentAnchor } from '../review.js';
-import type { View } from '../services/view.js';
+import type { ChromeTheme, DocumentAppearance, View, ViewOptions } from '../services/view.js';
 import { type FrameInfo, Method } from '../transport/protocol.js';
 import type { ClientPoint, ClientRect, Color, CommentId, ElementId, FrameStats, OverlayColors } from '../types.js';
 import type { Dom, Ledger } from './dom.js';
@@ -88,9 +88,9 @@ export function startChrome(
     if (motion.matches) follow();
   }
 
-  // The overlay colours: the engine's, or the system's in forced-colours mode until the application sets them.
-  const defaults: OverlayColors = { caret: '#000000', selection: '#B3D7FF', object: '#606060', drop: '#404040', marks: '#2F6FB5', leaders: '#767676' };
-  let overlay = defaults;
+  // The overlay colours: the theme's until the application sets them (the light theme's are the base it changes).
+  const THEME: OverlayColors = { selection: '#9DC7F4', object: '#0A74E4', drop: '#62656C', marks: '#0A74E4', leaders: '#62656C' };
+  let overlay = THEME;
   const system = (css: string): Color => {
     const probe = Object.assign(document.createElement('span'), { hidden: true });
     probe.style.color = css;
@@ -99,18 +99,35 @@ export function startChrome(
     probe.remove();
     return `#${[r, g, b].map((v) => (v ?? 0).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
   };
-  const paint = (colors: OverlayColors) => s.call(Method.HostSetOverlayPalette, colors).then(() => frames.request());
-  let forced: MediaQueryList | undefined = globalThis.matchMedia?.('(forced-colors: active)');
+  const paint = (colors: OverlayColors | null) => s.call(Method.HostSetOverlayPalette, colors).then(() => frames.request());
+
+  // The theme and the page's appearance: the application's, or, while the platform forces its colours, the
+  // high-contrast theme from the system colours with a light page; the application's again when that mode ends.
+  const look: { theme: ChromeTheme; appearance: DocumentAppearance } = { theme: 'light', appearance: 'light' };
+  const forced: MediaQueryList | undefined = globalThis.matchMedia?.('(forced-colors: active)');
+  const setLook = async ({ theme, appearance, ...rest }: ViewOptions) => {
+    if (theme) look.theme = theme;
+    if (appearance) look.appearance = appearance;
+    const mine = forced?.matches ? {} : { ...(theme && { theme }), ...(appearance && { appearance }) };
+    await s.run({ type: 'setViewOptions', ...rest, ...mine });
+  };
   if (forced) {
     const follow = () => {
-      if (!forced) return;
-      const text = system('CanvasText');
-      overlay = forced.matches ? { caret: text, selection: system('Highlight'), object: text, drop: text, marks: system('GrayText'), leaders: system('GrayText') } : defaults;
-      paint(overlay).catch(report);
+      const highContrast = () => ({
+        canvas: system('Canvas'),
+        canvasText: system('CanvasText'),
+        highlight: system('Highlight'),
+        highlightText: system('HighlightText'),
+        grayText: system('GrayText'),
+      });
+      const options = forced.matches ? { theme: { highContrast: highContrast() }, appearance: 'light' as const } : look;
+      s.run({ type: 'setViewOptions', ...options }).catch(report);
     };
     ledger.listen(forced, 'change', follow);
     if (forced.matches) follow();
   }
+  // The area around the pages: the theme's desk, or the application's background.
+  s.disposers.push(s.subscribe((state) => (dom.scroller.style.background = state.view.background)));
 
   const set = async (method: Method, value: unknown) => {
     await s.call(method, value);
@@ -118,19 +135,22 @@ export function startChrome(
   };
   const view: View = {
     revealSelection: () => s.call(Method.HostRevealSelection),
-    setBackground: async (color: Color) => {
+    setBackground: async (color: Color | null) => {
       await set(Method.HostSetBackground, color);
-      dom.scroller.style.background = color;
+      dom.scroller.style.background = color ?? s.state.view.background;
     },
+    setTheme: (theme, accent) => setLook({ theme, ...(accent && { accent }) }),
+    setThemeColors: (themeColors) => setLook({ themeColors }),
+    setAppearance: (appearance) => setLook({ appearance }),
+    setDetail: (detail) => setLook({ detail }),
     visiblePages: () => {
       const r = dom.canvas.getBoundingClientRect();
       return pages.map(({ page, rect }) => ({ page, rect: { ...rect, left: rect.left + r.left, top: rect.top + r.top } }));
     },
     frameStats: () => s.call<FrameStats>(Method.HostFrameStats),
     setOverlayColors: (colors) => {
-      forced = undefined;
-      overlay = { ...overlay, ...colors };
-      return paint(overlay);
+      overlay = colors ? { ...overlay, ...colors } : THEME;
+      return paint(colors && overlay);
     },
     setCaretBlink: (ms, stopAfterMs) => {
       motion = undefined;

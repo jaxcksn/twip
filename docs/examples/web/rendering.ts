@@ -14,9 +14,9 @@ const editor = await Editor.mount(container, {
   drawLeaders: true,
 });
 
-// Later: back to a steady caret, and a darker caret.
+// Later: back to a steady caret, and amber formatting marks.
 await editor.view.setCaretBlink(0);
-await editor.view.setOverlayColors({ caret: '#1A237E' });
+await editor.view.setOverlayColors({ marks: '#B26A00' });
 
 // What the frames have cost: for a benchmark or a test.
 const stats = await editor.view.frameStats();

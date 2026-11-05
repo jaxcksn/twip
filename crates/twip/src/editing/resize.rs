@@ -42,6 +42,8 @@ pub(super) struct BorderDrag {
     pub row: usize,
     /// The guide's extent across the border: the table's top and bottom on the page, or the row's left and right.
     pub span: [f64; 2],
+    /// Alt held: the readouts show the change.
+    pub snapping: super::snap::Snapping,
 }
 
 impl BorderDrag {
@@ -72,7 +74,8 @@ impl Editor {
     pub(super) fn border_press(&mut self, x: f64, y: f64, shift: bool, ctrl: bool, fonts: &Fonts) -> bool {
         let Some((page, table, border, at, row_top, span, row)) = self.border_at(x, y, fonts) else { return false };
         self.drag = None;
-        self.border_drag = Some(BorderDrag { table, border, start: (x, y), now: (x, y), page, shift, ctrl, at, row_top, span, row });
+        let snapping = super::snap::Snapping::On;
+        self.border_drag = Some(BorderDrag { table, border, start: (x, y), now: (x, y), page, shift, ctrl, at, row_top, span, row, snapping });
         self.requests.push(Request::CapturePointer);
         true
     }
@@ -123,10 +126,7 @@ impl Editor {
         });
         // The resize handle: 8 px square just outside the lower right corner of a table's last row on the page,
         // live only where it is shown: an outermost table's, or the table holding the selection's.
-        let held: Vec<TableId> = match self.selection {
-            Selection::Cells { table, .. } => vec![table],
-            s => s.focus().map(|p| self.index.chain_of(&p).iter().map(|l| l.table).collect()).unwrap_or_default(),
-        };
+        let held = self.held_tables();
         let found = found.or_else(|| {
             geo.rows
                 .iter()
@@ -141,6 +141,14 @@ impl Editor {
                 })
         });
         found.map(|(table, border, at, row_top, span, row)| (page, table, border, at, row_top, span, row))
+    }
+
+    /// The tables holding the selection: a cell block's, or every table around its focus.
+    pub(super) fn held_tables(&self) -> Vec<TableId> {
+        match self.selection {
+            Selection::Cells { table, .. } => vec![table],
+            s => s.focus().map(|p| self.index.chain_of(&p).iter().map(|l| l.table).collect()).unwrap_or_default(),
+        }
     }
 
     /// The release of a border drag: the resize as one step (none when the pointer didn't move).

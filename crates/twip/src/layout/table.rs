@@ -574,23 +574,23 @@ fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, b: &Border) {
     if let Some(cs) = three_d(b) {
         let mut at = if horizontal { y0 } else { x0 };
         for (w, colour) in st.iter().zip(cs) {
-            out.push(Item::Rect { rect: if horizontal { [x0, at, x1, at + w] } else { [at, y0, at + w, y1] }, colour });
+            out.push(Item::rect(if horizontal { [x0, at, x1, at + w] } else { [at, y0, at + w, y1] }, colour));
             at += w;
         }
         return;
     }
     if st.len() == 1 && !dash_pattern(&b.style).is_empty() {
-        out.extend(dashes(&b.style, rect, horizontal).into_iter().map(|rect| Item::Rect { rect, colour }));
+        out.extend(dashes(&b.style, rect, horizontal).into_iter().map(|rect| Item::rect(rect, colour)));
         return;
     }
     if st.len() == 1 {
-        out.push(Item::Rect { rect, colour });
+        out.push(Item::rect(rect, colour));
         return;
     }
     let mut at = if horizontal { y0 } else { x0 };
     for (k, w) in st.iter().enumerate() {
         if k % 2 == 0 {
-            out.push(Item::Rect { rect: if horizontal { [x0, at, x1, at + w] } else { [at, y0, at + w, y1] }, colour });
+            out.push(Item::rect(if horizontal { [x0, at, x1, at + w] } else { [at, y0, at + w, y1] }, colour));
         }
         at += w;
     }
@@ -1016,7 +1016,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                 // The text width it takes: its widths less TABLE-17's edge allowances (TABLE-11), or laid out
                 // in a cell that wide its A falls short and its words break.
                 let t = super::story::as_nested(t, Some(CellEnds { fixed, ..CellEnds::default() }));
-                let shown = in_view(&t, env.ctx.env.text.review.view);
+                let shown = in_view(&t, env.ctx.env.text.review.view, env.ctx.expansions);
                 let t = shown.as_ref().map_or(&*t, |v| &v.table);
                 let f = fit(t, 0.0, env, Some(autofit::MAXW), memos)?;
                 // TABLE-11: a nested table is never sloppy, so its allowances are compat 15's in every mode.
@@ -1234,7 +1234,7 @@ fn layout_with(
     reuse: Option<(&TableLayout, std::ops::RangeInclusive<usize>)>,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
-    match in_view(t, env.ctx.env.text.review.view) {
+    match in_view(t, env.ctx.env.text.review.view, env.ctx.expansions) {
         None => layout_shown(t, text_w, env, prev, measure, reuse, memos),
         Some(v) => Ok(v.expand(&*layout_shown(&v.table, text_w, env, prev, measure, None, memos)?)),
     }
@@ -1248,15 +1248,18 @@ struct ViewTable {
     rows: Vec<Option<Vec<usize>>>,
 }
 
-/// The table `view` shows, when it isn't `t` itself.
+/// The table `view` shows, when it isn't `t` itself: also when a row shows a sub-template's row in its place
+/// (`expansions`).
 // shortcut: in Original a cell keeps the formatting its current table style gives it, even when the table's earlier
 // properties name another style; resolving the cells again over that style would show it.
-fn in_view(t: &Table, view: MarkupView) -> Option<ViewTable> {
+fn in_view(t: &Table, view: MarkupView, expansions: Option<&super::expansion::Expansions>) -> Option<ViewTable> {
     let original = view == MarkupView::Original;
     let grid = t.table_grid_in(view);
     let differs = |c: &Cell| view.hides_cell(&c.rev) || c.v_merge_in(view) != c.v_merge || original && c.rev.change.is_some();
     let hides = t.rows.iter().any(|r| view.hides_row(&r.rev) || original && r.rev.change.is_some() || r.cells.iter().any(differs));
-    if !hides && grid == t.grid.as_slice() && !(original && t.change.is_some()) {
+    let shown_row = |ri: usize| expansions.and_then(|e| e.rows.get(&(super::ids::TableId(t.id), ri)));
+    let expanded = expansions.is_some_and(|e| !e.rows.is_empty()) && (0..t.rows.len()).any(|ri| shown_row(ri).is_some());
+    if !hides && !expanded && grid == t.grid.as_slice() && !(original && t.change.is_some()) {
         return None;
     }
     let mut table = t.clone();
@@ -1268,7 +1271,15 @@ fn in_view(t: &Table, view: MarkupView) -> Option<ViewTable> {
     let mut rows = Vec::with_capacity(t.rows.len());
     table.rows = std::mem::take(&mut table.rows)
         .into_iter()
-        .filter_map(|mut r| {
+        .enumerate()
+        .filter_map(|(ri, mut r)| {
+            // A sub-template's row in place of its reference's: its cells, each kept as the model cell at its place.
+            if let Some(body) = shown_row(ri) {
+                let n = r.cells.len().max(1);
+                r.cells = body.cells.clone();
+                rows.push(Some((0..r.cells.len()).map(|k| k.min(n - 1)).collect()));
+                return Some(r);
+            }
             if view.hides_row(&r.rev) {
                 rows.push(None);
                 return None;
@@ -1399,7 +1410,17 @@ fn layout_shown(
                     let after = r.cells.get(g.ci + 1).map_or(mark, |n| style(n.blocks.first(), view));
                     let ends =
                         CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after), fixed: t.fixed, fit: c.fit_text };
-                    Some(super::story::layout(&blocks, g.cw, env, Some(ends), memos)?)
+                    // FONT-15: automatic text is white over a dark cell.
+                    let shaded;
+                    let cell_env = match c.shading.filter(|f| super::env::is_dark(*f)) {
+                        Some(fill) => {
+                            let text = super::env::TextEnv { backdrop: Some(fill), ..env.ctx.env.text.clone() };
+                            shaded = super::LayoutEnv { text, ..env.ctx.env.clone() };
+                            StoryEnv { ctx: super::LayoutCtx { env: &shaded, ..env.ctx }, ..*env }
+                        }
+                        None => *env,
+                    };
+                    Some(super::story::layout(&blocks, g.cw, &cell_env, Some(ends), memos)?)
                 });
             }
         }
@@ -1947,7 +1968,7 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
                     }
                     Item::Rect { rect, colour } => {
                         let (x0, x1) = (rect[0].max(lo - dx), rect[2].min(hi - dx));
-                        (x1 > x0).then_some(Item::Rect { rect: [x0, rect[1], x1, rect[3]], colour: *colour })
+                        (x1 > x0).then_some(Item::rect([x0, rect[1], x1, rect[3]], *colour))
                     }
                     other => Some(other.clone()),
                 })
@@ -1961,6 +1982,7 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
                 changed: placed.line.changed,
                 mark: placed.line.mark,
                 texts: placed.line.texts.clone(),
+                expansions: placed.line.expansions.clone(),
             });
             Child::Line { para: *para, placed: PlacedLine { line, ..placed.clone() } }
         }
@@ -2095,7 +2117,7 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             // TABLE-39: a cell box ends the spacing above its row's bottom (2s on the table's last row).
             let (by0, by1) = (top + row.gap_top, top + height - gap(tb.spacing, tb.is_last(ri)));
             if let Some(fill) = c.shading {
-                background.push(Item::Rect { rect: [bx0, by0, bx1, by1], colour: fill });
+                background.push(Item::rect([bx0, by0, bx1, by1], fill));
             }
             let [t, l, b, r] = drawn_edges(tb, c);
             let vis = |e: &'_ Option<Border>| e.as_ref().filter(|b| b.visible()).map(|b| (thick(b), b.clone()));
@@ -2114,7 +2136,7 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             continue;
         }
         if let Some(fill) = c.shading {
-            background.push(Item::Rect { rect: [x0 + c.x, top, x0 + c.x + c.w, top + height], colour: fill });
+            background.push(Item::rect([x0 + c.x, top, x0 + c.x + c.w, top + height], fill));
         }
         // Borders as filled rectangles centred on the cell edges; edges without one are gridlines (screen only).
         let [t, l, b, r] = drawn_edges(tb, c);
@@ -2410,7 +2432,7 @@ mod tests {
         let drawn = |style: &str| {
             let mut out = Vec::new();
             edge(&mut out, [0.0, 0.0, 10.0, 2.5], true, &b(style));
-            out.iter().map(|i| if let Item::Rect { rect, colour } = i { (rect[3] - rect[1], *colour) } else { (0.0, 0) }).collect::<Vec<_>>()
+            out.iter().map(|i| if let Item::Rect { rect, colour, .. } = i { (rect[3] - rect[1], *colour) } else { (0.0, 0) }).collect::<Vec<_>>()
         };
         assert_eq!(drawn("threeDEmboss"), vec![(0.75, 0xC0C0C0), (1.0, 0x808080), (0.75, 0x000000)]);
         assert_eq!(drawn("threeDEngrave"), vec![(0.75, 0x000000), (1.0, 0x808080), (0.75, 0xC0C0C0)]);

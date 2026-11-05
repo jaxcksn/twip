@@ -432,6 +432,19 @@ impl Editor {
                     (formatted && in_list, (None, Some(CommandValue::Number(level))))
                 }
                 (C::EditHeader | C::EditFooter, _) => (editable && story == StoryId::Body, (None, None)),
+                // A building block has no section: page setup, headers and footers and line numbering are the template's.
+                (
+                    C::SetMargins
+                    | C::SetOrientation
+                    | C::SetPaperSize
+                    | C::SetColumns
+                    | C::SetHeaderFooterDistance
+                    | C::SetDifferentFirstPage
+                    | C::InsertPageNumber,
+                    _,
+                ) if self.editing_sub_template().is_some() => (false, (None, None)),
+                (C::CloseSubTemplate, _) => (self.editing_sub_template().is_some(), (None, None)),
+                (C::EditSubTemplate, _) => (self.has_sub_templates(), (None, None)),
                 (C::CloseHeaderFooter, _) => (header_footer, (None, None)),
                 (C::EditHyperlink | C::RemoveHyperlink, _) => (editable && link, (None, None)),
                 (C::MergeCells, _) => (editable && can_merge, (None, None)),
@@ -463,6 +476,7 @@ impl Editor {
                     | C::SetTableStyleOptions,
                     _,
                 ) => (editable && in_table, (None, None)),
+                (C::SetTablePosition, _) => (editable && in_table, (None, self.table_position().map(CommandValue::TablePosition))),
                 (C::SetObjectSize | C::SetObjectWrap | C::SetAltText | C::DeleteObject, _) => (editable && object.is_some(), (None, None)),
                 (C::ResetObjectSize, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::SetAnchorLocked | C::SetObjectPosition | C::SetObjectWrapOptions, _) => (editable && floating, (None, None)),

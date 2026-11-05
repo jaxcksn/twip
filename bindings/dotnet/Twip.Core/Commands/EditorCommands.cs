@@ -705,6 +705,17 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetTableStyleOptionsAsync(TableStyleOptionsUpdate options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTableStyleOptions(options), ct);
 
+    /// <summary>
+    /// Positions the caret's table so text wraps around it, as dragging its move handle does: a table without a
+    /// position gets one across from the margin and down from the paragraph, and each axis given is aligned, offset, or
+    /// (with neither) kept where it is and measured from its new reference. Unset values are kept; null puts the table
+    /// back in the text.
+    /// </summary>
+    /// <param name="position">The position, or null for a table in the text.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetTablePositionAsync(TablePosition? position, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTablePosition(position), ct);
+
     /// <summary>Resizes the selected picture or text box. Unset values are kept.</summary>
     /// <param name="width">The width, 1 to 1584 pt.</param>
     /// <param name="height">The height, 1 to 1584 pt.</param>
@@ -889,6 +900,55 @@ public sealed class EditorCommands
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetFieldLabelsAsync(IReadOnlyDictionary<string, string> labels, bool? merge = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetFieldLabels(labels, merge), ct);
+
+    /// <summary>Sets which fields are sub-template references, replacing the rules; none turns sub-templates off. A view setting.</summary>
+    /// <param name="rules">The rules.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetSubTemplateRulesAsync(IReadOnlyList<ReferenceRule> rules, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetSubTemplateRules(rules), ct);
+
+    /// <summary>Shows references' sub-template bodies in their place, or their fields. A view setting.</summary>
+    /// <param name="expanded">Show the bodies (else the fields).</param>
+    /// <param name="ids">The reference fields; null for every reference.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetSubTemplateViewAsync(bool expanded, IReadOnlyList<ElementId>? ids = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetSubTemplateView(expanded, ids), ct);
+
+    /// <summary>Edits a sub-template's body in this editor, on its own pages. A view change.</summary>
+    /// <param name="name">The sub-template.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the editor is on it and <see cref="EditorSession.State"/> says so.</returns>
+    public Task EditSubTemplateAsync(string name, string? category = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.EditSubTemplate(name, category), ct);
+
+    /// <summary>Back to the template from a sub-template, at the template's selection from before. A view change.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the template shows and <see cref="EditorSession.State"/> says so.</returns>
+    public Task CloseSubTemplateAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.CloseSubTemplate(), ct);
+
+    /// <summary>A new sub-template, empty or with the body of the DOCX <paramref name="from"/>. One undo step.</summary>
+    /// <param name="name">Its name, unique in its category.</param>
+    /// <param name="category">Its building block category; null for the first rule's.</param>
+    /// <param name="from">A DOCX whose body becomes its body.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task CreateSubTemplateAsync(string name, string? category = null, ReadOnlyMemory<byte>? from = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.CreateSubTemplate(name, category, from), ct);
+
+    /// <summary>Renames a sub-template, and optionally every reference to it. One undo step.</summary>
+    /// <param name="name">Its name now.</param>
+    /// <param name="to">Its new name, unique in its category.</param>
+    /// <param name="updateReferences">Rename the references too.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task RenameSubTemplateAsync(string name, string to, bool? updateReferences = null, string? category = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.RenameSubTemplate(name, to, updateReferences, category), ct);
+
+    /// <summary>Removes a sub-template; its references no longer resolve. One undo step.</summary>
+    /// <param name="name">The sub-template.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task RemoveSubTemplateAsync(string name, string? category = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.RemoveSubTemplate(name, category), ct);
 
     /// <summary>Inserts a content control.</summary>
     /// <param name="options">The control.</param>
@@ -1086,14 +1146,20 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetZoomAsync(ZoomLevel zoom, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetZoom(zoom), ct);
 
-    /// <summary>Shows or hides formatting marks, gridlines and text boundaries. Unset values are kept.</summary>
+    /// <summary>Sets the view options: formatting marks, gridlines, text boundaries, the chrome's theme and accent, dark mode, the measuring detail and the object grid. Unset values are kept.</summary>
     /// <param name="formattingMarks">Formatting marks.</param>
     /// <param name="gridlines">Table gridlines.</param>
     /// <param name="textBoundaries">Text boundaries.</param>
     /// <param name="liveLayout">Text wraps around an object again as it is dragged; otherwise a preview shows until the release.</param>
+    /// <param name="theme">The chrome's colour scheme.</param>
+    /// <param name="accent">The chrome's accent: selection, handles, guides and active markers. Any colour; the dark scheme lightens it.</param>
+    /// <param name="appearance">How the page is drawn on screen (dark mode).</param>
+    /// <param name="detail">How much the editor measures while you drag and hover.</param>
+    /// <param name="objectGrid">When the dot grid objects snap to shows (unrelated to <paramref name="gridlines"/>).</param>
+    /// <param name="themeColors">The application's colours for the light and dark schemes, to match its own UI.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout), ct);
+    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid, themeColors), ct);
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>
@@ -1101,6 +1167,51 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetModeAsync(EditorMode mode, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetMode(mode), ct);
 
+    /// <summary>Sets what a click on the ruler adds; answers the tab type picker. A view setting.</summary>
+    /// <param name="value">The tab type or indent marker.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetRulerTabTypeAsync(TabSelector value, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetRulerTabType(value), ct);
+
+    /// <summary>Asks for the tab type picker (<see cref="EditorSession.PopoverRequested"/>), as a click on the ruler's tab type box does.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the command has run.</returns>
+    public Task ShowTabTypesAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.ShowTabTypes(), ct);
+
+    /// <summary>Asks for the options of the tab stop nearest the caret (<see cref="EditorSession.PopoverRequested"/>).</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the command has run.</returns>
+    public Task ShowTabStopAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.ShowTabStop(), ct);
+
+    /// <summary>Switches AutoCorrect rules on or off, and replaces its lists. A session setting, not an undo step.</summary>
+    /// <param name="change">The rules and lists to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the setting applies and <see cref="EditorSession.State"/> shows it.</returns>
+    public Task SetAutoCorrectAsync(AutoCorrectChange change, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        return _session.RunAsync(EditorOperation.SetAutoCorrect(change), ct);
+    }
+
+    /// <summary>Puts back what was typed before the correction at the caret. Undoes the correction when it is the last step, otherwise one step of its own.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task RevertAutoCorrectAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.RevertAutoCorrect(), ct);
+
+    /// <summary>Reverts the correction at the caret, and never makes it again.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task NeverAutoCorrectAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.NeverAutoCorrect(), ct);
+
+    /// <summary>Asks for the options of the correction at the caret (<see cref="EditorSession.PopoverRequested"/>, Alt+Shift+F10).</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the command has run.</returns>
+    public Task ShowAutoCorrectOptionsAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.ShowAutoCorrectOptions(), ct);
+
+    /// <summary>Dismisses the popover asked for (<see cref="EditorSession.PopoverClosed"/>), for an application that closes its own on Esc or a click elsewhere; with none open, nothing.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the command has run.</returns>
+    public Task ClosePopoverAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.ClosePopover(), ct);
     /// <summary>Says the formatting at the caret to screen readers (an <see cref="EditorSession.AccessibilityAnnouncement"/>
     /// of kind <see cref="AnnouncementKind.Formatting"/>). Shift+F1. Changes nothing.</summary>
     /// <param name="ct">Cancels the command before it runs.</param>

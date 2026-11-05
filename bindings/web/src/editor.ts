@@ -7,7 +7,15 @@ import { mountHost, type Host } from './host/mount.js';
 import { createMountedReview, createReview, type MountedReview, type Review } from './review.js';
 import { createAccessibility, createShortcuts, type Accessibility, type Shortcuts } from './services/accessibility.js';
 import { createDialogs, type Dialogs } from './services/dialogs.js';
-import { createDataParts, createElements, type DataParts, type Elements, type MountedElements } from './services/elements.js';
+import {
+  createDataParts,
+  createElements,
+  createSubTemplates,
+  type DataParts,
+  type Elements,
+  type MountedElements,
+  type SubTemplates,
+} from './services/elements.js';
 import { createFind, type Find } from './services/find.js';
 import { createMenus, type MenuAction, type Menus } from './services/menus.js';
 import { createNavigation, createStyles, type Navigation, type Styles } from './services/navigation.js';
@@ -52,7 +60,7 @@ export interface MountOptions extends SessionOptions {
   markupPaneWidth?: number;
   /** The zoom. Default 100. */
   zoom?: number | 'pageWidth' | 'wholePage';
-  /** The background around the pages. Default `'#E6E6E6'`; the paper stays white. */
+  /** The background around the pages. Default: the theme's desk colour. */
   background?: Color;
   /**
    * The caret's blink: ms per phase, 0 for a steady caret. Default 530, or steady while the platform asks for reduced
@@ -355,6 +363,8 @@ export class HeadlessEditor {
   readonly elements: Elements;
   /** The custom XML data parts. */
   readonly data: DataParts;
+  /** The template's sub-templates, and editing one in this editor. */
+  readonly subTemplates: SubTemplates;
   /** The ruler model. */
   readonly ruler: RulerModelSource;
   /** The accessibility tree. */
@@ -380,6 +390,7 @@ export class HeadlessEditor {
     this.review = createReview(session);
     this.elements = createElements(session);
     this.data = createDataParts(session);
+    this.subTemplates = createSubTemplates(session);
     this.ruler = { model: () => session.state.ruler };
     this.accessibility = createAccessibility(session);
     this.shortcuts = createShortcuts(session);

@@ -162,6 +162,11 @@ impl ShapeItem {
 }
 
 impl Item {
+    /// A filled rectangle (borders, rules, shading).
+    pub fn rect(rect: [f64; 4], colour: u32) -> Item {
+        Item::Rect { rect, colour }
+    }
+
     /// The item's top edge (for vertical alignment's "both" distribution, SETUP-1).
     pub fn top(&self) -> f64 {
         match self {
@@ -193,6 +198,9 @@ pub struct LineFragment {
     pub mark: Option<Unit>,
     /// The line's inline shapes with text, each at its box (the items' coordinates): the page lays out their stories.
     pub texts: Box<[([f64; 4], crate::docx::Picture)]>,
+    /// The sub-template bodies shown on the line, each at its box (the items' coordinates): the page draws them, and
+    /// editing hit tests them.
+    pub expansions: Box<[([f64; 4], Rc<super::expansion::Expansion>)]>,
 }
 
 /// A unit drawn without characters on a line: x from and to (the items' coordinates), its paragraph and unit, and

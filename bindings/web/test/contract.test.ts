@@ -24,11 +24,11 @@ interface Script {
 
 /** Every event type, so the runner records them all. */
 const eventTypes: Record<keyof TwipEvents, true> = {
-  documentChanged: true, selectionChanged: true, linkActivated: true, placeholderActivated: true, contextMenu: true,
+  documentChanged: true, selectionChanged: true, editingTargetChanged: true, linkActivated: true, placeholderActivated: true, editRefused: true, contextMenu: true,
   dialogRequested: true, hostCommand: true, shortcut: true, gesture: true, wordAdded: true, fontsChanged: true,
   elementActivated: true, elementsChanged: true, fieldsUpdateRequested: true, revisionsChanged: true,
   commentsChanged: true, commentAnchors: true, balloonsLaidOut: true, rulerChanged: true, tooltip: true,
-  announcement: true, warning: true, error: true,
+  announcement: true, popoverRequested: true, popoverClosed: true, warning: true, error: true,
 };
 
 /** A step that sends input: a headless editor takes none, so scripts with one don't run here. */

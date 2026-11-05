@@ -49,6 +49,9 @@ pub enum Step {
     /// A header or footer part added (`blocks` given) to a section's reference `slot` (0 default, 1 first page, 2 even
     /// pages), or taken out again.
     HeaderPart { name: String, section: usize, footer: bool, slot: usize, blocks: Option<Vec<Block>> },
+    /// Glossary building block `k` replaced by `part` (made, renamed, removed or brought back); `None` takes out the
+    /// last one, made by the step this undoes.
+    BuildingBlock { k: u32, part: Option<Box<crate::docx::BuildingBlock>> },
     /// A table's own properties replaced (Table Properties and Table Design commands).
     TableProps { table: TableId, props: TableProps },
     /// Add (`blocks` given) or remove a footnote or endnote: inserting a note, deleting its reference mark.
@@ -104,6 +107,8 @@ pub struct TableProps {
     pub borders: [Option<crate::docx::props::Border>; 6],
     /// Rows and columns per style band (`w:tblStyleRowBandSize`, `w:tblStyleColBandSize`).
     pub bands: (i64, i64),
+    /// Its position (`w:tblpPr`), when it is placed out of the text.
+    pub floating: Option<crate::docx::props::TablePos>,
 }
 
 impl Step {
@@ -275,7 +280,16 @@ impl Targets {
 
 impl TableProps {
     pub fn of(t: &crate::docx::Table) -> TableProps {
-        TableProps { style_id: t.style_id.clone(), look: t.look, width: t.width, jc: t.jc, ind: t.ind, borders: t.borders.clone(), bands: t.bands }
+        TableProps {
+            style_id: t.style_id.clone(),
+            look: t.look,
+            width: t.width,
+            jc: t.jc,
+            ind: t.ind,
+            borders: t.borders.clone(),
+            bands: t.bands,
+            floating: t.floating,
+        }
     }
 }
 
@@ -517,8 +531,10 @@ fn units_of(inlines: &[Inline]) -> u32 {
 /// Layout's hint for a change inside top-level block `block` of a container.
 fn hint_in(idx: &DocIndex, container: Container, block: usize, added: isize) -> Option<Change> {
     let (section, b, row) = idx.top_block(container, block)?;
+    let flow = matches!(container, Container::Section(_))
+        || matches!(container, Container::Story(s) if idx.flow.is_some() && s == super::position::StoryId::BuildingBlock(idx.flow.unwrap_or_default()));
     match (container, row) {
-        (Container::Section(_), _) => Some(Change { section, first: b, old_end: b + 1, new_end: (b as isize + 1 + added) as usize, row: None }),
+        (_, None) if flow => Some(Change { section, first: b, old_end: b + 1, new_end: (b as isize + 1 + added) as usize, row: None }),
         (_, row) => Some(Change { section, first: b, old_end: b + 1, new_end: b + 1, row }),
     }
 }
@@ -728,6 +744,28 @@ impl Step {
                 let was = if filled { !doc.filled.insert(index) } else { doc.filled.remove(&index) };
                 Ok(Applied { inverse: Step::ImageData { index, data: old, filled: was }, map: Map::Same, hint: None })
             }
+            Step::BuildingBlock { k, part } => {
+                let g = doc.glossary.get_or_insert_with(Default::default);
+                let live = |b: &crate::docx::BuildingBlock| b.state != crate::docx::PartState::Removed;
+                let at = k as usize;
+                let old = match part {
+                    Some(new) if at == g.parts.len() => {
+                        g.parts.push(*new);
+                        None
+                    }
+                    Some(new) => Some(Box::new(std::mem::replace(g.parts.get_mut(at).ok_or(StepError::OutOfRange)?, *new))),
+                    None if at + 1 == g.parts.len() => g.parts.pop().map(Box::new),
+                    None => return Err(StepError::OutOfRange),
+                };
+                if let Some(o) = old.as_deref().filter(|o| live(o)) {
+                    idx.removed_part(&o.body);
+                }
+                if let Some(now) = g.parts.get(at).filter(|b| live(b)) {
+                    let body = now.body.clone();
+                    idx.added_building_block(k, &body);
+                }
+                Ok(Applied { inverse: Step::BuildingBlock { k, part: old }, map: Map::Same, hint: None })
+            }
             Step::HeaderPart { name, section, footer, slot, blocks } => {
                 let sec = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
                 let refs = if footer { &mut sec.footers } else { &mut sec.headers };
@@ -864,7 +902,9 @@ impl Step {
                 // Every section after it is renumbered: the index is built again. Positions name paragraphs, so they
                 // don't move; layout compares (the sections differ in number).
                 let parts = idx.parts().to_vec();
+                let flow = idx.flow;
                 *idx = DocIndex::build_with_parts(doc, &parts);
+                idx.flow = flow;
                 Ok(Applied { inverse, map: Map::Same, hint: None })
             }
             Step::SectionPage { section, page, change } => {
@@ -879,8 +919,8 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.borders, t.bands) =
-                    (props.style_id, props.look, props.width, props.jc, props.ind, props.borders, props.bands);
+                (t.style_id, t.look, t.width, t.jc, t.ind, t.borders, t.bands, t.floating) =
+                    (props.style_id, props.look, props.width, props.jc, props.ind, props.borders, props.bands, props.floating);
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
                     section,

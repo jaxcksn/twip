@@ -1,11 +1,16 @@
 [
   {
-    "background": "#E6E6E6",
+    "accent": "#0A74E4",
+    "accentOn": "#FFFFFF",
+    "appearance": "light",
+    "background": "#E8E7E3",
+    "detail": "standard",
     "fieldCodes": false,
     "formattingMarks": false,
     "gridlines": false,
     "liveLayout": true,
     "markupPaneWidth": 0.0,
+    "objectGrid": "whileDragging",
     "rulerUnit": "inches",
     "rulers": {
       "horizontal": false,
@@ -13,6 +18,8 @@
     },
     "tabSelector": "left",
     "textBoundaries": false,
+    "theme": "light",
+    "themeColors": {},
     "zoom": 100.0
   }
 ]

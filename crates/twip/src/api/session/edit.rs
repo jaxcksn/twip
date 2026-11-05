@@ -40,7 +40,22 @@ impl Session {
     pub fn batch(&mut self, commands: Vec<Command>, label: Option<String>) -> Result<Commit, Error> {
         for c in &commands {
             // A batch is edits: undo, redo and view settings aren't part of a transaction.
-            if matches!(c, Command::Undo | Command::Redo | Command::SetZoom(_) | Command::SetViewOptions(_) | Command::SetMode(_)) {
+            if matches!(
+                c,
+                Command::Undo
+                    | Command::Redo
+                    | Command::SetZoom(_)
+                    | Command::SetViewOptions(_)
+                    | Command::SetMode(_)
+                    | Command::SetRulerTabType(_)
+                    | Command::ShowTabTypes
+                    | Command::ShowTabStop
+                    | Command::SetAutoCorrect(_)
+                    | Command::RevertAutoCorrect
+                    | Command::NeverAutoCorrect
+                    | Command::ShowAutoCorrectOptions
+                    | Command::ClosePopover
+            ) {
                 return Err(Error::invalid(format!("a batch can't hold {}", id_name(c.id()))));
             }
             self.check(c)?;

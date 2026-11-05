@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::error::{Error, ErrorCode};
 use super::record::TransactionRecord;
 use super::review::{BalloonPlacement, CommentAnchor};
-use super::services::{ContextMenuEvent, DialogKind, ElementInfo, GestureEvent, PlaceholderInfo, RulerView, Tooltip};
+use super::services::{ContextMenuEvent, DialogKind, ElementInfo, GestureEvent, PlaceholderInfo, Popover, RulerView, Tooltip};
 use super::state::{SelectionSummary, State};
 use super::value::ElementId;
 use super::warning::Warning;
@@ -36,6 +36,10 @@ pub enum Event {
     PlaceholderActivated(PlaceholderInfo),
     /// A context menu to open.
     ContextMenu(ContextMenuEvent),
+    /// A click or command asked for a popover by its anchor. Opening one closes the one open.
+    PopoverRequested(Popover),
+    /// The engine dismissed the open popover: Esc, a press elsewhere, or its target gone.
+    PopoverClosed,
     /// A key or gesture asked for a dialog.
     DialogRequested {
         /// The dialog to open.
@@ -98,6 +102,16 @@ pub enum Event {
     BalloonsLaidOut(#[serde(with = "value")] Vec<BalloonPlacement>),
     /// The ruler view changed (coalesced per frame).
     RulerChanged(RulerView),
+    /// The editor switched between the template and a sub-template, or between sub-templates: where it is now.
+    EditingTargetChanged(super::state::EditingTarget),
+    /// Typing, pasting or dropping was refused: why, and the element concerned.
+    EditRefused {
+        /// Why.
+        reason: RefusalReason,
+        /// The element concerned: the reference field whose sub-template's body shows.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        element: Option<ElementId>,
+    },
     /// Hover over a link, element mark, revision or comment; `null` hides the tooltip.
     Tooltip(#[serde(with = "value")] Option<Tooltip>),
     /// What the editor said to screen readers.
@@ -122,6 +136,19 @@ pub enum Event {
         /// Whether the session is unusable: it rejects later operations with `internal`.
         fatal: bool,
     },
+}
+
+/// Why typing, pasting or dropping was refused.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum RefusalReason {
+    /// Into a sub-template's body shown in place of its reference: edit the sub-template instead.
+    SubTemplate {
+        /// The sub-template's name.
+        name: String,
+    },
+    /// Into a control whose content is locked.
+    Locked,
 }
 
 /// How a link was activated.

@@ -5,6 +5,7 @@
 //! and given to layout as edit hints. One commit path records them all, undo and redo included: it alone raises the
 //! revision. Geometry-dependent input first lays out through the page it concerns.
 
+pub mod autocorrect;
 mod cell_clipboard;
 pub mod clipboard;
 mod clipped;
@@ -40,12 +41,15 @@ pub mod section;
 pub mod selection;
 mod shapes;
 mod smart;
+pub(crate) mod snap;
 pub mod state;
 pub mod step;
 mod stories;
+pub mod sub_templates;
 pub mod table;
 mod table_cells;
 pub mod table_format;
+mod table_handles;
 pub mod tables;
 pub mod text;
 pub mod view;
@@ -91,6 +95,16 @@ struct Drag {
     block: bool,
 }
 
+/// A correction just made: its text in `para` and what was typed (Revert puts it back).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Correction {
+    pub para: ParaId,
+    pub range: std::ops::Range<Unit>,
+    pub from: String,
+    /// Characters typed after it since.
+    pub typed: usize,
+}
+
 pub struct Editor {
     doc: Document,
     layout: DocumentLayout,
@@ -101,6 +115,8 @@ pub struct Editor {
     goal_x: Option<f64>,
     /// Formatting for what is typed next at a collapsed caret; any caret move drops it.
     pending: Option<Run>,
+    /// The text the last AutoCorrect step produced, until the caret leaves it or typing moves past it.
+    correction: Option<Correction>,
     drag: Option<Drag>,
     pages: Pages,
     /// The page the caret was last shown on.
@@ -124,6 +140,8 @@ pub struct Editor {
     object_also: Option<(crate::layout::FloatId, Vec<crate::layout::FloatId>)>,
     /// A shape's rotate or adjust handle being dragged.
     shape_drag: Option<shapes::ShapeDrag>,
+    /// The snap lines of the page an object or group child is moved on, built at the press.
+    snaps: snap::SnapLines,
     /// Shape insert mode: the next press inserts a shape.
     shape_insert: Option<shapes::ShapeInsert>,
     /// The checkbox a click or Space last toggled, while the caret stays after it.
@@ -134,6 +152,10 @@ pub struct Editor {
     placeholder_looks: std::collections::HashMap<String, view::PlaceholderLook>,
     /// A table border being dragged.
     border_drag: Option<resize::BorderDrag>,
+    /// A table being moved by its handle.
+    table_drag: Option<table_handles::TableDrag>,
+    /// The table under the pointer, and what of it the pointer is over.
+    table_hover: Option<view::TableHover>,
     /// A cell block being dragged from a cell, row or column zone: its table, start cell and shape.
     zone_drag: Option<(TableId, selection::CellRef, selection::CellShape)>,
     /// The pointer's shape where it last moved without a drag.
@@ -172,6 +194,8 @@ pub struct Editor {
     /// Object drags lay the text out again as they move (Word's live layout); otherwise a ghost shows where the object
     /// goes until the release.
     pub live_layout: bool,
+    /// How drags are measured, when the object grid shows, and the unit readouts are in.
+    pub view_settings: view::ViewSettings,
     /// Every field and content control as the host last saw it: what change lists compare.
     elems: std::collections::HashMap<crate::docx::ElementId, elements::Element>,
     /// The elements added, removed and changed since the last reply.
@@ -191,6 +215,17 @@ pub struct Editor {
     drop: Option<Position>,
     /// The host's labels for empty fields in design mode, by trimmed code (`field.labels`).
     field_labels: HashMap<String, String>,
+    /// Which fields are sub-template references, the references they make, and those shown collapsed.
+    sub_template_rules: Vec<sub_templates::Rule>,
+    references: sub_templates::References,
+    collapsed: std::collections::HashSet<crate::docx::FieldId>,
+    /// The sub-template warnings already given since the rules last changed.
+    warned: std::collections::HashSet<(crate::docx::diagnostics::WarningCode, String)>,
+    /// The sub-template bodies the template's layout was last given, and whether they need laying out again.
+    expansions: Option<Rc<crate::layout::expansion::Expansions>>,
+    expansions_stale: bool,
+    /// While a sub-template is edited: it, and the template's layout kept until it shows again.
+    surface: Option<sub_templates::Surface>,
     /// The host's element marks (`element.mark`): view only.
     marks: Vec<merge::Mark>,
     /// The host's looks for controls in design mode (`view.looks`): view only.
@@ -313,6 +348,7 @@ impl Editor {
             selection: Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),
             goal_x: None,
             pending: None,
+            correction: None,
             drag: None,
             pages: Pages::default(),
             near: 0,
@@ -325,11 +361,14 @@ impl Editor {
             object_child: None,
             object_also: None,
             shape_drag: None,
+            snaps: snap::SnapLines::default(),
             shape_insert: None,
             toggled_checkbox: None,
             provisional: None,
             placeholder_looks: std::collections::HashMap::new(),
             border_drag: None,
+            table_drag: None,
+            table_hover: None,
             zone_drag: None,
             cursor: input::Cursor::Text,
             saved: (0, false),
@@ -348,6 +387,7 @@ impl Editor {
             tab_stop: None,
             mode: Mode::Editing,
             live_layout: true,
+            view_settings: view::ViewSettings::default(),
             elems: std::collections::HashMap::new(),
             changes: elements::Changes::default(),
             refused: None,
@@ -357,6 +397,13 @@ impl Editor {
             pending_images: Vec::new(),
             drop: None,
             field_labels: HashMap::new(),
+            sub_template_rules: Vec::new(),
+            references: sub_templates::References::default(),
+            collapsed: std::collections::HashSet::new(),
+            warned: std::collections::HashSet::new(),
+            expansions: None,
+            expansions_stale: false,
+            surface: None,
             marks: Vec::new(),
             looks: merge::Looks::default(),
             update_token: 0,
@@ -526,8 +573,9 @@ impl Editor {
 
     /// Lays out through the page showing `pos` (it may be provisional), then syncs geometry.
     fn ensure(&mut self, pos: &Position, fonts: &Fonts) {
+        self.sync_expansions(fonts);
         if let Some((para, unit)) = pos.para_offset() {
-            crate::prof::time("editor:layout", || self.layout.through(&self.doc, fonts, Target::Position { para, unit }));
+            crate::prof::time("editor:layout", || self.with_flow(|l, d| l.through(d, fonts, Target::Position { para, unit })));
         }
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
@@ -535,12 +583,13 @@ impl Editor {
 
     /// Lays out through page `page` (the host calls it for the visible pages before painting).
     pub fn ensure_page(&mut self, page: usize, fonts: &Fonts) {
+        self.sync_expansions(fonts);
         let snapshot = self.layout.snapshot();
         // A layout from before the last change is provisional throughout.
         let stale = snapshot.revision() != self.layout.revision();
         let pending = if stale { Some(0) } else { snapshot.info().iter().position(|i| i.provisional) };
         if pending.is_some_and(|p| page >= p) {
-            self.layout.through(&self.doc, fonts, Target::Page(page));
+            self.with_flow(|l, d| l.through(d, fonts, Target::Page(page)));
         }
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
@@ -548,8 +597,9 @@ impl Editor {
 
     /// Background layout for one idle slice; true while more is pending.
     pub fn idle(&mut self, fonts: &Fonts) -> bool {
+        self.sync_expansions(fonts);
         let t = Instant::now();
-        let step = self.layout.run(&self.doc, fonts, Budget::Until(t + IDLE_BUDGET));
+        let step = self.with_flow(|l, d| l.run(d, fonts, Budget::Until(t + IDLE_BUDGET)));
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
         step == LayoutStep::Yielded || snapshot.info().iter().any(|i| i.provisional)
@@ -576,7 +626,8 @@ impl Editor {
 
     /// Lays out the whole document (tests, PDF export).
     pub fn complete(&mut self, fonts: &Fonts) {
-        self.layout.complete(&self.doc, fonts);
+        self.sync_expansions(fonts);
+        self.with_flow(|l, d| l.complete(d, fonts));
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
     }
@@ -989,6 +1040,8 @@ impl Editor {
             self.last_maps = maps;
         }
         crate::prof::time("edit:elements", || self.track_elements(&tx.undo));
+        crate::prof::time("edit:references", || self.refresh_references(&tx.undo));
+        self.note_template_edits(&tx.undo);
         crate::prof::time("edit:labels", || self.refresh_labels(Some(&tx.undo)));
         if tx.pictures {
             self.doc.derive_image_sets();
@@ -1021,7 +1074,10 @@ impl Editor {
         // invariants hold.
         #[cfg(test)]
         {
-            assert_eq!(self.index, DocIndex::build_with_parts(&self.doc, self.index.parts()), "the incremental index differs from a fresh build");
+            let mut fresh = DocIndex::build_with_parts(&self.doc, self.index.parts());
+            // Which building block is the main flow is the editor's, not the document's.
+            fresh.flow = self.index.flow;
+            assert_eq!(self.index, fresh, "the incremental index differs from a fresh build");
             let v = integrity::check(&self.doc, &self.index, &self.selection);
             let text =
                 self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p)).map(|p| UnitText::of(p).text);
@@ -1050,7 +1106,10 @@ impl Editor {
         self.selection = if undo { done.before.selection } else { done.after.selection };
         self.pending = None;
         tx.replayed = Some(done);
-        self.commit(tx, None, fonts)
+        let out = self.commit(tx, None, fonts);
+        // Undo and redo go where their edit was: into a sub-template, or out of one.
+        self.follow_selection();
+        out
     }
 
     /// Applies recorded steps last to first (undoing what they record) into `tx`, which then holds their inverses.
@@ -1482,7 +1541,7 @@ impl Editor {
         // Typing into a selected shape without text gives it its story first.
         self.shape_story_for_typing(fonts);
         self.object_to_caret();
-        if self.refuse_locked() {
+        if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Typing");
@@ -1607,7 +1666,7 @@ impl Editor {
         if s.compat() == crate::docx::Compat::Legacy && s.has("splitPgBreakAndParaMark") {
             return self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts);
         }
-        if self.refuse_locked() {
+        if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Page Break");
@@ -1747,7 +1806,7 @@ impl Editor {
 
     /// Inlines at the caret (replacing the selection) as one step; the caret after them.
     fn insert_inlines(&mut self, make: impl Fn(Run) -> Vec<Inline>, label: &'static str, fonts: &Fonts) -> Outcome {
-        if self.refuse_locked() {
+        if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin(label);
@@ -2311,9 +2370,17 @@ impl Editor {
         let (page, px, py) = stack.page_at(x, y)?;
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
-        let z = geo.zone(px, py, 0.75 / self.viewport.zoom.max(0.1))?;
+        // The "+" zones are live around the table the pointer came from: a click on the text above or beside a table
+        // that only holds the caret reaches the text.
+        let hovered = self.table_hover.map(|h| h.table);
+        let z = geo.zone(px, py, 0.75 / self.viewport.zoom.max(0.1), hovered)?;
         let table = match z {
-            geometry::Zone::Cell(t, ..) | geometry::Zone::Row(t, _) | geometry::Zone::Column(t, ..) | geometry::Zone::Table(t) => t,
+            geometry::Zone::Cell(t, ..)
+            | geometry::Zone::Row(t, _)
+            | geometry::Zone::Column(t, ..)
+            | geometry::Zone::Table(t)
+            | geometry::Zone::InsertColumn(t, _)
+            | geometry::Zone::InsertRow(t, _) => t,
         };
         let story = self.index.table_slot(table).map(|s| self.index.host(self.index.story(s.container)));
         (story.map(|s| stories::reachable(self.editing(), s)) == Some(true)).then_some(z)
@@ -2331,6 +2398,11 @@ impl Editor {
                 self.history.break_typing();
                 // Design mode: a region's title tab selects the region.
                 if self.mode == Mode::Design && self.region_title_click(x, y, fonts) {
+                    return;
+                }
+                // A click on a sub-template's body shown in place of its reference selects the reference; a
+                // double-click edits the sub-template.
+                if !mods.shift && self.expansion_click(x, y, clicks, fonts) {
                     return;
                 }
                 if self.story_click(x, y, clicks, fonts) {
@@ -2390,6 +2462,23 @@ impl Editor {
                                 shape: selection::CellShape::Table,
                             });
                             self.drag = None;
+                            // A drag from the handle moves the table.
+                            if self.mode != Mode::ReadOnly {
+                                self.table_press(t, x, y);
+                            }
+                            return;
+                        }
+                        // A "+": a column or row goes in there, selected.
+                        geometry::Zone::InsertColumn(t, k) => {
+                            if self.mode != Mode::ReadOnly {
+                                self.insert_column_at(t, k, fonts);
+                            }
+                            return;
+                        }
+                        geometry::Zone::InsertRow(t, k) => {
+                            if self.mode != Mode::ReadOnly {
+                                self.insert_row_at(t, k, fonts);
+                            }
                             return;
                         }
                     };
@@ -2497,15 +2586,20 @@ impl Editor {
                     return;
                 }
                 if self.object_drag.is_some() {
-                    self.object_move(x, y, mods.shift);
+                    self.object_move(x, y, mods);
                     return;
                 }
                 if self.shape_drag.is_some() {
-                    self.shape_move(x, y, mods.shift);
+                    self.shape_move(x, y, mods);
                     return;
                 }
                 if let Some(d) = self.border_drag.as_mut() {
                     d.now = (x, y);
+                    d.snapping = if mods.alt { snap::Snapping::Free } else { snap::Snapping::On };
+                    return;
+                }
+                if self.table_drag.is_some() {
+                    self.table_drag_move(x, y, mods);
                     return;
                 }
                 if let Some((table, anchor, shape)) = self.zone_drag {
@@ -2527,6 +2621,7 @@ impl Editor {
                 let Some(mut d) = self.drag else {
                     self.cursor = self.hover(x, y, mods, fonts);
                     self.set_hover(x, y);
+                    self.table_hover = self.table_hover_at(x, y, fonts);
                     return;
                 };
                 d.at = (x, y);
@@ -2580,6 +2675,10 @@ impl Editor {
             PointerKind::Cancel if self.border_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
             PointerKind::Up if self.border_drag.is_some() => {
                 self.border_release(fonts);
+            }
+            PointerKind::Cancel if self.table_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
+            PointerKind::Up if self.table_drag.is_some() => {
+                self.table_drag_release(fonts);
             }
             PointerKind::Up if self.object_drag.is_some() => {
                 self.object_release(fonts);
@@ -2797,8 +2896,9 @@ impl Editor {
                     selection::ObjectRef::Inline { para, offset } => out.extend(self.inline_box(&geo, para, offset).map(|r| (page, r))),
                 }
             }
-            // No handles while dragged: the outline goes with the ghost.
-            return SelectionView::Object(out, !self.object_fixed(o) && !self.object_drag.is_some_and(|d| d.now != d.start));
+            // No handles while dragged, moved, resized or turned: the outline goes with the ghost.
+            let dragged = self.object_drag.is_some_and(|d| d.now != d.start) || self.shape_drag.is_some();
+            return SelectionView::Object(out, !self.object_fixed(o) && !dragged);
         }
         if let Selection::Block { .. } = self.selection {
             return SelectionView::Text(
@@ -2898,6 +2998,8 @@ impl Editor {
             from: d.rect,
             to: d.rect(self.object_locked(d.obj)),
         });
+        let (mut guides, mut measures, original) = self.object_feedback(visible.clone(), anchor);
+        let (table, table_preview) = self.table_feedback(visible.clone(), &mut guides, &mut measures);
         let visible_pages = visible.clone();
         let (marks, tooltip) = self.mark_views(visible.clone());
         let (comments, comment_anchors) = self.comment_views(visible.clone());
@@ -2925,6 +3027,12 @@ impl Editor {
             anchor,
             ghost,
             shapes: self.shape_frames(visible_pages.clone()),
+            guides,
+            measures,
+            original,
+            table,
+            table_preview,
+            correction: self.correction_view(visible_pages.clone()),
             placeholders: self.placeholder_views(&visible_pages),
             marks,
             tooltip,

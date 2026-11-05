@@ -147,7 +147,7 @@ methods! {
     FontSetDefault = 50,
     /// `FontRequest` → `null` (any session).
     FontMarkUnresolved = 51,
-    /// `Color` → `null`.
+    /// `Color` → `null`; `null` puts back the theme's desk.
     HostSetBackground = 52,
     /// `number` (CSS px) → `null`.
     HostSetMarkupPaneWidth = 53,
@@ -191,7 +191,7 @@ methods! {
     HostSetCaretBlink = 71,
     /// → `FrameStats`: what the frames have cost so far.
     HostFrameStats = 72,
-    /// `OverlayPalette` (colours `#RRGGBB`) → `null`.
+    /// `OverlayPalette` (colours `#RRGGBB`) → `null`; `null` puts back the theme's.
     HostSetOverlayPalette = 73,
     /// `{ recordings }` (`PaintBudget`, bytes) → `null`.
     HostSetPaintBudget = 74,
@@ -199,12 +199,14 @@ methods! {
     HostSetLeaders = 75,
     /// No session → `ShapeGalleryGroup[]`: Word's Insert > Shapes presets in its groups.
     ShapeGallery = 76,
+    /// → `SubTemplateInfo[]`: the sub-templates the rules declare.
+    SubTemplates = 77,
     /// `AccessibleId` → `null`: the caret to the start of the node's content.
-    AccessibleGo = 77,
+    AccessibleGo = 78,
     /// `{ anchor, focus }` (`WindowPoint`s of the last caret window) → `null`: the screen reader moved the caret.
-    HostCaretWindowSelect = 78,
+    HostCaretWindowSelect = 79,
     /// `AnnouncementKind[]` (the kinds the editor makes) → `null`.
-    AnnouncementsSet = 79,
+    AnnouncementsSet = 80,
 }
 
 #[derive(Deserialize)]
@@ -478,6 +480,7 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         Method::Elements => to_value(s.elements(&request::<Option<ElementFilter>>(json)?.unwrap_or_default())),
         Method::Element => to_value(s.element(request(json)?)?),
         Method::Placeholders => to_value(s.placeholders()),
+        Method::SubTemplates => to_value(s.sub_templates()),
         Method::Structure => {
             let r: StructureRequest = request::<Option<StructureRequest>>(json)?.unwrap_or_default();
             to_value(s.structure(r.root, r.depth))
@@ -519,7 +522,10 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
             Ok(none)
         }
         Method::HostSetBackground => {
-            s.host().set_background(request::<Color>(json)?);
+            match request::<Option<Color>>(json)? {
+                Some(c) => s.host().set_background(c),
+                None => s.host().reset_background(),
+            }
             Ok(none)
         }
         Method::HostSetMarkupPaneWidth => {
@@ -574,7 +580,10 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
             Ok(none)
         }
         Method::HostSetOverlayPalette => {
-            s.host().set_overlay_palette(request(json)?);
+            match request(json)? {
+                Some(p) => s.host().set_overlay_palette(p),
+                None => s.host().reset_overlay_palette(),
+            }
             Ok(none)
         }
         Method::HostSetCaretBlink => {

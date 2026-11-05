@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 using System.Drawing;
 
 namespace Twip;
@@ -119,6 +121,20 @@ public enum DialogKind
     Tabs,
     /// <summary>The accessibility check.</summary>
     Accessibility,
+    /// <summary>The AutoCorrect rules.</summary>
+    AutoCorrect,
+}
+
+/// <summary>
+/// A click or command asked for a popover. Show it at the popover's anchor, or let <c>DocumentEditor</c> show its own
+/// when nothing handles this event. Opening one closes the one open.
+/// </summary>
+public sealed class PopoverRequestedEventArgs : EditorEventArgs
+{
+    internal PopoverRequestedEventArgs(Popover popover, EditorState snapshot) : base(snapshot) => Popover = popover;
+
+    /// <summary>The popover, its anchor in control client pixels.</summary>
+    public Popover Popover { get; }
 }
 
 /// <summary>The user asked for a dialog (Ctrl+D, a double-click on the ruler). Open it through <see cref="EditorSession.Dialogs"/>.</summary>
@@ -221,6 +237,45 @@ public sealed class FontsChangedEventArgs : EditorEventArgs
 
     /// <summary>Families that couldn't be found.</summary>
     public IReadOnlyList<string> Unresolved { get; }
+}
+
+/// <summary>Why typing, pasting or dropping was refused.</summary>
+public enum RefusalKind
+{
+    /// <summary>Into a sub-template's body shown in place of its reference: edit the sub-template instead.</summary>
+    SubTemplate,
+    /// <summary>Into a control whose content is locked.</summary>
+    Locked,
+}
+
+/// <summary>Why typing, pasting or dropping was refused.</summary>
+/// <param name="Kind">The reason.</param>
+public sealed record RefusalReason(RefusalKind Kind)
+{
+    /// <summary>The sub-template's name, for <see cref="RefusalKind.SubTemplate"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
+}
+
+/// <summary>The editor switched between the template and a sub-template, or between sub-templates.</summary>
+public sealed class EditingTargetChangedEventArgs : EditorEventArgs
+{
+    internal EditingTargetChangedEventArgs(EditingTarget target, EditorState snapshot) : base(snapshot) => Target = target;
+
+    /// <summary>Where the editor is now.</summary>
+    public EditingTarget Target { get; }
+}
+
+/// <summary>Typing, pasting or dropping was refused.</summary>
+public sealed class EditRefusedEventArgs : EditorEventArgs
+{
+    internal EditRefusedEventArgs(RefusalReason reason, ElementId? element, EditorState snapshot) : base(snapshot) => (Reason, Element) = (reason, element);
+
+    /// <summary>Why.</summary>
+    public RefusalReason Reason { get; }
+
+    /// <summary>The element concerned: the reference field whose sub-template's body shows.</summary>
+    public ElementId? Element { get; }
 }
 
 /// <summary>In design mode, the user activated an element (Enter or a double-click).</summary>

@@ -18,6 +18,9 @@ const editingKeys = new Set([
 /** The clipboard's keys: the browser turns them into `copy`, `cut` and `paste` events (host/clipboard.ts). */
 const clipboardKeys = new Set(['ctrl+c', 'ctrl+x', 'ctrl+v', 'ctrl+shift+v', 'ctrl+insert', 'shift+insert', 'shift+delete']);
 
+/** The modifier keys, by `KeyboardEvent.key`. */
+const modifierKeys = new Set(['Alt', 'Control', 'Shift', 'Meta']);
+
 /** The keys that ask for a dialog (`dialogRequested`): the engine's, though `shortcuts.lookup` names none of them. */
 const dialogKeys = new Set(['ctrl+d']);
 
@@ -217,8 +220,15 @@ export function startInput(
 
   // Escape, then Tab or Shift+Tab: the browser moves the focus out; Escape still goes to the engine.
   let escaped = false;
+  // A modifier pressed or let go alone (Alt mid-drag): the engine runs the drag or hover again with it.
+  const modifier = (e: KeyboardEvent) => {
+    if (!modifierKeys.has(e.key) || e.repeat) return false;
+    s.input({ type: 'modifiers', mods: modsOf(e) }).catch(report);
+    return true;
+  };
+  ledger.listen(input, 'keyup', modifier);
   ledger.listen(input, 'keydown', (e: KeyboardEvent) => {
-    if (e.isComposing || e.keyCode === 229) return;
+    if (e.isComposing || e.keyCode === 229 || modifier(e)) return;
     const code = codeOf(e);
     if (code === 'F6' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();

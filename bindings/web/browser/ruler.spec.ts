@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { fixture, mount, open, pixels } from './helpers.ts';
 
 /** How deep the rulers' bands are, CSS px: the horizontal one along the top, the vertical one left. */
-const BAND = 20;
+const BAND = 18;
 
 const state = (page: Page) => page.evaluate(() => (window as any).editor.getState());
 const view = (page: Page) => page.evaluate(() => (window as any).editor.ruler.view());
@@ -80,12 +80,17 @@ test.describe('rulers', () => {
     await expect.poll(async () => (await tabs(page)).length).toBe(before);
   });
 
-  test('the corner box cycles the tab selector, and a double-click asks for the Tabs dialog', async ({ page }) => {
+  test('the picker the corner box asks for sets the tab type, and a double-click asks for the Tabs dialog', async ({ page }) => {
     const box = (await canvas(page).boundingBox())!;
+    // The application draws the picker: its answer is the command.
+    const asked = page.evaluate(() => new Promise((resolve) => (window as any).editor.on('popoverRequested', resolve)));
     await page.mouse.click(box.x + BAND / 2, box.y + BAND / 2);
-    const at = await onTab(page, 288);
+    await asked;
+    await page.evaluate(() => (window as any).editor.commands.setRulerTabType('center'));
+    const at = await onTab(page, 252);
     await page.mouse.click(at.x, at.y);
-    await expect.poll(async () => (await tabs(page)).find((t: { position: number }) => Math.abs(t.position - 288) < 0.01)?.alignment).toBe('center');
+    await expect.poll(async () => (await tabs(page)).find((t: { position: number }) => Math.abs(t.position - 252) < 0.01)?.alignment).toBe('center');
+    await page.waitForTimeout(500);
     await page.evaluate(() => {
       const w = window as any;
       w.dialogs = [];

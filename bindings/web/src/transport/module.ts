@@ -27,6 +27,7 @@ export interface TwipModule {
   _twip_composition(engine: Ptr, session: number, phase: number, utf8: Ptr, len: number): void;
   _twip_pointer(engine: Ptr, session: number, kind: number, x: number, y: number, button: number, clicks: number, mods: number): void;
   _twip_wheel(engine: Ptr, session: number, dx: number, dy: number, mods: number): void;
+  _twip_modifiers(engine: Ptr, session: number, mods: number): void;
   _twip_focus(engine: Ptr, session: number, focused: number): void;
   _twip_surface(engine: Ptr, session: number, width: number, height: number, dpr: number): void;
   _twip_scroll(engine: Ptr, session: number, x: number, y: number): void;

@@ -1,7 +1,8 @@
 import type { CommandId } from './commands.js';
 import type { DialogKind } from './services/dialogs.js';
-import type { ControlKind } from './services/elements.js';
+import type { ControlKind, ReferenceRule } from './services/elements.js';
 import type { RulerModel, RulerUnit, TabSelector } from './services/ruler.js';
+import type { ChromeTheme, DocumentAppearance, MeasureDetail, ObjectGrid, ThemeColors } from './services/view.js';
 import type { Color, CommentId, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
 
 /** An on/off value over the selection: `'mixed'` where it differs, `null` where it doesn't apply. */
@@ -20,6 +21,10 @@ export interface EditorState {
   load: 'opening' | 'ready' | 'layingOut';
   /** Editing or the merge designer's design mode. */
   mode: 'editing' | 'design';
+  /** What typing corrects (`setAutoCorrect`). */
+  autoCorrect: AutoCorrectOptions;
+  /** The sub-template being edited; absent while the template is. */
+  editing?: EditingTarget;
   /** Whether edits are refused. */
   readOnly: boolean;
   /** Changed since the last open or DOCX export; undoing back clears it. */
@@ -35,7 +40,7 @@ export interface EditorState {
   /** Each command's availability and value, keyed by command id. */
   commands: { readonly [K in CommandId]: CommandState<K> };
   /** Each dialog's availability: whether `dialogs.open` opens it now. */
-  dialogs: { readonly [K in DialogKind]: boolean };
+  dialogs: { readonly [K in Exclude<DialogKind, 'autoCorrect'>]: boolean };
   /** Undo and redo. */
   history: { canUndo: boolean; canRedo: boolean; undoLabel: string | null; redoLabel: string | null };
   /**
@@ -152,6 +157,10 @@ export interface CommandValues {
   setViewOptions: { formattingMarks: boolean; gridlines: boolean; textBoundaries: boolean; liveLayout: boolean };
   /** The mode. */
   setMode: EditorState['mode'];
+  /** What a click on the ruler adds. */
+  setRulerTabType: TabSelector;
+  /** The caret's table's position, every field set; absent for a table in the text. */
+  setTablePosition: Required<TablePosition>;
 }
 
 /** A command's entry in {@link EditorState.commands}. */
@@ -169,7 +178,7 @@ export interface SelectionSummary {
   /** A caret, text, table cells, an object, or an element. */
   kind: 'caret' | 'text' | 'cells' | 'object' | 'element';
   /** The story the selection is in. */
-  story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox';
+  story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox' | 'subTemplate';
   /** The page of the caret. */
   page: number;
   /** The selection mode. */
@@ -382,6 +391,21 @@ export interface ObjectPlacement {
   distance: TextDistance;
 }
 
+/**
+ * A positioned table's place (`setTablePosition`): each axis as {@link HorizontalPosition} and
+ * {@link VerticalPosition} give an object's, and its distance from the text around it. A table is measured from the
+ * `column`, `margin` or `page` across, and from the `paragraph`, `margin` or `page` down; another reference is an
+ * invalid argument. Given to the command, what isn't set is kept; in the state, every field is set.
+ */
+export interface TablePosition {
+  /** The horizontal place: an alignment or an offset. */
+  horizontal?: HorizontalPosition;
+  /** The vertical place: an alignment or an offset. */
+  vertical?: VerticalPosition;
+  /** How far the text around it keeps, 0 to 1584. */
+  wrapDistance?: TextDistance;
+}
+
 /** An element the selection is in or covers. */
 export interface ElementContext {
   /** The element. */
@@ -502,9 +526,28 @@ export interface ViewState {
   tabSelector: TabSelector;
   /** The room beside the pages for balloons, CSS px. */
   markupPaneWidth: number;
-  /** The editor background around the pages. */
+  /** The background around the pages: the application's colour, or the theme's desk. */
   background: Color;
+  /** The chrome's colour scheme. */
+  theme: ChromeTheme;
+  /** The application's colours for the light and dark schemes. */
+  themeColors: ThemeColors;
+  /** The chrome's accent as drawn (the dark scheme lightens it): for popovers and other chrome that matches the editor's. */
+  accent: Color;
+  /** Text and glyphs drawn on the accent. */
+  accentOn: Color;
+  /** How the page is drawn on screen. */
+  appearance: DocumentAppearance;
+  /** How much the editor measures while you drag and hover. */
+  detail: MeasureDetail;
+  /** When the objects' dot grid shows. */
+  objectGrid: ObjectGrid;
+  /** Which fields are sub-template references (`setSubTemplateRules`); absent when none are. */
+  subTemplateRules?: ReferenceRule[];
 }
+
+/** What the editor is on: the template, or one of its sub-templates. */
+export type EditingTarget = { kind: 'template' } | { kind: 'subTemplate'; name: string; category: string };
 
 /** Track changes and comments. */
 export interface ReviewState {
@@ -520,6 +563,54 @@ export interface ReviewState {
   comments: number;
   /** The active comment thread. */
   activeComment: CommentId | null;
+}
+
+/** What typing corrects (AutoCorrect): each rule on or off, and the texts never corrected again. All on by default. */
+export interface AutoCorrectOptions {
+  /** `THe` → `The`. */
+  twoInitialCapitals: boolean;
+  /** The first letter of a sentence. */
+  sentenceCapitals: boolean;
+  /** The first letter of a table cell. */
+  cellCapitals: boolean;
+  /** `monday` → `Monday`. */
+  dayNames: boolean;
+  /** The replacement list and the symbols (`(c)` → `©`). */
+  replaceText: boolean;
+  /** Straight quotes to curly ones. */
+  smartQuotes: boolean;
+  /** `1st` with the suffix raised. */
+  ordinals: boolean;
+  /** `1/2` → `½`. */
+  fractions: boolean;
+  /** Hyphens to en and em dashes. */
+  dashes: boolean;
+  /** `1.` or `1)` then a space or tab at a paragraph's start makes it a numbered list. */
+  numberedLists: boolean;
+  /** `*` or `-` then a space or tab at a paragraph's start makes it a bulleted list. */
+  bulletedLists: boolean;
+  /** The texts Never correct added (or `setAutoCorrect` set): never corrected again. Absent when empty. */
+  never?: string[];
+}
+
+/** `setAutoCorrect`'s change: the rules given switch, and the lists given replace the shipped ones. */
+export interface AutoCorrectChange extends Partial<Omit<AutoCorrectOptions, 'never'>> {
+  /** The replacement list, in place of the shipped one. */
+  entries?: AutoCorrectEntry[];
+  /** Abbreviations after which a sentence doesn't start (`e.g.`), in place of the shipped ones. */
+  firstLetterExceptions?: string[];
+  /** Words whose two initial capitals stay (`IDs`), in place of the shipped ones. */
+  initialCapsExceptions?: string[];
+  /** The texts never corrected. */
+  never?: string[];
+}
+
+/** One replacement-list entry. */
+export interface AutoCorrectEntry {
+  /** What's typed. */
+  from: string;
+  /** What it becomes. */
+  to: string;
 }
 
 /** How tracked changes are shown. */

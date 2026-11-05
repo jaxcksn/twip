@@ -183,6 +183,7 @@ class Doc:
         self.even_and_odd = False
         self.custom_xml = []  # (xml, ds:itemID) per custom XML part (data parts)
         self.glossary = False  # a glossary part with the default content-control placeholder
+        self.glossary_part = None  # a custom glossary part: dict(doc, styles, numbering, comments, rels, media)
         self.settings_extra = ""  # settings elements before w:compat (tracking, protection)
         self.compat_extra = ""  # w:compat children before compatSetting
         self.styles = STYLES  # a fixture may change the defaults or add styles
@@ -321,6 +322,26 @@ class Doc:
         if self.glossary:
             files.append(("word/glossary/document.xml", GLOSSARY, f"{CT}document.glossary+xml"))
             rels.append(("rIdGlossary", REL + "glossaryDocument", "glossary/document.xml"))
+        media = []
+        if self.glossary_part:
+            g = self.glossary_part
+            files.append(("word/glossary/document.xml", g["doc"], f"{CT}document.glossary+xml"))
+            g_rels = [("rIdGStyles", REL + "styles", "styles.xml"), ("rIdGSettings", REL + "settings", "settings.xml")]
+            files.append(("word/glossary/styles.xml", g["styles"], f"{CT}styles+xml"))
+            files.append(("word/glossary/settings.xml", f'{XML_DECL}<w:settings xmlns:w="{NS["w"]}"/>', f"{CT}settings+xml"))
+            if g.get("numbering"):
+                files.append(("word/glossary/numbering.xml", g["numbering"], f"{CT}numbering+xml"))
+                g_rels.append(("rIdGNumbering", REL + "numbering", "numbering.xml"))
+            if g.get("comments"):
+                files.append(("word/glossary/comments.xml", g["comments"], f"{CT}comments+xml"))
+                g_rels.append(("rIdGComments", REL + "comments", "comments.xml"))
+            g_rels += g.get("rels", [])
+            raw.append(("word/glossary/_rels/document.xml.rels",
+                        f'{XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        + "".join(f'<Relationship Id="{i}" Type="{t}" Target="{target}"/>' for i, t, target in g_rels)
+                        + "</Relationships>"))
+            media += [(f"word/glossary/{name}", data) for name, data in g.get("media", {}).items()]
+            rels.append(("rIdGlossary", REL + "glossaryDocument", "glossary/document.xml"))
         overrides = "".join(f'<Override PartName="/{name}" ContentType="{ctype}"/>' for name, _, ctype in files)
         content_types = (
             f'{XML_DECL}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -342,6 +363,7 @@ class Doc:
         entries += [(name, xml) for name, xml, _ in files] + raw
         entries = [(name, text.encode("utf-8")) for name, text in entries]
         entries += [(f"word/media/image{c + 1}.png", self.media.get(c) or png(COLOURS[c])) for c in sorted(self.images)]
+        entries += media
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             for name, data in entries:
                 info = zipfile.ZipInfo(name, STAMP)
@@ -1184,6 +1206,106 @@ MERGE_SET = {
 }
 
 
+def doc_part(name, category, gallery, n, body):
+    """One glossary building block."""
+    guid = f"{{00000000-0000-4000-8000-{n:012d}}}"
+    return (
+        f'<w:docPart><w:docPartPr><w:name w:val="{escape(name)}"/><w:category><w:name w:val="{escape(category)}"/>'
+        f'<w:gallery w:val="{gallery}"/></w:category><w:behaviors><w:behavior w:val="content"/></w:behaviors>'
+        f'<w:guid w:val="{guid}"/></w:docPartPr><w:docPartBody>{body}</w:docPartBody></w:docPart>'
+    )
+
+
+GLOSSARY_STYLES = f"""{XML_DECL}
+<w:styles xmlns:w="{NS["w"]}">
+<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US"/></w:rPr></w:rPrDefault></w:docDefaults>
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>
+<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:pPr><w:ind w:left="720"/></w:pPr></w:style>
+<w:style w:type="paragraph" w:styleId="Notice"><w:name w:val="Notice"/><w:basedOn w:val="Normal"/><w:rPr><w:i/><w:color w:val="C00000"/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Header"><w:name w:val="Fee cell"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="right"/></w:pPr></w:style>
+<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>
+</w:styles>"""
+
+
+def fx_subtemplates(d):
+    """Sub-template references (field type SUBTEMPLATE) and their building blocks in category "Sub-templates": a body
+    reference alone in its paragraph, one alone in a table row (a one-row body), one sharing its paragraph, a missing
+    name, a case near match, a cycle, one in a footer and one in a landscape section. The glossary has its own styles
+    (a heading both parts define, a glossary-only style, an id the template uses for another name) and numbering, a
+    picture, a tracked insertion and a comment; plus an AutoText block in another category and one nothing refers to."""
+    s = Sdt(7001)
+    ref = lambda name: fld(f" SUBTEMPLATE {name} ")  # noqa: E731
+    d.numbering = True
+    widths = split(TEXT_WIDTH, 2)
+    pic_graphic = (
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+        '<pic:nvPicPr><pic:cNvPr id="0" name="seal.png"/><pic:cNvPicPr/></pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="rIdGImg1"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{EMU // 2}" cy="{EMU // 2}"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
+    )
+    seal = f"<w:r>{d._drawing(d.uid(), 'Picture', EMU // 2, EMU // 2, pic_graphic, None)}</w:r>"
+    inserted = f'<w:ins w:id="9001" w:author="Fixture" w:date="2026-01-01T00:00:00Z">{r(" again")}</w:ins>'
+    commented = (
+        '<w:commentRangeStart w:id="0"/>' + r("recorded") + '<w:commentRangeEnd w:id="0"/>'
+        '<w:r><w:commentReference w:id="0"/></w:r>'
+    )
+    violation = (
+        P("Violation notice", HEADING)
+        + p(r("The violation below was ") + commented + inserted + r("."), '<w:pStyle w:val="Notice"/>')
+        + P("First count.", numbered(0, 1))
+        + P("Second count.", numbered(0, 1))
+        + p(r("Fee: ") + mf("Fee") + r(" Officer: ") + s.wrap(r("Officer"), kind="<w:text/>", alias="Officer", tag="Officer/Name"))
+        + p(seal)
+    )
+    fee_row = tbl([tr([tc(p(mf("Fee.Name")), widths[0]), tc(p(mf("Fee.Amount"), '<w:pStyle w:val="Header"/>'), widths[1])])], widths)
+    cat = "Sub-templates"
+    parts = [
+        doc_part("Violation", cat, "custom1", 1, violation),
+        doc_part("FeeRow", cat, "custom1", 2, fee_row + "<w:p/>"),
+        doc_part("Appeals notice", cat, "custom1", 3, P("If you disagree with this decision, you may appeal within 30 days.")),
+        doc_part("Cycle-A", cat, "custom1", 4, P("Cycle A starts.") + p(ref("Cycle-B"))),
+        doc_part("Cycle-B", cat, "custom1", 5, P("Cycle B starts.") + p(ref("Cycle-A"))),
+        doc_part("Greeting", "General", "autoTxt", 6, P("Kind regards,")),
+    ]
+    comments = (
+        f'{XML_DECL}<w:comments {NAMESPACES}><w:comment w:id="0" w:author="Fixture" w:date="2026-01-01T00:00:00Z" w:initials="F">'
+        f'{P("Check the date.")}</w:comment></w:comments>'
+    )
+    d.glossary_part = dict(
+        doc=f"{XML_DECL}<w:glossaryDocument {NAMESPACES}><w:docParts>{''.join(parts)}</w:docParts></w:glossaryDocument>",
+        styles=GLOSSARY_STYLES,
+        numbering=NUMBERING,
+        comments=comments,
+        rels=[("rIdGImg1", REL + "image", "media/seal.png")],
+        media={"media/seal.png": png(COLOURS[2], 16, 16)},
+    )
+    fees = tbl(
+        [
+            tr([tc(P("Fee"), widths[0]), tc(P("Amount"), widths[1])]),
+            tr([tc(p(ref("FeeRow")), widths[0]), tc("", widths[1])]),
+            tr([tc(P("Total"), widths[0]), tc("", widths[1])]),
+        ],
+        widths,
+    )
+    footer = d.story("footer", "default", p(ref("Violation")))
+    first = sect(footer)
+    body = (
+        P("FX-SUBTEMPLATES", HEADING)
+        + p(ref("Violation"))
+        + P("After the violation.")
+        + fees
+        + p(r("See ") + ref("Violation") + r(" here."))
+        + p(ref("Witness"))
+        + p(ref("violation"))
+        + p(ref("Cycle-A"), first)
+        + p(ref("Violation"))
+        + P("Landscape section text.")
+    )
+    return body, sect(landscape=True)
+
+
 def fx_placeholder(d):
     """A one-page form with a signature picture placeholder: a picture control showing its placeholder image, tagged
     with the box the filled image fits into. `<w:picture />` is written with the space, as tests patch that text."""
@@ -2006,6 +2128,7 @@ FIXTURES = {
     "FX-END-TABLE": fx_end_table,
     "FX-EXACT-ROW": fx_exact_row,
     "FX-REPEAT-REGION": fx_repeat_region,
+    "FX-SUBTEMPLATES": fx_subtemplates,
     "FX-SECTIONS": fx_sections,
     "FX-BULLETS": fx_bullets,
     "FX-CHECKBOXES": fx_checkboxes,

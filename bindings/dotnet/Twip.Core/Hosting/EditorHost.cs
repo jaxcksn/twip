@@ -32,7 +32,8 @@ public sealed class EditorHost : IDisposable
     private RulerUnit _rulerUnit;
     private TabSelector _tabSelector;
     private double _markupPaneWidth;
-    private Color _background = Color.FromArgb(0xE6, 0xE6, 0xE6);
+    private static readonly Color DefaultBackground = Color.FromArgb(0xE6, 0xE6, 0xE6);
+    private Color _background = DefaultBackground;
     private TimeSpan? _caretBlink = TimeSpan.FromMilliseconds(530), _caretBlinkStopAfter;
     private OverlayColors _overlayColors = OverlayColors.Default;
     private PaintBudget _paintBudget = PaintBudget.Default;
@@ -212,6 +213,10 @@ public sealed class EditorHost : IDisposable
         var scale = _dpi / 96;
         Fire(id => TwipNative.Pointer(_session.Engine, id, (uint)kind, x / scale, y / scale, (uint)button, (uint)Math.Max(clicks, 0), (uint)modifiers));
     }
+
+    /// <summary>The modifier keys changed with no other input (Alt pressed or released mid-drag), so a drag's snapping and readouts follow at once.</summary>
+    /// <param name="modifiers">The modifiers held now.</param>
+    public void OnModifiers(KeyModifiers modifiers) => Fire(id => TwipNative.Modifiers(_session.Engine, id, (uint)modifiers));
 
     /// <summary>Forwards a mouse wheel or touchpad scroll, in pixels: it scrolls the view, and with Ctrl it zooms.</summary>
     /// <param name="dx">The horizontal delta.</param>
@@ -405,7 +410,6 @@ public sealed class EditorHost : IDisposable
             SendAndDraw(Method.HostSetOverlayPalette, Json(w =>
             {
                 w.WriteStartObject();
-                w.WriteString("caret", Hex(value.Caret));
                 w.WriteString("selection", Hex(value.Selection));
                 w.WriteString("object", Hex(value.Object));
                 w.WriteString("drop", Hex(value.Drop));
@@ -414,6 +418,13 @@ public sealed class EditorHost : IDisposable
                 w.WriteEndObject();
             }));
         }
+    }
+
+    /// <summary>Puts back the theme's overlay colours, which follow it again.</summary>
+    public void ResetOverlayColors()
+    {
+        _overlayColors = OverlayColors.Default;
+        SendAndDraw(Method.HostSetOverlayPalette, Json(w => w.WriteNullValue()));
     }
 
     /// <summary>The memory the editor keeps pages' drawing in. Default <see cref="PaintBudget.Default"/>.</summary>
@@ -467,6 +478,13 @@ public sealed class EditorHost : IDisposable
             _background = value;
             SendAndDraw(Method.HostSetBackground, Json(w => w.WriteStringValue($"#{value.R:X2}{value.G:X2}{value.B:X2}")));
         }
+    }
+
+    /// <summary>Puts back the theme's colour around the pages (and, until the theme is set, the light chrome).</summary>
+    public void ResetBackground()
+    {
+        _background = DefaultBackground;
+        SendAndDraw(Method.HostSetBackground, Json(w => w.WriteNullValue()));
     }
 
     /// <summary>The ruler model with its viewport mapping.</summary>
@@ -532,6 +550,19 @@ public sealed class EditorHost : IDisposable
         var s = Scale;
         var b = t.Bounds;
         return t with { Location = ToClient(t.Location), Bounds = new RectangleF(b.X * s, b.Y * s, b.Width * s, b.Height * s) };
+    }
+
+    internal Popover ToClient(Popover p)
+    {
+        var s = Scale;
+        RectangleF R(RectangleF r) => new(r.X * s, r.Y * s, r.Width * s, r.Height * s);
+        return p switch
+        {
+            Popover.TabType t => t with { Anchor = R(t.Anchor) },
+            Popover.TabStop t => t with { Anchor = R(t.Anchor) },
+            Popover.AutoCorrect a => a with { Anchor = R(a.Anchor) },
+            _ => p,
+        };
     }
 
     internal CommentAnchor ToClient(CommentAnchor a)

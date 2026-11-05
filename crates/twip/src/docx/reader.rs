@@ -82,7 +82,8 @@ pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
     read_with(bytes, false, now)
 }
 
-fn now_utc() -> i64 {
+/// Seconds since 1970, UTC, by the system clock.
+pub fn now_utc() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
@@ -97,6 +98,34 @@ fn raw(n: Node) -> Rc<str> {
     n.document().input_text()[n.range()].into()
 }
 
+/// `w:background`'s colour (PAGE-12): `w:color`, or `w:themeColor` through the theme and its colour mapping (DRAW-7).
+// shortcut: `w:themeTint` and `w:themeShade` are not applied to a theme page colour.
+fn page_colour(b: Node, theme: &crate::drawing::theme::Theme, map: &crate::drawing::theme::ColourMap) -> Option<u32> {
+    use crate::drawing::colour::SchemeSlot::*;
+    let slot = attr(b, "themeColor").and_then(|t| {
+        Some(match t {
+            "dark1" => Dk1,
+            "light1" => Lt1,
+            "dark2" => Dk2,
+            "light2" => Lt2,
+            "background1" => Bg1,
+            "text1" => Tx1,
+            "background2" => Bg2,
+            "text2" => Tx2,
+            "hyperlink" => Hlink,
+            "followedHyperlink" => FolHlink,
+            a => Accent(a.strip_prefix("accent")?.parse().ok().filter(|n| (1..=6).contains(n))?),
+        })
+    });
+    match slot {
+        Some(s) => {
+            let c = theme.colour(map.map(s));
+            Some((u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b))
+        }
+        None => color(attr(b, "color")),
+    }
+}
+
 fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
     let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(|e| e.to_string())?;
     let mut pkg = Package { zip };
@@ -105,8 +134,6 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let rels = pkg.rels(&main);
     let part_of = |kind: &str| rels.values().find(|(k, _)| k == kind).map(|(_, t)| t.clone());
 
-    let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref());
-    let numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref());
     let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
     let theme = ThemeFonts::parse(theme_xml.as_deref());
     let drawing_theme = Rc::new(crate::drawing::theme::Theme::parse(theme_xml.as_deref()));
@@ -116,6 +143,19 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let colour_map = crate::drawing::theme::ColourMap::parse(
         settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok()).as_ref().map(|d| d.root_element()),
     );
+    // STYLE-11: theme colours resolve through the theme and the mapping.
+    let colours = ThemeColours::new(&drawing_theme, &colour_map);
+    let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
+    let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
+    // The glossary's styles and lists join the document's tables before anything resolves with them.
+    let glossary_part = part_of("glossaryDocument");
+    let glossary_map = glossary_part.as_deref().map(|path| {
+        let grels = pkg.rels(path);
+        let mut gpart = |kind: &str| grels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
+        let gstyles = gpart("styles").map_or_else(Styles::default, |x| Styles::parse(Some(&x), colours));
+        let gnumbering = Numbering::parse(gpart("numbering").as_deref(), &colours);
+        super::glossary::merge_tables(&mut styles, &mut numbering, gstyles, gnumbering)
+    });
     styles.compat = settings.compat();
     styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
     let xml = pkg.read_str(&main).ok_or("no main document part")?;
@@ -123,7 +163,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
     let mut ids = IdCounter::default();
     seed_ids(&xml, &mut ids);
-    let id_parts = ["header", "footer", "footnotes", "endnotes", "comments", "commentsExtended", "commentsIds", "commentsExtensible"];
+    let id_parts =
+        ["header", "footer", "footnotes", "endnotes", "comments", "commentsExtended", "commentsIds", "commentsExtensible", "glossaryDocument"];
     for (_, target) in rels.values().filter(|(k, _)| id_parts.contains(&k.as_str())) {
         if let Some(x) = pkg.read_str(target) {
             seed_ids(&x, &mut ids);
@@ -168,6 +209,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         comment_ids,
         anchored: HashSet::new(),
         orphans: HashSet::new(),
+        glossary_comments: None,
     };
     for (name, identity) in &people_part {
         if let Some(i) = identity {
@@ -179,6 +221,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     {
         let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
         let body = child(dom.root_element(), "body").ok_or("no body")?;
+        doc.page_colour = child(dom.root_element(), "background").and_then(|b| page_colour(b, &drawing_theme, &colour_map));
         r.record = editable;
         doc.sections = r.read_body(body, &mut pkg);
         r.record = false;
@@ -250,6 +293,32 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             r.diagnostics.warn(WarningCode::CommentUnanchored, Some(path), || format!("comment {} has no range or reference", c.0));
         }
     }
+    // The glossary's building blocks, read with their bodies' ids mapped onto the document's tables.
+    let mut glossary_src = None;
+    if let (Some(path), Some(map)) = (&glossary_part, glossary_map) {
+        // The bodies are read from the part with their style and list ids as the document's tables hold them, and
+        // saving maps them back: the model has one set of ids.
+        let xml = pkg.read_str(path).map(|x| map.to_view_xml(&x).into_owned());
+        match xml.as_deref().map(roxmltree::Document::parse) {
+            Some(Ok(dom)) => {
+                r.enter_part(path, &mut pkg);
+                let comments = r.rels.values().find(|(k, _)| k == "comments").and_then(|(_, t)| pkg.read_str(t));
+                let ids = comments.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
+                r.glossary_comments =
+                    Some(ids.iter().flat_map(|d| children(d.root_element(), "comment")).filter_map(|c| int(attr(c, "id"))).collect());
+                r.record = editable;
+                let read = r.read_glossary(dom.root_element(), &mut pkg);
+                r.record = false;
+                r.glossary_comments = None;
+                if editable {
+                    let parts = read.iter().map(|(b, range)| (range.clone(), b.body.clone())).collect();
+                    glossary_src = Some(GlossarySource { part: path.clone(), xml: xml.clone().unwrap_or_default(), parts });
+                }
+                doc.glossary = Some(Glossary { parts: read.into_iter().map(|(b, _)| b).collect(), map });
+            }
+            _ => r.diagnostics.warn(WarningCode::GlossaryUnreadable, Some(path), || "the glossary part isn't well-formed XML".into()),
+        }
+    }
     // People the people part names but no revision or comment does are kept after those that do.
     for (name, identity) in &people_part {
         r.people.author(name, identity.as_ref());
@@ -295,6 +364,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             footnotes,
             endnotes,
             controls,
+            glossary: glossary_src,
         }));
     }
     Ok(doc)
@@ -490,6 +560,8 @@ struct Reader {
     comment_ids: HashSet<i64>,
     anchored: HashSet<i64>,
     orphans: HashSet<i64>,
+    /// While the glossary is read, its own comments part's ids: markers in a body that name one aren't orphans.
+    glossary_comments: Option<HashSet<i64>>,
 }
 
 /// Units added to `out` since `before` (its length and last inline's units then): text may grow the last inline.
@@ -503,6 +575,28 @@ fn units_mark(out: &[Inline]) -> (usize, usize) {
 }
 
 impl Reader {
+    /// The glossary's building blocks, each with its `w:docPart`'s byte range and its body as read. A part without a
+    /// name or a body is left out (and kept as written), with a warning.
+    fn read_glossary(&mut self, root: Node, pkg: &mut Package) -> Vec<(BuildingBlock, std::ops::Range<usize>)> {
+        let mut out: Vec<(BuildingBlock, std::ops::Range<usize>)> = Vec::new();
+        for part in child(root, "docParts").into_iter().flat_map(|d| children(d, "docPart")) {
+            let (Some((name, category, gallery, guid)), Some(body)) = (super::glossary::part_props(part), child(part, "docPartBody")) else {
+                let at = self.part.clone();
+                self.diagnostics.warn(WarningCode::GlossaryUnreadable, Some(&at), || "a building block without a name or a body".into());
+                continue;
+            };
+            let mut blocks = self.read_blocks(body, pkg, None);
+            self.close_ranges(&mut blocks);
+            if out.iter().any(|(b, _)| b.name == name && b.category == category) {
+                let at = self.part.clone();
+                self.diagnostics.warn(WarningCode::DuplicateBuildingBlock, Some(&at), || format!("two building blocks named {name}"));
+            }
+            let editable = child(body, "sectPr").is_none();
+            out.push((BuildingBlock { name, category, gallery, guid, body: blocks, state: PartState::AsRead, editable }, part.range()));
+        }
+        out
+    }
+
     fn enter_part(&mut self, part: &str, pkg: &mut Package) {
         self.part = part.to_string();
         self.rels = pkg.rels(part);
@@ -677,7 +771,7 @@ impl Reader {
         let before = change.and_then(|c| child(c, "pPr"));
         let previous = match change {
             Some(_) => {
-                let mut s = self.res.paragraph(&ParaProps::parse(before), region).style;
+                let mut s = self.res.paragraph(&ParaProps::parse(before, &self.res.styles.colours), region).style;
                 if self.record {
                     s.direct = Raw(before.map(raw));
                 }
@@ -690,6 +784,12 @@ impl Reader {
 
     /// Whether comment `id` exists; a missing one is reported once.
     fn comment_exists(&mut self, id: i64) -> bool {
+        // shortcut: a body's markers for the glossary's own comments are left out of the model (the bytes stay while
+        // their paragraph is unedited) and the comments aren't shown; showing them needs the glossary's comments,
+        // whose ids overlap the document's, joined under ids of their own.
+        if self.glossary_comments.as_ref().is_some_and(|g| g.contains(&id)) {
+            return false;
+        }
         self.ids.saw_revision(id);
         self.anchored.insert(id);
         if self.comment_ids.contains(&id) {
@@ -741,8 +841,8 @@ impl Reader {
             self.open_ranges.push((kind, id));
             return Some(RangeMark { kind, id, name });
         }
-        // The end of a range whose start was left out goes with it.
-        if kind == RangeKind::CommentEnd && self.orphans.contains(&id) {
+        // The end of a range whose start was left out goes with it (an orphan's, or a glossary comment's).
+        if kind == RangeKind::CommentEnd && (self.orphans.contains(&id) || self.glossary_comments.as_ref().is_some_and(|g| g.contains(&id))) {
             return None;
         }
         let Some(k) = self.open_ranges.iter().rposition(|o| *o == (start, id)) else {
@@ -974,7 +1074,7 @@ impl Reader {
             sec.line_grid = Some((int(attr(g, "linePitch")).unwrap_or(0).max(1) * 2048 / 10) as i32);
         }
         if let Some(b) = child(s, "pgBorders") {
-            let side = |n| child(b, n).map(Border::parse);
+            let side = |n| child(b, n).map(|n| Border::parse(n, &self.res.styles.colours));
             sec.page_borders = Some(PageBorders {
                 top: side("top"),
                 left: side("left"),
@@ -1024,7 +1124,7 @@ impl Reader {
 
     fn read_paragraph(&mut self, n: Node, pkg: &mut Package, table: Option<&TableCtx>) -> Option<Paragraph> {
         let ppr_node = child(n, "pPr");
-        let direct = ParaProps::parse(ppr_node);
+        let direct = ParaProps::parse(ppr_node, &self.res.styles.colours);
         let ParaResolved { style: mut para_style, base, level, num_id, ilvl, from_style, style_id } =
             self.res.paragraph(&direct, table.map(|t| &*t.region));
         if self.record {
@@ -1113,7 +1213,7 @@ impl Reader {
 
     /// A run's properties over a base: its character style chain (a toggle level), then direct formatting.
     fn run_props(&self, base: &RunProps, rpr: Option<Node>) -> RunProps {
-        self.res.run_props(base, &RunProps::parse(rpr))
+        self.res.run_props(base, &RunProps::parse(rpr, &self.res.styles.colours))
     }
 
     fn run_style(&self, p: &RunProps) -> Run {
@@ -1218,7 +1318,7 @@ impl Reader {
         // after it, a trailing one does nothing.
         let mut direct = RunProps::default();
         for c in r.children().filter(|c| c.is_element()).take_while(|c| is_w(*c, "rPr")) {
-            direct.merge(&RunProps::parse(Some(c)));
+            direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
         }
         let mut run = self.direct_run(r, base, &mut direct);
         let mut content = false;
@@ -1227,7 +1327,7 @@ impl Reader {
         for c in r.children().filter(|c| c.is_element()) {
             if is_w(c, "rPr") {
                 if content {
-                    direct.merge(&RunProps::parse(Some(c)));
+                    direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
                     run = self.direct_run(r, base, &mut direct);
                 }
                 continue;
@@ -1986,7 +2086,7 @@ impl Reader {
     // ---------------- tables ----------------
 
     fn read_table(&mut self, t: Node, pkg: &mut Package) -> Table {
-        let direct = TblProps::parse(child(t, "tblPr"));
+        let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
         let style_id = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
         let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
         let mut tbl = style_region.tbl.clone();
@@ -1998,7 +2098,7 @@ impl Reader {
         // properties without borders leave the table's borders as they are (FX-REVIEW-TABLES and its rejected twin).
         let now = &tbl.borders;
         let change = self.table_change(child(t, "tblPr"), "tblPrChange", |r, before| {
-            let prev = TblProps::parse(before);
+            let prev = TblProps::parse(before, &r.res.styles.colours);
             let style_id = r.res.styles.table_style(prev.style.as_deref()).map(str::to_string);
             let mut tbl = r.res.styles.table_region(style_id.as_deref(), &[]).tbl.clone();
             tbl.merge(&prev);
@@ -2053,7 +2153,7 @@ impl Reader {
                 let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols), headers));
                 let mut tcp = region.tc.clone();
                 let tc_pr = child(*cn, "tcPr");
-                tcp.merge(&TcProps::parse(tc_pr));
+                tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
                 // TABLE-2: left and right margins of a table with no table style at all (no tblStyle and no default
                 // "Normal Table") and no tcMar or tblCellMar are 10 twips, not 0; with a table style, even one that sets no
                 // margins, they stay 0.
@@ -2106,7 +2206,7 @@ impl Reader {
                 grid_after: trp.grid_after.unwrap_or(0).max(0) as usize,
                 w_before: trp.w_before.map(|w| w.max(0.0)),
                 w_after: trp.w_after.map(|w| w.max(0.0)),
-                ind: TblProps::parse(child(*rn, "tblPrEx")).ind,
+                ind: TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours).ind,
                 jc: trp.jc,
                 cells,
                 controls: row_controls.clone(),
@@ -2172,9 +2272,9 @@ impl Reader {
             };
             (self.mark(e, mark_kind), kind)
         });
-        let change = self.table_change(tc_pr, "tcPrChange", |_, before| {
+        let change = self.table_change(tc_pr, "tcPrChange", |r, before| {
             let mut tcp = base.clone();
-            tcp.merge(&TcProps::parse(before));
+            tcp.merge(&TcProps::parse(before, &r.res.styles.colours));
             let b = &tcp.borders;
             Some(PreviousProps::Cell {
                 width: tcp.width,

@@ -131,6 +131,8 @@ pub struct ParaLines {
     ul_trail_space: bool,
     theme: std::rc::Rc<crate::drawing::theme::Theme>,
     colour_map: crate::drawing::theme::ColourMap,
+    /// The dark fill behind the story's text ([`super::env::TextEnv::backdrop`]).
+    backdrop: Option<u32>,
 }
 
 impl PartialEq for ParaLines {
@@ -178,6 +180,7 @@ impl ParaLines {
             review: &self.review,
             ul_trail_space: self.ul_trail_space,
             palette: crate::drawing::paint::Palette { theme: &self.theme, map: &self.colour_map },
+            backdrop: self.backdrop,
         }
     }
 
@@ -281,6 +284,7 @@ pub fn break_lines_uncached(
         ul_trail_space: space.env.ul_trail_space,
         theme: space.env.theme.clone(),
         colour_map: space.env.colour_map,
+        backdrop: space.env.backdrop,
     })
 }
 
@@ -1517,14 +1521,19 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     }
 }
 
-/// A run's text colour: its revision's colour in All markup (REV-3); else automatic text is white on a dark highlight
-/// or shading (FONT-15), else black (`None`).
-fn ink(r: &RunStyle, review: &ReviewView) -> Option<u32> {
+/// A run's text colour: its revision's colour in All markup (REV-3); else automatic text is white on a dark fill behind
+/// it (FONT-15): the run's shading, else `behind` (the paragraph's shading, or the story's backdrop), a highlight not
+/// counting; else black (`None`).
+fn ink(r: &RunStyle, review: &ReviewView, behind: Option<u32>) -> Option<u32> {
     if let Some(c) = revision_colour(r, review) {
         return Some(c);
     }
-    let dark = |c: &u32| (0.299 * (c >> 16) as f64 + 0.587 * ((c >> 8) & 0xFF) as f64 + 0.114 * (c & 0xFF) as f64) < 110.0;
-    r.color.or_else(|| r.highlight.or(r.shading).filter(dark).map(|_| 0xFFFFFF))
+    r.color.or_else(|| r.shading.or(behind).filter(|c| super::env::is_dark(*c)).map(|_| 0xFFFFFF))
+}
+
+/// The fill behind a line's text besides its runs' own (FONT-15): the paragraph's shading, else the story's dark fill.
+fn behind(o: &LineOrigin, src: &Paragraph) -> Option<u32> {
+    src.para_style_in(o.review.view).shading.or(o.backdrop)
 }
 
 /// REV-3: in All markup, an inserted, deleted or moved run draws in its author's colour, a move in the move colour.
@@ -1572,6 +1581,8 @@ pub struct LineOrigin<'a> {
     pub ul_trail_space: bool,
     /// The colours inline shapes resolve against (DRAW-7).
     pub palette: crate::drawing::paint::Palette<'a>,
+    /// The dark fill behind the story's text (FONT-15).
+    pub backdrop: Option<u32>,
 }
 
 impl LineOrigin<'_> {
@@ -1595,9 +1606,10 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             (g + (b - a) as usize, c + text_of(sp, &pieces[ix]).len())
         });
         for (r, c) in &line.rects {
-            out.push(Item::Rect { rect: [x0 + r[0], top + r[1], x0 + r[2], top + r[3]], colour: *c });
+            out.push(Item::rect([x0 + r[0], top + r[1], x0 + r[2], top + r[3]], *c));
         }
         let rects_end = out.len();
+        let behind_text = behind(o, src);
         let mut run: Option<GlyphRunBuilder> = None;
         let flush = |run: &mut Option<GlyphRunBuilder>, out: &mut Vec<Item>| {
             if let Some(r) = run.take()
@@ -1608,6 +1620,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         };
         let mut atoms: Vec<Atom> = Vec::new();
         let mut texts: Vec<([f64; 4], crate::docx::Picture)> = Vec::new();
+        let mut expansions: Vec<([f64; 4], Rc<super::expansion::Expansion>)> = Vec::new();
         // REV-6: a joined paragraph's pieces keep their own paragraphs and units (generated text, its first's).
         let join = sp.join.as_deref();
         let source = |p: &Piece| match (join, p.src) {
@@ -1641,7 +1654,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             if matches!(p.kind, Kind::Separator | Kind::ContSeparator) {
                 // NOTE-3: the separator rule.
                 let len = if p.kind == Kind::ContSeparator && o.compat == Compat::Legacy { o.width } else { 144.0 };
-                out.push(Item::Rect { rect: [x, base - 2.7, x + len, base - 2.1], colour: 0 });
+                out.push(Item::rect([x, base - 2.7, x + len, base - 2.1], 0));
                 continue;
             }
             // A unit drawn without characters ends where the next piece starts.
@@ -1651,6 +1664,16 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 draw_leader(o, line, k, x0, base, &mut out);
                 if let Some(unit) = first {
                     atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + line.widths[k]), para: q, unit, brk: false });
+                }
+                continue;
+            }
+            if let (Kind::Object, Some(Object::Expansion(e))) = (p.kind, p.object.map(|o| &sp.objects[o as usize])) {
+                flush(&mut run, &mut out);
+                // Sits on the baseline, as a picture does.
+                let rect = [x, base - e.size.1, x + e.size.0, base];
+                expansions.push((rect, e.clone()));
+                if let Some(unit) = first {
+                    atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + e.size.0), para: q, unit, brk: false });
                 }
                 continue;
             }
@@ -1691,7 +1714,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 continue;
             }
             let y = base - st.raise;
-            let color = ink(&st.run, o.review);
+            let color = ink(&st.run, o.review, behind_text);
             let same = run.as_ref().is_some_and(|r| {
                 Rc::ptr_eq(&r.face, face) && (r.size - st.size).abs() < EPS && (r.y - y).abs() < EPS && r.color == color && r.para == Some(q)
             });
@@ -1730,7 +1753,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             chars_left = chars_left.saturating_sub(text.len());
         }
         flush(&mut run, &mut out);
-        draw_decorations(o, line, base, rects_end, &mut out);
+        draw_decorations(o, line, base, rects_end, behind_text, &mut out);
         // The places left are at the line's end: its aligned start when it has no pieces.
         let end = match (line.xs.last(), line.widths.last()) {
             (Some(x), Some(w)) => x0 + x + w,
@@ -1759,6 +1782,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             changed,
             mark,
             texts: texts.into_boxed_slice(),
+            expansions: expansions.into_boxed_slice(),
         }
     }
 }
@@ -1856,7 +1880,7 @@ impl GlyphRunBuilder {
 
 /// A line's highlight and run shading behind its text (inserted into `out` at `bg_at`), underlines and strikethrough
 /// over it, as rectangles (FONT-15), with REV-3's revision marks in All markup.
-fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, out: &mut Vec<Item>) {
+fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind: Option<u32>, out: &mut Vec<Item>) {
     let (sp, x0, review) = (o.shaped, o.x0, o.review);
     let pieces = &o.pieces()[line.start..line.end];
     let content = pieces.iter().rposition(|p| p.kind != Kind::Space).map_or(0, |k| k + 1);
@@ -1866,7 +1890,7 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, out: &
         let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc } if *lc == c && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
         match v.iter_mut().rev().take(4).find(joins) {
             Some(Item::Rect { rect: last, .. }) => last[2] = r[2],
-            _ => v.push(Item::Rect { rect: r, colour: c }),
+            _ => v.push(Item::rect(r, c)),
         }
     };
     for (k, p) in pieces.iter().enumerate() {
@@ -1889,7 +1913,7 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, out: &
         if trailing && !o.ul_trail_space {
             continue;
         }
-        let ink = ink(r, review).unwrap_or(0);
+        let ink = ink(r, review, behind).unwrap_or(0);
         let line_at = |v: &mut Vec<Item>, y: f64, t: f64| push(v, [x, y - t / 2.0, x + w, y + t / 2.0], ink);
         // REV-3: in All markup an insertion is underlined (a move's destination twice) and a deletion struck through (a
         // move's source twice).

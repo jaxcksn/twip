@@ -54,6 +54,8 @@ pub struct Session {
     services: crate::services::Services,
     /// Gesture bindings and application shortcuts.
     bindings: input::Bindings,
+    /// What typing corrects.
+    autocorrect: crate::editing::autocorrect::AutoCorrect,
 }
 
 impl Session {
@@ -78,6 +80,7 @@ impl Session {
             watch: fonts::Watch::default(),
             services: crate::services::Services::default(),
             bindings: input::Bindings::default(),
+            autocorrect: Default::default(),
         };
         for d in &options.dictionaries {
             // shortcut: a dictionary that doesn't parse is left out silently; report it as a warning event if hosts
@@ -135,6 +138,7 @@ impl Session {
     fn changed(&mut self, events: Vec<Event>) {
         let revisions = self.state.review.revisions;
         let selection = std::mem::take(&mut self.state.selection);
+        let editing = std::mem::take(&mut self.state.editing);
         self.state = crate::prof::time("session:state", || self.build_state());
         self.emit(Event::StateChanged(self.state.clone()));
         for e in events {
@@ -145,8 +149,18 @@ impl Session {
             self.emit(e);
             review.into_iter().for_each(|r| self.emit(r));
         }
+        self.popover_follow();
         let mut said = std::mem::take(&mut self.services.said);
         said.extend(self.services.announcer.next(&mut self.editor, &self.services.spelling, &self.language, self.read_only));
+        if self.state.editing != editing {
+            self.emit(Event::EditingTargetChanged(self.state.editing.clone()));
+            // Screen readers hear where the editor went, first.
+            let text = match &self.state.editing {
+                crate::api::state::EditingTarget::SubTemplate { name, .. } => format!("Editing sub-template {name}"),
+                crate::api::state::EditingTarget::Template => "Back to the template".into(),
+            };
+            said.insert(0, (crate::api::services::AnnouncementKind::Mode, text));
+        }
         self.announce(said);
         if self.state.selection != selection {
             self.emit(Event::SelectionChanged(self.state.selection.clone()));

@@ -59,6 +59,29 @@ pub enum Mode {
     Design,
 }
 
+/// What the editor is on: the template, or one of its sub-templates.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum EditingTarget {
+    /// The document itself.
+    #[default]
+    Template,
+    /// A sub-template's body.
+    SubTemplate {
+        /// Its name.
+        name: String,
+        /// Its building block category.
+        category: String,
+    },
+}
+
+impl EditingTarget {
+    /// Whether it is the template.
+    pub fn is_template(&self) -> bool {
+        *self == EditingTarget::Template
+    }
+}
+
 /// Whether the document is open and laid out.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,6 +107,9 @@ pub struct State {
     pub load: LoadState,
     /// Editing or template design.
     pub mode: Mode,
+    /// The template, or the sub-template being edited (absent on the wire for the template).
+    #[serde(default, skip_serializing_if = "EditingTarget::is_template")]
+    pub editing: EditingTarget,
     /// Commands that change the document fail with `read-only`.
     pub read_only: bool,
     /// Changed since the last open or DOCX export.
@@ -120,6 +146,9 @@ pub struct State {
     /// accent6, hyperlink, followedHyperlink), for an application's colour picker.
     #[serde(default)]
     pub theme_colours: Vec<Color>,
+    /// What typing corrects.
+    #[serde(default)]
+    pub auto_correct: super::services::AutoCorrectOptions,
 }
 
 /// One command's state.
@@ -166,6 +195,10 @@ pub enum CommandValue {
     MarkupView(MarkupView),
     /// The session mode.
     Mode(Mode),
+    /// What a click on the ruler adds.
+    TabType(crate::api::services::TabSelector),
+    /// A positioned table's place (absent for a table in the text).
+    TablePosition(crate::api::command::TablePosition),
 }
 
 /// What is selected and where.
@@ -711,8 +744,26 @@ pub struct ViewState {
     pub tab_selector: TabSelector,
     /// The room beside the pages for balloons, CSS px (0 by default).
     pub markup_pane_width: f64,
-    /// Around the pages; the paper stays white.
+    /// Around the pages (the host's colour, or the theme's desk).
     pub background: Color,
+    /// The chrome's colour scheme.
+    pub theme: super::services::ChromeTheme,
+    /// The host's colours for the light and dark schemes.
+    pub theme_colors: super::services::ThemeColors,
+    /// The chrome's accent as drawn (the dark scheme's is lightened): for popovers and other host chrome that matches
+    /// the editor's.
+    pub accent: Color,
+    /// Text and glyphs drawn on the accent.
+    pub accent_on: Color,
+    /// How the page is drawn on screen.
+    pub appearance: super::services::DocumentAppearance,
+    /// How much the editor measures while you drag and hover.
+    pub detail: super::services::MeasureDetail,
+    /// When the objects' dot grid shows.
+    pub object_grid: super::services::ObjectGrid,
+    /// Which fields are sub-template references.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_template_rules: Vec<super::command::ReferenceRule>,
 }
 
 impl Default for ViewState {
@@ -728,7 +779,15 @@ impl Default for ViewState {
             ruler_unit: RulerUnit::default(),
             tab_selector: TabSelector::default(),
             markup_pane_width: 0.0,
-            background: Color(0xE6E6E6),
+            background: Color(0xE8E7E3),
+            theme: super::services::ChromeTheme::Light,
+            theme_colors: super::services::ThemeColors::default(),
+            accent: Color(0x0A74E4),
+            accent_on: Color(0xFFFFFF),
+            appearance: super::services::DocumentAppearance::Light,
+            detail: super::services::MeasureDetail::Standard,
+            object_grid: super::services::ObjectGrid::WhileDragging,
+            sub_template_rules: Vec::new(),
         }
     }
 }
@@ -829,6 +888,7 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
         StoryId::Footnote(_) => Story::Footnote,
         StoryId::Endnote(_) => Story::Endnote,
         StoryId::TextBox(_) => Story::TextBox,
+        StoryId::BuildingBlock(_) => Story::SubTemplate,
     };
     let mode = match commands.get(&CommandId::SetSelectionMode).and_then(|s| s.value.clone()) {
         Some(CommandValue::SelectionMode(m)) => m,

@@ -192,6 +192,11 @@ pub fn paras_in_order(e: &Editor) -> Vec<ParaId> {
         }
     }
     let mut out = Vec::new();
+    // While a sub-template is edited, its body; never a sub-template's body from the template.
+    if let Some(part) = e.editing_sub_template().and_then(|k| e.document().glossary.as_ref()?.parts.get(k as usize)) {
+        walk(&part.body, &mut out);
+        return out;
+    }
     for s in &e.document().sections {
         walk(&s.blocks, &mut out);
     }

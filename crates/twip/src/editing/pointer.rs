@@ -50,6 +50,7 @@ impl Editor {
             Some(Zone::Column(..)) => return Cursor::ColumnSelect,
             Some(Zone::Row(..)) => return Cursor::RowSelect,
             Some(Zone::Table(_)) => return Cursor::Move,
+            Some(Zone::InsertColumn(..) | Zone::InsertRow(..)) => return Cursor::Pointer,
             None => {}
         }
         if self.bar_hit(x, y, fonts).is_some() {
@@ -72,6 +73,9 @@ impl Editor {
         }
         if let Some(d) = self.object_drag {
             return Some(d.handle.map_or(Cursor::Move, handle_cursor));
+        }
+        if self.table_drag.is_some() {
+            return Some(Cursor::Move);
         }
         if let Some((.., shape)) = self.zone_drag {
             return Some(match shape {

@@ -20,6 +20,9 @@ public sealed record EditorState
     /// <summary>Editing or design mode.</summary>
     public EditorMode Mode { get; init; }
 
+    /// <summary>The template, or the sub-template being edited.</summary>
+    public EditingTarget Editing { get; init; } = EditingTarget.Template;
+
     /// <summary>Whether the session is read only.</summary>
     public bool ReadOnly { get; init; }
 
@@ -74,6 +77,57 @@ public sealed record EditorState
     /// <summary>The document's 12 theme colours in <see cref="ThemeColor"/> order, for an application's colour picker.</summary>
     [JsonPropertyName("themeColours")]
     public IReadOnlyList<ColorValue> ThemeColors { get; init; } = [];
+
+    /// <summary>What typing corrects; change it with <see cref="EditorCommands.SetAutoCorrectAsync"/>.</summary>
+    public AutoCorrectOptions AutoCorrect { get; init; } = new();
+}
+
+/// <summary>What typing corrects (AutoCorrect): each rule on or off (all on by default), and the texts never corrected again.</summary>
+public sealed record AutoCorrectOptions
+{
+    /// <summary>Two initial capitals: <c>THe</c> becomes <c>The</c>.</summary>
+    public bool TwoInitialCapitals { get; init; } = true;
+
+    /// <summary>The first letter of a sentence is capitalised.</summary>
+    public bool SentenceCapitals { get; init; } = true;
+
+    /// <summary>The first letter of a table cell is capitalised.</summary>
+    public bool CellCapitals { get; init; } = true;
+
+    /// <summary>Day names are capitalised: <c>monday</c> becomes <c>Monday</c>.</summary>
+    public bool DayNames { get; init; } = true;
+
+    /// <summary>The replacement list and the symbols: <c>(c)</c> becomes <c>©</c>.</summary>
+    public bool ReplaceText { get; init; } = true;
+
+    /// <summary>Straight quotes become curly ones.</summary>
+    public bool SmartQuotes { get; init; } = true;
+
+    /// <summary>Ordinals get their suffix raised: <c>1st</c>.</summary>
+    public bool Ordinals { get; init; } = true;
+
+    /// <summary>Fractions: <c>1/2</c> becomes <c>½</c>.</summary>
+    public bool Fractions { get; init; } = true;
+
+    /// <summary>Hyphens become en and em dashes.</summary>
+    public bool Dashes { get; init; } = true;
+
+    /// <summary><c>1.</c> or <c>1)</c> then a space or tab at a paragraph's start makes it a numbered list.</summary>
+    public bool NumberedLists { get; init; } = true;
+
+    /// <summary><c>*</c> or <c>-</c> then a space or tab at a paragraph's start makes it a bulleted list.</summary>
+    public bool BulletedLists { get; init; } = true;
+
+    /// <summary>The texts Never correct added: never corrected again.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string> Never { get; init; } = [];
+
+    [JsonInclude, JsonPropertyName("never"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    internal IReadOnlyList<string>? NeverWire
+    {
+        get => Never.Count == 0 ? null : Never;
+        init => Never = value ?? [];
+    }
 }
 
 /// <summary>Whether a document is ready.</summary>
@@ -92,7 +146,9 @@ public enum LoadStatus
 /// <param name="Checked">Whether a toggle shows as pressed.</param>
 /// <param name="Value">
 /// The command's state value, where it has one: a <see cref="bool"/>, a <see cref="double"/>, a <see cref="string"/> (an
-/// undo label or an enum value's wire name), or null.
+/// undo label or an enum value's wire name), a <see cref="System.Text.Json.JsonElement"/> in the wire shape for a
+/// structured value (such as <see cref="CommandId.SetTablePosition"/>'s <see cref="TablePosition"/>, absent for a table
+/// in the text), or null.
 /// </param>
 public sealed record CommandState(
     bool Enabled,
@@ -114,6 +170,31 @@ public enum SelectionKind
     Element,
 }
 
+/// <summary>What the editor is on: the template, or one of its sub-templates.</summary>
+public enum EditingTargetKind
+{
+    /// <summary>The document itself.</summary>
+    Template,
+    /// <summary>A sub-template's body.</summary>
+    SubTemplate,
+}
+
+/// <summary>What the editor is on.</summary>
+/// <param name="Kind">The template or a sub-template.</param>
+public sealed record EditingTarget(EditingTargetKind Kind)
+{
+    /// <summary>The template.</summary>
+    public static EditingTarget Template { get; } = new(EditingTargetKind.Template);
+
+    /// <summary>The sub-template's name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
+
+    /// <summary>The sub-template's building block category.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Category { get; init; }
+}
+
 /// <summary>Which story the selection is in.</summary>
 public enum Story
 {
@@ -129,6 +210,8 @@ public enum Story
     Endnote,
     /// <summary>A text box.</summary>
     TextBox,
+    /// <summary>A sub-template's body (a building block), while the editor is on it.</summary>
+    SubTemplate,
 }
 
 /// <summary>The selection.</summary>
@@ -764,8 +847,32 @@ public sealed record ViewState
     /// <summary>The room beside the pages for comment balloons, in pixels.</summary>
     public double MarkupPaneWidth { get; init; }
 
-    /// <summary>The background around the pages.</summary>
-    public ColorValue Background { get; init; } = ColorValue.FromRgb(0xE6, 0xE6, 0xE6);
+    /// <summary>The background around the pages: the host's colour, or the theme's desk.</summary>
+    public ColorValue Background { get; init; } = ColorValue.FromRgb(0xE8, 0xE7, 0xE3);
+
+    /// <summary>The chrome's colour scheme.</summary>
+    public ChromeTheme Theme { get; init; } = ChromeTheme.Light;
+
+    /// <summary>The application's colours for the light and dark schemes.</summary>
+    public ThemeColors ThemeColors { get; init; } = new();
+
+    /// <summary>The chrome's accent as drawn (the dark scheme's is lightened): for popovers and other chrome that matches the editor's.</summary>
+    public ColorValue Accent { get; init; } = ColorValue.FromRgb(0x0A, 0x74, 0xE4);
+
+    /// <summary>Text and glyphs drawn on <see cref="Accent"/>.</summary>
+    public ColorValue AccentOn { get; init; } = ColorValue.FromRgb(0xFF, 0xFF, 0xFF);
+
+    /// <summary>How the page is drawn on screen.</summary>
+    public DocumentAppearance Appearance { get; init; }
+
+    /// <summary>How much the editor measures while you drag and hover.</summary>
+    public MeasureDetail Detail { get; init; } = MeasureDetail.Standard;
+
+    /// <summary>When the objects' dot grid shows.</summary>
+    public ObjectGrid ObjectGrid { get; init; } = ObjectGrid.WhileDragging;
+    /// <summary>Which fields are sub-template references (<see cref="EditorCommands.SetSubTemplateRulesAsync"/>); none when null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ReferenceRule>? SubTemplateRules { get; init; }
 }
 
 /// <summary>Change tracking, revisions and comments.</summary>

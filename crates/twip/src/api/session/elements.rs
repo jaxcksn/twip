@@ -4,7 +4,10 @@ use super::Session;
 use crate::api::command::ElementField;
 use crate::api::error::Error;
 use crate::api::record::Origin;
-use crate::api::services::{Block, BlockCell, BlockRow, DataPart, ElementDetail, ElementFilter, ElementInfo, PlaceholderInfo, VerticalMerge};
+use crate::api::services::{
+    Block, BlockCell, BlockRow, DataPart, ElementDetail, ElementFilter, ElementInfo, PlaceholderInfo, ReferenceResolution, SubTemplateInfo,
+    SubTemplateReference, VerticalMerge,
+};
 use crate::api::state::ElementKind;
 use crate::api::value::{CheckboxOptions, ControlLock, ControlOptions, DataBinding, DateOptions, ElementId, ListItem, ListOptions, PlainTextOptions};
 use crate::docx::{ControlKind, Lock};
@@ -37,9 +40,34 @@ fn info(s: &Session, e: &Element) -> ElementInfo {
         title: p.and_then(|p| p.alias.clone()),
         display: e.display.clone(),
         story: super::review::story(&s.editor, e.story),
+        sub_template: match e.story {
+            crate::editing::position::StoryId::BuildingBlock(k) => {
+                s.editor.document().glossary.as_ref().and_then(|g| g.parts.get(k as usize)).map(|b| b.name.clone())
+            }
+            _ => None,
+        },
         parent: e.parent.map(|p| ElementId(elements::id_str(p))),
         locked: e.locked,
+        reference: match e.id {
+            crate::docx::ElementId::Field(f) => s.editor.references().by_field.get(&f).map(|r| reference(s, f, r)),
+            crate::docx::ElementId::Control(_) => None,
+        },
     }
+}
+
+/// A reference field's sub-template as the API reports it.
+fn reference(s: &Session, f: crate::docx::FieldId, r: &crate::editing::sub_templates::Reference) -> SubTemplateReference {
+    use crate::editing::sub_templates::Resolution as R;
+    let (resolution, near_match) = match &r.resolution {
+        R::Resolved => (ReferenceResolution::Resolved, None),
+        R::Missing => (ReferenceResolution::Missing, None),
+        R::NearMatch(n) => (ReferenceResolution::NearMatch, Some(n.clone())),
+        R::Cycle => (ReferenceResolution::Cycle, None),
+        R::TooDeep => (ReferenceResolution::TooDeep, None),
+        R::NotAlone => (ReferenceResolution::NotAlone, None),
+        R::NotInBody => (ReferenceResolution::NotInBody, None),
+    };
+    SubTemplateReference { name: r.name.clone(), resolution, near_match, expanded: s.editor.reference_expanded(f) }
 }
 
 /// The value of attribute `name` (`w:xpath`) in an element's XML as written.
@@ -159,6 +187,7 @@ impl Session {
             .filter(|e| {
                 filter.kind.is_none_or(|k| k == e.kind)
                     && filter.story.is_none_or(|s| s == e.story)
+                    && filter.sub_template.as_ref().is_none_or(|n| e.sub_template.as_ref() == Some(n))
                     && filter.matches.as_ref().is_none_or(|m| {
                         let v = match m.field {
                             ElementField::Code => e.code.as_deref(),
@@ -167,6 +196,29 @@ impl Session {
                         };
                         v.is_some_and(|v| v.contains(m.text.as_str()))
                     })
+            })
+            .collect()
+    }
+
+    /// The sub-templates: live building blocks in the rules' categories, in glossary order, each with its references
+    /// and its body's elements. None without rules.
+    pub fn sub_templates(&self) -> Vec<SubTemplateInfo> {
+        let rules = self.editor.sub_template_rules();
+        let Some(g) = &self.editor.document().glossary else { return Vec::new() };
+        let all: Vec<ElementInfo> = self.all_elements().iter().map(|e| info(self, e)).collect();
+        g.parts
+            .iter()
+            .filter(|b| b.state != crate::docx::PartState::Removed && rules.iter().any(|r| r.category == b.category))
+            .map(|b| {
+                let naming: Vec<&ElementInfo> = all.iter().filter(|e| e.reference.as_ref().is_some_and(|r| r.name == b.name)).collect();
+                let nested = naming.iter().filter(|e| e.story == crate::api::value::Story::SubTemplate).count() as u32;
+                SubTemplateInfo {
+                    name: b.name.clone(),
+                    category: b.category.clone(),
+                    references: naming.len() as u32 - nested,
+                    nested_references: nested,
+                    elements: all.iter().filter(|e| e.sub_template.as_deref() == Some(b.name.as_str())).cloned().collect(),
+                }
             })
             .collect()
     }
@@ -186,6 +238,7 @@ impl Session {
             title: i.title,
             display: i.display,
             story: i.story,
+            sub_template: i.sub_template,
             parent: i.parent,
             locked: i.locked,
             lock: match p.map_or(Lock::None, |p| p.lock) {

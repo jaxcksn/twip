@@ -1,0 +1,17 @@
+{
+  "name": "autocorrect-settings",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "expectState", "match": {"revision": 1, "autoCorrect": {"twoInitialCapitals": true, "sentenceCapitals": true, "cellCapitals": true, "dayNames": true, "replaceText": true, "smartQuotes": true, "ordinals": true, "fractions": true, "dashes": true, "never": {"$exact": null}}, "commands": {"setAutoCorrect": {"enabled": true}, "revertAutoCorrect": {"enabled": false}, "neverAutoCorrect": {"enabled": false}, "showAutoCorrectOptions": {"enabled": false}}}},
+    {"op": "command", "command": {"type": "setAutoCorrect", "smartQuotes": false, "dashes": false, "never": ["teh"]}},
+    {"op": "expectState", "match": {"revision": 1, "history": {"undoLabel": null}, "autoCorrect": {"smartQuotes": false, "dashes": false, "replaceText": true, "never": {"$exact": ["teh"]}}}},
+    {"op": "command", "command": {"type": "setAutoCorrect", "smartQuotes": true, "dashes": true, "never": [], "entries": [{"from": "adn", "to": "and"}]}},
+    {"op": "expectState", "match": {"autoCorrect": {"smartQuotes": true, "dashes": true, "never": {"$exact": null}}}},
+    {"op": "command", "command": {"type": "revertAutoCorrect"}},
+    {"op": "expectError", "code": "unavailable"},
+    {"op": "command", "command": {"type": "neverAutoCorrect"}},
+    {"op": "expectError", "code": "unavailable"},
+    {"op": "expectState", "match": {"revision": 1}}
+  ]
+}

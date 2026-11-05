@@ -1,0 +1,26 @@
+{
+  "name": "table-position",
+  "fixture": "editor/FX-tabs.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "call", "method": "find.next", "args": [{"text": "Second cell"}], "result": {"found": true}},
+    {"op": "expectState", "match": {"revision": 1, "commands": {"setTablePosition": {"enabled": true, "value": {"$exact": null}}}}},
+    {"op": "command", "command": {"type": "setTablePosition", "value": {"horizontal": {"relativeTo": "margin", "offset": 72}, "vertical": {"relativeTo": "paragraph", "offset": 36}}}},
+    {"op": "expectEvents", "match": [{"type": "documentChanged", "origin": "api", "revision": 2}]},
+    {"op": "expectState", "match": {"revision": 2, "commands": {"setTablePosition": {"enabled": true, "value": {"$exact": {"horizontal": {"relativeTo": "margin", "offset": 72}, "vertical": {"relativeTo": "paragraph", "offset": 36}, "wrapDistance": {"top": 0, "bottom": 0, "left": 9, "right": 9}}}}}}},
+    {"op": "command", "command": {"type": "setTablePosition", "value": {"horizontal": {"relativeTo": "page", "align": "center"}}}},
+    {"op": "expectState", "match": {"revision": 3, "commands": {"setTablePosition": {"value": {"$exact": {"horizontal": {"relativeTo": "page", "align": "center"}, "vertical": {"relativeTo": "paragraph", "offset": 36}, "wrapDistance": {"top": 0, "bottom": 0, "left": 9, "right": 9}}}}}}},
+    {"op": "command", "command": {"type": "setTablePosition", "value": {"horizontal": {"relativeTo": "character"}}}},
+    {"op": "expectError", "code": "invalid-argument"},
+    {"op": "command", "command": {"type": "setTablePosition", "value": null}},
+    {"op": "expectState", "match": {"revision": 4, "commands": {"setTablePosition": {"enabled": true, "value": {"$exact": null}}}}},
+    {"op": "command", "command": {"type": "undo"}},
+    {"op": "expectState", "match": {"revision": 5, "commands": {"setTablePosition": {"value": {"horizontal": {"relativeTo": "page", "align": "center"}}}}}},
+    {"op": "export", "format": "docx", "match": {"revision": 5}},
+    {"op": "reopen"},
+    {"op": "call", "method": "find.next", "args": [{"text": "Second cell"}], "result": {"found": true}},
+    {"op": "expectState", "match": {"commands": {"setTablePosition": {"value": {"$exact": {"horizontal": {"relativeTo": "page", "align": "center"}, "vertical": {"relativeTo": "paragraph", "offset": 36}, "wrapDistance": {"top": 0, "bottom": 0, "left": 9, "right": 9}}}}}}},
+    {"op": "call", "method": "find.next", "args": [{"text": "Name"}], "result": {"found": true}},
+    {"op": "expectState", "match": {"commands": {"setTablePosition": {"enabled": false}}}}
+  ]
+}

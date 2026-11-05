@@ -36,18 +36,27 @@ pub struct Region {
 }
 
 impl Region {
-    fn parse(n: Node) -> Region {
+    fn parse(n: Node, colours: &ThemeColours) -> Region {
         Region {
-            ppr: ParaProps::parse(child(n, "pPr")),
-            rpr: RunProps::parse(child(n, "rPr")),
-            tbl: TblProps::parse(child(n, "tblPr")),
-            tc: TcProps::parse(child(n, "tcPr")),
+            ppr: ParaProps::parse(child(n, "pPr"), colours),
+            rpr: RunProps::parse(child(n, "rPr"), colours),
+            tbl: TblProps::parse(child(n, "tblPr"), colours),
+            tc: TcProps::parse(child(n, "tcPr"), colours),
             tr: TrProps::parse(child(n, "trPr")),
             size_over_normal: None,
             sets_text: ["pPr", "rPr"].iter().any(|k| child(n, k).is_some_and(|e| e.children().any(|c| c.is_element()))),
             mark_at_style: false,
         }
     }
+}
+
+/// Which styles part a style was read from: the document's, or the glossary's (a style only a building block body
+/// uses, kept in the document's table under an id that doesn't collide).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StyleOrigin {
+    #[default]
+    Document,
+    Glossary,
 }
 
 #[derive(Clone, Debug)]
@@ -68,6 +77,7 @@ pub struct Style {
     pub base: Region,
     /// Conditional regions by `w:type` (`firstRow`, `band1Horz`, ...).
     pub regions: HashMap<String, Region>,
+    pub origin: StyleOrigin,
 }
 
 /// Table-style conditional regions, lowest precedence first (TABLE-3).
@@ -133,6 +143,8 @@ impl ThemeFonts {
 
 #[derive(Clone, Debug, Default)]
 pub struct Styles {
+    /// The document's theme colours (STYLE-11): what direct formatting edited later resolves `w:themeColor` with.
+    pub colours: ThemeColours,
     pub by_id: HashMap<String, Style>,
     /// Paragraph style ids in styles.xml order (STYLE-6 linkage).
     pub paragraph_order: Vec<String>,
@@ -147,8 +159,8 @@ pub struct Styles {
 }
 
 impl Styles {
-    pub fn parse(xml: Option<&str>) -> Styles {
-        let mut s = Styles::default();
+    pub fn parse(xml: Option<&str>, colours: ThemeColours) -> Styles {
+        let mut s = Styles { colours, ..Styles::default() };
         let doc = xml.and_then(|x| roxmltree::Document::parse(x).ok());
         let Some(doc) = doc else {
             s.app_defaults();
@@ -161,10 +173,10 @@ impl Styles {
                 // is there).
                 s.app_defaults();
                 if let Some(r) = child(dd, "rPrDefault") {
-                    s.doc_rpr = RunProps::parse(child(r, "rPr"));
+                    s.doc_rpr = RunProps::parse(child(r, "rPr"), &colours);
                 }
                 if let Some(p) = child(dd, "pPrDefault") {
-                    s.doc_ppr = ParaProps::parse(child(p, "pPr"));
+                    s.doc_ppr = ParaProps::parse(child(p, "pPr"), &colours);
                 }
             }
             None => s.app_defaults(),
@@ -181,7 +193,7 @@ impl Styles {
             let mut regions = HashMap::new();
             for r in children(n, "tblStylePr") {
                 if let Some(t) = attr(r, "type") {
-                    regions.insert(t.to_string(), Region::parse(r));
+                    regions.insert(t.to_string(), Region::parse(r, &colours));
                 }
             }
             let style = Style {
@@ -195,8 +207,9 @@ impl Styles {
                 priority: child(n, "uiPriority").and_then(val).and_then(|v| v.parse().ok()),
                 hidden: child(n, "semiHidden").is_some_and(on_off) || child(n, "hidden").is_some_and(on_off),
                 custom: attr(n, "customStyle").is_some_and(|v| on_off_str(Some(v))),
-                base: Region::parse(n),
+                base: Region::parse(n, &colours),
                 regions,
+                origin: StyleOrigin::Document,
             };
             if kind == StyleKind::Paragraph {
                 s.paragraph_order.push(style.id.clone());

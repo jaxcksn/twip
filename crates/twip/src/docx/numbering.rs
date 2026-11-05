@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use super::props::*;
+use super::styles::StyleOrigin;
 use super::xml::*;
 
 #[derive(Clone, Debug)]
@@ -26,12 +27,14 @@ pub struct Level {
 pub struct AbstractNum {
     pub levels: Vec<Option<Level>>,
     pub num_style_link: Option<String>,
+    pub origin: StyleOrigin,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Num {
     pub abstract_id: i64,
     pub start_overrides: HashMap<i64, i64>,
+    pub origin: StyleOrigin,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -41,7 +44,7 @@ pub struct Numbering {
 }
 
 impl Numbering {
-    pub fn parse(xml: Option<&str>) -> Numbering {
+    pub fn parse(xml: Option<&str>, colours: &super::props::ThemeColours) -> Numbering {
         let mut n = Numbering::default();
         let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return n };
         let root = doc.root_element();
@@ -63,11 +66,14 @@ impl Numbering {
                     is_lgl: child(l, "isLgl").map(on_off).unwrap_or(false),
                     restart: child(l, "lvlRestart").and_then(|s| int(val(s))),
                     pstyle: v("pStyle"),
-                    ppr: ParaProps::parse(child(l, "pPr")),
-                    rpr: RunProps::parse(child(l, "rPr")),
+                    ppr: ParaProps::parse(child(l, "pPr"), colours),
+                    rpr: RunProps::parse(child(l, "rPr"), colours),
                 });
             }
-            n.abstracts.insert(id, AbstractNum { levels, num_style_link: child(a, "numStyleLink").and_then(val).map(str::to_string) });
+            n.abstracts.insert(
+                id,
+                AbstractNum { levels, num_style_link: child(a, "numStyleLink").and_then(val).map(str::to_string), origin: StyleOrigin::Document },
+            );
         }
         for m in children(root, "num") {
             let Some(id) = int(attr(m, "numId")) else { continue };
