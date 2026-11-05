@@ -181,7 +181,7 @@ fn a_resolved_reference_shows_its_body_in_place() {
     assert!(text.contains("«Name»") && text.contains("«Amount»"), "FeeRow's fields are drawn in the fees table");
     let ex = &shown.paras[&reference];
     assert!(!ex.content.is_empty());
-    let cycle = shown.paras.values().find(|x| x.part == 3).expect("Cycle-A");
+    let cycle = shown.paras.values().find(|x| x.part == Some(3)).expect("Cycle-A");
     assert!(cycle.size.1 > 20.0);
 }
 

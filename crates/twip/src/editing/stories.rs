@@ -107,6 +107,9 @@ impl Editor {
             self.object_child = None;
             return Outcome::Moved;
         }
+        if self.collapse_after_placeholder() {
+            return Outcome::Moved;
+        }
         match self.selection {
             Selection::Object(ObjectRef::Inline { para, offset }) => {
                 let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));

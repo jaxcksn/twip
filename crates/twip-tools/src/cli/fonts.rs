@@ -7,10 +7,13 @@
 
 use std::path::Path;
 
-/// The characters the chrome draws: Basic Latin and the symbols in its labels, hints and readouts.
+/// The characters the chrome draws: Basic Latin, Latin-1 Supplement, Latin Extended-A and the symbols in its labels,
+/// hints and readouts.
 fn chars() -> String {
     let mut s: String = (' '..='~').collect();
     s.push_str("″×Δ°·→←−⌫⌥⇧⌘▾…—–“”‘’");
+    s.extend('\u{a0}'..='\u{17f}');
+    s.push('↗');
     s
 }
 

@@ -404,6 +404,12 @@ impl Editor {
             | Command::ClosePopover => Outcome::Moved,
             Command::RevertAutoCorrect | Command::NeverAutoCorrect => self.revert_correction(fonts),
             Command::DescribeFormatting => Outcome::Unchanged("described"),
+            Command::SetFieldTypes(t) => self.set_field_types(t),
+            Command::HighlightElement(h) => self.highlight_element(h.id.as_ref()),
+            Command::SelectNextPlaceholder => self.select_placeholder(true, fonts),
+            Command::SelectPreviousPlaceholder => self.select_placeholder(false, fonts),
+            Command::SetSubTemplateVersions(v) => self.set_sub_template_versions(v),
+            Command::SetUnmappedFields(u) => self.set_unmapped_fields(u),
             Command::SetMode(m) => self.set_mode(match m {
                 crate::api::state::Mode::Editing => super::Mode::Editing,
                 crate::api::state::Mode::Design => super::Mode::Design,

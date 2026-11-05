@@ -24,7 +24,8 @@ interface Script {
 
 /** Every event type, so the runner records them all. */
 const eventTypes: Record<keyof TwipEvents, true> = {
-  documentChanged: true, selectionChanged: true, editingTargetChanged: true, linkActivated: true, placeholderActivated: true, editRefused: true, contextMenu: true,
+  documentChanged: true, selectionChanged: true, editingTargetChanged: true, linkActivated: true, placeholderActivated: true, placeholderHovered: true,
+  placeholderSelected: true, subTemplateUpdateRequested: true, editRefused: true, contextMenu: true,
   dialogRequested: true, hostCommand: true, shortcut: true, gesture: true, wordAdded: true, fontsChanged: true,
   elementActivated: true, elementsChanged: true, fieldsUpdateRequested: true, revisionsChanged: true,
   commentsChanged: true, commentAnchors: true, balloonsLaidOut: true, rulerChanged: true, tooltip: true,

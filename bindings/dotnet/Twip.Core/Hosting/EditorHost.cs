@@ -565,6 +565,12 @@ public sealed class EditorHost : IDisposable
         };
     }
 
+    internal PlaceholderTarget ToClient(PlaceholderTarget t)
+    {
+        var (s, r) = (Scale, t.Anchor);
+        return t with { Anchor = new RectangleF(r.X * s, r.Y * s, r.Width * s, r.Height * s) };
+    }
+
     internal CommentAnchor ToClient(CommentAnchor a)
     {
         var s = Scale;

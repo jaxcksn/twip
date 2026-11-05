@@ -1,0 +1,11 @@
+[
+  {
+    "id": "sign",
+    "label": "Sign",
+    "primary": true
+  },
+  {
+    "id": "upload",
+    "label": "Upload image"
+  }
+]

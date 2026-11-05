@@ -312,9 +312,13 @@ impl Session {
                 if let Some(g) = v.object_grid {
                     p.object_grid = g;
                 }
+                if let Some(on) = v.placeholder_ui {
+                    p.placeholder_ui = on;
+                }
                 if v.theme.is_some() || v.theme_colors.is_some() || v.accent.is_some() || v.appearance.is_some() {
                     p.apply_look();
                 }
+                self.sync_view_settings();
             }
             Command::SetMode(m) => self.set_mode(*m),
             Command::SetRulerTabType(t) => {

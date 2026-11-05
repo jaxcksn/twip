@@ -15,17 +15,20 @@ use super::job::{Memos, Meter};
 use super::story::{StoryEnv, layout, stack_limited};
 use super::text::FieldValues;
 
+/// What takes a reference field's place: its sub-template's body, or (no content) a fixed-size card. `size`'s
+/// height includes `band`, the room kept above the body for its tab.
 #[derive(Debug)]
 pub struct Expansion {
     pub field: FieldId,
-    pub part: u32,
+    pub part: Option<u32>,
     pub size: (f64, f64),
+    pub band: f64,
     pub content: Rc<[Child]>,
 }
 
 impl PartialEq for Expansion {
     fn eq(&self, o: &Self) -> bool {
-        self.field == o.field && self.part == o.part && self.size == o.size && Rc::ptr_eq(&self.content, &o.content)
+        self.field == o.field && self.part == o.part && self.size == o.size && self.band == o.band && Rc::ptr_eq(&self.content, &o.content)
     }
 }
 
@@ -33,6 +36,10 @@ impl PartialEq for Expansion {
 pub struct Expansions {
     pub paras: HashMap<ParaId, Rc<Expansion>>,
     pub rows: HashMap<(super::ids::TableId, usize), Rc<crate::docx::Row>>,
+    /// Room kept above a paragraph (its space before is at least this) or a table, in design mode only: where a
+    /// repeating section's tab goes.
+    pub bands: HashMap<ParaId, f64>,
+    pub tables: HashMap<super::ids::TableId, f64>,
     pub revision: u64,
 }
 
@@ -61,7 +68,7 @@ pub fn shown(children: &[Child]) -> Vec<Child> {
     let mut out = Vec::new();
     super::traverse::lines_in(children, &mut |_, l, dx, dy| {
         for (r, e) in l.line.expansions.iter() {
-            out.push(Child::Group { offset: (r[0] + dx + l.x, r[1] + dy + l.y), children: e.content.clone() });
+            out.push(Child::Group { offset: (r[0] + dx + l.x, r[1] + dy + l.y + e.band), children: e.content.clone() });
         }
     });
     out

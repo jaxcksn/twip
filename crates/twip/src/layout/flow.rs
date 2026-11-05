@@ -19,7 +19,7 @@ use super::line::{
     top_border_extra,
 };
 use super::node::{Notes, SectionNode};
-use super::paragraph::{gap, lines_to_take, space_after, space_before};
+use super::paragraph::{gap, lines_to_take, space_after};
 use super::record::PageEffects;
 use super::space::{BorderKey, ColumnSpace, ParaSpace};
 use super::story::{NestedRow, StoryEnv, StoryLayout, StoryUnit};
@@ -1026,8 +1026,8 @@ impl<'d> PageFill<'d, '_> {
                 let pb = self.para_lines(&laid, bi, end, col.width, 0, col.x, memos)?;
                 let s = laid.para().para_style_in(self.ctx.env.text.review.view);
                 let g = match &carry.prev {
-                    Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, s, space_before(&self.ctx.env.text, s)),
-                    None => self.edge_before(bi, s, space_before(&self.ctx.env.text, s)),
+                    Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, s, self.ctx.space_before(laid.para(), s)),
+                    None => self.edge_before(bi, s, self.ctx.space_before(laid.para(), s)),
                 };
                 let n = pb.lines.len();
                 let need = if s.keep_lines {
@@ -1136,7 +1136,7 @@ impl<'d> PageFill<'d, '_> {
     ) -> Result<Stop, Yield> {
         let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
-        let mut before = space_before(&self.ctx.env.text, style);
+        let mut before = self.ctx.space_before(p, style);
         if style.before_auto && carry.first_para {
             before = 0.0;
         }
@@ -1265,7 +1265,7 @@ impl<'d> PageFill<'d, '_> {
 
     fn para_gap(&self, p: &Paragraph, pos: &FlowToken, carry: &FlowState, empty: bool) -> f64 {
         let style = p.para_style_in(self.ctx.env.text.review.view);
-        let mut before = space_before(&self.ctx.env.text, style);
+        let mut before = self.ctx.space_before(p, style);
         if style.before_auto && carry.first_para {
             before = 0.0;
         }
@@ -1458,7 +1458,7 @@ impl<'d> PageFill<'d, '_> {
                     let meets = |f: &&Placed| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS;
                     if first_part && bands.is_empty() && here.iter().filter(meets).any(|f| f.key.2 == float::TABLE_PIECE) {
                         let below = here.iter().filter(meets).map(|f| f.excl[3]).fold(yy, f64::max);
-                        let before = if style.before_auto && carry.first_para { 0.0 } else { space_before(&self.ctx.env.text, style) };
+                        let before = if style.before_auto && carry.first_para { 0.0 } else { self.ctx.space_before(p, style) };
                         yy = (below + before).min(col.bottom.to_pt().max(yy + EPS));
                         continue;
                     }
@@ -1692,6 +1692,11 @@ impl<'d> PageFill<'d, '_> {
         };
         if pos.at.at_start() && !*empty {
             *y += self.after_above_table(pos.block, carry);
+        }
+        if pos.at.at_start()
+            && let Some(Block::Table(t)) = self.sec.blocks.get(pos.block)
+        {
+            *y += self.ctx.table_band(t);
         }
         let fp = match self.sec.blocks.get(pos.block) {
             Some(Block::Table(t)) => t.floating,

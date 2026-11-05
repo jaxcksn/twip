@@ -33,6 +33,12 @@ export interface View {
   setAppearance(appearance: DocumentAppearance): Promise<void>;
   /** How much the editor measures while you drag and hover. `setViewOptions` with `detail`. */
   setDetail(detail: MeasureDetail): Promise<void>;
+  /**
+   * Draws placeholders as editor UI (field marks, repeating sections, sub-template cards and input blocks), with the
+   * `placeholderHovered` and `placeholderSelected` events; never changes the output. `setViewOptions` with
+   * `placeholderUi`.
+   */
+  setPlaceholderUi(on: boolean): Promise<void>;
   /** The pages on screen, for a page navigator or a thumbnails strip. */
   visiblePages(): { page: number; rect: ClientRect }[];
   /** What the frames have cost so far: for benchmarks and tests. */
@@ -71,6 +77,8 @@ export interface ViewOptions {
   detail?: MeasureDetail;
   /** When the dot grid objects snap to shows (unrelated to `gridlines`, the table gridlines). */
   objectGrid?: ObjectGrid;
+  /** Draws placeholders as editor UI: field marks, repeating sections, sub-template cards and input blocks. Default: off. */
+  placeholderUi?: boolean;
 }
 
 /**

@@ -190,5 +190,11 @@
   "neverAutoCorrect",
   "showAutoCorrectOptions",
   "closePopover",
-  "describeFormatting"
+  "describeFormatting",
+  "setFieldTypes",
+  "highlightElement",
+  "selectNextPlaceholder",
+  "selectPreviousPlaceholder",
+  "setSubTemplateVersions",
+  "setUnmappedFields"
 ]

@@ -31,6 +31,9 @@ pub struct GLine {
     pub pictures: Vec<(ParaId, Unit, [f64; 4])>,
     pub stops: Vec<Stop>,
     pub repeat: bool,
+    /// Each glyph run's paragraph, first and last unit, and its text's top and bottom (ascent and descent, not the
+    /// line's spacing).
+    pub ink: Vec<(ParaId, Unit, Unit, f64, f64)>,
 }
 
 impl GLine {
@@ -399,7 +402,20 @@ impl PageGeometry {
                 Some((a.para, a.unit, [l.x + r[0], l.y + r[1], l.x + r[2], l.y + r[3]]))
             })
             .collect();
-        self.lines.push(GLine { story, chain: chain.clone(), paras, top: l.y, bottom: l.y + l.line.pitch, pictures, stops, repeat });
+        let ink = l
+            .line
+            .items
+            .iter()
+            .filter_map(|it| {
+                let Item::Glyphs(r) = it else { return None };
+                let para = r.para?;
+                let units = r.chars.iter().filter_map(|c| c.2);
+                let (lo, hi) = units.fold(None, |m: Option<(Unit, Unit)>, u| Some(m.map_or((u, u), |(a, b)| (a.min(u), b.max(u)))))?;
+                let (above, below, _) = crate::layout::text::metrics(&r.face, r.size);
+                Some((para, lo, hi, l.y + r.baseline - above, l.y + r.baseline + below))
+            })
+            .collect();
+        self.lines.push(GLine { story, chain: chain.clone(), paras, top: l.y, bottom: l.y + l.line.pitch, pictures, stops, repeat, ink });
     }
 
     pub fn shows_para(&self, p: ParaId) -> bool {

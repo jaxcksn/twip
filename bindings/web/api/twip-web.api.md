@@ -301,6 +301,9 @@ export interface Commands {
     goToPage(page: number): Promise<void>;
     groupObjects(): Promise<void>;
     growFont(): Promise<void>;
+    highlightElement(options: {
+        id: ElementId | null;
+    }): Promise<void>;
     increaseIndent(): Promise<void>;
     insertColumnBreak(): Promise<void>;
     insertColumns(options: {
@@ -452,6 +455,8 @@ export interface Commands {
     selectComment(id: CommentId): Promise<void>;
     selectGroupChild(direction: 'next' | 'previous'): Promise<void>;
     selectNextObject(direction: 'next' | 'previous'): Promise<void>;
+    selectNextPlaceholder(): Promise<void>;
+    selectPreviousPlaceholder(): Promise<void>;
     selectRevision(direction: 'next' | 'previous'): Promise<void>;
     setActiveComment(id: CommentId | null): Promise<void>;
     setAlignment(alignment: 'left' | 'center' | 'right' | 'justify'): Promise<void>;
@@ -527,6 +532,10 @@ export interface Commands {
     setFieldsLocked(options: {
         locked: boolean;
     } & FieldTargets): Promise<void>;
+    setFieldTypes(options: {
+        types: Record<string, string>;
+        merge?: boolean;
+    }): Promise<void>;
     setFont(family: string): Promise<void>;
     setFontColor(color: Color | 'auto'): Promise<void>;
     setFontSize(size: Points): Promise<void>;
@@ -615,6 +624,9 @@ export interface Commands {
     setSubTemplateRules(options: {
         rules: ReferenceRule[];
     }): Promise<void>;
+    setSubTemplateVersions(options: {
+        versions: SubTemplateVersion[];
+    }): Promise<void>;
     setSubTemplateView(options: {
         ids?: ElementId[];
         expanded: boolean;
@@ -635,6 +647,9 @@ export interface Commands {
     setTableWidth(width: TableWidth): Promise<void>;
     setTrackChanges(on: boolean): Promise<void>;
     setUnderline(style: UnderlineStyle): Promise<void>;
+    setUnmappedFields(options: {
+        names: string[];
+    }): Promise<void>;
     setViewOptions(options: ViewOptions): Promise<void>;
     setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
     showAutoCorrectOptions(): Promise<void>;
@@ -1721,13 +1736,26 @@ export interface PictureAdjustChange {
 }
 
 // @public
+export interface PlaceholderAction {
+    id: string;
+    label: string;
+    primary?: boolean;
+}
+
+// @public
 export interface PlaceholderInfo {
+    action?: string;
     element: ElementId | null;
     key: string;
 }
 
 // @public
+export type PlaceholderKind = 'field' | 'control' | 'repeatingSection' | 'subTemplate' | 'inputBlock' | 'ifField';
+
+// @public
 export interface PlaceholderLook {
+    actions?: PlaceholderAction[];
+    hint?: string;
     look: {
         fill?: Color;
         label?: string;
@@ -1743,6 +1771,19 @@ export interface PlaceholderLook {
     } | {
         prefix: string;
     } | 'default';
+}
+
+// @public
+export interface PlaceholderTarget {
+    anchor: ClientRect_2;
+    code?: string;
+    element?: ElementId;
+    key?: string;
+    kind: PlaceholderKind;
+    label: string;
+    reference?: SubTemplateReference;
+    typeText: string;
+    unmapped: boolean;
 }
 
 // @public
@@ -2119,6 +2160,14 @@ export interface SubTemplates {
 }
 
 // @public
+export interface SubTemplateVersion {
+    category?: string;
+    name: string;
+    newer?: string;
+    version: string;
+}
+
+// @public
 export interface SystemColors {
     canvas: Color;
     canvasText: Color;
@@ -2303,7 +2352,10 @@ export interface TwipEvents {
     placeholderActivated: {
         key: string;
         element: ElementId | null;
+        action?: string;
     };
+    placeholderHovered: PlaceholderTarget | null;
+    placeholderSelected: PlaceholderTarget | null;
     popoverClosed: {};
     popoverRequested: Popover;
     revisionsChanged: {};
@@ -2311,6 +2363,10 @@ export interface TwipEvents {
     selectionChanged: SelectionSummary;
     shortcut: {
         id: string;
+    };
+    subTemplateUpdateRequested: {
+        name: string;
+        category: string;
     };
     tooltip: Tooltip | null;
     warning: Warning;
@@ -2342,6 +2398,7 @@ export interface View {
     setCaretBlink(ms: number, stopAfterMs?: number): Promise<void>;
     setDetail(detail: MeasureDetail): Promise<void>;
     setOverlayColors(colors: Partial<OverlayColors> | null): Promise<void>;
+    setPlaceholderUi(on: boolean): Promise<void>;
     setTheme(theme: ChromeTheme, accent?: Color): Promise<void>;
     setThemeColors(colors: ThemeColors): Promise<void>;
     visiblePages(): {
@@ -2359,6 +2416,7 @@ export interface ViewOptions {
     gridlines?: boolean;
     liveLayout?: boolean;
     objectGrid?: ObjectGrid;
+    placeholderUi?: boolean;
     textBoundaries?: boolean;
     theme?: ChromeTheme;
     themeColors?: ThemeColors;
@@ -2377,6 +2435,7 @@ export interface ViewState {
     liveLayout: boolean;
     markupPaneWidth: number;
     objectGrid: ObjectGrid;
+    placeholderUi: boolean;
     rulers: {
         horizontal: boolean;
         vertical: boolean;

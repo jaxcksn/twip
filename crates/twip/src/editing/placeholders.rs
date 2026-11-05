@@ -39,7 +39,8 @@ impl Editor {
     }
 
     pub(super) fn placeholder_views(&mut self, pages: &std::ops::Range<usize>) -> Vec<super::view::PlaceholderView> {
-        if self.placeholder_looks.is_empty() || self.doc.placeholders.is_empty() {
+        // With the placeholder affordances on, input blocks draw them.
+        if self.placeholder_looks.is_empty() || self.doc.placeholders.is_empty() || self.view_settings.placeholder_ui {
             return Vec::new();
         }
         let mut out = Vec::new();
@@ -66,12 +67,23 @@ impl Editor {
     }
 
     pub(super) fn activate_placeholder(&mut self) -> bool {
+        self.activate_placeholder_by(false)
+    }
+
+    /// Activates the selected placeholder. An input block with buttons isn't activated by the press that selects
+    /// it; Enter or Space presses its primary button.
+    pub(super) fn activate_placeholder_by(&mut self, click: bool) -> bool {
         if self.mode == super::Mode::Design {
             return false;
         }
+        let buttons = self.selected_block_actions();
+        if click && !buttons.is_empty() {
+            return false;
+        }
+        let action = buttons.iter().find(|a| a.primary == Some(true)).or(buttons.first()).map(|a| a.id.clone());
         match self.selected_placeholder() {
             Some(info) => {
-                self.events.push(super::input::Notice::Placeholder(info.key.clone()));
+                self.events.push(super::input::Notice::Placeholder { key: info.key.clone(), action });
                 self.requests.push(Request::Placeholder(info));
                 true
             }
@@ -104,7 +116,12 @@ impl Editor {
         if images.is_empty() {
             return Outcome::Unchanged("no such placeholder");
         }
-        self.fill_images(&images, data, (iw, ih), "Fill Placeholder", fonts)
+        let out = self.fill_images(&images, data, (iw, ih), "Fill Placeholder", fonts);
+        if let Outcome::Changed(_) = out {
+            let now = crate::docx::now_utc();
+            self.affordances.filled_at.extend(images.iter().map(|&i| (i, now)));
+        }
+        out
     }
 
     pub(super) fn fill_images(&mut self, images: &[usize], data: Vec<u8>, size: (f64, f64), label: &'static str, fonts: &Fonts) -> Outcome {

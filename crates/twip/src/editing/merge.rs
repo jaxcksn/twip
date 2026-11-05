@@ -34,14 +34,25 @@ pub(super) enum TagMatch {
     Prefix(String),
 }
 
+/// A look rule as kept: the look, with what input blocks show besides (their base colour, hint and buttons).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Rule {
+    pub look: Look,
+    pub base: Option<u32>,
+    pub hint: Option<String>,
+    pub actions: Vec<crate::api::command::PlaceholderAction>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct Looks {
-    by_element: std::collections::HashMap<ElementId, Look>,
-    by_tag: Vec<(TagMatch, Look)>,
-    default: Option<Look>,
+    by_element: std::collections::HashMap<ElementId, Rule>,
+    by_tag: Vec<(TagMatch, Rule)>,
+    default: Option<Rule>,
 }
 impl Looks {
-    fn find(&self, id: ElementId, tag: Option<&str>) -> Option<&Look> {
+    /// The rule for a control: by its id, its tag, the longest prefix of its tag (or of its picture placeholder's
+    /// key), else the default.
+    pub(super) fn find(&self, id: ElementId, tag: Option<&str>, key: Option<&str>) -> Option<&Rule> {
         if let Some(l) = self.by_element.get(&id) {
             return Some(l);
         }
@@ -50,7 +61,7 @@ impl Looks {
                 return Some(l);
             }
             let prefix = self.by_tag.iter().filter_map(|(m, l)| match m {
-                TagMatch::Prefix(p) if t.starts_with(p.as_str()) => Some((p.len(), l)),
+                TagMatch::Prefix(p) if t.starts_with(p.as_str()) || key.is_some_and(|k| k.starts_with(p.as_str())) => Some((p.len(), l)),
                 _ => None,
             });
             if let Some((_, l)) = prefix.max_by_key(|(n, _)| *n) {
@@ -571,7 +582,7 @@ impl Editor {
     }
 
     pub(super) fn region_views(&mut self, pages: std::ops::Range<usize>) -> Vec<super::view::RegionView> {
-        if self.mode != super::Mode::Design {
+        if self.mode != super::Mode::Design || self.affordances_on() {
             return Vec::new();
         }
         let mut ids = self.sections_at(&self.selection.clone());
@@ -591,6 +602,7 @@ impl Editor {
 
     pub(super) fn set_hover(&mut self, x: f64, y: f64) {
         self.hover = Some((x, y));
+        self.hover_target(x, y);
         if self.mode != super::Mode::Design {
             self.hover_region = None;
             return;
@@ -666,6 +678,11 @@ impl Editor {
         let mut new = Looks::default();
         let mut pictures = std::collections::HashMap::new();
         for rule in l.looks {
+            let base = match &rule.look {
+                LookArg::Drawn { fill, .. } => fill.map(|c| c.0),
+                LookArg::Image { .. } => None,
+            };
+            let (hint, actions) = (rule.hint.clone(), rule.actions.clone().unwrap_or_default());
             let look = match rule.look {
                 LookArg::Image { image, .. } => {
                     if crate::docx::image::image_type(&image.0).is_none() {
@@ -687,6 +704,7 @@ impl Editor {
             if let (Some(k), Look::Box(b)) = (key, &look) {
                 pictures.insert(k, b.clone());
             }
+            let look = Rule { look, base, hint, actions };
             match rule.matches {
                 PlaceholderMatch::Default(_) => new.default = Some(look),
                 PlaceholderMatch::Id { id } => match element_id(&id) {
@@ -730,7 +748,11 @@ impl Editor {
             .collect();
         controls.sort_by_key(|(id, _)| *id);
         for (c, props) in controls {
-            let Some(look) = self.looks.find(ElementId::Control(c), props.tag.as_deref()).cloned() else { continue };
+            let Some(look) = self.looks.find(ElementId::Control(c), props.tag.as_deref(), None).map(|r| r.look.clone()) else { continue };
+            // With the placeholder affordances on, input blocks draw picture placeholders.
+            if props.kind == ControlKind::Picture && self.view_settings.placeholder_ui {
+                continue;
+            }
             let Some(w) = self.locate(ElementId::Control(c)) else { continue };
             if props.kind == ControlKind::Picture {
                 let Where::Inline { para, first, last, .. } = w else { continue };

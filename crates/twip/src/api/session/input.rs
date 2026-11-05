@@ -216,7 +216,10 @@ impl Session {
                     Event::FieldsUpdateRequested { token, fields: fields.into_iter().map(|(e, code)| FieldRequest { id: id(e), code }).collect() }
                 }
                 Notice::Link { address, ctrl } => Event::LinkActivated { address, via: if ctrl { LinkVia::CtrlClick } else { LinkVia::Click } },
-                Notice::Placeholder(key) => Event::PlaceholderActivated(crate::api::services::PlaceholderInfo { key, element: None }),
+                Notice::Placeholder { key, action } => {
+                    Event::PlaceholderActivated(crate::api::services::PlaceholderInfo { key, element: None, action })
+                }
+                Notice::SubTemplateUpdate { name, category } => Event::SubTemplateUpdateRequested { name, category },
                 Notice::Warning(code, message) => Event::Warning(crate::docx::diagnostics::Warning { code, message, count: 1, location: None }),
                 Notice::Refused { sub_template, element } => Event::EditRefused {
                     reason: match sub_template {
@@ -264,10 +267,10 @@ impl Session {
             // The middle button, and the secondary one's release, do nothing.
             (PointerKind::Down | PointerKind::Up, PointerButton::Secondary | PointerButton::Middle) => {}
             (PointerKind::Leave, _) => {
-                let hovered = self.editor.table_hover().is_some();
+                let hovered = (self.editor.table_hover().is_some(), self.editor.affordance_hover());
                 self.editor.pointer_leave();
-                // The table's handles go with the pointer.
-                if hovered && self.editor.table_hover().is_none() {
+                // The table's handles and the placeholder's hover go with the pointer.
+                if hovered != (self.editor.table_hover().is_some(), self.editor.affordance_hover()) {
                     self.presentation.want_frame();
                 }
             }
@@ -453,14 +456,14 @@ impl Session {
             PointerKind::Up => K::Up,
             PointerKind::Cancel | PointerKind::Leave => K::Cancel,
         };
-        let hovered = self.editor.table_hover();
+        let hovered = (self.editor.table_hover(), self.editor.affordance_hover());
         let _ = self.apply_with(Origin::User, |e, fonts| {
             e.pointer_input(kind, x, y, clicks, mods, fonts);
             Outcome::Unchanged("pointer input")
         });
-        // A border, object or table drag moves its guide with no new state, and a table's handles follow the
-        // pointer: a frame shows them.
-        if kind == K::Move && (self.editor.dragging() || self.editor.table_hover() != hovered) {
+        // A border, object or table drag moves its guide with no new state, and a table's handles and a hovered
+        // placeholder follow the pointer: a frame shows them.
+        if kind == K::Move && (self.editor.dragging() || (self.editor.table_hover(), self.editor.affordance_hover()) != hovered) {
             self.presentation.want_frame();
         }
     }
@@ -581,6 +584,7 @@ impl Session {
             KeyContext { in_table: true, ..KeyContext::default() },
             KeyContext { list_start: true, ..KeyContext::default() },
             KeyContext { float: true, ..KeyContext::default() },
+            KeyContext { placeholder_selected: true, ..KeyContext::default() },
         ];
         let bound = contexts.into_iter().find_map(|cx| keymap::command(key.code(), mods, cx))?;
         let id = match bound {

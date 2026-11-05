@@ -1,0 +1,31 @@
+{
+  "name": "placeholders",
+  "fixture": "editor/FX-PLACEHOLDER-UI.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "setMode", "value": "design" } },
+    { "op": "command", "command": { "type": "setViewOptions", "placeholderUi": true } },
+    { "op": "expectState", "match": { "view": { "placeholderUi": true } } },
+    { "op": "command", "command": { "type": "setFieldLabels", "labels": { "MERGEFIELD Applicant.Email": "Email address" } } },
+    { "op": "command", "command": { "type": "setFieldTypes", "types": { "MERGEFIELD Applicant.Email": "Text" } } },
+    { "op": "call", "method": "elements.list", "args": [{ "kind": "field" }], "save": "fields" },
+    { "op": "call", "method": "elements.select", "args": [{ "$saved": "fields", "path": [{ "code": " MERGEFIELD Applicant.Email " }, "id"] }] },
+    { "op": "expectEvents", "match": [
+      { "type": "placeholderSelected", "value": { "kind": "field", "key": "Applicant.Email", "code": "MERGEFIELD Applicant.Email", "typeText": "Text", "unmapped": false, "anchor": { "width": { "$type": "number" } } } }
+    ] },
+    { "op": "command", "command": { "type": "selectNextPlaceholder" } },
+    { "op": "expectEvents", "match": [{ "type": "placeholderSelected", "value": { "kind": "field", "typeText": "MERGEFIELD" } }] },
+    { "op": "command", "command": { "type": "highlightElement", "id": { "$saved": "fields", "path": [{ "code": " MERGEFIELD Applicant.Email " }, "id"] } } },
+    { "op": "command", "command": { "type": "highlightElement", "id": null } },
+    { "op": "command", "command": { "type": "setUnmappedFields", "names": ["Applicant.Email"] } },
+    { "op": "call", "method": "elements.select", "args": [{ "$saved": "fields", "path": [{ "code": " MERGEFIELD Applicant.Email " }, "id"] }] },
+    { "op": "expectEvents", "match": [{ "type": "placeholderSelected", "value": { "key": "Applicant.Email", "unmapped": true } }] },
+    { "op": "command", "command": { "type": "setPlaceholderLooks", "looks": [
+      { "match": { "prefix": "Signature" }, "look": { "fill": "#2E7D32", "label": "Signature" }, "hint": "Click to sign",
+        "actions": [{ "id": "sign", "label": "Sign", "primary": true }, { "id": "upload", "label": "Upload image" }] }
+    ] } },
+    { "op": "command", "command": { "type": "setViewOptions", "placeholderUi": false } },
+    { "op": "expectEvents", "match": [{ "type": "placeholderSelected", "value": null }] },
+    { "op": "expectState", "match": { "view": { "placeholderUi": false }, "history": { "canUndo": false } } }
+  ]
+}

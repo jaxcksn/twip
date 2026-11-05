@@ -395,6 +395,7 @@
       "liveLayout": true,
       "markupPaneWidth": 0.0,
       "objectGrid": "whileDragging",
+      "placeholderUi": false,
       "rulerUnit": "inches",
       "rulers": {
         "horizontal": false,
@@ -626,6 +627,12 @@
   {
     "element": null,
     "key": "logo",
+    "type": "placeholderActivated"
+  },
+  {
+    "action": "sign",
+    "element": "control-9",
+    "key": "Signature.Applicant",
     "type": "placeholderActivated"
   },
   {
@@ -928,6 +935,33 @@
   {
     "type": "tooltip",
     "value": null
+  },
+  {
+    "type": "placeholderHovered",
+    "value": {
+      "anchor": {
+        "height": 1056.5,
+        "left": 40.5,
+        "top": 80.5,
+        "width": 816.5
+      },
+      "code": "MERGEFIELD ApplicantName",
+      "element": "field-7",
+      "key": "ApplicantName",
+      "kind": "field",
+      "label": "«ApplicantName»",
+      "typeText": "Text",
+      "unmapped": false
+    }
+  },
+  {
+    "type": "placeholderSelected",
+    "value": null
+  },
+  {
+    "category": "Sub-templates",
+    "name": "Appeals notice",
+    "type": "subTemplateUpdateRequested"
   },
   {
     "kind": "formatting",

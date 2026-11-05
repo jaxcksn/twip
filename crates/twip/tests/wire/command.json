@@ -811,6 +811,27 @@
         "match": {
           "tag": "logo"
         }
+      },
+      {
+        "actions": [
+          {
+            "id": "sign",
+            "label": "Sign",
+            "primary": true
+          },
+          {
+            "id": "upload",
+            "label": "Upload image"
+          }
+        ],
+        "hint": "Click to sign",
+        "look": {
+          "fill": "#0A74E4",
+          "label": "Signature"
+        },
+        "match": {
+          "prefix": "Placeholder:Signature"
+        }
       }
     ],
     "merge": false,
@@ -930,6 +951,7 @@
     "gridlines": false,
     "liveLayout": false,
     "objectGrid": "always",
+    "placeholderUi": true,
     "textBoundaries": true,
     "theme": "dark",
     "themeColors": {
@@ -979,5 +1001,39 @@
   },
   {
     "type": "describeFormatting"
+  },
+  {
+    "merge": true,
+    "type": "setFieldTypes",
+    "types": {
+      "MERGEFIELD ApplicantName": "Text"
+    }
+  },
+  {
+    "id": "field-7",
+    "type": "highlightElement"
+  },
+  {
+    "type": "selectNextPlaceholder"
+  },
+  {
+    "type": "selectPreviousPlaceholder"
+  },
+  {
+    "type": "setSubTemplateVersions",
+    "versions": [
+      {
+        "category": "Sub-templates",
+        "name": "Appeals notice",
+        "newer": "v5 available",
+        "version": "v4"
+      }
+    ]
+  },
+  {
+    "names": [
+      "Inspector_Name"
+    ],
+    "type": "setUnmappedFields"
   }
 ]

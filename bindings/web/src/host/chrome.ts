@@ -143,6 +143,7 @@ export function startChrome(
     setThemeColors: (themeColors) => setLook({ themeColors }),
     setAppearance: (appearance) => setLook({ appearance }),
     setDetail: (detail) => setLook({ detail }),
+    setPlaceholderUi: (placeholderUi) => setLook({ placeholderUi }),
     visiblePages: () => {
       const r = dom.canvas.getBoundingClientRect();
       return pages.map(({ page, rect }) => ({ page, rect: { ...rect, left: rect.left + r.left, top: rect.top + r.top } }));

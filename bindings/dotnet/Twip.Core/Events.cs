@@ -61,16 +61,82 @@ public sealed class LinkActivatedEventArgs : EditorEventArgs
     public LinkActivation Via { get; }
 }
 
-/// <summary>The user clicked an unfilled picture placeholder.</summary>
+/// <summary>The user clicked an unfilled picture placeholder, or one of its input block's buttons.</summary>
 public sealed class PlaceholderActivatedEventArgs : EditorEventArgs
 {
-    internal PlaceholderActivatedEventArgs(string key, ElementId? element, EditorState snapshot) : base(snapshot) => (Key, Element) = (key, element);
+    internal PlaceholderActivatedEventArgs(string key, ElementId? element, string? action, EditorState snapshot) : base(snapshot) => (Key, Element, Action) = (key, element, action);
 
     /// <summary>The placeholder key.</summary>
     public string Key { get; }
 
     /// <summary>The placeholder's element, when it is one.</summary>
     public ElementId? Element { get; }
+
+    /// <summary>The input block's button pressed (its <see cref="PlaceholderAction.Id"/>), or <c>replace</c> from a filled block's tab; null for the block itself.</summary>
+    public string? Action { get; }
+}
+
+/// <summary>What kind of placeholder a <see cref="PlaceholderTarget"/> is.</summary>
+public enum PlaceholderKind
+{
+    /// <summary>A merge field.</summary>
+    Field,
+    /// <summary>A content control showing its placeholder text.</summary>
+    Control,
+    /// <summary>A repeating section.</summary>
+    RepeatingSection,
+    /// <summary>A sub-template reference, shown as a card or as its body.</summary>
+    SubTemplate,
+    /// <summary>A picture placeholder: a signature, initials, photo or any other picture the user adds.</summary>
+    InputBlock,
+    /// <summary>An IF field shown as its result.</summary>
+    IfField,
+}
+
+/// <summary>A placeholder the pointer is over or the selection covers, with <see cref="ViewState.PlaceholderUi"/> on.</summary>
+/// <param name="Kind">What it is.</param>
+/// <param name="Label">What it shows, in full: a field's label or result, a control's title.</param>
+/// <param name="TypeText">The caption's type text: the text <see cref="EditorCommands.SetFieldTypesAsync"/> gives the code, else the field type (<c>MERGEFIELD</c>), or a control's kind.</param>
+/// <param name="Unmapped">The data source lacks the field (<see cref="EditorCommands.SetUnmappedFieldsAsync"/>).</param>
+/// <param name="Anchor">Where it is, in the same space as a popover's anchor: a field's last line, else its box.</param>
+public sealed record PlaceholderTarget(PlaceholderKind Kind, string Label, string TypeText, bool Unmapped, RectangleF Anchor)
+{
+    /// <summary>The field or control; null for an input block outside a content control.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ElementId? Element { get; init; }
+
+    /// <summary>A field's name (its first argument), a control's tag, or a picture placeholder's key.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Key { get; init; }
+
+    /// <summary>A field's code.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Code { get; init; }
+
+    /// <summary>For a sub-template reference: what it names and whether its body shows.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SubTemplateReference? Reference { get; init; }
+}
+
+/// <summary>The hovered or selected placeholder changed, or its anchor moved.</summary>
+public sealed class PlaceholderEventArgs : EditorEventArgs
+{
+    internal PlaceholderEventArgs(PlaceholderTarget? target, EditorState snapshot) : base(snapshot) => Target = target;
+
+    /// <summary>The placeholder, or null when none is hovered or selected any more.</summary>
+    public PlaceholderTarget? Target { get; }
+}
+
+/// <summary>A shown sub-template's newer-version notice (<see cref="EditorCommands.SetSubTemplateVersionsAsync"/>) was pressed: the application updates it.</summary>
+public sealed class SubTemplateUpdateRequestedEventArgs : EditorEventArgs
+{
+    internal SubTemplateUpdateRequestedEventArgs(string name, string category, EditorState snapshot) : base(snapshot) => (Name, Category) = (name, category);
+
+    /// <summary>The sub-template's name.</summary>
+    public string Name { get; }
+
+    /// <summary>Its building block category.</summary>
+    public string Category { get; }
 }
 
 /// <summary>How a context menu was opened.</summary>
