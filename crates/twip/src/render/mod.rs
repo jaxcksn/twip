@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+mod affordances;
 pub mod appearance;
 mod overlay;
 pub mod retained;
@@ -466,6 +467,17 @@ mod tests {
         let page = r.ink(0xFF_FFFF);
         for c in [0xE6_0000, 0x00_78D4, 0xD1_3438, 0xC1_9C00] {
             assert!(theme::contrast(r.ink(c), page) >= 3.0, "{c:06X} on the dark page");
+        }
+    }
+
+    #[test]
+    fn the_editor_sizes_chrome_text_with_the_ui_faces_advance() {
+        for face in [ChromeFace::Mono500, ChromeFace::Mono600] {
+            let font = Font::from_typeface(chrome_typeface(face).expect("the face"), 100.0);
+            for text in ["M", "i", "\u{e9}", "\u{17e}", "\u{2197}"] {
+                let (w, _) = font.measure_str(text, None);
+                assert!((f64::from(w) / 100.0 - crate::editing::view::MONO_ADVANCE).abs() < 1e-3, "{face:?} {text}: {w}");
+            }
         }
     }
 

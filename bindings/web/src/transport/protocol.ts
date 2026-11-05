@@ -302,7 +302,7 @@ export function decodeEvent(wire: unknown): { type: keyof TwipEvents; event: unk
 }
 
 /** The events whose payload always travels as `value`, an object or not: the engine's optional payloads. */
-const valueEvents = new Set<keyof TwipEvents>(['tooltip']);
+const valueEvents = new Set<keyof TwipEvents>(['tooltip', 'placeholderHovered', 'placeholderSelected']);
 
 /** The inverse of {@link decodeEvent}. */
 export function encodeEvent(type: keyof TwipEvents, event: unknown): unknown {

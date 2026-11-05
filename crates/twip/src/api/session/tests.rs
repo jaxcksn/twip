@@ -11,6 +11,32 @@ use crate::api::session::{ExportFormat, ExportOptions};
 use crate::api::state::Tri;
 use crate::api::value::Points;
 
+// The PDF's dates and ids come from the export's time: zeroed, so two exports compare.
+pub(super) fn undated(mut b: Vec<u8>) -> Vec<u8> {
+    let digits = |b: &[u8], at: usize, n: usize| b.get(at..at + n).is_some_and(|d| d.iter().all(u8::is_ascii_digit));
+    for i in 0..b.len() {
+        if b[i..].starts_with(b"/ID [") {
+            let end = b[i..].iter().position(|&c| c == b']').map_or(b.len(), |k| i + k);
+            b[i + 5..end].iter_mut().filter(|c| c.is_ascii_hexdigit()).for_each(|c| *c = b'0');
+        }
+        if b[i..].starts_with(b"uuid:") && b.len() >= i + 41 {
+            b[i + 5..i + 41].fill(b'0');
+        }
+        if b[i..].starts_with(b"D:") && digits(&b, i + 2, 14) {
+            b[i + 2..i + 16].fill(b'0');
+        }
+        if digits(&b, i, 4) && b.get(i + 4) == Some(&b'-') && b.get(i + 10) == Some(&b'T') && digits(&b, i + 11, 2) {
+            for k in [0, 5, 8, 11, 14, 17] {
+                let n = if k == 0 { 4 } else { 2 };
+                if digits(&b, i + k, n) {
+                    b[i + k..i + k + n].fill(b'0');
+                }
+            }
+        }
+    }
+    b
+}
+
 fn engine() -> (Engine, Rc<RefCell<Vec<Event>>>) {
     let mut engine = Engine::new(FontLibrary::empty());
     let events = Rc::new(RefCell::new(Vec::new()));
@@ -77,7 +103,7 @@ fn export_captures_the_revision_and_clears_modified() {
 }
 
 #[test]
-fn a_typical_state_is_under_10_kb() {
+fn a_typical_state_is_under_11_kb() {
     let (mut engine, _) = engine();
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
@@ -89,7 +115,7 @@ fn a_typical_state_is_under_10_kb() {
     let text = state.selection.text.take().expect("a short selection's text");
     assert!(text.contains('\n'), "{text:?}");
     let json = serde_json::to_string(&state).expect("serializes");
-    assert!(json.len() < 10 * 1024, "{} bytes", json.len());
+    assert!(json.len() < 11 * 1024, "{} bytes", json.len());
 }
 
 #[test]
@@ -889,31 +915,6 @@ fn sub_template_bodies_shown_inline_never_reach_the_output() {
     s.open(&std::fs::read(path).expect("fixture")).expect("opens");
     let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
     s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
-    // The PDF's dates and ids come from the export's time: zeroed, so two exports compare.
-    fn undated(mut b: Vec<u8>) -> Vec<u8> {
-        let digits = |b: &[u8], at: usize, n: usize| b.get(at..at + n).is_some_and(|d| d.iter().all(u8::is_ascii_digit));
-        for i in 0..b.len() {
-            if b[i..].starts_with(b"/ID [") {
-                let end = b[i..].iter().position(|&c| c == b']').map_or(b.len(), |k| i + k);
-                b[i + 5..end].iter_mut().filter(|c| c.is_ascii_hexdigit()).for_each(|c| *c = b'0');
-            }
-            if b[i..].starts_with(b"uuid:") && b.len() >= i + 41 {
-                b[i + 5..i + 41].fill(b'0');
-            }
-            if b[i..].starts_with(b"D:") && digits(&b, i + 2, 14) {
-                b[i + 2..i + 16].fill(b'0');
-            }
-            if digits(&b, i, 4) && b.get(i + 4) == Some(&b'-') && b.get(i + 10) == Some(&b'T') && digits(&b, i + 11, 2) {
-                for k in [0, 5, 8, 11, 14, 17] {
-                    let n = if k == 0 { 4 } else { 2 };
-                    if digits(&b, i + k, n) {
-                        b[i + k..i + k + n].fill(b'0');
-                    }
-                }
-            }
-        }
-        b
-    }
     let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions { format: f }).expect("exports").bytes.0);
     let (docx, pdf) = (export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf));
     assert!(s.editor.shows_expansions(), "the bodies show");
@@ -1151,4 +1152,217 @@ fn a_sub_template_body_shown_in_place_is_read_as_a_group_and_goes_to_its_referen
     let reference = bodies[0].target.expect("the reference's paragraph");
     s.accessible_go(inside).expect("goes");
     assert_eq!(s.editor.selection().focus().and_then(|p| p.para_offset()).map(|(p, _)| p.0), Some(reference.0));
+}
+
+#[test]
+fn field_marks_never_reach_the_output() {
+    use crate::api::command::ViewOptions;
+    use crate::api::state::Mode;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-PLACEHOLDER-UI.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    s.run(Command::SetMode(Mode::Design)).expect("design mode");
+    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions { format: f }).expect("exports").bytes.0);
+    let (docx, pdf) = (export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf));
+    s.run(Command::SetViewOptions(ViewOptions { placeholder_ui: Some(true), ..ViewOptions::default() })).expect("turns them on");
+    assert!(s.state().view.placeholder_ui);
+    assert_eq!(export(s, ExportFormat::Docx), docx);
+    assert_eq!(export(s, ExportFormat::Pdf), pdf);
+}
+
+/// A session showing the placeholder fixture in design mode with the affordances on, at 800 x 600, with the events
+/// it emits.
+fn placeholder_ui(engine: &mut Engine) -> (crate::api::engine::SessionId, Rc<RefCell<Vec<Event>>>) {
+    use crate::api::command::ViewOptions;
+    use crate::api::state::Mode;
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let sink = events.clone();
+    engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-PLACEHOLDER-UI.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    s.host().attach(|_| {});
+    s.host().set_size(800.0, 600.0, 1.0);
+    s.run(Command::SetMode(Mode::Design)).expect("design mode");
+    s.run(Command::SetViewOptions(ViewOptions { placeholder_ui: Some(true), ..ViewOptions::default() })).expect("turns them on");
+    (id, events)
+}
+
+type Sent = (Vec<Option<crate::api::services::PlaceholderTarget>>, Vec<Option<crate::api::services::PlaceholderTarget>>);
+
+fn placeholder_events(events: &Rc<RefCell<Vec<Event>>>) -> Sent {
+    let mut out: Sent = (Vec::new(), Vec::new());
+    for e in events.borrow_mut().drain(..) {
+        match e {
+            Event::PlaceholderHovered(t) => out.0.push(t),
+            Event::PlaceholderSelected(t) => out.1.push(t),
+            _ => {}
+        }
+    }
+    out
+}
+
+fn field_id(s: &mut crate::api::session::Session, code: &str) -> crate::api::value::ElementId {
+    use crate::api::services::ElementFilter;
+    let all = s.elements(&ElementFilter::default());
+    let found = all.iter().find(|e| e.code.as_deref().is_some_and(|c| c.trim() == code)).unwrap_or_else(|| panic!("{code}"));
+    found.id.clone()
+}
+
+#[test]
+fn selecting_a_placeholder_reports_it_once_and_again_when_its_anchor_moves() {
+    use crate::api::input::{Key, Modifiers};
+    let mut engine = Engine::new(FontLibrary::system());
+    let (id, events) = placeholder_ui(&mut engine);
+    let s = engine.session(id).expect("a session");
+    s.run(Command::SetFieldTypes(crate::api::command::FieldTypes {
+        types: [("MERGEFIELD Applicant.Email".to_string(), "Text".to_string())].into(),
+        merge: None,
+    }))
+    .expect("sets the type");
+    placeholder_events(&events);
+    let email = field_id(s, "MERGEFIELD Applicant.Email");
+    s.select_element(email.clone(), false).expect("selects");
+    let (_, selected) = placeholder_events(&events);
+    let Some(Some(t)) = selected.first().cloned() else { panic!("one selection event: {selected:?}") };
+    assert_eq!(selected.len(), 1);
+    assert_eq!((t.element.as_ref(), t.key.as_deref(), t.type_text.as_str()), (Some(&email), Some("Applicant.Email"), "Text"));
+    assert!(t.anchor.width > 0.0 && t.anchor.height > 0.0, "{:?}", t.anchor);
+    let mut pixels = vec![0u8; 800 * 600 * 4];
+    s.host().frame_rgba(&mut pixels, 800, 600).expect("draws");
+    assert!(placeholder_events(&events).1.is_empty(), "the same anchor isn't sent again");
+    s.host().set_scroll(0.0, 40.0);
+    s.host().frame_rgba(&mut pixels, 800, 600).expect("draws");
+    let (_, moved) = placeholder_events(&events);
+    let Some(Some(m)) = moved.first() else { panic!("sent again after the scroll: {moved:?}") };
+    assert!((m.anchor.top - (t.anchor.top - 40.0)).abs() < 0.01, "{:?} then {:?}", t.anchor, m.anchor);
+    // Tab moves to the next placeholder and Shift+Tab back; Esc puts the caret after it.
+    s.key(Key::Tab, Modifiers::default());
+    let (_, next) = placeholder_events(&events);
+    let Some(Some(n)) = next.last() else { panic!("the next one: {next:?}") };
+    assert_ne!(n.element.as_ref(), Some(&email));
+    s.key(Key::Tab, Modifiers { shift: true, ..Modifiers::default() });
+    let (_, back) = placeholder_events(&events);
+    assert_eq!(back.last().cloned().flatten().and_then(|t| t.element), Some(email.clone()));
+    s.key(Key::Escape, Modifiers::default());
+    assert_eq!(placeholder_events(&events).1, vec![None]);
+}
+
+#[test]
+fn hovering_a_placeholder_reports_it_and_leaving_clears_it() {
+    use crate::api::input::{Key, Modifiers, Point, PointerButton, PointerKind};
+    let mut engine = Engine::new(FontLibrary::system());
+    let (id, events) = placeholder_ui(&mut engine);
+    let s = engine.session(id).expect("a session");
+    let email = field_id(s, "MERGEFIELD Applicant.Email");
+    s.select_element(email.clone(), false).expect("selects");
+    let Some(Some(t)) = placeholder_events(&events).1.pop() else { panic!("selected") };
+    s.key(Key::Escape, Modifiers::default());
+    placeholder_events(&events);
+    let over = Point { x: t.anchor.left + t.anchor.width / 2.0, y: t.anchor.top + t.anchor.height / 2.0 };
+    s.pointer(PointerKind::Move, over, PointerButton::Primary, 0, Modifiers::default());
+    let (hovered, _) = placeholder_events(&events);
+    assert_eq!(hovered.len(), 1, "{hovered:?}");
+    let h = hovered[0].clone().expect("hovered");
+    assert_eq!((h.element.as_ref(), h.label.as_str(), h.type_text.as_str()), (Some(&email), "\u{ab}Email\u{bb}", "MERGEFIELD"));
+    assert_eq!(h.anchor, t.anchor, "the anchor is the field's line");
+    s.pointer(PointerKind::Leave, over, PointerButton::Primary, 0, Modifiers::default());
+    assert_eq!(placeholder_events(&events).0, vec![None]);
+}
+
+#[test]
+fn highlighting_draws_a_placeholder_hovered_and_refuses_other_elements() {
+    use crate::api::command::HighlightElement;
+    let mut engine = Engine::new(FontLibrary::system());
+    let (id, _) = placeholder_ui(&mut engine);
+    let s = engine.session(id).expect("a session");
+    let email = field_id(s, "MERGEFIELD Applicant.Email");
+    let state_of = |s: &mut crate::api::session::Session| {
+        let n = s.editor.page_geometries().len();
+        s.editor.view(0..n).affordances.into_iter().find_map(|v| match v {
+            crate::editing::view::AffordanceView::Field { target, state, .. } => {
+                (crate::editing::elements::id_str(target.element()) == email.0).then_some(state)
+            }
+            _ => None,
+        })
+    };
+    assert_eq!(state_of(s), Some(crate::editing::view::FieldState::Rest));
+    s.run(Command::HighlightElement(HighlightElement { id: Some(email.clone()) })).expect("highlights");
+    assert_eq!(state_of(s), Some(crate::editing::view::FieldState::Hover));
+    s.run(Command::HighlightElement(HighlightElement { id: None })).expect("clears");
+    assert_eq!(state_of(s), Some(crate::editing::view::FieldState::Rest));
+    let link = field_id(s, "HYPERLINK \"https://example.com/\"");
+    let bad = s.run(Command::HighlightElement(HighlightElement { id: Some(link) }));
+    assert_eq!(bad.map(|_| ()).map_err(|e| e.code), Err(ErrorCode::InvalidArgument));
+}
+
+#[test]
+fn no_placeholder_events_while_the_affordances_are_off() {
+    use crate::api::command::ViewOptions;
+    let mut engine = Engine::new(FontLibrary::system());
+    let (id, events) = placeholder_ui(&mut engine);
+    let s = engine.session(id).expect("a session");
+    let email = field_id(s, "MERGEFIELD Applicant.Email");
+    s.select_element(email, false).expect("selects");
+    placeholder_events(&events);
+    s.run(Command::SetViewOptions(ViewOptions { placeholder_ui: Some(false), ..ViewOptions::default() })).expect("turns them off");
+    assert_eq!(placeholder_events(&events).1, vec![None], "a last null");
+    let first = field_id(s, "MERGEFIELD Applicant.First_Name");
+    s.select_element(first, false).expect("selects");
+    s.key(crate::api::input::Key::Tab, crate::api::input::Modifiers::default());
+    assert_eq!(placeholder_events(&events), (Vec::new(), Vec::new()));
+}
+
+#[test]
+fn sub_template_cards_and_tabs_never_reach_the_output() {
+    use crate::api::command::{ReferenceRule, SubTemplateRules, SubTemplateView, ViewOptions};
+    use crate::api::state::Mode;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
+    s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
+    s.run(Command::SetMode(Mode::Design)).expect("design mode");
+    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions { format: f }).expect("exports").bytes.0);
+    let (docx, pdf) = (export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf));
+    s.run(Command::SetViewOptions(ViewOptions { placeholder_ui: Some(true), ..ViewOptions::default() })).expect("turns them on");
+    assert!((export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf)) == (docx.clone(), pdf.clone()), "bodies with tabs");
+    s.run(Command::SetSubTemplateView(SubTemplateView { ids: None, expanded: false })).expect("collapses");
+    assert_eq!(export(s, ExportFormat::Docx), docx, "cards");
+    assert_eq!(export(s, ExportFormat::Pdf), pdf, "cards");
+}
+
+#[test]
+#[ignore = "a timing probe: cargo test --release -p twip --lib -- frame_stages --ignored --nocapture"]
+fn frame_stages() {
+    use crate::api::command::{InsertField, ViewOptions};
+    use crate::api::state::Mode;
+    for on in [false, true] {
+        let mut engine = Engine::new(FontLibrary::system());
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        for k in 0..100 {
+            s.run(Command::InsertText(format!(" Item {k}: "))).expect("types");
+            s.run(Command::InsertField(InsertField { code: format!("MERGEFIELD Item.Field_{k}"), display: None, show_code: None })).expect("a field");
+        }
+        s.run(Command::SetMode(Mode::Design)).expect("design mode");
+        s.run(Command::SetViewOptions(ViewOptions { placeholder_ui: Some(on), ..ViewOptions::default() })).expect("the option");
+        s.host().set_size(1000.0, 800.0, 1.0);
+        s.host().set_focus(true);
+        while s.host().idle() {}
+        let mut pixels = vec![0u8; 1000 * 800 * 4];
+        s.host().frame_rgba(&mut pixels, 1000, 800).expect("a frame");
+        crate::prof::take();
+        for _ in 0..200 {
+            s.host().frame_rgba(&mut pixels, 1000, 800).expect("a frame");
+        }
+        for (name, ms, n) in crate::prof::take() {
+            eprintln!("on {on}: {name:18} {:8.1} us/frame ({n} calls)", ms * 1000.0 / 200.0);
+        }
+    }
 }

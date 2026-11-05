@@ -394,6 +394,7 @@
       "liveLayout": true,
       "markupPaneWidth": 0.0,
       "objectGrid": "whileDragging",
+      "placeholderUi": false,
       "rulerUnit": "inches",
       "rulers": {
         "horizontal": false,

@@ -4824,7 +4824,6 @@ Twip.DocumentAppearance.Dark = 1 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.DarkWithLightPage = 2 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.Light = 0 -> Twip.DocumentAppearance
 Twip.EditorCommands.SetRulerTabTypeAsync(Twip.TabSelector value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabStopAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabTypesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSession.PopoverClosed -> System.EventHandler?
@@ -4946,7 +4945,6 @@ static Twip.ChromeTheme.Light.get -> Twip.ChromeTheme!
 static Twip.ChromeTheme.operator !=(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.ChromeTheme.operator ==(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.EditorOperation.SetRulerTabType(Twip.TabSelector value) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabStop() -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabTypes() -> Twip.EditorOperation!
 static Twip.HighContrastColors.operator !=(Twip.HighContrastColors? left, Twip.HighContrastColors? right) -> bool
@@ -5281,3 +5279,110 @@ static Twip.EditorOperation.RenameSubTemplate(string! name, string! to, bool? up
 Twip.EditorCommands.CreateSubTemplateAsync(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.RemoveSubTemplateAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.RenameSubTemplateAsync(string! name, string! to, bool? updateReferences = null, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.PlaceholderKind.Field = 0 -> Twip.PlaceholderKind
+Twip.PlaceholderKind.SubTemplate = 3 -> Twip.PlaceholderKind
+Twip.PlaceholderKind.Control = 1 -> Twip.PlaceholderKind
+Twip.PlaceholderKind.IfField = 5 -> Twip.PlaceholderKind
+Twip.PlaceholderKind.RepeatingSection = 2 -> Twip.PlaceholderKind
+Twip.PlaceholderTarget.Label.get -> string!
+Twip.PlaceholderTarget.TypeText.get -> string!
+Twip.PlaceholderTarget.Unmapped.get -> bool
+Twip.PlaceholderTarget.Anchor.get -> System.Drawing.RectangleF
+Twip.PlaceholderTarget.Kind.get -> Twip.PlaceholderKind
+Twip.PlaceholderTarget.Label.init -> void
+Twip.PlaceholderTarget.TypeText.init -> void
+Twip.PlaceholderTarget.Unmapped.init -> void
+Twip.PlaceholderTarget.Anchor.init -> void
+Twip.PlaceholderTarget.Kind.init -> void
+Twip.PlaceholderAction.Label.get -> string!
+Twip.SubTemplateVersion.Name.get -> string!
+Twip.SubTemplateVersion.Version.get -> string!
+Twip.SubTemplateVersion.Category.get -> string?
+Twip.PlaceholderAction.Primary.get -> bool
+Twip.PlaceholderAction.Id.get -> string!
+Twip.PlaceholderAction.Label.init -> void
+Twip.SubTemplateVersion.Version.init -> void
+Twip.SubTemplateVersion.Category.init -> void
+Twip.SubTemplateVersion.Newer.get -> string?
+Twip.PlaceholderAction.Primary.init -> void
+Twip.PlaceholderAction.Id.init -> void
+Twip.PlaceholderKind.InputBlock = 4 -> Twip.PlaceholderKind
+Twip.SubTemplateVersion.Newer.init -> void
+Twip.CommandId.SelectNextPlaceholder = 194 -> Twip.CommandId
+Twip.CommandId.HighlightElement = 193 -> Twip.CommandId
+Twip.CommandId.SetFieldTypes = 192 -> Twip.CommandId
+Twip.CommandId.SetUnmappedFields = 197 -> Twip.CommandId
+Twip.SubTemplateVersion.Name.init -> void
+Twip.CommandId.SetSubTemplateVersions = 196 -> Twip.CommandId
+Twip.CommandId.SelectPreviousPlaceholder = 195 -> Twip.CommandId
+Twip.EditorSession.PlaceholderHovered -> System.EventHandler<Twip.PlaceholderEventArgs!>?
+Twip.EditorSession.SubTemplateUpdateRequested -> System.EventHandler<Twip.SubTemplateUpdateRequestedEventArgs!>?
+Twip.EditorSession.PlaceholderSelected -> System.EventHandler<Twip.PlaceholderEventArgs!>?
+Twip.SubTemplateUpdateRequestedEventArgs
+Twip.PlaceholderEventArgs
+Twip.PlaceholderAction
+override Twip.PlaceholderAction.ToString() -> string!
+static Twip.PlaceholderAction.operator !=(Twip.PlaceholderAction? left, Twip.PlaceholderAction? right) -> bool
+static Twip.PlaceholderAction.operator ==(Twip.PlaceholderAction? left, Twip.PlaceholderAction? right) -> bool
+override Twip.PlaceholderAction.GetHashCode() -> int
+override Twip.PlaceholderAction.Equals(object? obj) -> bool
+Twip.PlaceholderAction.Equals(Twip.PlaceholderAction? other) -> bool
+Twip.PlaceholderAction.<Clone>$() -> Twip.PlaceholderAction!
+Twip.PlaceholderAction.Deconstruct(out string! Id, out string! Label, out bool Primary) -> void
+Twip.SubTemplateVersion
+override Twip.SubTemplateVersion.ToString() -> string!
+Twip.PlaceholderTarget
+static Twip.SubTemplateVersion.operator !=(Twip.SubTemplateVersion? left, Twip.SubTemplateVersion? right) -> bool
+override Twip.PlaceholderTarget.ToString() -> string!
+static Twip.SubTemplateVersion.operator ==(Twip.SubTemplateVersion? left, Twip.SubTemplateVersion? right) -> bool
+static Twip.PlaceholderTarget.operator !=(Twip.PlaceholderTarget? left, Twip.PlaceholderTarget? right) -> bool
+override Twip.SubTemplateVersion.GetHashCode() -> int
+static Twip.PlaceholderTarget.operator ==(Twip.PlaceholderTarget? left, Twip.PlaceholderTarget? right) -> bool
+override Twip.SubTemplateVersion.Equals(object? obj) -> bool
+override Twip.PlaceholderTarget.GetHashCode() -> int
+Twip.SubTemplateVersion.Equals(Twip.SubTemplateVersion? other) -> bool
+override Twip.PlaceholderTarget.Equals(object? obj) -> bool
+Twip.SubTemplateVersion.<Clone>$() -> Twip.SubTemplateVersion!
+Twip.SubTemplateVersion.Deconstruct(out string! Name, out string! Version, out string? Category, out string? Newer) -> void
+Twip.PlaceholderTarget.Equals(Twip.PlaceholderTarget? other) -> bool
+Twip.PlaceholderTarget.<Clone>$() -> Twip.PlaceholderTarget!
+Twip.PlaceholderTarget.Deconstruct(out Twip.PlaceholderKind Kind, out string! Label, out string! TypeText, out bool Unmapped, out System.Drawing.RectangleF Anchor) -> void
+Twip.PlaceholderKind
+Twip.PlaceholderLook.Hint.get -> string?
+Twip.PlaceholderLook.Hint.init -> void
+Twip.PlaceholderLook.Actions.get -> System.Collections.Generic.IReadOnlyList<Twip.PlaceholderAction!>?
+Twip.PlaceholderLook.Actions.init -> void
+Twip.PlaceholderAction.PlaceholderAction(string! Id, string! Label, bool Primary = false) -> void
+Twip.SubTemplateVersion.SubTemplateVersion(string! Name, string! Version, string? Category = null, string? Newer = null) -> void
+Twip.PlaceholderTarget.PlaceholderTarget(Twip.PlaceholderKind Kind, string! Label, string! TypeText, bool Unmapped, System.Drawing.RectangleF Anchor) -> void
+Twip.PlaceholderActivatedEventArgs.Action.get -> string?
+Twip.PlaceholderTarget.Element.get -> Twip.ElementId?
+Twip.PlaceholderTarget.Key.get -> string?
+Twip.PlaceholderTarget.Element.init -> void
+Twip.PlaceholderTarget.Key.init -> void
+Twip.PlaceholderTarget.Code.init -> void
+Twip.PlaceholderTarget.Reference.get -> Twip.SubTemplateReference?
+Twip.PlaceholderTarget.Code.get -> string?
+Twip.PlaceholderTarget.Reference.init -> void
+Twip.PlaceholderEventArgs.Target.get -> Twip.PlaceholderTarget?
+Twip.SubTemplateUpdateRequestedEventArgs.Category.get -> string!
+Twip.SubTemplateUpdateRequestedEventArgs.Name.get -> string!
+Twip.EditorSession.SetPlaceholderUiAsync(bool on) -> System.Threading.Tasks.Task!
+Twip.PlaceholderInfo.Action.init -> void
+Twip.PlaceholderInfo.Action.get -> string?
+Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, bool? placeholderUi = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.ViewState.PlaceholderUi.init -> void
+Twip.ViewState.PlaceholderUi.get -> bool
+Twip.EditorCommands.SelectNextPlaceholderAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetFieldTypesAsync(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! types, bool? merge = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.HighlightElementAsync(Twip.ElementId? id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetSubTemplateVersionsAsync(System.Collections.Generic.IReadOnlyList<Twip.SubTemplateVersion!>! versions, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetUnmappedFieldsAsync(System.Collections.Generic.IReadOnlyList<string!>! names, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SelectPreviousPlaceholderAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, bool? placeholderUi = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.HighlightElement(Twip.ElementId? id) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetSubTemplateVersions(System.Collections.Generic.IReadOnlyList<Twip.SubTemplateVersion!>! versions) -> Twip.EditorOperation!
+static Twip.EditorOperation.SelectPreviousPlaceholder() -> Twip.EditorOperation!
+static Twip.EditorOperation.SetUnmappedFields(System.Collections.Generic.IReadOnlyList<string!>! names) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetFieldTypes(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! types, bool? merge = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SelectNextPlaceholder() -> Twip.EditorOperation!

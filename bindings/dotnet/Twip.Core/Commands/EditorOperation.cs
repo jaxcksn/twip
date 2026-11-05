@@ -969,8 +969,9 @@ public abstract partial record EditorOperation
     /// <param name="detail">How much the editor measures while you drag and hover.</param>
     /// <param name="objectGrid">When the dot grid objects snap to shows (unrelated to <paramref name="gridlines"/>).</param>
     /// <param name="themeColors">The application's colours for the light and dark schemes, to match its own UI.</param>
+    /// <param name="placeholderUi">Draws placeholders as editor UI: field marks, repeating sections, sub-template cards and input blocks. Never changes the output.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", Nullable(formattingMarks), Optional: true), new Arg("gridlines", Nullable(gridlines), Optional: true), new Arg("textBoundaries", Nullable(textBoundaries), Optional: true), new Arg("liveLayout", Nullable(liveLayout), Optional: true), new Arg("theme", theme is null ? null : Node(theme), Optional: true), new Arg("accent", Nullable(accent), Optional: true), new Arg("appearance", Nullable(appearance), Optional: true), new Arg("detail", Nullable(detail), Optional: true), new Arg("objectGrid", Nullable(objectGrid), Optional: true), new Arg("themeColors", themeColors is null ? null : Node(themeColors), Optional: true));
+    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, bool? placeholderUi = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", Nullable(formattingMarks), Optional: true), new Arg("gridlines", Nullable(gridlines), Optional: true), new Arg("textBoundaries", Nullable(textBoundaries), Optional: true), new Arg("liveLayout", Nullable(liveLayout), Optional: true), new Arg("theme", theme is null ? null : Node(theme), Optional: true), new Arg("accent", Nullable(accent), Optional: true), new Arg("appearance", Nullable(appearance), Optional: true), new Arg("detail", Nullable(detail), Optional: true), new Arg("objectGrid", Nullable(objectGrid), Optional: true), new Arg("themeColors", themeColors is null ? null : Node(themeColors), Optional: true), new Arg("placeholderUi", Nullable(placeholderUi), Optional: true));
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>
@@ -1013,4 +1014,33 @@ public abstract partial record EditorOperation
     /// <summary>Says the formatting at the caret to screen readers, as an announcement.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation DescribeFormatting() => Op(CommandId.DescribeFormatting);
+
+    /// <summary>The type text a field's caption shows, by field code (default: the field type, <c>MERGEFIELD</c>), as <see cref="EditorCommands.SetFieldLabelsAsync"/> sets labels. A view setting.</summary>
+    /// <param name="types">The type text for each field code.</param>
+    /// <param name="merge">Keep the type texts for codes not listed.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetFieldTypes(IReadOnlyDictionary<string, string> types, bool? merge = null) => Op(CommandId.SetFieldTypes, new Arg("types", Node(types)), new Arg("merge", merge is { } merge_ ? Node(merge_) : null, Optional: true));
+
+    /// <summary>Draws a placeholder hovered until cleared, as when the application's field list hovers it. A view setting.</summary>
+    /// <param name="id">The placeholder; null clears it.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation HighlightElement(ElementId? id) => Op(CommandId.HighlightElement, new Arg("id", Nullable(id)));
+
+    /// <summary>Selects the next placeholder in document order, wrapping; Tab while one is selected. A view change.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SelectNextPlaceholder() => Op(CommandId.SelectNextPlaceholder);
+
+    /// <summary>Selects the previous placeholder in document order, wrapping; Shift+Tab while one is selected. A view change.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SelectPreviousPlaceholder() => Op(CommandId.SelectPreviousPlaceholder);
+
+    /// <summary>The version text sub-templates' cards and tabs show, and their newer versions; replaces the list. A view setting.</summary>
+    /// <param name="versions">One entry per sub-template; entries naming none are kept.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetSubTemplateVersions(IReadOnlyList<SubTemplateVersion> versions) => Op(CommandId.SetSubTemplateVersions, new Arg("versions", Node(versions)));
+
+    /// <summary>The merge fields (by name, their first argument) the data source lacks: drawn neutral, struck through; replaces the list, and an empty one clears it. A view setting.</summary>
+    /// <param name="names">The field names.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetUnmappedFields(IReadOnlyList<string> names) => Op(CommandId.SetUnmappedFields, new Arg("names", Node(names)));
 }

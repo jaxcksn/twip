@@ -1,5 +1,5 @@
 import type { RichText } from './review.js';
-import type { ControlKind, ControlOptions, DataBinding, ReferenceRule } from './services/elements.js';
+import type { ControlKind, ControlOptions, DataBinding, ReferenceRule, SubTemplateVersion } from './services/elements.js';
 import type { TabAlignment, TabLeader, TabSelector } from './services/ruler.js';
 import type { ViewOptions } from './services/view.js';
 import type {
@@ -46,8 +46,25 @@ export interface FieldTargets {
 export interface PlaceholderLook {
   /** Which placeholders: one, those with a tag or a key prefix, or the default for the rest. */
   match: { id: ElementId } | { tag: string } | { prefix: string } | 'default';
-  /** A fill, label and icon, or an image. */
+  /**
+   * A fill, label and icon, or an image. With `placeholderUi` on, `fill` is the input block's base colour: its tint,
+   * outlines and primary button are derived from it.
+   */
   look: { fill?: Color; label?: string; iconSvg?: string } | { image: Uint8Array; mime: string };
+  /** The hint an input block shows while hovered. Default: "Click to add". */
+  hint?: string;
+  /** The buttons a selected input block shows, in order; none: a press on the block activates it. */
+  actions?: PlaceholderAction[];
+}
+
+/** A button on a selected input block: a press raises `placeholderActivated` with its `id` as `action`. */
+export interface PlaceholderAction {
+  /** What `placeholderActivated` names as `action`. */
+  id: string;
+  /** Its text. */
+  label: string;
+  /** Filled in the block's colour (the others are outlined); Enter presses it. Default: false. */
+  primary?: boolean;
 }
 
 /**
@@ -406,6 +423,13 @@ export interface Commands {
   showFieldCodes(options: { show: boolean } & FieldTargets): Promise<void>;
   /** What design mode shows for each field code. View. */
   setFieldLabels(options: { labels: Record<string, string>; merge?: boolean }): Promise<void>;
+  /** The type text a field's caption shows, by field code (default: the field type, `MERGEFIELD`). View. */
+  setFieldTypes(options: { types: Record<string, string>; merge?: boolean }): Promise<void>;
+  /**
+   * The merge fields (by name, their first argument) the data source lacks: drawn neutral, struck through. Replaces
+   * the list, and `[]` clears it. View.
+   */
+  setUnmappedFields(options: { names: string[] }): Promise<void>;
   /** Which fields are sub-template references: replaces the rules; an empty list turns sub-templates off. View. */
   setSubTemplateRules(options: { rules: ReferenceRule[] }): Promise<void>;
   /** Shows references' sub-template bodies in their place, or their fields (default: every reference). View. */
@@ -420,6 +444,8 @@ export interface Commands {
   renameSubTemplate(options: { name: string; to: string; category?: string; updateReferences?: boolean }): Promise<void>;
   /** Removes a sub-template; its references no longer resolve. */
   removeSubTemplate(options: { name: string; category?: string }): Promise<void>;
+  /** The version text sub-templates' cards and tabs show, and their newer versions; replaces the list. View. */
+  setSubTemplateVersions(options: { versions: SubTemplateVersion[] }): Promise<void>;
 
   // Content controls and regions
   /** Inserts a content control, optionally around the selection. */
@@ -468,6 +494,12 @@ export interface Commands {
   }): Promise<void>;
   /** Sets how picture placeholders look. View. */
   setPlaceholderLooks(options: { looks: PlaceholderLook[]; merge?: boolean }): Promise<void>;
+  /** Draws a placeholder hovered until cleared (`null`), as when the application's field list hovers it. View. */
+  highlightElement(options: { id: ElementId | null }): Promise<void>;
+  /** Selects the next placeholder in document order, wrapping; Tab while one is selected. View. */
+  selectNextPlaceholder(): Promise<void>;
+  /** Selects the previous placeholder in document order, wrapping; Shift+Tab while one is selected. View. */
+  selectPreviousPlaceholder(): Promise<void>;
   /** Fills the selected placeholder, or every unfilled one with `key`. */
   fillPlaceholder(options: { key?: string; image: Uint8Array }): Promise<void>;
 
@@ -518,7 +550,7 @@ export interface Commands {
   setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
   /**
    * Sets view options: formatting marks (Ctrl+Shift+8), gridlines, text boundaries, live layout, the chrome's theme
-   * and accent, the page's appearance, the measuring detail and the object grid.
+   * and accent, the page's appearance, the measuring detail, the object grid and the placeholder UI.
    */
   setViewOptions(options: ViewOptions): Promise<void>;
   /** Switches between editing and design mode. */
@@ -764,6 +796,8 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   unlinkFields: 'spread',
   showFieldCodes: 'spread',
   setFieldLabels: 'spread',
+  setFieldTypes: 'spread',
+  setUnmappedFields: 'spread',
   setSubTemplateRules: 'spread',
   setSubTemplateView: 'spread',
   editSubTemplate: 'spread',
@@ -771,6 +805,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   createSubTemplate: 'spread',
   renameSubTemplate: 'spread',
   removeSubTemplate: 'spread',
+  setSubTemplateVersions: 'spread',
   insertControl: 'spread',
   setControl: 'spread',
   removeControl: 'spread',
@@ -781,6 +816,9 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   replaceInElements: 'spread',
   markElements: 'spread',
   setPlaceholderLooks: 'spread',
+  highlightElement: 'spread',
+  selectNextPlaceholder: 'none',
+  selectPreviousPlaceholder: 'none',
   fillPlaceholder: 'spread',
   writeDataPart: 'spread',
   removeDataPart: 'spread',

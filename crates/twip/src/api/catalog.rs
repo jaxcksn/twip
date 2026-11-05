@@ -309,6 +309,12 @@ const ENTRIES: &[Entry] = {
         (C::ShowAutoCorrectOptions, "AutoCorrect Options Button", G::Text, &["Alt+Shift+F10"], &["⌥⇧F10"], false, false, U::View),
         (C::ClosePopover, "Close Popover", G::View, &[], &[], false, false, U::View),
         (C::DescribeFormatting, "Describe Formatting", G::View, &["Shift+F1"], &["⇧F1"], false, false, U::View),
+        (C::SetFieldTypes, "Field Types", G::View, &[], &[], true, false, U::View),
+        (C::HighlightElement, "Highlight Placeholder", G::View, &[], &[], true, false, U::View),
+        (C::SelectNextPlaceholder, "Next Placeholder", G::View, &["Tab"], &["Tab"], false, false, U::View),
+        (C::SelectPreviousPlaceholder, "Previous Placeholder", G::View, &["Shift+Tab"], &["⇧Tab"], false, false, U::View),
+        (C::SetSubTemplateVersions, "Sub-template Versions", G::Field, &[], &[], true, false, U::View),
+        (C::SetUnmappedFields, "Unmapped Fields", G::View, &[], &[], true, false, U::View),
     ]
 };
 

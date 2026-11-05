@@ -19,6 +19,8 @@ pub struct KeyContext {
     pub list_start: bool,
     pub float: bool,
     pub mac: bool,
+    /// The placeholder affordances are on and a placeholder is selected: Tab moves to the next one.
+    pub placeholder_selected: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,6 +105,9 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
             (false, true) => Command::InsertLineBreak,
             (false, false) => Command::InsertParagraph,
         }),
+        "Tab" if cx.placeholder_selected && !ctrl && !alt => {
+            run(if shift { Command::SelectPreviousPlaceholder } else { Command::SelectNextPlaceholder })
+        }
         "Tab" if cx.float && !ctrl && !alt => run(Command::SelectNextObject(if shift { Order::Previous } else { Order::Next })),
         "Digit5" | "Numpad5" if ctrl && alt && !shift => run(Command::SelectNextObject(Order::Next)),
         "ArrowUp" | "ArrowDown" if alt && shift && !ctrl && cx.in_table => {
@@ -224,7 +229,11 @@ fn catalog_shortcuts_are_the_keymap() {
             for k in keys.iter().filter(|k| !host.contains(&k.as_str())) {
                 let Some((code, mods)) = chord(k) else { continue };
                 use crate::api::command::CommandId as C;
-                let cx = KeyContext { in_table: matches!(info.id, C::SplitTable | C::MoveRows | C::MoveToCell), ..cx };
+                let cx = KeyContext {
+                    in_table: matches!(info.id, C::SplitTable | C::MoveRows | C::MoveToCell),
+                    placeholder_selected: matches!(info.id, C::SelectNextPlaceholder | C::SelectPreviousPlaceholder),
+                    ..cx
+                };
                 let bound = command(&code, mods, cx);
                 let id = match &bound {
                     Some(Bound::Run(c)) => Some(c.id()),

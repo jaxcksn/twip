@@ -182,6 +182,11 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     /// <returns>Completes when the setting applies.</returns>
     public Task SetDetailAsync(MeasureDetail detail) => Commands.SetViewOptionsAsync(detail: detail);
 
+    /// <summary>Draws placeholders as editor UI: field marks, repeating sections, sub-template cards and input blocks. Never changes the output. A wrapper over <see cref="EditorCommands.SetViewOptionsAsync"/>.</summary>
+    /// <param name="on">Draw them as editor UI.</param>
+    /// <returns>Completes when the setting applies.</returns>
+    public Task SetPlaceholderUiAsync(bool on) => Commands.SetViewOptionsAsync(placeholderUi: on);
+
     /// <summary>Sets the author of later edits, revisions and comments.</summary>
     /// <param name="author">The author.</param>
     /// <returns>Completes when the setting applies.</returns>
@@ -315,6 +320,15 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
 
     /// <summary>The editor switched between the template and a sub-template, or between sub-templates.</summary>
     public event EventHandler<EditingTargetChangedEventArgs>? EditingTargetChanged;
+
+    /// <summary>With <see cref="ViewState.PlaceholderUi"/> on, the pointer started or stopped being over a placeholder, or the hovered one's anchor moved.</summary>
+    public event EventHandler<PlaceholderEventArgs>? PlaceholderHovered;
+
+    /// <summary>With <see cref="ViewState.PlaceholderUi"/> on, the selection started or stopped covering exactly one placeholder, or the selected one's anchor moved (scroll, zoom, layout).</summary>
+    public event EventHandler<PlaceholderEventArgs>? PlaceholderSelected;
+
+    /// <summary>A shown sub-template's newer-version notice (<see cref="EditorCommands.SetSubTemplateVersionsAsync"/>) was pressed: the application updates it.</summary>
+    public event EventHandler<SubTemplateUpdateRequestedEventArgs>? SubTemplateUpdateRequested;
 
     /// <summary>Elements were added, removed or changed.</summary>
     public event EventHandler<ElementsChangedEventArgs>? ElementsChanged;
@@ -565,6 +579,13 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
         }
     }
 
+    /// <summary>A placeholder event's target, its anchor in client coordinates when attached.</summary>
+    private PlaceholderTarget? PlaceholderTargetOf(JsonElement root)
+    {
+        var target = root.Deserialize(TwipJsonContext.Default.PlaceholderTargetPayload)!.Target;
+        return target is not null && _host is { } host ? host.ToClient(target) : target;
+    }
+
     void ICallbackSink.OnCallbackFailed(Exception exception) => Notify(() => RaiseFault(exception, isFatal: false));
 
     private void OnEvent(byte[] payload)
@@ -596,7 +617,7 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
                 break;
             case "placeholderActivated":
                 var placeholder = root.Deserialize(ctx.PlaceholderInfo)!;
-                Notify(() => Raise(PlaceholderActivated, new PlaceholderActivatedEventArgs(placeholder.Key, placeholder.Element, snapshot)));
+                Notify(() => Raise(PlaceholderActivated, new PlaceholderActivatedEventArgs(placeholder.Key, placeholder.Element, placeholder.Action, snapshot)));
                 break;
             case "contextMenu":
                 var menu = root.Deserialize(ctx.ContextMenuPayload)!;
@@ -659,6 +680,18 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
                 var ruler = root.Deserialize(ctx.RulerView)!;
                 if (_host is { } rulerHost) ruler = rulerHost.ToClient(ruler);
                 Notify(() => Raise(RulerChanged, new RulerChangedEventArgs(ruler, snapshot)));
+                break;
+            case "placeholderHovered":
+                var hovered = new PlaceholderEventArgs(PlaceholderTargetOf(root), snapshot);
+                Notify(() => Raise(PlaceholderHovered, hovered));
+                break;
+            case "placeholderSelected":
+                var selected = new PlaceholderEventArgs(PlaceholderTargetOf(root), snapshot);
+                Notify(() => Raise(PlaceholderSelected, selected));
+                break;
+            case "subTemplateUpdateRequested":
+                var update = root.Deserialize(ctx.SubTemplateUpdateRequestedPayload)!;
+                Notify(() => Raise(SubTemplateUpdateRequested, new SubTemplateUpdateRequestedEventArgs(update.Name, update.Category, snapshot)));
                 break;
             case "tooltip":
                 var tip = root.Deserialize(ctx.TooltipPayload)!.Tooltip is { } t ? new TooltipInfo(t.Kind, t.Text, t.At, t.Rect) : null;

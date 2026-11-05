@@ -400,9 +400,10 @@ fn notice(n: &Notice) -> Value {
             json!({ "type": "field_update", "token": token, "fields": fields })
         }
         Notice::Link { address, ctrl } => json!({ "type": "link", "address": address, "ctrl": ctrl }),
-        Notice::Placeholder(key) => json!({ "type": "placeholder_activated", "key": key }),
+        Notice::Placeholder { key, action } => json!({ "type": "placeholder_activated", "key": key, "action": action }),
         Notice::Warning(code, message) => json!({ "type": "warning", "code": code.name(), "message": message }),
         Notice::Refused { sub_template, element } => json!({ "type": "refused", "sub_template": sub_template, "element": element.as_ref().map(id) }),
+        Notice::SubTemplateUpdate { name, category } => json!({ "type": "sub_template_update", "name": name, "category": category }),
     }
 }
 

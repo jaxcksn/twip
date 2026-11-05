@@ -285,6 +285,7 @@ impl Editor {
             list_start: self.tab_changes_level(),
             float: matches!(self.selection, Selection::Object(ObjectRef::Floating(_))),
             mac: self.mac,
+            placeholder_selected: self.affordances_on() && self.selected_target().is_some(),
         };
         match super::keymap::command(code, mods, cx)? {
             Bound::Run(c) => Some(c),

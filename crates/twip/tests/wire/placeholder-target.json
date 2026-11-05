@@ -1,0 +1,17 @@
+[
+  {
+    "anchor": {
+      "height": 1056.5,
+      "left": 40.5,
+      "top": 80.5,
+      "width": 816.5
+    },
+    "code": "MERGEFIELD ApplicantName",
+    "element": "field-7",
+    "key": "ApplicantName",
+    "kind": "field",
+    "label": "«ApplicantName»",
+    "typeText": "Text",
+    "unmapped": false
+  }
+]

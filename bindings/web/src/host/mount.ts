@@ -46,6 +46,10 @@ export async function mountHost(container: HTMLElement, s: Session, options: Mou
       const t = event as { at: ClientPoint; rect: { left: number; top: number } };
       return { ...t, at: client(t.at), rect: { ...t.rect, left: t.rect.left + r.left, top: t.rect.top + r.top } };
     }
+    if ((type === 'placeholderHovered' || type === 'placeholderSelected') && event) {
+      const t = event as { anchor: { left: number; top: number } };
+      return { ...t, anchor: { ...t.anchor, left: t.anchor.left + r.left, top: t.anchor.top + r.top } };
+    }
     if (type === 'popoverRequested') {
       const p = event as { anchor: { left: number; top: number } };
       return { ...p, anchor: { ...p.anchor, left: p.anchor.left + r.left, top: p.anchor.top + r.top } };

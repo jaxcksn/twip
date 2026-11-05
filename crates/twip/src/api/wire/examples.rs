@@ -156,6 +156,7 @@ pub fn fixtures() -> Vec<Fixture> {
         "page-number-format": PageNumberFormat,
         "page-number-place": PageNumberPlace,
         "paste-as": PasteAs,
+        "placeholder-kind": PlaceholderKind,
         "pointer-button": PointerButton,
         "pointer-kind": PointerKind,
         "reference-resolution": ReferenceResolution,
@@ -371,7 +372,7 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("block", Block, blocks()),
         fixture!("data-part", DataPart, vec![data_part()]),
         fixture!("data-part-info", DataPartInfo, vec![DataPartInfo { namespace: Some("urn:invoice".into()), item_id: "{6A9C}".into() }]),
-        fixture!("placeholder-info", PlaceholderInfo, vec![PlaceholderInfo { key: "logo".into(), element: Some(id("control-3")) }]),
+        fixture!("placeholder-info", PlaceholderInfo, vec![PlaceholderInfo { key: "logo".into(), element: Some(id("control-3")), action: None }]),
         fixture!("accessible-node", AccessibleNode, vec![accessible()]),
         fixture!("accessible-id", AccessibleId, vec![AccessibleId(42)]),
         fixture!("cell-place", CellPlace, vec![CellPlace { row: 2, col: 3, row_span: 2, col_span: 1 }]),
@@ -400,6 +401,9 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("page-rect", PageRect, vec![PageRect { page: 2, rect: rect() }]),
         fixture!("hit-result", HitResult, vec![HitResult { element: Some(id("field-1")), editable: true }]),
         fixture!("tooltip", Tooltip, vec![tooltip()]),
+        fixture!("placeholder-target", PlaceholderTarget, vec![placeholder_target()]),
+        fixture!("sub-template-version", SubTemplateVersion, vec![sub_template_version()]),
+        fixture!("placeholder-action", PlaceholderAction, placeholder_actions()),
         fixture!("word-count", WordCount, vec![word_count()]),
         // fonts, engine, input, documents
         fixture!("face-info", FaceInfo, vec![FaceInfo { family: "Carlito".into(), bold: true, italic: false }]),
@@ -784,10 +788,20 @@ fn commands() -> Vec<Command> {
             clear: Some(true),
         }),
         Command::SetPlaceholderLooks(PlaceholderLooks {
-            looks: vec![PlaceholderLookRule {
-                matches: PlaceholderMatch::Tag { tag: "logo".into() },
-                look: PlaceholderLook::Drawn { fill: Some(Color(0xEEEEEE)), label: Some("Logo".into()), icon_svg: None },
-            }],
+            looks: vec![
+                PlaceholderLookRule {
+                    matches: PlaceholderMatch::Tag { tag: "logo".into() },
+                    look: PlaceholderLook::Drawn { fill: Some(Color(0xEEEEEE)), label: Some("Logo".into()), icon_svg: None },
+                    hint: None,
+                    actions: None,
+                },
+                PlaceholderLookRule {
+                    matches: PlaceholderMatch::Prefix { prefix: "Placeholder:Signature".into() },
+                    look: PlaceholderLook::Drawn { fill: Some(Color(0x0A74E4)), label: Some("Signature".into()), icon_svg: None },
+                    hint: Some("Click to sign".into()),
+                    actions: Some(placeholder_actions()),
+                },
+            ],
             merge: Some(false),
         }),
         Command::FillPlaceholder(FillPlaceholder { key: Some("logo".into()), image: picture_bytes() }),
@@ -830,6 +844,7 @@ fn commands() -> Vec<Command> {
             appearance: Some(DocumentAppearance::DarkWithLightPage),
             detail: Some(MeasureDetail::Full),
             object_grid: Some(ObjectGrid::Always),
+            placeholder_ui: Some(true),
         }),
         Command::SetMode(Mode::Design),
         Command::SetRulerTabType(TabSelector::Decimal),
@@ -845,7 +860,29 @@ fn commands() -> Vec<Command> {
         Command::ShowAutoCorrectOptions,
         Command::ClosePopover,
         Command::DescribeFormatting,
+        Command::SetFieldTypes(FieldTypes { types: BTreeMap::from([("MERGEFIELD ApplicantName".into(), "Text".into())]), merge: Some(true) }),
+        Command::HighlightElement(HighlightElement { id: Some(id("field-7")) }),
+        Command::SelectNextPlaceholder,
+        Command::SelectPreviousPlaceholder,
+        Command::SetSubTemplateVersions(SubTemplateVersions { versions: vec![sub_template_version()] }),
+        Command::SetUnmappedFields(UnmappedFields { names: vec!["Inspector_Name".into()] }),
     ]
+}
+
+fn placeholder_actions() -> Vec<PlaceholderAction> {
+    vec![
+        PlaceholderAction { id: "sign".into(), label: "Sign".into(), primary: Some(true) },
+        PlaceholderAction { id: "upload".into(), label: "Upload image".into(), primary: None },
+    ]
+}
+
+fn sub_template_version() -> SubTemplateVersion {
+    SubTemplateVersion {
+        name: "Appeals notice".into(),
+        category: Some("Sub-templates".into()),
+        version: "v4".into(),
+        newer: Some("v5 available".into()),
+    }
 }
 
 fn popovers() -> [Popover; 3] {
@@ -1563,6 +1600,20 @@ fn ruler_view() -> RulerView {
     }
 }
 
+fn placeholder_target() -> PlaceholderTarget {
+    PlaceholderTarget {
+        element: Some(id("field-7")),
+        kind: PlaceholderKind::Field,
+        label: "\u{ab}ApplicantName\u{bb}".into(),
+        key: Some("ApplicantName".into()),
+        code: Some("MERGEFIELD ApplicantName".into()),
+        type_text: "Text".into(),
+        unmapped: false,
+        reference: None,
+        anchor: rect(),
+    }
+}
+
 fn tooltip() -> Tooltip {
     Tooltip { kind: TooltipKind::Revision, text: "Ada Lovelace inserted".into(), at: at(), rect: rect() }
 }
@@ -1605,7 +1656,12 @@ fn events() -> Vec<Event> {
         Event::DocumentChanged(record()),
         Event::SelectionChanged(selection()),
         Event::LinkActivated { address: "https://example.com".into(), via: LinkVia::CtrlClick },
-        Event::PlaceholderActivated(PlaceholderInfo { key: "logo".into(), element: None }),
+        Event::PlaceholderActivated(PlaceholderInfo { key: "logo".into(), element: None, action: None }),
+        Event::PlaceholderActivated(PlaceholderInfo {
+            key: "Signature.Applicant".into(),
+            element: Some(id("control-9")),
+            action: Some("sign".into()),
+        }),
         Event::ContextMenu(ContextMenuEvent { menu: menu(), at: at(), via: MenuVia::Pointer }),
         Event::PopoverRequested(popovers()[1].clone()),
         Event::PopoverClosed,
@@ -1629,6 +1685,9 @@ fn events() -> Vec<Event> {
         Event::EditRefused { reason: RefusalReason::Locked, element: None },
         Event::Tooltip(Some(tooltip())),
         Event::Tooltip(None),
+        Event::PlaceholderHovered(Some(placeholder_target())),
+        Event::PlaceholderSelected(None),
+        Event::SubTemplateUpdateRequested { name: "Appeals notice".into(), category: "Sub-templates".into() },
         Event::Announcement { text: "Bold on".into(), kind: AnnouncementKind::Formatting },
         Event::Warning(warning()),
         Event::fault(Error::new(ErrorCode::Internal, "the engine failed")),

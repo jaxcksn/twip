@@ -129,6 +129,9 @@ public sealed class WireTests
         ["announcement"] = Ctx.AnnouncementPayload,
         ["editRefused"] = Ctx.EditRefusedPayload,
         ["editingTargetChanged"] = Ctx.EditingTarget,
+        ["placeholderHovered"] = Ctx.PlaceholderTargetPayload,
+        ["placeholderSelected"] = Ctx.PlaceholderTargetPayload,
+        ["subTemplateUpdateRequested"] = Ctx.SubTemplateUpdateRequestedPayload,
         ["warning"] = Ctx.Warning,
         ["error"] = Ctx.ErrorPayload,
     };

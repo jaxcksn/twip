@@ -332,7 +332,7 @@ impl Editor {
             _ => None,
         };
         self.drag = None;
-        self.activate_placeholder();
+        self.activate_placeholder_by(true);
         if let Selection::Object(obj @ ObjectRef::Floating(f)) = s
             && self.selected_child().is_some()
             && !self.object_fixed(obj)

@@ -1,5 +1,6 @@
 //! Editor
 
+pub mod affordances;
 pub mod autocorrect;
 mod cell_clipboard;
 pub mod clipboard;
@@ -163,6 +164,7 @@ pub struct Editor {
     update_token: u64,
     hover: Option<(f64, f64)>,
     hover_region: Option<crate::docx::ControlId>,
+    affordances: affordances::Affordances,
     comments: comments::State,
     review_list: revisions::index::List,
     author: (Rc<str>, Option<crate::docx::review::Identity>),
@@ -309,6 +311,7 @@ impl Editor {
             update_token: 0,
             hover: None,
             hover_region: None,
+            affordances: affordances::Affordances::default(),
             comments: comments::State::default(),
             review_list: Default::default(),
             author: ("Author".into(), None),
@@ -2094,7 +2097,10 @@ impl Editor {
                 let mods = if self.modes.extend > 0 && clicks == 1 { keymap::Mods { shift: true, ..mods } } else { mods };
                 self.goal_x = None;
                 self.history.break_typing();
-                if self.mode == Mode::Design && self.region_title_click(x, y, fonts) {
+                if clicks == 1 && self.affordance_click(x, y, fonts) {
+                    return;
+                }
+                if self.mode == Mode::Design && (self.tab_click(x, y, fonts) || self.region_title_click(x, y, fonts)) {
                     return;
                 }
                 if !mods.shift && self.expansion_click(x, y, clicks, fonts) {
@@ -2687,6 +2693,7 @@ impl Editor {
             tooltip,
             regions: self.region_views(visible_pages.clone()),
             looks: self.look_views(visible_pages.clone()),
+            affordances: self.affordance_views(visible_pages.clone()),
             comments,
             comment_anchors,
             spelling: Vec::new(),
