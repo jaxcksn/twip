@@ -30,7 +30,8 @@ fn matches(hay: &[char], needle: &[char], case: bool) -> Vec<usize> {
 }
 
 impl Editor {
-    /// The body's paragraphs in document order.
+    /// The body's paragraphs in document order: the template's, or the sub-template's while one is edited (find never
+    /// reaches a sub-template's body from the template, where it shows only in place of its references).
     fn body_paras(&self) -> Vec<ParaId> {
         fn walk(blocks: &[Block], out: &mut Vec<ParaId>) {
             for b in blocks {
@@ -41,6 +42,10 @@ impl Editor {
             }
         }
         let mut out = Vec::new();
+        if let Some(part) = self.editing_sub_template().and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)) {
+            walk(&part.body, &mut out);
+            return out;
+        }
         for s in &self.doc.sections {
             walk(&s.blocks, &mut out);
         }

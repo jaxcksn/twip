@@ -138,6 +138,7 @@ impl Session {
     fn changed(&mut self, events: Vec<Event>) {
         let revisions = self.state.review.revisions;
         let selection = std::mem::take(&mut self.state.selection);
+        let editing = std::mem::take(&mut self.state.editing);
         self.state = crate::prof::time("session:state", || self.build_state());
         self.emit(Event::StateChanged(self.state.clone()));
         for e in events {
@@ -150,6 +151,15 @@ impl Session {
         }
         self.popover_follow();
         if let Some(text) = self.services.announcer.next(&mut self.editor) {
+            self.emit(Event::Announcement { text });
+        }
+        if self.state.editing != editing {
+            self.emit(Event::EditingTargetChanged(self.state.editing.clone()));
+            // Screen readers hear where the editor went.
+            let text = match &self.state.editing {
+                crate::api::state::EditingTarget::SubTemplate { name, .. } => format!("Editing sub-template {name}"),
+                crate::api::state::EditingTarget::Template => "Back to the template".into(),
+            };
             self.emit(Event::Announcement { text });
         }
         if self.state.selection != selection {

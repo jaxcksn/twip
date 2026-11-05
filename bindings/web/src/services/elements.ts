@@ -23,6 +23,8 @@ export interface Elements {
     kind?: 'field' | ControlKind;
     match?: { in: 'code' | 'tag' | 'title'; text: string };
     story?: SelectionSummary['story'];
+    /** Only the elements in this sub-template's body. */
+    subTemplate?: string;
   }): Promise<ElementInfo[]>;
   /** One element in detail. */
   get(id: ElementId): Promise<ElementDetail>;
@@ -70,10 +72,44 @@ export interface ElementInfo {
   display: string;
   /** The story it is in. */
   story: SelectionSummary['story'];
+  /** The sub-template whose body it is in, when `story` is `'subTemplate'`. */
+  subTemplate?: string;
   /** The element it is in. */
   parent: ElementId | null;
   /** Locked against editing. */
   locked: boolean;
+  /** A sub-template reference field's sub-template. */
+  reference?: SubTemplateReference;
+}
+
+/**
+ * One sub-template reference rule (`setSubTemplateRules`): a field of type `fieldType` names, in argument `argument`,
+ * the building block in `category` (and `gallery`) whose body it shows.
+ */
+export interface ReferenceRule {
+  /** The field type (`SUBTEMPLATE`), compared without case. */
+  fieldType: string;
+  /** Which of the field's arguments is the sub-template's name, from 0. Default: 0. */
+  argument?: number;
+  /** The building block category the name is looked up in. */
+  category: string;
+  /** The building block gallery (`custom1`), when it matters. */
+  gallery?: string;
+}
+
+/** Whether a reference's sub-template resolves, or why its body can't show. */
+export type ReferenceResolution = 'resolved' | 'missing' | 'nearMatch' | 'cycle' | 'tooDeep' | 'notAlone' | 'notInBody';
+
+/** What a sub-template reference field names and whether its body shows. */
+export interface SubTemplateReference {
+  /** The sub-template's name, as the field gives it. */
+  name: string;
+  /** Whether it names a sub-template whose body can show in its place. */
+  resolution: ReferenceResolution;
+  /** The sub-template's name when only a name in another case matches (`'nearMatch'`). */
+  nearMatch?: string;
+  /** Its body shows in its place. */
+  expanded: boolean;
 }
 
 /** An element in detail. */
@@ -123,6 +159,61 @@ export interface DataParts {
   list(): Promise<{ namespace: string | null; itemId: string }[]>;
   /** The data parts with a namespace or an item id. */
   get(options: { namespace?: string; itemId?: string }): Promise<{ namespace: string | null; itemId: string; xml: string }[]>;
+}
+
+/** A sub-template: a building block in a category the rules declare. */
+export interface SubTemplateInfo {
+  /** Its name. */
+  name: string;
+  /** Its building block category. */
+  category: string;
+  /** The reference fields naming it in the template's body, headers, footers and notes. */
+  references: number;
+  /** The reference fields naming it in other sub-templates' bodies. */
+  nestedReferences: number;
+  /** The fields and controls in its body. */
+  elements: ElementInfo[];
+}
+
+/**
+ * The template's sub-templates, and editing one in this editor. While one is edited, `state.editing` names it and
+ * every command, query and event concerns its body; `editingTargetChanged` fires on each switch.
+ */
+export interface SubTemplates {
+  /** The sub-templates the rules declare, in glossary order. */
+  list(): Promise<SubTemplateInfo[]>;
+  /** Edits a sub-template's body on its own pages (`category`: when several rules name categories). */
+  edit(name: string, category?: string): Promise<void>;
+  /** Back to the template, at its selection from before. */
+  close(): Promise<void>;
+  /** A new sub-template, empty or with the body of the DOCX `from`. One undo step. */
+  create(name: string, options?: { category?: string; from?: Uint8Array }): Promise<void>;
+  /** Renames a sub-template; `updateReferences` renames every reference to it too. One undo step. */
+  rename(name: string, to: string, options?: { category?: string; updateReferences?: boolean }): Promise<void>;
+  /** Removes a sub-template; its references no longer resolve. One undo step. */
+  remove(name: string, options?: { category?: string }): Promise<void>;
+}
+
+/** The sub-templates over a session. */
+export function createSubTemplates(s: Session): SubTemplates {
+  return {
+    list: () => s.call(Method.SubTemplates),
+    edit: async (name, category) => {
+      await s.run({ type: 'editSubTemplate', name, ...(category === undefined ? {} : { category }) } as Op);
+    },
+    close: async () => {
+      await s.run({ type: 'closeSubTemplate' } as Op);
+    },
+    create: async (name, options) => {
+      await s.run({ type: 'createSubTemplate', name, ...options } as Op);
+    },
+    rename: async (name, to, options) => {
+      await s.run({ type: 'renameSubTemplate', name, to, ...options } as Op);
+    },
+    remove: async (name, options) => {
+      await s.run({ type: 'removeSubTemplate', name, ...options } as Op);
+    },
+  };
 }
 
 /** The elements over a session. */

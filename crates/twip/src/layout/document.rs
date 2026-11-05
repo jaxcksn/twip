@@ -44,8 +44,23 @@ pub fn layout_with(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> Sn
 
 /// [`layout_with`], and the records of the committed pages (tests read them).
 pub(crate) fn layout_records(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> (Snapshot, Vec<PageRecord>) {
+    layout_showing(doc, fonts, cache, None)
+}
+
+/// [`layout`] showing `expansions` (the editor's sub-template bodies in place of their references): what an
+/// incremental layout with them equals.
+pub fn layout_expanded(doc: &Document, fonts: &Fonts, expansions: &super::expansion::Expansions) -> Snapshot {
+    layout_showing(doc, fonts, &mut LayoutCache::new(), Some(expansions)).0
+}
+
+fn layout_showing(
+    doc: &Document,
+    fonts: &Fonts,
+    cache: &mut LayoutCache,
+    expansions: Option<&super::expansion::Expansions>,
+) -> (Snapshot, Vec<PageRecord>) {
     let env = LayoutEnv::new(doc);
-    let ctx = LayoutCtx { fonts, env: &env, preview: None };
+    let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions };
     let mut job = LayoutJob::new(doc, Revision(0));
     // Full layouts never yield (no budget).
     job.run(doc, &ctx, cache, None, Budget::Unlimited);

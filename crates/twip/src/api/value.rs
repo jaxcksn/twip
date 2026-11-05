@@ -242,6 +242,8 @@ pub enum Story {
     Endnote,
     /// A text box.
     TextBox,
+    /// A sub-template's body (a building block), while the editor is on it.
+    SubTemplate,
 }
 
 /// `w:u` styles.

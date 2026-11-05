@@ -80,7 +80,8 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
   const events: unknown[] = [];
   const records: Run['records'] = [];
   const eventTypes = [
-    'documentChanged', 'selectionChanged', 'linkActivated', 'placeholderActivated', 'contextMenu', 'dialogRequested',
+    'documentChanged', 'selectionChanged', 'editingTargetChanged', 'linkActivated', 'placeholderActivated', 'editRefused',
+    'contextMenu', 'dialogRequested',
     'hostCommand', 'shortcut', 'gesture', 'wordAdded', 'fontsChanged', 'elementActivated', 'elementsChanged',
     'fieldsUpdateRequested', 'revisionsChanged', 'commentsChanged', 'commentAnchors', 'balloonsLaidOut', 'rulerChanged',
     'tooltip', 'announcement', 'popoverRequested', 'popoverClosed', 'warning', 'error',

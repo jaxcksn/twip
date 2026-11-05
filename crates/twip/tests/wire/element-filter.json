@@ -5,7 +5,8 @@
       "in": "tag",
       "text": "name"
     },
-    "story": "body"
+    "story": "subTemplate",
+    "subTemplate": "Violation"
   },
   {}
 ]

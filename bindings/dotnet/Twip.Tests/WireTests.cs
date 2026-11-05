@@ -126,6 +126,8 @@ public sealed class WireTests
         ["rulerChanged"] = Ctx.RulerView,
         ["tooltip"] = Ctx.TooltipPayload,
         ["announcement"] = Ctx.AnnouncementPayload,
+        ["editRefused"] = Ctx.EditRefusedPayload,
+        ["editingTargetChanged"] = Ctx.EditingTarget,
         ["warning"] = Ctx.Warning,
         ["error"] = Ctx.ErrorPayload,
     };

@@ -380,6 +380,20 @@ impl Editor {
             Command::UnlinkFields(ids) => self.unlink_fields(ids.ids.as_deref(), fonts),
             Command::ShowFieldCodes(s) => self.show_field_codes(s.show, s.ids.as_deref()),
             Command::SetFieldLabels(l) => self.set_field_labels(l),
+            Command::SetSubTemplateRules(r) => self.set_sub_template_rules(r),
+            Command::SetSubTemplateView(v) => self.set_sub_template_view(v),
+            Command::EditSubTemplate(n) => self.edit_sub_template(&n, fonts),
+            Command::CreateSubTemplate(c) => self.create_sub_template(c, fonts),
+            Command::RenameSubTemplate(r) => self.rename_sub_template(r, fonts),
+            Command::RemoveSubTemplate(n) => self.remove_sub_template(&n, fonts),
+            Command::CloseSubTemplate => {
+                let out = self.close_sub_template_to(None);
+                if let Outcome::Moved = out {
+                    self.ensure_current(fonts);
+                    self.scroll_to_caret(fonts);
+                }
+                out
+            }
             // Content controls and regions
             Command::InsertControl(c) => self.insert_control(c, fonts),
             Command::SetControl(c) => self.set_control(c, fonts),

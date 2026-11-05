@@ -85,6 +85,7 @@ export const Method = {
   HostSetPaintBudget: 74,
   HostSetLeaders: 75,
   ShapeGallery: 76,
+  SubTemplates: 77,
 } as const;
 
 /** A structured call number. */

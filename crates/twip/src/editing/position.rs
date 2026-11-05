@@ -13,6 +13,8 @@ pub enum StoryId {
     Footnote(i64),
     Endnote(i64),
     TextBox(FloatId),
+    /// A glossary building block's body, by its index in the glossary's parts (stable for the session).
+    BuildingBlock(u32),
 }
 
 /// Which of the two visual places of a position the caret shows at where they differ: `Upstream` at the end

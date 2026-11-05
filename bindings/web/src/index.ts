@@ -25,6 +25,7 @@ export type {
   CharacterFormatting,
   CommandState,
   CommandValues,
+  EditingTarget,
   EditorState,
   ElementContext,
   HighlightColor,
@@ -95,6 +96,11 @@ export type {
   Elements,
   MountedElements,
   PlaceholderInfo,
+  ReferenceResolution,
+  ReferenceRule,
+  SubTemplateInfo,
+  SubTemplateReference,
+  SubTemplates,
 } from './services/elements.js';
 export type { Accessibility, AccessibleNode, Shortcuts } from './services/accessibility.js';
 export type { Heading, Navigation, StyleInfo, Styles } from './services/navigation.js';

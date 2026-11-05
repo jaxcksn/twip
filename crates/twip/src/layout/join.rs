@@ -139,6 +139,7 @@ impl LaidPara<'_> {
 
     pub fn shape_space(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, ctx: &LayoutCtx) -> ShapeSpace {
         let mut space = shape_space(self.para(), fields, notes, &ctx.env.text, ctx.preview);
+        space.expansion = ctx.expansions.and_then(|e| e.paras.get(&ParaId(self.para().id))).cloned();
         if let LaidPara::Joined(j) = self {
             space.join = Some(j.map.clone());
         }

@@ -866,3 +866,124 @@ fn the_detail_and_object_grid_options_reach_the_editors_drag_feedback() {
     let v = s.editor.view_settings;
     assert_eq!((v.detail, v.object_grid), (MeasureDetail::Full, ObjectGrid::Always));
 }
+
+#[test]
+fn sub_template_bodies_shown_inline_never_reach_the_output() {
+    use crate::api::command::{ReferenceRule, SubTemplateRules, SubTemplateView};
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
+    s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
+    // The PDF's dates and ids come from the export's time: zeroed, so two exports compare.
+    fn undated(mut b: Vec<u8>) -> Vec<u8> {
+        let digits = |b: &[u8], at: usize, n: usize| b.get(at..at + n).is_some_and(|d| d.iter().all(u8::is_ascii_digit));
+        for i in 0..b.len() {
+            if b[i..].starts_with(b"/ID [") {
+                let end = b[i..].iter().position(|&c| c == b']').map_or(b.len(), |k| i + k);
+                b[i + 5..end].iter_mut().filter(|c| c.is_ascii_hexdigit()).for_each(|c| *c = b'0');
+            }
+            if b[i..].starts_with(b"uuid:") && b.len() >= i + 41 {
+                b[i + 5..i + 41].fill(b'0');
+            }
+            if b[i..].starts_with(b"D:") && digits(&b, i + 2, 14) {
+                b[i + 2..i + 16].fill(b'0');
+            }
+            if digits(&b, i, 4) && b.get(i + 4) == Some(&b'-') && b.get(i + 10) == Some(&b'T') && digits(&b, i + 11, 2) {
+                for k in [0, 5, 8, 11, 14, 17] {
+                    let n = if k == 0 { 4 } else { 2 };
+                    if digits(&b, i + k, n) {
+                        b[i + k..i + k + n].fill(b'0');
+                    }
+                }
+            }
+        }
+        b
+    }
+    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions { format: f }).expect("exports").bytes.0);
+    let (docx, pdf) = (export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf));
+    assert!(s.editor.shows_expansions(), "the bodies show");
+    s.run(Command::SetSubTemplateView(SubTemplateView { ids: None, expanded: false })).expect("collapses");
+    assert!(!s.editor.shows_expansions());
+    assert_eq!(export(s, ExportFormat::Docx), docx);
+    assert_eq!(export(s, ExportFormat::Pdf), pdf);
+}
+
+#[test]
+fn the_editing_target_is_reported_once_per_change() {
+    use crate::api::command::{ReferenceRule, SubTemplateName, SubTemplateRules};
+    use crate::api::state::EditingTarget;
+    let (mut engine, events) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
+    s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
+    let targets = |events: &Rc<RefCell<Vec<Event>>>| -> Vec<EditingTarget> {
+        events.borrow_mut().drain(..).filter_map(|e| if let Event::EditingTargetChanged(t) = e { Some(t) } else { None }).collect()
+    };
+    targets(&events);
+    let violation = EditingTarget::SubTemplate { name: "Violation".into(), category: "Sub-templates".into() };
+    s.run(Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: None })).expect("edits it");
+    assert_eq!(targets(&events), std::slice::from_ref(&violation));
+    assert_eq!(s.state().editing, violation);
+    s.run(Command::InsertText("x".into())).expect("types");
+    assert_eq!(targets(&events), [], "edits within it don't switch");
+    s.run(Command::CloseSubTemplate).expect("closes");
+    assert_eq!(targets(&events), [EditingTarget::Template]);
+    s.run(Command::Undo).expect("undoes");
+    assert_eq!(targets(&events), std::slice::from_ref(&violation), "undo goes back to the sub-template");
+    s.run(Command::Redo).expect("redoes");
+    assert_eq!(targets(&events), [], "redo stays on it");
+    assert_eq!(
+        s.run(Command::EditSubTemplate(SubTemplateName { name: "Nope".into(), category: None })).map_err(|e| e.code).err(),
+        Some(ErrorCode::InvalidArgument)
+    );
+    assert_eq!(s.state().editing, violation);
+}
+
+#[test]
+fn sub_templates_list_with_their_references_and_elements() {
+    use crate::api::command::{ReferenceRule, SubTemplateRules};
+    use crate::api::services::ElementFilter;
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    assert!(s.sub_templates().is_empty(), "none without rules");
+    let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
+    s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
+    let list = s.sub_templates();
+    let names: Vec<&str> = list.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["Violation", "FeeRow", "Appeals notice", "Cycle-A", "Cycle-B"], "not the AutoText block");
+    let violation = &list[0];
+    assert_eq!((violation.references, violation.nested_references), (4, 0), "two body paragraphs, the shared one and the footer");
+    assert_eq!(violation.elements.len(), 2, "its field and control");
+    assert_eq!((list[2].references, list[2].nested_references), (0, 0));
+    assert_eq!((list[4].references, list[4].nested_references), (0, 1), "Cycle-B is named inside Cycle-A");
+    let only = s.elements(&ElementFilter { sub_template: Some("Violation".into()), ..ElementFilter::default() });
+    assert_eq!(only.len(), 2);
+    assert!(only.iter().all(|e| e.sub_template.as_deref() == Some("Violation")));
+}
+
+#[test]
+fn switching_to_a_sub_template_is_announced() {
+    use crate::api::command::{ReferenceRule, SubTemplateName, SubTemplateRules};
+    let (mut engine, events) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
+    s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
+    events.borrow_mut().clear();
+    s.run(Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: None })).expect("edits it");
+    s.run(Command::CloseSubTemplate).expect("closes");
+    let said: Vec<String> =
+        events.borrow().iter().filter_map(|e| if let Event::Announcement { text } = e { Some(text.clone()) } else { None }).collect();
+    assert!(said.contains(&"Editing sub-template Violation".to_string()) && said.contains(&"Back to the template".to_string()), "{said:?}");
+}

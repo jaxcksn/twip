@@ -82,6 +82,9 @@ namespace Twip.Wire;
         typeof(CamelEnum<ShortcutKind>),
         typeof(CamelEnum<SpecialIndent>),
         typeof(CamelEnum<Story>),
+        typeof(CamelEnum<ReferenceResolution>),
+        typeof(CamelEnum<RefusalKind>),
+        typeof(CamelEnum<EditingTargetKind>),
         typeof(CamelEnum<StyleType>),
         typeof(CamelEnum<TabAlignment>),
         typeof(CamelEnum<TabLeader>),
@@ -220,6 +223,7 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(ElementMatch))]
 [JsonSerializable(typeof(ElementsChangedPayload))]
 [JsonSerializable(typeof(ElementTextField))]
+[JsonSerializable(typeof(EditRefusedPayload))]
 [JsonSerializable(typeof(EmptyPayload))]
 [JsonSerializable(typeof(EngineOptionsWire))]
 [JsonSerializable(typeof(ErrorBody))]
@@ -435,6 +439,13 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(SpecialIndent))]
 [JsonSerializable(typeof(SpellingState))]
 [JsonSerializable(typeof(Story))]
+[JsonSerializable(typeof(ReferenceResolution))]
+[JsonSerializable(typeof(ReferenceRule))]
+[JsonSerializable(typeof(IReadOnlyList<ReferenceRule>))]
+[JsonSerializable(typeof(SubTemplateReference))]
+[JsonSerializable(typeof(SubTemplateInfo))]
+[JsonSerializable(typeof(IReadOnlyList<SubTemplateInfo>))]
+[JsonSerializable(typeof(EditingTarget))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(StructureRequest))]
 [JsonSerializable(typeof(StyleId))]

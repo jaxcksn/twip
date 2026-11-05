@@ -5,6 +5,7 @@ pub mod comments;
 pub mod diagnostics;
 pub mod fields;
 mod frames;
+pub mod glossary;
 pub mod image;
 pub mod model;
 pub mod numbering;
@@ -17,7 +18,7 @@ pub mod styles;
 pub mod xml;
 
 pub use model::*;
-pub use reader::{read, read_at, read_editable};
+pub use reader::{now_utc, read, read_at, read_editable};
 #[cfg(test)]
 mod merge_tests;
 #[cfg(test)]

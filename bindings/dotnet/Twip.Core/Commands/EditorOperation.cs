@@ -750,6 +750,48 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetFieldLabels(IReadOnlyDictionary<string, string> labels, bool? merge = null) => Op(CommandId.SetFieldLabels, new Arg("labels", Node(labels)), new Arg("merge", merge is { } merge_ ? Node(merge_) : null, Optional: true));
 
+    /// <summary>Sets which fields are sub-template references, replacing the rules; none turns sub-templates off. A view setting.</summary>
+    /// <param name="rules">The rules.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetSubTemplateRules(IReadOnlyList<ReferenceRule> rules) => Op(CommandId.SetSubTemplateRules, new Arg("rules", Node(rules)));
+
+    /// <summary>Edits a sub-template's body in this editor, on its own pages. A view change.</summary>
+    /// <param name="name">The sub-template.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation EditSubTemplate(string name, string? category = null) => Op(CommandId.EditSubTemplate, new Arg("name", Node(name)), new Arg("category", category is { } category_ ? Node(category_) : null, Optional: true));
+
+    /// <summary>Back to the template from a sub-template, at the template's selection from before. A view change.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation CloseSubTemplate() => Op(CommandId.CloseSubTemplate);
+
+    /// <summary>A new sub-template, empty or with the body of the DOCX <paramref name="from"/>. One undo step.</summary>
+    /// <param name="name">Its name, unique in its category.</param>
+    /// <param name="category">Its building block category; null for the first rule's.</param>
+    /// <param name="from">A DOCX whose body becomes its body.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation CreateSubTemplate(string name, string? category = null, ReadOnlyMemory<byte>? from = null) => Op(CommandId.CreateSubTemplate, new Arg("name", Node(name)), new Arg("category", category is { } category_ ? Node(category_) : null, Optional: true), new Arg("from", from is { } from_ ? Node(from_) : null, Optional: true));
+
+    /// <summary>Renames a sub-template, and optionally every reference to it. One undo step.</summary>
+    /// <param name="name">Its name now.</param>
+    /// <param name="to">Its new name, unique in its category.</param>
+    /// <param name="updateReferences">Rename the references too.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation RenameSubTemplate(string name, string to, bool? updateReferences = null, string? category = null) => Op(CommandId.RenameSubTemplate, new Arg("name", Node(name)), new Arg("to", Node(to)), new Arg("category", category is { } category_ ? Node(category_) : null, Optional: true), new Arg("updateReferences", updateReferences is { } u_ ? Node(u_) : null, Optional: true));
+
+    /// <summary>Removes a sub-template; its references no longer resolve. One undo step.</summary>
+    /// <param name="name">The sub-template.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation RemoveSubTemplate(string name, string? category = null) => Op(CommandId.RemoveSubTemplate, new Arg("name", Node(name)), new Arg("category", category is { } category_ ? Node(category_) : null, Optional: true));
+
+    /// <summary>Shows references' sub-template bodies in their place, or their fields. A view setting.</summary>
+    /// <param name="expanded">Show the bodies (else the fields).</param>
+    /// <param name="ids">The reference fields; null for every reference.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetSubTemplateView(bool expanded, IReadOnlyList<ElementId>? ids = null) => Op(CommandId.SetSubTemplateView, new Arg("ids", ids is { } ids_ ? Node(ids_) : null, Optional: true), new Arg("expanded", Node(expanded)));
+
     /// <summary>Inserts a content control.</summary>
     /// <param name="options">The control.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

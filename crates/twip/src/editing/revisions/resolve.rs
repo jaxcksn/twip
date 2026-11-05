@@ -235,8 +235,9 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
     Some((merged.into_iter().map(|(i, _)| i).collect(), ranges))
 }
 
-/// Every table of the document in document order (an outer table before those in its cells), and every paragraph.
-fn tables_and_paras(doc: &Document) -> (Vec<TableId>, Vec<ParaId>) {
+/// Every table of the document in document order (an outer table before those in its cells), and every paragraph;
+/// with the body of the building block being edited (`flow`).
+fn tables_and_paras(doc: &Document, flow: Option<u32>) -> (Vec<TableId>, Vec<ParaId>) {
     fn walk<'a>(blocks: &'a [Block], t: &mut Vec<TableId>, p: &mut Vec<ParaId>, boxes: &mut Vec<&'a [Block]>) {
         for b in blocks {
             match b {
@@ -258,7 +259,9 @@ fn tables_and_paras(doc: &Document) -> (Vec<TableId>, Vec<ParaId>) {
         }
     }
     let (mut t, mut p, mut boxes) = (Vec::new(), Vec::new(), Vec::new());
-    let stories = doc.sections.iter().map(|s| &s.blocks).chain(doc.stories.values()).chain(doc.footnotes.values()).chain(doc.endnotes.values());
+    let flow = flow.and_then(|k| doc.glossary.as_ref()?.parts.get(k as usize)).map(|b| &b.body);
+    let stories =
+        doc.sections.iter().map(|s| &s.blocks).chain(doc.stories.values()).chain(doc.footnotes.values()).chain(doc.endnotes.values()).chain(flow);
     for blocks in stories {
         walk(blocks, &mut t, &mut p, &mut boxes);
     }
@@ -409,11 +412,11 @@ impl Editor {
             let page = if accept { s.page() } else { c.previous.clone() };
             self.step(tx, Step::SectionPage { section, page, change: None })?;
         }
-        let (tables, _) = tables_and_paras(&self.doc);
+        let (tables, _) = tables_and_paras(&self.doc, self.index.flow);
         for t in tables {
             self.resolve_table(tx, t, pick, accept)?;
         }
-        let (_, paras) = tables_and_paras(&self.doc);
+        let (_, paras) = tables_and_paras(&self.doc, self.index.flow);
         for para in &paras {
             let Some(p) = self.index.para(&self.doc, *para) else { continue };
             let Some((inlines, gone)) = resolve_inlines(p, pick, accept) else { continue };

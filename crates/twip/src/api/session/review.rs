@@ -36,6 +36,7 @@ pub(super) fn story(e: &crate::editing::Editor, s: StoryId) -> Story {
         StoryId::Footnote(_) => Story::Footnote,
         StoryId::Endnote(_) => Story::Endnote,
         StoryId::TextBox(_) => Story::TextBox,
+        StoryId::BuildingBlock(_) => Story::SubTemplate,
     }
 }
 

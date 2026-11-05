@@ -59,6 +59,29 @@ pub enum Mode {
     Design,
 }
 
+/// What the editor is on: the template, or one of its sub-templates.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum EditingTarget {
+    /// The document itself.
+    #[default]
+    Template,
+    /// A sub-template's body.
+    SubTemplate {
+        /// Its name.
+        name: String,
+        /// Its building block category.
+        category: String,
+    },
+}
+
+impl EditingTarget {
+    /// Whether it is the template.
+    pub fn is_template(&self) -> bool {
+        *self == EditingTarget::Template
+    }
+}
+
 /// Whether the document is open and laid out.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,6 +107,9 @@ pub struct State {
     pub load: LoadState,
     /// Editing or template design.
     pub mode: Mode,
+    /// The template, or the sub-template being edited (absent on the wire for the template).
+    #[serde(default, skip_serializing_if = "EditingTarget::is_template")]
+    pub editing: EditingTarget,
     /// Commands that change the document fail with `read-only`.
     pub read_only: bool,
     /// Changed since the last open or DOCX export.
@@ -735,6 +761,9 @@ pub struct ViewState {
     pub detail: super::services::MeasureDetail,
     /// When the objects' dot grid shows.
     pub object_grid: super::services::ObjectGrid,
+    /// Which fields are sub-template references.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_template_rules: Vec<super::command::ReferenceRule>,
 }
 
 impl Default for ViewState {
@@ -758,6 +787,7 @@ impl Default for ViewState {
             appearance: super::services::DocumentAppearance::Light,
             detail: super::services::MeasureDetail::Standard,
             object_grid: super::services::ObjectGrid::WhileDragging,
+            sub_template_rules: Vec::new(),
         }
     }
 }
@@ -858,6 +888,7 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
         StoryId::Footnote(_) => Story::Footnote,
         StoryId::Endnote(_) => Story::Endnote,
         StoryId::TextBox(_) => Story::TextBox,
+        StoryId::BuildingBlock(_) => Story::SubTemplate,
     };
     let mode = match commands.get(&CommandId::SetSelectionMode).and_then(|s| s.value.clone()) {
         Some(CommandValue::SelectionMode(m)) => m,

@@ -901,6 +901,55 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetFieldLabelsAsync(IReadOnlyDictionary<string, string> labels, bool? merge = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetFieldLabels(labels, merge), ct);
 
+    /// <summary>Sets which fields are sub-template references, replacing the rules; none turns sub-templates off. A view setting.</summary>
+    /// <param name="rules">The rules.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetSubTemplateRulesAsync(IReadOnlyList<ReferenceRule> rules, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetSubTemplateRules(rules), ct);
+
+    /// <summary>Shows references' sub-template bodies in their place, or their fields. A view setting.</summary>
+    /// <param name="expanded">Show the bodies (else the fields).</param>
+    /// <param name="ids">The reference fields; null for every reference.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetSubTemplateViewAsync(bool expanded, IReadOnlyList<ElementId>? ids = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetSubTemplateView(expanded, ids), ct);
+
+    /// <summary>Edits a sub-template's body in this editor, on its own pages. A view change.</summary>
+    /// <param name="name">The sub-template.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the editor is on it and <see cref="EditorSession.State"/> says so.</returns>
+    public Task EditSubTemplateAsync(string name, string? category = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.EditSubTemplate(name, category), ct);
+
+    /// <summary>Back to the template from a sub-template, at the template's selection from before. A view change.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the template shows and <see cref="EditorSession.State"/> says so.</returns>
+    public Task CloseSubTemplateAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.CloseSubTemplate(), ct);
+
+    /// <summary>A new sub-template, empty or with the body of the DOCX <paramref name="from"/>. One undo step.</summary>
+    /// <param name="name">Its name, unique in its category.</param>
+    /// <param name="category">Its building block category; null for the first rule's.</param>
+    /// <param name="from">A DOCX whose body becomes its body.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task CreateSubTemplateAsync(string name, string? category = null, ReadOnlyMemory<byte>? from = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.CreateSubTemplate(name, category, from), ct);
+
+    /// <summary>Renames a sub-template, and optionally every reference to it. One undo step.</summary>
+    /// <param name="name">Its name now.</param>
+    /// <param name="to">Its new name, unique in its category.</param>
+    /// <param name="updateReferences">Rename the references too.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task RenameSubTemplateAsync(string name, string to, bool? updateReferences = null, string? category = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.RenameSubTemplate(name, to, updateReferences, category), ct);
+
+    /// <summary>Removes a sub-template; its references no longer resolve. One undo step.</summary>
+    /// <param name="name">The sub-template.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task RemoveSubTemplateAsync(string name, string? category = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.RemoveSubTemplate(name, category), ct);
+
     /// <summary>Inserts a content control.</summary>
     /// <param name="options">The control.</param>
     /// <param name="ct">Cancels the command before it runs.</param>

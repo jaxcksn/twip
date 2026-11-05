@@ -38,6 +38,11 @@
       "tableProperties": false,
       "tabs": true
     },
+    "editing": {
+      "category": "Sub-templates",
+      "kind": "subTemplate",
+      "name": "Violation"
+    },
     "fonts": {
       "pending": [
         "Aptos"
@@ -878,6 +883,30 @@
       "origin": 80.5,
       "scale": 1.5
     }
+  },
+  {
+    "category": "Sub-templates",
+    "kind": "subTemplate",
+    "name": "Violation",
+    "type": "editingTargetChanged"
+  },
+  {
+    "kind": "template",
+    "type": "editingTargetChanged"
+  },
+  {
+    "element": "field-7",
+    "reason": {
+      "kind": "subTemplate",
+      "name": "Violation"
+    },
+    "type": "editRefused"
+  },
+  {
+    "reason": {
+      "kind": "locked"
+    },
+    "type": "editRefused"
   },
   {
     "type": "tooltip",

@@ -122,7 +122,12 @@ export interface Warning {
     | 'author-missing'
     | 'comment-unanchored'
     | 'comment-reference-orphan'
-    | 'unknown-preset';
+    | 'unknown-preset'
+    | 'glossary-unreadable'
+    | 'duplicate-building-block'
+    | 'sub-template-cycle'
+    | 'sub-template-too-deep'
+    | 'sub-template-near-match';
   /** A readable description. */
   message: string;
   /** How many times it occurred. */

@@ -142,6 +142,8 @@ const types: Record<string, string> = {
   'popover-tab-stop': "Extract<T.Popover, { kind: 'tabStop' }>",
   'popover-tab-type': "Extract<T.Popover, { kind: 'tabType' }>",
   'placeholder-match': "T.PlaceholderLook['match']",
+  'reference-resolution': "T.ReferenceResolution",
+  'sub-template-info': "T.SubTemplateInfo",
   'revision-kind': "T.RevisionInfo['kind']",
   'section-break-kind': "Arg<'insertSectionBreak'>",
   'select-unit': "Arg<'select'>",

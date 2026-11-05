@@ -40,6 +40,7 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
         Styles = new EditorStyles(this);
         Review = new EditorReview(this);
         Elements = new EditorElements(this);
+        SubTemplates = new EditorSubTemplates(this);
         DataParts = new EditorDataParts(this);
         Accessibility = new EditorAccessibility(this);
         Shortcuts = new EditorShortcuts(this);
@@ -216,6 +217,9 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     /// <summary>Merge-designer elements.</summary>
     public EditorElements Elements { get; }
 
+    /// <summary>The template's sub-templates, and editing one in this editor.</summary>
+    public EditorSubTemplates SubTemplates { get; }
+
     /// <summary>Custom XML data parts.</summary>
     public EditorDataParts DataParts { get; }
 
@@ -305,6 +309,12 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
 
     /// <summary>In design mode, the user activated an element.</summary>
     public event EventHandler<ElementActivatedEventArgs>? ElementActivated;
+
+    /// <summary>Typing, pasting or dropping was refused: into a sub-template's body shown in place of its reference, or a locked control.</summary>
+    public event EventHandler<EditRefusedEventArgs>? EditRefused;
+
+    /// <summary>The editor switched between the template and a sub-template, or between sub-templates.</summary>
+    public event EventHandler<EditingTargetChangedEventArgs>? EditingTargetChanged;
 
     /// <summary>Elements were added, removed or changed.</summary>
     public event EventHandler<ElementsChangedEventArgs>? ElementsChanged;
@@ -575,6 +585,14 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
             case "linkActivated":
                 var link = root.Deserialize(ctx.LinkActivatedPayload)!;
                 Notify(() => Raise(LinkActivated, new LinkActivatedEventArgs(link.Address, link.Via, snapshot)));
+                break;
+            case "editingTargetChanged":
+                var target = root.Deserialize(ctx.EditingTarget)!;
+                Notify(() => Raise(EditingTargetChanged, new EditingTargetChangedEventArgs(target, snapshot)));
+                break;
+            case "editRefused":
+                var refused = root.Deserialize(ctx.EditRefusedPayload)!;
+                Notify(() => Raise(EditRefused, new EditRefusedEventArgs(refused.Reason, refused.Element, snapshot)));
                 break;
             case "placeholderActivated":
                 var placeholder = root.Deserialize(ctx.PlaceholderInfo)!;

@@ -97,6 +97,7 @@ pub(super) fn story_name(s: StoryId, idx: &DocIndex) -> String {
         StoryId::Footnote(id) => format!("footnote {id}"),
         StoryId::Endnote(id) => format!("endnote {id}"),
         StoryId::TextBox(f) => format!("text box {}", f.0),
+        StoryId::BuildingBlock(k) => format!("building block {k}"),
     }
 }
 
@@ -128,7 +129,7 @@ impl Filter {
 
 /// Every story's blocks in document order: the body; each section's headers and footers (default,
 /// first, even; header before footer); footnotes; endnotes. Text boxes are walked where their anchors are, and
-/// listed after the notes.
+/// listed after the notes; building blocks come last ([`enumerate`]).
 fn stories<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(StoryId, &'d [Block])> {
     let mut out: Vec<(StoryId, &[Block])> = Vec::new();
     for s in &doc.sections {
@@ -300,6 +301,12 @@ pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element
         let (f, blocks) = w.boxes[k];
         w.blocks(blocks, StoryId::TextBox(f), &[]);
         k += 1;
+    }
+    // Building blocks last, in glossary order.
+    for (k, part) in doc.glossary.iter().flat_map(|g| g.parts.iter().enumerate()) {
+        if part.state != crate::docx::PartState::Removed {
+            w.blocks(&part.body, StoryId::BuildingBlock(k as u32), &[]);
+        }
     }
     w.out.into_iter().filter(|e| filter.keeps(e, idx)).collect()
 }

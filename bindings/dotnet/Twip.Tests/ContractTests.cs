@@ -336,6 +336,12 @@ public sealed class ContractTests
                 case "navigation.headings": return Json(await _session.Navigation.GetHeadingsAsync(ct));
                 case "navigation.select": await _session.Navigation.SelectAsync(Parse<HeadingId>(0), ct); return null;
                 case "styles.list": return Json(await _session.Styles.ListAsync(Arg(0)?["type"]?.Deserialize(WireJson.Info<StyleType>()), ct));
+                case "elements.list": return Json(await _session.Elements.ListAsync(Arg(0) is null ? null : Parse<ElementFilter>(0), ct));
+                case "elements.select": await _session.Elements.SelectAsync(Parse<ElementId>(0), Arg(1)?["reveal"]?.GetValue<bool>() ?? true, ct); return null;
+                case "subTemplates.list": return Json(await _session.SubTemplates.ListAsync(ct));
+                case "subTemplates.edit": await _session.SubTemplates.EditAsync(Parse<string>(0), Arg(1)?.GetValue<string>(), ct); return null;
+                case "subTemplates.close": await _session.SubTemplates.CloseAsync(ct); return null;
+                case "subTemplates.remove": await _session.SubTemplates.RemoveAsync(Parse<string>(0), ct: ct); return null;
                 case "review.revisions": return Json(await _session.Review.GetRevisionsAsync(ct));
                 case "review.comments": return Json(await _session.Review.GetCommentsAsync(ct));
             }
@@ -503,6 +509,8 @@ public sealed class ContractTests
             };
             _session.SelectionChanged += (_, e) => Record("selectionChanged", JsonSerializer.SerializeToNode(e.Selection, Ctx.SelectionSummary));
             _session.Warning += (_, e) => Record("warning", JsonSerializer.SerializeToNode(e.Warning, Ctx.Warning));
+            _session.EditRefused += (_, e) => Record("editRefused", JsonSerializer.SerializeToNode(new EditRefusedPayload(e.Reason, e.Element), Ctx.EditRefusedPayload));
+            _session.EditingTargetChanged += (_, e) => Record("editingTargetChanged", JsonSerializer.SerializeToNode(e.Target, Ctx.EditingTarget));
             _session.HostCommandRequested += (_, e) => Record("hostCommand", new JsonObject { ["command"] = WireJson.ToNode(e.Command) });
             _session.ShortcutPressed += (_, e) => Record("shortcut", new JsonObject { ["id"] = e.Id });
             _session.DialogRequested += (_, e) => Record("dialogRequested", new JsonObject { ["kind"] = WireJson.ToNode(e.Kind) });

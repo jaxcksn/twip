@@ -441,6 +441,43 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     }
 }
 
+/// Re-kinds the fields of the body, headers, footers, notes and building blocks: an unlocked field whose code
+/// `reference` matches is a sub-template reference, which shows its cached result (FIELD-2); one that stopped matching
+/// takes its kind from its code again. Returns whether any field's kind changed, and whether any stopped being a
+/// reference (values to evaluate again).
+pub fn rekind(doc: &mut Document, reference: &dyn Fn(&FieldCode) -> bool) -> (bool, bool) {
+    let (mut changed, mut back) = (false, false);
+    let mut visit = |p: &mut Paragraph| {
+        for s in spans(&p.inlines) {
+            let code = parse(&code_text(&p.inlines, s));
+            let Inline::FieldBegin { kind, value, lock, .. } = &mut p.inlines[s.begin] else { continue };
+            if *lock {
+                continue;
+            }
+            if reference(&code) {
+                if *kind != Some(FieldKind::SubTemplate) {
+                    *kind = Some(FieldKind::SubTemplate);
+                    *value = None;
+                    changed = true;
+                }
+            } else if *kind == Some(FieldKind::SubTemplate) {
+                *kind = code.kind();
+                (changed, back) = (true, true);
+            }
+        }
+    };
+    for s in &mut doc.sections {
+        paras(&mut s.blocks, &mut visit);
+    }
+    for b in doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()) {
+        paras(b, &mut visit);
+    }
+    for part in doc.glossary.iter_mut().flat_map(|g| g.parts.iter_mut()) {
+        paras(&mut part.body, &mut visit);
+    }
+    (changed, back)
+}
+
 /// Whether the body or notes hold fields that need the page count or bookmark pages (a second layout pass).
 pub fn page_dependent(doc: &Document) -> bool {
     doc.sections.iter().any(|s| blocks_page_dependent(&s.blocks))

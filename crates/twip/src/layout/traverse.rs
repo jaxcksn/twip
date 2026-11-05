@@ -736,6 +736,7 @@ mod tests {
                 changed: false,
                 mark: None,
                 texts: Box::new([]),
+                expansions: Box::new([]),
             }),
         }
     }
@@ -854,6 +855,7 @@ mod tests {
                 changed: false,
                 mark: None,
                 texts: Box::new([]),
+                expansions: Box::new([]),
             }),
         };
         let mut body = BoxBuilder::new();

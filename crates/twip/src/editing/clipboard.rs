@@ -473,7 +473,7 @@ impl Editor {
             [Block::Para(p)] if f.open_end => self.smart_spaces(&super::text::UnitText::of(p).text),
             _ => (false, false),
         };
-        if self.refuse_locked() {
+        if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Paste");

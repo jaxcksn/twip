@@ -201,6 +201,14 @@ pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
         w.blocks(blocks, false);
         k += 1;
     }
+    // The sub-template being edited: its body's revisions are reviewed there.
+    if let Some(k) = idx.flow
+        && let Some(part) = doc.glossary.as_ref().and_then(|g| g.parts.get(k as usize))
+    {
+        w.story = StoryId::BuildingBlock(k);
+        w.found.stories.push(w.story);
+        w.blocks(&part.body, false);
+    }
     w.found
 }
 

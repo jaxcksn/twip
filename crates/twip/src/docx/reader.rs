@@ -82,7 +82,8 @@ pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
     read_with(bytes, false, now)
 }
 
-fn now_utc() -> i64 {
+/// Seconds since 1970, UTC, by the system clock.
+pub fn now_utc() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
@@ -145,7 +146,16 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     // STYLE-11: theme colours resolve through the theme and the mapping.
     let colours = ThemeColours::new(&drawing_theme, &colour_map);
     let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
-    let numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
+    let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
+    // The glossary's styles and lists join the document's tables before anything resolves with them.
+    let glossary_part = part_of("glossaryDocument");
+    let glossary_map = glossary_part.as_deref().map(|path| {
+        let grels = pkg.rels(path);
+        let mut gpart = |kind: &str| grels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
+        let gstyles = gpart("styles").map_or_else(Styles::default, |x| Styles::parse(Some(&x), colours));
+        let gnumbering = Numbering::parse(gpart("numbering").as_deref(), &colours);
+        super::glossary::merge_tables(&mut styles, &mut numbering, gstyles, gnumbering)
+    });
     styles.compat = settings.compat();
     styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
     let xml = pkg.read_str(&main).ok_or("no main document part")?;
@@ -153,7 +163,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
     let mut ids = IdCounter::default();
     seed_ids(&xml, &mut ids);
-    let id_parts = ["header", "footer", "footnotes", "endnotes", "comments", "commentsExtended", "commentsIds", "commentsExtensible"];
+    let id_parts =
+        ["header", "footer", "footnotes", "endnotes", "comments", "commentsExtended", "commentsIds", "commentsExtensible", "glossaryDocument"];
     for (_, target) in rels.values().filter(|(k, _)| id_parts.contains(&k.as_str())) {
         if let Some(x) = pkg.read_str(target) {
             seed_ids(&x, &mut ids);
@@ -198,6 +209,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         comment_ids,
         anchored: HashSet::new(),
         orphans: HashSet::new(),
+        glossary_comments: None,
     };
     for (name, identity) in &people_part {
         if let Some(i) = identity {
@@ -281,6 +293,32 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             r.diagnostics.warn(WarningCode::CommentUnanchored, Some(path), || format!("comment {} has no range or reference", c.0));
         }
     }
+    // The glossary's building blocks, read with their bodies' ids mapped onto the document's tables.
+    let mut glossary_src = None;
+    if let (Some(path), Some(map)) = (&glossary_part, glossary_map) {
+        // The bodies are read from the part with their style and list ids as the document's tables hold them, and
+        // saving maps them back: the model has one set of ids.
+        let xml = pkg.read_str(path).map(|x| map.to_view_xml(&x).into_owned());
+        match xml.as_deref().map(roxmltree::Document::parse) {
+            Some(Ok(dom)) => {
+                r.enter_part(path, &mut pkg);
+                let comments = r.rels.values().find(|(k, _)| k == "comments").and_then(|(_, t)| pkg.read_str(t));
+                let ids = comments.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
+                r.glossary_comments =
+                    Some(ids.iter().flat_map(|d| children(d.root_element(), "comment")).filter_map(|c| int(attr(c, "id"))).collect());
+                r.record = editable;
+                let read = r.read_glossary(dom.root_element(), &mut pkg);
+                r.record = false;
+                r.glossary_comments = None;
+                if editable {
+                    let parts = read.iter().map(|(b, range)| (range.clone(), b.body.clone())).collect();
+                    glossary_src = Some(GlossarySource { part: path.clone(), xml: xml.clone().unwrap_or_default(), parts });
+                }
+                doc.glossary = Some(Glossary { parts: read.into_iter().map(|(b, _)| b).collect(), map });
+            }
+            _ => r.diagnostics.warn(WarningCode::GlossaryUnreadable, Some(path), || "the glossary part isn't well-formed XML".into()),
+        }
+    }
     // People the people part names but no revision or comment does are kept after those that do.
     for (name, identity) in &people_part {
         r.people.author(name, identity.as_ref());
@@ -326,6 +364,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             footnotes,
             endnotes,
             controls,
+            glossary: glossary_src,
         }));
     }
     Ok(doc)
@@ -521,6 +560,8 @@ struct Reader {
     comment_ids: HashSet<i64>,
     anchored: HashSet<i64>,
     orphans: HashSet<i64>,
+    /// While the glossary is read, its own comments part's ids: markers in a body that name one aren't orphans.
+    glossary_comments: Option<HashSet<i64>>,
 }
 
 /// Units added to `out` since `before` (its length and last inline's units then): text may grow the last inline.
@@ -534,6 +575,28 @@ fn units_mark(out: &[Inline]) -> (usize, usize) {
 }
 
 impl Reader {
+    /// The glossary's building blocks, each with its `w:docPart`'s byte range and its body as read. A part without a
+    /// name or a body is left out (and kept as written), with a warning.
+    fn read_glossary(&mut self, root: Node, pkg: &mut Package) -> Vec<(BuildingBlock, std::ops::Range<usize>)> {
+        let mut out: Vec<(BuildingBlock, std::ops::Range<usize>)> = Vec::new();
+        for part in child(root, "docParts").into_iter().flat_map(|d| children(d, "docPart")) {
+            let (Some((name, category, gallery, guid)), Some(body)) = (super::glossary::part_props(part), child(part, "docPartBody")) else {
+                let at = self.part.clone();
+                self.diagnostics.warn(WarningCode::GlossaryUnreadable, Some(&at), || "a building block without a name or a body".into());
+                continue;
+            };
+            let mut blocks = self.read_blocks(body, pkg, None);
+            self.close_ranges(&mut blocks);
+            if out.iter().any(|(b, _)| b.name == name && b.category == category) {
+                let at = self.part.clone();
+                self.diagnostics.warn(WarningCode::DuplicateBuildingBlock, Some(&at), || format!("two building blocks named {name}"));
+            }
+            let editable = child(body, "sectPr").is_none();
+            out.push((BuildingBlock { name, category, gallery, guid, body: blocks, state: PartState::AsRead, editable }, part.range()));
+        }
+        out
+    }
+
     fn enter_part(&mut self, part: &str, pkg: &mut Package) {
         self.part = part.to_string();
         self.rels = pkg.rels(part);
@@ -721,6 +784,12 @@ impl Reader {
 
     /// Whether comment `id` exists; a missing one is reported once.
     fn comment_exists(&mut self, id: i64) -> bool {
+        // shortcut: a body's markers for the glossary's own comments are left out of the model (the bytes stay while
+        // their paragraph is unedited) and the comments aren't shown; showing them needs the glossary's comments,
+        // whose ids overlap the document's, joined under ids of their own.
+        if self.glossary_comments.as_ref().is_some_and(|g| g.contains(&id)) {
+            return false;
+        }
         self.ids.saw_revision(id);
         self.anchored.insert(id);
         if self.comment_ids.contains(&id) {
@@ -772,8 +841,8 @@ impl Reader {
             self.open_ranges.push((kind, id));
             return Some(RangeMark { kind, id, name });
         }
-        // The end of a range whose start was left out goes with it.
-        if kind == RangeKind::CommentEnd && self.orphans.contains(&id) {
+        // The end of a range whose start was left out goes with it (an orphan's, or a glossary comment's).
+        if kind == RangeKind::CommentEnd && (self.orphans.contains(&id) || self.glossary_comments.as_ref().is_some_and(|g| g.contains(&id))) {
             return None;
         }
         let Some(k) = self.open_ranges.iter().rposition(|o| *o == (start, id)) else {

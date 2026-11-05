@@ -370,6 +370,21 @@ commands! {
     ShowFieldCodes(ShowFieldCodes),
     /// What design mode shows for each field code. Undo: view.
     SetFieldLabels(FieldLabels),
+    /// Which fields are sub-template references: replaces the rules; an empty list turns sub-templates off. Undo: view.
+    SetSubTemplateRules(SubTemplateRules),
+    /// Shows references' sub-template bodies in their place, or their fields (default: every reference). Undo: view.
+    SetSubTemplateView(SubTemplateView),
+    /// Edits a sub-template's body in this editor, on its own pages; the template shows again on Close Sub-template.
+    /// Undo: view.
+    EditSubTemplate(SubTemplateName),
+    /// Back to the template from a sub-template, at the template's selection from before. Undo: view.
+    CloseSubTemplate,
+    /// A new sub-template, empty or with a DOCX's body. Undo: one step.
+    CreateSubTemplate(CreateSubTemplate),
+    /// Renames a sub-template, and optionally every reference to it. Undo: one step.
+    RenameSubTemplate(RenameSubTemplate),
+    /// Removes a sub-template; its references no longer resolve. Undo: one step.
+    RemoveSubTemplate(SubTemplateName),
 
     // Content controls and regions
     /// A content control at the selection; result `{ id }`. Undo: one step.
@@ -1233,6 +1248,83 @@ pub struct ShowFieldCodes {
     /// The fields; `None` means the selection's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<ElementId>>,
+}
+
+/// One sub-template reference rule: a field of type `field_type` names, in argument `argument`, the building block
+/// in category `category` (and `gallery`) whose body it shows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReferenceRule {
+    /// The field type (`SUBTEMPLATE`), compared without case.
+    pub field_type: String,
+    /// Which of the field's arguments is the sub-template's name, from 0. Default: 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub argument: Option<u32>,
+    /// The building block category the name is looked up in.
+    pub category: String,
+    /// The building block gallery (`custom1`), when it matters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gallery: Option<String>,
+}
+
+/// A sub-template by name, and its category where several rules name categories.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubTemplateName {
+    /// Its name.
+    pub name: String,
+    /// Its building block category; default: the rules' categories, in order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+}
+
+/// `createSubTemplate`'s options.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateSubTemplate {
+    /// Its name: unique in its category.
+    pub name: String,
+    /// Its building block category; default: the first rule's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// A DOCX whose body becomes its body; default: one empty paragraph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Bytes>,
+}
+
+/// `renameSubTemplate`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenameSubTemplate {
+    /// Its name now.
+    pub name: String,
+    /// Its new name: unique in its category.
+    pub to: String,
+    /// Its building block category, where several rules name categories.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Renames the references too, in the template and in other sub-templates. Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_references: Option<bool>,
+}
+
+/// `setSubTemplateView`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubTemplateView {
+    /// The reference fields; `None` means every reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<ElementId>>,
+    /// Their bodies show in their place (else their fields do).
+    pub expanded: bool,
+}
+
+/// `setSubTemplateRules`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubTemplateRules {
+    /// The rules, replacing those set before.
+    pub rules: Vec<ReferenceRule>,
 }
 
 /// `setFieldLabels`'s options: labels by field code.

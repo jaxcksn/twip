@@ -223,8 +223,14 @@ export interface Commands {
     clearTabStops(): Promise<void>;
     closeHeaderFooter(): Promise<void>;
     closePopover(): Promise<void>;
+    closeSubTemplate(): Promise<void>;
     copy(): Promise<void>;
     copyFormatting(): Promise<void>;
+    createSubTemplate(options: {
+        name: string;
+        category?: string;
+        from?: Uint8Array;
+    }): Promise<void>;
     cut(): Promise<void>;
     decreaseIndent(): Promise<void>;
     delete(options: {
@@ -249,6 +255,10 @@ export interface Commands {
     editHyperlink(options: {
         address?: string;
         text?: string;
+    }): Promise<void>;
+    editSubTemplate(options: {
+        name: string;
+        category?: string;
     }): Promise<void>;
     escape(): Promise<void>;
     fillControl(options: {
@@ -380,6 +390,16 @@ export interface Commands {
     }): Promise<void>;
     removeElement(id: ElementId): Promise<void>;
     removeHyperlink(): Promise<void>;
+    removeSubTemplate(options: {
+        name: string;
+        category?: string;
+    }): Promise<void>;
+    renameSubTemplate(options: {
+        name: string;
+        to: string;
+        category?: string;
+        updateReferences?: boolean;
+    }): Promise<void>;
     repeat(): Promise<void>;
     replaceInElements(options: {
         find: string;
@@ -567,6 +587,13 @@ export interface Commands {
     setSmallCaps(on: boolean): Promise<void>;
     setStrikethrough(on: boolean): Promise<void>;
     setSubscript(on: boolean): Promise<void>;
+    setSubTemplateRules(options: {
+        rules: ReferenceRule[];
+    }): Promise<void>;
+    setSubTemplateView(options: {
+        ids?: ElementId[];
+        expanded: boolean;
+    }): Promise<void>;
     setSuperscript(on: boolean): Promise<void>;
     setTableAlignment(alignment: 'left' | 'center' | 'right'): Promise<void>;
     setTableIndent(indent: Points): Promise<void>;
@@ -930,6 +957,15 @@ export interface Dictionary {
 export type DocumentAppearance = 'light' | 'dark' | 'darkWithLightPage';
 
 // @public
+export type EditingTarget = {
+    kind: 'template';
+} | {
+    kind: 'subTemplate';
+    name: string;
+    category: string;
+};
+
+// @public
 export class Editor extends HeadlessEditor {
     protected constructor();
     readonly container: HTMLElement;
@@ -964,6 +1000,7 @@ export interface EditorState {
     dialogs: {
         readonly [K in Exclude<DialogKind, 'autoCorrect'>]: boolean;
     };
+    editing?: EditingTarget;
     fonts: {
         pending: string[];
         unresolved: string[];
@@ -1051,7 +1088,9 @@ export interface ElementInfo {
     kind: 'field' | ControlKind;
     locked: boolean;
     parent: ElementId | null;
+    reference?: SubTemplateReference;
     story: SelectionSummary['story'];
+    subTemplate?: string;
     tag?: string;
     title?: string;
 }
@@ -1066,6 +1105,7 @@ export interface Elements {
             text: string;
         };
         story?: SelectionSummary['story'];
+        subTemplate?: string;
     }): Promise<ElementInfo[]>;
     placeholders(): Promise<PlaceholderInfo[]>;
     select(id: ElementId, options?: {
@@ -1310,6 +1350,7 @@ export class HeadlessEditor {
     readonly spelling: Spelling;
     readonly styles: Styles;
     subscribe(listener: (state: EditorState) => void): () => void;
+    readonly subTemplates: SubTemplates;
     wordCount(): Promise<WordCount>;
 }
 
@@ -1698,6 +1739,17 @@ export type Popover = {
 export function pt(n: number): Points;
 
 // @public
+export type ReferenceResolution = 'resolved' | 'missing' | 'nearMatch' | 'cycle' | 'tooDeep' | 'notAlone' | 'notInBody';
+
+// @public
+export interface ReferenceRule {
+    argument?: number;
+    category: string;
+    fieldType: string;
+    gallery?: string;
+}
+
+// @public
 export interface Review {
     comments(): Promise<CommentThread[]>;
     people(): Promise<Person[]>;
@@ -1850,7 +1902,7 @@ export interface SelectionSummary {
     object: ObjectSelection | null;
     page: number;
     revision: RevisionId | null;
-    story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox';
+    story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox' | 'subTemplate';
     table: TableSelection | null;
     text: string | null;
 }
@@ -2000,6 +2052,41 @@ export interface SubstitutionRule {
 }
 
 // @public
+export interface SubTemplateInfo {
+    category: string;
+    elements: ElementInfo[];
+    name: string;
+    nestedReferences: number;
+    references: number;
+}
+
+// @public
+export interface SubTemplateReference {
+    expanded: boolean;
+    name: string;
+    nearMatch?: string;
+    resolution: ReferenceResolution;
+}
+
+// @public
+export interface SubTemplates {
+    close(): Promise<void>;
+    create(name: string, options?: {
+        category?: string;
+        from?: Uint8Array;
+    }): Promise<void>;
+    edit(name: string, category?: string): Promise<void>;
+    list(): Promise<SubTemplateInfo[]>;
+    remove(name: string, options?: {
+        category?: string;
+    }): Promise<void>;
+    rename(name: string, to: string, options?: {
+        category?: string;
+        updateReferences?: boolean;
+    }): Promise<void>;
+}
+
+// @public
 export interface SystemColors {
     canvas: Color;
     canvasText: Color;
@@ -2142,6 +2229,16 @@ export interface TwipEvents {
         kind: DialogKind;
     };
     documentChanged: TransactionRecord;
+    editingTargetChanged: EditingTarget;
+    editRefused: {
+        reason: {
+            kind: 'subTemplate';
+            name: string;
+        } | {
+            kind: 'locked';
+        };
+        element?: ElementId;
+    };
     elementActivated: {
         id: ElementId;
     };
@@ -2252,6 +2349,7 @@ export interface ViewState {
         vertical: boolean;
     };
     rulerUnit: RulerUnit;
+    subTemplateRules?: ReferenceRule[];
     tabSelector: TabSelector;
     textBoundaries: boolean;
     theme: ChromeTheme;
@@ -2261,7 +2359,7 @@ export interface ViewState {
 
 // @public
 export interface Warning {
-    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'font-substituted' | 'rewritten-content' | 'pdf-font-fallback' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset';
+    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'font-substituted' | 'rewritten-content' | 'pdf-font-fallback' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match';
     count: number;
     location?: {
         part: string;

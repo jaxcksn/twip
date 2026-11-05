@@ -184,6 +184,8 @@ pub enum FieldKind {
     /// A code whose first word can be neither a field name nor a bookmark (`"http://…"` left by a merge): Word shows
     /// nothing.
     Invalid,
+    /// A code the application declares a sub-template reference: never evaluated; its cached result shows (FIELD-2).
+    SubTemplate,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -451,6 +453,17 @@ pub struct Source {
     pub endnotes: HashMap<i64, Vec<Block>>,
     /// The content controls as read: saving takes the markup of those no longer in the document out.
     pub controls: HashMap<ControlId, Control>,
+    /// The glossary part as read, when the package has one.
+    pub glossary: Option<GlossarySource>,
+}
+
+/// The glossary part as read: its name and XML, and each building block's `w:docPart` byte range in that XML with
+/// its body as read (what saving compares the edited body with), in glossary order.
+#[derive(Debug, PartialEq)]
+pub struct GlossarySource {
+    pub part: String,
+    pub xml: String,
+    pub parts: Vec<(std::ops::Range<usize>, Vec<Block>)>,
 }
 
 impl std::fmt::Debug for Source {
@@ -471,6 +484,85 @@ pub struct DataPart {
     pub src: Option<String>,
     /// Written on save (new, or its XML changed); an unchanged part's bytes are copied.
     pub changed: bool,
+}
+
+/// The glossary document part: the package's building blocks, and how their bodies' style and numbering ids map
+/// onto the document's tables.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Glossary {
+    /// In glossary order; a building block's index here is its identity for the session (removed ones stay, marked).
+    pub parts: Vec<BuildingBlock>,
+    pub map: super::glossary::GlossaryMap,
+}
+
+impl Glossary {
+    /// The live building block named `name` in `category` (and `gallery`, when given): the first, when several are.
+    pub fn find(&self, name: &str, category: &str, gallery: Option<&Gallery>) -> Option<usize> {
+        self.parts
+            .iter()
+            .position(|b| b.state != PartState::Removed && b.name == name && b.category == category && gallery.is_none_or(|g| *g == b.gallery))
+    }
+}
+
+/// One building block (`w:docPart`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct BuildingBlock {
+    /// `w:docPartPr/w:name`.
+    pub name: String,
+    /// `w:category/w:name` and `w:category/w:gallery`.
+    pub category: String,
+    pub gallery: Gallery,
+    /// `w:guid`, as written.
+    pub guid: Option<String>,
+    /// `w:docPartBody`.
+    pub body: Vec<Block>,
+    pub state: PartState,
+    /// False for a body holding a `w:sectPr`: it is kept as written and never offered for editing.
+    pub editable: bool,
+}
+
+/// A building block's gallery (`w:gallery`): the ones the editor names, and any other value as written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Gallery {
+    /// `placeholder`: content control placeholder text.
+    Placeholder,
+    /// `autoTxt`.
+    AutoText,
+    /// `custom1` to `custom5`.
+    Custom(u8),
+    Other(String),
+}
+
+impl Gallery {
+    pub fn parse(v: &str) -> Gallery {
+        match v {
+            "placeholder" => Gallery::Placeholder,
+            "autoTxt" => Gallery::AutoText,
+            _ => match v.strip_prefix("custom").and_then(|n| n.parse::<u8>().ok()) {
+                Some(n @ 1..=5) => Gallery::Custom(n),
+                _ => Gallery::Other(v.to_string()),
+            },
+        }
+    }
+
+    /// The `w:gallery` value.
+    pub fn xml(&self) -> String {
+        match self {
+            Gallery::Placeholder => "placeholder".into(),
+            Gallery::AutoText => "autoTxt".into(),
+            Gallery::Custom(n) => format!("custom{n}"),
+            Gallery::Other(v) => v.clone(),
+        }
+    }
+}
+
+/// Whether a building block is as read, added since, or removed since (kept so undo can bring it back).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PartState {
+    #[default]
+    AsRead,
+    Added,
+    Removed,
 }
 
 /// A content control's or custom XML wrapper's identity: process-local, kept through edits,
@@ -882,6 +974,8 @@ pub struct Document {
     pub controls: HashMap<ControlId, Control>,
     /// The package's custom XML parts: definition data the host keeps with the template.
     pub data_parts: Vec<DataPart>,
+    /// The glossary part's building blocks, when the package has one.
+    pub glossary: Option<Glossary>,
     /// The item parts of data parts removed since reading (taken out of the package on save).
     pub removed_data: Vec<String>,
     /// Pictures of merge images and placeholders still showing their box (`w:showingPlcHdr`): image index →
@@ -925,6 +1019,11 @@ pub struct Document {
 }
 
 impl Document {
+    /// The bodies of the glossary's building blocks that haven't been removed, in glossary order.
+    pub fn glossary_bodies(&self) -> impl Iterator<Item = &Vec<Block>> {
+        self.glossary.iter().flat_map(|g| g.parts.iter()).filter(|b| b.state != PartState::Removed).map(|b| &b.body)
+    }
+
     /// Rebuilds the image sets kept for picture controls (`fixed`, `undeletable`, `placeholders`,
     /// `placeholder_keys`) from the controls holding the pictures, so they follow the controls' tags and locks (spec
     /// 003 C5). Run after reading, and after a transaction that changes a control or moves pictures.

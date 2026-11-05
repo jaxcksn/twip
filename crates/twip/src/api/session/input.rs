@@ -209,6 +209,14 @@ impl Session {
                 }
                 Notice::Link { address, ctrl } => Event::LinkActivated { address, via: if ctrl { LinkVia::CtrlClick } else { LinkVia::Click } },
                 Notice::Placeholder(key) => Event::PlaceholderActivated(crate::api::services::PlaceholderInfo { key, element: None }),
+                Notice::Warning(code, message) => Event::Warning(crate::docx::diagnostics::Warning { code, message, count: 1, location: None }),
+                Notice::Refused { sub_template, element } => Event::EditRefused {
+                    reason: match sub_template {
+                        Some(name) => crate::api::event::RefusalReason::SubTemplate { name },
+                        None => crate::api::event::RefusalReason::Locked,
+                    },
+                    element: element.map(id),
+                },
             })
             .collect()
     }

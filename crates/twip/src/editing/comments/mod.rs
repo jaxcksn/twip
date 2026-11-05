@@ -265,14 +265,15 @@ impl Editor {
         Outcome::Unchanged(why)
     }
 
-    /// Whether new comments can go in a story: the body and text boxes there, not headers, footers or notes.
+    /// Whether new comments can go in a story: the body and text boxes there, not headers, footers, notes or
+    /// building blocks.
     fn takes_comments(&self, story: StoryId) -> bool {
         match story {
             StoryId::Body => true,
             StoryId::TextBox(f) => {
                 self.index.float_anchor(f).and_then(|p| self.index.para_slot(p)).is_some_and(|s| self.takes_comments(self.index.story(s.container)))
             }
-            StoryId::HeaderFooter(_) | StoryId::Footnote(_) | StoryId::Endnote(_) => false,
+            StoryId::HeaderFooter(_) | StoryId::Footnote(_) | StoryId::Endnote(_) | StoryId::BuildingBlock(_) => false,
         }
     }
 
@@ -332,7 +333,7 @@ impl Editor {
         Some(Position::text(self.index.story(slot.container), m.para, m.unit))
     }
 
-    /// Document order across stories: the body, headers and footers, notes, then text boxes.
+    /// Document order across stories: the body, headers and footers, notes, text boxes, then building blocks.
     fn story_order(&self, a: &Position, b: &Position) -> Ordering {
         let rank = |s: StoryId| match s {
             StoryId::Body => (0, 0),
@@ -340,6 +341,7 @@ impl Editor {
             StoryId::Footnote(id) => (2, id),
             StoryId::Endnote(id) => (3, id),
             StoryId::TextBox(f) => (4, f.0 as i64),
+            StoryId::BuildingBlock(k) => (5, i64::from(k)),
         };
         if a.story == b.story { self.index.cmp(a, b) } else { rank(a.story).cmp(&rank(b.story)) }
     }

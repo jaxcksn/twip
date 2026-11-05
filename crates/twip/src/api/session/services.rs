@@ -206,7 +206,7 @@ impl Session {
 
     /// The document's styles, of one type or all.
     pub fn styles(&self, kind: Option<StyleType>) -> Vec<StyleInfo> {
-        crate::services::styles::list(self.editor.document(), kind)
+        crate::services::styles::list(self.editor.document(), kind, self.editor.editing_sub_template().is_some())
     }
 
     /// The document's accessibility tree.

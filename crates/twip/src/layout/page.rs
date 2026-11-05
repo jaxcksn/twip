@@ -884,6 +884,9 @@ pub fn layout_body(
             body.extend(super::story::inline_text_box(&pic, rect, para, &senv, memos)?);
         }
     }
+    // Sub-template bodies shown in place of their references, where their lines put them.
+    let shown = super::expansion::shown(&body);
+    body.extend(shown);
     separators(&s.section_in(env.ctx.env.text.review.view).columns, cols, page_top, earlier, &mut body);
     if env.ctx.env.text.review.view.change_bars() {
         change_bars(space, &mut body);
