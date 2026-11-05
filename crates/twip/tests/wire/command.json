@@ -872,5 +872,8 @@
   {
     "type": "setMode",
     "value": "design"
+  },
+  {
+    "type": "describeFormatting"
   }
 ]

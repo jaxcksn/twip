@@ -62,6 +62,9 @@ export type WireState = Omit<T.EditorState, 'commands'> & { commands: Partial<T.
 /** Fixtures whose public type isn't the PascalCase of the file name. */
 const types: Record<string, string> = {
   'accessible-mark': "NonNullable<T.AccessibleNode['marks']>[number]",
+  'a11y-update': 'P.A11yUpdate',
+  'caret-window': 'P.CaretWindow',
+  'window-point': 'P.WindowPoint',
   'accessible-role': "T.AccessibleNode['role']",
   alignment: "Arg<'setAlignment'>",
   'apply-to': "T.DialogValues['pageSetup']['applyTo']",

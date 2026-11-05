@@ -1965,6 +1965,41 @@ fn alt_text_saves() {
 }
 
 #[test]
+fn decorative_pictures_read_set_and_save() {
+    // A picture marked decorative (the wp:docPr extension) is read so; marking one clears its alt text, and both
+    // survive a save.
+    use serde_json::json;
+    let pictures = |d: &crate::docx::Document| -> Vec<(String, bool)> {
+        d.sections
+            .iter()
+            .flat_map(|s| s.blocks.iter())
+            .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
+            .flat_map(|p| p.inlines.iter())
+            .filter_map(|i| match i {
+                crate::docx::Inline::Picture(p, _) => Some((p.alt.to_string(), p.shape.as_ref().is_some_and(|s| s.nv.decorative))),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut r = super::scenarios::Run::open("FX-A11Y-STRUCTURE.docx", "decorative");
+    assert_eq!(pictures(r.e.document()), [("Board seal".to_string(), false), (String::new(), true)], "as read");
+    r.step(&json!({ "click": { "picture": 0 } }));
+    let out = r.e.execute(Command::SetAltText(crate::api::command::AltText { text: "ignored".into(), decorative: Some(true) }), fonts());
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(pictures(r.e.document())[0], (String::new(), true), "decorative: no alt text");
+    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
+    assert_eq!(pictures(again.document()), [(String::new(), true), (String::new(), true)], "both decorative after a save");
+    // And back: no longer decorative.
+    let mut r = super::scenarios::Run::open("FX-A11Y-STRUCTURE.docx", "decorative-off");
+    r.step(&json!({ "click": { "picture": 1 } }));
+    r.e.execute(Command::SetAltText(crate::api::command::AltText { text: "Divider".into(), decorative: Some(false) }), fonts());
+    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
+    assert_eq!(pictures(again.document())[1], ("Divider".to_string(), false));
+}
+
+#[test]
 fn extend_mode_grows_and_extends() {
     // F8, then F8 again selects the word, the sentence, the paragraph, the document; arrows extend; Esc keeps
     // the selection and ends the mode; an edit ends it too.

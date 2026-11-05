@@ -1007,6 +1007,12 @@ pub struct PlaceholderInfo {
 
 // ---------------- accessibility, shortcuts, gestures ----------------
 
+/// An accessibility tree node's identity. It stays the same across edits while the thing it names exists: a
+/// paragraph, table, note, comment or story keeps its id when other content changes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AccessibleId(pub u64);
+
 /// An accessibility tree node's role.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1014,37 +1020,47 @@ pub enum AccessibleRole {
     /// The document.
     #[default]
     Document,
-    /// A page.
-    Page,
     /// A paragraph.
     Paragraph,
-    /// A heading.
+    /// A heading (its `level`, 1 to 9).
     Heading,
     /// A list.
     List,
-    /// A list item.
+    /// A list item (its `level` and `position`, and a numbered item's `label`).
     ListItem,
-    /// A table.
+    /// A table (its nesting `level`).
     Table,
     /// A table row.
     Row,
-    /// A table cell.
+    /// A table cell (its `cell` place).
     Cell,
-    /// A picture.
+    /// A cell of a header row.
+    ColumnHeader,
+    /// A cell that heads its row.
+    RowHeader,
+    /// A picture or shape, named by its alternative text.
     Image,
     /// A hyperlink.
     Link,
-    /// A text box.
+    /// A text box or a shape's text.
     TextBox,
-    /// A footnote, endnote or comment.
+    /// A footnote or endnote.
     Note,
+    /// A footnote or endnote reference (its `target` is the note).
+    NoteRef,
+    /// A comment (its `author`), with its replies as children.
+    Comment,
     /// A header.
     Header,
     /// A footer.
     Footer,
+    /// A named group after the body: headers and footers, footnotes, endnotes, comments.
+    Region,
+    /// A run of text with the same marks, author, language and comment.
+    Text,
 }
 
-/// What an accessibility node is marked with.
+/// What a text node is marked with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AccessibleMark {
@@ -1052,16 +1068,40 @@ pub enum AccessibleMark {
     Insertion,
     /// A tracked deletion.
     Deletion,
-    /// A comment.
-    Comment,
     /// A misspelling.
     Misspelling,
+}
+
+/// Where a cell is in its table's grid: its row and column (from 1) and how many it spans.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CellPlace {
+    /// Its row, from 1.
+    pub row: u32,
+    /// Its first grid column, from 1.
+    pub col: u32,
+    /// How many rows it spans.
+    pub row_span: u32,
+    /// How many grid columns it spans.
+    pub col_span: u32,
+}
+
+/// Where a list item is in its list: its index (from 1) among the items at its level, and how many there are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ListPosition {
+    /// Its index, from 1.
+    pub index: u32,
+    /// The number of items.
+    pub count: u32,
 }
 
 /// The document's accessibility tree.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AccessibleNode {
+    /// Its identity.
+    pub id: AccessibleId,
     /// Its role.
     pub role: AccessibleRole,
     /// Its accessible name.
@@ -1070,14 +1110,183 @@ pub struct AccessibleNode {
     /// Its text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
-    /// A heading's or list item's level.
+    /// A heading's level, a list item's nesting level, or a table's nesting level, from 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub level: Option<u32>,
-    /// Review and spelling marks on it.
+    /// A numbered list item's number as shown (`3.`, `a)`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub marks: Option<Vec<AccessibleMark>>,
+    pub label: Option<String>,
+    /// A list item's position in its list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<ListPosition>,
+    /// A cell's place in its table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell: Option<CellPlace>,
+    /// Review and spelling marks on a text node.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub marks: Vec<AccessibleMark>,
+    /// Whose marks or comment it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// Its language (BCP 47), where it differs from its parent's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
+    /// The comment the text is in the range of.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<AccessibleId>,
+    /// The note a note reference points to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<AccessibleId>,
     /// Its children.
     pub children: Vec<AccessibleNode>,
+}
+
+/// The text around the caret, for the element that has the keyboard focus while the editor does: the caret's
+/// paragraph, the one before it and the ones after it (up to about 2,000 characters), all in the caret's container (the
+/// body, a cell, a note, a header or footer, a text box), each split into its laid-out lines; and the selection in it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CaretWindow {
+    /// The paragraphs, in order.
+    pub paragraphs: Vec<WindowParagraph>,
+    /// The selection's anchor, at the window's edge when it is outside.
+    pub anchor: WindowPoint,
+    /// The selection's focus: the caret.
+    pub focus: WindowPoint,
+    /// The selection is all of its story.
+    pub all: bool,
+    /// The caret's language (BCP 47).
+    pub lang: String,
+    /// The caret is where text can't go in (a locked control, a read-only document).
+    pub read_only: bool,
+}
+
+/// A paragraph of a caret window.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowParagraph {
+    /// Its id: the same as its node's in the accessibility tree.
+    pub id: AccessibleId,
+    /// `paragraph`, `heading` or `listItem`.
+    pub role: AccessibleRole,
+    /// A heading's level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<u32>,
+    /// A numbered list item's number as shown; it isn't part of the text or its offsets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Its laid-out lines; a line break ends one too.
+    pub lines: Vec<WindowLine>,
+}
+
+/// A line of a caret window's paragraph.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowLine {
+    /// Its text, split where marks, author or language change.
+    pub segments: Vec<WindowSegment>,
+}
+
+/// Text of a caret window's line with the same marks, author and language.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowSegment {
+    /// Its text.
+    pub text: String,
+    /// Its review and spelling marks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub marks: Vec<AccessibleMark>,
+    /// Whose marks they are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// Its language, where it differs from the document's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
+}
+
+/// A place in a caret window: a paragraph (its index in the window) and an offset in its text (characters, not
+/// counting a list item's label).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowPoint {
+    /// The paragraph's index in the window.
+    pub paragraph: u32,
+    /// The offset in its text.
+    pub offset: u32,
+}
+
+/// A change to the accessibility tree.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+pub enum A11yChange {
+    /// The node with this node's id, and its subtree, are replaced.
+    Replace {
+        /// The new node.
+        node: Box<AccessibleNode>,
+    },
+    /// A node's children are now these, in this order. Ids it didn't have before are nodes sent by a `Replace` in
+    /// the same update.
+    Children {
+        /// The node.
+        parent: AccessibleId,
+        /// Its children's ids.
+        ids: Vec<AccessibleId>,
+    },
+}
+
+/// The accessibility tree, or what changed in it since the last update.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum A11yUpdate {
+    /// The whole tree.
+    Full(Box<AccessibleNode>),
+    /// The changes since the last update, applied in order.
+    Patch(Vec<A11yChange>),
+}
+
+/// What an announcement is about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AnnouncementKind {
+    /// Entering, leaving or moving through a table.
+    Table,
+    /// Entering or leaving a list.
+    List,
+    /// The caret moved to another page.
+    Page,
+    /// An insertion or deletion at the caret.
+    Review,
+    /// A commented range at the caret, with the comment.
+    Comment,
+    /// A misspelled word at the caret.
+    Spelling,
+    /// Formatting turned on or off, or described on request.
+    Formatting,
+    /// Entering or leaving a header, footer, note or text box.
+    Mode,
+    /// Read-only content: entered, or an edit refused there.
+    ReadOnly,
+    /// What a command did (undo, redo, cut, copy, paste).
+    Command,
+    /// The selection (select all).
+    Selection,
+}
+
+impl AnnouncementKind {
+    /// Every kind.
+    pub const ALL: [AnnouncementKind; 11] = [
+        AnnouncementKind::Table,
+        AnnouncementKind::List,
+        AnnouncementKind::Page,
+        AnnouncementKind::Review,
+        AnnouncementKind::Comment,
+        AnnouncementKind::Spelling,
+        AnnouncementKind::Formatting,
+        AnnouncementKind::Mode,
+        AnnouncementKind::ReadOnly,
+        AnnouncementKind::Command,
+        AnnouncementKind::Selection,
+    ];
 }
 
 /// A key on every platform, or one per platform (`Ctrl+Alt+K`).

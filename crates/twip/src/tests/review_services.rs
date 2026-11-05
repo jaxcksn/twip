@@ -152,18 +152,30 @@ fn pdf_shows_the_view_without_comment_tints() {
     assert!(!tinted, "no comment tint among the printed items");
 }
 
-/// Every review mark on the reading tree's lines: (kind, author).
+/// Every review mark on the reading tree's text: (kind, author); commented text by its comment's author.
 fn tree_marks(e: &Editor) -> Vec<(String, String)> {
-    fn walk(n: &crate::api::services::AccessibleNode, out: &mut Vec<(String, String)>) {
-        for said in n.name.iter().flat_map(|s| s.split(", ")) {
-            if let Some((k, a)) = said.split_once(" by ") {
-                out.push((k.into(), a.into()));
-            }
-        }
+    use crate::api::services::{AccessibleMark, AccessibleNode, AccessibleRole};
+    fn walk<'a>(n: &'a AccessibleNode, out: &mut Vec<&'a AccessibleNode>) {
+        out.push(n);
         n.children.iter().for_each(|c| walk(c, out));
     }
+    let tree = crate::services::a11y::tree(e, &Default::default(), "en-US");
+    let mut nodes = Vec::new();
+    walk(&tree, &mut nodes);
     let mut out = Vec::new();
-    walk(&crate::services::a11y::tree(e, &Default::default(), "en-US"), &mut out);
+    for n in &nodes {
+        let who = n.author.clone().unwrap_or_default();
+        for m in &n.marks {
+            match m {
+                AccessibleMark::Insertion => out.push(("insertion".into(), who.clone())),
+                AccessibleMark::Deletion => out.push(("deletion".into(), who.clone())),
+                AccessibleMark::Misspelling => {}
+            }
+        }
+        if let Some(c) = n.details.and_then(|id| nodes.iter().find(|c| c.id == id && c.role == AccessibleRole::Comment)) {
+            out.push(("comment".into(), c.author.clone().unwrap_or_default()));
+        }
+    }
     out
 }
 
@@ -197,11 +209,12 @@ fn caret_entering_review_marks_announces_them() {
     let mut announcer = crate::services::a11y::Announcer::default();
     let mut caret = |e: &mut Editor, u: u32| {
         e.select_range(crate::layout::ParaId(id), Unit(u), Unit(u), fonts());
-        announcer.next(e)
+        announcer.next(e, &Default::default(), "en-US", false).into_iter().find(|s| s.0 == crate::api::services::AnnouncementKind::Review)
     };
     caret(&mut e, 0);
-    assert_eq!(caret(&mut e, ins.expect("an insertion")).as_deref(), Some("insertion by Author A"));
-    assert_eq!(caret(&mut e, del.expect("a deletion")).as_deref(), Some("deletion by Author B"));
+    use crate::api::services::AnnouncementKind::Review;
+    assert_eq!(caret(&mut e, ins.expect("an insertion")), Some((Review, "insertion by Author A".to_string())));
+    assert_eq!(caret(&mut e, del.expect("a deletion")), Some((Review, "deletion by Author B".to_string())));
     assert_eq!(caret(&mut e, 0), None, "leaving says nothing");
 }
 

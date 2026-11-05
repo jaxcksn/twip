@@ -353,4 +353,6 @@ public enum CommandId
     SetViewOptions,
     /// <summary>Switches between editing and design mode.</summary>
     SetMode,
+    /// <summary>Says the formatting at the caret to screen readers, as an announcement. Changes nothing.</summary>
+    DescribeFormatting,
 }

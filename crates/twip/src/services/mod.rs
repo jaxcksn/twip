@@ -13,6 +13,12 @@ pub mod styles;
 pub struct Services {
     pub spelling: spelling::Spellers,
     pub announcer: a11y::Announcer,
+    /// The paragraphs the accessibility tree read last, for its next build.
+    pub tree_cache: a11y::TreeCache,
+    /// What the command being run says (undo's label, a format turned on), said with the change it makes.
+    pub said: Vec<(crate::api::services::AnnouncementKind, String)>,
+    /// The kinds of announcements the application turned off.
+    pub silenced: Vec<crate::api::services::AnnouncementKind>,
     /// The revision count at a document revision.
     pub revision_count: Option<(u64, u32)>,
     /// The comments as `commentsChanged` last reported them.
@@ -28,6 +34,7 @@ impl Services {
         self.comments_seen = doc.comments.clone();
         self.anchors.clear();
         self.announcer = a11y::Announcer::default();
+        self.tree_cache = a11y::TreeCache::default();
     }
 }
 

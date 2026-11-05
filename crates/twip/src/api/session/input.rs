@@ -160,7 +160,13 @@ impl Session {
 
     /// A command from input: checked as the API's are, and recorded as the user's.
     fn input(&mut self, command: Command) -> Result<super::Commit, crate::api::error::Error> {
-        self.check(&command)?;
+        if let Err(e) = self.check(&command) {
+            // An edit the user tried in a read-only document is said to be refused, as Word does; the API's aren't.
+            if e.code == crate::api::error::ErrorCode::ReadOnly {
+                self.announce(vec![(crate::api::services::AnnouncementKind::ReadOnly, "Read only".into())]);
+            }
+            return Err(e);
+        }
         if let Some(done) = self.run_view(&command) {
             return done;
         }
@@ -414,6 +420,8 @@ impl Session {
     pub fn copy(&mut self, cut: bool) -> Option<ClipboardData> {
         let command = if cut { Command::Cut } else { Command::Copy };
         self.check(&command).ok()?;
+        // "Cut" or "Copied", as the commands say.
+        let said = self.command_said(&command);
         // The copy is answered here, not asked of the host.
         let mut copied = false;
         let _ = self.apply_with(Origin::User, |e, fonts| {
@@ -422,6 +430,7 @@ impl Session {
             out
         });
         let f = self.editor.clipboard().filter(|_| copied)?.clone();
+        self.announce(said);
         Some(self.hold(f))
     }
 

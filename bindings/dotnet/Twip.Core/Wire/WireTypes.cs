@@ -77,7 +77,7 @@ internal sealed record TooltipWire(
     TooltipKind Kind, string Text,
     [property: JsonConverter(typeof(ClientPointConverter))] PointF At, RectangleF Rect);
 
-internal sealed record AnnouncementPayload(string Text);
+internal sealed record AnnouncementPayload(string Text, AnnouncementKind Kind);
 
 internal sealed record ErrorPayload(
     EditorErrorCode Code, string Message, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? Details, bool Fatal);
@@ -95,6 +95,7 @@ internal sealed record EmptyPayload;
 [JsonDerivedType(typeof(ScrollRequest), "scroll")]
 [JsonDerivedType(typeof(ScrollToRequest), "scroll_to")]
 [JsonDerivedType(typeof(A11yRequest), "a11y")]
+[JsonDerivedType(typeof(CaretTextRequest), "caret_text")]
 internal record HostRequest;
 
 /// <summary>Show this pointer shape.</summary>
@@ -118,8 +119,53 @@ internal sealed record ScrollRequest(double X, double Y) : HostRequest;
 /// <summary>Scroll so this rectangle shows.</summary>
 internal sealed record ScrollToRequest(double X, double Y, double Width, double Height) : HostRequest;
 
-/// <summary>The accessibility tree changed: mirror it.</summary>
-internal sealed record A11yRequest(AccessibleNode Tree) : HostRequest;
+/// <summary>The text around the caret changed: for a focused editing element. WinForms has none yet (no UI Automation
+/// text provider), so the host takes it and does nothing with it.</summary>
+internal sealed record CaretTextRequest(CaretWindow Window) : HostRequest;
+
+/// <summary>The text around the caret: the caret's paragraph and its neighbours, in laid-out lines, and the selection.</summary>
+internal sealed record CaretWindow(IReadOnlyList<WindowParagraph> Paragraphs, WindowPoint Anchor, WindowPoint Focus, bool All, string Lang, bool ReadOnly);
+
+/// <summary>A paragraph of a caret window.</summary>
+internal sealed record WindowParagraph(
+    long Id,
+    AccessibleRole Role,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Level,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Label,
+    IReadOnlyList<WindowLine> Lines);
+
+/// <summary>A line of a caret window's paragraph.</summary>
+internal sealed record WindowLine(IReadOnlyList<WindowSegment> Segments);
+
+/// <summary>Text of a line with the same marks, author and language.</summary>
+internal sealed record WindowSegment(
+    string Text,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AccessibleMark>? Marks,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Author,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Lang);
+
+/// <summary>A place in a caret window: a paragraph's index and an offset in its text.</summary>
+internal sealed record WindowPoint(int Paragraph, int Offset);
+
+/// <summary>The accessibility tree changed: the whole tree, or the changes since the last one.</summary>
+internal sealed record A11yRequest(A11yUpdate Update) : HostRequest;
+
+/// <summary>The accessibility tree (<c>full</c>), or what changed in it (<c>patch</c>), applied in order.</summary>
+internal sealed record A11yUpdate(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccessibleNode? Full,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<A11yChange>? Patch);
+
+/// <summary>A change to the accessibility tree.</summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
+[JsonDerivedType(typeof(A11yReplace), "replace")]
+[JsonDerivedType(typeof(A11yChildren), "children")]
+internal abstract record A11yChange;
+
+/// <summary>The node with this node's id, and its subtree, are replaced.</summary>
+internal sealed record A11yReplace(AccessibleNode Node) : A11yChange;
+
+/// <summary>A node's children are now these, in this order: ids it didn't have are nodes replaced in the same update.</summary>
+internal sealed record A11yChildren(long Parent, IReadOnlyList<long> Ids) : A11yChange;
 
 /// <summary>A point in the control, in client pixels: <c>{ clientX, clientY }</c>.</summary>
 internal sealed record ClientPoint(double ClientX, double ClientY);

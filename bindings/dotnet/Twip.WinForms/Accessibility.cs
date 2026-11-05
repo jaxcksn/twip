@@ -48,24 +48,36 @@ internal sealed class NodeAccessibleObject : AccessibleObject
     public override WinRole Role => _node.Role switch
     {
         Twip.AccessibleRole.Document => WinRole.Document,
-        Twip.AccessibleRole.Page => WinRole.Grouping,
         Twip.AccessibleRole.Paragraph or Twip.AccessibleRole.Heading => WinRole.Text,
+        Twip.AccessibleRole.Text => WinRole.StaticText,
         Twip.AccessibleRole.List => WinRole.List,
         Twip.AccessibleRole.ListItem => WinRole.ListItem,
         Twip.AccessibleRole.Table => WinRole.Table,
         Twip.AccessibleRole.Row => WinRole.Row,
         Twip.AccessibleRole.Cell => WinRole.Cell,
+        Twip.AccessibleRole.ColumnHeader => WinRole.ColumnHeader,
+        Twip.AccessibleRole.RowHeader => WinRole.RowHeader,
         Twip.AccessibleRole.Image => WinRole.Graphic,
-        Twip.AccessibleRole.Link => WinRole.Link,
-        Twip.AccessibleRole.Note => WinRole.Grouping,
+        Twip.AccessibleRole.Link or Twip.AccessibleRole.NoteRef => WinRole.Link,
+        // Text boxes, notes, comments, headers, footers and the regions after the body group what they hold.
         _ => WinRole.Grouping,
     };
 
-    public override string? Name => _node.Name ?? _node.Text;
+    public override string? Name => _node.Name ?? TextOf(_node);
 
-    public override string? Value => _node.Text;
+    public override string? Value => TextOf(_node);
 
-    public override string? Description => _node.Level is { } level ? $"Heading level {level}" : null;
+    public override string? Description => _node switch
+    {
+        { Role: Twip.AccessibleRole.Heading, Level: { } level } => $"Heading level {level}",
+        { Position: { } p } => $"{p.Index} of {p.Count}",
+        { Marks.Count: > 0, Author: { } author } => $"{string.Join(", ", _node.Marks!)} by {author}",
+        _ => null,
+    };
+
+    /// <summary>A node's text: its own, or its descendants' joined.</summary>
+    private static string? TextOf(AccessibleNode n) =>
+        n.Text ?? (n.Children.Count == 0 ? null : string.Concat(n.Children.Select(TextOf)) is { Length: > 0 } t ? t : null);
 
     // The tree carries no geometry: a node takes the bounds of the node it is in.
     public override Rectangle Bounds => _parent.Bounds;

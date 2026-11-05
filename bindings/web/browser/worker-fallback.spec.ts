@@ -48,7 +48,7 @@ test('a claimed key is claimed in keydown, in the worker', async ({ page }) => {
   await open(page);
   await mount(page);
   const prevented = await page.evaluate(() => {
-    const input = document.querySelector('#editor textarea')!;
+    const input = document.querySelector('#editor [data-twip="input"]')!;
     const press = (init: KeyboardEventInit) => {
       const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
       input.dispatchEvent(e);

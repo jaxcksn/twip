@@ -203,8 +203,13 @@ class Doc:
         self.rels.append((rid, REL + kind, target))
         return rid
 
-    def _drawing(self, i, name, cx, cy, graphic, float_at):
-        doc_pr = f'<wp:docPr id="{i}" name="{name} {i}"/>'
+    def _drawing(self, i, name, cx, cy, graphic, float_at, alt="", decorative=False):
+        descr = f' descr="{escape(alt)}"' if alt else ""
+        ext = (
+            '<a:extLst><a:ext uri="{C183D7F6-B498-43B3-948B-1728B52AA6E4}">'
+            '<adec:decorative xmlns:adec="http://schemas.microsoft.com/office/drawing/2017/decorative" val="1"/></a:ext></a:extLst>'
+        ) if decorative else ""
+        doc_pr = f'<wp:docPr id="{i}" name="{name} {i}"{descr}>{ext}</wp:docPr>' if ext else f'<wp:docPr id="{i}" name="{name} {i}"{descr}/>'
         if float_at is None:
             return (
                 f'<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>'
@@ -223,8 +228,9 @@ class Doc:
             f'<wp:effectExtent l="0" t="0" r="0" b="0"/>{f["wrap"]}{doc_pr}<wp:cNvGraphicFramePr/>{graphic}{rel_size}</wp:anchor></w:drawing>'
         )
 
-    def picture(self, w=1.0, h=0.75, colour=0, float_at=None):
-        """A picture run: inline, or floating when float_at (from anchor_at) is given. Sizes in inches."""
+    def picture(self, w=1.0, h=0.75, colour=0, float_at=None, alt="", decorative=False):
+        """A picture run: inline, or floating when float_at (from anchor_at) is given. Sizes in inches. `alt` is its
+        alternative text; `decorative` marks it decorative (the docPr extension)."""
         if colour not in self.images:
             self.images[colour] = self.rel("image", f"media/image{colour + 1}.png")
         i = self.uid()
@@ -236,7 +242,7 @@ class Doc:
             f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
             '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
         )
-        return f"<w:r>{self._drawing(i, 'Picture', cx, cy, graphic, float_at)}</w:r>"
+        return f"<w:r>{self._drawing(i, 'Picture', cx, cy, graphic, float_at, alt, decorative)}</w:r>"
 
     def textbox(self, content, w, h, float_at):
         """A floating DrawingML text box (wps:wsp) holding block content, inside mc:AlternateContent as Word writes it."""
@@ -1525,7 +1531,7 @@ VARIABLE_FONTS = {"stand-in-variable.ttf": "Stand-in Variable"}
 W15 = "http://schemas.microsoft.com/office/word/2012/wordml"
 W16CID = "http://schemas.microsoft.com/office/word/2016/wordml/cid"
 W16CEX = "http://schemas.microsoft.com/office/word/2018/wordml/cex"
-AUTHORS = {"A": "Author A", "B": "Author B", "C": "Author C"}
+AUTHORS = {"A": "Author A", "B": "Author B", "C": "Author C", "Ada": "Ada", "Grace": "Grace"}
 IDENTITIES = {"A": ("AD", "author.a@example.com"), "B": ("AD", "author.b@example.com")}
 
 
@@ -1873,7 +1879,90 @@ REVIEW = {
 }
 
 
+# ---- accessibility ------------------------------------------------------------------------------------------------
+
+COMMENT_STYLES = (
+    '<w:style w:type="paragraph" w:styleId="CommentText"><w:name w:val="annotation text"/><w:basedOn w:val="Normal"/></w:style>'
+    '<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/></w:style>'
+)
+
+
+def fx_a11y_structure(d):
+    """What a screen reader navigates by: headings at three levels, a numbered list with a nested bulleted list, a
+    table with a repeated header row, merged cells and a nested table, two links, a described picture and a
+    decorative one, a floating text box, footnotes and an endnote, a comment with a reply, headers and footers, and
+    paragraphs in French and in Hebrew (right to left)."""
+    d.numbering = True
+    d.styles = STYLES.replace("</w:styles>", heading_style(2, 26) + heading_style(3, 24) + COMMENT_STYLES + "</w:styles>")
+    h = lambda level: f'<w:pStyle w:val="Heading{level}"/>'  # noqa: E731
+    refs = (
+        d.story("header", "default", P("Board minutes", '<w:pStyle w:val="Header"/>'))
+        + d.story("header", "first", P("Board minutes, first page", '<w:pStyle w:val="Header"/>'))
+        + d.story("footer", "default", P("Confidential", '<w:pStyle w:val="Footer"/>'))
+    )
+    comment_parts(d, [
+        (0, "Grace", 0x30, 0x3A000001, None, False, [r("Check the date.")]),
+        (1, "Ada", 0x31, 0x3A000002, 0x30, False, [r("The date is right.")]),
+    ])
+    w3 = split(TEXT_WIDTH, 3)
+    nested = grid([["Inner one", "Inner two"], ["Inner three", "Inner four"]], split(w3[2] - CELL_MARGINS, 2))
+    rows = [
+        tr([tc(P(t), w) for t, w in zip(("Name", "Role", "Office"), w3)], "<w:tblHeader/>"),
+        tr([tc(P("Ada"), w3[0]), tc(P("Chair"), w3[1]), tc(P("North"), w3[2], '<w:vMerge w:val="restart"/>')]),
+        tr([tc(P("Grace"), w3[0]), tc(P("Clerk"), w3[1]), tc("", w3[2], "<w:vMerge/>")]),
+        tr([tc(P("Both offices share one budget"), w3[0] + w3[1], '<w:gridSpan w:val="2"/>'), tc(P("Inner table:") + nested, w3[2])]),
+    ]
+    box = d.textbox(P("Text box paragraph."), 2.0, 0.6, anchor_at(SQUARE, ("margin", "right"), ("paragraph", 0.0)))
+    body = [
+        P("Introduction", h(1)),
+        p(r(filler(60, 1) + " ") + d.footnote("The first footnote.")),
+        P("Lists", h(2)),
+        P("First item", numbered(0, DECIMAL)),
+        P("Second item", numbered(0, DECIMAL)),
+        P("Nested bullet one", numbered(1, BULLET)),
+        P("Nested bullet two", numbered(1, BULLET)),
+        P("Third item", numbered(0, DECIMAL)),
+        P("Tables", h(2)),
+        tbl(rows, w3),
+        P("Links and pictures", h(2)),
+        p(r("Read the ") + d.link("agenda", "https://example.com/agenda") + r(" and the ") + d.link("minutes", "https://example.com/minutes") + r(".")),
+        p(d.picture(alt="Board seal") + r(" The board seal, then a divider: ") + d.picture(0.5, 0.1, 1, decorative=True)),
+        p(box + r("This paragraph anchors a text box. " + filler(20, 4))),
+        P("Notes and comments", h(3)),
+        p(r("A second note") + d.footnote("The second footnote.") + r(" and an endnote") + d.endnote("The endnote.") + r(".")),
+        p(r("The meeting is on ") + anchored(0, r("the first Monday")) + r(" of the month.")),
+        P("Languages", h(3)),
+        p(r("Bonjour à tous, la séance est ouverte.", '<w:lang w:val="fr-FR"/>')),
+        p(r("שלום לכולם", '<w:rtl/><w:lang w:val="he-IL" w:bidi="he-IL"/>'), "<w:bidi/>"),
+        P("Last paragraph."),
+    ]
+    return "".join(body), sect(refs, title_page=True)
+
+
+def fx_a11y_review(d):
+    """Review marks and spelling for screen readers, in a long document: insertions by Ada and deletions by Grace, a
+    range Grace commented on, misspelled words, a table, and about 100 pages of body ending with "Appendix B"."""
+    d.styles = STYLES.replace("</w:styles>", COMMENT_STYLES + "</w:styles>")
+    v = Review(d)
+    comment_parts(d, [(0, "Grace", 0x40, 0x4A000001, None, False, [r("Please confirm the figures.")])])
+    body = [
+        P("Review", HEADING),
+        p(r("The board ") + v.ins("unanimously ", "Ada") + r("approved the budget ") + v.dele("for next year ", "Grace") + r("at the meeting.")),
+        p(r("The clerk will ") + anchored(0, r("publish the figures")) + r(" on Friday.")),
+        P("We will recieve teh adress and definately seperate the files."),
+        grid([[f"Row {k + 1} column {c + 1}" for c in range(3)] for k in range(4)], split(TEXT_WIDTH, 3)),
+    ]
+    for page in range(100):
+        if page % 10 == 0:
+            body.append(P(f"Part {page // 10 + 1}", HEADING))
+        body += [P(filler(100, page * 5 + n)) for n in range(5)]
+    body += [P("Appendix B", HEADING), P("The last paragraph.")]
+    return "".join(body)
+
+
 FIXTURES = {
+    "FX-A11Y-STRUCTURE": fx_a11y_structure,
+    "FX-A11Y-REVIEW": fx_a11y_review,
     "FX-ROW-CLIP": fx_row_clip,
     "FX-GRID-WIDE": fx_grid_wide,
     "FX-PLACEHOLDER": fx_placeholder,

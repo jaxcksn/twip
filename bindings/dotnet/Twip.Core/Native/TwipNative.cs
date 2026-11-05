@@ -116,6 +116,9 @@ internal enum Method : uint
     HostSetPaintBudget = 74,
     HostSetLeaders = 75,
     ShapeGallery = 76,
+    AccessibleGo = 77,
+    HostCaretWindowSelect = 78,
+    AnnouncementsSet = 79,
 }
 
 /// <summary>Status codes the C functions return.</summary>

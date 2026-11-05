@@ -292,6 +292,7 @@ const ENTRIES: &[Entry] = {
         (C::SetZoom, "Zoom", G::View, &[], &[], true, false, U::View),
         (C::SetViewOptions, "Show", G::View, &[], &[], true, false, U::View),
         (C::SetMode, "Mode", G::View, &[], &[], true, false, U::View),
+        (C::DescribeFormatting, "Describe Formatting", G::View, &["Shift+F1"], &["⇧F1"], false, false, U::View),
     ]
 };
 

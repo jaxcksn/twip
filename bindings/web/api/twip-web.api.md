@@ -6,6 +6,8 @@
 
 // @public
 export interface Accessibility {
+    go(id: AccessibleId): Promise<void>;
+    setAnnouncements(kinds: AnnouncementKind[]): Promise<void>;
     tree(): Promise<AccessibleNode>;
 }
 
@@ -15,14 +17,28 @@ export interface AccessibilityDialogSession extends DialogSession<'accessibility
 }
 
 // @public
+export type AccessibleId = number;
+
+// @public
 export interface AccessibleNode {
+    author?: string;
+    cell?: CellPlace;
     children: AccessibleNode[];
+    details?: AccessibleId;
+    id: AccessibleId;
+    label?: string;
+    lang?: string;
     level?: number;
-    marks?: ('insertion' | 'deletion' | 'comment' | 'misspelling')[];
+    marks?: ('insertion' | 'deletion' | 'misspelling')[];
     name?: string;
-    role: 'document' | 'page' | 'paragraph' | 'heading' | 'list' | 'listItem' | 'table' | 'row' | 'cell' | 'image' | 'link' | 'textBox' | 'note' | 'header' | 'footer';
+    position?: ListPosition;
+    role: 'document' | 'paragraph' | 'heading' | 'list' | 'listItem' | 'table' | 'row' | 'cell' | 'columnHeader' | 'rowHeader' | 'image' | 'link' | 'textBox' | 'note' | 'noteRef' | 'comment' | 'header' | 'footer' | 'region' | 'text';
+    target?: AccessibleId;
     text?: string;
 }
+
+// @public
+export type AnnouncementKind = 'table' | 'list' | 'page' | 'review' | 'comment' | 'spelling' | 'formatting' | 'mode' | 'readOnly' | 'command' | 'selection';
 
 // @public
 export type Arrange = 'forward' | 'backward' | 'toFront' | 'toBack' | 'inFrontOfText' | 'behindText';
@@ -74,6 +90,14 @@ export type Block = {
         }[];
     }[];
 };
+
+// @public
+export interface CellPlace {
+    col: number;
+    colSpan: number;
+    row: number;
+    rowSpan: number;
+}
 
 // @public
 export interface CharacterFormatting {
@@ -192,6 +216,7 @@ export interface Commands {
     deleteRows(): Promise<void>;
     deleteTable(): Promise<void>;
     deleteTabStop(position: Points): Promise<void>;
+    describeFormatting(): Promise<void>;
     distributeColumns(): Promise<void>;
     distributeRows(): Promise<void>;
     editComment(options: {
@@ -1327,6 +1352,12 @@ export interface LineValue {
 }
 
 // @public
+export interface ListPosition {
+    count: number;
+    index: number;
+}
+
+// @public
 export type MarkupView = 'all' | 'simple' | 'noMarkup' | 'original';
 
 // @public
@@ -1428,6 +1459,7 @@ export interface MountOptions extends SessionOptions {
     document?: Uint8Array;
     drawLeaders?: boolean;
     execution?: 'auto' | 'main' | 'worker';
+    label?: string;
     markupPaneWidth?: number;
     overlayColors?: Partial<OverlayColors>;
     paintBudget?: {
@@ -2024,6 +2056,7 @@ export type Tri = boolean | 'mixed' | null;
 export interface TwipEvents {
     announcement: {
         text: string;
+        kind: AnnouncementKind;
     };
     balloonsLaidOut: BalloonPlacement[];
     commentAnchors: CommentAnchor[];

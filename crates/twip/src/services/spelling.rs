@@ -230,6 +230,17 @@ fn same_language(have: &str, want: &str) -> bool {
 }
 
 impl Spellers {
+    /// Changes when what is misspelled could change: checking on or off, dictionaries, ignored and added words.
+    pub fn signature(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::hash::DefaultHasher::new();
+        (self.enabled, self.ignored.len()).hash(&mut h);
+        for (language, sp) in &self.by_language {
+            (language, sp.ignored.len(), sp.added.len()).hash(&mut h);
+        }
+        h.finish()
+    }
+
     /// Adds (or replaces) the dictionary for `language`, with the words ignored so far and the user's words loaded
     /// for it.
     pub fn add_dictionary(&mut self, language: &str, aff: &[u8], dic: &[u8]) -> Result<(), String> {

@@ -76,6 +76,8 @@ export interface MountOptions extends SessionOptions {
    * `leaders` colour, so the application draws only the cards. Default false: the application draws them.
    */
   drawLeaders?: boolean;
+  /** The editor's accessible name, which screen readers say when it gets the focus. Default `'Document'`. */
+  label?: string;
   /** Aborts the mount; everything it created is released. */
   signal?: AbortSignal;
 }

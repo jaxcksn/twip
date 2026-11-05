@@ -2960,7 +2960,12 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                         // A resized or reformatted inline picture: its drawing with the new extents and properties.
                         self.add(to, None, None);
                         self.flush_text();
-                        let mut p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
+                        let mut p = Placement {
+                            size: Some((size.0, size.1)),
+                            alt: Some(size.2.to_string()),
+                            decorative: Some(decorative(&size.3)),
+                            ..Placement::default()
+                        };
                         if let (Some(a), Some(b)) = (self.orig[i].size.as_ref().and_then(|s| s.3.as_deref()), size.3.as_deref()) {
                             let d = self.s.choice_drawing(range.clone()).unwrap_or(range.clone());
                             p.shape = drawing::shape_changed(a, b, d.start, &self.s.src_text(d.clone()));
@@ -3699,6 +3704,8 @@ struct Placement {
     z: Option<u32>,
     /// The alternative text (`wp:docPr/@descr`).
     alt: Option<String>,
+    /// The decorative mark (`adec:decorative` in `wp:docPr`'s extension list).
+    decorative: Option<bool>,
     /// The distance from the text (`distT`, `distB`, `distL`, `distR`), `allowOverlap` and `layoutInCell`.
     dist: Option<[f64; 4]>,
     overlap: Option<bool>,
@@ -3743,6 +3750,7 @@ impl Placement {
             locked: (a.locked != b.locked).then_some(b.locked),
             z: (a.z != b.z).then_some(b.z),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
+            decorative: (decorative(&a.shape) != decorative(&b.shape)).then(|| decorative(&b.shape)),
             dist: a.dist.iter().zip(&b.dist).any(|(x, y)| ne(*x, *y)).then_some(b.dist),
             overlap: (a.allow_overlap != b.allow_overlap).then_some(b.allow_overlap),
             in_cell: (a.layout_in_cell != b.layout_in_cell).then_some(b.layout_in_cell),
@@ -3750,7 +3758,14 @@ impl Placement {
             inner: None,
             replace: None,
         };
-        let any = p.h.is_some() || p.v.is_some() || p.size.is_some() || p.wrap.is_some() || p.locked.is_some() || p.alt.is_some() || p.z.is_some();
+        let any = p.h.is_some()
+            || p.v.is_some()
+            || p.size.is_some()
+            || p.wrap.is_some()
+            || p.locked.is_some()
+            || p.alt.is_some()
+            || p.decorative.is_some()
+            || p.z.is_some();
         (any || p.dist.is_some() || p.overlap.is_some() || p.in_cell.is_some()).then_some(p)
     }
 
@@ -3826,6 +3841,9 @@ impl Placement {
             let tag = set_attr(&s[start..end], "descr", &esc);
             s.replace_range(start..end, &tag);
         }
+        if let Some(on) = self.decorative {
+            s = set_decorative(&s, on);
+        }
         if let Some((w, h)) = self.size {
             // The anchor's extent and the top shape's own size: the first `a:ext` with cx (extension lists' have none;
             // a group's children keep theirs, scaled by its child frame).
@@ -3852,6 +3870,59 @@ fn same_rev(a: &RunStyle, b: &RunStyle) -> bool {
 }
 
 /// The first start tag named `local` (any prefix) at or after `from`: its byte range.
+/// The decorative mark's extension (`a:ext/@uri`).
+const DECORATIVE: &str = "{C183D7F6-B498-43B3-948B-1728B52AA6E4}";
+
+fn decorative(shape: &Option<Box<crate::drawing::Shape>>) -> bool {
+    shape.as_ref().is_some_and(|s| s.nv.decorative)
+}
+
+/// A drawing's XML with the decorative mark in its `wp:docPr` (`on`) or not: added as an extension (in its extension
+/// list, or a new one), or that extension removed.
+fn set_decorative(s: &str, on: bool) -> String {
+    let Some((start, end)) = find_tag(s, "docPr", 0) else { return s.to_string() };
+    let mut s = s.to_string();
+    let close = s[start..].find("docPr>").map(|i| start + i + "docPr>".len()).filter(|_| !s[start..end].ends_with("/>"));
+    let within = close.unwrap_or(end);
+    let have = s[start..within].find(DECORATIVE).map(|i| start + i);
+    match (on, have) {
+        (true, Some(_)) | (false, None) => {}
+        (false, Some(at)) => {
+            // The whole `<a:ext uri=...>...</a:ext>`.
+            if let (Some(open), Some(shut)) = (s[..at].rfind('<'), s[at..].find("ext>").map(|i| at + i + "ext>".len())) {
+                s.replace_range(open..shut, "");
+            }
+        }
+        (true, None) => {
+            const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+            const ADEC: &str = "http://schemas.microsoft.com/office/drawing/2017/decorative";
+            let ext = format!(r#"<a:ext uri="{DECORATIVE}"><adec:decorative xmlns:adec="{ADEC}" val="1"/></a:ext>"#);
+            let prefix =
+                s[start + 1..].split(['>', ' ', '/']).next().and_then(|t| t.rsplit_once(':')).map_or(String::new(), |(p, _)| format!("{p}:"));
+            match close {
+                // An extension list already: the mark joins it.
+                Some(c) if s[start..c].contains("extLst>") => {
+                    // Before the list's closing tag: the last `extLst>` in the `wp:docPr` is it.
+                    if let Some(at) = s[start..c].rfind("extLst>").map(|i| start + i)
+                        && let Some(shut) = s[..at].rfind("</")
+                    {
+                        s.insert_str(shut, &ext);
+                    }
+                }
+                Some(c) => {
+                    let shut = s[..c].rfind("</").unwrap_or(c);
+                    s.insert_str(shut, &format!(r#"<a:extLst xmlns:a="{A}">{ext}</a:extLst>"#));
+                }
+                None => {
+                    let open = s[start..end - 2].trim_end().to_string();
+                    s.replace_range(start..end, &format!(r#"{open}><a:extLst xmlns:a="{A}">{ext}</a:extLst></{prefix}docPr>"#));
+                }
+            }
+        }
+    }
+    s
+}
+
 fn find_tag(s: &str, local: &str, from: usize) -> Option<(usize, usize)> {
     let mut at = from;
     while let Some(k) = s[at..].find('<') {

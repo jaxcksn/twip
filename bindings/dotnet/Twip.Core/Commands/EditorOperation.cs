@@ -918,4 +918,8 @@ public abstract partial record EditorOperation
     /// <param name="mode">The mode.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetMode(EditorMode mode) => Op(CommandId.SetMode, new Arg("value", Node(mode)));
+
+    /// <summary>Says the formatting at the caret to screen readers, as an announcement.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation DescribeFormatting() => Op(CommandId.DescribeFormatting);
 }

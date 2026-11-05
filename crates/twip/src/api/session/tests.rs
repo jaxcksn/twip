@@ -619,3 +619,111 @@ fn an_inserted_shape_is_the_selected_object() {
     assert!(o.is_some(), "{:?}", s.state().selection);
     assert_eq!(o.and_then(|o| o.shape).and_then(|s| s.preset), Some(preset));
 }
+
+#[test]
+fn commands_say_what_they_did_and_kinds_can_be_turned_off() {
+    use crate::api::services::AnnouncementKind as K;
+    let (mut engine, events) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Hello".into())).expect("types");
+    s.run(Command::SelectAll).expect("selects");
+    let said = |events: &Rc<RefCell<Vec<Event>>>| -> Vec<(K, String)> {
+        events.borrow_mut().drain(..).filter_map(|e| if let Event::Announcement { text, kind } = e { Some((kind, text)) } else { None }).collect()
+    };
+    said(&events);
+    s.run(Command::SetBold(true)).expect("bolds");
+    assert_eq!(said(&events), [(K::Formatting, "Bold on".to_string())]);
+    s.run(Command::Undo).expect("undoes");
+    assert_eq!(said(&events), [(K::Command, "Undo Bold".to_string())]);
+    s.run(Command::Redo).expect("redoes");
+    assert_eq!(said(&events), [(K::Command, "Redo Bold".to_string())]);
+    s.run(Command::Copy).expect("copies");
+    assert_eq!(said(&events), [(K::Command, "Copied".to_string())], "a copy changes nothing and still says so");
+    // The host's clipboard keys (the browser's copy and cut events) say the same.
+    s.copy(false).expect("copies");
+    assert_eq!(said(&events), [(K::Command, "Copied".to_string())]);
+    s.run(Command::DescribeFormatting).expect("describes");
+    let described = said(&events);
+    assert!(matches!(&described[..], [(K::Formatting, text)] if text.contains("point") && text.contains("bold")), "{described:?}");
+    // Formatting turned off: not said, not emitted.
+    s.set_announcements(&[K::Table, K::Command]);
+    s.run(Command::SetBold(false)).expect("unbolds");
+    assert!(said(&events).is_empty());
+    s.set_announcements(&K::ALL);
+    // An edit refused where text can't go says why.
+    s.set_read_only(true);
+    assert!(s.run(Command::InsertText("x".into())).is_err());
+    assert_eq!(said(&events), [(K::ReadOnly, "Read only".to_string())]);
+    // Each refused keystroke says it again, as Word does.
+    s.text("x");
+    s.text("y");
+    assert_eq!(said(&events), [(K::ReadOnly, "Read only".to_string()), (K::ReadOnly, "Read only".to_string())]);
+}
+
+#[test]
+fn the_caret_window_goes_with_the_caret_and_the_host_can_move_it() {
+    use crate::api::services::{CaretWindow, WindowPoint};
+    use crate::api::session::HostRequest;
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("First".into())).expect("types");
+    s.run(Command::InsertParagraph).expect("splits");
+    s.run(Command::InsertText("Second".into())).expect("types");
+    let windows: Rc<RefCell<Vec<CaretWindow>>> = Rc::default();
+    let sink = windows.clone();
+    s.host().attach(move |r| {
+        if let HostRequest::CaretText { window } = r {
+            sink.borrow_mut().push(window);
+        }
+    });
+    let last = |w: &Rc<RefCell<Vec<CaretWindow>>>| w.borrow().last().cloned().expect("a window");
+    let w = last(&windows);
+    assert_eq!(w.paragraphs.len(), 2, "both paragraphs: {w:?}");
+    assert_eq!(w.focus, WindowPoint { paragraph: 1, offset: 6 }, "the caret after Second");
+    // Typing sends the window again; the same window isn't sent twice.
+    s.run(Command::InsertText("!".into())).expect("types");
+    let count = windows.borrow().len();
+    assert_eq!(last(&windows).focus.offset, 7);
+    s.host().set_scroll(0.0, 0.0);
+    s.run(Command::SetZoom(crate::api::command::Zoom::Percent(100.0))).expect("zooms");
+    assert_eq!(windows.borrow().len(), count, "nothing changed in the window");
+    // The screen reader moves the caret to the first paragraph's start.
+    let start = WindowPoint { paragraph: 0, offset: 0 };
+    s.host().caret_window_select(start, start).expect("moves");
+    assert_eq!(last(&windows).focus, start);
+    let outside = WindowPoint { paragraph: 9, offset: 0 };
+    assert_eq!(s.host().caret_window_select(outside, outside).map_err(|e| e.code), Err(ErrorCode::InvalidArgument));
+}
+
+#[test]
+fn the_accessibility_tree_goes_whole_then_as_throttled_changes() {
+    use crate::api::services::A11yUpdate;
+    use crate::api::session::HostRequest;
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("First".into())).expect("types");
+    let updates = Rc::new(RefCell::new(Vec::new()));
+    let sink = updates.clone();
+    s.host().attach(move |r| {
+        if let HostRequest::A11y { update } = r {
+            sink.borrow_mut().push(update);
+        }
+    });
+    assert!(matches!(updates.borrow_mut().drain(..).collect::<Vec<_>>()[..], [A11yUpdate::Full(_)]), "attaching sends the whole tree");
+    // Edits arm one timer and send nothing yet; a second edit doesn't re-arm it.
+    s.run(Command::InsertText(" line".into())).expect("types");
+    assert_eq!(s.host().take_timers().iter().filter(|t| t.0 == 3).count(), 1, "the first edit arms the timer");
+    s.run(Command::InsertParagraph).expect("splits");
+    s.run(Command::InsertText("Second".into())).expect("types");
+    assert!(s.host().take_timers().iter().all(|t| t.0 != 3), "later edits don't re-arm it");
+    assert!(updates.borrow().is_empty(), "nothing goes before the timer");
+    s.host().timer_fired(3);
+    let sent = updates.borrow_mut().drain(..).collect::<Vec<_>>();
+    assert!(matches!(sent[..], [A11yUpdate::Patch(_)]), "the changes go as a patch: {sent:?}");
+    // The next edit arms it again.
+    s.run(Command::InsertText("!".into())).expect("types");
+    assert_eq!(s.host().take_timers().iter().filter(|t| t.0 == 3).count(), 1);
+}

@@ -414,6 +414,8 @@ impl Editor {
             Command::SetAuthorColor(a) => self.set_author_color_by_name(&a.author, a.color.0),
             // View
             Command::SetZoom(_) | Command::SetViewOptions(_) => Outcome::Moved,
+            // The session says the formatting; the editor has nothing to do.
+            Command::DescribeFormatting => Outcome::Unchanged("described"),
             Command::SetMode(m) => self.set_mode(match m {
                 crate::api::state::Mode::Editing => super::Mode::Editing,
                 crate::api::state::Mode::Design => super::Mode::Design,

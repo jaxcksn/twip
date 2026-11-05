@@ -60,6 +60,7 @@ fn nv_of(c: Option<Node>) -> NonVisual {
         descr: Rc::from(descr),
         hidden: on(c.attribute("hidden")),
         lock_aspect: false,
+        decorative: c.descendants().any(|n| n.tag_name().name() == "decorative" && on(n.attribute("val"))),
     }
 }
 

@@ -173,5 +173,6 @@
   "setAuthorColor",
   "setZoom",
   "setViewOptions",
-  "setMode"
+  "setMode",
+  "describeFormatting"
 ]

@@ -145,14 +145,24 @@ impl Session {
             self.emit(e);
             review.into_iter().for_each(|r| self.emit(r));
         }
-        if let Some(text) = self.services.announcer.next(&mut self.editor) {
-            self.emit(Event::Announcement { text });
-        }
+        let mut said = std::mem::take(&mut self.services.said);
+        said.extend(self.services.announcer.next(&mut self.editor, &self.services.spelling, &self.language, self.read_only));
+        self.announce(said);
         if self.state.selection != selection {
             self.emit(Event::SelectionChanged(self.state.selection.clone()));
         }
         self.blink_follow();
         self.deliver_requests();
+    }
+
+    /// Says what a change calls for, as one announcement: the kinds the application turned off are left out, and the
+    /// announcement's kind is what its first part is about.
+    fn announce(&self, said: Vec<(crate::api::services::AnnouncementKind, String)>) {
+        let said: Vec<_> = said.into_iter().filter(|s| !self.services.silenced.contains(&s.0)).collect();
+        if let Some(&(kind, _)) = said.first() {
+            let text = said.into_iter().map(|s| s.1).collect::<Vec<_>>().join(", ");
+            self.emit(Event::Announcement { text, kind });
+        }
     }
 
     fn emit(&self, event: Event) {

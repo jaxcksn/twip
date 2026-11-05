@@ -440,6 +440,9 @@ commands! {
     SetViewOptions(ViewOptions),
     /// Editing or design mode. Undo: view.
     SetMode(#[serde(with = "value")] Mode),
+    /// Says the formatting at the caret to screen readers (paragraph style, font and size, emphasis, colour,
+    /// highlight) as an announcement; changes nothing. Undo: view.
+    DescribeFormatting,
 }
 
 /// The kinds of section break.

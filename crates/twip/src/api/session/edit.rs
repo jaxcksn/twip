@@ -10,6 +10,7 @@ use crate::api::command::{Command, CommandResult};
 use crate::api::error::Error;
 use crate::api::event::Event;
 use crate::api::record::{Author, Origin, TransactionRecord};
+use crate::api::services::AnnouncementKind;
 use crate::api::state::Mode;
 use crate::editing::commands::Outcome;
 
@@ -58,7 +59,76 @@ impl Session {
 
     /// Runs a command, then rebuilds the state and reports the change. Input runs here with [`Origin::User`].
     pub(super) fn apply(&mut self, command: Command, origin: Origin) -> Result<Commit, Error> {
-        self.apply_with(origin, |e, fonts| e.execute(command, fonts))
+        self.services.said = self.command_said(&command);
+        let done = self.apply_with(origin, |e, fonts| e.execute(command, fonts));
+        // A command that changed nothing (a copy) says its part now; an edit refused where text can't go says why.
+        let mut said = std::mem::take(&mut self.services.said);
+        if let Err(e) = &done
+            && (e.code == crate::api::error::ErrorCode::ReadOnly || e.message == "locked")
+        {
+            said = vec![(AnnouncementKind::ReadOnly, "Read only".into())];
+        }
+        self.announce(said);
+        done
+    }
+
+    /// What a command says as it runs: undo and redo name what they take back or do again, the clipboard commands say
+    /// what they did, a character format says whether it went on or off.
+    pub(super) fn command_said(&self, c: &Command) -> Vec<(AnnouncementKind, String)> {
+        let h = self.editor.history();
+        let on = |name: &str, on: bool| (AnnouncementKind::Formatting, format!("{name} {}", if on { "on" } else { "off" }));
+        match c {
+            Command::Undo => h.next_undo().map(|l| (AnnouncementKind::Command, format!("Undo {l}"))).into_iter().collect(),
+            Command::Redo => h.next_redo().map(|l| (AnnouncementKind::Command, format!("Redo {l}"))).into_iter().collect(),
+            Command::Cut => vec![(AnnouncementKind::Command, "Cut".into())],
+            Command::Copy => vec![(AnnouncementKind::Command, "Copied".into())],
+            Command::Paste(_) | Command::PasteText(_) => vec![(AnnouncementKind::Command, "Pasted".into())],
+            Command::SetBold(v) => vec![on("Bold", *v)],
+            Command::SetItalic(v) => vec![on("Italic", *v)],
+            Command::SetUnderline(s) => vec![on("Underline", *s != crate::api::value::UnderlineStyle::None)],
+            Command::SetStrikethrough(v) => vec![on("Strikethrough", *v)],
+            Command::DescribeFormatting => vec![(AnnouncementKind::Formatting, self.describe_formatting())],
+            _ => Vec::new(),
+        }
+    }
+
+    /// The formatting at the caret, as said: "Heading 1, Calibri 16 point, bold, highlighted yellow".
+    fn describe_formatting(&self) -> String {
+        use crate::api::state::Tri::Uniform;
+        use crate::api::value::{AutoOr, NoneOr, UnderlineStyle};
+        let (f, p) = (&self.state.formatting, &self.state.paragraph);
+        let mut parts = Vec::new();
+        if let Uniform(id) = &p.style {
+            parts.push(self.styles(None).into_iter().find(|s| &s.id == id).map_or_else(|| id.0.clone(), |s| s.name));
+        }
+        match (&f.font, &f.size) {
+            (Uniform(font), Uniform(size)) => parts.push(format!("{font} {} point", size.0)),
+            (Uniform(font), _) => parts.push(font.clone()),
+            _ => {}
+        }
+        for (on, name) in [(&f.bold, "bold"), (&f.italic, "italic"), (&f.strikethrough, "strikethrough")] {
+            if *on == Uniform(true) {
+                parts.push(name.to_string());
+            }
+        }
+        if matches!(&f.underline, Uniform(u) if *u != UnderlineStyle::None) {
+            parts.push("underline".into());
+        }
+        if matches!(&f.color, Uniform(AutoOr::Value(_))) {
+            parts.push("coloured".into());
+        }
+        if let Uniform(NoneOr::Value(h)) = &f.highlight {
+            // `BrightGreen` as `bright green`.
+            let name = format!("{h:?}").chars().fold(String::new(), |mut s, c| {
+                if c.is_uppercase() && !s.is_empty() {
+                    s.push(' ');
+                }
+                s.extend(c.to_lowercase());
+                s
+            });
+            parts.push(format!("highlighted {name}"));
+        }
+        if parts.is_empty() { "No formatting".into() } else { parts.join(", ") }
     }
 
     /// Runs an editor operation from `origin` (a command, or what the services drive: selecting a match, replacing

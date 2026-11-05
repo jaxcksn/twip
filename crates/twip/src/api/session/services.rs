@@ -211,7 +211,23 @@ impl Session {
 
     /// The document's accessibility tree.
     pub fn accessible_tree(&mut self) -> AccessibleNode {
-        crate::services::a11y::tree(&self.editor, &self.services.spelling, &self.language)
+        crate::services::a11y::tree_with(&self.editor, &self.services.spelling, &self.language, &mut self.services.tree_cache)
+    }
+
+    /// The kinds of announcements the editor makes; the others are neither said nor emitted. All by default.
+    pub fn set_announcements(&mut self, kinds: &[crate::api::services::AnnouncementKind]) {
+        self.services.silenced = crate::api::services::AnnouncementKind::ALL.into_iter().filter(|k| !kinds.contains(k)).collect();
+    }
+
+    /// Puts the caret at the start of a tree node's content and reveals it: a note reference's note, a comment's
+    /// commented text. `invalid-argument` when no node has the id, `unavailable` when it holds no caret position (a
+    /// region).
+    pub fn accessible_go(&mut self, id: crate::api::services::AccessibleId) -> Result<(), Error> {
+        let tree = self.accessible_tree();
+        let para = crate::services::a11y::caret_para(&tree, id)
+            .ok_or_else(|| Error::invalid("no accessibility node has this id"))?
+            .ok_or_else(|| Error::unavailable("the node holds no caret position"))?;
+        self.apply_with(Origin::Api, |e, fonts| e.select_range(para, Unit(0), Unit(0), fonts)).map(|_| ())
     }
 
     /// The document's counts, computed now.
@@ -387,6 +403,26 @@ mod tests {
     }
 
     #[test]
+    fn going_to_an_accessibility_node_moves_the_caret_there() {
+        use crate::api::services::{AccessibleId, AccessibleNode, AccessibleRole};
+        fn find(n: &AccessibleNode, role: AccessibleRole) -> Option<&AccessibleNode> {
+            if n.role == role { Some(n) } else { n.children.iter().find_map(|c| find(c, role)) }
+        }
+        let (mut engine, id, _) = open("editor/FX-A11Y-STRUCTURE.docx");
+        let s = engine.session(id).expect("a session");
+        let tree = s.accessible_tree();
+        let table = find(&tree, AccessibleRole::Table).expect("a table");
+        s.accessible_go(table.id).expect("goes to the table");
+        assert!(s.state().selection.table.is_some(), "the caret is in the table: {:?}", s.state().selection);
+        let note_ref = find(&tree, AccessibleRole::NoteRef).expect("a note reference");
+        s.accessible_go(note_ref.id).expect("goes to the note");
+        assert_eq!(s.state().selection.story, crate::api::value::Story::Footnote, "{:?}", s.state().selection);
+        let region = find(&tree, AccessibleRole::Region).expect("a region");
+        assert_eq!(s.accessible_go(region.id).map_err(|e| e.code), Err(crate::api::error::ErrorCode::Unavailable));
+        assert_eq!(s.accessible_go(AccessibleId((1 << 53) - 1)).map_err(|e| e.code), Err(crate::api::error::ErrorCode::InvalidArgument));
+    }
+
+    #[test]
     fn the_menu_key_emits_a_menu_and_the_tree_reads_the_document() {
         let (mut engine, id, events) = open("editor/FX-services.docx");
         let s = engine.session(id).expect("a session");
@@ -394,7 +430,8 @@ mod tests {
         assert_eq!(s.key(Key::F10, Modifiers { shift: true, ..Modifiers::default() }), KeyOutcome::Handled);
         assert_eq!(events.borrow().iter().filter(|e| matches!(e, Event::ContextMenu(_))).count(), 2);
         let tree = s.accessible_tree();
-        let text: Vec<String> = tree.children.iter().filter_map(|n| n.text.clone()).collect();
+        // A paragraph's text is in its text nodes.
+        let text: Vec<String> = tree.children.iter().map(|n| n.children.iter().filter_map(|t| t.text.as_deref()).collect()).collect();
         assert!(text.iter().any(|t| t.starts_with("Teh quick brown fox")), "{text:?}");
         let count = s.word_count();
         assert!(count.words > 30 && count.pages >= 1 && count.lines >= count.paragraphs, "{count:?}");

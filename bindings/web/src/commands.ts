@@ -496,6 +496,8 @@ export interface Commands {
   setViewOptions(options: { formattingMarks?: boolean; gridlines?: boolean; textBoundaries?: boolean; liveLayout?: boolean }): Promise<void>;
   /** Switches between editing and design mode. */
   setMode(mode: 'editing' | 'design'): Promise<void>;
+  /** Says the formatting at the caret to screen readers (an `announcement` of kind `formatting`). Shift+F1. */
+  describeFormatting(): Promise<void>;
 }
 
 /** A command id: the method name, the batch op's `type`, the catalog id and the key in `state.commands`. */
@@ -749,6 +751,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setZoom: 'value',
   setViewOptions: 'spread',
   setMode: 'value',
+  describeFormatting: 'none',
 };
 
 /** Builds a command's op from its method arguments. */

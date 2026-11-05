@@ -1,0 +1,15 @@
+{
+  "name": "announcements",
+  "steps": [
+    { "op": "command", "command": { "type": "insertText", "value": "Hello" } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "call", "method": "accessibility.setAnnouncements", "args": [["command", "formatting", "selection"]] },
+    { "op": "command", "command": { "type": "setBold", "value": true } },
+    { "op": "expectEvents", "match": [ { "type": "announcement", "kind": "formatting", "text": "Bold on" } ] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectEvents", "match": [ { "type": "announcement", "kind": "command", "text": "Undo Bold" } ] },
+    { "op": "command", "command": { "type": "describeFormatting" } },
+    { "op": "expectEvents", "match": [ { "type": "announcement", "kind": "formatting", "text": { "$type": "string" } } ] },
+    { "op": "call", "method": "accessibility.setAnnouncements", "args": [["table", "list", "page", "review", "comment", "spelling", "formatting", "mode", "readOnly", "command", "selection"]] }
+  ]
+}

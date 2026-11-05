@@ -60,12 +60,17 @@ export async function mountHost(container: HTMLElement, s: Session, options: Mou
   });
   const scroll = startScroll(s, dom, ledger, frames, report);
   chrome = startChrome(s, dom, ledger, frames, report, toViewport);
-  const input = startInput(s, dom, ledger, report, claims);
+  const label = options.label ?? 'Document';
+  const input = startInput(s, dom, ledger, report, claims, label);
   startIme(s, input.element, ledger, report);
   const clipboard = startClipboard(s, dom, input.element, ledger, report, toViewport);
   const balloons = chrome.balloonLayer;
-  startPointer(s, dom, ledger, scroll, report, input.focus, (t) => t instanceof Node && balloons.contains(t) && t !== balloons);
-  startA11y(s, dom, ledger);
+  const a11y = startA11y(s, dom, ledger, label, input.focus, report);
+  startPointer(s, dom, ledger, scroll, report, input.focus, (t) => (t instanceof Node && balloons.contains(t) && t !== balloons) || a11y.activating());
+  // Firefox makes a scrolling element a Tab stop, where a screen reader reads the whole mirror: the editor has one
+  // stop, the editing element, and focus given to the scroller goes on to it.
+  dom.scroller.tabIndex = -1;
+  ledger.listen(dom.scroller, 'focus', input.focus);
 
   await chrome.view.setBackground(options.background ?? '#E6E6E6');
   if (options.overlayColors) await chrome.view.setOverlayColors(options.overlayColors);

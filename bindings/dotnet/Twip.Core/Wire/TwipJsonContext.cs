@@ -13,6 +13,7 @@ namespace Twip.Wire;
     Converters = [
         typeof(CamelEnum<AccessibleMark>),
         typeof(CamelEnum<AccessibleRole>),
+        typeof(CamelEnum<AnnouncementKind>),
         typeof(CamelEnum<AutoFitBehavior>),
         typeof(CamelEnum<BorderEdges>),
         typeof(CamelEnum<CaseChange>),
@@ -138,6 +139,13 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(AccessibleMark))]
 [JsonSerializable(typeof(AccessibleNode))]
 [JsonSerializable(typeof(AccessibleRole))]
+[JsonSerializable(typeof(A11yUpdate))]
+[JsonSerializable(typeof(CaretWindow))]
+[JsonSerializable(typeof(WindowPoint))]
+[JsonSerializable(typeof(AnnouncementKind))]
+[JsonSerializable(typeof(IReadOnlyList<AnnouncementKind>))]
+[JsonSerializable(typeof(CellPlace))]
+[JsonSerializable(typeof(ListPosition))]
 [JsonSerializable(typeof(AltTextDialogValues))]
 [JsonSerializable(typeof(AnnouncementPayload))]
 [JsonSerializable(typeof(Author))]

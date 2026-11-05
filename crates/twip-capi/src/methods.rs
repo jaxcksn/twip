@@ -199,6 +199,19 @@ methods! {
     HostSetLeaders = 75,
     /// No session → `ShapeGalleryGroup[]`: Word's Insert > Shapes presets in its groups.
     ShapeGallery = 76,
+    /// `AccessibleId` → `null`: the caret to the start of the node's content.
+    AccessibleGo = 77,
+    /// `{ anchor, focus }` (`WindowPoint`s of the last caret window) → `null`: the screen reader moved the caret.
+    HostCaretWindowSelect = 78,
+    /// `AnnouncementKind[]` (the kinds the editor makes) → `null`.
+    AnnouncementsSet = 79,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WindowSelectRequest {
+    anchor: engine::api::services::WindowPoint,
+    focus: engine::api::services::WindowPoint,
 }
 
 #[derive(Deserialize)]
@@ -478,6 +491,11 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
             to_value(s.data_parts(r.namespace.as_deref(), r.item_id.as_deref()))
         }
         Method::AccessibleTree => to_value(s.accessible_tree()),
+        Method::AccessibleGo => to_value(s.accessible_go(request(json)?)?),
+        Method::AnnouncementsSet => {
+            s.set_announcements(&request::<Vec<engine::api::services::AnnouncementKind>>(json)?);
+            Ok(none)
+        }
         Method::ShortcutsRegister => to_value(s.shortcuts().register(request::<Shortcut>(json)?)?),
         Method::ShortcutsUnregister => {
             s.shortcuts().unregister(&request::<String>(json)?);
@@ -548,6 +566,11 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         }
         Method::HostSetPaintBudget => {
             s.host().set_paint_budget(request(json)?);
+            Ok(none)
+        }
+        Method::HostCaretWindowSelect => {
+            let r: WindowSelectRequest = request(json)?;
+            s.host().caret_window_select(r.anchor, r.focus)?;
             Ok(none)
         }
         Method::HostSetOverlayPalette => {

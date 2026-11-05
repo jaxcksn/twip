@@ -4,7 +4,7 @@
 import { EditorError, type ErrorCode } from '../errors.js';
 import type { TwipEvents } from '../events.js';
 import type { FaceInfo } from '../fonts/library.js';
-import type { AccessibleNode } from '../services/accessibility.js';
+import type { AccessibleId, AccessibleNode } from '../services/accessibility.js';
 import type { Warning } from '../types.js';
 
 /** Structured call numbers: `TwipMethod` in `twip.h`, the C ABI's `Method`. The two lists must match exactly. */
@@ -85,6 +85,9 @@ export const Method = {
   HostSetPaintBudget: 74,
   HostSetLeaders: 75,
   ShapeGallery: 76,
+  AccessibleGo: 77,
+  HostCaretWindowSelect: 78,
+  AnnouncementsSet: 79,
 } as const;
 
 /** A structured call number. */
@@ -139,8 +142,47 @@ export type HostRequest =
   | { type: 'scroll'; x: number; y: number }
   /** Scroll so this rectangle shows. */
   | { type: 'scroll_to'; x: number; y: number; width: number; height: number }
-  /** The accessibility tree changed: mirror it. */
-  | { type: 'a11y'; tree: AccessibleNode };
+  /** The text around the caret and the selection in it changed: for the focused editing element. */
+  | { type: 'caret_text'; window: CaretWindow }
+  /** The accessibility tree changed: the whole tree, or the changes since the last one. */
+  | { type: 'a11y'; update: A11yUpdate };
+
+/** The text around the caret: the caret's paragraph and its neighbours in its container, in laid-out lines. */
+export interface CaretWindow {
+  paragraphs: {
+    id: AccessibleId;
+    role: 'paragraph' | 'heading' | 'listItem';
+    level?: number;
+    /** A numbered item's number: not part of the text or its offsets. */
+    label?: string;
+    lines: { segments: WindowSegment[] }[];
+  }[];
+  anchor: WindowPoint;
+  focus: WindowPoint;
+  /** The selection is all of its story. */
+  all: boolean;
+  lang: string;
+  readOnly: boolean;
+}
+
+/** Text of a line with the same marks, author and language. */
+export interface WindowSegment {
+  text: string;
+  marks?: ('insertion' | 'deletion' | 'misspelling')[];
+  author?: string;
+  lang?: string;
+}
+
+/** A place in a caret window: a paragraph's index and an offset in its text (characters, without the label). */
+export interface WindowPoint {
+  paragraph: number;
+  offset: number;
+}
+
+/** The accessibility tree, or what changed in it: a node and its subtree replaced, or a node's children reordered. */
+export type A11yUpdate =
+  | { full: AccessibleNode }
+  | { patch: ({ type: 'replace'; node: AccessibleNode } | { type: 'children'; parent: AccessibleId; ids: AccessibleId[] })[] };
 
 /** One engine-to-SDK message. `payload` is the decoded JSON, or undefined for kinds without one. */
 export interface Message {
