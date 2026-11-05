@@ -16,6 +16,7 @@ mod sections;
 mod shapes;
 mod snap;
 mod steps;
+mod sub_templates;
 mod table_handles;
 mod transactions;
 

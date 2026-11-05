@@ -511,6 +511,11 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
     state.view.appearance = p.appearance;
     state.view.detail = p.detail;
     state.view.object_grid = p.object_grid;
+    state.view.sub_template_rules = s.editor.sub_template_rules();
+    state.editing = match s.editor.editing_sub_template().and_then(|k| s.editor.document().glossary.as_ref()?.parts.get(k as usize)) {
+        Some(b) => crate::api::state::EditingTarget::SubTemplate { name: b.name.clone(), category: b.category.clone() },
+        None => crate::api::state::EditingTarget::Template,
+    };
 }
 
 impl Session {

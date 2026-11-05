@@ -363,6 +363,20 @@ impl Runner {
             "navigation.headings" => to_json(s.headings()),
             "navigation.select" => to_json(s.select_heading(arg_of(arg(0))?).map_err(Ok)?),
             "styles.list" => to_json(s.styles(arg_of(arg(0).get("type").cloned().unwrap_or(Value::Null))?)),
+            "elements.list" => to_json(s.elements(&arg_of(match arg(0) {
+                Value::Null => json!({}),
+                v => v,
+            })?)),
+            "elements.select" => {
+                s.select_element(arg_of(arg(0))?, arg(1).get("reveal").and_then(Value::as_bool).unwrap_or(true)).map_err(Ok)?;
+                none
+            }
+            "subTemplates.list" => to_json(s.sub_templates()),
+            "subTemplates.edit" => {
+                to_json(s.run(command_of("editSubTemplate", &[json!({ "name": arg(0), "category": arg(1) })]).map_err(Err)?).map_err(Ok)?.value)
+            }
+            "subTemplates.remove" => to_json(s.run(command_of("removeSubTemplate", &[json!({ "name": arg(0) })]).map_err(Err)?).map_err(Ok)?.value),
+            "subTemplates.close" => to_json(s.run(command_of("closeSubTemplate", &[]).map_err(Err)?).map_err(Ok)?.value),
             "review.revisions" => to_json(s.revisions()),
             "review.comments" => to_json(s.comments()),
             m => match m.strip_prefix("commands.") {

@@ -1,5 +1,5 @@
 import type { RichText } from './review.js';
-import type { ControlKind, ControlOptions, DataBinding } from './services/elements.js';
+import type { ControlKind, ControlOptions, DataBinding, ReferenceRule } from './services/elements.js';
 import type { TabAlignment, TabLeader, TabSelector } from './services/ruler.js';
 import type { ViewOptions } from './services/view.js';
 import type {
@@ -406,6 +406,20 @@ export interface Commands {
   showFieldCodes(options: { show: boolean } & FieldTargets): Promise<void>;
   /** What design mode shows for each field code. View. */
   setFieldLabels(options: { labels: Record<string, string>; merge?: boolean }): Promise<void>;
+  /** Which fields are sub-template references: replaces the rules; an empty list turns sub-templates off. View. */
+  setSubTemplateRules(options: { rules: ReferenceRule[] }): Promise<void>;
+  /** Shows references' sub-template bodies in their place, or their fields (default: every reference). View. */
+  setSubTemplateView(options: { ids?: ElementId[]; expanded: boolean }): Promise<void>;
+  /** Edits a sub-template's body in this editor, on its own pages. View. */
+  editSubTemplate(options: { name: string; category?: string }): Promise<void>;
+  /** Back to the template from a sub-template, at the template's selection from before. View. */
+  closeSubTemplate(): Promise<void>;
+  /** A new sub-template, empty or with a DOCX's body (`category`: default the first rule's). */
+  createSubTemplate(options: { name: string; category?: string; from?: Uint8Array }): Promise<void>;
+  /** Renames a sub-template, and with `updateReferences` every reference to it. */
+  renameSubTemplate(options: { name: string; to: string; category?: string; updateReferences?: boolean }): Promise<void>;
+  /** Removes a sub-template; its references no longer resolve. */
+  removeSubTemplate(options: { name: string; category?: string }): Promise<void>;
 
   // Content controls and regions
   /** Inserts a content control, optionally around the selection. */
@@ -748,6 +762,13 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   unlinkFields: 'spread',
   showFieldCodes: 'spread',
   setFieldLabels: 'spread',
+  setSubTemplateRules: 'spread',
+  setSubTemplateView: 'spread',
+  editSubTemplate: 'spread',
+  closeSubTemplate: 'none',
+  createSubTemplate: 'spread',
+  renameSubTemplate: 'spread',
+  removeSubTemplate: 'spread',
   insertControl: 'spread',
   setControl: 'spread',
   removeControl: 'spread',

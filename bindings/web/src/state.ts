@@ -1,6 +1,6 @@
 import type { CommandId } from './commands.js';
 import type { DialogKind } from './services/dialogs.js';
-import type { ControlKind } from './services/elements.js';
+import type { ControlKind, ReferenceRule } from './services/elements.js';
 import type { RulerModel, RulerUnit, TabSelector } from './services/ruler.js';
 import type { ChromeTheme, DocumentAppearance, MeasureDetail, ObjectGrid, ThemeColors } from './services/view.js';
 import type { Color, CommentId, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
@@ -23,6 +23,8 @@ export interface EditorState {
   mode: 'editing' | 'design';
   /** What typing corrects (`setAutoCorrect`). */
   autoCorrect: AutoCorrectOptions;
+  /** The sub-template being edited; absent while the template is. */
+  editing?: EditingTarget;
   /** Whether edits are refused. */
   readOnly: boolean;
   /** Changed since the last open or DOCX export; undoing back clears it. */
@@ -176,7 +178,7 @@ export interface SelectionSummary {
   /** A caret, text, table cells, an object, or an element. */
   kind: 'caret' | 'text' | 'cells' | 'object' | 'element';
   /** The story the selection is in. */
-  story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox';
+  story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox' | 'subTemplate';
   /** The page of the caret. */
   page: number;
   /** The selection mode. */
@@ -540,7 +542,12 @@ export interface ViewState {
   detail: MeasureDetail;
   /** When the objects' dot grid shows. */
   objectGrid: ObjectGrid;
+  /** Which fields are sub-template references (`setSubTemplateRules`); absent when none are. */
+  subTemplateRules?: ReferenceRule[];
 }
+
+/** What the editor is on: the template, or one of its sub-templates. */
+export type EditingTarget = { kind: 'template' } | { kind: 'subTemplate'; name: string; category: string };
 
 /** Track changes and comments. */
 export interface ReviewState {

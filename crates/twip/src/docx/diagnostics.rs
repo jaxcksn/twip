@@ -31,6 +31,16 @@ pub enum WarningCode {
     CommentReferenceOrphan,
     /// A shape's preset geometry the engine has no definition for: it draws as a rectangle and is kept on save.
     UnknownPreset,
+    /// A glossary building block (or the glossary part) that couldn't be read: it is kept as written.
+    GlossaryUnreadable,
+    /// Two building blocks with one name in one category: the first is the one a name finds.
+    DuplicateBuildingBlock,
+    /// A sub-template reference inside a body already shown around it: it shows its field.
+    SubTemplateCycle,
+    /// A sub-template reference more than 16 sub-templates deep: it shows its field.
+    SubTemplateTooDeep,
+    /// A sub-template reference whose name matches a sub-template only in another case: it doesn't resolve.
+    SubTemplateNearMatch,
 }
 
 impl WarningCode {
@@ -49,6 +59,11 @@ impl WarningCode {
             WarningCode::CommentUnanchored => "comment-unanchored",
             WarningCode::CommentReferenceOrphan => "comment-reference-orphan",
             WarningCode::UnknownPreset => "unknown-preset",
+            WarningCode::GlossaryUnreadable => "glossary-unreadable",
+            WarningCode::DuplicateBuildingBlock => "duplicate-building-block",
+            WarningCode::SubTemplateCycle => "sub-template-cycle",
+            WarningCode::SubTemplateTooDeep => "sub-template-too-deep",
+            WarningCode::SubTemplateNearMatch => "sub-template-near-match",
         }
     }
 }

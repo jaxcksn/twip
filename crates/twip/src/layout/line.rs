@@ -1620,6 +1620,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         };
         let mut atoms: Vec<Atom> = Vec::new();
         let mut texts: Vec<([f64; 4], crate::docx::Picture)> = Vec::new();
+        let mut expansions: Vec<([f64; 4], Rc<super::expansion::Expansion>)> = Vec::new();
         // REV-6: a joined paragraph's pieces keep their own paragraphs and units (generated text, its first's).
         let join = sp.join.as_deref();
         let source = |p: &Piece| match (join, p.src) {
@@ -1663,6 +1664,16 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 draw_leader(o, line, k, x0, base, &mut out);
                 if let Some(unit) = first {
                     atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + line.widths[k]), para: q, unit, brk: false });
+                }
+                continue;
+            }
+            if let (Kind::Object, Some(Object::Expansion(e))) = (p.kind, p.object.map(|o| &sp.objects[o as usize])) {
+                flush(&mut run, &mut out);
+                // Sits on the baseline, as a picture does.
+                let rect = [x, base - e.size.1, x + e.size.0, base];
+                expansions.push((rect, e.clone()));
+                if let Some(unit) = first {
+                    atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + e.size.0), para: q, unit, brk: false });
                 }
                 continue;
             }
@@ -1771,6 +1782,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             changed,
             mark,
             texts: texts.into_boxed_slice(),
+            expansions: expansions.into_boxed_slice(),
         }
     }
 }

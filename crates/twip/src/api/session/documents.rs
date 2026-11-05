@@ -123,8 +123,12 @@ impl Session {
             }
             ExportFormat::Pdf => {
                 let fonts = self.fonts.fonts();
-                // REV-1: a PDF prints the No-markup view, whatever view the editor shows.
-                let bytes = if self.editor.document().review.view == crate::docx::review::MarkupView::NoMarkup {
+                // REV-1: a PDF prints the No-markup view, whatever view the editor shows. Sub-template bodies shown in
+                // place of their references are the editor's view, not the document: never in the PDF.
+                let bytes = if self.editor.document().review.view == crate::docx::review::MarkupView::NoMarkup
+                    && !self.editor.shows_expansions()
+                    && self.editor.editing_sub_template().is_none()
+                {
                     self.editor.complete(&fonts);
                     crate::pdf::export(self.editor.document(), &self.editor.snapshot(), "")
                 } else {

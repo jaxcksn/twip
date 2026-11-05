@@ -20,6 +20,9 @@ public sealed record EditorState
     /// <summary>Editing or design mode.</summary>
     public EditorMode Mode { get; init; }
 
+    /// <summary>The template, or the sub-template being edited.</summary>
+    public EditingTarget Editing { get; init; } = EditingTarget.Template;
+
     /// <summary>Whether the session is read only.</summary>
     public bool ReadOnly { get; init; }
 
@@ -167,6 +170,31 @@ public enum SelectionKind
     Element,
 }
 
+/// <summary>What the editor is on: the template, or one of its sub-templates.</summary>
+public enum EditingTargetKind
+{
+    /// <summary>The document itself.</summary>
+    Template,
+    /// <summary>A sub-template's body.</summary>
+    SubTemplate,
+}
+
+/// <summary>What the editor is on.</summary>
+/// <param name="Kind">The template or a sub-template.</param>
+public sealed record EditingTarget(EditingTargetKind Kind)
+{
+    /// <summary>The template.</summary>
+    public static EditingTarget Template { get; } = new(EditingTargetKind.Template);
+
+    /// <summary>The sub-template's name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
+
+    /// <summary>The sub-template's building block category.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Category { get; init; }
+}
+
 /// <summary>Which story the selection is in.</summary>
 public enum Story
 {
@@ -182,6 +210,8 @@ public enum Story
     Endnote,
     /// <summary>A text box.</summary>
     TextBox,
+    /// <summary>A sub-template's body (a building block), while the editor is on it.</summary>
+    SubTemplate,
 }
 
 /// <summary>The selection.</summary>
@@ -840,6 +870,9 @@ public sealed record ViewState
 
     /// <summary>When the objects' dot grid shows.</summary>
     public ObjectGrid ObjectGrid { get; init; } = ObjectGrid.WhileDragging;
+    /// <summary>Which fields are sub-template references (<see cref="EditorCommands.SetSubTemplateRulesAsync"/>); none when null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ReferenceRule>? SubTemplateRules { get; init; }
 }
 
 /// <summary>Change tracking, revisions and comments.</summary>

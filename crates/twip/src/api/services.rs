@@ -852,6 +852,9 @@ pub struct ElementFilter {
     /// Only those in this story (any when unset).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub story: Option<Story>,
+    /// Only the elements in this sub-template's body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_template: Option<String>,
 }
 
 /// A field or content control.
@@ -875,10 +878,68 @@ pub struct ElementInfo {
     pub display: String,
     /// The story it is in.
     pub story: Story,
+    /// The sub-template whose body it is in, when `story` is `subTemplate`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_template: Option<String>,
     /// The element it is in.
     pub parent: Option<ElementId>,
     /// Locked against editing.
     pub locked: bool,
+    /// A sub-template reference field's sub-template.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<SubTemplateReference>,
+}
+
+/// A sub-template: a building block in a category the rules declare.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubTemplateInfo {
+    /// Its name.
+    pub name: String,
+    /// Its building block category.
+    pub category: String,
+    /// The reference fields naming it in the template's body, headers, footers and notes.
+    pub references: u32,
+    /// The reference fields naming it in other sub-templates' bodies.
+    pub nested_references: u32,
+    /// The fields and controls in its body.
+    pub elements: Vec<ElementInfo>,
+}
+
+/// What a sub-template reference field names and whether its body shows.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubTemplateReference {
+    /// The sub-template's name, as the field gives it.
+    pub name: String,
+    /// Whether it names a sub-template whose body can show in its place.
+    pub resolution: ReferenceResolution,
+    /// The sub-template's name when only a name in another case matches (`nearMatch`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub near_match: Option<String>,
+    /// Its body shows in its place.
+    pub expanded: bool,
+}
+
+/// Whether a reference's sub-template resolves, or why its body can't show.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReferenceResolution {
+    /// A sub-template has the name.
+    #[default]
+    Resolved,
+    /// No sub-template has the name.
+    Missing,
+    /// Only a name in another case matches.
+    NearMatch,
+    /// The sub-template is already being shown around it.
+    Cycle,
+    /// More than 16 sub-templates deep.
+    TooDeep,
+    /// The field shares its paragraph with other content.
+    NotAlone,
+    /// The field is in a header, footer, note or text box.
+    NotInBody,
 }
 
 /// An element with its settings and children.
@@ -902,6 +963,9 @@ pub struct ElementDetail {
     pub display: String,
     /// The story it is in.
     pub story: Story,
+    /// The sub-template whose body it is in, when `story` is `subTemplate`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_template: Option<String>,
     /// The element it is in.
     pub parent: Option<ElementId>,
     /// Locked against editing.

@@ -50,6 +50,15 @@ impl Region {
     }
 }
 
+/// Which styles part a style was read from: the document's, or the glossary's (a style only a building block body
+/// uses, kept in the document's table under an id that doesn't collide).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StyleOrigin {
+    #[default]
+    Document,
+    Glossary,
+}
+
 #[derive(Clone, Debug)]
 pub struct Style {
     pub id: String,
@@ -68,6 +77,7 @@ pub struct Style {
     pub base: Region,
     /// Conditional regions by `w:type` (`firstRow`, `band1Horz`, ...).
     pub regions: HashMap<String, Region>,
+    pub origin: StyleOrigin,
 }
 
 /// Table-style conditional regions, lowest precedence first (TABLE-3).
@@ -199,6 +209,7 @@ impl Styles {
                 custom: attr(n, "customStyle").is_some_and(|v| on_off_str(Some(v))),
                 base: Region::parse(n, &colours),
                 regions,
+                origin: StyleOrigin::Document,
             };
             if kind == StyleKind::Paragraph {
                 s.paragraph_order.push(style.id.clone());

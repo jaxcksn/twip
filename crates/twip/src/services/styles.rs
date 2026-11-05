@@ -8,7 +8,7 @@ use crate::docx::styles::StyleKind;
 
 /// The paragraph, character and table styles (`kind` only, when given), by priority then name. Numbering styles
 /// aren't listed.
-pub fn list(doc: &Document, kind: Option<StyleType>) -> Vec<StyleInfo> {
+pub fn list(doc: &Document, kind: Option<StyleType>, glossary: bool) -> Vec<StyleInfo> {
     let Some(r) = doc.resolver.as_deref() else { return Vec::new() };
     let styles = &r.styles;
     let mut out: Vec<StyleInfo> = styles
@@ -22,6 +22,10 @@ pub fn list(doc: &Document, kind: Option<StyleType>) -> Vec<StyleInfo> {
                 StyleKind::Numbering => return None,
             };
             if kind.is_some_and(|k| k != t) {
+                return None;
+            }
+            // A style only a sub-template's glossary defines is offered while that sub-template is edited.
+            if s.origin == crate::docx::styles::StyleOrigin::Glossary && !glossary {
                 return None;
             }
             // A run with no direct formatting under the document defaults and this style's chain, as text resolves.

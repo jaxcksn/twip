@@ -8,6 +8,7 @@ pub mod cache;
 pub mod document;
 pub mod dump;
 pub mod env;
+pub mod expansion;
 pub mod float;
 pub mod flow;
 pub mod fragment;
@@ -50,6 +51,8 @@ pub struct LayoutCtx<'a> {
     pub env: &'a LayoutEnv,
     /// Live layout's preview of a dragged float ([`Preview`]).
     pub preview: Option<&'a Preview>,
+    /// The editor's sub-template bodies shown in place of their references ([`expansion::Expansions`]).
+    pub expansions: Option<&'a expansion::Expansions>,
 }
 
 /// Live layout: a dragged float as the drag would leave it, laid out in place of the document's float with its id

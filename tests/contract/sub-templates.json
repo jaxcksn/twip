@@ -1,0 +1,66 @@
+{
+  "name": "sub-templates",
+  "fixture": "editor/FX-SUBTEMPLATES.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "setSubTemplateRules", "rules": [{ "fieldType": "SUBTEMPLATE", "category": "Sub-templates" }] } },
+    { "op": "expectState", "match": { "view": { "subTemplateRules": [{ "fieldType": "SUBTEMPLATE", "category": "Sub-templates" }] } } },
+    { "op": "call", "method": "elements.list", "args": [{ "kind": "field", "story": "body" }], "save": "fields", "result": { "$has": [
+      { "id": { "$type": "string" }, "code": " SUBTEMPLATE Violation ", "reference": { "name": "Violation", "resolution": "resolved", "expanded": true } },
+      { "code": " SUBTEMPLATE Witness ", "reference": { "name": "Witness", "resolution": "missing", "expanded": true } },
+      { "code": " SUBTEMPLATE violation ", "reference": { "name": "violation", "resolution": "nearMatch", "nearMatch": "Violation" } }
+    ] } },
+    { "op": "call", "method": "elements.list", "args": [{ "kind": "field", "story": "subTemplate" }], "result": { "$has": [
+      { "code": " MERGEFIELD Fee ", "story": "subTemplate", "subTemplate": "Violation" }
+    ] } },
+    { "op": "call", "method": "elements.select", "args": [{ "$saved": "fields", "path": [{ "code": " SUBTEMPLATE Violation " }, "id"] }] },
+    { "op": "command", "command": { "type": "insertText", "value": "x" } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "expectEvents", "match": [{ "type": "editRefused", "reason": { "kind": "subTemplate", "name": "Violation" } }] },
+    { "op": "command", "command": { "type": "setSubTemplateView", "expanded": false } },
+    { "op": "call", "method": "elements.list", "args": [{ "kind": "field", "story": "body" }], "result": { "$has": [
+      { "code": " SUBTEMPLATE Violation ", "reference": { "name": "Violation", "resolution": "resolved", "expanded": false } }
+    ] } },
+    { "op": "expectState", "match": { "revision": 1 } },
+
+    { "op": "call", "method": "subTemplates.list", "result": [
+      { "name": "Violation", "category": "Sub-templates", "references": 4, "nestedReferences": 0 },
+      { "name": "FeeRow", "references": 1 },
+      { "name": "Appeals notice", "references": 0, "nestedReferences": 0, "elements": [] },
+      { "name": "Cycle-A" },
+      { "name": "Cycle-B", "nestedReferences": 1 }
+    ] },
+    { "op": "call", "method": "subTemplates.edit", "args": ["Appeals notice"] },
+    { "op": "expectEvents", "match": [{ "type": "editingTargetChanged", "kind": "subTemplate", "name": "Appeals notice", "category": "Sub-templates" }] },
+    { "op": "expectState", "match": { "editing": { "kind": "subTemplate", "name": "Appeals notice" }, "selection": { "story": "subTemplate" } } },
+    { "op": "call", "method": "subTemplates.edit", "args": ["Violation"] },
+    { "op": "expectState", "match": { "editing": { "kind": "subTemplate", "name": "Violation" } } },
+    { "op": "call", "method": "subTemplates.edit", "args": ["Nope"] },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "insertText", "value": "x" } },
+    { "op": "command", "command": { "type": "closeSubTemplate" } },
+    { "op": "expectState", "match": { "selection": { "story": "body" } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "editing": { "kind": "subTemplate", "name": "Violation" } } },
+    { "op": "call", "method": "subTemplates.close" },
+    { "op": "expectEvents", "match": [{ "type": "editingTargetChanged", "kind": "template" }] },
+
+    { "op": "command", "command": { "type": "createSubTemplate", "name": "Payment" } },
+    { "op": "command", "command": { "type": "createSubTemplate", "name": "Payment" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "renameSubTemplate", "name": "Violation", "to": "Citation", "updateReferences": true } },
+    { "op": "call", "method": "elements.list", "args": [{ "kind": "field", "story": "body" }], "result": { "$has": [
+      { "reference": { "name": "Citation", "resolution": "resolved" } }
+    ] } },
+    { "op": "call", "method": "subTemplates.remove", "args": ["Cycle-B"] },
+    { "op": "call", "method": "subTemplates.list", "result": [
+      { "name": "Citation" }, { "name": "FeeRow" }, { "name": "Appeals notice" }, { "name": "Cycle-A" }, { "name": "Payment" }
+    ] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "call", "method": "subTemplates.list", "result": [
+      { "name": "Violation" }, { "name": "FeeRow" }, { "name": "Appeals notice" }, { "name": "Cycle-A" }, { "name": "Cycle-B" }
+    ] }
+  ]
+}

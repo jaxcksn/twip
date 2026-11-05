@@ -22,6 +22,7 @@ use super::*;
 
 mod comments;
 mod drawing;
+mod glossary;
 pub mod props;
 mod revisions;
 
@@ -51,6 +52,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
             parts.push((name.clone(), xml.into_bytes()));
         }
     }
+    glossary::write(doc, src, &mut parts)?;
     for (name, xml, foot) in &src.notes {
         let (was, is) = if *foot { (&src.footnotes, &doc.footnotes) } else { (&src.endnotes, &doc.endnotes) };
         let mut ids: Vec<&i64> = was.keys().filter(|id| is.contains_key(id)).collect();

@@ -34,6 +34,8 @@ pub struct ShapeSpace {
     /// The previewed float's id when the paragraph anchors it in the document but the preview anchors it elsewhere:
     /// it isn't laid out here.
     pub hide: Option<u64>,
+    /// The sub-template body shown in place of the paragraph's reference field ([`super::expansion`]).
+    pub expansion: Option<std::rc::Rc<super::expansion::Expansion>>,
 }
 
 /// A paragraph's border settings, which make consecutive paragraphs share one box when identical (PARA-7):

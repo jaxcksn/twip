@@ -371,4 +371,18 @@ public enum CommandId
     SetTablePosition,
     /// <summary>Dismisses the popover asked for; with none open, nothing.</summary>
     ClosePopover,
+    /// <summary>Which fields are sub-template references.</summary>
+    SetSubTemplateRules,
+    /// <summary>Shows references' sub-template bodies in their place, or their fields.</summary>
+    SetSubTemplateView,
+    /// <summary>Edits a sub-template's body in this editor.</summary>
+    EditSubTemplate,
+    /// <summary>Back to the template from a sub-template.</summary>
+    CloseSubTemplate,
+    /// <summary>A new sub-template.</summary>
+    CreateSubTemplate,
+    /// <summary>Renames a sub-template.</summary>
+    RenameSubTemplate,
+    /// <summary>Removes a sub-template.</summary>
+    RemoveSubTemplate,
 }

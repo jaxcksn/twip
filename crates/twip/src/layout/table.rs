@@ -1016,7 +1016,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                 // The text width it takes: its widths less TABLE-17's edge allowances (TABLE-11), or laid out
                 // in a cell that wide its A falls short and its words break.
                 let t = super::story::as_nested(t, Some(CellEnds { fixed, ..CellEnds::default() }));
-                let shown = in_view(&t, env.ctx.env.text.review.view);
+                let shown = in_view(&t, env.ctx.env.text.review.view, env.ctx.expansions);
                 let t = shown.as_ref().map_or(&*t, |v| &v.table);
                 let f = fit(t, 0.0, env, Some(autofit::MAXW), memos)?;
                 // TABLE-11: a nested table is never sloppy, so its allowances are compat 15's in every mode.
@@ -1234,7 +1234,7 @@ fn layout_with(
     reuse: Option<(&TableLayout, std::ops::RangeInclusive<usize>)>,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
-    match in_view(t, env.ctx.env.text.review.view) {
+    match in_view(t, env.ctx.env.text.review.view, env.ctx.expansions) {
         None => layout_shown(t, text_w, env, prev, measure, reuse, memos),
         Some(v) => Ok(v.expand(&*layout_shown(&v.table, text_w, env, prev, measure, None, memos)?)),
     }
@@ -1248,15 +1248,18 @@ struct ViewTable {
     rows: Vec<Option<Vec<usize>>>,
 }
 
-/// The table `view` shows, when it isn't `t` itself.
+/// The table `view` shows, when it isn't `t` itself: also when a row shows a sub-template's row in its place
+/// (`expansions`).
 // shortcut: in Original a cell keeps the formatting its current table style gives it, even when the table's earlier
 // properties name another style; resolving the cells again over that style would show it.
-fn in_view(t: &Table, view: MarkupView) -> Option<ViewTable> {
+fn in_view(t: &Table, view: MarkupView, expansions: Option<&super::expansion::Expansions>) -> Option<ViewTable> {
     let original = view == MarkupView::Original;
     let grid = t.table_grid_in(view);
     let differs = |c: &Cell| view.hides_cell(&c.rev) || c.v_merge_in(view) != c.v_merge || original && c.rev.change.is_some();
     let hides = t.rows.iter().any(|r| view.hides_row(&r.rev) || original && r.rev.change.is_some() || r.cells.iter().any(differs));
-    if !hides && grid == t.grid.as_slice() && !(original && t.change.is_some()) {
+    let shown_row = |ri: usize| expansions.and_then(|e| e.rows.get(&(super::ids::TableId(t.id), ri)));
+    let expanded = expansions.is_some_and(|e| !e.rows.is_empty()) && (0..t.rows.len()).any(|ri| shown_row(ri).is_some());
+    if !hides && !expanded && grid == t.grid.as_slice() && !(original && t.change.is_some()) {
         return None;
     }
     let mut table = t.clone();
@@ -1268,7 +1271,15 @@ fn in_view(t: &Table, view: MarkupView) -> Option<ViewTable> {
     let mut rows = Vec::with_capacity(t.rows.len());
     table.rows = std::mem::take(&mut table.rows)
         .into_iter()
-        .filter_map(|mut r| {
+        .enumerate()
+        .filter_map(|(ri, mut r)| {
+            // A sub-template's row in place of its reference's: its cells, each kept as the model cell at its place.
+            if let Some(body) = shown_row(ri) {
+                let n = r.cells.len().max(1);
+                r.cells = body.cells.clone();
+                rows.push(Some((0..r.cells.len()).map(|k| k.min(n - 1)).collect()));
+                return Some(r);
+            }
             if view.hides_row(&r.rev) {
                 rows.push(None);
                 return None;
@@ -1971,6 +1982,7 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
                 changed: placed.line.changed,
                 mark: placed.line.mark,
                 texts: placed.line.texts.clone(),
+                expansions: placed.line.expansions.clone(),
             });
             Child::Line { para: *para, placed: PlacedLine { line, ..placed.clone() } }
         }

@@ -5057,3 +5057,156 @@ Twip.AutoCorrectOptions.NumberedLists.get -> bool
 Twip.AutoCorrectOptions.NumberedLists.init -> void
 Twip.AutoCorrectOptions.BulletedLists.get -> bool
 Twip.AutoCorrectOptions.BulletedLists.init -> void
+Twip.CommandId.SetSubTemplateRules = 184 -> Twip.CommandId
+Twip.CommandId.SetSubTemplateView = 185 -> Twip.CommandId
+Twip.EditRefusedEventArgs
+Twip.EditRefusedEventArgs.Element.get -> Twip.ElementId?
+Twip.EditRefusedEventArgs.Reason.get -> Twip.RefusalReason!
+Twip.EditorCommands.SetSubTemplateRulesAsync(System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>! rules, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetSubTemplateViewAsync(bool expanded, System.Collections.Generic.IReadOnlyList<Twip.ElementId>? ids = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSession.EditRefused -> System.EventHandler<Twip.EditRefusedEventArgs!>?
+Twip.ElementInfo.Reference.get -> Twip.SubTemplateReference?
+Twip.ElementInfo.Reference.init -> void
+Twip.ElementInfo.SubTemplate.get -> string?
+Twip.ElementInfo.SubTemplate.init -> void
+Twip.ReferenceResolution
+Twip.ReferenceResolution.Cycle = 3 -> Twip.ReferenceResolution
+Twip.ReferenceResolution.Missing = 1 -> Twip.ReferenceResolution
+Twip.ReferenceResolution.NearMatch = 2 -> Twip.ReferenceResolution
+Twip.ReferenceResolution.NotAlone = 5 -> Twip.ReferenceResolution
+Twip.ReferenceResolution.NotInBody = 6 -> Twip.ReferenceResolution
+Twip.ReferenceResolution.Resolved = 0 -> Twip.ReferenceResolution
+Twip.ReferenceResolution.TooDeep = 4 -> Twip.ReferenceResolution
+Twip.ReferenceRule
+Twip.ReferenceRule.<Clone>$() -> Twip.ReferenceRule!
+Twip.ReferenceRule.Argument.get -> int?
+Twip.ReferenceRule.Argument.init -> void
+Twip.ReferenceRule.Category.get -> string!
+Twip.ReferenceRule.Category.init -> void
+Twip.ReferenceRule.Deconstruct(out string! FieldType, out string! Category) -> void
+Twip.ReferenceRule.Equals(Twip.ReferenceRule? other) -> bool
+Twip.ReferenceRule.FieldType.get -> string!
+Twip.ReferenceRule.FieldType.init -> void
+Twip.ReferenceRule.Gallery.get -> string?
+Twip.ReferenceRule.Gallery.init -> void
+Twip.ReferenceRule.ReferenceRule(string! FieldType, string! Category) -> void
+Twip.RefusalKind
+Twip.RefusalKind.Locked = 1 -> Twip.RefusalKind
+Twip.RefusalKind.SubTemplate = 0 -> Twip.RefusalKind
+Twip.RefusalReason
+Twip.RefusalReason.<Clone>$() -> Twip.RefusalReason!
+Twip.RefusalReason.Deconstruct(out Twip.RefusalKind Kind) -> void
+Twip.RefusalReason.Equals(Twip.RefusalReason? other) -> bool
+Twip.RefusalReason.Kind.get -> Twip.RefusalKind
+Twip.RefusalReason.Kind.init -> void
+Twip.RefusalReason.Name.get -> string?
+Twip.RefusalReason.Name.init -> void
+Twip.RefusalReason.RefusalReason(Twip.RefusalKind Kind) -> void
+Twip.Story.SubTemplate = 6 -> Twip.Story
+Twip.SubTemplateReference
+Twip.SubTemplateReference.<Clone>$() -> Twip.SubTemplateReference!
+Twip.SubTemplateReference.Deconstruct(out string! Name, out Twip.ReferenceResolution Resolution, out bool Expanded) -> void
+Twip.SubTemplateReference.Equals(Twip.SubTemplateReference? other) -> bool
+Twip.SubTemplateReference.Expanded.get -> bool
+Twip.SubTemplateReference.Expanded.init -> void
+Twip.SubTemplateReference.Name.get -> string!
+Twip.SubTemplateReference.Name.init -> void
+Twip.SubTemplateReference.NearMatch.get -> string?
+Twip.SubTemplateReference.NearMatch.init -> void
+Twip.SubTemplateReference.Resolution.get -> Twip.ReferenceResolution
+Twip.SubTemplateReference.Resolution.init -> void
+Twip.SubTemplateReference.SubTemplateReference(string! Name, Twip.ReferenceResolution Resolution, bool Expanded) -> void
+Twip.ViewState.SubTemplateRules.get -> System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>?
+Twip.ViewState.SubTemplateRules.init -> void
+Twip.WarningCode.DuplicateBuildingBlock = 13 -> Twip.WarningCode
+Twip.WarningCode.GlossaryUnreadable = 12 -> Twip.WarningCode
+override Twip.ReferenceRule.Equals(object? obj) -> bool
+override Twip.ReferenceRule.GetHashCode() -> int
+override Twip.ReferenceRule.ToString() -> string!
+override Twip.RefusalReason.Equals(object? obj) -> bool
+override Twip.RefusalReason.GetHashCode() -> int
+override Twip.RefusalReason.ToString() -> string!
+override Twip.SubTemplateReference.Equals(object? obj) -> bool
+override Twip.SubTemplateReference.GetHashCode() -> int
+override Twip.SubTemplateReference.ToString() -> string!
+static Twip.EditorOperation.SetSubTemplateRules(System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>! rules) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetSubTemplateView(bool expanded, System.Collections.Generic.IReadOnlyList<Twip.ElementId>? ids = null) -> Twip.EditorOperation!
+static Twip.ReferenceRule.operator !=(Twip.ReferenceRule? left, Twip.ReferenceRule? right) -> bool
+static Twip.ReferenceRule.operator ==(Twip.ReferenceRule? left, Twip.ReferenceRule? right) -> bool
+static Twip.RefusalReason.operator !=(Twip.RefusalReason? left, Twip.RefusalReason? right) -> bool
+static Twip.RefusalReason.operator ==(Twip.RefusalReason? left, Twip.RefusalReason? right) -> bool
+static Twip.SubTemplateReference.operator !=(Twip.SubTemplateReference? left, Twip.SubTemplateReference? right) -> bool
+static Twip.SubTemplateReference.operator ==(Twip.SubTemplateReference? left, Twip.SubTemplateReference? right) -> bool
+Twip.CommandId.CloseSubTemplate = 187 -> Twip.CommandId
+Twip.CommandId.EditSubTemplate = 186 -> Twip.CommandId
+Twip.EditingTarget
+Twip.EditingTarget.<Clone>$() -> Twip.EditingTarget!
+Twip.EditingTarget.Category.get -> string?
+Twip.EditingTarget.Category.init -> void
+Twip.EditingTarget.Deconstruct(out Twip.EditingTargetKind Kind) -> void
+Twip.EditingTarget.EditingTarget(Twip.EditingTargetKind Kind) -> void
+Twip.EditingTarget.Equals(Twip.EditingTarget? other) -> bool
+Twip.EditingTarget.Kind.get -> Twip.EditingTargetKind
+Twip.EditingTarget.Kind.init -> void
+Twip.EditingTarget.Name.get -> string?
+Twip.EditingTarget.Name.init -> void
+Twip.EditingTargetKind
+Twip.EditingTargetKind.SubTemplate = 1 -> Twip.EditingTargetKind
+Twip.EditingTargetKind.Template = 0 -> Twip.EditingTargetKind
+Twip.EditorCommands.CloseSubTemplateAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.EditSubTemplateAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+override Twip.EditingTarget.Equals(object? obj) -> bool
+override Twip.EditingTarget.GetHashCode() -> int
+override Twip.EditingTarget.ToString() -> string!
+static Twip.EditingTarget.Template.get -> Twip.EditingTarget!
+static Twip.EditingTarget.operator !=(Twip.EditingTarget? left, Twip.EditingTarget? right) -> bool
+static Twip.EditingTarget.operator ==(Twip.EditingTarget? left, Twip.EditingTarget? right) -> bool
+static Twip.EditorOperation.CloseSubTemplate() -> Twip.EditorOperation!
+static Twip.EditorOperation.EditSubTemplate(string! name, string? category = null) -> Twip.EditorOperation!
+Twip.EditingTargetChangedEventArgs
+Twip.EditingTargetChangedEventArgs.Target.get -> Twip.EditingTarget!
+Twip.EditorSession.EditingTargetChanged -> System.EventHandler<Twip.EditingTargetChangedEventArgs!>?
+Twip.EditorSession.SubTemplates.get -> Twip.EditorSubTemplates!
+Twip.EditorState.Editing.get -> Twip.EditingTarget!
+Twip.EditorState.Editing.init -> void
+Twip.EditorSubTemplates
+Twip.EditorSubTemplates.CloseAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSubTemplates.EditAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSubTemplates.ListAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.SubTemplateInfo!>!>!
+Twip.ElementFilter.SubTemplate.get -> string?
+Twip.ElementFilter.SubTemplate.init -> void
+Twip.SubTemplateInfo
+Twip.SubTemplateInfo.<Clone>$() -> Twip.SubTemplateInfo!
+Twip.SubTemplateInfo.Category.get -> string!
+Twip.SubTemplateInfo.Category.init -> void
+Twip.SubTemplateInfo.Deconstruct(out string! Name, out string! Category, out int References, out int NestedReferences, out System.Collections.Generic.IReadOnlyList<Twip.ElementInfo!>! Elements) -> void
+Twip.SubTemplateInfo.Elements.get -> System.Collections.Generic.IReadOnlyList<Twip.ElementInfo!>!
+Twip.SubTemplateInfo.Elements.init -> void
+Twip.SubTemplateInfo.Equals(Twip.SubTemplateInfo? other) -> bool
+Twip.SubTemplateInfo.Name.get -> string!
+Twip.SubTemplateInfo.Name.init -> void
+Twip.SubTemplateInfo.NestedReferences.get -> int
+Twip.SubTemplateInfo.NestedReferences.init -> void
+Twip.SubTemplateInfo.References.get -> int
+Twip.SubTemplateInfo.References.init -> void
+Twip.SubTemplateInfo.SubTemplateInfo(string! Name, string! Category, int References, int NestedReferences, System.Collections.Generic.IReadOnlyList<Twip.ElementInfo!>! Elements) -> void
+override Twip.SubTemplateInfo.Equals(object? obj) -> bool
+override Twip.SubTemplateInfo.GetHashCode() -> int
+override Twip.SubTemplateInfo.ToString() -> string!
+static Twip.SubTemplateInfo.operator !=(Twip.SubTemplateInfo? left, Twip.SubTemplateInfo? right) -> bool
+static Twip.SubTemplateInfo.operator ==(Twip.SubTemplateInfo? left, Twip.SubTemplateInfo? right) -> bool
+Twip.CommandId.CreateSubTemplate = 188 -> Twip.CommandId
+Twip.CommandId.RemoveSubTemplate = 190 -> Twip.CommandId
+Twip.CommandId.RenameSubTemplate = 189 -> Twip.CommandId
+Twip.EditorSubTemplates.CreateAsync(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSubTemplates.RemoveAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSubTemplates.RenameAsync(string! name, string! to, bool updateReferences = false, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.WarningCode.SubTemplateCycle = 14 -> Twip.WarningCode
+Twip.WarningCode.SubTemplateNearMatch = 16 -> Twip.WarningCode
+Twip.WarningCode.SubTemplateTooDeep = 15 -> Twip.WarningCode
+static Twip.EditorOperation.CreateSubTemplate(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.RemoveSubTemplate(string! name, string? category = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.RenameSubTemplate(string! name, string! to, bool? updateReferences = null, string? category = null) -> Twip.EditorOperation!
+Twip.EditorCommands.CreateSubTemplateAsync(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.RemoveSubTemplateAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.RenameSubTemplateAsync(string! name, string! to, bool? updateReferences = null, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!

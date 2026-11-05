@@ -683,6 +683,47 @@
     "type": "setFieldLabels"
   },
   {
+    "rules": [
+      {
+        "argument": 0,
+        "category": "Sub-templates",
+        "fieldType": "SUBTEMPLATE",
+        "gallery": "custom1"
+      }
+    ],
+    "type": "setSubTemplateRules"
+  },
+  {
+    "expanded": false,
+    "ids": [
+      "field-7"
+    ],
+    "type": "setSubTemplateView"
+  },
+  {
+    "category": "Sub-templates",
+    "name": "Violation",
+    "type": "editSubTemplate"
+  },
+  {
+    "type": "closeSubTemplate"
+  },
+  {
+    "category": "Sub-templates",
+    "name": "Payment",
+    "type": "createSubTemplate"
+  },
+  {
+    "name": "Violation",
+    "to": "Citation",
+    "type": "renameSubTemplate",
+    "updateReferences": true
+  },
+  {
+    "name": "Cycle-B",
+    "type": "removeSubTemplate"
+  },
+  {
     "binding": {
       "prefixMappings": "xmlns:i='urn:invoice'",
       "storeItemId": "{6A9C}",

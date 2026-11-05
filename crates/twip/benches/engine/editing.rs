@@ -299,3 +299,68 @@ mod merge {
             .bench_local_values(|insert| e.borrow_mut().execute(insert, &fonts));
     }
 }
+
+mod sub_templates {
+    use divan::Bencher;
+    use twip::api::command::{Command as Api, InsertField, ReferenceRule, SubTemplateName, SubTemplateRules};
+    use twip::internal::editing::commands::Command;
+    use twip::internal::font::Fonts;
+    use twip::internal::layout::{ParaId, Unit};
+
+    use super::open;
+
+    /// The sub-template fixture with Violation referenced 20 times from the template: its 4 and 16 more, one per
+    /// paragraph at the end.
+    fn twenty(fonts: &Fonts) -> twip::internal::editing::Editor {
+        let mut e = open("editor/FX-SUBTEMPLATES.docx", fonts);
+        let rules = SubTemplateRules {
+            rules: vec![ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None }],
+        };
+        e.execute(Api::SetSubTemplateRules(rules), fonts);
+        let last = e.document().sections.last().and_then(|s| s.blocks.last()).map(|b| match b {
+            twip::internal::docx::Block::Para(p) => ParaId(p.id),
+            twip::internal::docx::Block::Table(t) => ParaId(t.id),
+        });
+        if let Some(p) = last {
+            e.select_range(p, Unit(1000), Unit(1000), fonts);
+        }
+        for _ in 0..16 {
+            e.execute(Command::InsertParagraph, fonts);
+            e.execute(Api::InsertField(InsertField { code: "SUBTEMPLATE Violation".into(), display: None, show_code: None }), fonts);
+        }
+        e.complete(fonts);
+        e
+    }
+
+    fn violation() -> Api {
+        Api::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: None })
+    }
+
+    /// Into Violation, one keystroke there, and back to the template, its 20 references laid out again. Budget: under
+    /// 100 ms each way on this machine.
+    #[divan::bench(sample_count = 20, sample_size = 1)]
+    fn switch(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let mut e = twenty(&fonts);
+        bencher.bench_local(|| {
+            e.execute(violation(), &fonts);
+            e.execute(Command::InsertText("x".into()), &fonts);
+            e.execute(Api::CloseSubTemplate, &fonts);
+            e.ensure_current(&fonts);
+        });
+    }
+
+    /// Typing in Violation's body while it is referenced 20 times. Budget: within `typing_*`'s, since the template
+    /// lays its references out again only when it shows.
+    #[divan::bench(sample_size = 1)]
+    fn type_in_body_20_refs(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let mut e = twenty(&fonts);
+        e.execute(violation(), &fonts);
+        e.complete(&fonts);
+        bencher.bench_local(|| {
+            e.execute(Command::InsertText("x".into()), &fonts);
+            e.ensure_current(&fonts);
+        });
+    }
+}

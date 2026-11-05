@@ -101,6 +101,7 @@ fn story(s: StoryId, o: &Order) -> Value {
         StoryId::Footnote(id) => json!(format!("footnote:{id}")),
         StoryId::Endnote(id) => json!(format!("endnote:{id}")),
         StoryId::TextBox(f) => json!(format!("text-box:{}", o.boxes.get(&f).map_or(-1, |&n| n as i64))),
+        StoryId::BuildingBlock(k) => json!(format!("building-block:{k}")),
     }
 }
 

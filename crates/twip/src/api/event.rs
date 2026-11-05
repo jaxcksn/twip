@@ -102,6 +102,16 @@ pub enum Event {
     BalloonsLaidOut(#[serde(with = "value")] Vec<BalloonPlacement>),
     /// The ruler view changed (coalesced per frame).
     RulerChanged(RulerView),
+    /// The editor switched between the template and a sub-template, or between sub-templates: where it is now.
+    EditingTargetChanged(super::state::EditingTarget),
+    /// Typing, pasting or dropping was refused: why, and the element concerned.
+    EditRefused {
+        /// Why.
+        reason: RefusalReason,
+        /// The element concerned: the reference field whose sub-template's body shows.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        element: Option<ElementId>,
+    },
     /// Hover over a link, element mark, revision or comment; `null` hides the tooltip.
     Tooltip(#[serde(with = "value")] Option<Tooltip>),
     /// What the editor said to screen readers.
@@ -124,6 +134,19 @@ pub enum Event {
         /// Whether the session is unusable: it rejects later operations with `internal`.
         fatal: bool,
     },
+}
+
+/// Why typing, pasting or dropping was refused.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum RefusalReason {
+    /// Into a sub-template's body shown in place of its reference: edit the sub-template instead.
+    SubTemplate {
+        /// The sub-template's name.
+        name: String,
+    },
+    /// Into a control whose content is locked.
+    Locked,
 }
 
 /// How a link was activated.

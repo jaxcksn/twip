@@ -21,7 +21,7 @@ pub fn check(doc: &Document, idx: &DocIndex, selection: &Selection) -> Vec<Viola
     for s in &doc.sections {
         blocks(&s.blocks, &mut out, true);
     }
-    for b in doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()) {
+    for b in doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()).chain(doc.glossary_bodies()) {
         blocks(b, &mut out, false);
     }
     // 8: a body ending with a table has a final paragraph after it.
@@ -56,7 +56,15 @@ pub fn check(doc: &Document, idx: &DocIndex, selection: &Selection) -> Vec<Viola
             }
         }
     }
-    for b in doc.sections.iter().map(|s| &s.blocks).chain(doc.stories.values()).chain(doc.footnotes.values()).chain(doc.endnotes.values()) {
+    for b in doc
+        .sections
+        .iter()
+        .map(|s| &s.blocks)
+        .chain(doc.stories.values())
+        .chain(doc.footnotes.values())
+        .chain(doc.endnotes.values())
+        .chain(doc.glossary_bodies())
+    {
         anchors(b, idx, &mut out);
     }
     // 7: the selection's positions are valid. (Undo and redo records are checked when restored: they are valid in the
@@ -227,7 +235,7 @@ fn review(doc: &Document, out: &mut Vec<Violation>) {
         blocks(&s.blocks, &mut open, &mut seen, doc, out);
     }
     unended(&mut open, out);
-    let others = doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values());
+    let others = doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()).chain(doc.glossary_bodies());
     for b in others.chain(doc.comments.by_id.values().map(|c| &c.body)) {
         blocks(b, &mut open, &mut seen, doc, out);
         unended(&mut open, out);
@@ -358,9 +366,10 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                     if !stack.is_empty() {
                         out.push(Violation { invariant: "F1 one field", detail: format!("{stack:?} not closed in paragraph {}", p.id) });
                     }
-                    // F3: an evaluated kind is its code's.
+                    // F3: an evaluated kind is its code's (or the application declared it a sub-template reference).
                     for s in crate::docx::fields::spans(&p.inlines) {
                         if let Inline::FieldBegin { kind, .. } = &p.inlines[s.begin]
+                            && *kind != Some(crate::docx::FieldKind::SubTemplate)
                             && *kind != crate::docx::fields::kind_at(&p.inlines, s)
                         {
                             out.push(Violation { invariant: "F3 kind from code", detail: format!("field in paragraph {} has {kind:?}", p.id) });
@@ -403,6 +412,9 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
         for (id, b) in notes {
             walk(b, &format!("{kind} {id}"), doc, &mut seen_fields, &mut used, &mut members, out);
         }
+    }
+    for (k, b) in doc.glossary_bodies().enumerate() {
+        walk(b, &format!("building block {k}"), doc, &mut seen_fields, &mut used, &mut members, out);
     }
     // C2: a block-level control's blocks are consecutive.
     for (c, (container, v)) in &members {
@@ -527,7 +539,7 @@ pub fn duplicate_ids(doc: &Document) -> Vec<u64> {
     for s in &doc.sections {
         walk(&s.blocks, &mut seen, &mut dup);
     }
-    for b in doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()) {
+    for b in doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()).chain(doc.glossary_bodies()) {
         walk(b, &mut seen, &mut dup);
     }
     dup

@@ -5,7 +5,7 @@ import type { ElementInfo } from './services/elements.js';
 import type { ContextMenuEvent } from './services/menus.js';
 import type { RulerView } from './services/ruler.js';
 import type { GestureEvent, Popover } from './services/view.js';
-import type { SelectionSummary } from './state.js';
+import type { EditingTarget, SelectionSummary } from './state.js';
 import type { Author, ClientPoint, ClientRect, CommentId, ElementId, RevisionId, Warning } from './types.js';
 
 /** Every event of `editor.on(type, listener)`, keyed by type. */
@@ -14,10 +14,17 @@ export interface TwipEvents {
   documentChanged: TransactionRecord;
   /** The selection changed; coalesced per frame. */
   selectionChanged: SelectionSummary;
+  /** The editor switched between the template and a sub-template, or between sub-templates: where it is now. */
+  editingTargetChanged: EditingTarget;
   /** A link was activated: a click when read only, Ctrl+click otherwise. */
   linkActivated: { address: string; via: 'ctrlClick' | 'click' };
   /** An unfilled picture placeholder was clicked. */
   placeholderActivated: { key: string; element: ElementId | null };
+  /**
+   * Typing, pasting or dropping was refused: into a sub-template's body shown in place of its reference (edit the
+   * sub-template instead), or into a locked control.
+   */
+  editRefused: { reason: { kind: 'subTemplate'; name: string } | { kind: 'locked' }; element?: ElementId };
   /** The user asked for a context menu. */
   contextMenu: ContextMenuEvent;
   /**

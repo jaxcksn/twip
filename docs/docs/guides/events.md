@@ -46,6 +46,8 @@ operations reject, new ones reject, and `destroy()` still works.
 | `elementActivated` | `ElementActivated` | Design mode: Enter or a double-click on a field or content control. |
 | `elementsChanged` | `ElementsChanged` | Fields or content controls were added, removed or changed. |
 | `fieldsUpdateRequested` | `FieldsUpdateRequested` | The user asked to update fields. Compute their results and answer with `setFieldResults`, passing the token. |
+| `editingTargetChanged` | `EditingTargetChanged` | The editor switched between the template and a sub-template (a double-click, `subTemplates.edit`, undo or redo): show it in your own UI. |
+| `editRefused` | `EditRefused` | Typing, pasting or dropping was refused: into a sub-template's body shown in place of its reference, or a locked control. |
 | `revisionsChanged` | `RevisionsChanged` | The tracked changes changed: refresh a revisions pane. |
 | `commentsChanged` | `CommentsChanged` | The comments changed: refresh a comments pane. |
 | `commentAnchors` | `CommentAnchorsChanged` | Where visible comments sit, after layout, zoom or scrolling. Mounted or attached only. |

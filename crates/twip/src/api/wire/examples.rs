@@ -13,7 +13,7 @@ use crate::api::command::*;
 use crate::api::drawing as dr;
 use crate::api::engine::{Dictionary, SessionId, SessionOptions};
 use crate::api::error::{Error, ErrorCode};
-use crate::api::event::{Event, FieldRequest, HostCommand, KeyOutcome, LinkVia};
+use crate::api::event::{Event, FieldRequest, HostCommand, KeyOutcome, LinkVia, RefusalReason};
 use crate::api::fonts::{FaceInfo, FontRequest, SubstitutionRule};
 use crate::api::input::{ClipboardData, CompositionPhase, Key, Modifiers, Point, PointerButton, PointerKind};
 use crate::api::record::{Author, ChangeSummary, Identity, Origin, Timestamp, TransactionRecord};
@@ -157,6 +157,7 @@ pub fn fixtures() -> Vec<Fixture> {
         "paste-as": PasteAs,
         "pointer-button": PointerButton,
         "pointer-kind": PointerKind,
+        "reference-resolution": ReferenceResolution,
         "revision-kind": RevisionKind,
         "ruler-unit": RulerUnit,
         "section-break-kind": SectionBreakKind,
@@ -353,7 +354,18 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("heading", Heading, vec![Heading { id: HeadingId("h2".into()), level: 2, text: "Terms".into(), page: 3 }]),
         fixture!("style-info", StyleInfo, vec![style_info()]),
         fixture!("element-filter", ElementFilter, vec![element_filter(), ElementFilter::default()]),
-        fixture!("element-info", ElementInfo, vec![element_info()]),
+        fixture!("element-info", ElementInfo, vec![element_info(), reference_info()]),
+        fixture!(
+            "sub-template-info",
+            SubTemplateInfo,
+            vec![SubTemplateInfo {
+                name: "Notice".into(),
+                category: "Sub-templates".into(),
+                references: 2,
+                nested_references: 1,
+                elements: vec![reference_info()]
+            }]
+        ),
         fixture!("element-detail", ElementDetail, vec![element_detail()]),
         fixture!("block", Block, blocks()),
         fixture!("data-part", DataPart, vec![data_part()]),
@@ -707,6 +719,25 @@ fn commands() -> Vec<Command> {
         Command::UnlinkFields(ElementIds { ids: None }),
         Command::ShowFieldCodes(ShowFieldCodes { show: true, ids: None }),
         Command::SetFieldLabels(FieldLabels { labels: BTreeMap::from([("MERGEFIELD Name".into(), "Customer name".into())]), merge: Some(true) }),
+        Command::SetSubTemplateRules(SubTemplateRules {
+            rules: vec![ReferenceRule {
+                field_type: "SUBTEMPLATE".into(),
+                argument: Some(0),
+                category: "Sub-templates".into(),
+                gallery: Some("custom1".into()),
+            }],
+        }),
+        Command::SetSubTemplateView(SubTemplateView { ids: Some(vec![id("field-7")]), expanded: false }),
+        Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: Some("Sub-templates".into()) }),
+        Command::CloseSubTemplate,
+        Command::CreateSubTemplate(CreateSubTemplate { name: "Payment".into(), category: Some("Sub-templates".into()), from: None }),
+        Command::RenameSubTemplate(RenameSubTemplate {
+            name: "Violation".into(),
+            to: "Citation".into(),
+            category: None,
+            update_references: Some(true),
+        }),
+        Command::RemoveSubTemplate(SubTemplateName { name: "Cycle-B".into(), category: None }),
         Command::InsertControl(InsertControl {
             kind: ControlKind::DropDown,
             tag: Some("status".into()),
@@ -1027,6 +1058,7 @@ fn state() -> State {
         sequence: 19,
         load: LoadState::Ready,
         mode: Mode::Editing,
+        editing: crate::api::state::EditingTarget::SubTemplate { name: "Violation".into(), category: "Sub-templates".into() },
         read_only: false,
         modified: true,
         selection: selection(),
@@ -1292,7 +1324,25 @@ fn element_filter() -> ElementFilter {
     ElementFilter {
         kind: Some(ElementKind::PlainText),
         matches: Some(ElementMatch { field: ElementField::Tag, text: "name".into() }),
-        story: Some(Story::Body),
+        story: Some(Story::SubTemplate),
+        sub_template: Some("Violation".into()),
+    }
+}
+
+fn reference_info() -> ElementInfo {
+    ElementInfo {
+        id: id("field-7"),
+        kind: ElementKind::Field,
+        code: Some("SUBTEMPLATE Violation".into()),
+        story: Story::SubTemplate,
+        sub_template: Some("Notice".into()),
+        reference: Some(SubTemplateReference {
+            name: "violation".into(),
+            resolution: ReferenceResolution::NearMatch,
+            near_match: Some("Violation".into()),
+            expanded: true,
+        }),
+        ..ElementInfo::default()
     }
 }
 
@@ -1305,8 +1355,10 @@ fn element_info() -> ElementInfo {
         title: Some("Name".into()),
         display: "Ada".into(),
         story: Story::Body,
+        sub_template: None,
         parent: Some(id("control-1")),
         locked: false,
+        reference: None,
     }
 }
 
@@ -1319,6 +1371,7 @@ fn element_detail() -> ElementDetail {
         title: Some("Due".into()),
         display: "2026-10-27".into(),
         story: Story::Footer,
+        sub_template: None,
         parent: None,
         locked: true,
         lock: ControlLock::Both,
@@ -1481,6 +1534,10 @@ fn events() -> Vec<Event> {
         Event::CommentAnchors(vec![anchor()]),
         Event::BalloonsLaidOut(vec![balloon()]),
         Event::RulerChanged(ruler_view()),
+        Event::EditingTargetChanged(crate::api::state::EditingTarget::SubTemplate { name: "Violation".into(), category: "Sub-templates".into() }),
+        Event::EditingTargetChanged(crate::api::state::EditingTarget::Template),
+        Event::EditRefused { reason: RefusalReason::SubTemplate { name: "Violation".into() }, element: Some(id("field-7")) },
+        Event::EditRefused { reason: RefusalReason::Locked, element: None },
         Event::Tooltip(Some(tooltip())),
         Event::Tooltip(None),
         Event::Announcement { text: "Bold on".into() },

@@ -199,7 +199,8 @@ pub struct CaretRect {
 }
 
 impl PageGeometry {
-    pub fn build(page: &PageFragment, idx: &DocIndex) -> Option<PageGeometry> {
+    /// `shows`: the building block the page shows as the main flow (while one is edited), else `None`.
+    pub fn build(page: &PageFragment, idx: &DocIndex, shows: Option<u32>) -> Option<PageGeometry> {
         let tree = spatial_tree(page, false)?;
         let mut g = PageGeometry { w: page.w, h: page.h, body_area: page.body_area, ..PageGeometry::default() };
         for s in &tree.stories {
@@ -219,6 +220,13 @@ impl PageGeometry {
             g.stories.push(GStory { story, host: idx.host(story), float, rect: s.rect });
             g.nodes(&s.nodes, si, &Rc::from([]), false);
         }
+        // Sub-template bodies shown in place of their references are views of other building blocks: nothing drawn
+        // in them is a place on the page.
+        let viewed = |s: StoryId| matches!(s, StoryId::BuildingBlock(k) if Some(k) != shows);
+        let table_viewed = |t: TableId| idx.table_slot(t).is_some_and(|s| viewed(idx.story(s.container)));
+        g.lines.retain(|l| !l.para().and_then(|p| idx.para_slot(p)).is_some_and(|s| viewed(idx.story(s.container))));
+        g.rows.retain(|r| !table_viewed(r.table) && !r.outer.iter().any(|k| table_viewed(k.0)));
+        g.cells.retain(|c| !c.chain.iter().any(|k| table_viewed(k.0)));
         // Endnotes are laid out in the body's flow: their lines get their own story, boxed by those lines.
         for i in 0..g.lines.len() {
             let si = g.lines[i].story;
@@ -729,6 +737,8 @@ fn line_dist(l: &GLine, x: f64, y: f64) -> f64 {
 #[derive(Default)]
 pub struct Pages {
     snapshot: Option<Rc<crate::layout::Snapshot>>,
+    /// The building block the pages show as the main flow (while one is edited).
+    pub shows: Option<u32>,
     by_page: Vec<Option<Rc<PageGeometry>>>,
     cache: std::collections::HashMap<crate::layout::FragmentId, Rc<PageGeometry>>,
 }
@@ -770,7 +780,7 @@ impl Pages {
         let g = match self.cache.get(&frag.id) {
             Some(g) => g.clone(),
             None => {
-                let g = Rc::new(PageGeometry::build(frag, idx)?);
+                let g = Rc::new(PageGeometry::build(frag, idx, self.shows)?);
                 self.cache.insert(frag.id, g.clone());
                 g
             }

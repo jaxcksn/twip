@@ -38,6 +38,11 @@
       "tableProperties": false,
       "tabs": true
     },
+    "editing": {
+      "category": "Sub-templates",
+      "kind": "subTemplate",
+      "name": "Violation"
+    },
     "fonts": {
       "pending": [
         "Aptos"

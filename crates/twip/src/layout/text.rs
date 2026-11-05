@@ -79,6 +79,8 @@ pub enum Object {
     Note(NoteKind, i64),
     /// A `w:ptab` tab piece's position.
     PTab(crate::docx::PTab),
+    /// A reference field shown as its sub-template's body ([`super::expansion`]).
+    Expansion(Rc<super::expansion::Expansion>),
 }
 
 /// One piece: compact, with ranges into its paragraph's arrays.
@@ -698,8 +700,40 @@ impl Builder<'_> {
             p.object = Some(Object::Float(f));
             self.atom(p, "");
         }
+        // A reference field shown as its sub-template's body: one object at its begin marker; the rest of the field
+        // draws nothing.
+        let expanded = space.expansion.as_ref().and_then(|e| {
+            crate::docx::fields::spans(&para.inlines)
+                .into_iter()
+                .find(|s| matches!(para.inlines[s.begin], Inline::FieldBegin { id, .. } if id == e.field))
+                .map(|s| (s.begin..=s.end, e.clone()))
+        });
         for (k, inl) in para.inlines.iter().enumerate() {
             let evaluated = matches!(inl, Inline::FieldBegin { kind: Some(_), .. });
+            if let Some((span, e)) = expanded.as_ref().filter(|(s, _)| s.contains(&k)) {
+                if evaluated {
+                    field += 1;
+                }
+                if k == *span.start()
+                    && let Some(run) = inl.run()
+                {
+                    self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
+                    let mut p = self.new_piece(Kind::Object, run_in(run, view), None, run.size, 0.0);
+                    (p.width, p.ascent, p.descent) = (e.size.0, e.size.1, 0.0);
+                    p.object = Some(Object::Expansion(e.clone()));
+                    p.break_after = true;
+                    if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
+                        q.break_after = true;
+                    }
+                    self.atom(p, "\u{FFFC}");
+                    // The object is the field's begin unit: a click on it is before or after the field.
+                    if let Some(last) = self.pieces.last_mut() {
+                        last.src = Some(Unit(at));
+                    }
+                }
+                at += inl.units() as u32;
+                continue;
+            }
             // STYLE-7: hidden text (and anything else in a hidden run) takes no space and draws nothing; its units
             // still count, so the units after it keep their place, and fields and notes keep their numbering. REV-1:
             // so does revised content the markup view hides.

@@ -199,6 +199,8 @@ methods! {
     HostSetLeaders = 75,
     /// No session → `ShapeGalleryGroup[]`: Word's Insert > Shapes presets in its groups.
     ShapeGallery = 76,
+    /// → `SubTemplateInfo[]`: the sub-templates the rules declare.
+    SubTemplates = 77,
 }
 
 #[derive(Deserialize)]
@@ -465,6 +467,7 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         Method::Elements => to_value(s.elements(&request::<Option<ElementFilter>>(json)?.unwrap_or_default())),
         Method::Element => to_value(s.element(request(json)?)?),
         Method::Placeholders => to_value(s.placeholders()),
+        Method::SubTemplates => to_value(s.sub_templates()),
         Method::Structure => {
             let r: StructureRequest = request::<Option<StructureRequest>>(json)?.unwrap_or_default();
             to_value(s.structure(r.root, r.depth))

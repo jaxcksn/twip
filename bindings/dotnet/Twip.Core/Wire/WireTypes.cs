@@ -54,6 +54,8 @@ internal sealed record FontsChangedPayload(IReadOnlyList<string> Pending, IReadO
 
 internal sealed record ElementActivatedPayload(ElementId Id);
 
+internal sealed record EditRefusedPayload(RefusalReason Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementId? Element);
+
 internal sealed record ElementsChangedPayload(IReadOnlyList<ElementInfo> Added, IReadOnlyList<ElementId> Removed, IReadOnlyList<ElementInfo> Changed);
 
 internal sealed record FieldsUpdateRequestedPayload(long Token, IReadOnlyList<FieldUpdateRequest> Fields);

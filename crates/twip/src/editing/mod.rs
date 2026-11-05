@@ -45,6 +45,7 @@ pub(crate) mod snap;
 pub mod state;
 pub mod step;
 mod stories;
+pub mod sub_templates;
 pub mod table;
 mod table_cells;
 pub mod table_format;
@@ -214,6 +215,17 @@ pub struct Editor {
     drop: Option<Position>,
     /// The host's labels for empty fields in design mode, by trimmed code (`field.labels`).
     field_labels: HashMap<String, String>,
+    /// Which fields are sub-template references, the references they make, and those shown collapsed.
+    sub_template_rules: Vec<sub_templates::Rule>,
+    references: sub_templates::References,
+    collapsed: std::collections::HashSet<crate::docx::FieldId>,
+    /// The sub-template warnings already given since the rules last changed.
+    warned: std::collections::HashSet<(crate::docx::diagnostics::WarningCode, String)>,
+    /// The sub-template bodies the template's layout was last given, and whether they need laying out again.
+    expansions: Option<Rc<crate::layout::expansion::Expansions>>,
+    expansions_stale: bool,
+    /// While a sub-template is edited: it, and the template's layout kept until it shows again.
+    surface: Option<sub_templates::Surface>,
     /// The host's element marks (`element.mark`): view only.
     marks: Vec<merge::Mark>,
     /// The host's looks for controls in design mode (`view.looks`): view only.
@@ -385,6 +397,13 @@ impl Editor {
             pending_images: Vec::new(),
             drop: None,
             field_labels: HashMap::new(),
+            sub_template_rules: Vec::new(),
+            references: sub_templates::References::default(),
+            collapsed: std::collections::HashSet::new(),
+            warned: std::collections::HashSet::new(),
+            expansions: None,
+            expansions_stale: false,
+            surface: None,
             marks: Vec::new(),
             looks: merge::Looks::default(),
             update_token: 0,
@@ -554,8 +573,9 @@ impl Editor {
 
     /// Lays out through the page showing `pos` (it may be provisional), then syncs geometry.
     fn ensure(&mut self, pos: &Position, fonts: &Fonts) {
+        self.sync_expansions(fonts);
         if let Some((para, unit)) = pos.para_offset() {
-            crate::prof::time("editor:layout", || self.layout.through(&self.doc, fonts, Target::Position { para, unit }));
+            crate::prof::time("editor:layout", || self.with_flow(|l, d| l.through(d, fonts, Target::Position { para, unit })));
         }
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
@@ -563,12 +583,13 @@ impl Editor {
 
     /// Lays out through page `page` (the host calls it for the visible pages before painting).
     pub fn ensure_page(&mut self, page: usize, fonts: &Fonts) {
+        self.sync_expansions(fonts);
         let snapshot = self.layout.snapshot();
         // A layout from before the last change is provisional throughout.
         let stale = snapshot.revision() != self.layout.revision();
         let pending = if stale { Some(0) } else { snapshot.info().iter().position(|i| i.provisional) };
         if pending.is_some_and(|p| page >= p) {
-            self.layout.through(&self.doc, fonts, Target::Page(page));
+            self.with_flow(|l, d| l.through(d, fonts, Target::Page(page)));
         }
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
@@ -576,8 +597,9 @@ impl Editor {
 
     /// Background layout for one idle slice; true while more is pending.
     pub fn idle(&mut self, fonts: &Fonts) -> bool {
+        self.sync_expansions(fonts);
         let t = Instant::now();
-        let step = self.layout.run(&self.doc, fonts, Budget::Until(t + IDLE_BUDGET));
+        let step = self.with_flow(|l, d| l.run(d, fonts, Budget::Until(t + IDLE_BUDGET)));
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
         step == LayoutStep::Yielded || snapshot.info().iter().any(|i| i.provisional)
@@ -604,7 +626,8 @@ impl Editor {
 
     /// Lays out the whole document (tests, PDF export).
     pub fn complete(&mut self, fonts: &Fonts) {
-        self.layout.complete(&self.doc, fonts);
+        self.sync_expansions(fonts);
+        self.with_flow(|l, d| l.complete(d, fonts));
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
     }
@@ -997,6 +1020,8 @@ impl Editor {
             self.last_maps = maps;
         }
         crate::prof::time("edit:elements", || self.track_elements(&tx.undo));
+        crate::prof::time("edit:references", || self.refresh_references(&tx.undo));
+        self.note_template_edits(&tx.undo);
         crate::prof::time("edit:labels", || self.refresh_labels(Some(&tx.undo)));
         if tx.pictures {
             self.doc.derive_image_sets();
@@ -1029,7 +1054,10 @@ impl Editor {
         // invariants hold.
         #[cfg(test)]
         {
-            assert_eq!(self.index, DocIndex::build_with_parts(&self.doc, self.index.parts()), "the incremental index differs from a fresh build");
+            let mut fresh = DocIndex::build_with_parts(&self.doc, self.index.parts());
+            // Which building block is the main flow is the editor's, not the document's.
+            fresh.flow = self.index.flow;
+            assert_eq!(self.index, fresh, "the incremental index differs from a fresh build");
             let v = integrity::check(&self.doc, &self.index, &self.selection);
             let text =
                 self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p)).map(|p| UnitText::of(p).text);
@@ -1058,7 +1086,10 @@ impl Editor {
         self.selection = if undo { done.before.selection } else { done.after.selection };
         self.pending = None;
         tx.replayed = Some(done);
-        self.commit(tx, None, fonts)
+        let out = self.commit(tx, None, fonts);
+        // Undo and redo go where their edit was: into a sub-template, or out of one.
+        self.follow_selection();
+        out
     }
 
     /// Applies recorded steps last to first (undoing what they record) into `tx`, which then holds their inverses.
@@ -1490,7 +1521,7 @@ impl Editor {
         // Typing into a selected shape without text gives it its story first.
         self.shape_story_for_typing(fonts);
         self.object_to_caret();
-        if self.refuse_locked() {
+        if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Typing");
@@ -1615,7 +1646,7 @@ impl Editor {
         if s.compat() == crate::docx::Compat::Legacy && s.has("splitPgBreakAndParaMark") {
             return self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts);
         }
-        if self.refuse_locked() {
+        if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Page Break");
@@ -1755,7 +1786,7 @@ impl Editor {
 
     /// Inlines at the caret (replacing the selection) as one step; the caret after them.
     fn insert_inlines(&mut self, make: impl Fn(Run) -> Vec<Inline>, label: &'static str, fonts: &Fonts) -> Outcome {
-        if self.refuse_locked() {
+        if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin(label);
@@ -2347,6 +2378,11 @@ impl Editor {
                 self.history.break_typing();
                 // Design mode: a region's title tab selects the region.
                 if self.mode == Mode::Design && self.region_title_click(x, y, fonts) {
+                    return;
+                }
+                // A click on a sub-template's body shown in place of its reference selects the reference; a
+                // double-click edits the sub-template.
+                if !mods.shift && self.expansion_click(x, y, clicks, fonts) {
                     return;
                 }
                 if self.story_click(x, y, clicks, fonts) {

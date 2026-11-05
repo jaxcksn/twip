@@ -72,6 +72,11 @@ pub enum Notice {
     Link { address: String, ctrl: bool },
     /// An unfilled picture placeholder was activated: its key.
     Placeholder(String),
+    /// Typing, pasting or dropping was refused: over a reference whose sub-template's body shows (its name), else
+    /// into a locked control; and the element concerned.
+    Refused { sub_template: Option<String>, element: Option<crate::docx::ElementId> },
+    /// Something the editor found while working that the application should know (a sub-template cycle).
+    Warning(crate::docx::diagnostics::WarningCode, String),
 }
 
 /// A request for the host.
