@@ -133,6 +133,7 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         // Shift+Tab in text inserts a tab too.
         "Tab" if !alt && !ctrl => run(Command::InsertTab),
         "Escape" if plain => run(Command::Escape),
+        "F1" if shift && !ctrl && !alt => run(Command::DescribeFormatting),
         "KeyF" if ctrl && alt && !shift => run(Command::InsertFootnote),
         "KeyD" if ctrl && alt && !shift => run(Command::InsertEndnote),
         "KeyA" if ctrl && !alt && !shift => run(Command::SelectAll),

@@ -5,7 +5,6 @@ use super::{Commit, Session};
 use crate::api::catalog::{CommandInfo, info};
 use crate::api::command::{Command, CommandId, Zoom, ZoomFit};
 use crate::api::error::{Error, ErrorCode};
-use crate::api::event::Event;
 use crate::api::record::Origin;
 use crate::api::services::Popover;
 use crate::api::state::CommandState;
@@ -356,7 +355,8 @@ impl Session {
                 if never && let Some(from) = from {
                     let text = format!("Won\u{2019}t autocorrect \u{201C}{from}\u{201D} again");
                     self.autocorrect.never.push(from);
-                    self.changed(vec![Event::Announcement { text }]);
+                    self.services.said.push((crate::api::services::AnnouncementKind::Command, text));
+                    self.changed(Vec::new());
                 }
                 return Some(done);
             }

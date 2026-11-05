@@ -634,6 +634,26 @@ impl Editor {
 
     // ---------------- inputs ----------------
 
+    /// From `anchor` to `focus` (paragraphs of one story) selected and revealed: a screen reader moved the caret.
+    pub fn select_between(&mut self, anchor: (ParaId, Unit), focus: (ParaId, Unit), fonts: &Fonts) -> Outcome {
+        let place = |(para, u): (ParaId, Unit)| {
+            let slot = self.index.para_slot(para)?;
+            let len = self.index.para(&self.doc, para).map_or(Unit(0), step::para_len);
+            Some(Position::text(self.index.story(slot.container), para, Unit(u.0.min(len.0))))
+        };
+        let (Some(a), Some(f)) = (place(anchor), place(focus)) else { return Outcome::Unchanged("no paragraph") };
+        if a.story != f.story {
+            return Outcome::Unchanged("not in one story");
+        }
+        self.history.break_typing();
+        self.set_selection(Selection::range(a, f, selection::Granularity::Char));
+        if let Some(p) = self.caret() {
+            self.ensure(&p, fonts);
+            self.scroll_to_caret(fonts);
+        }
+        Outcome::Moved
+    }
+
     /// Units `a..b` of a paragraph selected and revealed (find, spelling).
     pub fn select_range(&mut self, para: ParaId, a: Unit, b: Unit, fonts: &Fonts) -> Outcome {
         let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
@@ -3151,6 +3171,37 @@ impl Editor {
     }
 
     /// Every laid-out (non-provisional) page's geometry, in page order.
+    /// Where each of `para`'s laid-out lines starts, in order; one line from its start while it isn't laid out. The
+    /// pages near the caret's are looked at first.
+    pub fn line_starts(&mut self, para: ParaId) -> Vec<Unit> {
+        let snapshot = self.layout.snapshot();
+        self.pages.sync(&snapshot);
+        let mut out = Vec::new();
+        for page in self.pages.pages_of(para, self.near, &self.index) {
+            if let Some(g) = self.pages.page(page, &self.index) {
+                out.extend(g.lines_of(para).filter_map(|(_, l)| l.first_of(para)));
+            }
+        }
+        out.dedup();
+        if out.first() != Some(&Unit(0)) {
+            out.insert(0, Unit(0));
+        }
+        out
+    }
+
+    /// Whether the selection is all of its story (select all).
+    pub fn selects_story(&mut self) -> bool {
+        let Some(story) = self.selection.focus().map(|p| p.story) else { return false };
+        let nav = self.nav();
+        let (Some(a), Some(b)) = (nav.story_edge(story, false), nav.story_edge(story, true)) else { return false };
+        a != b && self.selection.ordered(&self.index) == Some((a, b))
+    }
+
+    /// Whether text can go in at the caret: not inside a control whose content is locked.
+    pub fn caret_editable(&self) -> bool {
+        self.selection.focus().is_none_or(|p| self.editable(&p))
+    }
+
     pub fn page_geometries(&mut self) -> Vec<(usize, Rc<geometry::PageGeometry>)> {
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);

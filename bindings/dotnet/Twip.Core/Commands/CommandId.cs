@@ -385,4 +385,6 @@ public enum CommandId
     RenameSubTemplate,
     /// <summary>Removes a sub-template.</summary>
     RemoveSubTemplate,
+    /// <summary>Says the formatting at the caret to screen readers, as an announcement. Changes nothing.</summary>
+    DescribeFormatting,
 }

@@ -7,7 +7,7 @@ import { docxXml, fixture, hello, mount, open, text } from './helpers.ts';
 const clipboard = (page: Page) => expect.poll(() => page.evaluate(() => navigator.clipboard.readText()));
 const state = (page: Page, name = 'editor') => page.evaluate((name) => (window as any)[name].getState(), name);
 /** The caret in client px: the input element follows it. */
-const caret = async (page: Page, name = 'editor') => (await page.locator(`#${name} textarea`).boundingBox())!;
+const caret = async (page: Page, name = 'editor') => (await page.locator(`#${name} [data-twip="input"]`).boundingBox())!;
 /** Presses `key` and waits for the caret to get there: the input element follows it a moment later. */
 async function caretAfter(page: Page, key: string) {
   const before = await caret(page);

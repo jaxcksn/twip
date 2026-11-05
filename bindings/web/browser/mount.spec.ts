@@ -152,13 +152,3 @@ test('mount, open, type, export and destroy', async ({ page }) => {
   expect(await page.locator('#editor *').count()).toBe(0);
 });
 
-test('the accessibility DOM mirrors the document, with a polite live region', async ({ page }) => {
-  await mount(page, { docx: hello });
-  const tree = page.locator('#editor [data-twip="a11y"]');
-  await expect(tree.locator('[role="document"]')).toHaveCount(1);
-  await expect(tree.locator('[role="paragraph"]').first()).toHaveText('Hello from Twip.');
-  await page.evaluate(() => (window as any).editor.commands.insertText('More '));
-  await expect(tree).toContainText('More Hello');
-  await expect(page.locator('#editor [aria-live="polite"]')).toHaveCount(1);
-  await expect(page.locator('#editor textarea')).toHaveAttribute('aria-label', 'Document');
-});

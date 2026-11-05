@@ -19,7 +19,7 @@ impl Editor {
         let Some(alt) = p.alt_text.filter(|a| !a.is_empty()) else { return self.insert_picture(p.data.0, fonts) };
         self.joined("Insert Picture", fonts, |e| match e.insert_picture(p.data.0, fonts) {
             // The new picture is selected: its alternative text joins the same step.
-            o @ Outcome::Changed(_) => match e.object_cmd(crate::editing::objects::ObjectCmd::AltText(alt), fonts) {
+            o @ Outcome::Changed(_) => match e.object_cmd(crate::editing::objects::ObjectCmd::AltText(alt, None), fonts) {
                 a @ Outcome::Changed(_) => a,
                 _ => o,
             },

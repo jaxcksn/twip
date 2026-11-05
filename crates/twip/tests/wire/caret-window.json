@@ -1,0 +1,60 @@
+[
+  {
+    "all": false,
+    "anchor": {
+      "offset": 4,
+      "paragraph": 1
+    },
+    "focus": {
+      "offset": 10,
+      "paragraph": 1
+    },
+    "lang": "en-US",
+    "paragraphs": [
+      {
+        "id": 4,
+        "level": 1,
+        "lines": [
+          {
+            "segments": [
+              {
+                "text": "Terms"
+              }
+            ]
+          }
+        ],
+        "role": "heading"
+      },
+      {
+        "id": 5,
+        "label": "1.",
+        "lines": [
+          {
+            "segments": [
+              {
+                "text": "The tenant pays "
+              },
+              {
+                "author": "Ada",
+                "marks": [
+                  "insertion"
+                ],
+                "text": "monthly"
+              }
+            ]
+          },
+          {
+            "segments": [
+              {
+                "lang": "fr-FR",
+                "text": "à la date"
+              }
+            ]
+          }
+        ],
+        "role": "listItem"
+      }
+    ],
+    "readOnly": false
+  }
+]

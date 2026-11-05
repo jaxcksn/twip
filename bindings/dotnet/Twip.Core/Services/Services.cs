@@ -518,6 +518,19 @@ public sealed class EditorAccessibility
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The root node.</returns>
     public Task<AccessibleNode> GetTreeAsync(CancellationToken ct = default) => _session.CallAsync<AccessibleNode>(Method.AccessibleTree, [], ct);
+
+    /// <summary>Puts the caret at the start of a node's content and reveals it: a note reference's note, a comment's
+    /// commented text. Fails with <c>InvalidArgument</c> when no node has the id, and <c>Unavailable</c> when the node
+    /// holds no caret position (a region).</summary>
+    /// <param name="id">The node's <see cref="AccessibleNode.Id"/>.</param>
+    /// <param name="ct">Cancels the request.</param>
+    public Task GoAsync(long id, CancellationToken ct = default) => _session.CallAsync(Method.AccessibleGo, WireJson.ToUtf8(id), ct);
+
+    /// <summary>The kinds of announcements the editor makes; the others are neither said nor raised. Default: all.</summary>
+    /// <param name="kinds">The kinds to make.</param>
+    /// <param name="ct">Cancels the request.</param>
+    public Task SetAnnouncementsAsync(IReadOnlyList<AnnouncementKind> kinds, CancellationToken ct = default) =>
+        _session.CallAsync(Method.AnnouncementsSet, WireJson.ToUtf8(kinds), ct);
 }
 
 /// <summary>An accessible node's role.</summary>
@@ -525,34 +538,44 @@ public enum AccessibleRole
 {
     /// <summary>The document.</summary>
     Document,
-    /// <summary>A page.</summary>
-    Page,
     /// <summary>A paragraph.</summary>
     Paragraph,
-    /// <summary>A heading.</summary>
+    /// <summary>A heading (its <c>Level</c>, 1 to 9).</summary>
     Heading,
     /// <summary>A list.</summary>
     List,
-    /// <summary>A list item.</summary>
+    /// <summary>A list item (its <c>Level</c> and <c>Position</c>, and a numbered item's <c>Label</c>).</summary>
     ListItem,
-    /// <summary>A table.</summary>
+    /// <summary>A table (its nesting <c>Level</c>).</summary>
     Table,
     /// <summary>A row.</summary>
     Row,
-    /// <summary>A cell.</summary>
+    /// <summary>A cell (its <c>Cell</c> place).</summary>
     Cell,
-    /// <summary>An image.</summary>
+    /// <summary>A cell of a header row.</summary>
+    ColumnHeader,
+    /// <summary>A cell that heads its row.</summary>
+    RowHeader,
+    /// <summary>A picture or shape, named by its alternative text.</summary>
     Image,
     /// <summary>A link.</summary>
     Link,
-    /// <summary>A text box.</summary>
+    /// <summary>A text box or a shape's text.</summary>
     TextBox,
     /// <summary>A footnote or endnote.</summary>
     Note,
+    /// <summary>A footnote or endnote reference (its <c>Target</c> is the note).</summary>
+    NoteRef,
+    /// <summary>A comment (its <c>Author</c>), with its replies as children.</summary>
+    Comment,
     /// <summary>A header.</summary>
     Header,
     /// <summary>A footer.</summary>
     Footer,
+    /// <summary>A named group after the body: headers and footers, footnotes, endnotes, comments.</summary>
+    Region,
+    /// <summary>A run of text with the same marks, author, language and comment.</summary>
+    Text,
 }
 
 /// <summary>A mark on accessible text.</summary>
@@ -562,26 +585,99 @@ public enum AccessibleMark
     Insertion,
     /// <summary>A deletion.</summary>
     Deletion,
-    /// <summary>A comment.</summary>
-    Comment,
     /// <summary>A misspelling.</summary>
     Misspelling,
 }
 
+/// <summary>Where a cell is in its table's grid: its row and column (from 1) and how many it spans.</summary>
+/// <param name="Row">Its row, from 1.</param>
+/// <param name="Col">Its first grid column, from 1.</param>
+/// <param name="RowSpan">How many rows it spans.</param>
+/// <param name="ColSpan">How many grid columns it spans.</param>
+public sealed record CellPlace(int Row, int Col, int RowSpan, int ColSpan);
+
+/// <summary>Where a list item is in its list: its index (from 1) among the items at its level, and how many there are.</summary>
+/// <param name="Index">Its index, from 1.</param>
+/// <param name="Count">The number of items.</param>
+public sealed record ListPosition(int Index, int Count);
+
 /// <summary>A node of the accessible tree.</summary>
+/// <param name="Id">Its identity: the same across edits while the thing it names exists.</param>
 /// <param name="Role">Its role.</param>
-/// <param name="Name">Its name.</param>
-/// <param name="Text">Its text.</param>
-/// <param name="Level">A heading's level.</param>
-/// <param name="Marks">Marks on it.</param>
 /// <param name="Children">Its children.</param>
-public sealed record AccessibleNode(
-    AccessibleRole Role,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Name,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Text,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Level,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AccessibleMark>? Marks,
-    IReadOnlyList<AccessibleNode> Children);
+public sealed record AccessibleNode(long Id, AccessibleRole Role, IReadOnlyList<AccessibleNode> Children)
+{
+    /// <summary>Its name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
+
+    /// <summary>A text node's text.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Text { get; init; }
+
+    /// <summary>A heading's level, a list item's nesting level, or a table's nesting level, from 1.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Level { get; init; }
+
+    /// <summary>A numbered list item's number as shown (<c>3.</c>, <c>a)</c>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Label { get; init; }
+
+    /// <summary>A list item's position in its list.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ListPosition? Position { get; init; }
+
+    /// <summary>A cell's place in its table.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellPlace? Cell { get; init; }
+
+    /// <summary>Review and spelling marks on a text node.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<AccessibleMark>? Marks { get; init; }
+
+    /// <summary>Whose marks or comment it is.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Author { get; init; }
+
+    /// <summary>Its language (BCP 47), where it differs from its parent's.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Lang { get; init; }
+
+    /// <summary>The comment the text is in the range of.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? Details { get; init; }
+
+    /// <summary>The note a note reference points to; for a sub-template body shown in place, its reference's paragraph.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? Target { get; init; }
+}
+
+/// <summary>What an announcement is about.</summary>
+public enum AnnouncementKind
+{
+    /// <summary>Entering, leaving or moving through a table.</summary>
+    Table,
+    /// <summary>Entering or leaving a list.</summary>
+    List,
+    /// <summary>The caret moved to another page.</summary>
+    Page,
+    /// <summary>An insertion or deletion at the caret.</summary>
+    Review,
+    /// <summary>A commented range at the caret, with the comment.</summary>
+    Comment,
+    /// <summary>A misspelled word at the caret.</summary>
+    Spelling,
+    /// <summary>Formatting turned on or off, or described on request.</summary>
+    Formatting,
+    /// <summary>Entering or leaving a header, footer, note or text box.</summary>
+    Mode,
+    /// <summary>Read-only content: entered, or an edit refused there.</summary>
+    ReadOnly,
+    /// <summary>What a command did (undo, redo, cut, copy, paste).</summary>
+    Command,
+    /// <summary>The selection (select all).</summary>
+    Selection,
+}
 
 /// <summary>A pointer gesture the engine recognises.</summary>
 public enum GestureId

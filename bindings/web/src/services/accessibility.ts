@@ -8,14 +8,29 @@ import { Method } from '../transport/protocol.js';
 export interface Accessibility {
   /** The tree. */
   tree(): Promise<AccessibleNode>;
+  /**
+   * Puts the caret at the start of a node's content and scrolls it into view: a note reference's note, a comment's
+   * commented text. Rejects with `'invalid-argument'` when no node has the id, and `'unavailable'` when the node holds
+   * no caret position (a region).
+   */
+  go(id: AccessibleId): Promise<void>;
+  /** The kinds of announcements the editor makes; the others are neither said nor emitted. Default: all. */
+  setAnnouncements(kinds: AnnouncementKind[]): Promise<void>;
 }
+
+/**
+ * A node's identity: the same across edits while the thing it names exists (a paragraph, table, note, comment or
+ * story keeps its id when other content changes).
+ */
+export type AccessibleId = number;
 
 /** A node of the accessibility tree. */
 export interface AccessibleNode {
-  /** Its role. */
+  /** Its identity. */
+  id: AccessibleId;
+  /** Its role. `region`: a named group after the body (headers and footers, footnotes, endnotes, comments). */
   role:
     | 'document'
-    | 'page'
     | 'paragraph'
     | 'heading'
     | 'list'
@@ -23,23 +38,77 @@ export interface AccessibleNode {
     | 'table'
     | 'row'
     | 'cell'
+    | 'columnHeader'
+    | 'rowHeader'
     | 'image'
     | 'link'
     | 'textBox'
     | 'note'
+    | 'noteRef'
+    | 'comment'
     | 'header'
-    | 'footer';
+    | 'footer'
+    | 'region'
+    | 'text';
   /** Its accessible name. */
   name?: string;
-  /** Its text. */
+  /** A text node's text. */
   text?: string;
-  /** A heading's or list item's level. */
+  /** A heading's level, a list item's nesting level, or a table's nesting level, from 1. */
   level?: number;
-  /** Review and spelling marks on it. */
-  marks?: ('insertion' | 'deletion' | 'comment' | 'misspelling')[];
+  /** A numbered list item's number as shown (`3.`, `a)`). */
+  label?: string;
+  /** A list item's position in its list. */
+  position?: ListPosition;
+  /** A cell's place in its table. */
+  cell?: CellPlace;
+  /** Review and spelling marks on a text node. */
+  marks?: ('insertion' | 'deletion' | 'misspelling')[];
+  /** Whose marks or comment it is. */
+  author?: string;
+  /** Its language (BCP 47), where it differs from its parent's. */
+  lang?: string;
+  /** The comment the text is in the range of. */
+  details?: AccessibleId;
+  /** The note a note reference points to; for a sub-template body shown in place, its reference's paragraph. */
+  target?: AccessibleId;
   /** Its children. */
   children: AccessibleNode[];
 }
+
+/** Where a list item is in its list: its index (from 1) among the items at its level, and how many there are. */
+export interface ListPosition {
+  /** Its index, from 1. */
+  index: number;
+  /** The number of items. */
+  count: number;
+}
+
+/** Where a cell is in its table's grid: its row and column (from 1) and how many it spans. */
+export interface CellPlace {
+  /** Its row, from 1. */
+  row: number;
+  /** Its first grid column, from 1. */
+  col: number;
+  /** How many rows it spans. */
+  rowSpan: number;
+  /** How many grid columns it spans. */
+  colSpan: number;
+}
+
+/** What an announcement is about. */
+export type AnnouncementKind =
+  | 'table'
+  | 'list'
+  | 'page'
+  | 'review'
+  | 'comment'
+  | 'spelling'
+  | 'formatting'
+  | 'mode'
+  | 'readOnly'
+  | 'command'
+  | 'selection';
 
 /** Keyboard shortcuts: the application's own, and what a key does now. */
 export interface Shortcuts {
@@ -53,7 +122,9 @@ export interface Shortcuts {
 
 /** The accessibility tree over a session. */
 export function createAccessibility(s: Session): Accessibility {
-  return { tree: () => s.call(Method.AccessibleTree) };
+  return { tree: () => s.call(Method.AccessibleTree), go: (id) => s.call(Method.AccessibleGo, id),
+    setAnnouncements: (kinds) => s.call(Method.AnnouncementsSet, kinds),
+  };
 }
 
 /** The keys the application owns (the engine's host keys), by their Windows shortcut. */

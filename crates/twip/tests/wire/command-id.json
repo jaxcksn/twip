@@ -189,5 +189,6 @@
   "revertAutoCorrect",
   "neverAutoCorrect",
   "showAutoCorrectOptions",
-  "closePopover"
+  "closePopover",
+  "describeFormatting"
 ]

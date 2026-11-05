@@ -1010,4 +1010,7 @@ public abstract partial record EditorOperation
     /// <summary>Dismisses the popover asked for (<see cref="EditorSession.PopoverClosed"/>), for an application that closes its own on Esc or a click elsewhere; with none open, nothing.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation ClosePopover() => Op(CommandId.ClosePopover);
+    /// <summary>Says the formatting at the caret to screen readers, as an announcement.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation DescribeFormatting() => Op(CommandId.DescribeFormatting);
 }

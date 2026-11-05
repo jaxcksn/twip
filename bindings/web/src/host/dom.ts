@@ -141,6 +141,8 @@ export function createDom(container: HTMLElement, ledger: Ledger): Dom {
   // extent, in both directions.
   const scroller = element('div', 'editor', 'position:relative;width:100%;height:100%;overflow:auto;display:grid;outline:none;');
   const canvas = element('canvas', 'canvas', 'grid-area:1/1;position:sticky;left:0;top:0;align-self:start;justify-self:start;display:block;touch-action:none;');
+  // The pixels say nothing to assistive technology: the editing element and the accessibility DOM do.
+  canvas.setAttribute('aria-hidden', 'true');
   const content = element('div', 'content', 'grid-area:1/1;position:relative;pointer-events:none;');
   const layer = element('div', 'layer', 'position:absolute;inset:0;overflow:hidden;');
   content.append(layer);

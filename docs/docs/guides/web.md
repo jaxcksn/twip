@@ -6,7 +6,7 @@ sidebar_position: 1
 # Getting started in the browser
 
 `@twip/web` is a complete editor for a page: you mount it in an element, and it owns input, rendering, scrolling,
-the clipboard and the accessibility DOM inside that element. Your application draws everything around it (toolbar,
+the clipboard and the accessibility DOM ([Accessibility](accessibility)) inside that element. Your application draws everything around it (toolbar,
 menus, dialogs, panes) from the editor's state and services. Install it first (see [Installation](../installation)).
 
 ## Mount an editor

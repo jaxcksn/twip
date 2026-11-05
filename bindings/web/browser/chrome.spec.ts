@@ -5,7 +5,7 @@ import { mount, open, pixels, text } from './helpers.ts';
 
 const editor = (page: Page) => page.locator('#editor canvas');
 /** The caret in client px: the input element follows it. */
-const caret = async (page: Page) => (await page.locator('#editor textarea').boundingBox())!;
+const caret = async (page: Page) => (await page.locator('#editor [data-twip="input"]').boundingBox())!;
 
 /** Records the browser's own handling: whether the last `contextmenu` and `keydown` reached it unprevented. */
 async function watchDefaults(page: Page) {

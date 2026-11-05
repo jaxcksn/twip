@@ -68,10 +68,17 @@ pub enum HostRequest {
         /// Its height.
         height: f64,
     },
-    /// The accessibility tree changed: mirror it.
+    /// The text around the caret and the selection in it changed: for the element with the keyboard focus, which a
+    /// screen reader reads as the caret moves. It goes with the `caret` request.
+    CaretText {
+        /// The text and the selection.
+        window: crate::api::services::CaretWindow,
+    },
+    /// The accessibility tree changed: the whole tree, or the changes since the last `a11y` request. The first after
+    /// attaching or opening is the whole tree; while edits keep coming, one goes at most every 250 ms.
     A11y {
-        /// The whole tree.
-        tree: AccessibleNode,
+        /// The tree or the changes.
+        update: crate::api::services::A11yUpdate,
     },
 }
 
@@ -82,9 +89,32 @@ struct Sink {
     cursor: Option<Cursor>,
     caret: Option<(f64, f64, f64, bool)>,
     tooltip: Option<Tooltip>,
-    /// The document revision the last tree was sent for.
-    a11y: Option<u64>,
+    /// The accessibility tree the host was last sent, and the document revision it was built at.
+    a11y: Option<(AccessibleNode, u64)>,
+    /// The accessibility timer is armed: an update goes when it fires.
+    a11y_armed: bool,
+    /// The caret window the host was last sent.
+    window: Option<crate::services::a11y::Window>,
 }
+
+/// The timer that sends the accessibility tree's changes after an edit (timer 1 is background layout, 2 the caret's
+/// blink).
+pub(super) const A11Y_TIMER: u32 = 3;
+
+/// What the reading tree is read from: the document, and the sub-template view (which references there are, which
+/// bodies show in place, which one is edited). The tree is sent again when this changes.
+fn a11y_key(e: &crate::editing::Editor) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (e.revision(), e.references().revision, e.editing_sub_template()).hash(&mut h);
+    let mut shown: Vec<u64> = e.references().by_field.keys().filter(|f| e.reference_expanded(**f)).map(|f| f.0).collect();
+    shown.sort_unstable();
+    shown.hash(&mut h);
+    h.finish()
+}
+
+/// How long after a change the accessibility tree's changes go: edits within it go together.
+const A11Y_MS: u32 = 250;
 
 /// What a host keeps about the frame it drew: the document's size and the caret, for scrollbars and the IME.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -426,6 +456,26 @@ impl Presentation {
         self.sink.a11y = None;
     }
 
+    /// The accessibility timer went off: the tree's changes since it was last sent go to the host.
+    // The tree is built (paragraphs whose reading didn't change come from the tree cache) and compared with the last
+    // one, at most every A11Y_MS.
+    pub(super) fn a11y_fired(s: &mut Session) {
+        s.presentation.sink.a11y_armed = false;
+        if s.presentation.sink.deliver.is_none() {
+            return;
+        }
+        let revision = a11y_key(&s.editor);
+        let tree = s.accessible_tree();
+        let update = s.presentation.sink.a11y.as_ref().map_or_else(
+            || Some(crate::api::services::A11yUpdate::Full(Box::new(tree.clone()))),
+            |(sent, _)| crate::services::a11y::diff(sent, &tree),
+        );
+        s.presentation.sink.a11y = Some((tree, revision));
+        if let (Some(update), Some(deliver)) = (update, s.presentation.sink.deliver.as_mut()) {
+            deliver(HostRequest::A11y { update });
+        }
+    }
+
     fn px_per_pt(&self) -> f64 {
         self.zoom * 96.0 / 72.0
     }
@@ -759,6 +809,15 @@ impl Session {
             s.caret = Some(caret);
             out.push(HostRequest::Caret { x: caret.0, y: caret.1, height: caret.2, visible: caret.3 });
         }
+        // The window keeps its last text while the selection holds no text position (an object).
+        if let Some(w) = crate::services::a11y::window(&mut self.editor, &self.services.spelling, &self.language, self.read_only) {
+            let sink = &mut self.presentation.sink;
+            if sink.window.as_ref().map(|w| &w.window) != Some(&w.window) {
+                out.push(HostRequest::CaretText { window: w.window.clone() });
+                sink.window = Some(w);
+            }
+        }
+        let s = &mut self.presentation.sink;
         let tooltip = hovered.and_then(|(kind, t)| {
             let (x, y) = stack.to_doc(t.page, t.rect[0], t.rect[1])?;
             let (left, top) = (x * k - scroll.0, y * k - scroll.1);
@@ -768,12 +827,20 @@ impl Session {
         });
         let tooltip_changed = s.tooltip != tooltip;
         s.tooltip.clone_from(&tooltip);
-        let revision = self.editor.revision();
-        if self.presentation.sink.a11y != Some(revision) {
-            // shortcut: the whole tree goes again after each document change; send the changed blocks when
-            // documents of hundreds of pages make typing slow.
-            self.presentation.sink.a11y = Some(revision);
-            out.push(HostRequest::A11y { tree: self.accessible_tree() });
+        let revision = a11y_key(&self.editor);
+        match &self.presentation.sink.a11y {
+            None => {
+                let tree = self.accessible_tree();
+                out.push(HostRequest::A11y { update: crate::api::services::A11yUpdate::Full(Box::new(tree.clone())) });
+                self.presentation.sink.a11y = Some((tree, revision));
+            }
+            // Throttled: the first change arms the timer and later ones don't re-arm it, so typing still gets an
+            // update every A11Y_MS.
+            Some((_, sent)) if *sent != revision && !self.presentation.sink.a11y_armed => {
+                self.presentation.sink.a11y_armed = true;
+                self.presentation.timers.push((A11Y_TIMER, A11Y_MS));
+            }
+            Some(_) => {}
         }
         if tooltip_changed {
             self.emit(Event::Tooltip(tooltip));
@@ -1134,9 +1201,29 @@ impl HostSurface<'_> {
         std::mem::take(&mut self.session.presentation.frame_wanted)
     }
 
+    /// The screen reader moved the caret in the focused element (as it does reading continuously): the selection goes
+    /// to those places of the last caret window, and the next window follows it. `invalid-argument` when a place is
+    /// outside that window.
+    pub fn caret_window_select(
+        &mut self,
+        anchor: crate::api::services::WindowPoint,
+        focus: crate::api::services::WindowPoint,
+    ) -> Result<(), crate::api::error::Error> {
+        let s = &mut *self.session;
+        let w = s.presentation.sink.window.as_ref().ok_or_else(|| crate::api::error::Error::invalid("no caret window was sent"))?;
+        let (Some(a), Some(f)) = (w.place(anchor), w.place(focus)) else {
+            return Err(crate::api::error::Error::invalid("the place is outside the caret window"));
+        };
+        s.apply_with(crate::api::record::Origin::User, |e, fonts| e.select_between(a, f, fonts)).map(|_| ())
+    }
+
     /// A timer the engine asked for (`set_timer`) went off: the C ABI arms one while background layout is pending,
     /// and each runs one slice of it ([`HostSurface::idle`]).
     pub fn timer_fired(&mut self, timer: u32) {
+        if timer == A11Y_TIMER {
+            Presentation::a11y_fired(self.session);
+            return;
+        }
         if timer == super::blink::TIMER {
             let s = &mut *self.session;
             let active = s.presentation.focused && s.editor.selection().is_collapsed();

@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { mount, open, pixels } from './helpers.ts';
 
 /** The caret in client px: the input element follows it. */
-const caret = async (page: Page) => (await page.locator('#editor textarea').boundingBox())!;
+const caret = async (page: Page) => (await page.locator('#editor [data-twip="input"]').boundingBox())!;
 
 /** Dark pixels in a box around the caret: more while the caret's bar is drawn (the text beside it is there either way). */
 async function ink(page: Page): Promise<number> {

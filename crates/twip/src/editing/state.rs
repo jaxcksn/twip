@@ -39,6 +39,8 @@ pub struct SelectedObject {
     pub width: f64,
     pub height: f64,
     pub alt: Rc<str>,
+    /// Marked decorative: screen readers skip it.
+    pub decorative: bool,
     /// A float's `wp:wrap*` (`square`, `tight`, `through`, `topAndBottom`, `none`) and whether it is behind the text.
     pub wrap: Option<(String, bool)>,
     pub locked: Option<bool>,
@@ -266,9 +268,15 @@ impl Editor {
         match self.selection {
             Selection::Object(ObjectRef::Inline { para, offset }) => {
                 match self.index.para(&self.doc, para).and_then(|p| super::stories::inline_at(p, offset)) {
-                    Some(crate::docx::Inline::Picture(p, _)) => {
-                        Some(SelectedObject { kind: ObjectKind::Picture, width: p.w, height: p.h, alt: p.alt.clone(), wrap: None, locked: None })
-                    }
+                    Some(crate::docx::Inline::Picture(p, _)) => Some(SelectedObject {
+                        kind: ObjectKind::Picture,
+                        width: p.w,
+                        height: p.h,
+                        alt: p.alt.clone(),
+                        decorative: p.shape.as_ref().is_some_and(|s| s.nv.decorative),
+                        wrap: None,
+                        locked: None,
+                    }),
                     _ => None,
                 }
             }
@@ -280,6 +288,7 @@ impl Editor {
                         width: fl.w,
                         height: fl.h,
                         alt: fl.alt.clone(),
+                        decorative: fl.shape.as_ref().is_some_and(|s| s.nv.decorative),
                         wrap: Some((fl.wrap.clone(), fl.behind)),
                         locked: Some(fl.locked),
                     }),
@@ -592,7 +601,7 @@ impl Editor {
             width: Points(o.width),
             height: Points(o.height),
             alt_text: o.alt.to_string(),
-            decorative: false,
+            decorative: o.decorative,
             anchor_locked: o.locked,
             placement: self.object_placement(),
             shape: shape.state,

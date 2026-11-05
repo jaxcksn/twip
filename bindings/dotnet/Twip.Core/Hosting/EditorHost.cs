@@ -24,6 +24,7 @@ public sealed class EditorHost : IDisposable
     private double _scrollX, _scrollY;
     private double _contentWidth, _contentHeight;
     private (double X, double Y)? _scrollTarget; // engine thread only: a zoom's scroll, for after the next frame
+    private AccessibleNode? _tree; // engine thread only: the accessibility tree the updates build
     private bool _renderQueued; // engine thread only
     private bool _hidden, _missedFrame; // engine thread only
     private bool _window; // engine thread only: frames go to the attached window, with the GPU
@@ -617,8 +618,8 @@ public sealed class EditorHost : IDisposable
                 // The engine draws from there already; the adapter can scroll that far once the frame sized the content.
                 _scrollTarget = (scroll.X, scroll.Y);
                 break;
-            case A11yRequest a11y:
-                Post(() => Adapter.UpdateAccessibility(a11y.Tree));
+            case A11yRequest a11y when (_tree = AccessibleTree.Apply(_tree, a11y.Update)) is { } tree:
+                Post(() => Adapter.UpdateAccessibility(tree));
                 break;
         }
     }

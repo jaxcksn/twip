@@ -438,6 +438,8 @@ impl Editor {
             | Command::ClosePopover => Outcome::Moved,
             // The session adds Never correct's word to its settings; the editor reverts.
             Command::RevertAutoCorrect | Command::NeverAutoCorrect => self.revert_correction(fonts),
+            // The session says the formatting; the editor has nothing to do.
+            Command::DescribeFormatting => Outcome::Unchanged("described"),
             Command::SetMode(m) => self.set_mode(match m {
                 crate::api::state::Mode::Editing => super::Mode::Editing,
                 crate::api::state::Mode::Design => super::Mode::Design,

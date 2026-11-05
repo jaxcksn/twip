@@ -342,6 +342,10 @@ impl Runner {
                 s.spelling().set_enabled(arg_of(arg(0))?);
                 none
             }
+            "accessibility.setAnnouncements" => {
+                s.set_announcements(&arg_of::<Vec<twip::api::services::AnnouncementKind>>(arg(0))?);
+                none
+            }
             "spelling.setLanguage" => {
                 s.spelling().set_language(&arg_of::<String>(arg(0))?);
                 none

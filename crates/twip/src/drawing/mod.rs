@@ -39,6 +39,8 @@ pub struct NonVisual {
     pub descr: Rc<str>,
     pub hidden: bool,
     pub lock_aspect: bool,
+    /// Marked decorative (`adec:decorative` in the extension list): screen readers skip it.
+    pub decorative: bool,
 }
 
 /// Byte ranges in the part's XML of the shape element and of the properties it parses, for saving only what changed.

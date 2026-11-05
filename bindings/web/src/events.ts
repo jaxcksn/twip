@@ -1,5 +1,6 @@
 import type { EditorError } from './errors.js';
 import type { BalloonPlacement, CommentAnchor } from './review.js';
+import type { AnnouncementKind } from './services/accessibility.js';
 import type { DialogKind } from './services/dialogs.js';
 import type { ElementInfo } from './services/elements.js';
 import type { ContextMenuEvent } from './services/menus.js';
@@ -64,8 +65,8 @@ export interface TwipEvents {
   rulerChanged: RulerView;
   /** Mounted only: hover over a link, element mark, revision or comment, or `null` when it ends. */
   tooltip: Tooltip | null;
-  /** What the editor said to screen readers. */
-  announcement: { text: string };
+  /** What the editor said to screen readers, and what it is about (when one change says several things, the first). */
+  announcement: { text: string; kind: AnnouncementKind };
   /** A fidelity warning outside an operation. */
   warning: Warning;
   /** A listener's exception, or a fault (then `fatal` is true). */

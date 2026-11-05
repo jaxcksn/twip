@@ -240,8 +240,8 @@ pub enum ObjectCmd {
     Size(f64, f64),
     /// The picture's own size (its pixels at its resolution).
     ResetSize,
-    /// Alternative text.
-    AltText(String),
+    /// Alternative text, and whether the object is decorative (unchanged when `None`).
+    AltText(String, Option<bool>),
 }
 
 /// The checkbox a click or Space toggled, and the caret it left after it: Space there toggles it again.
@@ -575,7 +575,17 @@ impl Editor {
     }
 
     /// Alt Text: the selected picture's alternative text, one step.
-    fn set_alt_text(&mut self, o: ObjectRef, text: &str, fonts: &Fonts) -> Outcome {
+    /// The selected object's alternative text, and its decorative mark: a decorative object has none, and screen
+    /// readers skip it. The mark is on the drawing; an object without one can't take it.
+    fn set_alt_text(&mut self, o: ObjectRef, text: &str, decorative: Option<bool>, fonts: &Fonts) -> Outcome {
+        let text = if decorative == Some(true) { "" } else { text };
+        let mark = |shape: &mut Option<Box<crate::drawing::Shape>>| match (decorative, shape) {
+            (Some(on), Some(s)) if s.nv.decorative != on => {
+                s.nv.decorative = on;
+                true
+            }
+            _ => false,
+        };
         let (para, unit) = match o {
             ObjectRef::Inline { para, offset } => (para, Some(offset)),
             ObjectRef::Floating(f) => match self.index.float_anchor(f) {
@@ -591,13 +601,13 @@ impl Editor {
             let here = at;
             at += i.units() as u32;
             match i {
-                Inline::Picture(pic, _) if Some(Unit(here)) == unit && &*pic.alt != text => {
+                Inline::Picture(pic, _) if Some(Unit(here)) == unit => {
+                    done |= mark(&mut pic.shape) | (&*pic.alt != text);
                     pic.alt = text.into();
-                    done = true;
                 }
-                Inline::Float(fl, _) if unit.is_none() && ObjectRef::Floating(FloatId(fl.id)) == o && &*fl.alt != text => {
+                Inline::Float(fl, _) if unit.is_none() && ObjectRef::Floating(FloatId(fl.id)) == o => {
+                    done |= mark(&mut fl.shape) | (&*fl.alt != text);
                     fl.alt = text.into();
-                    done = true;
                 }
                 _ => {}
             }
@@ -760,8 +770,8 @@ impl Editor {
     /// size back.
     pub(super) fn object_cmd(&mut self, c: ObjectCmd, fonts: &Fonts) -> Outcome {
         let Selection::Object(o) = self.selection else { return Outcome::Unchanged("no object selected") };
-        if let ObjectCmd::AltText(text) = &c {
-            return self.set_alt_text(o, text, fonts);
+        if let ObjectCmd::AltText(text, decorative) = &c {
+            return self.set_alt_text(o, text, *decorative, fonts);
         }
         if matches!(c, ObjectCmd::Size(..) | ObjectCmd::ResetSize) && self.object_fixed(o) {
             return Outcome::Unchanged("fixed size");
@@ -785,7 +795,7 @@ impl Editor {
                     ObjectCmd::Wrap(_) if self.object_fixed(o) => return Outcome::Unchanged("fixed picture"),
                     ObjectCmd::Wrap(w) => return self.float_inline(para, offset, &w, fonts),
                     ObjectCmd::LockAnchor(_) => return Outcome::Unchanged("inline picture"),
-                    ObjectCmd::AltText(_) => return Outcome::Unchanged("handled above"),
+                    ObjectCmd::AltText(..) => return Outcome::Unchanged("handled above"),
                 };
                 self.set_picture_size(para, offset, w, h, fonts)
             }
@@ -816,7 +826,7 @@ impl Editor {
                         }
                         None => return Outcome::Unchanged("no image size"),
                     },
-                    ObjectCmd::AltText(_) => return Outcome::Unchanged("handled above"),
+                    ObjectCmd::AltText(..) => return Outcome::Unchanged("handled above"),
                 };
                 (n.w, n.h) = ((n.w * 20.0).round() / 20.0, (n.h * 20.0).round() / 20.0);
                 self.set_float(n, label, fonts)

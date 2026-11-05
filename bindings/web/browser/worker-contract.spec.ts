@@ -230,7 +230,7 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
     const found = await editor.find.next({ text: step.text });
     if (!found.found) fail(at, `no ${String(step.text)} to click`);
     await frames(3);
-    const end = container.querySelector('textarea')!.getBoundingClientRect();
+    const end = container.querySelector('[data-twip="input"]')!.getBoundingClientRect();
     return (window as any).twipInput({ op: 'click', mods: step.mods, at: { x: end.left - 3, y: end.top + end.height / 2 } });
   };
 

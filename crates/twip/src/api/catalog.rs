@@ -308,6 +308,7 @@ const ENTRIES: &[Entry] = {
         (C::NeverAutoCorrect, "Stop Correcting", G::Text, &[], &[], false, true, U::Step),
         (C::ShowAutoCorrectOptions, "AutoCorrect Options Button", G::Text, &["Alt+Shift+F10"], &["⌥⇧F10"], false, false, U::View),
         (C::ClosePopover, "Close Popover", G::View, &[], &[], false, false, U::View),
+        (C::DescribeFormatting, "Describe Formatting", G::View, &["Shift+F1"], &["⇧F1"], false, false, U::View),
     ]
 };
 

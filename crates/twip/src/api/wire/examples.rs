@@ -100,6 +100,7 @@ pub fn fixtures() -> Vec<Fixture> {
         "apply-to": ApplyTo,
         "accessible-mark": AccessibleMark,
         "accessible-role": AccessibleRole,
+        "announcement-kind": AnnouncementKind,
         "area-kind": AreaKind,
         "auto-fit": AutoFit,
         "border-edges": BorderEdges,
@@ -372,6 +373,12 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("data-part-info", DataPartInfo, vec![DataPartInfo { namespace: Some("urn:invoice".into()), item_id: "{6A9C}".into() }]),
         fixture!("placeholder-info", PlaceholderInfo, vec![PlaceholderInfo { key: "logo".into(), element: Some(id("control-3")) }]),
         fixture!("accessible-node", AccessibleNode, vec![accessible()]),
+        fixture!("accessible-id", AccessibleId, vec![AccessibleId(42)]),
+        fixture!("cell-place", CellPlace, vec![CellPlace { row: 2, col: 3, row_span: 2, col_span: 1 }]),
+        fixture!("list-position", ListPosition, vec![ListPosition { index: 2, count: 5 }]),
+        fixture!("a11y-update", A11yUpdate, a11y_updates()),
+        fixture!("caret-window", CaretWindow, vec![caret_window()]),
+        fixture!("window-point", WindowPoint, vec![WindowPoint { paragraph: 1, offset: 12 }]),
         fixture!("shortcut", Shortcut, vec![shortcut()]),
         fixture!(
             "shortcut-keys",
@@ -438,8 +445,11 @@ pub fn fixtures() -> Vec<Fixture> {
                 HostRequest::Caret { x: 96.5, y: 120.0, height: 18.5, visible: true },
                 HostRequest::Scroll { x: -12.0, y: 1180.5 },
                 HostRequest::ScrollTo { x: 96.5, y: 1240.0, width: 1.5, height: 18.5 },
-                HostRequest::A11y { tree: accessible() },
             ]
+            .into_iter()
+            .chain(a11y_updates().into_iter().map(|update| HostRequest::A11y { update }))
+            .chain([HostRequest::CaretText { window: caret_window() }])
+            .collect()
         ),
     ]);
     out.sort_by_key(|f| f.name);
@@ -834,6 +844,7 @@ fn commands() -> Vec<Command> {
         Command::NeverAutoCorrect,
         Command::ShowAutoCorrectOptions,
         Command::ClosePopover,
+        Command::DescribeFormatting,
     ]
 }
 
@@ -1403,21 +1414,99 @@ fn data_part() -> DataPart {
 }
 
 fn accessible() -> AccessibleNode {
+    let node = |id, role| AccessibleNode { id: AccessibleId(id), role, ..AccessibleNode::default() };
+    let text = |id, text: &str| AccessibleNode { text: Some(text.into()), ..node(id, AccessibleRole::Text) };
     AccessibleNode {
-        role: AccessibleRole::Document,
         name: Some("Contract".into()),
-        text: None,
-        level: None,
-        marks: None,
-        children: vec![AccessibleNode {
-            role: AccessibleRole::Heading,
-            name: None,
-            text: Some("Terms".into()),
-            level: Some(1),
-            marks: Some(vec![AccessibleMark::Insertion, AccessibleMark::Misspelling]),
-            children: Vec::new(),
-        }],
+        lang: Some("en-US".into()),
+        children: vec![
+            AccessibleNode { level: Some(1), children: vec![text(11, "Terms")], ..node(1, AccessibleRole::Heading) },
+            AccessibleNode {
+                children: vec![AccessibleNode {
+                    level: Some(1),
+                    label: Some("1.".into()),
+                    position: Some(ListPosition { index: 1, count: 2 }),
+                    children: vec![
+                        AccessibleNode {
+                            marks: vec![AccessibleMark::Insertion, AccessibleMark::Misspelling],
+                            author: Some("Ada".into()),
+                            lang: Some("fr-FR".into()),
+                            details: Some(AccessibleId(1 << 52 | 5)),
+                            ..text(21, "Payment")
+                        },
+                        AccessibleNode {
+                            name: Some("Footnote 1".into()),
+                            target: Some(AccessibleId(1 << 52 | 7)),
+                            ..node(22, AccessibleRole::NoteRef)
+                        },
+                    ],
+                    ..node(2, AccessibleRole::ListItem)
+                }],
+                ..node(3, AccessibleRole::List)
+            },
+            AccessibleNode {
+                name: Some("Table".into()),
+                level: Some(1),
+                children: vec![AccessibleNode {
+                    children: vec![AccessibleNode {
+                        cell: Some(CellPlace { row: 1, col: 1, row_span: 1, col_span: 2 }),
+                        ..node(6, AccessibleRole::ColumnHeader)
+                    }],
+                    ..node(5, AccessibleRole::Row)
+                }],
+                ..node(4, AccessibleRole::Table)
+            },
+        ],
+        ..node(0, AccessibleRole::Document)
     }
+}
+
+fn caret_window() -> CaretWindow {
+    let segment = |text: &str| WindowSegment { text: text.into(), ..WindowSegment::default() };
+    CaretWindow {
+        paragraphs: vec![
+            WindowParagraph {
+                id: AccessibleId(4),
+                role: AccessibleRole::Heading,
+                level: Some(1),
+                label: None,
+                lines: vec![WindowLine { segments: vec![segment("Terms")] }],
+            },
+            WindowParagraph {
+                id: AccessibleId(5),
+                role: AccessibleRole::ListItem,
+                level: None,
+                label: Some("1.".into()),
+                lines: vec![
+                    WindowLine {
+                        segments: vec![
+                            segment("The tenant pays "),
+                            WindowSegment { text: "monthly".into(), marks: vec![AccessibleMark::Insertion], author: Some("Ada".into()), lang: None },
+                        ],
+                    },
+                    WindowLine {
+                        segments: vec![WindowSegment { text: "à la date".into(), lang: Some("fr-FR".into()), ..WindowSegment::default() }]
+                    },
+                ],
+            },
+        ],
+        anchor: WindowPoint { paragraph: 1, offset: 4 },
+        focus: WindowPoint { paragraph: 1, offset: 10 },
+        all: false,
+        lang: "en-US".into(),
+        read_only: false,
+    }
+}
+
+fn a11y_updates() -> Vec<A11yUpdate> {
+    let paragraph = AccessibleNode { id: AccessibleId(9), role: AccessibleRole::Paragraph, ..AccessibleNode::default() };
+    vec![
+        A11yUpdate::Full(Box::new(accessible())),
+        A11yUpdate::Patch(vec![
+            A11yChange::Replace { node: Box::new(paragraph) },
+            A11yChange::Children { parent: AccessibleId(0), ids: vec![AccessibleId(1), AccessibleId(9), AccessibleId(3)] },
+        ]),
+    ]
 }
 
 fn shortcut() -> Shortcut {
@@ -1540,7 +1629,7 @@ fn events() -> Vec<Event> {
         Event::EditRefused { reason: RefusalReason::Locked, element: None },
         Event::Tooltip(Some(tooltip())),
         Event::Tooltip(None),
-        Event::Announcement { text: "Bold on".into() },
+        Event::Announcement { text: "Bold on".into(), kind: AnnouncementKind::Formatting },
         Event::Warning(warning()),
         Event::fault(Error::new(ErrorCode::Internal, "the engine failed")),
     ]

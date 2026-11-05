@@ -541,6 +541,8 @@ export interface Commands {
   showAutoCorrectOptions(): Promise<void>;
   /** Dismisses the popover asked for (`popoverClosed`), for an application that closes its own on Esc or a press elsewhere; with none open, nothing. View. */
   closePopover(): Promise<void>;
+  /** Says the formatting at the caret to screen readers (an `announcement` of kind `formatting`). Shift+F1. */
+  describeFormatting(): Promise<void>;
 }
 
 /** A command id: the method name, the batch op's `type`, the catalog id and the key in `state.commands`. */
@@ -810,6 +812,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   neverAutoCorrect: 'none',
   showAutoCorrectOptions: 'none',
   closePopover: 'none',
+  describeFormatting: 'none',
 };
 
 /** Builds a command's op from its method arguments. */

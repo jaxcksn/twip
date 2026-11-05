@@ -102,7 +102,7 @@ export type {
   SubTemplateReference,
   SubTemplates,
 } from './services/elements.js';
-export type { Accessibility, AccessibleNode, Shortcuts } from './services/accessibility.js';
+export type { Accessibility, AccessibleId, AccessibleNode, AnnouncementKind, CellPlace, ListPosition, Shortcuts } from './services/accessibility.js';
 export type { Heading, Navigation, StyleInfo, Styles } from './services/navigation.js';
 export type {
   Ruler,

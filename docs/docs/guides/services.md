@@ -119,5 +119,7 @@ The engine recognises every pointer gesture (double-click in a header, a triple-
 `shortcuts.register` claims a key for your application, and pressing it emits `shortcut`. A key a command or another
 registration already uses fails with `'unavailable'`, naming the binding. `shortcuts.lookup(keys)` says what a key
 does now. The mounted editor keeps its own accessibility DOM for screen readers; `accessibility.tree()` gives the
-document's reading structure, and `announcement` events say what it announced. `wordCount()` counts words,
+document's reading structure, `accessibility.go(id)` puts the caret at a node, `accessibility.setAnnouncements` picks
+what it announces, and `announcement` events say what it announced. [Accessibility](accessibility) says what screen
+reader users get and what your application does. `wordCount()` counts words,
 characters, paragraphs, lines and pages on request.

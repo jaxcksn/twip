@@ -669,7 +669,7 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
             case "announcement":
                 var announcement = root.Deserialize(ctx.AnnouncementPayload)!;
                 _host?.OnAnnouncement(announcement.Text);
-                Notify(() => Raise(AccessibilityAnnouncement, new AnnouncementEventArgs(announcement.Text, snapshot)));
+                Notify(() => Raise(AccessibilityAnnouncement, new AnnouncementEventArgs(announcement.Text, announcement.Kind, snapshot)));
                 break;
             case "warning":
                 var warning = root.Deserialize(ctx.Warning)!;

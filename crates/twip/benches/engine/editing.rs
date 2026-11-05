@@ -364,3 +364,65 @@ mod sub_templates {
         });
     }
 }
+
+/// What screen readers get after a keystroke, on `FX-A11Y-REVIEW.docx` (about 100 pages, review marks, misspellings).
+mod a11y {
+    use std::cell::RefCell;
+
+    use divan::Bencher;
+    use twip::internal::editing::commands::Command;
+    use twip::internal::font::Fonts;
+    use twip::internal::services::a11y;
+    use twip::internal::services::spelling::Spellers;
+
+    use super::{caret, open, text_paras};
+
+    const DOC: &str = "editor/FX-A11Y-REVIEW.docx";
+
+    fn spellers() -> Spellers {
+        let dir = format!("{}/tests/fixtures/dictionaries", env!("CARGO_MANIFEST_DIR"));
+        let mut s = Spellers::default();
+        if let (Ok(aff), Ok(dic)) = (std::fs::read(format!("{dir}/en_US.aff")), std::fs::read(format!("{dir}/en_US.dic"))) {
+            s.add_dictionary("en-US", &aff, &dic).expect("the dictionary loads");
+        }
+        s
+    }
+
+    /// The caret window at a paragraph in the middle of the document. Budget: under 0.2 ms.
+    #[divan::bench(sample_size = 1)]
+    fn caret_window(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let mut e = open(DOC, &fonts);
+        let paras = text_paras(&e);
+        caret(&mut e, paras[paras.len() / 2].0, 3);
+        let spelling = spellers();
+        bencher.bench_local(|| a11y::window(&mut e, &spelling, "en-US", false));
+    }
+
+    /// After a keystroke, the tree built (reusing the paragraphs that didn't change) and compared with the one sent
+    /// before it: what the throttled update does.
+    /// Budget: under 5 ms.
+    #[divan::bench(sample_size = 1)]
+    fn tree_patch(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let mut e = open(DOC, &fonts);
+        let paras = text_paras(&e);
+        caret(&mut e, paras[paras.len() / 2].0, 3);
+        let spelling = spellers();
+        let mut cache = a11y::TreeCache::default();
+        let sent = a11y::tree_with(&e, &spelling, "en-US", &mut cache);
+        let (e, sent, cache) = (RefCell::new(e), RefCell::new(sent), RefCell::new(cache));
+        bencher
+            .with_inputs(|| {
+                let mut e = e.borrow_mut();
+                e.execute(Command::InsertText("x".into()), &fonts);
+                while e.idle(&fonts) {}
+            })
+            .bench_local_values(|()| {
+                let now = a11y::tree_with(&e.borrow(), &spelling, "en-US", &mut cache.borrow_mut());
+                let update = a11y::diff(&sent.borrow(), &now);
+                *sent.borrow_mut() = now;
+                update
+            });
+    }
+}

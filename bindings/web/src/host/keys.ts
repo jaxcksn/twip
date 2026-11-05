@@ -22,6 +22,25 @@ export function keyNumber(code: string): number {
   return Object.hasOwn(numbers, code) ? numbers[code]! : 0;
 }
 
+/** Keys whose `KeyboardEvent.key` is their code's name. */
+const named = new Set(Object.keys(numbers).filter((c) => !/^(Key|Digit|Numpad|Intl)/.test(c) && c.length > 1));
+
+/**
+ * The key's code: `KeyboardEvent.code`, or, when it is empty (keys sent without a scan code, as screen readers, on-screen
+ * keyboards and automation do), the code `key` implies on a US layout: `ArrowDown`, `KeyA`, `Digit1`, `Space`. A keypad
+ * key that navigates (NumLock off, or a key sent without its extended flag) is the key it acts as: `Numpad2` is
+ * `ArrowDown`.
+ */
+export function codeOf(e: { code: string; key: string }): string {
+  if (/^Numpad(\d|Decimal)$/.test(e.code) && named.has(e.key)) return e.key;
+  if (e.code && e.code !== 'Unidentified') return e.code;
+  if (named.has(e.key)) return e.key;
+  if (e.key === ' ') return 'Space';
+  if (/^[a-z]$/i.test(e.key)) return `Key${e.key.toUpperCase()}`;
+  if (/^[0-9]$/.test(e.key)) return `Digit${e.key}`;
+  return e.code;
+}
+
 /** Modifier bits of the C ABI. */
 export const Mods = { ctrl: 1, shift: 2, alt: 4, meta: 8 } as const;
 

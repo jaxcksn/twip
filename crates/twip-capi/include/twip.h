@@ -150,7 +150,10 @@ enum TwipMethod {
     TWIP_HOST_SET_PAINT_BUDGET = 74,  /* PaintBudget { recordings } bytes -> null */
     TWIP_HOST_SET_LEADERS = 75,       /* Point[][] (content CSS px) -> null: the balloons' leader lines */
     TWIP_SHAPE_GALLERY = 76,          /* no session -> ShapeGalleryGroup[]: Word's Insert > Shapes presets */
-    TWIP_SUB_TEMPLATES = 77           /* -> SubTemplateInfo[] (the sub-templates the rules name) */
+    TWIP_SUB_TEMPLATES = 77,          /* -> SubTemplateInfo[] (the sub-templates the rules name) */
+    TWIP_ACCESSIBLE_GO = 78,          /* AccessibleId -> null: the caret to the start of the node's content */
+    TWIP_HOST_CARET_WINDOW_SELECT = 79, /* { anchor, focus } (WindowPoints of the last caret window) -> null */
+    TWIP_ANNOUNCEMENTS_SET = 80       /* AnnouncementKind[] (the kinds the editor makes) -> null */
 };
 
 int32_t twip_call(TwipEngine* engine, uint32_t session, uint32_t method, const uint8_t* req, size_t len, TwipBuf* out);

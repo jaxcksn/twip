@@ -14,16 +14,12 @@ Twip.AccessibilityIssue.Text.init -> void
 Twip.AccessibilityIssue.Tip.get -> bool
 Twip.AccessibilityIssue.Tip.init -> void
 Twip.AccessibleMark
-Twip.AccessibleMark.Comment = 2 -> Twip.AccessibleMark
 Twip.AccessibleMark.Deletion = 1 -> Twip.AccessibleMark
 Twip.AccessibleMark.Insertion = 0 -> Twip.AccessibleMark
-Twip.AccessibleMark.Misspelling = 3 -> Twip.AccessibleMark
 Twip.AccessibleNode
 Twip.AccessibleNode.<Clone>$() -> Twip.AccessibleNode!
-Twip.AccessibleNode.AccessibleNode(Twip.AccessibleRole Role, string? Name, string? Text, int? Level, System.Collections.Generic.IReadOnlyList<Twip.AccessibleMark>? Marks, System.Collections.Generic.IReadOnlyList<Twip.AccessibleNode!>! Children) -> void
 Twip.AccessibleNode.Children.get -> System.Collections.Generic.IReadOnlyList<Twip.AccessibleNode!>!
 Twip.AccessibleNode.Children.init -> void
-Twip.AccessibleNode.Deconstruct(out Twip.AccessibleRole Role, out string? Name, out string? Text, out int? Level, out System.Collections.Generic.IReadOnlyList<Twip.AccessibleMark>? Marks, out System.Collections.Generic.IReadOnlyList<Twip.AccessibleNode!>! Children) -> void
 Twip.AccessibleNode.Equals(Twip.AccessibleNode? other) -> bool
 Twip.AccessibleNode.Level.get -> int?
 Twip.AccessibleNode.Level.init -> void
@@ -36,21 +32,7 @@ Twip.AccessibleNode.Role.init -> void
 Twip.AccessibleNode.Text.get -> string?
 Twip.AccessibleNode.Text.init -> void
 Twip.AccessibleRole
-Twip.AccessibleRole.Cell = 8 -> Twip.AccessibleRole
 Twip.AccessibleRole.Document = 0 -> Twip.AccessibleRole
-Twip.AccessibleRole.Footer = 14 -> Twip.AccessibleRole
-Twip.AccessibleRole.Header = 13 -> Twip.AccessibleRole
-Twip.AccessibleRole.Heading = 3 -> Twip.AccessibleRole
-Twip.AccessibleRole.Image = 9 -> Twip.AccessibleRole
-Twip.AccessibleRole.Link = 10 -> Twip.AccessibleRole
-Twip.AccessibleRole.List = 4 -> Twip.AccessibleRole
-Twip.AccessibleRole.ListItem = 5 -> Twip.AccessibleRole
-Twip.AccessibleRole.Note = 12 -> Twip.AccessibleRole
-Twip.AccessibleRole.Page = 1 -> Twip.AccessibleRole
-Twip.AccessibleRole.Paragraph = 2 -> Twip.AccessibleRole
-Twip.AccessibleRole.Row = 7 -> Twip.AccessibleRole
-Twip.AccessibleRole.Table = 6 -> Twip.AccessibleRole
-Twip.AccessibleRole.TextBox = 11 -> Twip.AccessibleRole
 Twip.AltTextDialogValues
 Twip.AltTextDialogValues.<Clone>$() -> Twip.AltTextDialogValues!
 Twip.AltTextDialogValues.AltTextDialogValues(string! Text, bool Decorative) -> void
@@ -3986,6 +3968,58 @@ virtual Twip.MenuTarget.PrintMembers(System.Text.StringBuilder! builder) -> bool
 ~override Twip.StyleId.Equals(object obj) -> bool
 ~override Twip.ZoomLevel.Equals(object obj) -> bool
 ~override Twip.ZoomLevel.ToString() -> string
+
+Twip.AccessibleMark.Misspelling = 2 -> Twip.AccessibleMark
+Twip.AccessibleNode.AccessibleNode(long Id, Twip.AccessibleRole Role, System.Collections.Generic.IReadOnlyList<Twip.AccessibleNode!>! Children) -> void
+Twip.AccessibleNode.Author.get -> string?
+Twip.AccessibleNode.Author.init -> void
+Twip.AccessibleNode.Cell.get -> Twip.CellPlace?
+Twip.AccessibleNode.Cell.init -> void
+Twip.AccessibleNode.Deconstruct(out long Id, out Twip.AccessibleRole Role, out System.Collections.Generic.IReadOnlyList<Twip.AccessibleNode!>! Children) -> void
+Twip.AccessibleNode.Details.get -> long?
+Twip.AccessibleNode.Details.init -> void
+Twip.AccessibleNode.Id.get -> long
+Twip.AccessibleNode.Id.init -> void
+Twip.AccessibleNode.Label.get -> string?
+Twip.AccessibleNode.Label.init -> void
+Twip.AccessibleNode.Lang.get -> string?
+Twip.AccessibleNode.Lang.init -> void
+Twip.AccessibleNode.Position.get -> Twip.ListPosition?
+Twip.AccessibleNode.Position.init -> void
+Twip.AccessibleNode.Target.get -> long?
+Twip.AccessibleNode.Target.init -> void
+Twip.AccessibleRole.Cell = 7 -> Twip.AccessibleRole
+Twip.AccessibleRole.ColumnHeader = 8 -> Twip.AccessibleRole
+Twip.AccessibleRole.Comment = 15 -> Twip.AccessibleRole
+Twip.AccessibleRole.Footer = 17 -> Twip.AccessibleRole
+Twip.AccessibleRole.Header = 16 -> Twip.AccessibleRole
+Twip.AccessibleRole.Heading = 2 -> Twip.AccessibleRole
+Twip.AccessibleRole.Image = 10 -> Twip.AccessibleRole
+Twip.AccessibleRole.Link = 11 -> Twip.AccessibleRole
+Twip.AccessibleRole.List = 3 -> Twip.AccessibleRole
+Twip.AccessibleRole.ListItem = 4 -> Twip.AccessibleRole
+Twip.AccessibleRole.Note = 13 -> Twip.AccessibleRole
+Twip.AccessibleRole.NoteRef = 14 -> Twip.AccessibleRole
+Twip.AccessibleRole.Paragraph = 1 -> Twip.AccessibleRole
+Twip.AccessibleRole.Region = 18 -> Twip.AccessibleRole
+Twip.AccessibleRole.Row = 6 -> Twip.AccessibleRole
+Twip.AccessibleRole.RowHeader = 9 -> Twip.AccessibleRole
+Twip.AccessibleRole.Table = 5 -> Twip.AccessibleRole
+Twip.AccessibleRole.Text = 19 -> Twip.AccessibleRole
+Twip.AccessibleRole.TextBox = 12 -> Twip.AccessibleRole
+Twip.AnnouncementEventArgs.Kind.get -> Twip.AnnouncementKind
+Twip.AnnouncementKind
+Twip.AnnouncementKind.Command = 9 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.Comment = 4 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.Formatting = 6 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.List = 1 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.Mode = 7 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.Page = 2 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.ReadOnly = 8 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.Review = 3 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.Selection = 10 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.Spelling = 5 -> Twip.AnnouncementKind
+Twip.AnnouncementKind.Table = 0 -> Twip.AnnouncementKind
 Twip.Hosting.EditorKey.IntlBackslash = 88 -> Twip.Hosting.EditorKey
 Twip.FrameStats
 Twip.FrameStats.<Clone>$() -> Twip.FrameStats!
@@ -4195,6 +4229,19 @@ Twip.Arrowhead.Length.get -> Twip.ArrowSize
 Twip.Arrowhead.Length.init -> void
 Twip.Arrowhead.Width.get -> Twip.ArrowSize
 Twip.Arrowhead.Width.init -> void
+Twip.CellPlace
+Twip.CellPlace.<Clone>$() -> Twip.CellPlace!
+Twip.CellPlace.CellPlace(int Row, int Col, int RowSpan, int ColSpan) -> void
+Twip.CellPlace.Col.get -> int
+Twip.CellPlace.Col.init -> void
+Twip.CellPlace.ColSpan.get -> int
+Twip.CellPlace.ColSpan.init -> void
+Twip.CellPlace.Deconstruct(out int Row, out int Col, out int RowSpan, out int ColSpan) -> void
+Twip.CellPlace.Equals(Twip.CellPlace? other) -> bool
+Twip.CellPlace.Row.get -> int
+Twip.CellPlace.Row.init -> void
+Twip.CellPlace.RowSpan.get -> int
+Twip.CellPlace.RowSpan.init -> void
 Twip.ColorTransform
 Twip.ColorTransform.<Clone>$() -> Twip.ColorTransform!
 Twip.ColorTransform.ColorTransform(Twip.ColorTransformKind Kind, double Value) -> void
@@ -4216,6 +4263,7 @@ Twip.ColorTransformKind.SatOff = 5 -> Twip.ColorTransformKind
 Twip.ColorTransformKind.Shade = 1 -> Twip.ColorTransformKind
 Twip.ColorTransformKind.Tint = 0 -> Twip.ColorTransformKind
 Twip.CommandId.ArrangeObject = 131 -> Twip.CommandId
+Twip.CommandId.DescribeFormatting = 191 -> Twip.CommandId
 Twip.CommandId.FlipObject = 130 -> Twip.CommandId
 Twip.CommandId.GroupObjects = 132 -> Twip.CommandId
 Twip.CommandId.InsertShape = 79 -> Twip.CommandId
@@ -4229,7 +4277,10 @@ Twip.CommandId.SetShapeLine = 125 -> Twip.CommandId
 Twip.CommandId.SetShapePreset = 122 -> Twip.CommandId
 Twip.CommandId.SetShapeText = 127 -> Twip.CommandId
 Twip.CommandId.UngroupObjects = 133 -> Twip.CommandId
+Twip.EditorAccessibility.GoAsync(long id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorAccessibility.SetAnnouncementsAsync(System.Collections.Generic.IReadOnlyList<Twip.AnnouncementKind>! kinds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ArrangeObjectAsync(Twip.Arrange arrange, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.DescribeFormattingAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.FlipObjectAsync(Twip.FlipAxis axis, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.GroupObjectsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.InsertShapeAsync(Twip.ShapePreset preset, Twip.Length? width = null, Twip.Length? height = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -4427,6 +4478,15 @@ Twip.LineValue.Join.init -> void
 Twip.LineValue.LineValue(Twip.Length Width, Twip.FillValue! Fill, string! Dash, Twip.LineCompound Compound, Twip.LineCap Cap, Twip.LineJoin Join, Twip.LineEnds! Ends) -> void
 Twip.LineValue.Width.get -> Twip.Length
 Twip.LineValue.Width.init -> void
+Twip.ListPosition
+Twip.ListPosition.<Clone>$() -> Twip.ListPosition!
+Twip.ListPosition.Count.get -> int
+Twip.ListPosition.Count.init -> void
+Twip.ListPosition.Deconstruct(out int Index, out int Count) -> void
+Twip.ListPosition.Equals(Twip.ListPosition? other) -> bool
+Twip.ListPosition.Index.get -> int
+Twip.ListPosition.Index.init -> void
+Twip.ListPosition.ListPosition(int Index, int Count) -> void
 Twip.ObjectKind.Group = 4 -> Twip.ObjectKind
 Twip.ObjectKind.Line = 3 -> Twip.ObjectKind
 Twip.ObjectKind.Shape = 2 -> Twip.ObjectKind
@@ -4574,6 +4634,9 @@ abstract Twip.FillValue.<Clone>$() -> Twip.FillValue!
 override Twip.Arrowhead.Equals(object? obj) -> bool
 override Twip.Arrowhead.GetHashCode() -> int
 override Twip.Arrowhead.ToString() -> string!
+override Twip.CellPlace.Equals(object? obj) -> bool
+override Twip.CellPlace.GetHashCode() -> int
+override Twip.CellPlace.ToString() -> string!
 override Twip.ColorTransform.Equals(object? obj) -> bool
 override Twip.ColorTransform.GetHashCode() -> int
 override Twip.ColorTransform.ToString() -> string!
@@ -4626,6 +4689,9 @@ override Twip.LineState.ToString() -> string!
 override Twip.LineValue.Equals(object? obj) -> bool
 override Twip.LineValue.GetHashCode() -> int
 override Twip.LineValue.ToString() -> string!
+override Twip.ListPosition.Equals(object? obj) -> bool
+override Twip.ListPosition.GetHashCode() -> int
+override Twip.ListPosition.ToString() -> string!
 override Twip.PictureAdjustChange.Equals(object? obj) -> bool
 override Twip.PictureAdjustChange.GetHashCode() -> int
 override Twip.PictureAdjustChange.ToString() -> string!
@@ -4657,9 +4723,12 @@ override sealed Twip.FillValue.Picture.Equals(Twip.FillValue? other) -> bool
 override sealed Twip.FillValue.Solid.Equals(Twip.FillValue? other) -> bool
 static Twip.Arrowhead.operator !=(Twip.Arrowhead? left, Twip.Arrowhead? right) -> bool
 static Twip.Arrowhead.operator ==(Twip.Arrowhead? left, Twip.Arrowhead? right) -> bool
+static Twip.CellPlace.operator !=(Twip.CellPlace? left, Twip.CellPlace? right) -> bool
+static Twip.CellPlace.operator ==(Twip.CellPlace? left, Twip.CellPlace? right) -> bool
 static Twip.ColorTransform.operator !=(Twip.ColorTransform? left, Twip.ColorTransform? right) -> bool
 static Twip.ColorTransform.operator ==(Twip.ColorTransform? left, Twip.ColorTransform? right) -> bool
 static Twip.EditorOperation.ArrangeObject(Twip.Arrange arrange) -> Twip.EditorOperation!
+static Twip.EditorOperation.DescribeFormatting() -> Twip.EditorOperation!
 static Twip.EditorOperation.FlipObject(Twip.FlipAxis axis) -> Twip.EditorOperation!
 static Twip.EditorOperation.GroupObjects() -> Twip.EditorOperation!
 static Twip.EditorOperation.InsertShape(Twip.ShapePreset preset, Twip.Length? width = null, Twip.Length? height = null) -> Twip.EditorOperation!
@@ -4711,6 +4780,8 @@ static Twip.LineState.operator !=(Twip.LineState? left, Twip.LineState? right) -
 static Twip.LineState.operator ==(Twip.LineState? left, Twip.LineState? right) -> bool
 static Twip.LineValue.operator !=(Twip.LineValue? left, Twip.LineValue? right) -> bool
 static Twip.LineValue.operator ==(Twip.LineValue? left, Twip.LineValue? right) -> bool
+static Twip.ListPosition.operator !=(Twip.ListPosition? left, Twip.ListPosition? right) -> bool
+static Twip.ListPosition.operator ==(Twip.ListPosition? left, Twip.ListPosition? right) -> bool
 static Twip.PictureAdjustChange.operator !=(Twip.PictureAdjustChange? left, Twip.PictureAdjustChange? right) -> bool
 static Twip.PictureAdjustChange.operator ==(Twip.PictureAdjustChange? left, Twip.PictureAdjustChange? right) -> bool
 static Twip.Shadow.operator !=(Twip.Shadow? left, Twip.Shadow? right) -> bool

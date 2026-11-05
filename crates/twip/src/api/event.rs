@@ -118,6 +118,8 @@ pub enum Event {
     Announcement {
         /// The announced text.
         text: String,
+        /// What it is about; when one change says several things, what the first is about.
+        kind: crate::api::services::AnnouncementKind,
     },
     /// A fidelity note from reading or writing.
     Warning(Warning),

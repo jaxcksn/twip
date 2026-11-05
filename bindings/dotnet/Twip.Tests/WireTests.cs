@@ -58,6 +58,7 @@ public sealed class WireTests
         ["clipboarddata"] = Ctx.ClipboardContent,
         ["point"] = Ctx.PointF,
         ["contentpoint"] = Ctx.PointF,
+        ["accessibleid"] = Ctx.Int64,
         ["caretblink"] = Ctx.CaretBlinkWire,
         ["overlaypalette"] = Ctx.OverlayPaletteWire,
         ["clientrect"] = Ctx.RectangleF,
@@ -192,6 +193,25 @@ public sealed class WireTests
             again[key] = value;
         }
         return again;
+    }
+
+    [Fact]
+    public void AccessibilityPatchesBuildTheTree()
+    {
+        AccessibleNode Node(long id, AccessibleRole role, params AccessibleNode[] kids) => new(id, role, kids);
+        var tree = Hosting.AccessibleTree.Apply(null, new A11yUpdate(Node(0, AccessibleRole.Document, Node(1, AccessibleRole.Paragraph), Node(2, AccessibleRole.Paragraph)), null));
+        Assert.NotNull(tree);
+        // A paragraph replaced, a new one placed between, the order changed.
+        var patch = new A11yUpdate(null, [
+            new A11yReplace(Node(2, AccessibleRole.Heading)),
+            new A11yReplace(Node(3, AccessibleRole.Paragraph)),
+            new A11yChildren(0, [2, 3, 1]),
+        ]);
+        tree = Hosting.AccessibleTree.Apply(tree, patch)!;
+        Assert.Equal([2L, 3L, 1L], tree.Children.Select(c => c.Id));
+        Assert.Equal(AccessibleRole.Heading, tree.Children[0].Role);
+        // A patch before the first whole tree has nothing to apply to.
+        Assert.Null(Hosting.AccessibleTree.Apply(null, patch));
     }
 
     // The SDK's own encoding of shapes with custom converters: these run without engine fixtures.

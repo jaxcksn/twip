@@ -6,6 +6,7 @@ import type { Session } from '../editor.js';
 import { EditorError } from '../errors.js';
 import { type ClipboardData, Kind, type HostRequest, type Message, Method } from '../transport/protocol.js';
 import type { Dom, Ledger } from './dom.js';
+import { codeOf } from './keys.js';
 
 /** The last copy on the page: the system clipboard has no place for its token, so a paste brings it back (the engine
  * pastes the copy it names only while the text is still that copy's). */
@@ -24,7 +25,7 @@ function escapeHtml(text: string): string {
 export function startClipboard(
   s: Session,
   dom: Dom,
-  input: HTMLTextAreaElement,
+  input: HTMLElement,
   ledger: Ledger,
   report: (e: unknown) => void,
   toViewport: (e: { clientX: number; clientY: number }) => { x: number; y: number },
@@ -90,7 +91,7 @@ export function startClipboard(
   // Ctrl+Shift+V pastes as text.
   let plain = false;
   ledger.listen(input, 'keydown', (e: KeyboardEvent) => {
-    plain = (e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyV';
+    plain = (e.ctrlKey || e.metaKey) && e.shiftKey && codeOf(e) === 'KeyV';
   });
   ledger.listen(input, 'paste', (e: ClipboardEvent) => {
     e.preventDefault();

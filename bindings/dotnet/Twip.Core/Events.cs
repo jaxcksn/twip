@@ -351,10 +351,13 @@ public sealed class TooltipEventArgs : EditorEventArgs
 /// <summary>The editor said something to screen readers.</summary>
 public sealed class AnnouncementEventArgs : EditorEventArgs
 {
-    internal AnnouncementEventArgs(string text, EditorState snapshot) : base(snapshot) => Text = text;
+    internal AnnouncementEventArgs(string text, AnnouncementKind kind, EditorState snapshot) : base(snapshot) => (Text, Kind) = (text, kind);
 
     /// <summary>What was said.</summary>
     public string Text { get; }
+
+    /// <summary>What it is about; when one change says several things, what the first is about.</summary>
+    public AnnouncementKind Kind { get; }
 }
 
 /// <summary>An import, export or font approximation.</summary>

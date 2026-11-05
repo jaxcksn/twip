@@ -45,12 +45,8 @@ impl Editor {
         self.object_cmd(ObjectCmd::LockAnchor(on), fonts)
     }
 
-    // shortcut: decorative pictures (no alternative text read out) aren't built yet.
     pub(in crate::editing) fn alt_text(&mut self, a: AltText, fonts: &Fonts) -> Outcome {
-        if a.decorative == Some(true) {
-            return Outcome::unsupported("decorative pictures");
-        }
-        self.object_cmd(ObjectCmd::AltText(a.text), fonts)
+        self.object_cmd(ObjectCmd::AltText(a.text, a.decorative), fonts)
     }
 
     pub(in crate::editing) fn delete_selected_object(&mut self, fonts: &Fonts) -> Outcome {

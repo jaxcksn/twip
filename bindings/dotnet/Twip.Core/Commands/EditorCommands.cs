@@ -1212,4 +1212,9 @@ public sealed class EditorCommands
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the command has run.</returns>
     public Task ClosePopoverAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.ClosePopover(), ct);
+    /// <summary>Says the formatting at the caret to screen readers (an <see cref="EditorSession.AccessibilityAnnouncement"/>
+    /// of kind <see cref="AnnouncementKind.Formatting"/>). Shift+F1. Changes nothing.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the command has run.</returns>
+    public Task DescribeFormattingAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.DescribeFormatting(), ct);
 }

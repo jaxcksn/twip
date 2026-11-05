@@ -476,6 +476,9 @@ commands! {
     /// Dismisses the popover asked for (`popoverClosed`): what an application that closes it itself, on Esc or a
     /// click elsewhere, sends. With none open it does nothing. Undo: view.
     ClosePopover,
+    /// Says the formatting at the caret to screen readers (paragraph style, font and size, emphasis, colour,
+    /// highlight) as an announcement; changes nothing. Undo: view.
+    DescribeFormatting,
 }
 
 /// The kinds of section break.

@@ -327,6 +327,7 @@ public sealed class ContractTests
                 case "menus.invoke": await _session.Menus.InvokeAsync(new MenuAction(Arg(0)?.DeepClone()), ct); return null;
                 case "spelling.addDictionary": await _session.Spelling.AddDictionaryAsync(Parse<Dictionary>(0), ct); return null;
                 case "spelling.setEnabled": await _session.Spelling.SetEnabledAsync(Parse<bool>(0)); return null;
+                case "accessibility.setAnnouncements": await _session.Accessibility.SetAnnouncementsAsync(Parse<IReadOnlyList<AnnouncementKind>>(0), ct); return null;
                 case "spelling.setLanguage": await _session.Spelling.SetLanguageAsync(Parse<string>(0)); return null;
                 case "spelling.ignore": await _session.Spelling.IgnoreAsync(Parse<string>(0)); return null;
                 case "spelling.add": await _session.Spelling.AddAsync(Parse<string>(0)); return null;
@@ -523,7 +524,7 @@ public sealed class ContractTests
             _session.ElementActivated += (_, e) => Record("elementActivated", new JsonObject { ["id"] = e.Id.Value });
             _session.RevisionsChanged += (_, _) => Record("revisionsChanged", null);
             _session.CommentsChanged += (_, _) => Record("commentsChanged", null);
-            _session.AccessibilityAnnouncement += (_, e) => Record("announcement", new JsonObject { ["text"] = e.Text });
+            _session.AccessibilityAnnouncement += (_, e) => Record("announcement", new JsonObject { ["text"] = e.Text, ["kind"] = WireJson.ToNode(e.Kind) });
             _session.PlaceholderActivated += (_, e) => Record("placeholderActivated", JsonSerializer.SerializeToNode(new PlaceholderInfo(e.Key, e.Element), Ctx.PlaceholderInfo));
             _session.GestureRequested += (_, e) => Record("gesture", JsonSerializer.SerializeToNode(new GestureEvent(e.Gesture, e.Location, e.Page, e.Target), Ctx.GestureEvent));
             _session.ElementsChanged += (_, e) => Record("elementsChanged", JsonSerializer.SerializeToNode(new ElementsChangedPayload(e.Added, e.Removed, e.Changed), Ctx.ElementsChangedPayload));
