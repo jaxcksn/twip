@@ -75,9 +75,19 @@ impl Session {
     /// Runs a command, then rebuilds the state and reports the change. Input runs here with [`Origin::User`].
     pub(super) fn apply(&mut self, command: Command, origin: Origin) -> Result<Commit, Error> {
         self.services.said = self.command_said(&command);
+        // A copy and Describe Formatting never change anything, and still say their part; a paste that pasted nothing
+        // (an empty clipboard) says nothing.
+        let says_unchanged = matches!(command, Command::Copy | Command::DescribeFormatting);
         let done = self.apply_with(origin, |e, fonts| e.execute(command, fonts));
-        // A command that changed nothing (a copy) says its part now; an edit refused where text can't go says why.
+        // What wasn't said with a change is said now, if it may be; an edit refused where text can't go says why.
         let mut said = std::mem::take(&mut self.services.said);
+        if !says_unchanged {
+            said.clear();
+        } else if !said.is_empty() {
+            // Through a change, so the state goes first, as with every event.
+            self.services.said = std::mem::take(&mut said);
+            self.changed(Vec::new());
+        }
         if let Err(e) = &done
             && (e.code == crate::api::error::ErrorCode::ReadOnly || e.message == "locked")
         {

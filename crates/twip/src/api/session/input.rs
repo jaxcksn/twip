@@ -186,9 +186,11 @@ impl Session {
             Command::InsertText(t) => t.chars().count(),
             _ => 0,
         };
+        let revision = self.editor.revision();
         let done = self.apply(command, Origin::User)?;
-        // The correction mark stays through typing after it; anything else that moves the caret away drops it.
-        self.editor.follow_correction(typed);
+        // The correction mark stays through typing after it and caret moves onto it; anything else drops it.
+        let edited = self.editor.revision() != revision;
+        self.editor.follow_correction(typed, edited);
         if let Some(trigger) = trigger {
             let ac = std::mem::take(&mut self.autocorrect);
             let corrected = self.apply_with(Origin::User, |e, fonts| e.auto_correct(&ac, trigger, fonts));

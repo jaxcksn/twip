@@ -88,6 +88,9 @@ pub struct Announcer {
     last: CellContext,
     /// The first context was seen: until then there is nothing to compare with, and nothing is said.
     primed: bool,
+    /// The document's revision at the last call: a misspelling an edit made isn't said (typing a word is misspelled
+    /// until its last letter), as screen readers in Word say it only when the caret moves onto one.
+    revision: u64,
 }
 
 impl Announcer {
@@ -115,6 +118,7 @@ impl Announcer {
         now.story = e.selection().focus().map(|p| p.story);
         now.read_only = read_only || !e.caret_editable();
         now.misspelled = spelling.at_selection(e, language).map(|m| (m.para, m.error.start));
+        let edited = std::mem::replace(&mut self.revision, e.revision()) != e.revision();
         now.all = e.selects_story();
         let was = std::mem::replace(&mut self.last, now.clone());
         if !std::mem::replace(&mut self.primed, true) {
@@ -191,7 +195,7 @@ impl Announcer {
                 ));
             }
         }
-        if now.misspelled.is_some() && now.misspelled != was.misspelled {
+        if now.misspelled.is_some() && now.misspelled != was.misspelled && !edited {
             said.push((AnnouncementKind::Spelling, "Misspelled".into()));
         }
         if now.all && !was.all {
@@ -319,6 +323,10 @@ mod tests {
         assert_eq!(kinds(&comment, AnnouncementKind::Comment), ["Comment by Grace: Please confirm the figures."]);
         if s.speller("en-US").is_some() {
             assert_eq!(kinds(&go(&mut a, &mut e, &fonts, &s, "recieve", 2), AnnouncementKind::Spelling), ["Misspelled"]);
+            // Typing a misspelled word: nothing, as with screen readers in Word.
+            go(&mut a, &mut e, &fonts, &s, "The board", 0);
+            e.execute(crate::editing::commands::Command::InsertText("teh".into()), &fonts);
+            assert!(kinds(&a.next(&mut e, &s, "en-US", false), AnnouncementKind::Spelling).is_empty(), "not while typing");
         }
         // The last page: a page change.
         let page = go(&mut a, &mut e, &fonts, &s, "Appendix B", 0);

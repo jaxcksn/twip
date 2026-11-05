@@ -144,6 +144,12 @@ class Mirror {
   }
 }
 
+/** How long an announcement waits after emptying the live region. */
+const LIVE_MS = 50;
+
+/** How long after the focus comes into the editing element an announcement waits: past the focus's own speech. */
+const AFTER_FOCUS_MS = 600;
+
 /** How long after a mirror node's activation a press on the editor is the activation's own mouse click. */
 const ACTIVATION_MS = 500;
 
@@ -186,13 +192,20 @@ export function startA11y(s: Session, dom: Dom, ledger: Ledger, label: string, f
   ledger.listen(tree, 'click', activate);
   ledger.listen(tree, 'focusin', activate);
 
-  // A repeated announcement is read again: the region empties first.
+  // A repeated announcement is read again: the region empties first. One made as the focus comes into the editing
+  // element waits for the screen reader to start saying the focus (NVDA does about 150 ms later, and cancels what it
+  // was saying): it is then said after it, not cut off by it ("Editing sub-template Violation" from a button).
   let cancel: (() => void) | undefined;
+  let focusedAt = -Infinity;
+  ledger.listen(dom.layer, 'focusin', (e: FocusEvent) => {
+    if ((e.target as Element).matches('[data-twip="input"]')) focusedAt = performance.now();
+  });
   s.disposers.push(
     s.on('announcement', ({ text }) => {
       live.textContent = '';
       cancel?.();
-      cancel = ledger.timeout(() => (live.textContent = text), 50);
+      const wait = Math.max(LIVE_MS, focusedAt + AFTER_FOCUS_MS - performance.now());
+      cancel = ledger.timeout(() => (live.textContent = text), wait);
     }),
   );
   return { activating: () => performance.now() - activated < ACTIVATION_MS };

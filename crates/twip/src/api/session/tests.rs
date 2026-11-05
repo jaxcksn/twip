@@ -284,6 +284,20 @@ fn enter_corrects_the_paragraph_it_ends_and_tracking_marks_corrections() {
 }
 
 #[test]
+fn the_correction_mark_stays_while_the_caret_moves_onto_its_word() {
+    use crate::api::input::{Key, Modifiers};
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    typed(s, "Word teh ");
+    // As Word: Ctrl+Left onto the corrected word, then Alt+Shift+F10 offers its options.
+    s.key(Key::ArrowLeft, Modifiers { ctrl: true, ..Modifiers::default() });
+    assert!(s.editor.correction().is_some(), "on the word");
+    s.key(Key::ArrowLeft, Modifiers::default());
+    assert!(s.editor.correction().is_none(), "before it, it goes");
+}
+
+#[test]
 fn a_correction_offers_its_options_and_never_correct_stops_it() {
     use crate::api::command::CommandId;
     use crate::api::event::Event;
@@ -1119,6 +1133,21 @@ fn a_sub_template_body_shown_in_place_is_read_as_a_group_and_goes_to_its_referen
     assert!(bodies.iter().all(|b| b.role == AccessibleRole::TextBox && !b.children.is_empty()));
     let ids: std::collections::HashSet<_> = nodes.iter().map(|n| n.id).collect();
     assert_eq!(ids.len(), nodes.len(), "no id twice, though the body shows at several references");
+    // A host gets the bodies too: the rules and the view aren't edits, and still send the tree again.
+    use crate::api::session::HostRequest;
+    let sent = Rc::new(RefCell::new(0));
+    let count = sent.clone();
+    s.host().attach(move |r| {
+        if let HostRequest::A11y { .. } = r {
+            *count.borrow_mut() += 1;
+        }
+    });
+    *sent.borrow_mut() = 0;
+    s.run(Command::SetSubTemplateView(crate::api::command::SubTemplateView { ids: None, expanded: false })).expect("collapses");
+    assert_eq!(s.host().take_timers().iter().filter(|t| t.0 == 3).count(), 1, "collapsing the bodies arms the tree's timer");
+    s.host().timer_fired(3);
+    assert_eq!(*sent.borrow(), 1, "and sends the change");
+    s.run(Command::SetSubTemplateView(crate::api::command::SubTemplateView { ids: None, expanded: true })).expect("shows them");
     // Activating the body's text starts editing at its reference.
     let inside = bodies[0].children[0].id;
     let reference = bodies[0].target.expect("the reference's paragraph");

@@ -101,6 +101,18 @@ struct Sink {
 /// blink).
 pub(super) const A11Y_TIMER: u32 = 3;
 
+/// What the reading tree is read from: the document, and the sub-template view (which references there are, which
+/// bodies show in place, which one is edited). The tree is sent again when this changes.
+fn a11y_key(e: &crate::editing::Editor) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (e.revision(), e.references().revision, e.editing_sub_template()).hash(&mut h);
+    let mut shown: Vec<u64> = e.references().by_field.keys().filter(|f| e.reference_expanded(**f)).map(|f| f.0).collect();
+    shown.sort_unstable();
+    shown.hash(&mut h);
+    h.finish()
+}
+
 /// How long after a change the accessibility tree's changes go: edits within it go together.
 const A11Y_MS: u32 = 250;
 
@@ -452,7 +464,7 @@ impl Presentation {
         if s.presentation.sink.deliver.is_none() {
             return;
         }
-        let revision = s.editor.revision();
+        let revision = a11y_key(&s.editor);
         let tree = s.accessible_tree();
         let update = s.presentation.sink.a11y.as_ref().map_or_else(
             || Some(crate::api::services::A11yUpdate::Full(Box::new(tree.clone()))),
@@ -815,7 +827,7 @@ impl Session {
         });
         let tooltip_changed = s.tooltip != tooltip;
         s.tooltip.clone_from(&tooltip);
-        let revision = self.editor.revision();
+        let revision = a11y_key(&self.editor);
         match &self.presentation.sink.a11y {
             None => {
                 let tree = self.accessible_tree();

@@ -184,6 +184,16 @@ test('headers and footers are groups in their region: the landmarks are the regi
   await expect(page.locator(`${tree} [role="region"] [role="region"]`)).toHaveCount(0);
 });
 
+test('editing a sub-template names it in the editing element, and a shown body is a read-only group', async ({ page }) => {
+  await mount(page, { docx: fixture('editor/FX-SUBTEMPLATES.docx') });
+  await page.evaluate(() => (window as any).editor.commands.setSubTemplateRules({ rules: [{ fieldType: 'SUBTEMPLATE', category: 'Sub-templates' }] }));
+  await expect(page.locator(`${tree} [role="group"][aria-label="Sub-template Violation, read only"]`).first()).toContainText('Violation notice');
+  await page.evaluate(() => (window as any).editor.subTemplates.edit('Violation'));
+  await expect(page.locator(input)).toHaveAttribute('aria-label', 'Document, sub-template Violation');
+  await page.evaluate(() => (window as any).editor.subTemplates.close());
+  await expect(page.locator(input)).toHaveAttribute('aria-label', 'Document');
+});
+
 test('two editors on a page keep their own names, mirrors and live regions', async ({ page }) => {
   await page.evaluate(async (docx) => {
     const { Editor } = (window as any).twip;

@@ -171,6 +171,11 @@ export function startInput(
   input.setAttribute('role', 'textbox');
   input.setAttribute('aria-multiline', 'true');
   input.setAttribute('aria-label', label);
+  // What is edited is in the name, so the screen reader says it with the focus: "Document, sub-template Violation".
+  // (The switch's announcement can be lost while the screen reader reloads the page's content.)
+  s.disposers.push(
+    s.on('editingTargetChanged', (t) => input.setAttribute('aria-label', t.kind === 'subTemplate' ? `${label}, sub-template ${t.name}` : label)),
+  );
   input.setAttribute('aria-description', LEAVE_HINT);
   input.setAttribute('autocomplete', 'off');
   input.setAttribute('autocorrect', 'off');

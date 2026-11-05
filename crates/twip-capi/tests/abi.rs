@@ -195,7 +195,7 @@ fn frames_draw_into_the_callers_pixels() {
     // SAFETY: twip_alloc made it with this length.
     unsafe { twip_free(pixels, (w * h * 4) as usize) };
     f.call(s, Method::Run, json!({ "type": "insertText", "value": "x" }));
-    assert_eq!(f.take_log().last().map(|(_, k, _)| *k), Some(kind::REQUEST_FRAME), "a change asks for a frame");
+    assert!(f.take_log().iter().any(|(_, k, _)| *k == kind::REQUEST_FRAME), "a change asks for a frame");
 }
 
 #[test]
@@ -279,7 +279,7 @@ fn a_shown_session_gets_host_requests() {
     unsafe { twip_surface(f.engine, s, 400.0, 300.0, 1.0) };
     let first = requests(f.take_log());
     let types: Vec<&str> = first.iter().filter_map(|r| r["type"].as_str()).collect();
-    assert_eq!(types, ["cursor", "caret", "a11y"], "{first:?}");
+    assert_eq!(types, ["cursor", "caret", "caret_text", "a11y"], "{first:?}");
     let mut pixels = vec![0u8; 400 * 300 * 4];
     // SAFETY: a live engine and session, pixels for 400 x 300, no info.
     assert_eq!(unsafe { twip_frame_rgba(f.engine, s, pixels.as_mut_ptr(), 400, 300, std::ptr::null_mut()) }, 0);
@@ -287,7 +287,11 @@ fn a_shown_session_gets_host_requests() {
     assert!(caret.as_ref().is_some_and(|c| c["x"].as_f64().is_some_and(|x| x > 0.0) && c["visible"] == true), "the caret shows: {caret:?}");
     f.call(s, Method::Run, json!({ "type": "insertText", "value": "!" }));
     let typed = requests(f.take_log());
-    assert!(typed.iter().any(|r| r["type"] == "caret") && typed.iter().any(|r| r["type"] == "a11y"), "{typed:?}");
+    // The caret goes at once, with its window; the tree's changes go when its timer (3) fires, at most every 250 ms.
+    assert!(typed.iter().any(|r| r["type"] == "caret") && typed.iter().any(|r| r["type"] == "caret_text"), "{typed:?}");
+    // SAFETY: a live engine and session.
+    unsafe { twip_timer_fired(f.engine, s, 3) };
+    assert!(requests(f.take_log()).iter().any(|r| r["type"] == "a11y"), "the tree's changes");
     assert!(!typed.iter().any(|r| r["type"] == "cursor"), "an unchanged cursor isn't sent again: {typed:?}");
     f.call(s, Method::HostRevealSelection, Value::Null);
     let reveal = requests(f.take_log());

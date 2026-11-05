@@ -449,12 +449,15 @@ impl Editor {
         Some(super::view::CorrectionView { rects, button })
     }
 
-    /// Keeps the correction mark through typing after it, and drops it when the caret leaves its paragraph, an edit
-    /// lands before it, or more than 14 characters were typed after it.
-    pub fn follow_correction(&mut self, typed: usize) {
+    /// Keeps the correction mark through typing after it, and while the caret only moves onto the corrected text (as
+    /// Word does: Ctrl+Left onto the word, then Alt+Shift+F10). Drops it when the caret leaves its paragraph or goes
+    /// before it, an edit lands before its end (`edited`: the input changed the document), or more than 14
+    /// characters were typed after it.
+    pub fn follow_correction(&mut self, typed: usize, edited: bool) {
         let caret = self.caret().and_then(|p| p.para_offset());
         let Some(c) = &mut self.correction else { return };
-        let keep = caret.is_some_and(|(p, at)| p == c.para && at >= c.range.end);
+        let from = if edited { c.range.end } else { c.range.start };
+        let keep = caret.is_some_and(|(p, at)| p == c.para && at >= from);
         c.typed += typed;
         if !keep || c.typed > 14 {
             self.correction = None;
