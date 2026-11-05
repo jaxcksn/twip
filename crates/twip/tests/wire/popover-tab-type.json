@@ -1,0 +1,24 @@
+[
+  {
+    "anchor": {
+      "height": 18.0,
+      "left": 0.0,
+      "top": 3.0,
+      "width": 18.0
+    },
+    "choices": [
+      {
+        "description": "Text starts at the stop",
+        "name": "Left",
+        "value": "left"
+      },
+      {
+        "description": "Numbers line up on the decimal point",
+        "name": "Decimal",
+        "value": "decimal"
+      }
+    ],
+    "current": "left",
+    "kind": "tabType"
+  }
+]

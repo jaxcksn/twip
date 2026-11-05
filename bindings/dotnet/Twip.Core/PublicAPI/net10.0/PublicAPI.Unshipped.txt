@@ -22,3 +22,6 @@ override Twip.FillValue.None.<Clone>$() -> Twip.FillValue.None!
 override Twip.FillValue.Pattern.<Clone>$() -> Twip.FillValue.Pattern!
 override Twip.FillValue.Picture.<Clone>$() -> Twip.FillValue.Picture!
 override Twip.FillValue.Solid.<Clone>$() -> Twip.FillValue.Solid!
+override Twip.Popover.AutoCorrect.<Clone>$() -> Twip.Popover.AutoCorrect!
+override Twip.Popover.TabStop.<Clone>$() -> Twip.Popover.TabStop!
+override Twip.Popover.TabType.<Clone>$() -> Twip.Popover.TabType!

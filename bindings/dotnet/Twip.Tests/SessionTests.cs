@@ -207,4 +207,70 @@ public sealed class SessionTests : IDisposable
         Assert.Equal(8, session.ShapeGallery.Count);
         Assert.Contains(session.ShapeGallery, g => g.Label == "Basic Shapes" && g.Presets.Contains(new ShapePreset("ellipse")));
     }
+
+    [Fact]
+    public async Task TheViewSettingsReachTheState()
+    {
+        Native.Require();
+        await using var session = new EditorSession();
+        await session.SetThemeAsync(ChromeTheme.Dark);
+        await session.SetAppearanceAsync(DocumentAppearance.DarkWithLightPage);
+        await session.SetDetailAsync(MeasureDetail.Quiet);
+        await session.Commands.SetViewOptionsAsync(objectGrid: ObjectGrid.Always, ct: Ct);
+        var view = session.State.View;
+        Assert.Equal(ChromeThemeKind.Dark, view.Theme.Kind);
+        Assert.Equal(DocumentAppearance.DarkWithLightPage, view.Appearance);
+        Assert.Equal(MeasureDetail.Quiet, view.Detail);
+        Assert.Equal(ObjectGrid.Always, view.ObjectGrid);
+
+        // The application's colours for the dark scheme, which is on.
+        var dark = new ChromeColors(Desk: ColorValue.FromRgb(0x1B, 0x1F, 0x27), Text: ColorValue.FromRgb(0xE6, 0xED, 0xF3));
+        await session.SetThemeColorsAsync(new ThemeColors(Dark: dark));
+        Assert.Equal(dark, session.State.View.ThemeColors.Dark);
+        Assert.Null(session.State.View.ThemeColors.Light);
+        Assert.Equal(ColorValue.FromRgb(0x1B, 0x1F, 0x27), session.State.View.Background);
+
+        var colors = new HighContrastColors(System.Drawing.Color.Black, System.Drawing.Color.White, ColorValue.FromRgb(0x1A, 0xEB, 0xFF), System.Drawing.Color.Black, ColorValue.FromRgb(0x3F, 0xF2, 0x3F));
+        await session.SetThemeAsync(ChromeTheme.HighContrast(colors), ColorValue.FromRgb(0x7A, 0x3E, 0xC8));
+        Assert.Equal(colors, session.State.View.Theme.Colors);
+    }
+
+    [Fact]
+    public async Task TheTabTypePickerIsRequestedAnsweredAndClosed()
+    {
+        Native.Require();
+        await using var session = new EditorSession();
+        var requested = new TaskCompletionSource<Popover>(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.PopoverRequested += (_, e) => requested.TrySetResult(e.Popover);
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.PopoverClosed += (_, _) => closed.TrySetResult();
+        await session.Commands.ShowTabTypesAsync(Ct);
+        var picker = Assert.IsType<Popover.TabType>(await requested.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct));
+        Assert.Equal(TabSelector.Left, picker.Current);
+        Assert.Equal(7, picker.Choices.Count);
+        Assert.Contains(new TabTypeChoice(TabSelector.Decimal, "Decimal", "Numbers line up on the decimal point"), picker.Choices);
+
+        await session.Commands.SetRulerTabTypeAsync(TabSelector.Decimal, Ct);
+        Assert.Equal(TabSelector.Decimal, session.State.View.TabSelector);
+        Assert.Equal("decimal", session.State.Commands[CommandId.SetRulerTabType].Value);
+        await closed.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        // The application closes its own: the engine's closes too, and with none open nothing happens.
+        closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await session.Commands.ShowTabTypesAsync(Ct);
+        await session.Commands.ClosePopoverAsync(Ct);
+        await closed.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+        await session.Commands.ClosePopoverAsync(Ct);
+    }
+
+    [Fact]
+    public async Task AutoCorrectSettingsReachTheState()
+    {
+        Native.Require();
+        await using var session = new EditorSession();
+        Assert.True(session.State.AutoCorrect.SmartQuotes);
+        await session.Commands.SetAutoCorrectAsync(new AutoCorrectChange(SmartQuotes: false, Never: ["teh"]), Ct);
+        Assert.False(session.State.AutoCorrect.SmartQuotes);
+        Assert.Equal(["teh"], session.State.AutoCorrect.Never);
+    }
 }

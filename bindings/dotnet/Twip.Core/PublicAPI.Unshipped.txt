@@ -820,7 +820,6 @@ Twip.EditorCommands.SetTableStyleOptionsAsync(Twip.TableStyleOptionsUpdate! opti
 Twip.EditorCommands.SetTableWidthAsync(Twip.TableWidth! width, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetTrackChangesAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetUnderlineAsync(Twip.UnderlineStyle style, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetZoomAsync(Twip.ZoomLevel zoom, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowFieldCodesAsync(bool show, System.Collections.Generic.IReadOnlyList<Twip.ElementId>? ids = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShrinkFontAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -3661,7 +3660,6 @@ static Twip.EditorOperation.SetTableStyleOptions(Twip.TableStyleOptionsUpdate! o
 static Twip.EditorOperation.SetTableWidth(Twip.TableWidth! width) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetTrackChanges(bool on) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetUnderline(Twip.UnderlineStyle style) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetZoom(Twip.ZoomLevel zoom) -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowFieldCodes(bool show, System.Collections.Generic.IReadOnlyList<Twip.ElementId>? ids = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.ShrinkFont() -> Twip.EditorOperation!
@@ -3988,7 +3986,6 @@ virtual Twip.MenuTarget.PrintMembers(System.Text.StringBuilder! builder) -> bool
 ~override Twip.StyleId.Equals(object obj) -> bool
 ~override Twip.ZoomLevel.Equals(object obj) -> bool
 ~override Twip.ZoomLevel.ToString() -> string
-
 Twip.Hosting.EditorKey.IntlBackslash = 88 -> Twip.Hosting.EditorKey
 Twip.FrameStats
 Twip.FrameStats.<Clone>$() -> Twip.FrameStats!
@@ -4017,9 +4014,7 @@ Twip.Hosting.EditorHost.OverlayColors.get -> Twip.OverlayColors!
 Twip.Hosting.EditorHost.OverlayColors.set -> void
 Twip.OverlayColors
 Twip.OverlayColors.<Clone>$() -> Twip.OverlayColors!
-Twip.OverlayColors.Caret.get -> System.Drawing.Color
-Twip.OverlayColors.Caret.init -> void
-Twip.OverlayColors.Deconstruct(out System.Drawing.Color Caret, out System.Drawing.Color Selection, out System.Drawing.Color Object, out System.Drawing.Color Drop, out System.Drawing.Color Marks, out System.Drawing.Color Leaders) -> void
+Twip.OverlayColors.Deconstruct(out System.Drawing.Color Selection, out System.Drawing.Color Object, out System.Drawing.Color Drop, out System.Drawing.Color Marks, out System.Drawing.Color Leaders) -> void
 Twip.OverlayColors.Drop.get -> System.Drawing.Color
 Twip.OverlayColors.Drop.init -> void
 Twip.OverlayColors.Equals(Twip.OverlayColors? other) -> bool
@@ -4029,7 +4024,7 @@ Twip.OverlayColors.Marks.get -> System.Drawing.Color
 Twip.OverlayColors.Marks.init -> void
 Twip.OverlayColors.Object.get -> System.Drawing.Color
 Twip.OverlayColors.Object.init -> void
-Twip.OverlayColors.OverlayColors(System.Drawing.Color Caret, System.Drawing.Color Selection, System.Drawing.Color Object, System.Drawing.Color Drop, System.Drawing.Color Marks, System.Drawing.Color Leaders) -> void
+Twip.OverlayColors.OverlayColors(System.Drawing.Color Selection, System.Drawing.Color Object, System.Drawing.Color Drop, System.Drawing.Color Marks, System.Drawing.Color Leaders) -> void
 Twip.OverlayColors.Selection.get -> System.Drawing.Color
 Twip.OverlayColors.Selection.init -> void
 override Twip.OverlayColors.Equals(object? obj) -> bool
@@ -4740,3 +4735,325 @@ virtual Twip.FillValue.PrintMembers(System.Text.StringBuilder! builder) -> bool
 ~override Twip.EffectChange<T>.Equals(object obj) -> bool
 ~override Twip.EffectChange<T>.ToString() -> string
 ~override Twip.ShapePreset.Equals(object obj) -> bool
+Twip.ChromeTheme
+Twip.ChromeTheme.<Clone>$() -> Twip.ChromeTheme!
+Twip.ChromeTheme.Colors.get -> Twip.HighContrastColors?
+Twip.ChromeTheme.Equals(Twip.ChromeTheme? other) -> bool
+Twip.ChromeTheme.Kind.get -> Twip.ChromeThemeKind
+Twip.ChromeThemeKind
+Twip.ChromeThemeKind.Dark = 1 -> Twip.ChromeThemeKind
+Twip.ChromeThemeKind.HighContrast = 2 -> Twip.ChromeThemeKind
+Twip.ChromeThemeKind.Light = 0 -> Twip.ChromeThemeKind
+Twip.CommandId.SetRulerTabType = 175 -> Twip.CommandId
+Twip.CommandId.ShowTabStop = 177 -> Twip.CommandId
+Twip.CommandId.ShowTabTypes = 176 -> Twip.CommandId
+Twip.DialogKind.AutoCorrect = 10 -> Twip.DialogKind
+Twip.DocumentAppearance
+Twip.DocumentAppearance.Dark = 1 -> Twip.DocumentAppearance
+Twip.DocumentAppearance.DarkWithLightPage = 2 -> Twip.DocumentAppearance
+Twip.DocumentAppearance.Light = 0 -> Twip.DocumentAppearance
+Twip.EditorCommands.SetRulerTabTypeAsync(Twip.TabSelector value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.ShowTabStopAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.ShowTabTypesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSession.PopoverClosed -> System.EventHandler?
+Twip.EditorSession.PopoverRequested -> System.EventHandler<Twip.PopoverRequestedEventArgs!>?
+Twip.EditorSession.SetAppearanceAsync(Twip.DocumentAppearance appearance) -> System.Threading.Tasks.Task!
+Twip.EditorSession.SetDetailAsync(Twip.MeasureDetail detail) -> System.Threading.Tasks.Task!
+Twip.EditorSession.SetThemeAsync(Twip.ChromeTheme! theme, Twip.ColorValue? accent = null) -> System.Threading.Tasks.Task!
+Twip.HighContrastColors
+Twip.HighContrastColors.<Clone>$() -> Twip.HighContrastColors!
+Twip.HighContrastColors.Canvas.get -> Twip.ColorValue
+Twip.HighContrastColors.Canvas.init -> void
+Twip.HighContrastColors.CanvasText.get -> Twip.ColorValue
+Twip.HighContrastColors.CanvasText.init -> void
+Twip.HighContrastColors.Deconstruct(out Twip.ColorValue Canvas, out Twip.ColorValue CanvasText, out Twip.ColorValue Highlight, out Twip.ColorValue HighlightText, out Twip.ColorValue GrayText) -> void
+Twip.HighContrastColors.Equals(Twip.HighContrastColors? other) -> bool
+Twip.HighContrastColors.GrayText.get -> Twip.ColorValue
+Twip.HighContrastColors.GrayText.init -> void
+Twip.HighContrastColors.HighContrastColors(Twip.ColorValue Canvas, Twip.ColorValue CanvasText, Twip.ColorValue Highlight, Twip.ColorValue HighlightText, Twip.ColorValue GrayText) -> void
+Twip.HighContrastColors.Highlight.get -> Twip.ColorValue
+Twip.HighContrastColors.Highlight.init -> void
+Twip.HighContrastColors.HighlightText.get -> Twip.ColorValue
+Twip.HighContrastColors.HighlightText.init -> void
+Twip.Hosting.EditorHost.OnModifiers(Twip.Hosting.KeyModifiers modifiers) -> void
+Twip.MeasureDetail
+Twip.MeasureDetail.Full = 2 -> Twip.MeasureDetail
+Twip.MeasureDetail.Quiet = 0 -> Twip.MeasureDetail
+Twip.MeasureDetail.Standard = 1 -> Twip.MeasureDetail
+Twip.ObjectGrid
+Twip.ObjectGrid.Always = 2 -> Twip.ObjectGrid
+Twip.ObjectGrid.Off = 0 -> Twip.ObjectGrid
+Twip.ObjectGrid.WhileDragging = 1 -> Twip.ObjectGrid
+Twip.Popover
+Twip.Popover.AutoCorrect
+Twip.Popover.AutoCorrect.Anchor.get -> System.Drawing.RectangleF
+Twip.Popover.AutoCorrect.Anchor.init -> void
+Twip.Popover.AutoCorrect.AutoCorrect(System.Drawing.RectangleF Anchor, string! From, string! To) -> void
+Twip.Popover.AutoCorrect.Deconstruct(out System.Drawing.RectangleF Anchor, out string! From, out string! To) -> void
+Twip.Popover.AutoCorrect.Equals(Twip.Popover.AutoCorrect? other) -> bool
+Twip.Popover.AutoCorrect.From.get -> string!
+Twip.Popover.AutoCorrect.From.init -> void
+Twip.Popover.AutoCorrect.To.get -> string!
+Twip.Popover.AutoCorrect.To.init -> void
+Twip.Popover.Popover(Twip.Popover! original) -> void
+Twip.Popover.TabStop
+Twip.Popover.TabStop.Alignment.get -> Twip.TabAlignment
+Twip.Popover.TabStop.Alignment.init -> void
+Twip.Popover.TabStop.Anchor.get -> System.Drawing.RectangleF
+Twip.Popover.TabStop.Anchor.init -> void
+Twip.Popover.TabStop.Deconstruct(out System.Drawing.RectangleF Anchor, out Twip.Length Position, out Twip.TabAlignment Alignment, out Twip.TabLeader Leader) -> void
+Twip.Popover.TabStop.Equals(Twip.Popover.TabStop? other) -> bool
+Twip.Popover.TabStop.Leader.get -> Twip.TabLeader
+Twip.Popover.TabStop.Leader.init -> void
+Twip.Popover.TabStop.Position.get -> Twip.Length
+Twip.Popover.TabStop.Position.init -> void
+Twip.Popover.TabStop.TabStop(System.Drawing.RectangleF Anchor, Twip.Length Position, Twip.TabAlignment Alignment, Twip.TabLeader Leader) -> void
+Twip.Popover.TabType
+Twip.Popover.TabType.Anchor.get -> System.Drawing.RectangleF
+Twip.Popover.TabType.Anchor.init -> void
+Twip.Popover.TabType.Choices.get -> System.Collections.Generic.IReadOnlyList<Twip.TabTypeChoice!>!
+Twip.Popover.TabType.Choices.init -> void
+Twip.Popover.TabType.Current.get -> Twip.TabSelector
+Twip.Popover.TabType.Current.init -> void
+Twip.Popover.TabType.Deconstruct(out System.Drawing.RectangleF Anchor, out Twip.TabSelector Current, out System.Collections.Generic.IReadOnlyList<Twip.TabTypeChoice!>! Choices) -> void
+Twip.Popover.TabType.Equals(Twip.Popover.TabType? other) -> bool
+Twip.Popover.TabType.TabType(System.Drawing.RectangleF Anchor, Twip.TabSelector Current, System.Collections.Generic.IReadOnlyList<Twip.TabTypeChoice!>! Choices) -> void
+Twip.PopoverRequestedEventArgs
+Twip.PopoverRequestedEventArgs.Popover.get -> Twip.Popover!
+Twip.TabTypeChoice
+Twip.TabTypeChoice.<Clone>$() -> Twip.TabTypeChoice!
+Twip.TabTypeChoice.Deconstruct(out Twip.TabSelector Value, out string! Name, out string! Description) -> void
+Twip.TabTypeChoice.Description.get -> string!
+Twip.TabTypeChoice.Description.init -> void
+Twip.TabTypeChoice.Equals(Twip.TabTypeChoice? other) -> bool
+Twip.TabTypeChoice.Name.get -> string!
+Twip.TabTypeChoice.Name.init -> void
+Twip.TabTypeChoice.TabTypeChoice(Twip.TabSelector Value, string! Name, string! Description) -> void
+Twip.TabTypeChoice.Value.get -> Twip.TabSelector
+Twip.TabTypeChoice.Value.init -> void
+Twip.ViewState.Accent.get -> Twip.ColorValue
+Twip.ViewState.Accent.init -> void
+Twip.ViewState.AccentOn.get -> Twip.ColorValue
+Twip.ViewState.AccentOn.init -> void
+Twip.ViewState.Appearance.get -> Twip.DocumentAppearance
+Twip.ViewState.Appearance.init -> void
+Twip.ViewState.Detail.get -> Twip.MeasureDetail
+Twip.ViewState.Detail.init -> void
+Twip.ViewState.ObjectGrid.get -> Twip.ObjectGrid
+Twip.ViewState.ObjectGrid.init -> void
+Twip.ViewState.Theme.get -> Twip.ChromeTheme!
+Twip.ViewState.Theme.init -> void
+abstract Twip.Popover.<Clone>$() -> Twip.Popover!
+override Twip.ChromeTheme.Equals(object? obj) -> bool
+override Twip.ChromeTheme.GetHashCode() -> int
+override Twip.ChromeTheme.ToString() -> string!
+override Twip.HighContrastColors.Equals(object? obj) -> bool
+override Twip.HighContrastColors.GetHashCode() -> int
+override Twip.HighContrastColors.ToString() -> string!
+override Twip.Popover.AutoCorrect.Equals(object? obj) -> bool
+override Twip.Popover.AutoCorrect.GetHashCode() -> int
+override Twip.Popover.AutoCorrect.ToString() -> string!
+override Twip.Popover.Equals(object? obj) -> bool
+override Twip.Popover.GetHashCode() -> int
+override Twip.Popover.TabStop.Equals(object? obj) -> bool
+override Twip.Popover.TabStop.GetHashCode() -> int
+override Twip.Popover.TabStop.ToString() -> string!
+override Twip.Popover.TabType.Equals(object? obj) -> bool
+override Twip.Popover.TabType.GetHashCode() -> int
+override Twip.Popover.TabType.ToString() -> string!
+override Twip.Popover.ToString() -> string!
+override Twip.TabTypeChoice.Equals(object? obj) -> bool
+override Twip.TabTypeChoice.GetHashCode() -> int
+override Twip.TabTypeChoice.ToString() -> string!
+override sealed Twip.Popover.AutoCorrect.Equals(Twip.Popover? other) -> bool
+override sealed Twip.Popover.TabStop.Equals(Twip.Popover? other) -> bool
+override sealed Twip.Popover.TabType.Equals(Twip.Popover? other) -> bool
+static Twip.ChromeTheme.Dark.get -> Twip.ChromeTheme!
+static Twip.ChromeTheme.HighContrast(Twip.HighContrastColors! colors) -> Twip.ChromeTheme!
+static Twip.ChromeTheme.Light.get -> Twip.ChromeTheme!
+static Twip.ChromeTheme.operator !=(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
+static Twip.ChromeTheme.operator ==(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
+static Twip.EditorOperation.SetRulerTabType(Twip.TabSelector value) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.ShowTabStop() -> Twip.EditorOperation!
+static Twip.EditorOperation.ShowTabTypes() -> Twip.EditorOperation!
+static Twip.HighContrastColors.operator !=(Twip.HighContrastColors? left, Twip.HighContrastColors? right) -> bool
+static Twip.HighContrastColors.operator ==(Twip.HighContrastColors? left, Twip.HighContrastColors? right) -> bool
+static Twip.Popover.AutoCorrect.operator !=(Twip.Popover.AutoCorrect? left, Twip.Popover.AutoCorrect? right) -> bool
+static Twip.Popover.AutoCorrect.operator ==(Twip.Popover.AutoCorrect? left, Twip.Popover.AutoCorrect? right) -> bool
+static Twip.Popover.TabStop.operator !=(Twip.Popover.TabStop? left, Twip.Popover.TabStop? right) -> bool
+static Twip.Popover.TabStop.operator ==(Twip.Popover.TabStop? left, Twip.Popover.TabStop? right) -> bool
+static Twip.Popover.TabType.operator !=(Twip.Popover.TabType? left, Twip.Popover.TabType? right) -> bool
+static Twip.Popover.TabType.operator ==(Twip.Popover.TabType? left, Twip.Popover.TabType? right) -> bool
+static Twip.Popover.operator !=(Twip.Popover? left, Twip.Popover? right) -> bool
+static Twip.Popover.operator ==(Twip.Popover? left, Twip.Popover? right) -> bool
+static Twip.TabTypeChoice.operator !=(Twip.TabTypeChoice? left, Twip.TabTypeChoice? right) -> bool
+static Twip.TabTypeChoice.operator ==(Twip.TabTypeChoice? left, Twip.TabTypeChoice? right) -> bool
+virtual Twip.Popover.EqualityContract.get -> System.Type!
+virtual Twip.Popover.Equals(Twip.Popover? other) -> bool
+virtual Twip.Popover.PrintMembers(System.Text.StringBuilder! builder) -> bool
+Twip.AutoCorrectChange
+Twip.AutoCorrectChange.<Clone>$() -> Twip.AutoCorrectChange!
+Twip.AutoCorrectChange.AutoCorrectChange(bool? TwoInitialCapitals = null, bool? SentenceCapitals = null, bool? CellCapitals = null, bool? DayNames = null, bool? ReplaceText = null, bool? SmartQuotes = null, bool? Ordinals = null, bool? Fractions = null, bool? Dashes = null, bool? NumberedLists = null, bool? BulletedLists = null, System.Collections.Generic.IReadOnlyList<Twip.AutoCorrectEntry!>? Entries = null, System.Collections.Generic.IReadOnlyList<string!>? FirstLetterExceptions = null, System.Collections.Generic.IReadOnlyList<string!>? InitialCapsExceptions = null, System.Collections.Generic.IReadOnlyList<string!>? Never = null) -> void
+Twip.AutoCorrectChange.CellCapitals.get -> bool?
+Twip.AutoCorrectChange.CellCapitals.init -> void
+Twip.AutoCorrectChange.Dashes.get -> bool?
+Twip.AutoCorrectChange.Dashes.init -> void
+Twip.AutoCorrectChange.DayNames.get -> bool?
+Twip.AutoCorrectChange.DayNames.init -> void
+Twip.AutoCorrectChange.Deconstruct(out bool? TwoInitialCapitals, out bool? SentenceCapitals, out bool? CellCapitals, out bool? DayNames, out bool? ReplaceText, out bool? SmartQuotes, out bool? Ordinals, out bool? Fractions, out bool? Dashes, out bool? NumberedLists, out bool? BulletedLists, out System.Collections.Generic.IReadOnlyList<Twip.AutoCorrectEntry!>? Entries, out System.Collections.Generic.IReadOnlyList<string!>? FirstLetterExceptions, out System.Collections.Generic.IReadOnlyList<string!>? InitialCapsExceptions, out System.Collections.Generic.IReadOnlyList<string!>? Never) -> void
+Twip.AutoCorrectChange.Entries.get -> System.Collections.Generic.IReadOnlyList<Twip.AutoCorrectEntry!>?
+Twip.AutoCorrectChange.Entries.init -> void
+Twip.AutoCorrectChange.Equals(Twip.AutoCorrectChange? other) -> bool
+Twip.AutoCorrectChange.FirstLetterExceptions.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Twip.AutoCorrectChange.FirstLetterExceptions.init -> void
+Twip.AutoCorrectChange.Fractions.get -> bool?
+Twip.AutoCorrectChange.Fractions.init -> void
+Twip.AutoCorrectChange.InitialCapsExceptions.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Twip.AutoCorrectChange.InitialCapsExceptions.init -> void
+Twip.AutoCorrectChange.Never.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Twip.AutoCorrectChange.Never.init -> void
+Twip.AutoCorrectChange.Ordinals.get -> bool?
+Twip.AutoCorrectChange.Ordinals.init -> void
+Twip.AutoCorrectChange.ReplaceText.get -> bool?
+Twip.AutoCorrectChange.ReplaceText.init -> void
+Twip.AutoCorrectChange.SentenceCapitals.get -> bool?
+Twip.AutoCorrectChange.SentenceCapitals.init -> void
+Twip.AutoCorrectChange.SmartQuotes.get -> bool?
+Twip.AutoCorrectChange.SmartQuotes.init -> void
+Twip.AutoCorrectChange.TwoInitialCapitals.get -> bool?
+Twip.AutoCorrectChange.TwoInitialCapitals.init -> void
+Twip.AutoCorrectEntry
+Twip.AutoCorrectEntry.<Clone>$() -> Twip.AutoCorrectEntry!
+Twip.AutoCorrectEntry.AutoCorrectEntry(string! From, string! To) -> void
+Twip.AutoCorrectEntry.Deconstruct(out string! From, out string! To) -> void
+Twip.AutoCorrectEntry.Equals(Twip.AutoCorrectEntry? other) -> bool
+Twip.AutoCorrectEntry.From.get -> string!
+Twip.AutoCorrectEntry.From.init -> void
+Twip.AutoCorrectEntry.To.get -> string!
+Twip.AutoCorrectEntry.To.init -> void
+Twip.AutoCorrectOptions
+Twip.AutoCorrectOptions.<Clone>$() -> Twip.AutoCorrectOptions!
+Twip.AutoCorrectOptions.AutoCorrectOptions() -> void
+Twip.AutoCorrectOptions.CellCapitals.get -> bool
+Twip.AutoCorrectOptions.CellCapitals.init -> void
+Twip.AutoCorrectOptions.Dashes.get -> bool
+Twip.AutoCorrectOptions.Dashes.init -> void
+Twip.AutoCorrectOptions.DayNames.get -> bool
+Twip.AutoCorrectOptions.DayNames.init -> void
+Twip.AutoCorrectOptions.Equals(Twip.AutoCorrectOptions? other) -> bool
+Twip.AutoCorrectOptions.Fractions.get -> bool
+Twip.AutoCorrectOptions.Fractions.init -> void
+Twip.AutoCorrectOptions.Never.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Twip.AutoCorrectOptions.Never.init -> void
+Twip.AutoCorrectOptions.Ordinals.get -> bool
+Twip.AutoCorrectOptions.Ordinals.init -> void
+Twip.AutoCorrectOptions.ReplaceText.get -> bool
+Twip.AutoCorrectOptions.ReplaceText.init -> void
+Twip.AutoCorrectOptions.SentenceCapitals.get -> bool
+Twip.AutoCorrectOptions.SentenceCapitals.init -> void
+Twip.AutoCorrectOptions.SmartQuotes.get -> bool
+Twip.AutoCorrectOptions.SmartQuotes.init -> void
+Twip.AutoCorrectOptions.TwoInitialCapitals.get -> bool
+Twip.AutoCorrectOptions.TwoInitialCapitals.init -> void
+Twip.CommandId.NeverAutoCorrect = 180 -> Twip.CommandId
+Twip.CommandId.RevertAutoCorrect = 179 -> Twip.CommandId
+Twip.CommandId.SetAutoCorrect = 178 -> Twip.CommandId
+Twip.CommandId.ShowAutoCorrectOptions = 181 -> Twip.CommandId
+Twip.EditorCommands.NeverAutoCorrectAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.RevertAutoCorrectAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetAutoCorrectAsync(Twip.AutoCorrectChange! change, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.ShowAutoCorrectOptionsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorState.AutoCorrect.get -> Twip.AutoCorrectOptions!
+Twip.EditorState.AutoCorrect.init -> void
+override Twip.AutoCorrectChange.Equals(object? obj) -> bool
+override Twip.AutoCorrectChange.GetHashCode() -> int
+override Twip.AutoCorrectChange.ToString() -> string!
+override Twip.AutoCorrectEntry.Equals(object? obj) -> bool
+override Twip.AutoCorrectEntry.GetHashCode() -> int
+override Twip.AutoCorrectEntry.ToString() -> string!
+override Twip.AutoCorrectOptions.Equals(object? obj) -> bool
+override Twip.AutoCorrectOptions.GetHashCode() -> int
+override Twip.AutoCorrectOptions.ToString() -> string!
+static Twip.AutoCorrectChange.operator !=(Twip.AutoCorrectChange? left, Twip.AutoCorrectChange? right) -> bool
+static Twip.AutoCorrectChange.operator ==(Twip.AutoCorrectChange? left, Twip.AutoCorrectChange? right) -> bool
+static Twip.AutoCorrectEntry.operator !=(Twip.AutoCorrectEntry? left, Twip.AutoCorrectEntry? right) -> bool
+static Twip.AutoCorrectEntry.operator ==(Twip.AutoCorrectEntry? left, Twip.AutoCorrectEntry? right) -> bool
+static Twip.AutoCorrectOptions.operator !=(Twip.AutoCorrectOptions? left, Twip.AutoCorrectOptions? right) -> bool
+static Twip.AutoCorrectOptions.operator ==(Twip.AutoCorrectOptions? left, Twip.AutoCorrectOptions? right) -> bool
+static Twip.EditorOperation.NeverAutoCorrect() -> Twip.EditorOperation!
+static Twip.EditorOperation.RevertAutoCorrect() -> Twip.EditorOperation!
+static Twip.EditorOperation.SetAutoCorrect(Twip.AutoCorrectChange! change) -> Twip.EditorOperation!
+static Twip.EditorOperation.ShowAutoCorrectOptions() -> Twip.EditorOperation!
+Twip.CommandId.SetTablePosition = 182 -> Twip.CommandId
+Twip.EditorCommands.SetTablePositionAsync(Twip.TablePosition? position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.TablePosition
+Twip.TablePosition.<Clone>$() -> Twip.TablePosition!
+Twip.TablePosition.Deconstruct(out Twip.HorizontalPosition? Horizontal, out Twip.VerticalPosition? Vertical, out Twip.TextDistance? WrapDistance) -> void
+Twip.TablePosition.Equals(Twip.TablePosition? other) -> bool
+Twip.TablePosition.Horizontal.get -> Twip.HorizontalPosition?
+Twip.TablePosition.Horizontal.init -> void
+Twip.TablePosition.TablePosition(Twip.HorizontalPosition? Horizontal = null, Twip.VerticalPosition? Vertical = null, Twip.TextDistance? WrapDistance = null) -> void
+Twip.TablePosition.Vertical.get -> Twip.VerticalPosition?
+Twip.TablePosition.Vertical.init -> void
+Twip.TablePosition.WrapDistance.get -> Twip.TextDistance?
+Twip.TablePosition.WrapDistance.init -> void
+override Twip.TablePosition.Equals(object? obj) -> bool
+override Twip.TablePosition.GetHashCode() -> int
+override Twip.TablePosition.ToString() -> string!
+static Twip.EditorOperation.SetTablePosition(Twip.TablePosition? position) -> Twip.EditorOperation!
+static Twip.TablePosition.operator !=(Twip.TablePosition? left, Twip.TablePosition? right) -> bool
+static Twip.TablePosition.operator ==(Twip.TablePosition? left, Twip.TablePosition? right) -> bool
+Twip.CommandId.ClosePopover = 183 -> Twip.CommandId
+Twip.EditorCommands.ClosePopoverAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Twip.EditorOperation.ClosePopover() -> Twip.EditorOperation!
+Twip.Hosting.EditorHost.ResetBackground() -> void
+Twip.Hosting.EditorHost.ResetOverlayColors() -> void
+Twip.ThemeColors
+Twip.ThemeColors.<Clone>$() -> Twip.ThemeColors!
+Twip.ThemeColors.ThemeColors(Twip.ChromeColors? Light = null, Twip.ChromeColors? Dark = null) -> void
+Twip.ThemeColors.Deconstruct(out Twip.ChromeColors? Light, out Twip.ChromeColors? Dark) -> void
+Twip.ThemeColors.Equals(Twip.ThemeColors? other) -> bool
+Twip.ThemeColors.Light.get -> Twip.ChromeColors?
+Twip.ThemeColors.Light.init -> void
+Twip.ThemeColors.Dark.get -> Twip.ChromeColors?
+Twip.ThemeColors.Dark.init -> void
+Twip.ChromeColors
+Twip.ChromeColors.<Clone>$() -> Twip.ChromeColors!
+Twip.ChromeColors.ChromeColors(Twip.ColorValue? Desk = null, Twip.ColorValue? Surface = null, Twip.ColorValue? Text = null, Twip.ColorValue? SecondaryText = null, Twip.ColorValue? FaintText = null, Twip.ColorValue? Line = null) -> void
+Twip.ChromeColors.Deconstruct(out Twip.ColorValue? Desk, out Twip.ColorValue? Surface, out Twip.ColorValue? Text, out Twip.ColorValue? SecondaryText, out Twip.ColorValue? FaintText, out Twip.ColorValue? Line) -> void
+Twip.ChromeColors.Equals(Twip.ChromeColors? other) -> bool
+Twip.ChromeColors.Desk.get -> Twip.ColorValue?
+Twip.ChromeColors.Desk.init -> void
+Twip.ChromeColors.Surface.get -> Twip.ColorValue?
+Twip.ChromeColors.Surface.init -> void
+Twip.ChromeColors.Text.get -> Twip.ColorValue?
+Twip.ChromeColors.Text.init -> void
+Twip.ChromeColors.SecondaryText.get -> Twip.ColorValue?
+Twip.ChromeColors.SecondaryText.init -> void
+Twip.ChromeColors.FaintText.get -> Twip.ColorValue?
+Twip.ChromeColors.FaintText.init -> void
+Twip.ChromeColors.Line.get -> Twip.ColorValue?
+Twip.ChromeColors.Line.init -> void
+Twip.ViewState.ThemeColors.get -> Twip.ThemeColors!
+Twip.ViewState.ThemeColors.init -> void
+override Twip.ThemeColors.Equals(object? obj) -> bool
+override Twip.ThemeColors.GetHashCode() -> int
+override Twip.ThemeColors.ToString() -> string!
+static Twip.ThemeColors.operator !=(Twip.ThemeColors? left, Twip.ThemeColors? right) -> bool
+static Twip.ThemeColors.operator ==(Twip.ThemeColors? left, Twip.ThemeColors? right) -> bool
+override Twip.ChromeColors.Equals(object? obj) -> bool
+override Twip.ChromeColors.GetHashCode() -> int
+override Twip.ChromeColors.ToString() -> string!
+static Twip.ChromeColors.operator !=(Twip.ChromeColors? left, Twip.ChromeColors? right) -> bool
+static Twip.ChromeColors.operator ==(Twip.ChromeColors? left, Twip.ChromeColors? right) -> bool
+Twip.EditorSession.SetThemeColorsAsync(Twip.ThemeColors! colors) -> System.Threading.Tasks.Task!
+Twip.AutoCorrectChange.NumberedLists.get -> bool?
+Twip.AutoCorrectChange.NumberedLists.init -> void
+Twip.AutoCorrectChange.BulletedLists.get -> bool?
+Twip.AutoCorrectChange.BulletedLists.init -> void
+Twip.AutoCorrectOptions.NumberedLists.get -> bool
+Twip.AutoCorrectOptions.NumberedLists.init -> void
+Twip.AutoCorrectOptions.BulletedLists.get -> bool
+Twip.AutoCorrectOptions.BulletedLists.init -> void

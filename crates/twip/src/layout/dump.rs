@@ -255,7 +255,7 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                     )
                     .unwrap();
                 }
-                Item::Rect { rect: b, colour: c } => writeln!(s, "R {} {} {} {} {c:06x}", f(b[0]), f(b[1]), f(b[2]), f(b[3])).unwrap(),
+                Item::Rect { rect: b, colour: c, .. } => writeln!(s, "R {} {} {} {} {c:06x}", f(b[0]), f(b[1]), f(b[2]), f(b[3])).unwrap(),
                 Item::Image { rect: b, key } => {
                     writeln!(s, "I {} {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3]), key.index.map_or(-1, |i| i as isize)).unwrap()
                 }

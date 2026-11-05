@@ -583,6 +583,16 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetTableStyleOptions(TableStyleOptionsUpdate options) => Op(CommandId.SetTableStyleOptions, Arg.Flatten(options));
 
+    /// <summary>
+    /// Positions the caret's table so text wraps around it, as dragging its move handle does: a table without a
+    /// position gets one across from the margin and down from the paragraph, and each axis given is aligned, offset, or
+    /// (with neither) kept where it is and measured from its new reference. Unset values are kept; null puts the table
+    /// back in the text.
+    /// </summary>
+    /// <param name="position">The position, or null for a table in the text.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetTablePosition(TablePosition? position) => Op(CommandId.SetTablePosition, new Arg("value", position is null ? null : Node(position)));
+
     /// <summary>Resizes the selected picture or text box. Unset values are kept.</summary>
     /// <param name="width">The width, 1 to 1584 pt.</param>
     /// <param name="height">The height, 1 to 1584 pt.</param>
@@ -906,16 +916,56 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetZoom(ZoomLevel zoom) => Op(CommandId.SetZoom, new Arg("value", Node(zoom)));
 
-    /// <summary>Shows or hides formatting marks, gridlines and text boundaries. Unset values are kept.</summary>
+    /// <summary>Sets the view options: formatting marks, gridlines, text boundaries, the chrome's theme and accent, dark mode, the measuring detail and the object grid. Unset values are kept.</summary>
     /// <param name="formattingMarks">Formatting marks.</param>
     /// <param name="gridlines">Table gridlines.</param>
     /// <param name="textBoundaries">Text boundaries.</param>
     /// <param name="liveLayout">Text wraps around an object again as it is dragged; otherwise a preview shows until the release.</param>
+    /// <param name="theme">The chrome's colour scheme.</param>
+    /// <param name="accent">The chrome's accent: selection, handles, guides and active markers. Any colour; the dark scheme lightens it.</param>
+    /// <param name="appearance">How the page is drawn on screen (dark mode).</param>
+    /// <param name="detail">How much the editor measures while you drag and hover.</param>
+    /// <param name="objectGrid">When the dot grid objects snap to shows (unrelated to <paramref name="gridlines"/>).</param>
+    /// <param name="themeColors">The application's colours for the light and dark schemes, to match its own UI.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", formattingMarks is { } formattingMarks_ ? Node(formattingMarks_) : null, Optional: true), new Arg("gridlines", gridlines is { } gridlines_ ? Node(gridlines_) : null, Optional: true), new Arg("textBoundaries", textBoundaries is { } textBoundaries_ ? Node(textBoundaries_) : null, Optional: true), new Arg("liveLayout", liveLayout is { } liveLayout_ ? Node(liveLayout_) : null, Optional: true));
+    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", Nullable(formattingMarks), Optional: true), new Arg("gridlines", Nullable(gridlines), Optional: true), new Arg("textBoundaries", Nullable(textBoundaries), Optional: true), new Arg("liveLayout", Nullable(liveLayout), Optional: true), new Arg("theme", theme is null ? null : Node(theme), Optional: true), new Arg("accent", Nullable(accent), Optional: true), new Arg("appearance", Nullable(appearance), Optional: true), new Arg("detail", Nullable(detail), Optional: true), new Arg("objectGrid", Nullable(objectGrid), Optional: true), new Arg("themeColors", themeColors is null ? null : Node(themeColors), Optional: true));
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetMode(EditorMode mode) => Op(CommandId.SetMode, new Arg("value", Node(mode)));
+
+    /// <summary>Sets what a click on the ruler adds; answers the tab type picker. A view setting.</summary>
+    /// <param name="value">The tab type or indent marker.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetRulerTabType(TabSelector value) => Op(CommandId.SetRulerTabType, new Arg("value", Node(value)));
+
+    /// <summary>Asks for the tab type picker (<see cref="EditorSession.PopoverRequested"/>), as a click on the ruler's tab type box does.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ShowTabTypes() => Op(CommandId.ShowTabTypes);
+
+    /// <summary>Asks for the options of the tab stop nearest the caret (<see cref="EditorSession.PopoverRequested"/>).</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ShowTabStop() => Op(CommandId.ShowTabStop);
+
+    /// <summary>Switches AutoCorrect rules on or off, and replaces its lists. A session setting, not an undo step.</summary>
+    /// <param name="change">The rules and lists to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetAutoCorrect(AutoCorrectChange change) => Op(CommandId.SetAutoCorrect, Arg.Flatten(change));
+
+    /// <summary>Puts back what was typed before the correction at the caret. Undoes the correction when it is the last step, otherwise one step of its own.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation RevertAutoCorrect() => Op(CommandId.RevertAutoCorrect);
+
+    /// <summary>Reverts the correction at the caret, and never makes it again.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation NeverAutoCorrect() => Op(CommandId.NeverAutoCorrect);
+
+    /// <summary>Asks for the options of the correction at the caret (<see cref="EditorSession.PopoverRequested"/>, Alt+Shift+F10).</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ShowAutoCorrectOptions() => Op(CommandId.ShowAutoCorrectOptions);
+
+    /// <summary>Dismisses the popover asked for (<see cref="EditorSession.PopoverClosed"/>), for an application that closes its own on Esc or a click elsewhere; with none open, nothing.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ClosePopover() => Op(CommandId.ClosePopover);
 }

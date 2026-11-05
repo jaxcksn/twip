@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::error::{Error, ErrorCode};
 use super::record::TransactionRecord;
 use super::review::{BalloonPlacement, CommentAnchor};
-use super::services::{ContextMenuEvent, DialogKind, ElementInfo, GestureEvent, PlaceholderInfo, RulerView, Tooltip};
+use super::services::{ContextMenuEvent, DialogKind, ElementInfo, GestureEvent, PlaceholderInfo, Popover, RulerView, Tooltip};
 use super::state::{SelectionSummary, State};
 use super::value::ElementId;
 use super::warning::Warning;
@@ -36,6 +36,10 @@ pub enum Event {
     PlaceholderActivated(PlaceholderInfo),
     /// A context menu to open.
     ContextMenu(ContextMenuEvent),
+    /// A click or command asked for a popover by its anchor. Opening one closes the one open.
+    PopoverRequested(Popover),
+    /// The engine dismissed the open popover: Esc, a press elsewhere, or its target gone.
+    PopoverClosed,
     /// A key or gesture asked for a dialog.
     DialogRequested {
         /// The dialog to open.

@@ -147,14 +147,14 @@ Example: Malgun Gothic 10pt, "가나 다라": the space is 5pt (its average char
 
 ### FONT-15. Decorations {#font-15}
 
-Draw a run's highlight (or run shading) behind its text, from `baseline − A` to `baseline + D` of its font, including trailing spaces. Draw underline and strikethrough over the text, but not under the spaces that end a line:
+Draw a run's highlight (or run shading) behind its text, from `baseline − A` to `baseline + D` of its font, including trailing spaces. The `w:highlight` names are drawn in: `yellow` FFFF00, `green` 00FF00, `cyan` 00FFFF, `magenta` FF00FF, `blue` 0000FF, `red` FF0000, `darkBlue` 00008B, `darkCyan` 008B8B, `darkGreen` 006400, `darkMagenta` 800080, `darkRed` 8B0000, `darkYellow` 808000, `darkGray` A9A9A9, `lightGray` D3D3D3, `black` 000000, `white` FFFFFF. Draw underline and strikethrough over the text, but not under the spaces that end a line:
 
 - underline at `post.underlinePosition` below the baseline, `post.underlineThickness` thick (at least 0.5pt); `double` draws a second line two thicknesses lower, `thick` doubles the thickness, `words` skips spaces and tabs, every other style draws as single;
 - strikethrough at `OS/2.yStrikeoutPosition` above the baseline, `OS/2.yStrikeoutSize` thick (at least 0.5pt); `w:dstrike` draws two lines one thickness above and below that.
 
 A tab takes its run's highlight, underline and strikethrough across its whole width, wherever it falls on the line; a tab's leader draws too. A tab ends the spaces that end a line: spaces before it are decorated. So an underlined tab at the end of a paragraph draws a fill-in line. With `w:ulTrailSpace` in the settings' `w:compat`, the spaces that end a line are underlined as well (strikethrough still stops before them).
 
-List numbers take no underline and no highlight. Text whose colour is automatic is white over a dark highlight or shading (luma `0.299 R + 0.587 G + 0.114 B < 110`), black otherwise.
+List numbers take no underline and no highlight. Text whose colour is automatic is white over a dark fill (`0.30 R + 0.59 G + 0.11 B < 60`), black otherwise. The fill is the run's shading; without one, the paragraph's shading; without one, the cell's shading or, in a shape's text, the shape's fill when it is one opaque colour. A highlight is not a fill here: automatic text over any highlight, even black, is black.
 
 ### FONT-16. Shaping stretches {#font-16}
 

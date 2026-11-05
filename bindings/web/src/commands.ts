@@ -1,13 +1,16 @@
 import type { RichText } from './review.js';
 import type { ControlKind, ControlOptions, DataBinding } from './services/elements.js';
-import type { TabAlignment, TabLeader } from './services/ruler.js';
+import type { TabAlignment, TabLeader, TabSelector } from './services/ruler.js';
+import type { ViewOptions } from './services/view.js';
 import type {
+  AutoCorrectChange,
   HighlightColor,
   HorizontalPosition,
   LineSpacing,
   MarkupView,
   ObjectWrap,
   RowHeight,
+  TablePosition,
   TableWidth,
   UnderlineStyle,
   VerticalPosition,
@@ -327,6 +330,13 @@ export interface Commands {
     bandedRows?: boolean;
     bandedColumns?: boolean;
   }): Promise<void>;
+  /**
+   * Positions the caret's table, so text wraps around it, as dragging its move handle does: a table without a
+   * position gets one across from the margin and down from the paragraph, and each axis given is aligned, offset, or
+   * (with neither) kept where it is and measured from its new reference. Unset fields keep their value; `null` puts
+   * the table back in the text.
+   */
+  setTablePosition(position: TablePosition | null): Promise<void>;
 
   // Objects: the selected object
   /** Sets the object's size, 1 to 1584. */
@@ -492,10 +502,31 @@ export interface Commands {
   // View: never change the document
   /** Sets the zoom: 10 to 500 percent, or a fit. */
   setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
-  /** Shows or hides formatting marks (Ctrl+Shift+8), gridlines and text boundaries. */
-  setViewOptions(options: { formattingMarks?: boolean; gridlines?: boolean; textBoundaries?: boolean; liveLayout?: boolean }): Promise<void>;
+  /**
+   * Sets view options: formatting marks (Ctrl+Shift+8), gridlines, text boundaries, live layout, the chrome's theme
+   * and accent, the page's appearance, the measuring detail and the object grid.
+   */
+  setViewOptions(options: ViewOptions): Promise<void>;
   /** Switches between editing and design mode. */
   setMode(mode: 'editing' | 'design'): Promise<void>;
+  /** Sets what a click on the ruler adds; answers the tab type popover. View. */
+  setRulerTabType(type: TabSelector): Promise<void>;
+  /** Asks for the tab type popover (`popoverRequested`). View. */
+  showTabTypes(): Promise<void>;
+  /** Asks for the options of the tab stop nearest the caret (`popoverRequested`). View. */
+  showTabStop(): Promise<void>;
+
+  // AutoCorrect
+  /** Sets what typing corrects: the rules given switch, the lists given replace the shipped ones. A session setting: no undo. */
+  setAutoCorrect(change: AutoCorrectChange): Promise<void>;
+  /** Puts back what was typed in place of the correction just made: undoes it when it is the last step, else one undo step. */
+  revertAutoCorrect(): Promise<void>;
+  /** Reverts the correction just made, as `revertAutoCorrect` does, and never makes it again (adds it to `autoCorrect.never`). */
+  neverAutoCorrect(): Promise<void>;
+  /** Asks for the options of the correction just made (`popoverRequested`), Alt+Shift+F10. View. */
+  showAutoCorrectOptions(): Promise<void>;
+  /** Dismisses the popover asked for (`popoverClosed`), for an application that closes its own on Esc or a press elsewhere; with none open, nothing. View. */
+  closePopover(): Promise<void>;
 }
 
 /** A command id: the method name, the batch op's `type`, the catalog id and the key in `state.commands`. */
@@ -688,6 +719,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setTableIndent: 'value',
   setTableStyle: 'value',
   setTableStyleOptions: 'spread',
+  setTablePosition: 'value',
   setObjectSize: 'spread',
   resetObjectSize: 'none',
   setObjectWrap: 'value',
@@ -749,6 +781,14 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setZoom: 'value',
   setViewOptions: 'spread',
   setMode: 'value',
+  setRulerTabType: 'value',
+  showTabTypes: 'none',
+  showTabStop: 'none',
+  setAutoCorrect: 'spread',
+  revertAutoCorrect: 'none',
+  neverAutoCorrect: 'none',
+  showAutoCorrectOptions: 'none',
+  closePopover: 'none',
 };
 
 /** Builds a command's op from its method arguments. */

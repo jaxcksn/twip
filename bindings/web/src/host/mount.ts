@@ -46,6 +46,10 @@ export async function mountHost(container: HTMLElement, s: Session, options: Mou
       const t = event as { at: ClientPoint; rect: { left: number; top: number } };
       return { ...t, at: client(t.at), rect: { ...t.rect, left: t.rect.left + r.left, top: t.rect.top + r.top } };
     }
+    if (type === 'popoverRequested') {
+      const p = event as { anchor: { left: number; top: number } };
+      return { ...p, anchor: { ...p.anchor, left: p.anchor.left + r.left, top: p.anchor.top + r.top } };
+    }
     if (type === 'rulerChanged' && event) {
       const v = event as RulerView;
       return { ...v, horizontal: { ...v.horizontal, origin: v.horizontal.origin + r.left }, vertical: { ...v.vertical, origin: v.vertical.origin + r.top } };
@@ -67,7 +71,7 @@ export async function mountHost(container: HTMLElement, s: Session, options: Mou
   startPointer(s, dom, ledger, scroll, report, input.focus, (t) => t instanceof Node && balloons.contains(t) && t !== balloons);
   startA11y(s, dom, ledger);
 
-  await chrome.view.setBackground(options.background ?? '#E6E6E6');
+  if (options.background) await chrome.view.setBackground(options.background);
   if (options.overlayColors) await chrome.view.setOverlayColors(options.overlayColors);
   if (options.drawLeaders) chrome.drawLeaders(true);
   if (options.paintBudget) {

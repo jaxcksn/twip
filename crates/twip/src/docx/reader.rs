@@ -97,6 +97,34 @@ fn raw(n: Node) -> Rc<str> {
     n.document().input_text()[n.range()].into()
 }
 
+/// `w:background`'s colour (PAGE-12): `w:color`, or `w:themeColor` through the theme and its colour mapping (DRAW-7).
+// shortcut: `w:themeTint` and `w:themeShade` are not applied to a theme page colour.
+fn page_colour(b: Node, theme: &crate::drawing::theme::Theme, map: &crate::drawing::theme::ColourMap) -> Option<u32> {
+    use crate::drawing::colour::SchemeSlot::*;
+    let slot = attr(b, "themeColor").and_then(|t| {
+        Some(match t {
+            "dark1" => Dk1,
+            "light1" => Lt1,
+            "dark2" => Dk2,
+            "light2" => Lt2,
+            "background1" => Bg1,
+            "text1" => Tx1,
+            "background2" => Bg2,
+            "text2" => Tx2,
+            "hyperlink" => Hlink,
+            "followedHyperlink" => FolHlink,
+            a => Accent(a.strip_prefix("accent")?.parse().ok().filter(|n| (1..=6).contains(n))?),
+        })
+    });
+    match slot {
+        Some(s) => {
+            let c = theme.colour(map.map(s));
+            Some((u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b))
+        }
+        None => color(attr(b, "color")),
+    }
+}
+
 fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
     let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(|e| e.to_string())?;
     let mut pkg = Package { zip };
@@ -105,8 +133,6 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let rels = pkg.rels(&main);
     let part_of = |kind: &str| rels.values().find(|(k, _)| k == kind).map(|(_, t)| t.clone());
 
-    let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref());
-    let numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref());
     let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
     let theme = ThemeFonts::parse(theme_xml.as_deref());
     let drawing_theme = Rc::new(crate::drawing::theme::Theme::parse(theme_xml.as_deref()));
@@ -116,6 +142,10 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let colour_map = crate::drawing::theme::ColourMap::parse(
         settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok()).as_ref().map(|d| d.root_element()),
     );
+    // STYLE-11: theme colours resolve through the theme and the mapping.
+    let colours = ThemeColours::new(&drawing_theme, &colour_map);
+    let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
+    let numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
     styles.compat = settings.compat();
     styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
     let xml = pkg.read_str(&main).ok_or("no main document part")?;
@@ -179,6 +209,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     {
         let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
         let body = child(dom.root_element(), "body").ok_or("no body")?;
+        doc.page_colour = child(dom.root_element(), "background").and_then(|b| page_colour(b, &drawing_theme, &colour_map));
         r.record = editable;
         doc.sections = r.read_body(body, &mut pkg);
         r.record = false;
@@ -677,7 +708,7 @@ impl Reader {
         let before = change.and_then(|c| child(c, "pPr"));
         let previous = match change {
             Some(_) => {
-                let mut s = self.res.paragraph(&ParaProps::parse(before), region).style;
+                let mut s = self.res.paragraph(&ParaProps::parse(before, &self.res.styles.colours), region).style;
                 if self.record {
                     s.direct = Raw(before.map(raw));
                 }
@@ -974,7 +1005,7 @@ impl Reader {
             sec.line_grid = Some((int(attr(g, "linePitch")).unwrap_or(0).max(1) * 2048 / 10) as i32);
         }
         if let Some(b) = child(s, "pgBorders") {
-            let side = |n| child(b, n).map(Border::parse);
+            let side = |n| child(b, n).map(|n| Border::parse(n, &self.res.styles.colours));
             sec.page_borders = Some(PageBorders {
                 top: side("top"),
                 left: side("left"),
@@ -1024,7 +1055,7 @@ impl Reader {
 
     fn read_paragraph(&mut self, n: Node, pkg: &mut Package, table: Option<&TableCtx>) -> Option<Paragraph> {
         let ppr_node = child(n, "pPr");
-        let direct = ParaProps::parse(ppr_node);
+        let direct = ParaProps::parse(ppr_node, &self.res.styles.colours);
         let ParaResolved { style: mut para_style, base, level, num_id, ilvl, from_style, style_id } =
             self.res.paragraph(&direct, table.map(|t| &*t.region));
         if self.record {
@@ -1113,7 +1144,7 @@ impl Reader {
 
     /// A run's properties over a base: its character style chain (a toggle level), then direct formatting.
     fn run_props(&self, base: &RunProps, rpr: Option<Node>) -> RunProps {
-        self.res.run_props(base, &RunProps::parse(rpr))
+        self.res.run_props(base, &RunProps::parse(rpr, &self.res.styles.colours))
     }
 
     fn run_style(&self, p: &RunProps) -> Run {
@@ -1218,7 +1249,7 @@ impl Reader {
         // after it, a trailing one does nothing.
         let mut direct = RunProps::default();
         for c in r.children().filter(|c| c.is_element()).take_while(|c| is_w(*c, "rPr")) {
-            direct.merge(&RunProps::parse(Some(c)));
+            direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
         }
         let mut run = self.direct_run(r, base, &mut direct);
         let mut content = false;
@@ -1227,7 +1258,7 @@ impl Reader {
         for c in r.children().filter(|c| c.is_element()) {
             if is_w(c, "rPr") {
                 if content {
-                    direct.merge(&RunProps::parse(Some(c)));
+                    direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
                     run = self.direct_run(r, base, &mut direct);
                 }
                 continue;
@@ -1986,7 +2017,7 @@ impl Reader {
     // ---------------- tables ----------------
 
     fn read_table(&mut self, t: Node, pkg: &mut Package) -> Table {
-        let direct = TblProps::parse(child(t, "tblPr"));
+        let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
         let style_id = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
         let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
         let mut tbl = style_region.tbl.clone();
@@ -1998,7 +2029,7 @@ impl Reader {
         // properties without borders leave the table's borders as they are (FX-REVIEW-TABLES and its rejected twin).
         let now = &tbl.borders;
         let change = self.table_change(child(t, "tblPr"), "tblPrChange", |r, before| {
-            let prev = TblProps::parse(before);
+            let prev = TblProps::parse(before, &r.res.styles.colours);
             let style_id = r.res.styles.table_style(prev.style.as_deref()).map(str::to_string);
             let mut tbl = r.res.styles.table_region(style_id.as_deref(), &[]).tbl.clone();
             tbl.merge(&prev);
@@ -2053,7 +2084,7 @@ impl Reader {
                 let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols), headers));
                 let mut tcp = region.tc.clone();
                 let tc_pr = child(*cn, "tcPr");
-                tcp.merge(&TcProps::parse(tc_pr));
+                tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
                 // TABLE-2: left and right margins of a table with no table style at all (no tblStyle and no default
                 // "Normal Table") and no tcMar or tblCellMar are 10 twips, not 0; with a table style, even one that sets no
                 // margins, they stay 0.
@@ -2106,7 +2137,7 @@ impl Reader {
                 grid_after: trp.grid_after.unwrap_or(0).max(0) as usize,
                 w_before: trp.w_before.map(|w| w.max(0.0)),
                 w_after: trp.w_after.map(|w| w.max(0.0)),
-                ind: TblProps::parse(child(*rn, "tblPrEx")).ind,
+                ind: TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours).ind,
                 jc: trp.jc,
                 cells,
                 controls: row_controls.clone(),
@@ -2172,9 +2203,9 @@ impl Reader {
             };
             (self.mark(e, mark_kind), kind)
         });
-        let change = self.table_change(tc_pr, "tcPrChange", |_, before| {
+        let change = self.table_change(tc_pr, "tcPrChange", |r, before| {
             let mut tcp = base.clone();
-            tcp.merge(&TcProps::parse(before));
+            tcp.merge(&TcProps::parse(before, &r.res.styles.colours));
             let b = &tcp.borders;
             Some(PreviousProps::Cell {
                 width: tcp.width,

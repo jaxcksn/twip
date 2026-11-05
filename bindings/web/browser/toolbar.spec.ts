@@ -21,9 +21,9 @@ test('a button outside the editor makes the selection bold and keeps it', async 
     document.body.append(button);
   });
   await page.locator('#editor canvas').click({ position: { x: 300, y: 120 } });
-  await page.keyboard.type('plain bold');
+  await page.keyboard.type('Plain bold');
   await page.keyboard.press('Control+Shift+ArrowLeft');
-  await expect.poll(() => text(page)).toBe('plain bold');
+  await expect.poll(() => text(page)).toBe('Plain bold');
   const before = await page.evaluate(() => (window as any).editor.getState().selection);
   expect(before.kind).toBe('text');
   await page.locator('#bold').click();

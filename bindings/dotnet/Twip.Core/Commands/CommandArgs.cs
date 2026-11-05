@@ -734,6 +734,44 @@ public enum MarkupView
     Original,
 }
 
+/// <summary>An AutoCorrect change: the rules given switch, the lists given replace the shipped ones; unset values are kept.</summary>
+/// <param name="TwoInitialCapitals">Two initial capitals: <c>THe</c> becomes <c>The</c>.</param>
+/// <param name="SentenceCapitals">The first letter of a sentence.</param>
+/// <param name="CellCapitals">The first letter of a table cell.</param>
+/// <param name="DayNames">Day names.</param>
+/// <param name="ReplaceText">The replacement list and the symbols.</param>
+/// <param name="SmartQuotes">Smart quotes.</param>
+/// <param name="Ordinals">Ordinals.</param>
+/// <param name="Fractions">Fractions.</param>
+/// <param name="Dashes">Dashes.</param>
+/// <param name="NumberedLists">Automatic numbered lists: <c>1.</c> then a space at a paragraph's start.</param>
+/// <param name="BulletedLists">Automatic bulleted lists: <c>*</c> then a space at a paragraph's start.</param>
+/// <param name="Entries">The replacement list, in place of the shipped one.</param>
+/// <param name="FirstLetterExceptions">Abbreviations after which a sentence doesn't start (<c>e.g.</c>), in place of the shipped ones.</param>
+/// <param name="InitialCapsExceptions">Words whose two initial capitals stay (<c>IDs</c>), in place of the shipped ones.</param>
+/// <param name="Never">The texts never corrected.</param>
+public sealed record AutoCorrectChange(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? TwoInitialCapitals = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SentenceCapitals = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? CellCapitals = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? DayNames = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ReplaceText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SmartQuotes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Ordinals = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Fractions = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Dashes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? NumberedLists = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BulletedLists = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AutoCorrectEntry>? Entries = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? FirstLetterExceptions = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? InitialCapsExceptions = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Never = null);
+
+/// <summary>One AutoCorrect replacement.</summary>
+/// <param name="From">What is typed.</param>
+/// <param name="To">What it becomes.</param>
+public sealed record AutoCorrectEntry(string From, string To);
+
 /// <summary>Indents to change; unset values are kept. <c>FirstLine</c> and <c>Hanging</c> are exclusive.</summary>
 /// <param name="Left">The left indent.</param>
 /// <param name="Right">The right indent.</param>

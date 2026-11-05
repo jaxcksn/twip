@@ -3,6 +3,8 @@
 //! innermost one at the caret, through one `Rows` step for the whole table (or `Blocks` for a table inserted or
 //! removed), so undo restores it exactly and kept paragraphs keep their positions.
 
+use crate::api::command::TablePosition;
+use crate::docx::props::{Jc, TableAnchor, TablePos};
 use crate::docx::{Block, Cell, Inline, Paragraph, Row, Table, VMerge};
 use crate::font::Fonts;
 use crate::layout::{ParaId, TableId, Unit};
@@ -834,12 +836,260 @@ pub(super) fn cuts_region(t: &Table, r0: usize, r1: usize, within: bool) -> bool
     })
 }
 
+/// A table's first position: across from the margin and down from the text where it stood, 9 pt from the text on its
+/// left and right.
+pub(super) const NEW_POSITION: TablePos = TablePos {
+    v_anchor: TableAnchor::Text,
+    y: 0.0,
+    x: 0.0,
+    x_spec: None,
+    h_page: false,
+    h_text: false,
+    y_spec: None,
+    dist: [0.0, 0.0, 9.0, 9.0],
+    never_overlap: false,
+};
+
+/// Points in whole twips, as the file keeps them.
+fn twips(v: f64) -> f64 {
+    (v * 20.0).round() / 20.0
+}
+
 impl Editor {
+    /// A "+" above grid boundary `k`: column `k` − 1 selected (column 0 at the left edge), a column inserted right of
+    /// it (left of column 0), then the new column selected. One step.
+    pub(super) fn insert_column_at(&mut self, table: TableId, k: usize, fonts: &Fonts) -> Outcome {
+        let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
+        let (cols, rows) = (Grid::of(t).cols, t.rows.len());
+        if cols == 0 || rows == 0 {
+            return Outcome::Unchanged("an empty table");
+        }
+        let (col, right) = if k == 0 { (0, false) } else { ((k - 1).min(cols - 1), true) };
+        let column = |c: usize| Selection::Cells {
+            table,
+            anchor: CellRef { row: 0, col: c },
+            focus: CellRef { row: rows - 1, col: c },
+            shape: super::selection::CellShape::Columns,
+        };
+        self.selection = column(col);
+        let out = self.insert_columns(right, fonts);
+        if matches!(out, Outcome::Changed(_)) {
+            self.set_selection(column(if right { col + 1 } else { col }));
+        }
+        out
+    }
+
+    /// A "+" left of the bottom border of row `k` − 1: that row selected, a row inserted below it, then the new row
+    /// selected. One step.
+    pub(super) fn insert_row_at(&mut self, table: TableId, k: usize, fonts: &Fonts) -> Outcome {
+        let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
+        let (cols, rows) = (Grid::of(t).cols, t.rows.len());
+        if cols == 0 || k == 0 || k > rows {
+            return Outcome::Unchanged("no row there");
+        }
+        let row = |r: usize| Selection::Cells {
+            table,
+            anchor: CellRef { row: r, col: 0 },
+            focus: CellRef { row: r, col: cols - 1 },
+            shape: super::selection::CellShape::Rows,
+        };
+        self.selection = row(k - 1);
+        let out = self.insert_rows(true, 1, fonts);
+        if matches!(out, Outcome::Changed(_)) {
+            self.set_selection(row(k));
+        }
+        out
+    }
+
+    /// The position of the innermost table at the selection, when it has one.
+    pub(super) fn table_position(&self) -> Option<TablePosition> {
+        use crate::api::value::{
+            HorizontalPosition, HorizontalReference as H, ObjectHorizontalAlignment as HA, ObjectVerticalAlignment as VA, Points, VerticalPosition,
+            VerticalReference as V,
+        };
+        let p = self.index.table(&self.doc, self.table_target()?.table)?.floating?;
+        let horizontal = HorizontalPosition {
+            relative_to: match (p.h_page, p.h_text) {
+                (true, _) => H::Page,
+                (false, true) => H::Column,
+                (false, false) => H::Margin,
+            },
+            align: p.x_spec.map(|j| match j {
+                Jc::Center => HA::Center,
+                Jc::Right => HA::Right,
+                _ => HA::Left,
+            }),
+            offset: p.x_spec.is_none().then_some(Points(p.x)),
+        };
+        // Against the text an alignment is the offset it is read as.
+        let y_spec = p.y_spec.filter(|_| p.v_anchor != TableAnchor::Text);
+        let vertical = VerticalPosition {
+            relative_to: match p.v_anchor {
+                TableAnchor::Text => V::Paragraph,
+                TableAnchor::Margin => V::Margin,
+                TableAnchor::Page => V::Page,
+            },
+            align: y_spec.map(|j| match j {
+                Jc::Center => VA::Center,
+                Jc::Right => VA::Bottom,
+                _ => VA::Top,
+            }),
+            offset: y_spec.is_none().then_some(Points(p.y)),
+        };
+        let [top, bottom, left, right] = p.dist.map(Points);
+        Some(TablePosition {
+            horizontal: Some(horizontal),
+            vertical: Some(vertical),
+            wrap_distance: Some(crate::api::state::TextDistance { top, bottom, left, right }),
+        })
+    }
+
+    /// Table Position: the innermost table at the selection positioned (a table without a position gets one across
+    /// from the margin and down from the text), or put back in the text (`None`). An axis given with neither an
+    /// alignment nor an offset keeps the table where it is drawn, measured from its new reference. One step.
+    pub(super) fn set_table_position(&mut self, p: Option<TablePosition>, fonts: &Fonts) -> Outcome {
+        use crate::api::value::{HorizontalReference as H, ObjectHorizontalAlignment as HA, ObjectVerticalAlignment as VA, VerticalReference as V};
+        let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
+        let Some(p) = p else { return self.set_floating(tg.table, None, fonts) };
+        let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
+        let mut n = t.floating.unwrap_or(NEW_POSITION);
+        let mut stay = [false; 2];
+        if let Some(h) = p.horizontal {
+            (n.h_page, n.h_text) = match h.relative_to {
+                H::Column => (false, true),
+                H::Margin => (false, false),
+                H::Page => (true, false),
+                H::Character | H::LeftMargin | H::RightMargin | H::InsideMargin | H::OutsideMargin => {
+                    return Outcome::invalid("a table is placed across from the column, the margin or the page");
+                }
+            };
+            match (h.align, h.offset) {
+                (Some(a), _) => {
+                    n.x_spec = Some(match a {
+                        HA::Left | HA::Inside => Jc::Left,
+                        HA::Center => Jc::Center,
+                        HA::Right | HA::Outside => Jc::Right,
+                    })
+                }
+                (None, Some(o)) => (n.x_spec, n.x) = (None, twips(o.0)),
+                (None, None) => stay[0] = true,
+            }
+        }
+        if let Some(v) = p.vertical {
+            n.v_anchor = match v.relative_to {
+                V::Paragraph => TableAnchor::Text,
+                V::Margin => TableAnchor::Margin,
+                V::Page => TableAnchor::Page,
+                V::Line | V::TopMargin | V::BottomMargin | V::InsideMargin | V::OutsideMargin => {
+                    return Outcome::invalid("a table is placed down from the paragraph, the margin or the page");
+                }
+            };
+            match (v.align, v.offset) {
+                (Some(a), _) => {
+                    // TABLE-49: against the text an alignment is its stored code taken as a twip offset.
+                    let (jc, code) = match a {
+                        VA::Top => (Jc::Left, -4.0),
+                        VA::Center => (Jc::Center, -8.0),
+                        VA::Bottom => (Jc::Right, -12.0),
+                        VA::Inside => (Jc::Left, -16.0),
+                        VA::Outside => (Jc::Right, -20.0),
+                    };
+                    n.y_spec = Some(jc);
+                    if n.v_anchor == TableAnchor::Text {
+                        n.y = code / 20.0;
+                    }
+                }
+                (None, Some(o)) => (n.y_spec, n.y) = (None, twips(o.0)),
+                (None, None) => stay[1] = true,
+            }
+        }
+        if let Some(d) = p.wrap_distance {
+            n.dist = [d.top, d.bottom, d.left, d.right].map(|v| twips(v.0.clamp(0.0, 1584.0)));
+        }
+        let table = tg.table;
+        match self.table_box(table, fonts) {
+            Some((page, r)) if stay.contains(&true) => {
+                let keep = [stay[0].then_some(r[0]), stay[1].then_some(r[1])];
+                self.position_table(table, n, keep, page, "Table Position", fonts)
+            }
+            _ => self.set_floating(table, Some(n), fonts),
+        }
+    }
+
+    /// Positions `table` as `pos`; on each axis with a place in `keep` (page `page`'s coordinates), by the offset that
+    /// draws its top left there. One step.
+    pub(super) fn position_table(
+        &mut self,
+        table: TableId,
+        mut pos: TablePos,
+        keep: [Option<f64>; 2],
+        page: usize,
+        label: &'static str,
+        fonts: &Fonts,
+    ) -> Outcome {
+        if keep[0].is_some() {
+            pos.x_spec = None;
+        }
+        if keep[1].is_some() {
+            pos.y_spec = None;
+        }
+        self.begin_batch(Some(label.into()));
+        self.set_floating(table, Some(pos), fonts);
+        // Where the new position draws it, moved by the difference.
+        self.ensure_page(page, fonts);
+        if let Some(now) = self.pages.page(page, &self.index).and_then(|g| table_on(&g, table)) {
+            if let Some(x) = keep[0] {
+                pos.x = twips(pos.x + x - now[0]);
+            }
+            if let Some(y) = keep[1] {
+                pos.y = twips(pos.y + y - now[1]);
+            }
+            self.set_floating(table, Some(pos), fonts);
+        }
+        self.end_batch(true, fonts)
+    }
+
+    /// A table's position replaced, in one step of its own.
+    fn set_floating(&mut self, table: TableId, floating: Option<TablePos>, fonts: &Fonts) -> Outcome {
+        let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
+        let mut props = super::step::TableProps::of(t);
+        if props.floating == floating {
+            return Outcome::Unchanged("already there");
+        }
+        props.floating = floating;
+        let mut tx = self.begin("Table Position");
+        if self.step(&mut tx, Step::TableProps { table, props }).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("stale table");
+        }
+        self.commit(tx, None, fonts)
+    }
+
+    /// Where a table is drawn: the nearest page drawing its first row, and its box there.
+    pub(super) fn table_box(&mut self, table: TableId, fonts: &Fonts) -> Option<(usize, [f64; 4])> {
+        let n = self.pages.len();
+        let near = self.near;
+        (0..n).map(|d| if d % 2 == 0 { near + d / 2 } else { near.wrapping_sub(d / 2 + 1) }).filter(|&p| p < n).find_map(|p| {
+            self.ensure_page(p, fonts);
+            let geo = self.pages.page(p, &self.index)?;
+            geo.rows.iter().any(|r| r.table == table && r.row == 0 && !r.repeat).then(|| table_on(&geo, table)).flatten().map(|r| (p, r))
+        })
+    }
+
     /// A table edit refused because it cuts a region: refused `region boundary`.
     pub(super) fn region_boundary(&mut self) -> Outcome {
         self.refused = Some("region boundary");
         Outcome::Unchanged("region boundary")
     }
+}
+
+/// A table's box on a page: around its rows drawn there (repeated header rows aside).
+pub(super) fn table_on(geo: &super::geometry::PageGeometry, table: TableId) -> Option<[f64; 4]> {
+    geo.rows
+        .iter()
+        .filter(|r| r.table == table && !r.repeat)
+        .map(|r| r.rect)
+        .reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])])
 }
 
 /// Where a control's start markup gives its `w:id` value.

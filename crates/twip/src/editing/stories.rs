@@ -118,7 +118,7 @@ impl Editor {
         if self.object_cancel() || self.shape_cancel() || self.shape_insert.take().is_some() {
             return Outcome::Moved;
         }
-        if self.border_drag.take().is_some() {
+        if self.border_drag.take().is_some() || self.table_drag.take().is_some() {
             self.requests.push(super::input::Request::ReleasePointer);
             return Outcome::Moved;
         }

@@ -1,0 +1,2470 @@
+# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not
+# distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+# From LibreOffice extras/source/autocorr/lang/en-US/DocumentList.xml (twip-tools autocorrect-list).
+-->	→
+1/2	½
+1/4	¼
+3/4	¾
+:!!:	‼
+:!2:	❗
+:!:	❕
+:!?:	⁉
+:':	’
+:+-:	±
+:-+:	∓
+:---:	—
+:--:	–
+:-:	−
+:.:	…
+:/:	∕
+:1 h:	🕐
+:1.30:	🕜
+:1/2:	½
+:1/3:	⅓
+:1/4:	¼
+:1/8:	⅛
+:10 h:	🕙
+:10.30:	🕥
+:100:	💯
+:11 h:	🕚
+:11.30:	🕦
+:12 h:	🕛
+:12.30:	🕧
+:2 h:	🕑
+:2.30:	🕝
+:2/3:	⅔
+:3 h:	🕒
+:3.30:	🕞
+:3/4:	¾
+:3/8:	⅜
+:4 h:	🕓
+:4.30:	🕟
+:5 h:	🕔
+:5.30:	🕠
+:5/8:	⅝
+:6 h:	🕕
+:6.30:	🕡
+:7 h:	🕖
+:7.30:	🕢
+:7/8:	⅞
+:8 h:	🕗
+:8.30:	🕣
+:9 h:	🕘
+:9.30:	🕤
+::	
+:<<:	≪
+:<=:	≤
+:>=:	≥
+:>>:	≫
+:?2:	❔
+:?:	❓
+:Adi Shakti:	☬
+:Alpha:	Α
+:Beta:	Β
+:Celtic cross:	🕈
+:Chi:	Χ
+:Delta:	Δ
+:E2:	⇒
+:E:	→
+:EW2:	⇔
+:EW:	↔
+:Epsilon:	Ε
+:Eta:	Η
+:Farsi:	☫
+:Fuji:	🗻
+:Gamma:	Γ
+:Greek cross2:	✙
+:Greek cross:	✚
+:Iota:	Ι
+:Japan:	🗾
+:Kaaba:	🕋
+:Kappa:	Κ
+:Lambda:	Λ
+:Latin cross2:	🕆
+:Latin cross3:	🕇
+:Latin cross:	✝
+:Maltese cross:	✠
+:Moon2:	☾
+:Moon:	☽
+:Mu:	Μ
+:N2:	⇑
+:N:	↑
+:NE2:	⇗
+:NE:	↗
+:NS2:	⇕
+:NS:	↕
+:NW2:	⇖
+:NW:	↖
+:Nu:	Ν
+:Omega:	Ω
+:Omicron:	Ο
+:Phi:	Φ
+:Pi:	Π
+:Psi:	Ψ
+:Rho:	Ρ
+:S2:	⇓
+:S:	↓
+:SE2:	⇘
+:SE:	↘
+:SW2:	⇙
+:SW:	↙
+:Sigma:	Σ
+:Sun2:	☼
+:Sun:	☉
+:Tau:	Τ
+:Theta:	Θ
+:Turkish lira:	₺
+:Upsilon:	Υ
+:W2:	⇐
+:W:	←
+:Xi:	Ξ
+:Zeta:	Ζ
+:\\:	∖
+:^(:	⁽
+:^):	⁾
+:^+:	⁺
+:^-:	⁻
+:^0:	⁰
+:^1:	¹
+:^2:	²
+:^3:	³
+:^4:	⁴
+:^5:	⁵
+:^6:	⁶
+:^7:	⁷
+:^8:	⁸
+:^9:	⁹
+:^=:	⁼
+:^A:	ᴬ
+:^B:	ᴮ
+:^D:	ᴰ
+:^E:	ᴱ
+:^G:	ᴳ
+:^H:	ᴴ
+:^I:	ᴵ
+:^J:	ᴶ
+:^K:	ᴷ
+:^L:	ᴸ
+:^M:	ᴹ
+:^N:	ᴺ
+:^O:	ᴼ
+:^P:	ᴾ
+:^Phi:	ᶲ
+:^R:	ᴿ
+:^T:	ᵀ
+:^U:	ᵁ
+:^V:	ⱽ
+:^W:	ᵂ
+:^a:	ᵃ
+:^alpha:	ᵅ
+:^b:	ᵇ
+:^beta:	ᵝ
+:^c:	ᶜ
+:^chi:	ᵡ
+:^d:	ᵈ
+:^delta:	ᵟ
+:^e:	ᵉ
+:^epsilon:	ᵋ
+:^f:	ᶠ
+:^g:	ᵍ
+:^gamma:	ᵞ
+:^h:	ʰ
+:^i:	ⁱ
+:^iota:	ᶥ
+:^j:	ʲ
+:^k:	ᵏ
+:^l:	ˡ
+:^m:	ᵐ
+:^n:	ⁿ
+:^o:	ᵒ
+:^p:	ᵖ
+:^phi:	ᵠ
+:^r:	ʳ
+:^s:	ˢ
+:^t:	ᵗ
+:^theta:	ᶿ
+:^u:	ᵘ
+:^v:	ᵛ
+:^w:	ʷ
+:^x:	ˣ
+:^y:	ʸ
+:^z:	ᶻ
+:_(:	₍
+:_):	₎
+:_+:	₊
+:_-:	₋
+:_0:	₀
+:_1:	₁
+:_2:	₂
+:_3:	₃
+:_4:	₄
+:_5:	₅
+:_6:	₆
+:_7:	₇
+:_8:	₈
+:_9:	₉
+:_=:	₌
+:_a:	ₐ
+:_beta:	ᵦ
+:_chi:	ᵪ
+:_e:	ₑ
+:_gamma:	ᵧ
+:_h:	ₕ
+:_i:	ᵢ
+:_j:	ⱼ
+:_k:	ₖ
+:_l:	ₗ
+:_m:	ₘ
+:_n:	ₙ
+:_o:	ₒ
+:_p:	ₚ
+:_phi:	ᵩ
+:_r:	ᵣ
+:_rho:	ᵨ
+:_s:	ₛ
+:_t:	ₜ
+:_u:	ᵤ
+:_v:	ᵥ
+:_x:	ₓ
+:abc:	🔤
+:ace:	🂡
+:adult:	🧑
+:aerial tramway:	🚡
+:airplane2:	🛩
+:airplane3:	🛧
+:airplane4:	🛨
+:airplane5:	🛦
+:airplane6:	🛪
+:airplane:	✈
+:alarm clock:	⏰
+:alembic:	⚗
+:alien2:	👾
+:alien:	👽
+:alpha:	α
+:ambulance:	🚑
+:amphora:	🏺
+:anchor:	⚓
+:and:	∧
+:angel:	👼
+:anger:	💢
+:angle2:	∡
+:angle:	∠
+:angry:	😠
+:anguished:	😧
+:ankh:	☥
+:ant:	🐜
+:antenna:	📡
+:apple:	🍎
+:aquarius:	♒
+:aries:	♈
+:arrival:	🛬
+:arrows:	🗘
+:art:	🎨
+:astonished:	😲
+:atm:	🏧
+:atom:	⚛
+:avocado:	🥑
+:baby bottle:	🍼
+:baby2:	🚼
+:baby3:	🤱
+:baby:	👶
+:bacon:	🥓
+:badminton:	🏸
+:baggage:	🛄
+:baht:	฿
+:ball:	⛹
+:balloon:	🎈
+:ballot:	🗳
+:bamboo:	🎍
+:banana:	🍌
+:bandage:	🤕
+:bank:	🏦
+:barber:	💈
+:baseball:	⚾
+:basis point:	‱
+:basketball:	🏀
+:bat:	🦇
+:bath:	🛀
+:bathtub:	🛁
+:battery:	🔋
+:beach:	🏖
+:beads:	📿
+:bear:	🐻
+:beard:	🧔
+:bed:	🛏
+:bee:	🐝
+:beer2:	🍻
+:beer:	🍺
+:beginner:	🔰
+:bell2:	🛎
+:bell3:	🕭
+:bell:	🔔
+:bento:	🍱
+:beta:	β
+:bicyclist2:	🚵
+:bicyclist:	🚴
+:bike:	🚲
+:bikini:	👙
+:billiards:	🎱
+:biohazard:	☣
+:bird:	🐦
+:birthday:	🎂
+:bitcoin:	₿
+:black bishop:	♝
+:black circle:	⚫
+:black heart:	🖤
+:black king:	♚
+:black knight:	♞
+:black pawn:	♟
+:black queen:	♛
+:black rook:	♜
+:blond hair:	👱
+:blossom2:	🌸
+:blossom:	🌼
+:blush:	😊
+:boar:	🐗
+:bomb:	💣
+:book2:	📕
+:book3:	📖
+:book:	🕮
+:bookmark2:	🔖
+:bookmark:	📑
+:books:	📚
+:boom:	💥
+:boot:	👢
+:bouquet2:	🎕
+:bouquet:	💐
+:bow:	🏹
+:bowl:	🥣
+:bowling:	🎳
+:box:	🗃
+:boxing:	🥊
+:boy:	👦
+:boys:	🛉
+:brain:	🧠
+:bread2:	🥖
+:bread:	🍞
+:bride:	👰
+:bridge:	🌉
+:briefcase:	💼
+:brightness2:	🔆
+:brightness:	🔅
+:broccoli:	🥦
+:broken heart:	💔
+:bronze:	🥉
+:bubble10:	🗩
+:bubble2:	🗪
+:bubble3:	🗫
+:bubble4:	🗯
+:bubble5:	🗭
+:bubble6:	🗱
+:bubble7:	🗬
+:bubble8:	🗮
+:bubble9:	🗰
+:bubble:	🗨
+:bug:	🐛
+:bulb:	💡
+:bullet2:	‣
+:bullet3:	◦
+:bullet:	•
+:bullhorn2:	🕬
+:bullhorn:	🕫
+:bunny ears:	👯
+:burrito:	🌯
+:bus2:	🚍
+:bus:	🚌
+:busstop:	🚏
+:bust:	👤
+:busts:	👥
+:butterfly:	🦋
+:button2:	🔲
+:button:	🔳
+:cabinet:	🗄
+:cactus:	🌵
+:caduceus:	☤
+:cake:	🍰
+:calculator:	🖩
+:calendar2:	📆
+:calendar3:	🗓
+:calendar:	📅
+:call:	🤙
+:calling:	📲
+:camel2:	🐫
+:camel:	🐪
+:camera:	📷
+:camping:	🏕
+:can:	🥫
+:cancel:	🗙
+:cancer:	♋
+:candle:	🕯
+:candy:	🍬
+:canoe:	🛶
+:cap:	🧢
+:capricorn:	♑
+:car2:	🚘
+:car3:	🚙
+:car4:	🏎
+:car:	🚗
+:card index:	📇
+:cards:	🎴
+:carrot:	🥕
+:cart:	🛒
+:cartridge:	🖭
+:castle2:	🏯
+:castle:	🏰
+:cat2:	🐱
+:cat:	🐈
+:caution:	☡
+:cd:	💿
+:celebration:	🙌
+:cent:	¢
+:chains:	⛓
+:chart2:	📉
+:chart3:	📊
+:chart4:	💹
+:chart5:	🗠
+:chart:	📈
+:check mark2:	✔
+:check mark3:	✅
+:check mark4:	🗴
+:check mark5:	🗸
+:check mark:	✓
+:checkbox2:	☑
+:checkbox3:	☒
+:checkbox4:	🗷
+:checkbox5:	🗹
+:checkbox6:	🗵
+:checkbox:	☐
+:cheese:	🧀
+:cherry:	🍒
+:chestnut:	🌰
+:chi rho:	☧
+:chi:	χ
+:chick2:	🐤
+:chick3:	🐥
+:chick:	🐣
+:chicken:	🐔
+:child:	🧒
+:chipmunk:	🐿
+:chocolate:	🍫
+:chopsticks:	🥢
+:christmas:	🎄
+:church:	⛪
+:cinema:	🎦
+:circle2:	●
+:circle3:	🔾
+:circle4:	🔿
+:circle:	○
+:circus:	🎪
+:city:	🏙
+:clamp:	🗜
+:clap:	👏
+:clapper:	🎬
+:clef:	𝄞
+:climber:	🧗
+:clipboard:	📋
+:clock:	🕰
+:clothes:	👚
+:cloud2:	⛅
+:cloud3:	⛈
+:cloud:	☁
+:cloudy2:	🌥
+:cloudy:	🌤
+:clover:	🍀
+:clown:	🤡
+:clubs2:	♧
+:clubs:	♣
+:coat:	🧥
+:cocktail:	🍸
+:coconut:	🥥
+:coffee:	☕
+:coffin:	⚰
+:cold sweat:	😰
+:comet:	☄
+:computer2:	🖥
+:computer:	💻
+:confounded:	😖
+:confused:	😕
+:construction:	🚧
+:control:	🎛
+:cookie2:	🥠
+:cookie:	🍪
+:cooking:	🍳
+:cop:	👮
+:copyright:	©
+:corn:	🌽
+:couch:	🛋
+:couple2:	👬
+:couple3:	👭
+:couple4:	💑
+:couple:	👫
+:cow2:	🐮
+:cow:	🐄
+:cowboy:	🤠
+:crab:	🦀
+:crane:	🏗
+:crayon:	🖍
+:credit card:	💳
+:crescent moon:	🌙
+:cricket2:	🦗
+:cricket:	🏏
+:crocodile:	🐊
+:croissant:	🥐
+:cross of Jerusalem:	☩
+:cross of Lorraine:	☨
+:crosswalk:	🚸
+:crown:	👑
+:cry:	😢
+:crying cat:	😿
+:crystal ball:	🔮
+:cube root:	∛
+:cucumber:	🥒
+:curling:	🥌
+:curry:	🍛
+:cursing:	🤬
+:custard:	🍮
+:customs:	🛃
+:cuteness:	💠
+:cyclone:	🌀
+:dagger2:	‡
+:dagger:	†
+:dancer2:	🕺
+:dancer:	💃
+:dango:	🍡
+:dash:	💨
+:deer:	🦌
+:degree:	°
+:delta:	δ
+:departure:	🛫
+:desert:	🏜
+:detective:	🕵
+:diamonds2:	♢
+:diamonds:	♦
+:dice1:	⚀
+:dice2:	⚁
+:dice3:	⚂
+:dice4:	⚃
+:dice5:	⚄
+:dice6:	⚅
+:dice:	🎲
+:dinosaur2:	🦖
+:dinosaur:	🦕
+:disappointed relieved:	😥
+:disappointed:	😞
+:divides:	∣
+:divorce:	⚮
+:dizzy face:	😵
+:dizzy:	💫
+:do not litter:	🚯
+:document2:	🖹
+:document3:	🖻
+:document4:	🖺
+:document:	🗎
+:dog2:	🐶
+:dog:	🐕
+:dollar2:	💵
+:dolls:	🎎
+:dolphin:	🐬
+:domino:	🁠
+:door:	🚪
+:double flat:	𝄫
+:double sharp:	𝄪
+:doughnut:	🍩
+:dove:	🕊
+:down2:	👇
+:down3:	🖟
+:down4:	🖗
+:down5:	🖣
+:down6:	🖡
+:down:	☟
+:dragon2:	🐲
+:dragon:	🐉
+:dress:	👗
+:drink2:	🍹
+:drink:	🥤
+:drool:	🤤
+:droplet2:	🌢
+:droplet:	💧
+:drum2:	🥁
+:drum:	🛢
+:duck:	🦆
+:dumpling:	🥟
+:dvd:	📀
+:e-mail:	📧
+:eagle:	🦅
+:ear:	👂
+:earth:	♁
+:egg:	🥚
+:eggplant:	🍆
+:eighth note:	𝅘𝅥𝅮
+:eighth rest:	𝄾
+:elephant:	🐘
+:elf:	🧝
+:ellipse:	⬭
+:empty document:	🗋
+:empty note pad:	🗇
+:empty note page:	🗆
+:empty note:	🗅
+:empty page:	🗌
+:empty pages:	🗍
+:empty set:	∅
+:end of proof:	∎
+:envelope2:	🖃
+:envelope3:	🖂
+:envelope4:	🖆
+:envelope5:	🖄
+:envelope6:	🖅
+:envelope7:	📨
+:envelope8:	📩
+:envelope:	✉
+:epsilon:	ε
+:eta:	η
+:euro2:	💶
+:euro:	€
+:exchange:	💱
+:excited:	🤩
+:exists:	∃
+:expressionless:	😑
+:eye roll:	🙄
+:eye:	👁
+:eyebrow:	🤨
+:eyeglasses:	👓
+:eyes:	👀
+:facepalm:	🤦
+:factory:	🏭
+:fair2:	🎠
+:fair:	🎡
+:fairy:	🧚
+:family:	👪
+:fax2:	🖷
+:fax:	📠
+:fearful:	😨
+:feast2:	🕄
+:feast:	🕃
+:feet:	🐾
+:female:	♀
+:fencer:	🤺
+:ferry:	⛴
+:ff:	ﬀ
+:ffi:	ﬃ
+:ffl:	ﬄ
+:fi:	ﬁ
+:film:	🎞
+:finger:	🖕
+:fire engine2:	🛱
+:fire engine:	🚒
+:fire:	🔥
+:fireworks:	🎆
+:first quarter:	🌓
+:fish cake:	🍥
+:fish2:	🐠
+:fish3:	🐡
+:fish:	🐟
+:fishing:	🎣
+:fist2:	👊
+:fist3:	🤛
+:fist4:	🤜
+:fist:	✊
+:fl:	ﬂ
+:flag2:	🏳
+:flag3:	⚑
+:flag4:	⚐
+:flag:	🏴
+:flags2:	🎏
+:flags:	🎌
+:flash:	📸
+:flashlight:	🔦
+:flat:	♭
+:flatbread:	🥙
+:fleur de lis:	⚜
+:floppy2:	🖬
+:floppy3:	🖫
+:floppy4:	🖪
+:floppy:	💾
+:flower2:	🥀
+:flower:	⚘
+:flushed:	😳
+:fog:	🌫
+:foggy:	🌁
+:folder2:	📂
+:folder3:	🗀
+:folder4:	🗁
+:folder5:	🖿
+:folder:	📁
+:font2:	🗚
+:font:	🗛
+:food:	🥘
+:football:	🏈
+:footprints:	👣
+:for all:	∀
+:fountain:	⛲
+:fourth root:	∜
+:fox:	🦊
+:frame2:	🖽
+:frame:	🖾
+:fried shrimp:	🍤
+:fries:	🍟
+:frog:	🐸
+:frown:	☹
+:frowning2:	🙁
+:frowning:	😦
+:fuelpump:	⛽
+:full moon2:	🌝
+:full moon:	🌕
+:gamma:	γ
+:gear:	⚙
+:gem:	💎
+:gemini:	♊
+:genie:	🧞
+:ghost:	👻
+:gift heart:	💝
+:gift:	🎁
+:giraffe:	🦒
+:girl:	👧
+:girls:	🛊
+:glass3:	🥃
+:glass:	🍷
+:globe2:	🌎
+:globe3:	🌏
+:globe4:	🌐
+:globe:	🌍
+:gloves:	🧤
+:goat:	🐐
+:goblin:	👺
+:gold:	🥇
+:golf2:	⛳
+:golf:	🏌
+:good luck:	🤞
+:gorilla:	🦍
+:graduation:	🎓
+:grapes:	🍇
+:grass:	🌾
+:green apple:	🍏
+:grimacing:	😬
+:grin:	😁
+:grinning:	😀
+:groom:	🤵
+:guard:	💂
+:guitar:	🎸
+:gymnast:	🤸
+:haircut:	💇
+:half note:	𝅗𝅥
+:half rest:	𝄼
+:halloween:	🎃
+:hamburger:	🍔
+:hammer and pick:	⚒
+:hammer and sickle:	☭
+:hammer and wrench:	🛠
+:hammer:	🔨
+:hamster:	🐹
+:hand2:	🖐
+:hand3:	🖑
+:hand4:	🤚
+:hand:	✋
+:handbag:	👜
+:handball:	🤾
+:handshake:	🤝
+:happiness:	🙋
+:hard disk:	🖴
+:hat2:	👲
+:hat:	👒
+:head:	🗣
+:headphone:	🎧
+:headscarf:	🧕
+:hear no evil:	🙉
+:heart decoration:	💟
+:heart eyes cat:	😻
+:heart eyes:	😍
+:heart2:	🎔
+:heart:	❤
+:heartbeat:	💓
+:heartpulse:	💗
+:hearts2:	♡
+:hearts:	♥
+:heavy dollar sign:	💲
+:hedgehog:	🦔
+:helicopter:	🚁
+:helmet:	⛑
+:herb:	🌿
+:hexagon2:	⬢
+:hexagon:	⬡
+:hibiscus:	🌺
+:hit:	🎯
+:hockey2:	🏑
+:hockey:	🏒
+:hole:	🕳
+:honey:	🍯
+:horn:	📯
+:horns:	🤘
+:horse2:	🐴
+:horse3:	🏇
+:horse:	🐎
+:hospital:	🏥
+:hot dog:	🌭
+:hot springs:	♨
+:hotel2:	🏩
+:hotel:	🏨
+:hourglass2:	⏳
+:hourglass:	⌛
+:house2:	🏡
+:house3:	🏚
+:house:	🏠
+:houses:	🏘
+:hryvnia:	₴
+:hugging:	🤗
+:hush:	🤫
+:hushed:	😯
+:ice cream:	🍨
+:icecream:	🍦
+:imp:	👿
+:in:	∈
+:inch:	″
+:index:	🗂
+:infinity:	∞
+:information2:	💁
+:information3:	🛈
+:information:	ℹ
+:innocent:	😇
+:integral2:	∬
+:integral3:	∭
+:integral4:	∮
+:integral5:	∰
+:integral:	∫
+:intersection:	∩
+:iota:	ι
+:island:	🏝
+:jack:	🂫
+:jeans:	👖
+:joker:	🃏
+:joy cat:	😹
+:joy:	😂
+:joystick:	🕹
+:judo:	🥋
+:juggling:	🤹
+:jupiter:	♃
+:kappa:	κ
+:key2:	🗝
+:key:	🔑
+:keyboard2:	🖮
+:keyboard3:	🖦
+:keyboard:	⌨
+:kimono:	👘
+:king:	🂮
+:kiss mark:	💋
+:kiss2:	😘
+:kiss3:	😙
+:kiss4:	😚
+:kiss:	💏
+:kissing cat:	😽
+:kissing:	😗
+:kiwi:	🥝
+:knife2:	🗡
+:knife:	🔪
+:koala:	🐨
+:label:	🏷
+:ladybug:	🐞
+:lambda:	λ
+:lantern:	🏮
+:large circle2:	⬤
+:large circle:	◯
+:large square2:	⬛
+:large square:	⬜
+:last quarter:	🌗
+:laugh:	😆
+:leaf2:	🍂
+:leaf3:	🍃
+:leaf:	🍁
+:ledger:	📒
+:left luggage:	🛅
+:left2:	👈
+:left3:	☚
+:left4:	🖚
+:left5:	🖜
+:left6:	🖘
+:left:	☜
+:lemon:	🍋
+:leo:	♌
+:leopard:	🐆
+:liar:	🤥
+:liberty:	🗽
+:libra:	♎
+:light rail:	🚈
+:lightning2:	🗲
+:lightning3:	☇
+:lightning:	🌩
+:link:	🔗
+:lion:	🦁
+:lips:	🗢
+:lipstick:	💄
+:lira:	₤
+:litter:	🚮
+:lizard:	🦎
+:lock2:	🔏
+:lock3:	🔐
+:lock:	🔒
+:locomotive2:	🛲
+:locomotive:	🚂
+:lol:	🤣
+:lollipop:	🍭
+:loop2:	➿
+:loop:	➰
+:lorry:	🚛
+:loud sound:	🔊
+:loudspeaker:	📢
+:love letter:	💌
+:love2:	🤟
+:love:	💘
+:lozenge:	◊
+:mag2:	🔎
+:mag:	🔍
+:mage:	🧙
+:mahjong:	🀄
+:mailbox2:	📫
+:mailbox3:	📬
+:mailbox4:	📭
+:mailbox:	📪
+:male:	♂
+:man:	👨
+:map:	🗺
+:marks chapter:	🕅
+:marriage:	⚭
+:mask:	😷
+:massage:	💆
+:maximize:	🗖
+:md:	💽
+:meat:	🍖
+:medal2:	🎖
+:medal:	🏅
+:medical:	⚕
+:medium square2:	◼
+:medium square:	◻
+:medium star:	⭐
+:mega:	📣
+:melon:	🍈
+:memo:	📝
+:menorah:	🕎
+:mens:	🚹
+:mercury:	☿
+:merperson:	🧜
+:metro:	🚇
+:microphone2:	🎙
+:microphone:	🎤
+:microscope:	🔬
+:middle dot:	·
+:milk:	🥛
+:milky way:	🌌
+:minibus:	🚐
+:minimize:	🗕
+:mobile phone off:	📴
+:mobile2:	🖁
+:mobile:	📱
+:modem:	🖀
+:money2:	💰
+:money3:	🤑
+:money:	💸
+:monkey2:	🐵
+:monkey:	🐒
+:monocle:	🧐
+:monorail:	🚝
+:moon2:	🌜
+:moon:	🌛
+:mosque:	🕌
+:motor boat:	🛥
+:motorcycle:	🏍
+:motorway:	🛣
+:mountain cableway:	🚠
+:mountain railway:	🚞
+:mountain2:	🏔
+:mountain:	⛰
+:mouse2:	🐭
+:mouse3:	🖱
+:mouse4:	🖰
+:mouse5:	🖯
+:mouse:	🐁
+:mouth:	👄
+:movie camera:	🎥
+:mrs. claus:	🤶
+:mu:	μ
+:muscle:	💪
+:museum:	🏛
+:mushroom:	🍄
+:music2:	🎵
+:music:	🎶
+:mute:	🔇
+:nail care:	💅
+:name:	📛
+:natural:	♮
+:nausea:	🤢
+:necktie:	👔
+:neptune:	♆
+:nerd:	🤓
+:network:	🖧
+:neutral face:	😐
+:new moon2:	🌚
+:new moon:	🌑
+:newspaper2:	🗞
+:newspaper:	📰
+:ni:	∋
+:nib2:	✒
+:nib:	✑
+:night:	🌃
+:no bell:	🔕
+:no bicycles:	🚳
+:no entry sign:	🚫
+:no entry:	⛔
+:no good:	🙅
+:no mobile:	📵
+:no mouth:	😶
+:no pedestrians:	🚷
+:no piracy:	🕲
+:no smoking:	🚭
+:no2:	🖓
+:no:	👎
+:non-potable water:	🚱
+:nose:	👃
+:not divides:	∤
+:not equal:	≠
+:not exists:	∄
+:not in:	∉
+:not ni:	∌
+:not subset:	⊄
+:not superset:	⊅
+:not:	¬
+:note pad:	🗊
+:note page:	🗉
+:note2:	♪
+:note3:	🗈
+:note:	♩
+:notebook2:	📔
+:notebook:	📓
+:notepad:	🗒
+:notes2:	♬
+:notes3:	🎝
+:notes4:	🎜
+:notes:	♫
+:nparallel:	∦
+:nu:	ν
+:nut and bolt:	🔩
+:o:	⭕
+:ocean:	🌊
+:octopus:	🐙
+:oden:	🍢
+:office:	🏢
+:ogre:	👹
+:ok2:	🖏
+:ok3:	🙆
+:ok:	👌
+:old:	🧓
+:older man:	👴
+:older woman:	👵
+:om:	🕉
+:omega:	ω
+:omicron:	ο
+:open hands:	👐
+:open mouth:	😮
+:ophiuchus:	⛎
+:optical disc:	🖸
+:or:	∨
+:orange heart:	🧡
+:orthodox cross:	☦
+:overlap:	🗗
+:owl:	🦉
+:ox:	🐂
+:package:	📦
+:page2:	🗏
+:page3:	📃
+:page4:	🗟
+:page:	📄
+:pager:	📟
+:pages:	🗐
+:paintbrush:	🖌
+:palm2:	🤲
+:palm:	🌴
+:pancakes:	🥞
+:panda:	🐼
+:paperclip2:	🖇
+:paperclip:	📎
+:parallel:	∥
+:parallelogram2:	▰
+:parallelogram:	▱
+:park:	🏞
+:partial:	∂
+:party2:	🎊
+:party3:	🥂
+:party4:	🍾
+:party:	🎉
+:passport:	🛂
+:pause:	⏸
+:pc:	🖳
+:peace:	☮
+:peach:	🍑
+:peanuts:	🥜
+:pear:	🍐
+:pen2:	🖋
+:pen:	🖊
+:pencil2:	✏
+:pencil3:	✐
+:pencil4:	🖉
+:pencil:	✎
+:penguin:	🐧
+:pennant2:	🏱
+:pennant:	🏲
+:pensive:	😔
+:pentagon2:	⬟
+:pentagon:	⬠
+:pentagram:	⛤
+:pepper:	🌶
+:per mille:	‰
+:permanent paper:	♾
+:persevere:	😣
+:person frowning:	🙍
+:person pouting:	🙎
+:peso:	₱
+:phi:	φ
+:phone2:	☏
+:phone3:	🕾
+:phone4:	🕿
+:phone:	☎
+:pi:	π
+:piano:	🎹
+:pick:	⛏
+:picture:	🖼
+:pie:	🥧
+:pig nose:	🐽
+:pig2:	🐷
+:pig:	🐖
+:pill:	💊
+:pine:	🌲
+:pineapple:	🍍
+:ping pong:	🏓
+:pirate:	🕱
+:pisces:	♓
+:pistol:	🔫
+:pizza:	🍕
+:plate:	🍽
+:plug:	🔌
+:pluto:	♇
+:poison:	☠
+:police car2:	🚔
+:police car:	🚓
+:poo:	💩
+:poodle:	🐩
+:popcorn:	🍿
+:post office2:	🏣
+:post office:	🏤
+:postbox:	📮
+:potable water:	🚰
+:potato:	🥔
+:pouch:	👝
+:poultry leg:	🍗
+:pound2:	💷
+:pound:	£
+:pouting cat:	😾
+:pray:	🙏
+:pregnant:	🤰
+:pretzel:	🥨
+:prime:	′
+:prince:	🤴
+:princess:	👸
+:printer2:	🖶
+:printer:	🖨
+:product:	∏
+:prohibited:	🛇
+:projector:	📽
+:prostration:	🙇
+:psi:	ψ
+:purse:	👛
+:pushpin:	📌
+:quarter note:	𝅘𝅥
+:quarter rest:	𝄽
+:queen:	🂭
+:rabbit2:	🐰
+:rabbit:	🐇
+:race:	🏁
+:radio button:	🔘
+:radio:	📻
+:radioactive:	☢
+:rage:	😡
+:railway car:	🚃
+:rain2:	⛆
+:rain:	☔
+:rainbow:	🌈
+:rainy:	🌦
+:ram:	🐏
+:ramen:	🍜
+:rat:	🐀
+:rays2:	🗥
+:rays3:	🗤
+:rays4:	🗧
+:rays:	🗦
+:receiver2:	🕻
+:receiver3:	🕽
+:receiver4:	🕼
+:receiver:	📞
+:record:	⏺
+:rectangle2:	▬
+:rectangle:	▭
+:recycled paper:	♼
+:recycling2:	♻
+:recycling:	♲
+:registered:	®
+:relieved:	😌
+:restaurant:	🍴
+:restroom:	🚻
+:revolving hearts:	💞
+:rhinoceros:	🦏
+:rho:	ρ
+:ribbon2:	🎀
+:ribbon:	🎗
+:rice ball:	🍙
+:rice cracker:	🍘
+:rice scene:	🎑
+:rice:	🍚
+:right triangle:	⊿
+:right2:	👉
+:right3:	☛
+:right4:	🖛
+:right5:	🖙
+:right6:	🖝
+:right:	☞
+:ring:	💍
+:robot:	🤖
+:rocket:	🚀
+:roller coaster:	🎢
+:rooster:	🐓
+:rose:	🌹
+:rosette2:	🏶
+:rosette:	🏵
+:rotating light:	🚨
+:round pushpin:	📍
+:rowboat:	🚣
+:rugby football:	🏉
+:ruler2:	📐
+:ruler:	📏
+:runner:	🏃
+:rupee:	₹
+:sagittarius:	♐
+:sailboat:	⛵
+:sake:	🍶
+:salad:	🥗
+:saltire:	☓
+:sandal:	👡
+:sandwich:	🥪
+:santa:	🎅
+:satellite:	🛰
+:saturn:	♄
+:sauna:	🧖
+:saxophone:	🎷
+:scales:	⚖
+:scarf:	🧣
+:school satchel:	🎒
+:school:	🏫
+:schwa:	ə
+:scissors2:	✄
+:scissors3:	✁
+:scissors4:	✃
+:scissors:	✂
+:scooter2:	🛵
+:scooter:	🛴
+:score:	🎼
+:scorpion:	🦂
+:scorpius:	♏
+:scream cat:	🙀
+:scream:	😱
+:screen:	🖵
+:scroll:	📜
+:seat:	💺
+:section:	§
+:see no evil:	🙈
+:seedling:	🌱
+:selfie:	🤳
+:shark:	🦈
+:sharp:	♯
+:shaved ice:	🍧
+:sheep:	🐑
+:shekel:	₪
+:shell:	🐚
+:shield2:	⛨
+:shield:	🛡
+:ship2:	🛳
+:ship:	🚢
+:shirt2:	🎽
+:shirt:	👕
+:shocked:	🤯
+:shoe2:	👟
+:shoe3:	👠
+:shoe:	👞
+:shop:	🛍
+:shower:	🚿
+:shrimp:	🦐
+:shrugging:	🤷
+:sigma2:	ς
+:sigma:	σ
+:signal strength:	📶
+:silver:	🥈
+:sixteenth note:	𝅘𝅥𝅯
+:skate:	⛸
+:ski:	🎿
+:skier:	⛷
+:skin1:	🏻
+:skin2:	🏼
+:skin3:	🏽
+:skin4:	🏾
+:skin5:	🏿
+:skull:	💀
+:sled:	🛷
+:sleep:	🛌
+:sleeping:	😴
+:sleepy:	😪
+:slider:	🎚
+:sliding car:	⛐
+:slot machine:	🎰
+:small in:	∊
+:small ni:	∍
+:small square2:	▪
+:small square:	▫
+:small star2:	⭑
+:small star:	⭒
+:smaller square2:	◾
+:smaller square:	◽
+:smile cat:	😸
+:smile:	😄
+:smiley cat:	😺
+:smiley:	😃
+:smiling imp:	😈
+:smiling2:	☻
+:smiling3:	🙂
+:smiling4:	🤭
+:smiling:	☺
+:smirk cat:	😼
+:smirk:	😏
+:smoking:	🚬
+:snail:	🐌
+:snake:	🐍
+:sneeze:	🤧
+:snow:	🌨
+:snowboarder:	🏂
+:snowflake:	❄
+:snowman2:	⛄
+:snowman:	☃
+:sob:	😭
+:soccer2:	🥅
+:soccer:	⚽
+:socks:	🧦
+:sound:	🔉
+:spades2:	♤
+:spades:	♠
+:spaghetti:	🍝
+:sparkle:	❇
+:sparkler:	🎇
+:sparkles:	✨
+:sparkling heart:	💖
+:speak no evil:	🙊
+:speaker2:	🕩
+:speaker3:	🕨
+:speaker4:	🕪
+:speaker:	🔈
+:speech balloon:	💬
+:speedboat:	🚤
+:spider:	🕷
+:spock:	🖖
+:spoon:	🥄
+:sqrt:	√
+:square2:	■
+:square:	□
+:squid:	🦑
+:stadium:	🏟
+:staff:	⚚
+:star and crescent:	☪
+:star of David:	✡
+:star2:	☆
+:star3:	🌟
+:star4:	🌠
+:star:	★
+:station:	🚉
+:statue:	🗿
+:steak:	🥩
+:stereo:	📾
+:stew:	🍲
+:stop2:	⏹
+:stop:	🛑
+:stopwatch:	⏱
+:store2:	🏬
+:store:	🏪
+:storm2:	☈
+:storm:	🌧
+:strawberry:	🍓
+:subset:	⊂
+:suit:	🕴
+:sum:	∑
+:sun2:	🌣
+:sun:	🌞
+:sunflower:	🌻
+:sunglasses2:	😎
+:sunglasses:	🕶
+:sunny:	☀
+:sunrise2:	🌄
+:sunrise3:	🌇
+:sunrise:	🌅
+:sunset:	🌆
+:superset:	⊃
+:surfer:	🏄
+:sushi:	🍣
+:suspension railway:	🚟
+:sweat drops:	💦
+:sweat smile:	😅
+:sweat:	😓
+:sweet potato:	🍠
+:swimmer:	🏊
+:swords:	⚔
+:synagogue:	🕍
+:synthesizer:	🎘
+:syringe:	💉
+:tack:	🖈
+:taco:	🌮
+:takeout:	🥡
+:tanabata tree:	🎋
+:tangerine:	🍊
+:tau:	τ
+:taurus:	♉
+:taxi2:	🚖
+:taxi:	🚕
+:tea:	🍵
+:telephone:	✆
+:telescope:	🔭
+:tennis:	🎾
+:tent:	⛺
+:theatre:	🎭
+:thermometer2:	🤒
+:thermometer:	🌡
+:theta:	θ
+:thinking:	🤔
+:thought balloon:	💭
+:ticket2:	🎟
+:ticket:	🎫
+:tiger2:	🐯
+:tiger:	🐅
+:timer clock:	⏲
+:times2:	✖
+:tired face:	😫
+:tm:	™
+:toilet2:	🚾
+:toilet:	🚽
+:tomato:	🍅
+:tongue2:	😛
+:tongue3:	😜
+:tongue4:	😝
+:tongue:	👅
+:top hat:	🎩
+:tornado:	🌪
+:tower:	🗼
+:track:	🛤
+:trackball:	🖲
+:tractor:	🚜
+:traffic light2:	🚦
+:traffic light:	🚥
+:train2:	🚄
+:train3:	🚅
+:train:	🚆
+:tram2:	🚋
+:tram:	🚊
+:trapezium:	⏢
+:tray2:	📥
+:tray:	📤
+:tree:	🌳
+:triangle2:	▲
+:triangle3:	🛆
+:triangle:	△
+:triangular flag:	🚩
+:trident:	🔱
+:triumph:	😤
+:trolleybus:	🚎
+:trophy:	🏆
+:truck2:	🚚
+:truck:	⛟
+:trumpet:	🎺
+:tulip:	🌷
+:turban:	👳
+:turkey:	🦃
+:turtle:	🐢
+:tv:	📺
+:two hearts:	💕
+:ufo:	🛸
+:umbrella2:	🌂
+:umbrella3:	⛱
+:umbrella:	☂
+:unamused:	😒
+:underage:	🔞
+:unicorn:	🦄
+:union:	∪
+:unlock:	🔓
+:up2:	👆
+:up3:	🖞
+:up4:	🖠
+:up5:	🖢
+:up:	☝
+:upside-down:	🙃
+:upsilon:	υ
+:uranus:	♅
+:urn:	⚱
+:vampire:	🧛
+:vhs:	📼
+:vibration mode:	📳
+:victory2:	🖔
+:victory:	✌
+:video camera:	📹
+:video game:	🎮
+:violin:	🎻
+:virgo:	♍
+:volcano:	🌋
+:volleyball:	🏐
+:vomit:	🤮
+:walking:	🚶
+:waning crescent moon:	🌘
+:waning gibbous moon:	🌖
+:warning:	⚠
+:wastebasket:	🗑
+:watch:	⌚
+:water buffalo:	🐃
+:water polo:	🤽
+:watermelon:	🍉
+:wave:	👋
+:waxing crescent moon:	🌒
+:waxing gibbous moon:	🌔
+:weary:	😩
+:web:	🕸
+:wedding:	💒
+:weight lifter:	🏋
+:whale2:	🐋
+:whale:	🐳
+:wheelchair:	♿
+:white bishop:	♗
+:white circle:	⚪
+:white flower:	💮
+:white king:	♔
+:white knight:	♘
+:white pawn:	♙
+:white queen:	♕
+:white rook:	♖
+:whole note:	𝅝
+:whole rest:	𝄻
+:wind chime:	🎐
+:wind:	🌬
+:window:	🗔
+:wink:	😉
+:wolf:	🐺
+:woman:	👩
+:womens:	🚺
+:won:	₩
+:worker:	👷
+:worried:	😟
+:worship:	🛐
+:wrench:	🔧
+:wrestling:	🤼
+:writing2:	🖎
+:writing:	✍
+:x2:	❌
+:x3:	❎
+:x4:	🗶
+:x:	×
+:xi:	ξ
+:yen2:	💴
+:yen:	¥
+:yes2:	🖒
+:yes:	👍
+:yin yang:	☯
+:yoga:	🧘
+:yum:	😋
+:zany:	🤪
+:zap:	⚡
+:zebra:	🦓
+:zeta:	ζ
+:zipper:	🤐
+:zombie:	🧟
+:zzz:	💤
+:~:	≈
+<--	←
+<-->	↔
+<->	↔
+Ameria	America
+I.e.	i.e.
+UnitedStates	United States
+abotu	about
+abouta	about a
+aboutit	about it
+abscence	absence
+accesories	accessories
+accidant	accident
+accomodate	accommodate
+accordingto	according to
+accross	across
+acheive	achieve
+acheived	achieved
+acheiving	achieving
+acn	can
+acommodate	accommodate
+acomodate	accommodate
+actualyl	actually
+additinal	additional
+addtional	additional
+adequit	adequate
+adequite	adequate
+adn	and
+advanage	advantage
+affraid	afraid
+afterthe	after the
+againstt he	against the
+aggresive	aggressive
+agian	again
+agreemeent	agreement
+agreemeents	agreements
+agreemnet	agreement
+agreemnets	agreements
+agressive	aggressive
+ahppen	happen
+ahve	have
+allready	already
+allwasy	always
+allwyas	always
+almots	almost
+almsot	almost
+alomst	almost
+alot	a lot
+alraedy	already
+alreayd	already
+alreday	already
+alwasy	always
+alwats	always
+alway	always
+alwyas	always
+amde	made
+amke	make
+amkes	makes
+anbd	and
+andone	and one
+andt he	and the
+andteh	and the
+andthe	and the
+anothe	another
+ansewer	answer
+anual	annual
+anythnig	anything
+apparant	apparent
+apparnetly	apparently
+apparrent	apparent
+appearence	appearance
+appeares	appears
+applicaiton	application
+applicaitons	applications
+applyed	applied
+appointiment	appointment
+approrpiate	appropriate
+approrpriate	appropriate
+aproach	approach
+aquisition	acquisition
+aquisitions	acquisitions
+arguement	argument
+arguements	arguments
+arond	around
+artical	article
+articel	article
+asdvertising	advertising
+askt he	ask the
+atention	attention
+atmospher	atmosphere
+attachement	attachment
+attachements	attachments
+attentioin	attention
+atthe	at the
+audeince	audience
+audiance	audience
+avaiable	available
+availalbe	available
+awya	away
+aywa	away
+bakc	back
+balence	balance
+ballance	balance
+baout	about
+bcak	back
+beacuse	because
+becasue	because
+becaus	because
+becausea	because a
+becauseof	because of
+becausethe	because the
+becauseyou	because you
+becomeing	becoming
+becomming	becoming
+becuase	because
+becuse	because
+befoer	before
+beggining	beginning
+begining	beginning
+beginining	beginning
+beleiev	believe
+beleieve	believe
+beleif	belief
+beleive	believe
+beleived	believed
+beleives	believes
+benifit	benefit
+benifits	benefits
+betwen	between
+beutiful	beautiful
+birhtday	birthday
+birhtdays	birthdays
+blase	blasé
+boxs	boxes
+braek	break
+braeks	breaks
+breackage	breakage
+breackages	breakages
+brodcast	broadcast
+butthe	but the
+bve	be
+byt he	by the
+caharcter	character
+calcullated	calculated
+calulated	calculated
+candidtae	candidate
+candidtaes	candidates
+catagory	category
+categiory	category
+ceritifcate	certificate
+ceritifcates	certificates
+certian	certain
+challange	challenge
+challanges	challenges
+chaneg	change
+chanegs	changes
+changable	changeable
+changeing	changing
+changng	changing
+charachter	character
+charachters	characters
+charactor	character
+charecter	character
+charector	character
+cheif	chief
+chekc	check
+chnage	change
+cieling	ceiling
+circut	circuit
+claer	clear
+claered	cleared
+claerly	clearly
+cliant	client
+cliche	cliché
+cna	can
+colection	collection
+comanies	companies
+comany	company
+comapnies	companies
+comapny	company
+combintation	combination
+comited	committed
+comittee	committee
+commadn	command
+comming	coming
+commitee	committee
+committe	committee
+committment	commitment
+committments	commitments
+committy	committee
+comntain	contain
+comntains	contains
+compair	compare
+compleated	completed
+compleatly	completely
+compleatness	completeness
+completly	completely
+completness	completeness
+composate	composite
+comtain	contain
+comtains	contains
+comunicate	communicate
+comunity	community
+condolances	condolences
+conected	connected
+conferance	conference
+confirmmation	confirmation
+considerit	considerate
+considerite	considerate
+consonent	consonant
+conspiricy	conspiracy
+consultent	consultant
+convertable	convertible
+cooparate	cooperate
+cooporate	cooperate
+corproation	corporation
+corproations	corporations
+corruptable	corruptible
+cotten	cotton
+coudl	could
+could of been	could have been
+could of had	could have had
+couldnt	couldn’t
+couldthe	could the
+cpoy	copy
+creme	crème
+crysys	crisis
+ctaegory	category
+cummulative	cumulative
+cusotmer	customer
+cusotmers	customers
+cutsomer	customer
+cutsomers	customer
+cxan	can
+danceing	dancing
+dcument	document
+deatils	details
+decison	decision
+decisons	decisions
+decor	décor
+defendent	defendant
+definately	definitely
+deleteing	deleting
+deptartment	department
+desicion	decision
+desicions	decisions
+desision	decision
+desisions	decisions
+develeoprs	developers
+devellop	develop
+develloped	developed
+develloper	developer
+devellopers	developers
+develloping	developing
+devellopment	development
+devellopments	developments
+devellops	develop
+develope	develop
+developement	development
+developements	developments
+developor	developer
+developors	developers
+develpment	development
+diaplay	display
+dident	didn’t
+diden’t	didn’t
+didnot	did not
+didnt	didn’t
+difefrent	different
+diferences	differences
+differance	difference
+differances	differences
+differant	different
+differemt	different
+differnt	different
+diffrent	different
+directer	director
+directers	directors
+directiosn	direction
+directy	directly
+disapoint	disappoint
+disatisfied	dissatisfied
+discoverd	discovered
+disign	design
+dispaly	display
+disperation	desperation
+dissonent	dissonant
+distribusion	distribution
+divsion	division
+docuement	document
+docuemnt	document
+documetn	document
+documnet	document
+documnets	documents
+doe snot	does not
+doese	does
+doesnt	doesn’t
+doign	doing
+doimg	doing
+doind	doing
+dollers	dollars
+donig	doing
+dont	don’t
+driveing	driving
+drnik	drink
+eacch	each
+editting	editing
+efel	feel
+effecient	efficient
+efort	effort
+eforts	efforts
+ehr	her
+elce	else
+eligable	eligible
+embarass	embarrass
+enought	enough
+equippment	equipment
+equivalant	equivalent
+esle	else
+especally	especially
+especialyl	especially
+espesially	especially
+excellant	excellent
+excercise	exercise
+exchagne	exchange
+exchagnes	exchanges
+excitment	excitement
+executeable	executable
+executeables	executables
+exhcange	exchange
+exhcanges	exchanges
+experiance	experience
+experienc	experience
+exprience	experience
+exprienced	experienced
+eyt	yet
+faeture	feature
+faetures	features
+familair	familiar
+familar	familiar
+familliar	familiar
+fammiliar	familiar
+feild	field
+feilds	fields
+fianlly	finally
+fidn	find
+finalyl	finally
+firends	friends
+firts	first
+follwo	follow
+follwoing	following
+fora	for a
+foriegn	foreign
+forthe	for the
+forwrd	forward
+forwrds	forwards
+foudn	found
+foward	forward
+fowards	forwards
+freind	friend
+freindly	friendly
+freinds	friends
+frmo	from
+fromt he	from the
+fromthe	from the
+furneral	funeral
+fwe	few
+garantee	guarantee
+gaurd	guard
+gemeral	general
+gerat	great
+geting	getting
+gettin	getting
+gievn	given
+giveing	giving
+gloabl	global
+goign	going
+gonig	going
+govenment	government
+goverment	government
+gruop	group
+gruops	groups
+grwo	grow
+guidlines	guidelines
+hadbeen	had been
+haev	have
+hapen	happen
+hapened	happened
+hapening	happening
+hapens	happens
+happend	happened
+harwdare	hardware
+hasbeen	has been
+havebeen	have been
+haveing	having
+hearign	hearing
+helpfull	helpful
+herat	heart
+hesaid	he said
+hewas	he was
+hge	he
+hismelf	himself
+hlep	help
+hsa	has
+hsi	his
+hte	the
+htere	there
+htese	these
+htey	they
+hting	thing
+htink	think
+htis	this
+hvae	have
+hvaing	having
+hwich	which
+hystory	history
+i	I
+i snot	is not
+idae	idea
+idaes	ideas
+identofy	identify
+ihs	his
+imediate	immediate
+imediatly	immediately
+immediatly	immediately
+importent	important
+importnat	important
+impossable	impossible
+improvemnt	improvement
+improvment	improvement
+imprved	improved
+includ	include
+indecate	indicate
+indenpendence	independence
+indenpendent	independent
+indepedent	independent
+independance	independence
+independant	independent
+influance	influence
+infomation	information
+informatoin	information
+inital	initial
+instaleld	installed
+insted	instead
+insurence	insurance
+int he	in the
+inteh	in the
+inteligence	intelligence
+inteligences	intelligences
+interum	interim
+inthe	in the
+inwhich	in which
+isthe	is the
+itis	it is
+ititial	initial
+itnerest	interest
+itnerested	interested
+itneresting	interesting
+itnerests	interests
+iwll	will
+iwth	with
+jsut	just
+jugment	judgment
+knoew	know
+knowldge	knowledge
+knowlege	knowledge
+knwo	know
+knwon	known
+knwos	knows
+konwn	known
+konws	knows
+labratory	laboratory
+lastyear	last year
+learnign	learning
+lenght	length
+levle	level
+libary	library
+librarry	library
+librery	library
+liek	like
+liekd	liked
+lieutenent	lieutenant
+liev	live
+likly	likely
+lisense	license
+littel	little
+litttle	little
+liuke	like
+liveing	living
+lizzard	lizard
+loev	love
+lonly	lonely
+lookign	looking
+mainfraime	mainframe
+mainfraimes	mainframes
+mainteined	maintained
+maintenence	maintenance
+makeing	making
+managment	management
+mantain	maintain
+marraige	marriage
+may of been	may have been
+may of had	may have had
+mechine	machine
+mechines	machines
+memeber	member
+merchent	merchant
+mesage	message
+mesages	messages
+might of been	might have been
+might of had	might have had
+mispell	misspell
+mispelling	misspelling
+mispellings	misspellings
+mkae	make
+mkaes	makes
+mkaing	making
+moeny	money
+morgage	mortgage
+mroe	more
+must of been	must have been
+must of had	must have had
+mysefl	myself
+myu	my
+necassarily	necessarily
+necassary	necessary
+neccessarily	necessarily
+neccessary	necessary
+necesarily	necessarily
+necesary	necessary
+needent	needn’t
+needen’t	needn’t
+negotiaing	negotiating
+nkow	know
+nothign	nothing
+nver	never
+nwe	new
+nwo	now
+obediant	obedient
+ocasion	occasion
+occassion	occasion
+occorrence	occurrence
+occorrences	occurrences
+occured	occurred
+occurence	occurrence
+occurrance	occurrence
+ocur	occur
+odf	ODF
+oeprator	operator
+ofits	of its
+oft he	of the
+ofthe	of the
+oging	going
+ohter	other
+omre	more
+oneof	one of
+onepoint	one point
+ont he	on the
+onthe	on the
+onyl	only
+opnion	opinion
+opnions	opinions
+oppasite	opposite
+opperation	operation
+oppertunity	opportunity
+opposate	opposite
+opposible	opposable
+opposit	opposite
+oppotunities	opportunities
+oppotunity	opportunity
+orginization	organization
+orginized	organized
+otehr	other
+otu	out
+outof	out of
+overthe	over the
+owrk	work
+owuld	would
+oxident	oxidant
+papaer	paper
+parliment	parliament
+partof	part of
+paymetn	payment
+paymetns	payments
+pciture	picture
+peaple	people
+peice	piece
+peices	pieces
+peolpe	people
+peopel	people
+percentof	percent of
+percentto	percent to
+performence	performance
+perhasp	perhaps
+perhpas	perhaps
+permanant	permanent
+perminent	permanent
+personalyl	personally
+pleasent	pleasant
+poeple	people
+porblem	problem
+porblems	problems
+porvide	provide
+possable	possible
+postition	position
+potentialy	potentially
+pregnent	pregnant
+presance	presence
+probelm	problem
+probelms	problems
+problim	problem
+problims	problems
+proggress	progress
+prominant	prominent
+psoition	position
+ptogress	progress
+puting	putting
+pwoer	power
+quater	quarter
+quaters	quarters
+quesion	question
+quesions	questions
+questioms	questions
+questiosn	questions
+questoin	question
+quetion	question
+quetions	questions
+qurantine	quarantine
+realyl	really
+reccomend	recommend
+reccommend	recommend
+receieve	receive
+recieve	receive
+recieved	received
+recieving	receiving
+recomend	recommend
+recomendation	recommendation
+recomendations	recommendations
+recomended	recommended
+reconize	recognize
+recrod	record
+releaesd	released
+religous	religious
+reluctent	reluctant
+remainig	remaining
+remeber	remember
+reommend	recommend
+representativs	representatives
+representives	representatives
+represetned	represented
+represnt	represent
+reserach	research
+resollution	resolution
+resorces	resources
+respomd	respond
+respomse	response
+responce	response
+responsability	responsibility
+responsable	responsible
+responsibile	responsible
+responsiblity	responsibility
+restaraunt	restaurant
+restuarant	restaurant
+reult	result
+reveiw	review
+reveiwing	reviewing
+rumers	rumors
+rwite	write
+rythm	rhythm
+saidhe	said he
+saidit	said it
+saidt he	said the
+saidthat	said that
+saidthe	said the
+scedule	schedule
+sceduled	scheduled
+seance	séance
+secratary	secretary
+sectino	section
+seh	she
+selectoin	selection
+sentance	sentence
+separeate	separate
+sercumstances	circumstances
+shcool	school
+shesaid	she said
+shineing	shining
+shiped	shipped
+shoudl	should
+should of been	should have been
+should of had	should have had
+shouldnt	shouldn’t
+showinf	showing
+signifacnt	significant
+simalar	similar
+similiar	similar
+simpyl	simply
+sincerly	sincerely
+sitll	still
+smae	same
+smoe	some
+soem	some
+sohw	show
+soical	social
+someoen	someone
+somethign	something
+someting	something
+somewaht	somewhat
+somtheing	something
+somthing	something
+somtimes	sometimes
+somtin	something
+sot hat	so that
+soudn	sound
+soudns	sounds
+speach	speech
+specificaly	specifically
+specificalyl	specifically
+speeking	speaking
+statment	statement
+statments	statements
+stnad	stand
+stopry	story
+stoyr	story
+stpo	stop
+strentgh	strength
+stroy	story
+struggel	struggle
+strugle	struggle
+studnet	student
+successfull	successful
+successfuly	successfully
+successfulyl	successfully
+sucess	success
+sucessfull	successful
+sufficiant	sufficient
+sugestion	suggestion
+sugestions	suggestions
+suposed	supposed
+suppossed	supposed
+suprised	surprised
+swiming	swimming
+tahn	than
+taht	that
+talekd	talked
+talkign	talking
+tath	that
+tecnical	technical
+teh	the
+tehy	they
+tellt he	tell the
+termoil	turmoil
+testiing	testing
+tets	test
+tghe	the
+tghis	this
+thansk	thanks
+thatt he	that the
+thatthe	that the
+thecompany	the company
+thefirst	the first
+thegovernment	the government
+their are	there are
+their is	there is
+themselfs	themselves
+thenew	the new
+theri	their
+thesame	the same
+thetwo	the two
+theyr	their
+thgat	that
+thge	the
+thier	their
+thigsn	things
+thisyear	this year
+thme	them
+thna	than
+thne	then
+thnig	thing
+thnigs	things
+threatend	threatened
+thsi	this
+thsoe	those
+thta	that
+tihs	this
+timne	time
+tiogether	together
+tje	the
+tjhe	the
+tkae	take
+tkaes	takes
+tkaing	taking
+tlaking	talking
+todya	today
+togahter	together
+togehter	together
+toldt he	told the
+tomorow	tomorrow
+tongiht	tonight
+tonihgt	tonight
+totaly	totally
+totalyl	totally
+tothe	to the
+towrad	toward
+traditionalyl	traditionally
+trainning	training
+transfered	transferred
+truely	truly
+truley	truly
+tryed	tried
+tthe	the
+tyhat	that
+tyhe	the
+udnerstand	understand
+uknown	unknown
+understnad	understand
+undert he	under the
+unliek	unlike
+unmainteined	unmaintained
+unpleasently	unpleasantly
+untill	until
+untilll	until
+upcomming	upcoming
+useing	using
+usualyl	usually
+uszed	used
+veyr	very
+virtualyl	virtually
+vrey	very
+vulnerible	vulnerable
+wa snot	was not
+waht	what
+warrent	warrant
+watn	want
+wehn	when
+werent	weren’t
+werre	were
+whcih	which
+whent he	when the
+wherre	where
+whic	which
+whicht he	which the
+whihc	which
+who;ve	who’ve
+whta	what
+wief	wife
+wierd	weird
+wihch	which
+wiht	with
+will of been	will have been
+willbe	will be
+windoes	windows
+witha	with a
+withe	with
+witht he	with the
+withthe	with the
+wiull	will
+wnat	want
+wnated	wanted
+wnats	wants
+woh	who
+wohle	whole
+wokr	work
+woudl	would
+would of been	would have been
+would of had	would have had
+wouldbe	would be
+wriet	write
+writen	written
+writting	writing
+wrod	word
+wroet	wrote
+wroking	working
+wtih	with
+wuould	would
+wya	way
+yera	year
+yeras	years
+yersa	years
+yeserday	yesterday
+yoiu	you
+youare	you are
+youreself	yourself
+ytou	you
+yuo	you
+yuor	your

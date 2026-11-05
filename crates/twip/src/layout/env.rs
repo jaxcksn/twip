@@ -53,6 +53,14 @@ pub struct TextEnv {
     /// The colours shapes resolve against (DRAW-7, DRAW-8): read-only document state.
     pub theme: std::rc::Rc<crate::drawing::theme::Theme>,
     pub colour_map: crate::drawing::theme::ColourMap,
+    /// A dark fill behind the story's text (a cell's shading, a text box's fill): automatic text is white over it
+    /// (FONT-15). `None` for a light fill or none.
+    pub backdrop: Option<u32>,
+}
+
+/// Whether automatic text is white over fill `c` (FONT-15): 0.30 R + 0.59 G + 0.11 B under 60.
+pub fn is_dark(c: u32) -> bool {
+    30 * (c >> 16) + 59 * ((c >> 8) & 0xFF) + 11 * (c & 0xFF) < 6000
 }
 
 impl TextEnv {
@@ -85,6 +93,7 @@ impl TextEnv {
             adjust_line_height_in_table: s.has("adjustLineHeightInTable"),
             theme: doc.theme.clone(),
             colour_map: doc.colour_map,
+            backdrop: None,
         }
     }
 }

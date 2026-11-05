@@ -162,6 +162,11 @@ impl ShapeItem {
 }
 
 impl Item {
+    /// A filled rectangle (borders, rules, shading).
+    pub fn rect(rect: [f64; 4], colour: u32) -> Item {
+        Item::Rect { rect, colour }
+    }
+
     /// The item's top edge (for vertical alignment's "both" distribution, SETUP-1).
     pub fn top(&self) -> f64 {
         match self {

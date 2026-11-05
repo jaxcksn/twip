@@ -136,6 +136,8 @@ fn in_header_editing_the_background_is_selected_and_dragged() {
     // Above the header text, at the page's right.
     let p = (x1 - 20.0, y0 + 10.0);
     assert_eq!(hover(&mut e, 0, p), Cursor::Move);
+    // Without the object grid it moves as far as the pointer.
+    e.view_settings.object_grid = crate::api::services::ObjectGrid::Off;
     at(&mut e, PointerKind::Down, 0, p, 1);
     assert_eq!(e.selection(), Selection::Object(ObjectRef::Floating(f)));
     at(&mut e, PointerKind::Move, 0, (p.0 + 10.0, p.1 + 10.0), 0);

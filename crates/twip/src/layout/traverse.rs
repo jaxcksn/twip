@@ -22,6 +22,8 @@ pub struct Placed<'a> {
     pub dy: f64,
     pub item: &'a Item,
     pub line: u32,
+    /// Inside a shape with a fill: drawn in its own colours on a dark page (DRAW-27).
+    pub own_colours: bool,
 }
 
 impl Placed<'_> {
@@ -45,7 +47,7 @@ pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
             colour: r.colour,
             para: r.para,
         }),
-        Item::Rect { rect, colour } => Item::Rect { rect: r4(rect), colour: *colour },
+        Item::Rect { rect, colour } => Item::rect(r4(rect), *colour),
         Item::Image { rect, key } => Item::Image { rect: r4(rect), key: *key },
         Item::Gridline { line } => Item::Gridline { line: r4(line) },
         Item::Shape(s) => Item::Shape(std::rc::Rc::new(s.moved(dx, dy))),
@@ -80,7 +82,7 @@ fn line_items<'a>(para: Option<ParaId>, p: &'a PlacedLine, dx: f64, dy: f64, lin
     let line = lines.next();
     (lines.placed)(line, para, p, dx, dy);
     for it in p.line.items.iter() {
-        out(Placed { dx: dx + p.x, dy: dy + p.y, item: it, line });
+        out(Placed { dx: dx + p.x, dy: dy + p.y, item: it, line, own_colours: false });
     }
 }
 
@@ -94,7 +96,7 @@ fn backgrounds<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKi
             Child::Table(t) => {
                 for r in t.rows.iter() {
                     for it in r.background.iter() {
-                        out(Placed { dx, dy, item: it, line: 0 });
+                        out(Placed { dx, dy, item: it, line: 0, own_colours: false });
                     }
                     for cell in r.cells.iter() {
                         backgrounds(&cell.content, dx, dy, skip, out);
@@ -121,7 +123,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
                 for label in p.line_numbers.iter() {
                     let line = lines.next();
                     for it in label.iter() {
-                        out(Placed { dx, dy, item: it, line });
+                        out(Placed { dx, dy, item: it, line, own_colours: false });
                     }
                 }
             }
@@ -134,7 +136,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
             Child::Items(items) => {
                 let line = lines.next();
                 for it in items.iter() {
-                    out(Placed { dx, dy, item: it, line });
+                    out(Placed { dx, dy, item: it, line, own_colours: false });
                 }
             }
         }
@@ -146,7 +148,7 @@ fn row<'a>(r: &'a RowFragment, dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool
         flow(&cell.content, dx, dy, skip, lines, out);
     }
     for it in r.borders.iter() {
-        out(Placed { dx, dy, item: it, line: 0 });
+        out(Placed { dx, dy, item: it, line: 0, own_colours: false });
     }
 }
 
@@ -161,6 +163,23 @@ fn boxes_of<'a>(children: &'a [Child], dx: f64, dy: f64, want: &dyn Fn(&BoxKind)
             _ => {}
         }
     }
+}
+
+/// Whether a float's children draw a shape with a fill: its content keeps its colours on a dark page (DRAW-27).
+fn filled(children: &[Child]) -> bool {
+    fn shapes(items: &[Item]) -> bool {
+        items.iter().any(|i| match i {
+            Item::Shape(s) => !s.fill.is_none() && !s.picture,
+            Item::Turned(t) => shapes(&t.items),
+            _ => false,
+        })
+    }
+    children.iter().any(|c| match c {
+        Child::Items(i) => shapes(i),
+        Child::Group { children, .. } => filled(children),
+        Child::Box(b) => filled(&b.children),
+        _ => false,
+    })
 }
 
 fn is_float(k: &BoxKind) -> bool {
@@ -209,8 +228,10 @@ pub fn paint_lines<'a>(
     }
     found.sort_by_key(|(fb, ..)| layer_of(&fb.kind));
     for (fb, dx, dy) in found {
-        backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut visible);
-        flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut visible);
+        let own_colours = filled(&fb.children);
+        let mut inside = |p: Placed<'a>| visible(Placed { own_colours, ..p });
+        backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut inside);
+        flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut inside);
     }
     for b in bodies() {
         flow(&b.children, b.offset.0, b.offset.1, &neither, &mut lines, &mut visible);
@@ -223,8 +244,10 @@ pub fn paint_lines<'a>(
         }
         found.sort_by_key(|(fb, ..)| layer_of(&fb.kind));
         for (fb, dx, dy) in found {
-            backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut visible);
-            flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut visible);
+            let own_colours = filled(&fb.children);
+            let mut inside = |p: Placed<'a>| visible(Placed { own_colours, ..p });
+            backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut inside);
+            flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut inside);
         }
     }
     for c in page.children.iter() {
@@ -698,7 +721,7 @@ mod tests {
     use super::*;
 
     fn rect(y: f64, colour: u32) -> Item {
-        Item::Rect { rect: [0.0, y, 10.0, y + 1.0], colour }
+        Item::rect([0.0, y, 10.0, y + 1.0], colour)
     }
 
     fn line(colour: u32) -> PlacedLine {

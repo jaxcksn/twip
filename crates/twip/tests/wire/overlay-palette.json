@@ -1,10 +1,9 @@
 [
   {
-    "caret": "#000000",
-    "drop": "#404040",
-    "leaders": "#767676",
-    "marks": "#2F6FB5",
-    "object": "#606060",
-    "selection": "#B3D7FF"
+    "drop": "#62656C",
+    "leaders": "#62656C",
+    "marks": "#0A74E4",
+    "object": "#0A74E4",
+    "selection": "#9DC7F4"
   }
 ]

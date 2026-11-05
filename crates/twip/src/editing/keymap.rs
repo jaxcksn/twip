@@ -175,6 +175,8 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "F9" if ctrl && shift && !alt => run(Command::UnlinkFields(ElementIds::default())),
         "F9" if ctrl && !shift && !alt => run(Command::InsertField(InsertField { code: String::new(), display: None, show_code: None })),
         "F9" if plain => run(Command::UpdateFields(ElementIds::default())),
+        // The options of the correction just made.
+        "F10" if alt && shift && !ctrl => run(Command::ShowAutoCorrectOptions),
         "F11" if ctrl && !alt => run(Command::SetFieldsLocked(FieldsLocked { locked: !shift, ids: None })),
         _ => None,
     }

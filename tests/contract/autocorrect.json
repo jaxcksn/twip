@@ -1,0 +1,24 @@
+{
+  "name": "autocorrect",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "text", "text": "Word teh"},
+    {"op": "text", "text": " "},
+    {"op": "expectState", "match": {"commands": {"revertAutoCorrect": {"enabled": true}, "neverAutoCorrect": {"enabled": true}, "showAutoCorrectOptions": {"enabled": true}}}},
+    {"op": "command", "command": {"type": "showAutoCorrectOptions"}},
+    {"op": "expectEvents", "match": [{"type": "popoverRequested", "kind": "autoCorrect", "from": "teh", "to": "the", "anchor": {"width": {"$type": "number"}}}]},
+    {"op": "command", "command": {"type": "neverAutoCorrect"}},
+    {"op": "expectEvents", "match": [{"type": "popoverClosed"}, {"type": "documentChanged", "origin": "undo"}, {"type": "announcement", "text": {"$type": "string"}}]},
+    {"op": "expectState", "match": {"autoCorrect": {"never": {"$exact": ["teh"]}}, "commands": {"revertAutoCorrect": {"enabled": false}}}},
+    {"op": "text", "text": "teh"},
+    {"op": "text", "text": " "},
+    {"op": "expectState", "match": {"commands": {"revertAutoCorrect": {"enabled": false}}}},
+    {"op": "text", "text": "(c)"},
+    {"op": "text", "text": " "},
+    {"op": "expectState", "match": {"commands": {"revertAutoCorrect": {"enabled": true}}}},
+    {"op": "command", "command": {"type": "revertAutoCorrect"}},
+    {"op": "expectState", "match": {"commands": {"revertAutoCorrect": {"enabled": false}}}},
+    {"op": "call", "method": "find.next", "args": [{"text": "Word teh teh (c) "}], "result": {"found": true}}
+  ]
+}

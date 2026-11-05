@@ -348,6 +348,7 @@ impl Editor {
             Command::SetTableIndent(i) => self.table_format(&super::table_format::TableFormat::TableIndent(i.0), fonts),
             Command::SetTableStyle(id) => self.set_table_style(id, fonts),
             Command::SetTableStyleOptions(o) => self.set_table_style_options(o, fonts),
+            Command::SetTablePosition(p) => self.set_table_position(p, fonts),
             // Objects
             Command::SetObjectSize(s) => self.set_object_size(s, fonts),
             Command::ResetObjectSize => self.object_cmd(super::objects::ObjectCmd::ResetSize, fonts),
@@ -413,7 +414,16 @@ impl Editor {
             Command::SelectComment(id) => self.select_comment(&id, fonts),
             Command::SetAuthorColor(a) => self.set_author_color_by_name(&a.author, a.color.0),
             // View
-            Command::SetZoom(_) | Command::SetViewOptions(_) => Outcome::Moved,
+            Command::SetZoom(_)
+            | Command::SetViewOptions(_)
+            | Command::SetRulerTabType(_)
+            | Command::ShowTabTypes
+            | Command::ShowTabStop
+            | Command::SetAutoCorrect(_)
+            | Command::ShowAutoCorrectOptions
+            | Command::ClosePopover => Outcome::Moved,
+            // The session adds Never correct's word to its settings; the editor reverts.
+            Command::RevertAutoCorrect | Command::NeverAutoCorrect => self.revert_correction(fonts),
             Command::SetMode(m) => self.set_mode(match m {
                 crate::api::state::Mode::Editing => super::Mode::Editing,
                 crate::api::state::Mode::Design => super::Mode::Design,

@@ -69,7 +69,7 @@ internal sealed record BalloonPlacement(CommentId Thread, double Top, double Lef
 internal sealed record CaretBlinkWire(int? IntervalMs, int? StopAfterMs);
 
 /// <summary>The overlay colours on the wire, as <c>#RRGGBB</c> (<c>EditorHost.OverlayColors</c> sends them).</summary>
-internal sealed record OverlayPaletteWire(string Caret, string Selection, string Object, string Drop, string Marks, string Leaders);
+internal sealed record OverlayPaletteWire(string Selection, string Object, string Drop, string Marks, string Leaders);
 
 internal sealed record TooltipPayload([property: JsonPropertyName("value")] TooltipWire? Tooltip);
 

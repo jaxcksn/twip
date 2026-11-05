@@ -27,6 +27,7 @@ fn main() {
         "twip_composition",
         "twip_pointer",
         "twip_wheel",
+        "twip_modifiers",
         "twip_focus",
         "twip_surface",
         "twip_scroll",

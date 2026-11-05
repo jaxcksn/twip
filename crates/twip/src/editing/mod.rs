@@ -5,6 +5,7 @@
 //! and given to layout as edit hints. One commit path records them all, undo and redo included: it alone raises the
 //! revision. Geometry-dependent input first lays out through the page it concerns.
 
+pub mod autocorrect;
 mod cell_clipboard;
 pub mod clipboard;
 mod clipped;
@@ -40,12 +41,14 @@ pub mod section;
 pub mod selection;
 mod shapes;
 mod smart;
+pub(crate) mod snap;
 pub mod state;
 pub mod step;
 mod stories;
 pub mod table;
 mod table_cells;
 pub mod table_format;
+mod table_handles;
 pub mod tables;
 pub mod text;
 pub mod view;
@@ -91,6 +94,16 @@ struct Drag {
     block: bool,
 }
 
+/// A correction just made: its text in `para` and what was typed (Revert puts it back).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Correction {
+    pub para: ParaId,
+    pub range: std::ops::Range<Unit>,
+    pub from: String,
+    /// Characters typed after it since.
+    pub typed: usize,
+}
+
 pub struct Editor {
     doc: Document,
     layout: DocumentLayout,
@@ -101,6 +114,8 @@ pub struct Editor {
     goal_x: Option<f64>,
     /// Formatting for what is typed next at a collapsed caret; any caret move drops it.
     pending: Option<Run>,
+    /// The text the last AutoCorrect step produced, until the caret leaves it or typing moves past it.
+    correction: Option<Correction>,
     drag: Option<Drag>,
     pages: Pages,
     /// The page the caret was last shown on.
@@ -124,6 +139,8 @@ pub struct Editor {
     object_also: Option<(crate::layout::FloatId, Vec<crate::layout::FloatId>)>,
     /// A shape's rotate or adjust handle being dragged.
     shape_drag: Option<shapes::ShapeDrag>,
+    /// The snap lines of the page an object or group child is moved on, built at the press.
+    snaps: snap::SnapLines,
     /// Shape insert mode: the next press inserts a shape.
     shape_insert: Option<shapes::ShapeInsert>,
     /// The checkbox a click or Space last toggled, while the caret stays after it.
@@ -134,6 +151,10 @@ pub struct Editor {
     placeholder_looks: std::collections::HashMap<String, view::PlaceholderLook>,
     /// A table border being dragged.
     border_drag: Option<resize::BorderDrag>,
+    /// A table being moved by its handle.
+    table_drag: Option<table_handles::TableDrag>,
+    /// The table under the pointer, and what of it the pointer is over.
+    table_hover: Option<view::TableHover>,
     /// A cell block being dragged from a cell, row or column zone: its table, start cell and shape.
     zone_drag: Option<(TableId, selection::CellRef, selection::CellShape)>,
     /// The pointer's shape where it last moved without a drag.
@@ -172,6 +193,8 @@ pub struct Editor {
     /// Object drags lay the text out again as they move (Word's live layout); otherwise a ghost shows where the object
     /// goes until the release.
     pub live_layout: bool,
+    /// How drags are measured, when the object grid shows, and the unit readouts are in.
+    pub view_settings: view::ViewSettings,
     /// Every field and content control as the host last saw it: what change lists compare.
     elems: std::collections::HashMap<crate::docx::ElementId, elements::Element>,
     /// The elements added, removed and changed since the last reply.
@@ -313,6 +336,7 @@ impl Editor {
             selection: Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),
             goal_x: None,
             pending: None,
+            correction: None,
             drag: None,
             pages: Pages::default(),
             near: 0,
@@ -325,11 +349,14 @@ impl Editor {
             object_child: None,
             object_also: None,
             shape_drag: None,
+            snaps: snap::SnapLines::default(),
             shape_insert: None,
             toggled_checkbox: None,
             provisional: None,
             placeholder_looks: std::collections::HashMap::new(),
             border_drag: None,
+            table_drag: None,
+            table_hover: None,
             zone_drag: None,
             cursor: input::Cursor::Text,
             saved: (0, false),
@@ -348,6 +375,7 @@ impl Editor {
             tab_stop: None,
             mode: Mode::Editing,
             live_layout: true,
+            view_settings: view::ViewSettings::default(),
             elems: std::collections::HashMap::new(),
             changes: elements::Changes::default(),
             refused: None,
@@ -2291,9 +2319,17 @@ impl Editor {
         let (page, px, py) = stack.page_at(x, y)?;
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
-        let z = geo.zone(px, py, 0.75 / self.viewport.zoom.max(0.1))?;
+        // The "+" zones are live around the table the pointer came from: a click on the text above or beside a table
+        // that only holds the caret reaches the text.
+        let hovered = self.table_hover.map(|h| h.table);
+        let z = geo.zone(px, py, 0.75 / self.viewport.zoom.max(0.1), hovered)?;
         let table = match z {
-            geometry::Zone::Cell(t, ..) | geometry::Zone::Row(t, _) | geometry::Zone::Column(t, ..) | geometry::Zone::Table(t) => t,
+            geometry::Zone::Cell(t, ..)
+            | geometry::Zone::Row(t, _)
+            | geometry::Zone::Column(t, ..)
+            | geometry::Zone::Table(t)
+            | geometry::Zone::InsertColumn(t, _)
+            | geometry::Zone::InsertRow(t, _) => t,
         };
         let story = self.index.table_slot(table).map(|s| self.index.host(self.index.story(s.container)));
         (story.map(|s| stories::reachable(self.editing(), s)) == Some(true)).then_some(z)
@@ -2370,6 +2406,23 @@ impl Editor {
                                 shape: selection::CellShape::Table,
                             });
                             self.drag = None;
+                            // A drag from the handle moves the table.
+                            if self.mode != Mode::ReadOnly {
+                                self.table_press(t, x, y);
+                            }
+                            return;
+                        }
+                        // A "+": a column or row goes in there, selected.
+                        geometry::Zone::InsertColumn(t, k) => {
+                            if self.mode != Mode::ReadOnly {
+                                self.insert_column_at(t, k, fonts);
+                            }
+                            return;
+                        }
+                        geometry::Zone::InsertRow(t, k) => {
+                            if self.mode != Mode::ReadOnly {
+                                self.insert_row_at(t, k, fonts);
+                            }
                             return;
                         }
                     };
@@ -2477,15 +2530,20 @@ impl Editor {
                     return;
                 }
                 if self.object_drag.is_some() {
-                    self.object_move(x, y, mods.shift);
+                    self.object_move(x, y, mods);
                     return;
                 }
                 if self.shape_drag.is_some() {
-                    self.shape_move(x, y, mods.shift);
+                    self.shape_move(x, y, mods);
                     return;
                 }
                 if let Some(d) = self.border_drag.as_mut() {
                     d.now = (x, y);
+                    d.snapping = if mods.alt { snap::Snapping::Free } else { snap::Snapping::On };
+                    return;
+                }
+                if self.table_drag.is_some() {
+                    self.table_drag_move(x, y, mods);
                     return;
                 }
                 if let Some((table, anchor, shape)) = self.zone_drag {
@@ -2507,6 +2565,7 @@ impl Editor {
                 let Some(mut d) = self.drag else {
                     self.cursor = self.hover(x, y, mods, fonts);
                     self.set_hover(x, y);
+                    self.table_hover = self.table_hover_at(x, y, fonts);
                     return;
                 };
                 d.at = (x, y);
@@ -2560,6 +2619,10 @@ impl Editor {
             PointerKind::Cancel if self.border_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
             PointerKind::Up if self.border_drag.is_some() => {
                 self.border_release(fonts);
+            }
+            PointerKind::Cancel if self.table_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
+            PointerKind::Up if self.table_drag.is_some() => {
+                self.table_drag_release(fonts);
             }
             PointerKind::Up if self.object_drag.is_some() => {
                 self.object_release(fonts);
@@ -2777,8 +2840,9 @@ impl Editor {
                     selection::ObjectRef::Inline { para, offset } => out.extend(self.inline_box(&geo, para, offset).map(|r| (page, r))),
                 }
             }
-            // No handles while dragged: the outline goes with the ghost.
-            return SelectionView::Object(out, !self.object_fixed(o) && !self.object_drag.is_some_and(|d| d.now != d.start));
+            // No handles while dragged, moved, resized or turned: the outline goes with the ghost.
+            let dragged = self.object_drag.is_some_and(|d| d.now != d.start) || self.shape_drag.is_some();
+            return SelectionView::Object(out, !self.object_fixed(o) && !dragged);
         }
         if let Selection::Block { .. } = self.selection {
             return SelectionView::Text(
@@ -2878,6 +2942,8 @@ impl Editor {
             from: d.rect,
             to: d.rect(self.object_locked(d.obj)),
         });
+        let (mut guides, mut measures, original) = self.object_feedback(visible.clone(), anchor);
+        let (table, table_preview) = self.table_feedback(visible.clone(), &mut guides, &mut measures);
         let visible_pages = visible.clone();
         let (marks, tooltip) = self.mark_views(visible.clone());
         let (comments, comment_anchors) = self.comment_views(visible.clone());
@@ -2905,6 +2971,12 @@ impl Editor {
             anchor,
             ghost,
             shapes: self.shape_frames(visible_pages.clone()),
+            guides,
+            measures,
+            original,
+            table,
+            table_preview,
+            correction: self.correction_view(visible_pages.clone()),
             placeholders: self.placeholder_views(&visible_pages),
             marks,
             tooltip,

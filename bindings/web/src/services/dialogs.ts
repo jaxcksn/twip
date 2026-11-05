@@ -21,7 +21,8 @@ export type DialogKind =
   | 'altText'
   | 'hyperlink'
   | 'tabs'
-  | 'accessibility';
+  | 'accessibility'
+  | 'autoCorrect';
 
 /** An open dialog. */
 export interface DialogSession<K extends DialogKind> {
@@ -159,6 +160,8 @@ export interface DialogValues {
   };
   /** The Accessibility checker (read only). */
   accessibility: { issues: { id: string; text: string; tip: boolean }[] };
+  /** The AutoCorrect rules: the application's own dialog, asked for by `dialogRequested`. `open` rejects `unsupported`. */
+  autoCorrect: Record<never, never>;
 }
 
 /** An open dialog as the engine sends it: its values are tagged with the kind. */

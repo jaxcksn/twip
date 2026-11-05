@@ -128,7 +128,7 @@ impl Editor {
                     let Some(raw) = c.direct.0.clone() else { continue };
                     let region = res.cell_region(t.style_id.as_deref(), look, t.bands, (ri, ci), (nrows, ncols), headers);
                     let mut tcp = region.tc.clone();
-                    tcp.merge(&cx.parse(&raw, |_, n| crate::docx::props::TcProps::parse(Some(n))).unwrap_or_default());
+                    tcp.merge(&cx.parse(&raw, |_, n| crate::docx::props::TcProps::parse(Some(n), &res.styles.colours)).unwrap_or_default());
                     c.shading = tcp.shading.flatten();
                     c.top = tcp.borders.top.clone();
                     c.left = tcp.borders.left.clone();

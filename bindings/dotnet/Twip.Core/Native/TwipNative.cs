@@ -174,6 +174,9 @@ internal static unsafe partial class TwipNative
     [DllImport(Library, EntryPoint = "twip_wheel")]
     public static extern void Wheel(nint engine, uint session, double dx, double dy, uint mods);
 
+    [DllImport(Library, EntryPoint = "twip_modifiers")]
+    public static extern void Modifiers(nint engine, uint session, uint mods);
+
     [DllImport(Library, EntryPoint = "twip_focus")]
     public static extern void Focus(nint engine, uint session, uint focused);
 

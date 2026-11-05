@@ -94,6 +94,9 @@ public sealed class WireTests
         ["colourtransform"] = Ctx.ColorTransform,
         ["transformkind"] = Ctx.ColorTransformKind,
         ["compound"] = Ctx.LineCompound,
+        ["popovertabtype"] = Ctx.Popover,
+        ["popovertabstop"] = Ctx.Popover,
+        ["popoverautocorrect"] = Ctx.Popover,
     };
 
     /// <summary>Each engine event's payload type: the event is <c>{ "type": ..., ...payload }</c>.</summary>
@@ -105,6 +108,8 @@ public sealed class WireTests
         ["linkActivated"] = Ctx.LinkActivatedPayload,
         ["placeholderActivated"] = Ctx.PlaceholderInfo,
         ["contextMenu"] = Ctx.ContextMenuPayload,
+        ["popoverRequested"] = Ctx.Popover,
+        ["popoverClosed"] = Ctx.EmptyPayload,
         ["dialogRequested"] = Ctx.DialogRequestedPayload,
         ["hostCommand"] = Ctx.HostCommandPayload,
         ["shortcut"] = Ctx.ShortcutPayload,
@@ -238,9 +243,23 @@ public sealed class WireTests
         Assert.Equal("""{"type":"addComment","value":"Check this"}""", Wire(EditorOperation.AddComment("Check this")));
         Assert.Equal("""{"type":"setLineSpacing","rule":"multiple","lines":1.5}""", Wire(EditorOperation.SetLineSpacing(LineSpacing.Multiple(1.5))));
         Assert.Equal("""{"type":"setRowHeight","value":"auto"}""", Wire(EditorOperation.SetRowHeight(RowHeight.Auto)));
+        Assert.Equal("""{"type":"setTablePosition","value":{"horizontal":{"relativeTo":"page","offset":72}}}""", Wire(EditorOperation.SetTablePosition(new TablePosition(new HorizontalPosition(HorizontalReference.Page, Offset: Length.FromPoints(72))))));
+        Assert.Equal("""{"type":"setTablePosition","value":null}""", Wire(EditorOperation.SetTablePosition(null)));
 
         var op = JsonSerializer.Deserialize("""{"type":"insertText","value":"hi"}""", Ctx.EditorOperation)!;
         Assert.Equal(EditorOperation.InsertText("hi"), op);
+    }
+
+    [Fact]
+    public void TablePositionReadsItsStateValue()
+    {
+        var fixture = JsonNode.Parse(File.ReadAllText(Path.Combine(FixtureDir, "command-value.json")))!.AsArray();
+        var value = fixture.Single(v => v is JsonObject o && o.ContainsKey("wrapDistance"));
+        var position = value.Deserialize(Ctx.TablePosition)!;
+        Assert.Equal(HorizontalReference.Margin, position.Horizontal!.RelativeTo);
+        Assert.Equal(VerticalReference.Paragraph, position.Vertical!.RelativeTo);
+        Assert.Equal(9, position.WrapDistance!.Left.Points);
+        Assert.True(JsonCompare.Equal(value, JsonSerializer.SerializeToNode(position, Ctx.TablePosition), "tablePosition", out var why), why);
     }
 
     [Fact]

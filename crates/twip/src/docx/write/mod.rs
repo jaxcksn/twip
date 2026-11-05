@@ -1327,7 +1327,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             && a.grid == b.grid
             && (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
             && a.width == b.width
-            && (&a.style_id, a.look, a.jc, a.ind) == (&b.style_id, b.look, b.jc, b.ind);
+            && (&a.style_id, a.look, a.jc, a.ind, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.floating);
         if !same_rows {
             // Rows or cells came or went: the table is written again, its kept rows from their source.
             let range = (**a.src.as_ref().ok_or("a table without its source")?).clone();
@@ -1501,6 +1501,10 @@ impl<'a, 'i> Saver<'a, 'i> {
                         if a.style_id != t.style_id {
                             let tag = t.style_id.as_ref().map_or(String::new(), |id| format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
                             fix.push(self.set_child(p, "tblStyle", tag, before("tblStyle")));
+                        }
+                        if a.floating != t.floating {
+                            let (pos, overlap) = tblp_pr(&w, t.floating.as_ref());
+                            fix.extend(self.set_children(p, vec![("tblpPr", pos, before("tblpPr")), ("tblOverlap", overlap, before("tblOverlap"))]));
                         }
                         if a.width != t.width {
                             fix.push(self.set_child(p, "tblW", width(&w, "tblW", &t.width), before("tblW")));
@@ -3922,6 +3926,43 @@ fn twips(pt: f64) -> i64 {
     (pt * 20.0).round() as i64
 }
 
+/// A table position's `w:tblpPr` and its `w:tblOverlap` (empty when the table may overlap others); both empty without
+/// a position. Against the text an alignment is written as the offset the reader takes it for.
+fn tblp_pr(w: &str, p: Option<&super::props::TablePos>) -> (String, String) {
+    use super::props::TableAnchor as A;
+    let Some(p) = p else { return (String::new(), String::new()) };
+    let [top, bottom, left, right] = p.dist.map(twips);
+    let vert = match p.v_anchor {
+        A::Text => "text",
+        A::Margin => "margin",
+        A::Page => "page",
+    };
+    let horz = match (p.h_page, p.h_text) {
+        (true, _) => "page",
+        (false, true) => "text",
+        (false, false) => "margin",
+    };
+    let spec = |name: &str, j: Option<Jc>, ends: [&str; 2]| match j {
+        Some(Jc::Center) => format!(" {w}{name}=\"center\""),
+        Some(Jc::Right) => format!(" {w}{name}=\"{}\"", ends[1]),
+        Some(_) => format!(" {w}{name}=\"{}\"", ends[0]),
+        None => String::new(),
+    };
+    let x = match p.x_spec {
+        Some(_) => spec("tblpXSpec", p.x_spec, ["left", "right"]),
+        None => format!(" {w}tblpX=\"{}\"", twips(p.x)),
+    };
+    let y = match (p.v_anchor, p.y_spec) {
+        (A::Text, _) | (_, None) => format!(" {w}tblpY=\"{}\"", twips(p.y)),
+        (_, Some(_)) => spec("tblpYSpec", p.y_spec, ["top", "bottom"]),
+    };
+    let pos = format!(
+        "<{w}tblpPr {w}leftFromText=\"{left}\" {w}rightFromText=\"{right}\" {w}topFromText=\"{top}\" {w}bottomFromText=\"{bottom}\" {w}vertAnchor=\"{vert}\" {w}horzAnchor=\"{horz}\"{x}{y}/>"
+    );
+    let overlap = if p.never_overlap { format!("<{w}tblOverlap {w}val=\"never\"/>") } else { String::new() };
+    (pos, overlap)
+}
+
 fn width(w: &str, name: &str, v: &Width) -> String {
     let (n, kind) = match v {
         Width::Auto => (0, "auto"),
@@ -3955,6 +3996,9 @@ fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
     }
+    let (pos, overlap) = tblp_pr(w, t.floating.as_ref());
+    s.push_str(&pos);
+    s.push_str(&overlap);
     if t.bidi_visual {
         s.push_str(&format!("<{w}bidiVisual/>"));
     }

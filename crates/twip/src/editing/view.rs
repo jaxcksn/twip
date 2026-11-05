@@ -90,10 +90,155 @@ pub struct ShapeFrame {
     pub rect: [f64; 4],
     /// Degrees clockwise about the box's centre.
     pub rot: f64,
-    /// The rotate handle, 18 px above the top's middle (turned with the shape), and that middle.
+    /// The rotate knob's centre, 24 px above the top's middle (turned with the shape), and that middle.
     pub rotate: [f64; 2],
     pub top: [f64; 2],
     pub adjust: Vec<[f64; 2]>,
+}
+
+/// A length in page points.
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+pub struct Pt(pub f64);
+
+/// A length in CSS pixels at 100% zoom: 0.75 pt each.
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+pub struct Px(pub f64);
+
+impl Px {
+    pub fn of(p: Pt) -> Px {
+        Px(p.0 / 0.75)
+    }
+
+    pub fn pt(self) -> Pt {
+        Pt(self.0 * 0.75)
+    }
+}
+
+/// Which way a guide runs: `X`, a vertical line at an x; `Y`, a horizontal line at a y.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+}
+
+/// A line a dragged edge or centre snapped to: where it is on its axis and how far it runs along the other.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GuideLine {
+    pub axis: Axis,
+    pub at: Pt,
+    pub span: (Pt, Pt),
+}
+
+/// The dot grid: a dot at `origin` and every `step` from it, both ways.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grid {
+    pub origin: [Pt; 2],
+    pub step: Pt,
+}
+
+/// What an object drag shows on a page besides the object: its guides, the grid, and the dotted line from the anchor.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Guides {
+    pub lines: Vec<GuideLine>,
+    pub grid: Option<Grid>,
+    /// From the anchor's place (the point [`View::anchor`] gives) to the moving object's left edge, at the anchor
+    /// mark's height: drawn dotted from the anchor mark.
+    pub anchor_link: Option<[Pt; 4]>,
+}
+
+/// A correction just made: its text's line boxes (underlined), and its options button (page, box) while the caret is
+/// in it or just after it. Page coordinates.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CorrectionView {
+    pub rects: Vec<(usize, [f64; 4])>,
+    pub button: Option<(usize, [f64; 4])>,
+}
+
+/// A readout drawn over a page; labels are final strings.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Measure {
+    /// A dimension line with end ticks, its label over its middle.
+    Dimension { from: [Pt; 2], to: [Pt; 2], label: String, tone: Tone },
+    /// A dark chip, its top left at `at` (from the page's top left).
+    Chip { at: [Px; 2], label: String },
+    /// A ruler hover hint.
+    Hint { at: Px, label: String },
+    /// A table status line.
+    Status { at: [Pt; 2], label: String, tone: Tone },
+}
+
+/// A measurement's colour: the accent for what's being changed, muted for what's shown alongside.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tone {
+    Accent,
+    Muted,
+}
+
+/// A dragged object's box and angle (degrees clockwise) when the press was: drawn dashed while it is resized or turned.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Outline {
+    pub page: usize,
+    pub rect: [f64; 4],
+    pub rot: f64,
+}
+
+/// What the pointer is over on a table showing its handles: grid boundaries and grid columns, model rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TableZone {
+    /// The "+" above grid boundary `k`.
+    InsertColumn(usize),
+    /// The "+" left of the bottom border of row `k` − 1.
+    InsertRow(usize),
+    /// The arrow above grid column `k`.
+    SelectColumn(usize),
+    /// The arrow left of row `k`.
+    SelectRow(usize),
+    /// Column border `k`.
+    Border(usize),
+    Move,
+    Resize,
+}
+
+/// The table showing its handles: the one under the pointer, else the one holding the caret or selection (no zone).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TableHover {
+    pub table: crate::layout::TableId,
+    pub zone: Option<TableZone>,
+}
+
+/// A table's handles on a page, page coordinates; their sizes and offsets are CSS px.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TableHandles {
+    pub page: usize,
+    /// The table's top left, when its first row is on the page: the move handle is 20 px above and left of it.
+    pub corner: Option<[f64; 2]>,
+    /// The table's bottom right, when its last row is on the page: the resize handle's top left.
+    pub end: Option<[f64; 2]>,
+    /// The affordance under the pointer.
+    pub mark: Option<TableMark>,
+}
+
+/// A table affordance drawn under the pointer, page coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TableMark {
+    /// A "+" above column border `x` and a dashed line down it from 4 px above `top` to 4 px below `bottom`.
+    InsertColumn { x: f64, top: f64, bottom: f64 },
+    /// A "+" left of row border `y` and a dashed line along it from 6 px left of `left` to `right`.
+    InsertRow { y: f64, left: f64, right: f64 },
+    /// An arrow pointing down, 6 px above `top`, centred between `x0` and `x1`.
+    SelectColumn { x0: f64, x1: f64, top: f64 },
+    /// An arrow pointing right, 6 px left of `left`, centred between `y0` and `y1`.
+    SelectRow { y0: f64, y1: f64, left: f64 },
+    /// A dashed line down column border `x`, from 4 px above `top` to 4 px below `bottom`.
+    Border { x: f64, top: f64, bottom: f64 },
+}
+
+/// The view options that shape the drag feedback: how much is measured, when the grid shows, and the unit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ViewSettings {
+    pub detail: crate::api::services::MeasureDetail,
+    pub object_grid: crate::api::services::ObjectGrid,
+    pub unit: crate::api::services::RulerUnit,
 }
 
 /// Everything a renderer needs for one frame besides the snapshot's own content.
@@ -120,6 +265,16 @@ pub struct View {
     pub ghost: Option<Ghost>,
     /// The selected shapes' rotate and adjust handles.
     pub shapes: Vec<ShapeFrame>,
+    /// Object drag feedback by page: the guides and grid, the readouts, and the original box while resized or turned.
+    pub guides: Vec<(usize, Guides)>,
+    pub measures: Vec<(usize, Measure)>,
+    pub original: Option<Outline>,
+    /// The handles of the table under the pointer or holding the caret, with no drag under way.
+    pub table: Option<TableHandles>,
+    /// A table resize's or move's new box: dashed, with the accent's soft tint (page coordinates).
+    pub table_preview: Option<(usize, [f64; 4])>,
+    /// The text the last AutoCorrect step made, and its options button while the caret is at it.
+    pub correction: Option<CorrectionView>,
     pub cursor: super::input::Cursor,
     /// Unfilled placeholders on the visible pages drawn the host's way: page coordinates.
     pub placeholders: Vec<PlaceholderView>,
@@ -237,6 +392,20 @@ pub struct MarkView {
     pub page: usize,
     pub rect: [f64; 4],
     pub severity: Severity,
+}
+
+/// A ruler's measurement or hint, drawn over the viewport while a ruler marker is dragged or hovered. Labels are final
+/// text: the value in the ruler unit, its decimals and suffix, and any change from where the drag started.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RulerMeasure {
+    /// A dimension line with end ticks and its label in the middle, from one point to another (page points).
+    Dimension { from: [f64; 2], to: [f64; 2], label: String, tone: Tone },
+    /// A dark chip whose top-left corner is at a viewport point (CSS px).
+    Chip { at: [f64; 2], label: String },
+    /// A ruler hover hint under the horizontal ruler, its left edge at a viewport x (CSS px).
+    Hint { at: f64, label: String },
+    /// A status line whose top-left corner is at a page point.
+    Status { at: [f64; 2], label: String, tone: Tone },
 }
 
 #[derive(Clone, Debug, PartialEq)]

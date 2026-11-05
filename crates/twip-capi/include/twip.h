@@ -125,7 +125,7 @@ enum TwipMethod {
     TWIP_FONT_SET_SUBSTITUTIONS = 49, /* SubstitutionRule[] -> null */
     TWIP_FONT_SET_DEFAULT = 50,       /* string -> null */
     TWIP_FONT_MARK_UNRESOLVED = 51,   /* FontRequest -> null */
-    TWIP_HOST_SET_BACKGROUND = 52,    /* Color -> null */
+    TWIP_HOST_SET_BACKGROUND = 52,    /* Color | null (the theme's) -> null */
     TWIP_HOST_SET_MARKUP_PANE_WIDTH = 53, /* number -> null */
     TWIP_HOST_SET_RULERS = 54,        /* {horizontal, vertical} -> null */
     TWIP_HOST_SET_RULER_UNIT = 55,    /* RulerUnit -> null */
@@ -146,7 +146,7 @@ enum TwipMethod {
     TWIP_PLACEHOLDERS = 70,           /* -> PlaceholderInfo[] (the unfilled picture placeholders) */
     TWIP_HOST_SET_CARET_BLINK = 71,   /* CaretBlink { intervalMs, stopAfterMs } -> null */
     TWIP_HOST_FRAME_STATS = 72,       /* -> FrameStats (what the frames have cost so far) */
-    TWIP_HOST_SET_OVERLAY_PALETTE = 73, /* OverlayPalette (colours #RRGGBB) -> null */
+    TWIP_HOST_SET_OVERLAY_PALETTE = 73, /* OverlayPalette (colours #RRGGBB) | null (the theme's) -> null */
     TWIP_HOST_SET_PAINT_BUDGET = 74,  /* PaintBudget { recordings } bytes -> null */
     TWIP_HOST_SET_LEADERS = 75,       /* Point[][] (content CSS px) -> null: the balloons' leader lines */
     TWIP_SHAPE_GALLERY = 76           /* no session -> ShapeGalleryGroup[]: Word's Insert > Shapes presets */
@@ -200,6 +200,8 @@ void twip_text(TwipEngine* engine, uint32_t session, const uint8_t* utf8, size_t
 void twip_composition(TwipEngine* engine, uint32_t session, uint32_t phase, const uint8_t* utf8, size_t len);
 void twip_pointer(TwipEngine* engine, uint32_t session, uint32_t kind, double x, double y, uint32_t button, uint32_t clicks, uint32_t mods);
 void twip_wheel(TwipEngine* engine, uint32_t session, double dx, double dy, uint32_t mods);
+/* The modifier keys changed with no other input (Alt pressed or released mid-drag). */
+void twip_modifiers(TwipEngine* engine, uint32_t session, uint32_t mods);
 void twip_focus(TwipEngine* engine, uint32_t session, uint32_t focused);
 
 /* Presentation. A session with a surface (width and height > 0) gets a frame request after each change. */

@@ -54,6 +54,8 @@ pub struct Session {
     services: crate::services::Services,
     /// Gesture bindings and application shortcuts.
     bindings: input::Bindings,
+    /// What typing corrects.
+    autocorrect: crate::editing::autocorrect::AutoCorrect,
 }
 
 impl Session {
@@ -78,6 +80,7 @@ impl Session {
             watch: fonts::Watch::default(),
             services: crate::services::Services::default(),
             bindings: input::Bindings::default(),
+            autocorrect: Default::default(),
         };
         for d in &options.dictionaries {
             // shortcut: a dictionary that doesn't parse is left out silently; report it as a warning event if hosts
@@ -145,6 +148,7 @@ impl Session {
             self.emit(e);
             review.into_iter().for_each(|r| self.emit(r));
         }
+        self.popover_follow();
         if let Some(text) = self.services.announcer.next(&mut self.editor) {
             self.emit(Event::Announcement { text });
         }

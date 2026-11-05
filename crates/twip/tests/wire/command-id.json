@@ -113,6 +113,7 @@
   "setTableIndent",
   "setTableStyle",
   "setTableStyleOptions",
+  "setTablePosition",
   "setObjectSize",
   "resetObjectSize",
   "setObjectWrap",
@@ -173,5 +174,13 @@
   "setAuthorColor",
   "setZoom",
   "setViewOptions",
-  "setMode"
+  "setMode",
+  "setRulerTabType",
+  "showTabTypes",
+  "showTabStop",
+  "setAutoCorrect",
+  "revertAutoCorrect",
+  "neverAutoCorrect",
+  "showAutoCorrectOptions",
+  "closePopover"
 ]

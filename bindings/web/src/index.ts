@@ -19,6 +19,9 @@ export type {
   PlaceholderLook,
 } from './commands.js';
 export type {
+  AutoCorrectChange,
+  AutoCorrectEntry,
+  AutoCorrectOptions,
   CharacterFormatting,
   CommandState,
   CommandValues,
@@ -40,6 +43,7 @@ export type {
   ReviewState,
   RowHeight,
   SelectionSummary,
+  TablePosition,
   TableSelection,
   TableStyleOptions,
   TableWidth,
@@ -104,7 +108,24 @@ export type {
   TabLeader,
   TabSelector,
 } from './services/ruler.js';
-export type { GestureAction, GestureBinding, GestureEvent, GestureId, Gestures, View } from './services/view.js';
+export type {
+  ChromeColors,
+  ChromeTheme,
+  DocumentAppearance,
+  GestureAction,
+  GestureBinding,
+  GestureEvent,
+  GestureId,
+  Gestures,
+  MeasureDetail,
+  ObjectGrid,
+  Popover,
+  SystemColors,
+  TabTypeChoice,
+  ThemeColors,
+  View,
+  ViewOptions,
+} from './services/view.js';
 export { cm, inches, mm, pt } from './types.js';
 export type {
   Arrange,

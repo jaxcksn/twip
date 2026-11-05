@@ -189,6 +189,8 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             })
         }
         DialogKind::Accessibility => DialogValues::Accessibility(AccessibilityDialog { issues: cx.issues.clone() }),
+        // The AutoCorrect rules are the application's dialog: the engine only asks for it.
+        DialogKind::AutoCorrect => return Err(Error::unsupported("the AutoCorrect dialog's values")),
     })
 }
 
@@ -661,6 +663,7 @@ pub fn label(kind: DialogKind) -> &'static str {
         DialogKind::Hyperlink => "Hyperlink",
         DialogKind::Tabs => "Tabs",
         DialogKind::Accessibility => "Check Accessibility",
+        DialogKind::AutoCorrect => "AutoCorrect",
     }
 }
 

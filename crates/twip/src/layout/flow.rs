@@ -735,7 +735,7 @@ impl<'d> PageFill<'d, '_> {
                     let (a, d, e) = super::text::metrics(&f, 11.0);
                     a + d + e
                 });
-                let rule = Item::Rect { rect: [0.0, h * 0.78 - 2.7, 144.0, h * 0.78 - 2.1], colour: 0 };
+                let rule = Item::rect([0.0, h * 0.78 - 2.7, 144.0, h * 0.78 - 2.1], 0);
                 let content: Rc<[Child]> = Rc::from([Child::Items(Box::new([rule]))]);
                 StoryLayout {
                     units: vec![StoryUnit {
@@ -1818,6 +1818,7 @@ impl<'d> PageFill<'d, '_> {
             review: &self.ctx.env.text.review,
             ul_trail_space: self.ctx.env.text.ul_trail_space,
             palette: crate::drawing::paint::Palette { theme: &self.ctx.env.text.theme, map: &self.ctx.env.text.colour_map },
+            backdrop: self.ctx.env.text.backdrop,
         };
         let mut lines = Vec::new();
         let mut numbers = Vec::new();

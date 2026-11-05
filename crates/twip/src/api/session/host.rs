@@ -106,36 +106,31 @@ pub struct FrameInfo {
     pub pages: u32,
 }
 
-/// The colours of what the editor draws over the document ([`HostSurface::set_overlay_palette`]). The defaults are at
-/// least 3:1 against the page, except the selection: a light fill, black text over it at least 4.5:1.
+/// The colours of what the editor draws over the document ([`HostSurface::set_overlay_palette`]). Setting them wins
+/// over the chrome theme's; the defaults are the light theme's with the default accent: lines and marks at least 3:1
+/// against the page, and the selection a light tint black text keeps at least 4.5:1 over. The caret is always black
+/// or white, whichever stands out more on the page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OverlayPalette {
-    /// The caret. Default black.
-    pub caret: Color,
-    /// The selection, blended under the content (multiply), so black text stays black over it. Default `#B3D7FF`, a system
-    /// text selection's light blue.
+    /// The selection, blended under the content (multiply), so black text stays black over it. Default `#9DC7F4`,
+    /// the accent's light tint.
     pub selection: Color,
-    /// A selected object's outline and handles. Default `#606060`.
+    /// A selected object's outline and handles. Default `#0A74E4`, the accent.
     pub object: Color,
-    /// The drop caret of a drag. Default `#404040`.
+    /// The drop caret of a drag. Default `#62656C`.
     pub drop: Color,
-    /// Formatting marks and text boundaries. Default `#2F6FB5`.
+    /// Formatting marks and text boundaries. Default `#0A74E4`.
     pub marks: Color,
-    /// The markup pane's leader lines. Default `#767676`.
+    /// The markup pane's leader lines. Default `#62656C`.
     pub leaders: Color,
 }
 
 impl Default for OverlayPalette {
     fn default() -> OverlayPalette {
-        OverlayPalette {
-            caret: Color(0x000000),
-            selection: Color(0xB3D7FF),
-            object: Color(0x606060),
-            drop: Color(0x404040),
-            marks: Color(0x2F6FB5),
-            leaders: Color(0x767676),
-        }
+        let p = crate::render::Palette::default();
+        let c = |c: skia_safe::Color| Color((u32::from(c.r()) << 16) | (u32::from(c.g()) << 8) | u32::from(c.b()));
+        OverlayPalette { selection: c(p.selection), object: c(p.object), drop: c(p.drop), marks: c(p.marks), leaders: c(p.leaders) }
     }
 }
 
@@ -233,9 +228,24 @@ pub(super) struct RulerDrag {
     pub moved: bool,
     /// Alt is down: no snapping.
     pub free: bool,
+    /// A tab stop dragged far enough below the ruler that the release removes it.
+    pub removing: bool,
+}
+
+/// The pointer over the rulers with no button down: where (viewport CSS px), and whether Alt is down.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct RulerHover {
+    pub at: Point,
+    pub free: bool,
 }
 
 impl RulerDrag {
+    /// The moved marker and where the drag puts it (page points along its ruler), as the rulers draw it.
+    fn shown(&self) -> Option<crate::render::ruler::Dragged> {
+        let marker = self.marker.filter(|_| self.moved)?;
+        Some(crate::render::ruler::Dragged { marker, at: self.value(), removing: self.removing })
+    }
+
     /// Where the drag puts its marker, page points along its ruler: snapped to the unit's minor marks from the text
     /// start, unless Alt is down.
     pub fn value(&self) -> f64 {
@@ -249,7 +259,7 @@ impl RulerDrag {
 
     /// The guide line over the document: along which ruler, and its client coordinate.
     fn guide(&self) -> Option<(bool, f64)> {
-        let m = self.marker.filter(|_| self.moved)?;
+        let m = self.marker.filter(|_| self.moved && !self.removing)?;
         let axis = if m.horizontal() { self.view.horizontal } else { self.view.vertical };
         Some((m.horizontal(), axis.origin + self.value() * axis.scale))
     }
@@ -276,7 +286,10 @@ pub(super) struct Presentation {
     ruler_unit: Option<RulerUnit>,
     pub(super) tab_selector: TabSelector,
     pub(super) ruler_drag: Option<RulerDrag>,
+    pub(super) ruler_hover: Option<RulerHover>,
     ruler_seen: Option<RulerView>,
+    /// The popover the application was asked to show and hasn't closed.
+    pub(super) popover: Option<crate::api::services::Popover>,
     counters: FrameCounters,
     /// Each CPU frame is drawn a second time from scratch and compared ([`HostSurface::set_verify_frames`]).
     verify: bool,
@@ -292,6 +305,15 @@ pub(super) struct Presentation {
     /// Unique on the thread: names this session's WebGL canvas or GPU window.
     #[cfg_attr(not(any(target_os = "emscripten", twip_dawn)), allow(dead_code, reason = "no GPU target in this build"))]
     serial: u64,
+    /// The view settings the chrome and page are drawn with ([`Presentation::apply_look`]); `chrome_set` once the host
+    /// chose a scheme (before that, a dark background gives dark chrome).
+    pub(super) chrome: crate::api::services::ChromeTheme,
+    pub(super) chrome_set: bool,
+    pub(super) accent: Option<Color>,
+    pub(super) theme_colors: crate::api::services::ThemeColors,
+    pub(super) appearance: crate::api::services::DocumentAppearance,
+    pub(super) detail: crate::api::services::MeasureDetail,
+    pub(super) object_grid: crate::api::services::ObjectGrid,
 }
 
 impl Default for Presentation {
@@ -312,7 +334,9 @@ impl Default for Presentation {
             ruler_unit: None,
             tab_selector: TabSelector::default(),
             ruler_drag: None,
+            ruler_hover: None,
             ruler_seen: None,
+            popover: None,
             counters: FrameCounters::default(),
             verify: false,
             verify_failures: 0,
@@ -321,7 +345,63 @@ impl Default for Presentation {
             blink: super::blink::Blink::default(),
             blink_selection: None,
             serial: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            chrome: Default::default(),
+            chrome_set: false,
+            accent: None,
+            theme_colors: Default::default(),
+            appearance: Default::default(),
+            detail: Default::default(),
+            object_grid: Default::default(),
         }
+    }
+}
+
+impl Presentation {
+    /// The renderer's theme and page appearance from the view settings.
+    pub(super) fn apply_look(&mut self) {
+        use crate::api::services::{ChromeTheme, DocumentAppearance};
+        use crate::render::appearance::{Appearance, PageMode};
+        use crate::render::theme::{AZURE, Scheme, SystemColours, Theme};
+        let c = |c: Color| crate::render::rgb(c.0);
+        let scheme = match self.chrome {
+            ChromeTheme::Light => Scheme::Light,
+            ChromeTheme::Dark => Scheme::Dark,
+            ChromeTheme::HighContrast(s) => Scheme::HighContrast(SystemColours {
+                canvas: c(s.canvas),
+                text: c(s.canvas_text),
+                highlight: c(s.highlight),
+                highlight_text: c(s.highlight_text),
+                gray_text: c(s.gray_text),
+            }),
+        };
+        let mut theme = Theme::new(scheme, self.accent.map_or(AZURE, c));
+        let own = match scheme {
+            Scheme::Light => self.theme_colors.light,
+            Scheme::Dark => self.theme_colors.dark,
+            Scheme::HighContrast(_) => None,
+        };
+        if let Some(o) = own {
+            let t = &mut theme.tokens;
+            for (to, from) in [
+                (&mut t.desk, o.desk),
+                (&mut t.paper, o.surface),
+                (&mut t.ink, o.text),
+                (&mut t.ink2, o.secondary_text),
+                (&mut t.ink3, o.faint_text),
+                (&mut t.line, o.line),
+            ] {
+                if let Some(v) = from {
+                    *to = c(v);
+                }
+            }
+        }
+        self.renderer.set_theme(theme);
+        self.renderer.appearance = match self.appearance {
+            DocumentAppearance::Light => Appearance::Light,
+            DocumentAppearance::Dark => Appearance::Dark { page: PageMode::Dark },
+            DocumentAppearance::DarkWithLightPage => Appearance::Dark { page: PageMode::Light },
+        };
+        self.frame_wanted = true;
     }
 }
 
@@ -379,7 +459,7 @@ impl Presentation {
 
     /// The markup pane's colour: the background a shade towards the middle grey.
     fn pane_color(&self) -> skia_safe::Color {
-        let bg = self.renderer.background.unwrap_or(skia_safe::Color::from_rgb(0xf3, 0xf3, 0xf3));
+        let bg = self.renderer.background.unwrap_or(self.renderer.theme.tokens.desk);
         let shade = |c: u8| if bg.r() as u32 + bg.g() as u32 + bg.b() as u32 > 3 * 128 { c.saturating_sub(10) } else { c.saturating_add(16) };
         skia_safe::Color::from_rgb(shade(bg.r()), shade(bg.g()), shade(bg.b()))
     }
@@ -391,12 +471,55 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
     state.view.rulers = crate::api::state::RulerVisibility { horizontal: p.rulers.horizontal, vertical: p.rulers.vertical };
     state.view.ruler_unit = p.unit(&s.language);
     state.view.tab_selector = p.tab_selector;
+    {
+        use crate::api::command::CommandId as C;
+        use crate::api::state::{CommandState, CommandValue};
+        let stops = !state.ruler.horizontal.tabs.is_empty();
+        state.commands.insert(C::SetRulerTabType, CommandState { enabled: true, checked: None, value: Some(CommandValue::TabType(p.tab_selector)) });
+        state.commands.insert(C::ShowTabStop, CommandState { enabled: stops, checked: None, value: None });
+        state.commands.insert(C::ClosePopover, CommandState { enabled: true, checked: None, value: None });
+        let corrected = s.editor.correction().is_some();
+        for id in [C::RevertAutoCorrect, C::NeverAutoCorrect, C::ShowAutoCorrectOptions] {
+            state.commands.insert(id, CommandState { enabled: corrected, checked: None, value: None });
+        }
+        state.commands.insert(C::SetAutoCorrect, CommandState { enabled: true, checked: None, value: None });
+    }
+    let a = &s.autocorrect;
+    state.auto_correct = crate::api::services::AutoCorrectOptions {
+        two_initial_capitals: a.two_initial_capitals,
+        sentence_capitals: a.sentence_capitals,
+        cell_capitals: a.cell_capitals,
+        day_names: a.day_names,
+        replace_text: a.replace_text,
+        smart_quotes: a.smart_quotes,
+        ordinals: a.ordinals,
+        fractions: a.fractions,
+        dashes: a.dashes,
+        numbered_lists: a.numbered_lists,
+        bulleted_lists: a.bulleted_lists,
+        never: a.never.clone(),
+    };
     state.view.formatting_marks = s.formatting_marks;
     state.view.text_boundaries = s.text_boundaries;
     state.view.live_layout = s.editor.live_layout;
+    let (t, rgb) = (&p.renderer.theme, |c: skia_safe::Color| Color((u32::from(c.r()) << 16) | (u32::from(c.g()) << 8) | u32::from(c.b())));
+    state.view.background = rgb(p.renderer.background.unwrap_or(t.tokens.desk));
+    state.view.theme = p.chrome;
+    state.view.theme_colors = p.theme_colors;
+    state.view.accent = rgb(t.accent.solid);
+    state.view.accent_on = rgb(t.accent.on);
+    state.view.appearance = p.appearance;
+    state.view.detail = p.detail;
+    state.view.object_grid = p.object_grid;
 }
 
 impl Session {
+    /// Hands the editor the view options its drag feedback follows: the detail level, the object grid and the unit.
+    pub(super) fn sync_view_settings(&mut self) {
+        let p = &self.presentation;
+        self.editor.view_settings = crate::editing::view::ViewSettings { detail: p.detail, object_grid: p.object_grid, unit: p.unit(&self.language) };
+    }
+
     /// Sets the zoom (a factor, 1 is 100%) about the caret's line, or the viewport's centre when the caret isn't in
     /// view: that point keeps its place in the viewport. The scroll moves now, and the host is asked to follow.
     pub(super) fn set_zoom(&mut self, factor: f64) {
@@ -416,6 +539,136 @@ impl Session {
         let y = (ay * k - on_y).clamp(0.0, (ch - h).max(0.0));
         p.scroll = (x, y);
         self.request(HostRequest::Scroll { x, y });
+    }
+
+    /// The options of the correction just made, at its options button (or its text), viewport CSS px.
+    pub(super) fn auto_correct_popover(&mut self) -> Option<crate::api::services::Popover> {
+        let from = self.editor.correction()?.from.clone();
+        let to = self.editor.correction_text()?;
+        let pages = 0..self.editor.stack().pages.len();
+        let view = self.editor.correction_view(pages)?;
+        let (page, r) = view.button.or_else(|| view.rects.last().copied())?;
+        let stack = self.editor.stack();
+        let [px, py, ..] = *stack.pages.get(page)?;
+        let p = &self.presentation;
+        let k = p.px_per_pt();
+        let anchor = crate::api::services::ClientRect {
+            left: (px + r[0]) * k - p.scroll.0,
+            top: (py + r[1]) * k - p.scroll.1,
+            width: (r[2] - r[0]) * k,
+            height: (r[3] - r[1]) * k,
+        };
+        Some(crate::api::services::Popover::AutoCorrect { anchor, from, to })
+    }
+
+    /// Whether document point (`x`, `y`) is on the correction mark's options button.
+    pub(super) fn on_correction_button(&mut self, x: f64, y: f64) -> bool {
+        let pages = 0..self.editor.stack().pages.len();
+        let Some((page, [x0, y0, x1, y1])) = self.editor.correction_view(pages).and_then(|v| v.button) else { return false };
+        let stack = self.editor.stack();
+        let Some(&[px, py, ..]) = stack.pages.get(page) else { return false };
+        (px + x0..=px + x1).contains(&x) && (py + y0..=py + y1).contains(&y)
+    }
+
+    /// Asks the application for `popover`, closing the one open.
+    /// The events follow the state they go with.
+    pub(super) fn show_popover(&mut self, popover: crate::api::services::Popover) {
+        let mut events = Vec::new();
+        if self.presentation.popover.take().is_some() {
+            events.push(Event::PopoverClosed);
+        }
+        self.presentation.popover = Some(popover.clone());
+        self.presentation.want_frame();
+        events.push(Event::PopoverRequested(popover));
+        self.changed(events);
+    }
+
+    /// Dismisses the open popover, if there is one, with `popoverClosed` (after the state).
+    pub(super) fn close_popover(&mut self) -> Option<crate::api::services::Popover> {
+        let open = self.presentation.popover.take()?;
+        self.presentation.want_frame();
+        self.changed(vec![Event::PopoverClosed]);
+        Some(open)
+    }
+
+    /// Closes the tab stop popover when its stop is gone.
+    pub(super) fn popover_follow(&mut self) {
+        use crate::api::services::Popover;
+        if let Some(Popover::TabStop { position, .. }) = &self.presentation.popover
+            && !self.state.ruler.horizontal.tabs.iter().any(|t| (t.position.0 - position.0).abs() < 0.5)
+        {
+            self.close_popover();
+        }
+    }
+
+    /// The tab type picker by the box in the rulers' corner.
+    pub(super) fn tab_types_popover(&self) -> crate::api::services::Popover {
+        use crate::api::catalog::ruler::{TAB_TYPES, tab_type};
+        let choice = |value| {
+            let (name, description) = tab_type(value);
+            crate::api::services::TabTypeChoice { value, name: name.into(), description: description.into() }
+        };
+        let choices = TAB_TYPES.into_iter().map(choice).collect();
+        crate::api::services::Popover::TabType { anchor: crate::services::ruler::SELECTOR, current: self.presentation.tab_selector, choices }
+    }
+
+    /// The options of the caret's paragraph's stop at `position` (within half a point), by its mark on the ruler.
+    pub(super) fn tab_stop_popover(&self, position: f64) -> Option<crate::api::services::Popover> {
+        let view = self.ruler_view();
+        let t = view.model.horizontal.tabs.iter().find(|t| (t.position.0 - position).abs() < 0.5)?;
+        let anchor = crate::services::ruler::tab_anchor(&view, t.position.0);
+        Some(crate::api::services::Popover::TabStop { anchor, position: t.position, alignment: t.alignment, leader: t.leader })
+    }
+
+    /// The position of the caret's paragraph's stop nearest viewport x `x`.
+    pub(super) fn nearest_tab_stop(&self, x: f64) -> Option<f64> {
+        let view = self.ruler_view();
+        let centre = |p: f64| crate::services::ruler::tab_anchor(&view, p).left + 7.0;
+        let tabs = view.model.horizontal.tabs.iter().map(|t| t.position.0);
+        tabs.min_by(|a, b| (centre(*a) - x).abs().total_cmp(&(centre(*b) - x).abs()))
+    }
+
+    /// What the rulers measure now: the drag under way's dimension line or chip, else the hovered marker's hint (none
+    /// while a popover is open).
+    pub(super) fn ruler_measures(&self) -> Vec<crate::editing::view::RulerMeasure> {
+        use crate::services::ruler::{drag_measures, hint, hit};
+        let p = &self.presentation;
+        if let Some(d) = &p.ruler_drag {
+            return match d.marker.filter(|_| d.moved) {
+                Some(m) => drag_measures(&d.view, m, d.value(), d.removing, p.detail, d.free),
+                None => Vec::new(),
+            };
+        }
+        let Some(h) = p.ruler_hover.filter(|_| p.popover.is_none()) else { return Vec::new() };
+        let view = self.ruler_view();
+        let Some(on) = hit(&view, p.rulers, h.at.x, h.at.y) else { return Vec::new() };
+        hint(&view, on, p.tab_selector, h.free, p.width).into_iter().collect()
+    }
+
+    /// Where a click on the empty ruler under the pointer adds a tab stop of the box's type (page points), drawn as
+    /// its ghost.
+    fn ruler_ghost(&self, view: &RulerView) -> Option<f64> {
+        use crate::services::ruler::{Hit, ghost, hit};
+        let p = &self.presentation;
+        let h = p.ruler_hover.filter(|_| p.popover.is_none() && p.ruler_drag.is_none())?;
+        if matches!(p.tab_selector, TabSelector::FirstLineIndent | TabSelector::HangingIndent) {
+            return None;
+        }
+        match hit(view, p.rulers, h.at.x, h.at.y)? {
+            Hit::Text(pt) => ghost(view, pt, h.free),
+            Hit::Selector | Hit::Marker(_) | Hit::Ruler => None,
+        }
+    }
+
+    /// The ruler marker under the pointer, tinted while hovered.
+    fn ruler_hovered(&self, view: &RulerView) -> Option<Marker> {
+        use crate::services::ruler::{Hit, hit};
+        let p = &self.presentation;
+        let h = p.ruler_hover.filter(|_| p.ruler_drag.is_none())?;
+        match hit(view, p.rulers, h.at.x, h.at.y)? {
+            Hit::Marker(m) => Some(m),
+            Hit::Selector | Hit::Text(_) | Hit::Ruler => None,
+        }
     }
 
     /// The ruler model with its viewport mapping: the caret's page's left and top edges in the viewport.
@@ -752,6 +1005,7 @@ impl HostSurface<'_> {
     }
 
     fn draw_frame(&mut self, canvas: &skia_safe::Canvas, width: f64, height: f64) {
+        self.session.sync_view_settings();
         let s = &mut *self.session;
         let p = &mut s.presentation;
         let f = p.frame(width, height);
@@ -769,6 +1023,7 @@ impl HostSurface<'_> {
         view.formatting_marks = formatting_marks;
         view.boundaries = boundaries;
         p.renderer.gridlines = s.gridlines;
+        p.renderer.page_colour = s.editor.document().page_colour;
         p.renderer.draw(canvas, &view, &s.editor.document().images, &f);
         if p.markup_pane > 0.0 {
             let left = (view.stack.width * f.px_per_pt + f.origin_x) * f.dpr;
@@ -780,7 +1035,7 @@ impl HostSurface<'_> {
             let mut line = skia_safe::Paint::default();
             line.set_anti_alias(true);
             line.set_style(skia_safe::paint::Style::Stroke);
-            line.set_color(p.renderer.palette.leaders);
+            line.set_color(p.renderer.palette().leaders);
             line.set_stroke_width(f.dpr.round().max(1.0) as f32);
             for polyline in &p.leaders {
                 let points: Vec<skia_safe::Point> = polyline
@@ -797,6 +1052,7 @@ impl HostSurface<'_> {
         let ruler = s.ruler_view();
         let p = &s.presentation;
         if p.rulers != Bands::default() {
+            let measures = s.ruler_measures();
             let frame = crate::render::ruler::RulerFrame {
                 bands: p.rulers,
                 width: width / f.dpr,
@@ -804,10 +1060,14 @@ impl HostSurface<'_> {
                 dpr: f.dpr,
                 selector: p.tab_selector,
                 guide: p.ruler_drag.as_ref().and_then(RulerDrag::guide),
-                typeface: crate::render::ruler::typeface(&p.renderer),
+                drag: p.ruler_drag.as_ref().and_then(RulerDrag::shown),
+                ghost: s.ruler_ghost(&ruler),
+                hover: s.ruler_hovered(&ruler),
+                popover: p.popover.as_ref(),
+                measures: &measures,
+                page: p.renderer.page_theme(),
             };
-            let theme = crate::render::ruler::RulerTheme::of(p.renderer.background.unwrap_or(skia_safe::Color::from_rgb(0xf3, 0xf3, 0xf3)));
-            crate::render::ruler::paint(&ruler, &theme, canvas, &frame);
+            crate::render::ruler::paint(&ruler, &p.renderer.theme, canvas, &frame);
         }
         // Coalesced per frame: the view as this frame shows it, when it changed.
         if s.presentation.ruler_seen.as_ref() != Some(&ruler) {
@@ -911,20 +1171,45 @@ impl HostSurface<'_> {
     /// The colours of what the editor draws over the document.
     pub fn set_overlay_palette(&mut self, palette: OverlayPalette) {
         let c = |c: Color| crate::render::rgb(c.0);
-        self.session.presentation.renderer.palette = crate::render::Palette {
-            caret: c(palette.caret),
+        let r = &mut self.session.presentation.renderer;
+        r.overlay_colours = Some(crate::render::Palette {
             selection: c(palette.selection),
             object: c(palette.object),
             drop: c(palette.drop),
             marks: c(palette.marks),
             leaders: c(palette.leaders),
-        };
+        });
         self.session.presentation.frame_wanted = true;
     }
 
-    /// The background around the pages; the paper stays white.
+    /// The overlay colours back to the chrome theme's: they follow it again.
+    pub fn reset_overlay_palette(&mut self) {
+        let r = &mut self.session.presentation.renderer;
+        r.overlay_colours = None;
+        self.session.presentation.frame_wanted = true;
+    }
+
+    /// The background around the pages. Until the host sets the chrome's theme, a dark background gives dark chrome.
     pub fn set_background(&mut self, color: Color) {
-        self.session.presentation.renderer.background = Some(crate::render::rgb(color.0));
+        self.background(Some(crate::render::rgb(color.0)));
+    }
+
+    /// The background back to the chrome theme's desk (and, until the host sets the theme, the light chrome).
+    pub fn reset_background(&mut self) {
+        self.background(None);
+    }
+
+    fn background(&mut self, bg: Option<skia_safe::Color>) {
+        use crate::api::services::ChromeTheme;
+        let p = &mut self.session.presentation;
+        p.renderer.background = bg;
+        if !p.chrome_set {
+            let dark = bg.is_some_and(|bg| crate::render::theme::luminance(bg) < 0.2);
+            p.chrome = if dark { ChromeTheme::Dark } else { ChromeTheme::Light };
+            p.apply_look();
+        }
+        p.frame_wanted = true;
+        self.session.changed(Vec::new());
     }
 
     /// Room right of the pages for comment balloons, CSS px: the content gets wider by it, so a host that centres
@@ -937,6 +1222,7 @@ impl HostSurface<'_> {
     pub fn set_rulers(&mut self, horizontal: bool, vertical: bool) {
         self.session.presentation.rulers = Bands { horizontal, vertical };
         self.session.presentation.ruler_drag = None;
+        self.session.presentation.ruler_hover = None;
         self.session.changed(Vec::new());
     }
 
@@ -946,7 +1232,7 @@ impl HostSurface<'_> {
         self.session.changed(Vec::new());
     }
 
-    /// What a click on the ruler adds; the selector box in the rulers' corner cycles it.
+    /// What a click on the ruler adds; the tab type picker the box in the rulers' corner opens sets it too.
     pub fn set_tab_selector(&mut self, kind: TabSelector) {
         self.session.presentation.tab_selector = kind;
         self.session.changed(Vec::new());
@@ -1078,13 +1364,360 @@ mod tests {
         press(s, K::Up, x(180.0), 120.0, 0);
         assert!(tabs(s).is_empty());
         assert_eq!(s.state().history.undo_label.as_deref(), Some("Delete Tab Stop"));
-        // The corner box cycles the tab selector; a double-click asks for the Tabs dialog.
+        // The corner box asks for the tab type picker rather than cycling; a double-click asks for the Tabs dialog.
         press(s, K::Down, 5.0, 5.0, 1);
-        assert_eq!(s.state().view.tab_selector, TabSelector::Center);
+        assert_eq!(s.state().view.tab_selector, TabSelector::Left);
         press(s, K::Down, x(300.0), 10.0, 2);
         let events = events.borrow();
         assert!(events.iter().any(|e| matches!(e, Event::DialogRequested { kind: DialogKind::Tabs })));
         assert_eq!(events.iter().filter(|e| matches!(e, Event::DocumentChanged(_))).count(), 4, "typing and three tab commands");
+    }
+
+    mod ruler {
+        use super::*;
+        use crate::api::command::AddTabStop;
+        use crate::api::event::{Event, KeyOutcome};
+        use crate::api::input::{Key, Modifiers, PointerButton as B, PointerKind as K};
+        use crate::api::services::{ClientRect, MeasureDetail, Popover, TabSelector};
+        use crate::api::session::Session;
+        use crate::api::session::host::RulerDrag;
+        use crate::api::value::{Points, TabAlignment, TabLeader};
+        use crate::editing::view::RulerMeasure;
+        use crate::render::ruler::Dragged;
+        use crate::services::ruler::Marker;
+
+        type Events = std::rc::Rc<std::cell::RefCell<Vec<Event>>>;
+
+        /// A session that typed "Hello", in an 800 by 600 view with both rulers, and the events it raises; with no fonts,
+        /// or `fonts`.
+        fn ruled() -> (Engine, crate::api::engine::SessionId, Events) {
+            ruled_with(FontLibrary::empty())
+        }
+
+        fn ruled_with(fonts: FontLibrary) -> (Engine, crate::api::engine::SessionId, Events) {
+            let mut engine = Engine::new(fonts);
+            let events = Events::default();
+            let sink = events.clone();
+            engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
+            let id = engine.create_session(SessionOptions::default());
+            let s = engine.session(id).expect("a session");
+            s.run(Command::InsertText("Hello".into())).expect("types");
+            s.host().set_size(800.0, 600.0, 1.0);
+            s.host().set_rulers(true, true);
+            events.borrow_mut().clear();
+            (engine, id, events)
+        }
+
+        /// The client x of a point `pt` from the text start: the page's left edge is 18 pt in, its text an inch
+        /// further, and a CSS px is 3/4 pt.
+        fn x(pt: f64) -> f64 {
+            24.0 + (72.0 + pt) / 0.75
+        }
+
+        fn at(s: &mut Session, kind: K, x: f64, y: f64, alt: bool) {
+            let clicks = if kind == K::Down { 1 } else { 0 };
+            s.pointer(kind, Point { x, y }, B::Primary, clicks, Modifiers { alt, ..Modifiers::default() });
+        }
+
+        fn click(s: &mut Session, x: f64, y: f64) {
+            at(s, K::Down, x, y, false);
+            at(s, K::Up, x, y, false);
+        }
+
+        fn labels(s: &Session) -> Vec<String> {
+            s.ruler_measures()
+                .into_iter()
+                .map(|m| match m {
+                    RulerMeasure::Dimension { label, .. }
+                    | RulerMeasure::Chip { label, .. }
+                    | RulerMeasure::Hint { label, .. }
+                    | RulerMeasure::Status { label, .. } => label,
+                })
+                .collect()
+        }
+
+        fn tabs(s: &Session) -> Vec<(f64, TabAlignment, TabLeader)> {
+            s.state().ruler.horizontal.tabs.iter().map(|t| (t.position.0, t.alignment, t.leader)).collect()
+        }
+
+        fn popovers(events: &Events) -> Vec<Option<Popover>> {
+            let events = events.borrow();
+            let shown = events.iter().filter_map(|e| match e {
+                Event::PopoverRequested(p) => Some(Some(p.clone())),
+                Event::PopoverClosed => Some(None),
+                _ => None,
+            });
+            shown.collect()
+        }
+
+        #[test]
+        fn a_first_line_drag_follows_the_pointer_snapped_to_the_sixteenth_inch_unless_alt_is_down() {
+            let (mut engine, id, _) = ruled();
+            let s = engine.session(id).expect("a session");
+            // 0.27 in is 19.44 pt: it snaps to 0.25 in.
+            at(s, K::Down, x(0.0), 5.0, false);
+            at(s, K::Move, x(19.44), 5.0, false);
+            let shown = s.presentation.ruler_drag.as_ref().and_then(RulerDrag::shown);
+            assert_eq!(shown, Some(Dragged { marker: Marker::FirstLine, at: 72.0 + 18.0, removing: false }), "the marker follows");
+            assert!(s.presentation.ruler_drag.as_ref().and_then(RulerDrag::guide).is_some_and(|(h, gx)| h && (gx - x(18.0)).abs() < 1e-9));
+            assert_eq!(labels(s), ["First line 0.25″"]);
+            assert_eq!(s.state().ruler.horizontal.indents.first_line, Points(0.0), "nothing commits during the drag");
+            // Alt pressed mid-drag runs it again where the pointer is: no snapping, and the change shows.
+            s.modifiers(Modifiers { alt: true, ..Modifiers::default() });
+            assert_eq!(labels(s), ["First line 0.27″  Δ +0.27″"]);
+            s.modifiers(Modifiers::default());
+            assert_eq!(labels(s), ["First line 0.25″"]);
+            at(s, K::Up, x(19.44), 5.0, false);
+            assert_eq!(s.state().ruler.horizontal.indents.first_line, Points(18.0));
+            // With Alt it lands where the pointer is.
+            at(s, K::Down, x(18.0), 5.0, true);
+            at(s, K::Move, x(37.44), 5.0, true);
+            at(s, K::Up, x(37.44), 5.0, true);
+            // Indents are kept in twentieths of a point; snapped, it would be 36 pt.
+            assert!((s.state().ruler.horizontal.indents.first_line.0 - 37.44).abs() < 0.05, "{:?}", s.state().ruler.horizontal.indents);
+        }
+
+        #[test]
+        fn the_detail_level_picks_a_chip_a_dimension_line_or_the_change_too() {
+            let (mut engine, id, _) = ruled();
+            let s = engine.session(id).expect("a session");
+            let detail = |s: &mut Session, d| {
+                s.run(Command::SetViewOptions(crate::api::command::ViewOptions { detail: Some(d), ..Default::default() })).expect("sets");
+            };
+            at(s, K::Down, x(0.0), 5.0, false);
+            at(s, K::Move, x(36.0), 5.0, false);
+            assert!(matches!(&s.ruler_measures()[..], [RulerMeasure::Dimension { .. }]));
+            assert_eq!(labels(s), ["First line 0.50″"]);
+            detail(s, MeasureDetail::Full);
+            assert_eq!(labels(s), ["First line 0.50″  Δ +0.50″"]);
+            detail(s, MeasureDetail::Quiet);
+            assert!(matches!(&s.ruler_measures()[..], [RulerMeasure::Chip { .. }]));
+            assert_eq!(labels(s), ["First line 0.50″"]);
+        }
+
+        #[test]
+        fn hovering_the_ruler_hints_and_shows_the_ghost_stop_a_click_adds() {
+            let (mut engine, id, _) = ruled();
+            let s = engine.session(id).expect("a session");
+            at(s, K::Move, x(0.0), 5.0, false);
+            assert_eq!(
+                s.ruler_measures(),
+                [RulerMeasure::Hint { at: x(0.0) - 6.0, label: "First line · 0.00″ — indents only the first line".into() }]
+            );
+            at(s, K::Move, 5.0, 5.0, false);
+            assert_eq!(labels(s), ["Tab type: Left — click to change"]);
+            at(s, K::Move, x(468.0), 5.0, false);
+            assert_eq!(labels(s), ["Right margin · 1.00″ — drag to change"]);
+            assert_eq!(s.ruler_hovered(&s.ruler_view()), Some(Marker::TextEnd), "the margin's handle tints");
+            // Over the empty ruler, the ghost of the stop sits where the click adds it.
+            at(s, K::Move, x(146.0), 10.0, false);
+            assert_eq!(s.ruler_ghost(&s.ruler_view()), Some(72.0 + 144.0));
+            assert_eq!(labels(s), ["Click to add a left tab · 2.00″"]);
+            click(s, x(146.0), 10.0);
+            assert_eq!(tabs(s), [(144.0, TabAlignment::Left, TabLeader::None)]);
+            // Off the ruler, nothing shows.
+            at(s, K::Move, 300.0, 300.0, false);
+            assert!(s.ruler_measures().is_empty() && s.ruler_ghost(&s.ruler_view()).is_none());
+        }
+
+        #[test]
+        fn a_stop_is_removed_only_more_than_30_px_below_the_band() {
+            let (mut engine, id, _) = ruled();
+            let s = engine.session(id).expect("a session");
+            click(s, x(144.0), 10.0);
+            // 29 px below the band, it moves.
+            at(s, K::Down, x(144.0), 15.0, false);
+            at(s, K::Move, x(162.0), 18.0 + 29.0, false);
+            assert_eq!(labels(s), ["Left tab 2.25″"]);
+            at(s, K::Up, x(162.0), 18.0 + 29.0, false);
+            assert_eq!(tabs(s).iter().map(|t| t.0).collect::<Vec<_>>(), [162.0]);
+            // Further down it fades and says so; dragged back up in the same drag, it stays.
+            at(s, K::Down, x(162.0), 15.0, false);
+            at(s, K::Move, x(162.0), 18.0 + 31.0, false);
+            assert_eq!(labels(s), ["Release to remove tab stop"]);
+            assert!(s.presentation.ruler_drag.as_ref().is_some_and(|d| d.removing && d.guide().is_none()));
+            at(s, K::Move, x(162.0), 15.0, false);
+            at(s, K::Up, x(162.0), 15.0, false);
+            assert_eq!(tabs(s).len(), 1);
+            // Released down there, it goes.
+            at(s, K::Down, x(162.0), 15.0, false);
+            at(s, K::Move, x(162.0), 18.0 + 31.0, false);
+            at(s, K::Up, x(162.0), 18.0 + 31.0, false);
+            assert!(tabs(s).is_empty());
+            assert_eq!(s.state().history.undo_label.as_deref(), Some("Delete Tab Stop"));
+        }
+
+        #[test]
+        fn the_tab_type_box_asks_for_the_picker_and_its_answer_sets_the_type() {
+            let (mut engine, id, events) = ruled();
+            let s = engine.session(id).expect("a session");
+            click(s, 5.0, 5.0);
+            let shown = popovers(&events);
+            let Some(Some(Popover::TabType { anchor, current, choices })) = shown.first() else { panic!("{shown:?}") };
+            assert_eq!((*anchor, *current), (ClientRect { left: 2.0, top: 2.0, width: 14.0, height: 14.0 }, TabSelector::Left));
+            let named: Vec<(TabSelector, &str, &str)> = choices.iter().map(|c| (c.value, c.name.as_str(), c.description.as_str())).collect();
+            assert_eq!(
+                named,
+                [
+                    (TabSelector::Left, "Left", "Text starts at the stop"),
+                    (TabSelector::Center, "Center", "Text centers on the stop"),
+                    (TabSelector::Right, "Right", "Text ends at the stop"),
+                    (TabSelector::Decimal, "Decimal", "Numbers line up on the decimal point"),
+                    (TabSelector::Bar, "Bar", "A vertical line at the stop"),
+                    (TabSelector::FirstLineIndent, "First line indent", "A click sets where the first line starts"),
+                    (TabSelector::HangingIndent, "Hanging indent", "A click sets where wrapped lines start"),
+                ]
+            );
+            // A second press on the box closes it.
+            click(s, 5.0, 5.0);
+            assert_eq!(popovers(&events).len(), 2);
+            assert_eq!(popovers(&events)[1], None);
+            // The picker's answer, and the command's state.
+            s.run(Command::SetRulerTabType(TabSelector::Decimal)).expect("sets");
+            assert_eq!(s.state().view.tab_selector, TabSelector::Decimal);
+            let value = s.command_state(crate::api::command::CommandId::SetRulerTabType).and_then(|c| c.value.clone());
+            assert_eq!(value, Some(crate::api::state::CommandValue::TabType(TabSelector::Decimal)));
+            click(s, x(146.0), 10.0);
+            assert_eq!(tabs(s), [(144.0, TabAlignment::Decimal, TabLeader::None)]);
+            // From the keyboard; Esc dismisses it.
+            events.borrow_mut().clear();
+            s.run(Command::ShowTabTypes).expect("shows");
+            assert!(matches!(&popovers(&events)[..], [Some(Popover::TabType { current: TabSelector::Decimal, .. })]));
+            assert_eq!(s.key(Key::Escape, Modifiers::default()), KeyOutcome::Handled);
+            assert_eq!(popovers(&events).last(), Some(&None));
+            // The picker's answer closes it, and says so.
+            s.run(Command::ShowTabTypes).expect("shows");
+            events.borrow_mut().clear();
+            s.run(Command::SetRulerTabType(TabSelector::Left)).expect("sets");
+            assert_eq!(popovers(&events), [None]);
+            // The application closes it itself: once; with none open, nothing happens.
+            s.run(Command::ShowTabTypes).expect("shows");
+            events.borrow_mut().clear();
+            s.run(Command::ClosePopover).expect("closes");
+            s.run(Command::ClosePopover).expect("closes nothing");
+            assert_eq!(popovers(&events), [None]);
+        }
+
+        #[test]
+        fn the_overlay_colours_and_background_go_back_to_the_themes() {
+            use crate::api::command::ViewOptions;
+            use crate::api::services::ChromeTheme;
+            use crate::api::session::OverlayPalette;
+            use crate::api::value::Color;
+            let (mut engine, id, _) = ruled();
+            let s = engine.session(id).expect("a session");
+            let desk = s.state().view.background;
+            let theme = s.presentation.renderer.palette();
+            s.host().set_background(Color(0x1E1E1E));
+            assert_eq!(s.state().view.background, Color(0x1E1E1E));
+            assert_eq!(s.state().view.theme, ChromeTheme::Dark, "a dark background darkens the chrome");
+            s.host().reset_background();
+            assert_eq!((s.state().view.background, s.state().view.theme), (desk, ChromeTheme::Light));
+            s.host().set_overlay_palette(OverlayPalette { marks: Color(0xFF0000), ..OverlayPalette::default() });
+            assert_ne!(s.presentation.renderer.palette(), theme);
+            s.host().reset_overlay_palette();
+            assert_eq!(s.presentation.renderer.palette(), theme);
+            // Reset, they follow the theme again.
+            s.run(Command::SetViewOptions(ViewOptions { theme: Some(ChromeTheme::Dark), ..ViewOptions::default() })).expect("sets");
+            assert_eq!(s.presentation.renderer.palette(), s.presentation.renderer.page_theme().palette());
+            assert_ne!(s.state().view.background, desk);
+        }
+
+        #[test]
+        fn the_hosts_colours_replace_each_schemes_own() {
+            use crate::api::command::ViewOptions;
+            use crate::api::services::{ChromeColors, ChromeTheme, SystemColors, ThemeColors};
+            use crate::api::value::Color;
+            let (mut engine, id, _) = ruled();
+            let s = engine.session(id).expect("a session");
+            let set = |s: &mut Session, theme: Option<ChromeTheme>, colors: Option<ThemeColors>| {
+                s.run(Command::SetViewOptions(ViewOptions { theme, theme_colors: colors, ..ViewOptions::default() })).expect("sets");
+            };
+            let ink = |s: &Session| s.presentation.renderer.theme.tokens.ink;
+            let built_in = ink(s);
+            let dark = ChromeColors { desk: Some(Color(0x1B1F27)), text: Some(Color(0xE6EDF3)), ..ChromeColors::default() };
+            set(s, None, Some(ThemeColors { light: None, dark: Some(dark) }));
+            assert_eq!(ink(s), built_in, "the light scheme keeps its own");
+            set(s, Some(ChromeTheme::Dark), None);
+            assert_eq!((s.state().view.background, ink(s)), (Color(0x1B1F27), crate::render::rgb(0xE6EDF3)));
+            assert_eq!(s.state().view.theme_colors.dark, Some(dark));
+            // The caret stays black on the white page.
+            assert_eq!(s.presentation.renderer.caret(), skia_safe::Color::BLACK);
+            // High contrast takes the platform's.
+            let hc = SystemColors {
+                canvas: Color(0),
+                canvas_text: Color(0xFFFFFF),
+                highlight: Color(0x1AEBFF),
+                highlight_text: Color(0),
+                gray_text: Color(0x3FF23F),
+            };
+            set(s, Some(ChromeTheme::HighContrast(hc)), None);
+            assert_eq!(s.state().view.background, Color(0));
+            // `{}` puts the scheme's own back.
+            set(s, Some(ChromeTheme::Dark), Some(ThemeColors { light: None, dark: Some(ChromeColors::default()) }));
+            assert_ne!(s.state().view.background, Color(0x1B1F27));
+        }
+
+        #[test]
+        fn a_click_on_a_stop_asks_for_its_options_and_each_answer_is_one_step() {
+            let (mut engine, id, events) = ruled();
+            let s = engine.session(id).expect("a session");
+            assert!(!s.command_state(crate::api::command::CommandId::ShowTabStop).is_some_and(|c| c.enabled), "no stops");
+            click(s, x(144.0), 10.0);
+            events.borrow_mut().clear();
+            click(s, x(144.0), 15.0);
+            let request = Popover::TabStop {
+                anchor: ClientRect { left: x(144.0) - 7.0, top: 10.0, width: 14.0, height: 14.0 },
+                position: Points(144.0),
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            };
+            assert_eq!(popovers(&events), [Some(request.clone())]);
+            // Changing the alignment and leader keeps it open; undo puts the stop back.
+            let change = AddTabStop { position: Points(144.0), alignment: Some(TabAlignment::Right), leader: Some(TabLeader::Dots) };
+            s.run(Command::AddTabStop(change)).expect("changes");
+            assert_eq!(tabs(s), [(144.0, TabAlignment::Right, TabLeader::Dots)]);
+            assert_eq!(s.state().history.undo_label.as_deref(), Some("Add Tab Stop"));
+            assert_eq!(popovers(&events).len(), 1, "still open");
+            s.run(Command::Undo).expect("undoes");
+            assert_eq!(tabs(s), [(144.0, TabAlignment::Left, TabLeader::None)]);
+            // Clearing it is one step, and its popover closes with it.
+            s.run(Command::DeleteTabStop(Points(144.0))).expect("clears");
+            assert!(tabs(s).is_empty());
+            assert_eq!(popovers(&events), [Some(request), None]);
+            s.run(Command::Undo).expect("undoes");
+            assert_eq!(tabs(s).len(), 1);
+            // From the keyboard: the stop nearest the caret.
+            click(s, x(400.0), 10.0);
+            events.borrow_mut().clear();
+            assert!(s.command_state(crate::api::command::CommandId::ShowTabStop).is_some_and(|c| c.enabled));
+            s.run(Command::ShowTabStop).expect("shows");
+            assert!(matches!(&popovers(&events)[..], [Some(Popover::TabStop { position: Points(144.0), .. })]), "{:?}", popovers(&events));
+            // A press in the document dismisses it.
+            click(s, 300.0, 300.0);
+            assert_eq!(popovers(&events).last(), Some(&None));
+        }
+
+        #[test]
+        fn in_a_table_the_ruler_measures_the_columns_either_side_of_a_dragged_border() {
+            let (mut engine, id, _) = ruled_with(FontLibrary::system());
+            let s = engine.session(id).expect("a session");
+            s.run(Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 3 })).expect("inserts");
+            // A frame lays the table out; the next state has its column boundaries.
+            let mut pixels = vec![0u8; 800 * 600 * 4];
+            s.host().frame_rgba(&mut pixels, 800, 600).expect("draws");
+            s.host().set_rulers(true, true);
+            let view = s.ruler_view();
+            let b: Vec<f64> = view.model.horizontal.table_columns.iter().map(|b| b.0).collect();
+            assert_eq!(b.len(), 4, "{b:?}");
+            let client = |pt: f64| view.horizontal.origin + pt * view.horizontal.scale;
+            at(s, K::Down, client(b[1]), 12.0, false);
+            at(s, K::Move, client(b[1] + 36.0), 12.0, true);
+            assert!(matches!(&s.ruler_measures()[..], [RulerMeasure::Dimension { .. }, RulerMeasure::Dimension { .. }]));
+            // The border was 2.17 in from the left edge: 2.67 in and 1.67 in either side of it now.
+            assert_eq!(labels(s), ["2.67", "1.67"], "{b:?}");
+            assert!(s.presentation.ruler_drag.as_ref().and_then(RulerDrag::shown).is_some_and(|d| d.marker == Marker::TableColumn(1)));
+        }
     }
 
     #[test]

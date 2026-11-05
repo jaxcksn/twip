@@ -90,6 +90,8 @@ pub struct Counts {
 pub struct Inputs {
     /// Table gridlines (cell edges without borders) are drawn.
     pub gridlines: bool,
+    /// How the document's colours are drawn (DRAW-27).
+    pub appearance: super::appearance::Appearance,
 }
 
 struct Recording {
