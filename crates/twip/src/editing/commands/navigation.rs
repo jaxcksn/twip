@@ -1,4 +1,4 @@
-//! Selection and navigation: none of these change the document.
+//! Selection and navigation
 
 use crate::api::command::{MoveSelection, MoveUnit, SelectUnit, SelectionMode};
 use crate::api::value::{Direction, Order};
@@ -11,7 +11,6 @@ use crate::editing::selection::{CellShape, Granularity, ObjectRef, Selection};
 use crate::editing::{Editor, extend};
 
 impl Editor {
-    /// The whole story the selection is in.
     pub(in crate::editing) fn select_all(&mut self) -> Outcome {
         let story = self.selection.focus().map_or(self.editing(), |p| p.story);
         let (Some(a), Some(b)) = (self.nav().story_edge(story, false), self.nav().story_edge(story, true)) else {
@@ -52,11 +51,9 @@ impl Editor {
             MoveUnit::RowEdge => MoveBy::RowEdge,
             MoveUnit::ColumnEdge => MoveBy::ColumnEdge,
         };
-        // Extending to a row's or column's edge in a table selects the cells there.
         if extend && matches!(by, MoveBy::RowEdge | MoveBy::ColumnEdge) {
             return self.select_to_edge(by == MoveBy::RowEdge, dir == Dir::Forward);
         }
-        // A selected float moves by the arrows (Up and Down by lines, Left and Right by characters).
         if !extend && let Selection::Object(o @ ObjectRef::Floating(f)) = self.selection {
             if self.object_fixed(o) {
                 return Outcome::Unchanged("fixed position");
@@ -69,7 +66,6 @@ impl Editor {
             };
         }
         let out = self.move_caret(by, dir, extend, fonts);
-        // A paragraph with no lines laid out (no font draws it yet): Home and End go to its edges.
         if by == MoveBy::LineEdge
             && out == Outcome::Unchanged("no place to move to")
             && let Some(focus) = self.selection.focus()
@@ -95,7 +91,6 @@ impl Editor {
         }
     }
 
-    /// The first floating object, or from a selected one the next or previous.
     pub(in crate::editing) fn next_object(&mut self, o: Order) -> Outcome {
         match self.selection {
             Selection::Object(ObjectRef::Floating(_)) => self.object_focus(Some(o == Order::Previous)),
@@ -103,7 +98,6 @@ impl Editor {
         }
     }
 
-    /// The caret at bookmark `name` (Word's names ignore case), shown.
     pub(in crate::editing) fn go_to_bookmark(&mut self, name: &str, fonts: &Fonts) -> Outcome {
         let found = self.index.para_ids().find_map(|pid| {
             let p = self.index.para(&self.doc, pid)?;
@@ -124,7 +118,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// The caret at the start of page `page` (from 1).
     pub(in crate::editing) fn go_to_page(&mut self, page: u32, fonts: &Fonts) -> Outcome {
         let Some(k) = (page as usize).checked_sub(1) else { return Outcome::invalid("pages count from 1") };
         self.ensure_page(k, fonts);

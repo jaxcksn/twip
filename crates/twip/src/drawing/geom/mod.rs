@@ -1,5 +1,4 @@
-//! Shape geometry (DRAW-1 to DRAW-5): a preset or custom geometry's guides, paths, text rectangle, adjust handles and
-//! connection sites, evaluated on a shape's size.
+//! Shape geometry
 
 pub mod ends;
 mod eval;
@@ -14,31 +13,20 @@ pub use presets::Preset;
 
 use super::units::Emu;
 
-/// A guide formula (DRAW-1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Formula {
-    /// `*/ x y z` = x × y ÷ z
     MulDiv,
-    /// `+- x y z` = x + y − z
     AddSub,
-    /// `+/ x y z` = (x + y) ÷ z
     AddDiv,
-    /// `?: x y z` = y if x > 0, else z
     IfElse,
     Abs,
-    /// `at2 x y` = the angle of the point (x, y), 60000ths of a degree
     At2,
-    /// `cat2 x y z` = x × cos(at2(y, z))
     Cat2,
-    /// `cos x y` = x × cos(y)
     Cos,
     Max,
     Min,
-    /// `mod x y z` = √(x² + y² + z²)
     Mod,
-    /// `pin x y z` = y clamped to [x, z]
     Pin,
-    /// `sat2 x y z` = x × sin(at2(y, z))
     Sat2,
     Sin,
     Sqrt,
@@ -72,27 +60,22 @@ impl Formula {
     }
 }
 
-/// A built-in variable of the guide language: the shape's size and its fractions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Var {
     W,
     H,
-    /// The shape's right and bottom edges: `r` = w, `b` = h; `l` and `t` are the constant 0.
     R,
     B,
     Hc,
     Vc,
-    /// The shorter and longer side.
     Ss,
     Ls,
-    /// w ÷ n, h ÷ n, ss ÷ n.
     Wd(u8),
     Hd(u8),
     Ssd(u8),
 }
 
 impl Var {
-    /// A built-in name as a variable or (for `l`, `t` and the angle constants `cd2`… `7cd8`) a constant.
     pub fn parse(s: &str) -> Option<Arg> {
         use Var::*;
         let n = |p: &str| s.strip_prefix(p).and_then(|d| d.parse::<u8>().ok());
@@ -121,7 +104,6 @@ impl Var {
     }
 }
 
-/// A formula argument: a constant, a built-in variable, an adjust value or an earlier guide.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Arg {
     Const(i32),
@@ -140,9 +122,7 @@ pub type Pt = [Arg; 2];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HandleDef {
-    /// `a:ahXY`: the adjust values the handle moves in x and y, with their limits.
     Xy { x: Option<(u8, Option<Arg>, Option<Arg>)>, y: Option<(u8, Option<Arg>, Option<Arg>)>, pos: Pt },
-    /// `a:ahPolar`: radius and angle.
     Polar { r: Option<(u8, Option<Arg>, Option<Arg>)>, ang: Option<(u8, Option<Arg>, Option<Arg>)>, pos: Pt },
 }
 
@@ -152,8 +132,6 @@ pub struct CxnDef {
     pub pos: Pt,
 }
 
-/// A path command; its arguments follow in the path's argument list: `MoveTo` and `LineTo` a point (x, y), `ArcTo`
-/// wR, hR, stAng, swAng, `QuadTo` two points, `CubicTo` three, `Close` none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cmd {
     MoveTo,
@@ -165,7 +143,6 @@ pub enum Cmd {
 }
 
 impl Cmd {
-    /// How many arguments the command takes.
     pub fn arity(self) -> usize {
         match self {
             Cmd::MoveTo | Cmd::LineTo => 2,
@@ -176,7 +153,6 @@ impl Cmd {
     }
 }
 
-/// How a path is filled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum PathFill {
     None,
@@ -190,7 +166,6 @@ pub enum PathFill {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PathDef<'a> {
-    /// The path's coordinate space; 0 = the shape's size.
     pub w: i64,
     pub h: i64,
     pub fill: PathFill,
@@ -199,20 +174,16 @@ pub struct PathDef<'a> {
     pub args: &'a [Arg],
 }
 
-/// A geometry definition, borrowed from the preset table or from a [`CustomGeom`].
 #[derive(Clone, Copy, Debug)]
 pub struct GeomDef<'a> {
-    /// Adjust value names and defaults.
     pub av: &'a [(&'a str, i64)],
     pub gd: &'a [Op],
     pub ah: &'a [HandleDef],
     pub cxn: &'a [CxnDef],
-    /// The text rectangle (l, t, r, b); `None`: the whole shape.
     pub rect: Option<[Arg; 4]>,
     pub paths: &'a [PathDef<'a>],
 }
 
-/// A custom geometry (`a:custGeom`) compiled to the same form as a preset.
 #[derive(Debug, PartialEq)]
 pub struct CustomGeom {
     av_names: Vec<String>,
@@ -224,14 +195,9 @@ pub struct CustomGeom {
     paths: Vec<(i64, i64, PathFill, bool, Vec<Cmd>, Vec<Arg>)>,
 }
 
-/// A shape's geometry as the document gives it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Geometry {
-    /// A preset and its adjust values that override the defaults, by name.
-    Preset {
-        preset: Preset,
-        adj: Vec<(String, i64)>,
-    },
+    Preset { preset: Preset, adj: Vec<(String, i64)> },
     Custom(Rc<CustomGeom>),
 }
 
@@ -241,7 +207,6 @@ impl Default for Geometry {
     }
 }
 
-/// A path segment, points from the shape's top left.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Seg {
     Move([f64; 2]),
@@ -258,31 +223,25 @@ pub struct GeomPath {
     pub stroke: bool,
 }
 
-/// An adjust handle at its place, with what it moves.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandlePos {
     pub at: [f64; 2],
     pub def_index: usize,
 }
 
-/// A geometry evaluated on a size (points from the shape's top left, before rotation and flips).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Geom {
     pub paths: Vec<GeomPath>,
-    /// Left, top, right, bottom.
     pub text_rect: [f64; 4],
     pub handles: Vec<HandlePos>,
     pub cxn: Vec<[f64; 2]>,
 }
 
 impl Geom {
-    /// Whether `p` (the shape's own coordinates) is inside a filled path (`filled`: the shape has a fill), or within
-    /// `reach` of a stroked one.
     pub fn hit(&self, p: [f64; 2], filled: bool, reach: Option<f64>) -> bool {
         self.paths.iter().any(|gp| {
             let subs = flatten(&gp.segs);
             let inside = || {
-                // Even-odd over every subpath, each closed.
                 let mut odd = false;
                 for (pts, _) in &subs {
                     for (i, a) in pts.iter().enumerate() {
@@ -305,7 +264,6 @@ impl Geom {
     }
 }
 
-/// A path's subpaths as polylines (curves in 16 steps), each with whether it was closed.
 fn flatten(segs: &[Seg]) -> Vec<(Vec<[f64; 2]>, bool)> {
     let mut out: Vec<(Vec<[f64; 2]>, bool)> = Vec::new();
     let mut at = [0.0, 0.0];
@@ -348,7 +306,6 @@ fn flatten(segs: &[Seg]) -> Vec<(Vec<[f64; 2]>, bool)> {
     out
 }
 
-/// The distance from `p` to the segment `a`–`b`.
 fn seg_distance(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
     let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
     let l2 = dx * dx + dy * dy;
@@ -357,8 +314,6 @@ fn seg_distance(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
 }
 
 impl Geometry {
-    /// Calls `f` with the definition and the adjust values in effect (defaults overridden by the document's), in `av`
-    /// order.
     fn with_def<R>(&self, f: impl FnOnce(&GeomDef, &[i64]) -> R) -> R {
         match self {
             Geometry::Preset { preset, adj } => {
@@ -382,12 +337,10 @@ impl Geometry {
         }
     }
 
-    /// DRAW-1: the geometry evaluated on a `w` × `h` shape.
     pub fn evaluate(&self, w: Emu, h: Emu) -> Rc<Geom> {
         self.with_def(|def, adj| Rc::new(eval::evaluate_def(def, adj, w, h)))
     }
 
-    /// The preset, if this is one.
     pub fn preset(&self) -> Option<Preset> {
         match self {
             Geometry::Preset { preset, .. } => Some(*preset),
@@ -395,31 +348,24 @@ impl Geometry {
         }
     }
 
-    /// The adjust values in effect, in the definition's order (for the editor and the API).
     pub fn adjust_values(&self) -> Vec<i64> {
         self.with_def(|_, adj| adj.to_vec())
     }
 
-    /// The handle definitions (for dragging adjust handles).
     pub fn handles(&self) -> Vec<HandleDef> {
         self.with_def(|def, _| def.ah.to_vec())
     }
 
-    /// The adjust value names in the definition's order.
     pub fn adjust_names(&self) -> Vec<String> {
         self.with_def(|def, _| def.av.iter().map(|(n, _)| n.to_string()).collect())
     }
 
-    /// A preset with `vals` (in the definition's order) as its adjust values.
     pub fn with_values(&self, vals: &[i64]) -> Option<Geometry> {
         let Geometry::Preset { preset, .. } = self else { return None };
         let adj = self.adjust_names().into_iter().zip(vals.iter().copied()).collect();
         Some(Geometry::Preset { preset: *preset, adj })
     }
 
-    /// A preset with handle `i`'s adjust values set so the handle lies as near `to` (points from the shape's top
-    /// left, on a `w` x `h` shape) as its limits allow: each value is searched over its range in turn, twice. `None`
-    /// for custom geometry (its adjust values aren't written) and handles it doesn't have.
     pub fn drag_handle(&self, i: usize, w: Emu, h: Emu, to: [f64; 2]) -> Option<Geometry> {
         let axes: Vec<(u8, Option<Arg>, Option<Arg>)> = match self.handles().get(i)? {
             HandleDef::Xy { x, y, .. } => [*x, *y],
@@ -435,14 +381,12 @@ impl Geometry {
                 let mut vals = g.adjust_values();
                 let Some(&now) = vals.get(k as usize) else { continue };
                 let lim = g.with_def(|def, adj| eval::eval_args(def, adj, w, h, &[lo.unwrap_or(Arg::Const(0)), hi.unwrap_or(Arg::Const(0))]));
-                // Without a limit, a value moves within 200000 of where it is.
                 let lo = lo.map_or(now as f64 - 200000.0, |_| lim[0]);
                 let hi = hi.map_or(now as f64 + 200000.0, |_| lim[1]).max(lo);
                 let at = |v: f64, vals: &mut Vec<i64>| {
                     vals[k as usize] = v.round() as i64;
                     g.with_values(vals).map_or(f64::MAX, |c| miss(&c))
                 };
-                // 33 samples, then halving about the best.
                 let (mut best, mut d) = (now as f64, at(now as f64, &mut vals));
                 for s in 0..=32 {
                     let v = lo + (hi - lo) * f64::from(s) / 32.0;
@@ -470,9 +414,6 @@ impl Geometry {
     }
 }
 
-/// DRAW-5: a wedge callout whose tail tip (adj1, adj2: 100000ths of the width and height from the centre) lies inside
-/// its body is drawn as the body alone: `wedgeRectCallout` as `rect`, `wedgeRoundRectCallout` as `roundRect` with its
-/// corner adjust (adj3), `wedgeEllipseCallout` as `ellipse`.
 fn tailless_body(p: Preset, adj: &[i64]) -> Option<(Preset, Vec<i64>)> {
     let (x, y) = (*adj.first()? as f64 / 50000.0, *adj.get(1)? as f64 / 50000.0);
     match p.name() {

@@ -1,15 +1,4 @@
-//! Accepting and rejecting revisions. Resolving is built from ordinary steps (rows, blocks, restyle, text, paragraph
-//! and join) with nothing recorded, as one transaction: one undo step, whatever it covers.
-//!
-//! - A run's insertion: accepting clears it, rejecting removes the text; a deletion the other way round. With both
-//!   (an insertion another author deleted) each resolves on its own.
-//! - A formatting change: accepting drops it, rejecting restores the formatting before it.
-//! - A paragraph mark: accepting its deletion (or rejecting its insertion) joins the paragraph with the next one,
-//!   which gives the joined paragraph its properties.
-//! - Paragraph, section, table, row, cell and grid property changes: accepting drops them, rejecting restores what
-//!   was before.
-//! - Rows and cells inserted or deleted are kept or removed whole; a cell removed gives its columns to its neighbour.
-//! - A move resolves both ends together, and its range markers go.
+//! Revision accept and reject
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -29,15 +18,11 @@ use super::super::step::{Edges, Step, StepError, para_len};
 use super::super::{Editor, Tx};
 use super::index::{Found, found, revisions};
 
-/// Which revisions a resolve covers.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Scope {
-    /// Every revision the selection touches (runs split at its edges), or the one at a caret.
     Selection,
     All,
-    /// Every revision by the person of this name; others' revisions nested in theirs stay.
     Author(String),
-    /// The revision holding this mark.
     Revision(RevisionId),
 }
 
@@ -57,14 +42,10 @@ impl Who {
     }
 }
 
-/// What a resolve covers, mark by mark.
 struct Pick {
     who: Who,
-    /// A range: the changes besides runs' (marks, properties, rows, cells) it touches. Runs' changes resolve only in
-    /// the units [`Pick::inside`] gives.
     blocks: Option<HashSet<RevisionId>>,
     inside: Option<HashMap<ParaId, Range<u32>>>,
-    /// Moves resolved whole, by name, and the ids of their range markers.
     moves: HashSet<Rc<str>>,
     move_ranges: HashSet<i64>,
 }
@@ -74,17 +55,14 @@ impl Pick {
         m.move_name.as_ref().is_some_and(|n| self.moves.contains(n))
     }
 
-    /// A change of a paragraph mark, a paragraph, a row, a cell or a table.
     fn block(&self, m: &RevisionMark) -> bool {
         self.moved(m) || self.who.has(m) && self.blocks.as_ref().is_none_or(|b| b.contains(&m.id))
     }
 
-    /// A run's change, the run being in the range (or there being none).
     fn run(&self, m: &RevisionMark, in_range: bool) -> bool {
         self.moved(m) || in_range && self.who.has(m)
     }
 
-    /// Completes a pick: the moves it touches (`touches` says which changes count), whole.
     fn with_moves(mut self, found: &Found, touches: impl Fn(&super::index::Item) -> bool) -> Pick {
         let all = matches!(self.who, Who::All) && self.blocks.is_none();
         self.moves = found.items.iter().filter(|it| touches(it)).filter_map(|it| it.mark.move_name.clone()).collect();
@@ -96,7 +74,6 @@ impl Pick {
     }
 }
 
-/// What resolving does to a run: `None` leaves it, else whether its content goes and the run it keeps otherwise.
 fn decide(r: &Run, accept: bool, take: impl Fn(&RevisionMark) -> bool) -> Option<(bool, Run)> {
     let mut rev = r.rev.clone();
     let (mut touched, mut remove, mut base) = (false, false, None);
@@ -128,7 +105,6 @@ fn decide(r: &Run, accept: bool, take: impl Fn(&RevisionMark) -> bool) -> Option
     Some((remove, Rc::new(s)))
 }
 
-/// An inline carrying `run` instead of its own.
 fn with_run(i: &Inline, run: &Run) -> Inline {
     match i {
         Inline::Float(f, _) => Inline::Float(f.clone(), run.clone()),
@@ -138,8 +114,6 @@ fn with_run(i: &Inline, run: &Run) -> Inline {
     }
 }
 
-/// A paragraph's inlines resolved: the runs they carry now (units unchanged, removed objects and resolved move
-/// markers out), and the unit ranges whose content goes, in order. `None` when nothing changes.
 fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inline>, Vec<Range<u32>>)> {
     let inside = pick.inside.as_ref().map(|i| i.get(&ParaId(p.id)).cloned());
     let cuts: Vec<u32> = inside.clone().flatten().map(|r| vec![r.start, r.end]).unwrap_or_default();
@@ -147,7 +121,6 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
     let mut out: Vec<(Inline, bool)> = Vec::with_capacity(p.inlines.len());
     let (mut at, mut changed) = (0u32, false);
     for i in &p.inlines {
-        // A text crossing the range's edges is cut there.
         let n = i.units() as u32;
         let pieces: Vec<Inline> = match i {
             Inline::Text(t, r) if cuts.iter().any(|&c| at < c && c < at + n) => {
@@ -189,7 +162,6 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
                     changed = true;
                     let float = matches!(piece, Inline::Float(..));
                     match (float, remove) {
-                        // A floating object goes with its run; a comment's reference stays where its comment is.
                         (true, true) => {}
                         (false, true) if n > 0 => out.push((piece, true)),
                         _ => out.push((with_run(&piece, &run), false)),
@@ -202,7 +174,6 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
     if !changed {
         return None;
     }
-    // Texts now in one run join again (those staying, and those going, each among themselves).
     let mut merged: Vec<(Inline, bool)> = Vec::with_capacity(out.len());
     for (i, gone) in out {
         if let (Some((Inline::Text(prev, pr), g)), Inline::Text(t, r)) = (merged.last_mut(), &i)
@@ -235,8 +206,6 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
     Some((merged.into_iter().map(|(i, _)| i).collect(), ranges))
 }
 
-/// Every table of the document in document order (an outer table before those in its cells), and every paragraph;
-/// with the body of the building block being edited (`flow`).
 fn tables_and_paras(doc: &Document, flow: Option<u32>) -> (Vec<TableId>, Vec<ParaId>) {
     fn walk<'a>(blocks: &'a [Block], t: &mut Vec<TableId>, p: &mut Vec<ParaId>, boxes: &mut Vec<&'a [Block]>) {
         for b in blocks {
@@ -271,7 +240,6 @@ fn tables_and_paras(doc: &Document, flow: Option<u32>) -> (Vec<TableId>, Vec<Par
     (t, p)
 }
 
-/// The grid column each cell of a row starts at.
 fn columns(r: &Row) -> Vec<usize> {
     let mut at = r.grid_before;
     r.cells
@@ -284,7 +252,6 @@ fn columns(r: &Row) -> Vec<usize> {
         .collect()
 }
 
-/// Vertical merges that no longer hold: a start with nothing continuing it below, a continuation with nothing above.
 fn tidy_merges(rows: &mut [Row]) {
     let cols: Vec<Vec<usize>> = rows.iter().map(columns).collect();
     let state = |rows: &[Row], ri: usize, col: usize| {
@@ -305,18 +272,14 @@ fn tidy_merges(rows: &mut [Row]) {
     }
 }
 
-/// A table resolved: its rows (none: the table goes), its grid when that changed, and the table itself when its own
-/// properties changed.
 struct TablePlan {
     rows: Option<Vec<Row>>,
     grid: Option<Vec<f64>>,
     table: Option<Table>,
-    /// Cells got their earlier properties: their formatting resolves again from them.
     restyle: bool,
 }
 
 impl Editor {
-    /// Accepts or rejects the revisions `scope` covers, as one transaction.
     pub(in crate::editing) fn resolve_revisions(&mut self, accept: bool, scope: &Scope, fonts: &Fonts) -> Outcome {
         if self.doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking()) {
             self.refused = Some("unavailable");
@@ -324,7 +287,6 @@ impl Editor {
         }
         let Some(pick) = self.pick(scope) else { return Outcome::Unchanged("no revision") };
         let mut tx = self.begin(if accept { "Accept" } else { "Reject" });
-        // Resolving is never recorded, whether tracking is on or not.
         tx.tracked = false;
         if self.apply_pick(&mut tx, &pick, accept).is_err() {
             self.abort(tx);
@@ -334,7 +296,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// The marks `scope` covers, `None` when it covers no revision.
     fn pick(&mut self, scope: &Scope) -> Option<Pick> {
         let f = found(&self.doc, &self.index);
         let base = |who: Who| Pick { who, blocks: None, inside: None, moves: HashSet::new(), move_ranges: HashSet::new() };
@@ -365,7 +326,6 @@ impl Editor {
             Scope::Selection => {
                 let (s, e) = match self.selection {
                     Selection::Caret(c) => {
-                        // The innermost revision holding the caret.
                         let list = revisions(&self.doc, &self.index);
                         let idx = &self.index;
                         let r = list.iter().rfind(|r| r.story == c.story && idx.cmp(&r.start, &c).is_le() && idx.cmp(&c, &r.end).is_le())?;
@@ -374,8 +334,6 @@ impl Editor {
                     }
                     Selection::Text { .. } => self.selection.ordered(&self.index)?,
                     Selection::Cells { table, anchor, focus, .. } => {
-                        // shortcut: a cell block resolves from its first cell to its last in document order, the
-                        // cells between them in the rows between included.
                         let t = self.index.table(&self.doc, table)?;
                         let story = self.index.story(self.index.table_slot(table)?.container);
                         let cell = |row: usize, col: usize| t.rows.get(row).and_then(|r| r.cells.get(col.min(r.cells.len().saturating_sub(1))));
@@ -392,7 +350,6 @@ impl Editor {
         f.items.iter().any(|it| touched(&it.mark)).then_some(pick)
     }
 
-    /// The changes from `s` to `e`: runs' inside it, everything else it touches, and the moves it touches whole.
     fn range_pick(&self, f: &Found, s: Position, e: Position) -> Pick {
         let idx = &self.index;
         let touches = |it: &super::index::Item| it.story == s.story && idx.cmp(&it.start, &e).is_lt() && idx.cmp(&s, &it.end).is_lt();
@@ -403,8 +360,6 @@ impl Editor {
         p.with_moves(f, |it| touches(it))
     }
 
-    /// Applies a pick: sections' page changes, tables (rows, cells and their properties), then runs, then paragraph
-    /// marks and properties, then the joins deleted marks make, last first.
     fn apply_pick(&mut self, tx: &mut Tx, pick: &Pick, accept: bool) -> Result<(), StepError> {
         for section in 0..self.doc.sections.len() {
             let s = &self.doc.sections[section];
@@ -450,8 +405,6 @@ impl Editor {
         Ok(())
     }
 
-    /// A paragraph whose mark goes joins the next one, taking its properties. With no paragraph after it in its
-    /// container its mark stays (cleared already); an empty one before a table goes.
     fn join_next(&mut self, tx: &mut Tx, para: ParaId) -> Result<(), StepError> {
         let Some(slot) = self.index.para_slot(para) else { return Ok(()) };
         let Some(blocks) = self.index.blocks(&self.doc, slot.container) else { return Ok(()) };
@@ -490,7 +443,6 @@ impl Editor {
             None => {}
         }
         if let Some(mut own) = plan.table {
-            // The table as the rows step left it, with its own properties resolved.
             let now = self.index.table(&self.doc, table).ok_or(StepError::Missing)?;
             own.rows = now.rows.clone();
             own.grid = now.grid.clone();
@@ -502,7 +454,6 @@ impl Editor {
         Ok(())
     }
 
-    /// A table's revisions resolved; `None` when it has none the pick covers.
     fn table_plan(&self, t: &Table, pick: &Pick, accept: bool) -> Option<TablePlan> {
         let cx = self.cx();
         let picked = |m: &Rc<RevisionMark>| pick.block(m);
@@ -541,8 +492,6 @@ impl Editor {
                     p.restore_row(&mut r);
                 }
             }
-            // shortcut: rejecting a change of a row's table exceptions drops it without restoring them (the model
-            // keeps no row exceptions).
             if r.rev.ex_change.as_ref().is_some_and(|c| picked(&c.mark)) {
                 r.rev.ex_change = None;
             }
@@ -555,7 +504,6 @@ impl Editor {
                         if let Some(p) = &ch.previous {
                             p.restore_cell(c);
                         }
-                        // Its formatting resolves again from the earlier properties at its place now.
                         let raw = ch.previous_raw.0.clone().unwrap_or_else(|| Rc::from(format!("<{}tcPr/>", cx.w).as_str()));
                         c.direct = Raw(Some(raw));
                         restyle = true;
@@ -628,7 +576,6 @@ impl Editor {
         Some(TablePlan { rows: changed.then_some(rows), grid: new_grid, table, restyle })
     }
 
-    /// The selection carried through the transaction's steps; a place they removed becomes the start of the story.
     fn follow_steps(&mut self, tx: &Tx) {
         let map = |p: Position| tx.maps.iter().fold(p, |p, m| m.apply(p));
         let s = match self.selection {
@@ -651,10 +598,8 @@ impl Editor {
         };
     }
 
-    /// Selects and reveals the next (or, `back`, the previous) revision after the selection's start, across stories.
     pub(in crate::editing) fn go_to_revision(&mut self, back: bool, fonts: &Fonts) -> Outcome {
         let here = self.selection.ordered(&self.index).map(|(a, _)| a).or_else(|| self.selection.focus());
-        // A caret at a revision's start goes to that revision; a selection moves past it.
         let caret = self.selection.is_collapsed();
         let (list, stories) = self.review_list.get(self.generation, &self.doc, &self.index);
         let rank = |s: StoryId| stories.iter().position(|x| *x == s).unwrap_or(0);
@@ -698,7 +643,6 @@ fn last_para(b: &Block) -> Option<&Paragraph> {
     }
 }
 
-/// The units of `para` from `s` to `e`, when they hold any.
 fn covered(doc: &Document, idx: &DocIndex, s: Position, e: Position, para: ParaId) -> Option<Range<u32>> {
     let len = para_len(idx.para(doc, para)?).0;
     let story = idx.story(idx.para_slot(para)?.container);

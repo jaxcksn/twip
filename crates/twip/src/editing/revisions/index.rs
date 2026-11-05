@@ -1,6 +1,4 @@
-//! Finding revisions in document order, across stories: the body, then headers and footers, footnotes, endnotes and
-//! text boxes. A revision is a stretch of one kind of change by one author: adjacent runs, paragraph marks and rows
-//! inserted (or deleted, or formatted) by the same person are one revision, as are the property changes of one row.
+//! Revision index
 
 use std::ops::Range;
 use std::rc::Rc;
@@ -13,17 +11,14 @@ use super::super::index::DocIndex;
 use super::super::position::{Position, StoryId};
 use super::super::step::para_len;
 
-/// What a revision changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RevisionKind {
     Insert,
     Delete,
     MovedFrom,
     MovedTo,
-    /// Character formatting.
     Property,
     ParagraphProperty,
-    /// Table, row, cell or column grid properties.
     TableProperty,
     SectionProperty,
     CellInsertion,
@@ -49,7 +44,6 @@ impl RevisionKind {
     }
 }
 
-/// One revision: where it starts and ends in its story, what it is, who made it, and the marks it covers.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Revision {
     pub story: StoryId,
@@ -58,12 +52,9 @@ pub struct Revision {
     pub kind: RevisionKind,
     pub author: AuthorId,
     pub ids: Vec<RevisionId>,
-    /// The first change's date.
     pub date: Option<crate::docx::review::Timestamp>,
 }
 
-/// The slots changes sit in. Adjacent changes join into one revision only within a slot, so an insertion another
-/// author deleted is both an insertion and (inside a longer one) a deletion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Channel {
     Ins,
@@ -75,7 +66,6 @@ enum Channel {
     Section,
 }
 
-/// One change where it sits: a run's, a paragraph mark's, a paragraph's, a row's, a cell's, a table's or a section's.
 #[derive(Clone, Debug)]
 pub(super) struct Item {
     channel: Channel,
@@ -84,24 +74,18 @@ pub(super) struct Item {
     pub story: StoryId,
     pub start: Position,
     pub end: Position,
-    /// A run's: its paragraph and units. Other changes resolve whole.
     pub run: Option<(ParaId, Range<u32>)>,
-    /// What the review lists. A numbering change alone isn't listed: it resolves with its paragraph's other changes.
     listed: bool,
-    /// The element's place in its channel's order: adjacent elements of a channel differ by one.
     seq: usize,
 }
 
-/// Every change in document order, and the move range markers (name, `w:id`) of every story.
 #[derive(Debug, Default)]
 pub(super) struct Found {
     pub items: Vec<Item>,
     pub move_ranges: Vec<(Rc<str>, i64)>,
-    /// The stories in the order they were walked.
     pub stories: Vec<StoryId>,
 }
 
-/// The document's revisions, built when asked for and kept until the document changes.
 #[derive(Debug, Default)]
 pub struct List {
     at: Option<u64>,
@@ -110,7 +94,6 @@ pub struct List {
 }
 
 impl List {
-    /// The revisions of `doc` at document revision `revision`, built again when the document changed since.
     pub fn get(&mut self, revision: u64, doc: &Document, idx: &DocIndex) -> (&[Revision], &[StoryId]) {
         if self.at != Some(revision) {
             let found = found(doc, idx);
@@ -122,19 +105,15 @@ impl List {
     }
 }
 
-/// The document's revisions in document order, story by story.
 pub fn revisions(doc: &Document, idx: &DocIndex) -> Vec<Revision> {
     revisions_of(&found(doc, idx).items)
 }
 
-/// Joins adjacent listed changes of one kind and author (in one channel and story) into revisions.
 fn revisions_of(items: &[Item]) -> Vec<Revision> {
     let mut out: Vec<Revision> = Vec::new();
-    // Per channel: the revision its last change went to, and that change's place.
     let mut open: [Option<(usize, usize)>; 7] = [None; 7];
     for it in items.iter().filter(|i| i.listed) {
         let ch = it.channel as usize;
-        // Changes of one element, and of adjacent elements, join.
         let joins = open[ch].filter(|&(e, last)| {
             let r = &out[e];
             r.kind == it.kind && r.author == it.mark.author && r.story == it.story && (it.seq == last || it.seq == last + 1)
@@ -165,7 +144,6 @@ fn revisions_of(items: &[Item]) -> Vec<Revision> {
     out
 }
 
-/// Every change of the document, story by story in document order.
 pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
     let mut w = Walk { found: Found::default(), story: StoryId::Body, seq: [0; 7], boxes: Vec::new() };
     for s in &doc.sections {
@@ -193,7 +171,7 @@ pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
         w.found.stories.push(story);
         w.blocks(blocks, false);
     }
-    // Text boxes, those inside text boxes after them.
+    // Text boxes
     let mut k = 0;
     while let Some(&(f, blocks)) = w.boxes.get(k) {
         w.story = StoryId::TextBox(f);
@@ -201,7 +179,7 @@ pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
         w.blocks(blocks, false);
         k += 1;
     }
-    // The sub-template being edited: its body's revisions are reviewed there.
+    // Sub-template body
     if let Some(k) = idx.flow
         && let Some(part) = doc.glossary.as_ref().and_then(|g| g.parts.get(k as usize))
     {
@@ -215,7 +193,6 @@ pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
 struct Walk<'a> {
     found: Found,
     story: StoryId,
-    /// Per channel, the place of the element last walked.
     seq: [usize; 7],
     boxes: Vec<(FloatId, &'a [Block])>,
 }
@@ -240,7 +217,6 @@ impl<'a> Walk<'a> {
         Position::text(self.story, ParaId(p.id), Unit(u))
     }
 
-    /// The start of the first paragraph and the end of the last in `blocks` (descending into tables).
     fn span(&self, blocks: &[Block]) -> (Position, Position) {
         fn first(bs: &[Block]) -> Option<&Paragraph> {
             bs.iter().find_map(|b| match b {
@@ -304,14 +280,12 @@ impl<'a> Walk<'a> {
             }
             at += n;
         }
-        // A cell's last mark is its end: it neither starts nor breaks a revision unless it has one itself.
         if !(cell_end && p.mark.rev.is_empty()) {
             let end = next.map_or(self.at(p, len), |q| self.at(q, 0));
             self.run(&p.mark, self.at(p, len), end, None);
         }
     }
 
-    /// An element of the text channels (a run, a paragraph mark): its insertion, deletion and formatting change.
     fn run(&mut self, r: &Run, start: Position, end: Position, run: Option<(ParaId, Range<u32>)>) {
         for ch in [Channel::Ins, Channel::Del, Channel::Fmt] {
             self.seq[ch as usize] += 1;
@@ -331,7 +305,6 @@ impl<'a> Walk<'a> {
 
     fn table(&mut self, t: &'a Table) {
         let id = TableId(t.id);
-        // Rows of different tables aren't adjacent.
         for ch in [Channel::Para, Channel::Table, Channel::Cell] {
             self.seq[ch as usize] += 2;
         }
@@ -345,7 +318,6 @@ impl<'a> Walk<'a> {
         let row_start = |ri: usize| starts.get(ri).copied().unwrap_or(Position::row_end(story, id, ri));
         let end = Position::row_end(story, id, t.rows.len().saturating_sub(1));
         let props = |r: &crate::docx::Row| r.rev.change.is_some() || r.rev.ex_change.is_some() || r.cells.iter().any(|c| c.rev.change.is_some());
-        // The table's own property and grid changes go with the first row's property changes, or stand alone.
         let mut table: Vec<&Rc<RevisionMark>> = t.change.iter().map(|c| &c.mark).chain(t.grid_change.iter().map(|g| &g.mark)).collect();
         if !t.rows.iter().any(props) && !table.is_empty() {
             self.seq[Channel::Table as usize] += 1;
@@ -364,7 +336,6 @@ impl<'a> Walk<'a> {
             if let Some(m) = &r.rev.del {
                 self.push(Channel::Del, RevisionKind::Delete, m, rs, re, None, true);
             }
-            // Cell marks join along a row, not across rows.
             self.seq[Channel::Cell as usize] += 1;
             for c in &r.cells {
                 self.seq[Channel::Cell as usize] += 1;
@@ -379,8 +350,6 @@ impl<'a> Walk<'a> {
                 }
                 self.blocks(&c.blocks, true);
             }
-            // A row's property changes (its own, its cells', and the table's with the first such row) are one
-            // revision per author, listed after its cells'.
             self.seq[Channel::Table as usize] += 1;
             if props(r) {
                 let row = r.rev.change.iter().chain(r.rev.ex_change.iter()).map(|c| &c.mark);

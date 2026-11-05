@@ -1,4 +1,4 @@
-//! Tables: commands on the selection's cells, rows, columns and table.
+//! Table commands
 
 use crate::api::command::{AutoFit, BorderEdges, BorderStyle, CellBorders, CellMargins, HorizontalSide, InsertColumns, SplitCells, TableStyleChange};
 use crate::api::value::{AutoOr, CellAlignment, HeightRule, HorizontalAlignment, RowHeight, StyleId, TableWidth};
@@ -11,7 +11,6 @@ use crate::editing::table::Grid;
 use crate::editing::table_format::{Edges, TableFormat};
 
 impl Editor {
-    /// Columns left or right of the selection, `count` of them, as one step.
     pub(in crate::editing) fn insert_columns_by(&mut self, c: InsertColumns, fonts: &Fonts) -> Outcome {
         let right = c.side == HorizontalSide::Right;
         self.joined("Insert Columns", fonts, |e| {
@@ -26,7 +25,6 @@ impl Editor {
         })
     }
 
-    /// The selected cells split into `columns` and then `rows`, as one step.
     pub(in crate::editing) fn split_cells(&mut self, s: SplitCells, fonts: &Fonts) -> Outcome {
         let (columns, rows) = (s.columns as usize, s.rows.unwrap_or(1) as usize);
         self.joined("Split Cells", fonts, |e| {
@@ -48,8 +46,6 @@ impl Editor {
         })
     }
 
-    /// The selected columns fitted to their contents.
-    // shortcut: fitting to the window and fixed widths aren't built yet.
     pub(in crate::editing) fn auto_fit_columns(&mut self, to: AutoFit, fonts: &Fonts) -> Outcome {
         if to != AutoFit::Contents {
             return Outcome::unsupported("fitting columns to the window or fixed widths");
@@ -108,7 +104,6 @@ impl Editor {
         self.table_format(&TableFormat::CellBorders(edges, border), fonts)
     }
 
-    /// The selected cells' margins; those not given keep the first selected cell's.
     pub(in crate::editing) fn set_cell_margins(&mut self, m: CellMargins, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
         let now = self
@@ -166,8 +161,6 @@ impl Editor {
         self.table_format(&TableFormat::TableStyle(id.0), fonts)
     }
 
-    /// Which parts of the table style apply; those not given keep theirs (Word's default without `w:tblLook`: header
-    /// row, banded rows and first column).
     pub(in crate::editing) fn set_table_style_options(&mut self, o: TableStyleChange, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::unavailable("not in a table") };

@@ -1,8 +1,4 @@
-//! In-progress interactions (selection drags, resizes, object moves) with their preview, commit and cancel.
-//!
-//! Drag-and-drop of selected text: a press inside a text selection starts it; a release without
-//! moving collapses the selection there; a release elsewhere moves the text (Ctrl: copies it) as one undo step; a
-//! release inside the selection, or Esc, does nothing.
+//! Text drag and drop
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -20,21 +16,16 @@ use super::selection::Selection;
 use super::step::Step;
 use super::text::UnitText;
 
-/// A press inside the selection, waiting to become a drop.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TextDrag {
-    /// Where the press was (document points) and the position under it.
     pub start: (f64, f64),
     pub press: Position,
-    /// Past the threshold: a drag, not a click.
     pub moved: bool,
     pub copy: bool,
-    /// Where the text would go.
     pub drop: Option<Position>,
 }
 
 impl Editor {
-    /// Whether `p` is inside the text selection (its ends excluded).
     pub(super) fn inside_selection(&self, p: &Position) -> bool {
         let Selection::Text { .. } = self.selection else { return false };
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
@@ -43,7 +34,6 @@ impl Editor {
 
     pub(super) fn text_drag_move(&mut self, x: f64, y: f64, ctrl: bool, fonts: &Fonts) {
         let Some(mut d) = self.text_drag else { return };
-        // 3 pixels at the zoom, as a drag threshold.
         let tol = 2.25 / self.viewport.zoom.max(0.1);
         if !d.moved && ((x - d.start.0).abs() > tol || (y - d.start.1).abs() > tol) {
             d.moved = true;
@@ -55,11 +45,9 @@ impl Editor {
         self.text_drag = Some(d);
     }
 
-    /// The release: a click puts the caret there; a drop moves or copies the text.
     pub(super) fn text_drag_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.text_drag.take()?;
         self.requests.push(Request::ReleasePointer);
-        // An inline picture dragged: moved as the one unit it is, and selected again where it lands.
         let object = match self.selection {
             s @ Selection::Object(super::selection::ObjectRef::Inline { para, offset }) if d.moved => {
                 let at = |u: u32| Position::text(d.press.story, para, Unit(u));
@@ -84,7 +72,6 @@ impl Editor {
             return Some(Outcome::Unchanged("no drop place"));
         };
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(Outcome::Unchanged("no selection")) };
-        // Into a text box the selection holds: as onto the selection (the box goes with the text).
         let in_box = match drop.story {
             super::position::StoryId::TextBox(f) => self.index.float_anchor(f).and_then(|para| {
                 let p = self.index.para(&self.doc, para)?;
@@ -97,22 +84,18 @@ impl Editor {
         };
         let inside = |p: &Position| self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater;
         if inside(&drop) || in_box.is_some_and(|p| inside(&p)) {
-            // Onto itself: nothing moves.
             restore(self);
             return Some(Outcome::Unchanged("dropped on the selection"));
         }
         let frag = self.copy_fragment()?;
         let sel = self.selection;
-        // With tracking, whole paragraphs or a whole sentence moved are recorded as a move.
         let moving = !d.copy && self.tracking() && self.moves_whole();
         let mut marks = (None, None);
-        // The dropped text's ends, followed through the edits after its paste.
         let mut placed: Option<(Position, Position)> = None;
         let paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             e.set_selection(Selection::Caret(drop));
             let start = drop;
             let ok = matches!(e.paste_fragment(&frag, fonts), Outcome::Changed(_));
-            // The paste goes in at `drop`, which stays its start (a split there keeps it in the first part).
             if ok && let Some(end) = e.selection.focus() {
                 *placed = Some((start, end));
             }
@@ -120,7 +103,6 @@ impl Editor {
         };
         let delete = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             e.set_selection(sel);
-            // Smart cut: the space the move would leave doubled goes with it. A recorded move takes what was selected.
             if !moving && object.is_none() {
                 e.smart_cut();
             }
@@ -132,9 +114,7 @@ impl Editor {
             }
             ok
         };
-        // The edit further down first, so the other place is still where it was.
         let after = self.index.cmp(&drop, &b) == std::cmp::Ordering::Greater;
-        // What each recorded: the insertion and the deletion a move is made of.
         let mut paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             let ok = paste(e, placed);
             if ok {
@@ -149,7 +129,6 @@ impl Editor {
             }
             ok
         };
-        // The paste, the deletion and the move recorded are one transaction.
         self.begin_batch(Some(if d.copy { "Copy" } else { "Move" }.into()));
         #[allow(clippy::if_same_then_else, reason = "the order differs: each call moves what the other one sees")]
         let steps = if d.copy {
@@ -167,7 +146,6 @@ impl Editor {
         if moving && let (Some(to), Some(from)) = &marks {
             self.record_move(to, from, fonts);
         }
-        // The dropped text is selected; a dropped picture, as the object.
         if object.is_some()
             && let Some((para, offset)) = placed.and_then(|(s, _)| s.para_offset())
         {
@@ -178,8 +156,6 @@ impl Editor {
         Some(self.end_batch(true, fonts))
     }
 
-    /// After a paste: the fragment cut as a move (whole paragraphs or a sentence, with tracking) pasted again is
-    /// recorded as that move, in the paste's transaction (the batch the paste runs in).
     pub(super) fn paste_moved(&mut self, f: &super::clipboard::Fragment, out: &Outcome, fonts: &Fonts) {
         let Some((id, from)) = self.cut_move.take() else { return };
         if id != f.id || !matches!(out, Outcome::Changed(_)) {
@@ -191,8 +167,6 @@ impl Editor {
         self.selection = sel;
     }
 
-    /// Whether the selection is whole paragraphs (from a paragraph's start to a later one's) or one whole sentence,
-    /// holding no revisions: what moving records as a move.
     pub(super) fn moves_whole(&mut self) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset()) else { return false };
@@ -206,8 +180,6 @@ impl Editor {
         whole && self.selected_ranges().into_iter().all(|(para, s, e)| self.index.para(&self.doc, para).is_some_and(|p| !has_revisions(p, s, e)))
     }
 
-    /// Records the insertion `to` and the deletion `from` as the two ends of one move, in one transaction: their
-    /// text and marks become the move's, with the move's range markers around each end.
     pub(super) fn record_move(&mut self, to: &Rc<RevisionMark>, from: &Rc<RevisionMark>, fonts: &Fonts) -> bool {
         let id = self.doc.review_ids.next_revision_id();
         let name: Rc<str> = format!("move{id}").into();
@@ -235,7 +207,6 @@ impl Editor {
         }
         let mut paras = Vec::new();
         self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut paras));
-        // Each end's first and last place (destination, then source), and the paragraphs that change.
         let mut ends: [Option<((ParaId, Unit), (ParaId, Unit))>; 2] = [None, None];
         let mut cache: HashMap<*const RunStyle, Option<Run>> = HashMap::new();
         let mut steps = Vec::new();
@@ -289,7 +260,6 @@ impl Editor {
     }
 }
 
-/// Whether units `a..b` of `p` hold inserted or deleted text.
 fn has_revisions(p: &crate::docx::Paragraph, a: Unit, b: Unit) -> bool {
     let mut at = 0u32;
     p.inlines.iter().any(|i| {

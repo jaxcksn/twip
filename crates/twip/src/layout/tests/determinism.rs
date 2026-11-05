@@ -1,5 +1,4 @@
-//! Equal inputs give equal layouts: laying a document out twice, and with a fresh font catalog,
-//! gives the same dump.
+//! Determinism
 
 use crate::layout::dump::page_text;
 use crate::layout::layout;

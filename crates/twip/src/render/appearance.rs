@@ -1,5 +1,4 @@
-//! How the document's colours are drawn: in their own colours, or on a dark page (DRAW-27). Only screen drawing reads
-//! this; layout, the document, PDF export and printing never see it.
+//! Colour appearance
 
 use std::sync::OnceLock;
 
@@ -32,7 +31,6 @@ impl Appearance {
 
 const LEVELS: usize = 17;
 
-/// The dark-page table (DRAW-27): 17 levels per channel, `[r][g][b]` flattened.
 fn table() -> &'static [[u8; 3]] {
     static TABLE: OnceLock<Vec<[u8; 3]>> = OnceLock::new();
     TABLE.get_or_init(|| {
@@ -44,8 +42,6 @@ fn table() -> &'static [[u8; 3]] {
     })
 }
 
-/// `c` on a dark page: interpolated in the table between the 4 corners of the tetrahedron it lies in, but for the
-/// pure blues between 0x80 and 0x90, which step at 0x8E (DRAW-27).
 // shortcut: other saturated blues and violets (red and green under about 0x80, blue over about 0xA0) also sit near a
 // step the 17 levels don't follow: on a 600-colour random sample 3% are off by more than CIEDE2000 3 (up to 15), the
 // rest by 0.4 on average. Following them needs the mapping itself, not a finer table (steps of 8 still miss).
@@ -187,7 +183,6 @@ mod tests {
 
     #[test]
     fn highlights_follow_the_table_and_light_pages_keep_their_colours() {
-        // The highlight colours as drawn (FONT-15) on a dark page, dark blue across the pure blues' step.
         for (from, want) in [
             (0xFFFF00, 0x515100),
             (0x00FF00, 0x006F00),

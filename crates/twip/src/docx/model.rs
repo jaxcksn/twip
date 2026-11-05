@@ -17,12 +17,7 @@ pub struct RunStyle {
     pub h_ansi: String,
     pub east_asia: String,
     pub cs: String,
-    /// The East Asian font is the theme's empty slot (`east_asia` is then the Latin font, or a name above the slot,
-    /// STYLE-8): Word treats it as an East Asian font for balanced space runs and compressed punctuation (FONT-14,
-    /// BREAK-8, BREAK-9).
     pub east_asia_unset: bool,
-    /// The East Asian font is named and isn't Times New Roman, the font an unset slot stands for: such a run is
-    /// laid out at a 1000-unit em under compat ≤ 14 `useWord97LineBreakRules` (FONT-18).
     pub east_asia_named: bool,
     pub hint_east_asia: bool,
     pub size: f64,
@@ -46,7 +41,6 @@ pub struct RunStyle {
     pub scale: f64,
     /// Kern at or above this size; 0 = off.
     pub kern: f64,
-    /// `w14:ligatures` bits (1 standard, 2 contextual, 4 historical, 8 discretional) and 16 for `w14:cntxtAlts` (FONT-4).
     pub ligatures: u8,
     /// `w:em`, when it marks the text ("dot", "comma", "circle", "underDot").
     pub em: Option<String>,
@@ -77,7 +71,6 @@ impl PartialEq for Raw {
 pub struct ParaStyle {
     pub style_id: Option<String>,
     pub jc: Jc,
-    /// `w:bidi`: a right-to-left paragraph, its left and right alignments swapped (JUST-4).
     pub bidi: bool,
     pub ind_left: f64,
     pub ind_right: f64,
@@ -91,7 +84,6 @@ pub struct ParaStyle {
     pub line: f64,
     pub line_rule: LineRule,
     pub contextual: bool,
-    /// LINE-16: `w:snapToGrid` (default on).
     pub snap_to_grid: bool,
     pub keep_next: bool,
     pub keep_lines: bool,
@@ -109,15 +101,11 @@ pub struct ParaStyle {
     pub frame: Option<FramePr>,
     pub text_alignment: String,
     pub outline_lvl: Option<i64>,
-    /// The list level's `w:lvlJc` (LIST-1): the number starts (left), ends (right) or is centred at the first-line position.
     pub list_jc: String,
     /// The list the paragraph is in (numId, ilvl; direct or from its style), and that level's `w:numFmt`.
     pub num: Option<(i64, i64)>,
     pub list_fmt: Option<String>,
-    /// The `w:abstractNum` its list uses: paragraphs with the same one are in the same list (PARA-5).
     pub list: Option<i64>,
-    /// The size the paragraph mark is laid out at when not its own (STYLE-4: compat ≤ 14 cells); formatting keeps the
-    /// mark's.
     pub mark_size: Option<f64>,
     /// The `w:pPr` as written (editable reads only), what formatting edits change and saving writes back.
     pub direct: Raw,
@@ -165,8 +153,6 @@ pub enum FieldView {
     Code,
 }
 
-/// Fields the engine evaluates (FIELD-1): layout draws their value in place of their result; every other field shows its
-/// result.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldKind {
     Page,
@@ -179,12 +165,10 @@ pub enum FieldKind {
     StyleRef(String),
     Date,
     If,
-    /// A code that is one word naming no field (FIELD-2): Word reads it as `REF word`, a bookmark reference.
     Bookmark(String),
     /// A code whose first word can be neither a field name nor a bookmark (`"http://…"` left by a merge): Word shows
     /// nothing.
     Invalid,
-    /// A code the application declares a sub-template reference: never evaluated; its cached result shows (FIELD-2).
     SubTemplate,
 }
 
@@ -199,7 +183,6 @@ pub struct Picture {
     /// Lock aspect ratio (`a:graphicFrameLocks/@noChangeAspect` or `a:picLocks/@noChangeAspect`): corner handles keep
     /// the ratio.
     pub lock_aspect: bool,
-    /// `wp:effectExtent` (left, top, right, bottom), points: the layout box grows by it (FLOAT-5).
     pub effect: [f64; 4],
     /// The DrawingML object: its geometry, paint and transform (`None`: a picture inserted without them).
     pub shape: Option<Box<crate::drawing::Shape>>,
@@ -239,7 +222,6 @@ pub struct Float {
     /// Identity in layouts and editing ([`next_para_id`]'s counter): fragments name it, selections and drags keep it.
     pub id: u64,
     pub w: f64,
-    /// A frame without `w`: as wide as its content, at most the column (FRAME-1).
     pub auto_w: bool,
     pub h: f64,
     pub image: Option<usize>,
@@ -260,20 +242,14 @@ pub struct Float {
     /// `bothSides`, `left`, `right`, `largest`.
     pub wrap_text: String,
     pub dist: [f64; 4],
-    /// `wp:effectExtent` (left, top, right, bottom), points, whole twips; may be negative (FLOAT-6, FLOAT-7).
     pub effect: [f64; 4],
-    /// A tight or through wrap polygon's bounding box, fractions of the extent (x0, y0, x1, y1); None without a
-    /// polygon of at least two points (FLOAT-8).
     pub poly: Option<[f64; 4]>,
     pub behind: bool,
     pub allow_overlap: bool,
     pub layout_in_cell: bool,
     /// Document order of the float, for F13.
     pub order: usize,
-    /// `wp:anchor/@relativeHeight`: its place among the floats of its plane (FLOAT-16).
     pub z: u32,
-    /// FLOAT-17: the shape is turned a quarter (45° to 135° mod 180°, compat ≠ 12): `w`, `h` and the offsets are the
-    /// box turned about its centre, which is what is positioned and wrapped; the document's extent is (`h`, `w`).
     pub rot_swap: bool,
     /// The source `w:drawing` element's byte range in its part: saving drops it when the float is deleted.
     pub src: Option<std::ops::Range<usize>>,
@@ -281,14 +257,11 @@ pub struct Float {
     pub locked: bool,
     /// A frame's paragraphs in the source (frames.rs): saving drops them when the frame is deleted.
     pub frame_src: Option<std::ops::Range<usize>>,
-    /// A group shape's pictures and text boxes (FLOAT-15), in drawing order; the float's own image and text box are
-    /// then none.
     pub parts: Vec<GroupPart>,
     /// The DrawingML object (geometry, paint, transform, group tree); `None` for frames and floats made without one.
     pub shape: Option<Box<crate::drawing::Shape>>,
 }
 
-/// A picture or text box of a group shape: its box from the group's top left, points (FLOAT-15).
 #[derive(Clone, Debug, PartialEq)]
 pub struct GroupPart {
     pub rect: [f64; 4],
@@ -299,8 +272,6 @@ pub struct GroupPart {
 }
 
 impl Float {
-    /// FLOAT-14: whether a float anchored in a table cell is laid out in the cell: in compat 15, with `layoutInCell`,
-    /// or positioned from the anchor character (horizontally) or line (vertically).
     pub fn in_cell(&self, compat: Compat) -> bool {
         compat == Compat::Generic || self.layout_in_cell || self.h_relative == "character" || self.v_relative == "line"
     }
@@ -312,7 +283,6 @@ pub struct TextBox {
     pub insets: [f64; 4],
     pub outline: f64,
     pub auto_fit: bool,
-    /// `wps:bodyPr/@anchor`: 0 top, 1 centre (`ctr`), 2 bottom (`b`); others are top (FLOAT-10).
     pub v_anchor: u8,
 }
 
@@ -341,7 +311,6 @@ pub enum Inline {
     },
     /// `w:footnoteRef` / `w:endnoteRef` inside a note: the note's own number (`id` = the note's id).
     NoteMark(NoteKind, i64, Run),
-    /// `w:separator` / `w:continuationSeparator` in a note separator story: the rule above the notes (NOTE-3).
     Separator {
         continuation: bool,
         run: Run,
@@ -359,11 +328,7 @@ pub enum Inline {
         view: FieldView,
         /// Template design: what an empty result shows; not saved.
         label: Option<Rc<str>>,
-        /// An evaluated kind's value computed after reading (SEQ, REF, IF, DATE, STYLEREF, FIELD-1), shown in place of
-        /// the result; page-dependent kinds get theirs at layout.
         value: Option<String>,
-        /// The `begin` run's formatting; for an evaluated kind, what its value is drawn in (FIELD-4: the result's first
-        /// run with `\* MERGEFORMAT`, else the code's).
         run: Run,
     },
     /// `w:fldChar separate`: the end of a field's code, the start of its result.
@@ -402,7 +367,6 @@ pub struct ListLabel {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Paragraph {
     pub style: Rc<ParaStyle>,
-    /// The paragraph mark's formatting (empty-line height, STYLE-5).
     pub mark: Run,
     pub list: Option<ListLabel>,
     pub inlines: Vec<Inline>,
@@ -425,7 +389,6 @@ pub fn next_para_id() -> u64 {
 /// A body paragraph's place in the main part's XML ([`Source::xml`] byte offsets), for lossless saving.
 #[derive(Debug, PartialEq)]
 pub struct ParaSrc {
-    /// Its `w:p` elements: several when hidden paragraph marks joined them (STYLE-7).
     pub ranges: Vec<std::ops::Range<usize>>,
     /// The elements that produced its units, in order, with how many units each did: `w:t`, `w:tab`, a drawing, a
     /// whole complex field (from its `begin` run to its `end` run), ...
@@ -715,7 +678,6 @@ pub struct Cell {
     pub v_align: String,
     pub text_direction: String,
     pub no_wrap: bool,
-    /// `w:tcFitText`: each paragraph on one line, fitted to the cell (TABLE-51).
     pub fit_text: bool,
     /// The cell's `w:tcPr` as read (or as table formatting changed it): what re-resolution merges over the cell's
     /// table-style region when its place in the table changes.
@@ -734,13 +696,9 @@ pub struct Row {
     pub header: bool,
     pub grid_before: usize,
     pub grid_after: usize,
-    /// `w:wBefore` / `w:wAfter`: the skipped columns' width, points (0 when not dxa; `None` when absent). Autofit
-    /// only (TABLE-15).
     pub w_before: Option<f64>,
     pub w_after: Option<f64>,
-    /// `w:tblPrEx/w:tblInd`: the row's own indent (twips as points, like [`Table::ind`]), when it has one (TABLE-50).
     pub ind: Option<f64>,
-    /// `w:trPr/w:jc`: the row's own alignment (TABLE-23: compat ≤ 14 aligns each row by it).
     pub jc: Option<Jc>,
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
@@ -758,18 +716,13 @@ pub struct Table {
     pub width: Width,
     pub jc: Jc,
     pub ind: f64,
-    /// `w:tblInd` is set, directly or by the table style's chain (TABLE-23: in compat ≤ 14 a table without one isn't
-    /// pulled left by its edge allowance).
     pub ind_set: bool,
     pub borders: [Option<Border>; 6],
     pub fixed: bool,
     pub cell_spacing: f64,
     pub look: Option<Look>,
-    /// `w:tblStyleRowBandSize` and `w:tblStyleColBandSize` (table style banding, STYLE-4).
     pub bands: (i64, i64),
-    /// `w:tblpPr`: placed at its anchor, taking no room in the flow; text wraps around it (TABLE-49).
     pub floating: Option<TablePos>,
-    /// `w:bidiVisual`: laid out in logical order, drawn right to left (TABLE-23).
     pub bidi_visual: bool,
     pub grid: Vec<f64>,
     pub rows: Vec<Row>,
@@ -895,14 +848,12 @@ pub struct Section {
     pub line_numbers: Option<LineNumbering>,
     pub v_align: String,
     pub page_borders: Option<PageBorders>,
-    /// LINE-16: `w:docGrid` line pitch in layout units, for a grid of type `lines`, `linesAndChars` or `snapToChars`.
     pub line_grid: Option<i32>,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,
 }
 
-/// The layout engine a document gets (COMPAT-1): `Generic` for compat 15, `Legacy` for every older mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Compat {
     #[default]
@@ -912,7 +863,6 @@ pub enum Compat {
 
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
-    /// `w:compatSetting compatibilityMode` as written; 12 without one (COMPAT-1).
     pub compat_mode: i64,
     /// `w:compat` child options that are on.
     pub compat: std::collections::HashSet<String>,
@@ -936,7 +886,6 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// COMPAT-1: compat 15 is `compatibilityMode` ≥ 15.
     pub fn compat(&self) -> Compat {
         if self.compat_mode >= 15 { Compat::Generic } else { Compat::Legacy }
     }
@@ -957,10 +906,8 @@ pub struct AddedList {
 #[derive(Clone, Debug, Default)]
 pub struct Document {
     pub sections: Vec<Section>,
-    /// The theme's colour and format schemes (DRAW-7, DRAW-8) and the settings' colour mapping.
     pub theme: Rc<crate::drawing::theme::Theme>,
     pub colour_map: crate::drawing::theme::ColourMap,
-    /// `w:background`'s colour (PAGE-12), drawn on screen only.
     pub page_colour: Option<u32>,
     /// Headers and footers by part name, in name order (the editor addresses them by place in it).
     pub stories: std::collections::BTreeMap<String, Vec<Block>>,
@@ -998,7 +945,6 @@ pub struct Document {
     /// `sdtLocked` or `sdtContentLocked`).
     pub undeletable: std::collections::HashSet<usize>,
     pub settings: Settings,
-    /// The `LineNumber` character style, resolved (LNUM-1).
     pub line_number_run: Option<Run>,
     /// What the document was read from, when read for editing.
     pub source: Option<Rc<Source>>,

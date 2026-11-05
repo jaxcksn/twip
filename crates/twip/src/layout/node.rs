@@ -1,17 +1,12 @@
-//! Input nodes: borrowed views of the content an algorithm lays out, built by the document pass. Algorithms
-//! below the document pass see the document only through these.
+//! Input nodes
 
 use std::collections::HashMap;
 
 use crate::docx::review::MarkupView;
 use crate::docx::{Block, NoteKind, ParaStyle, Section};
 
-/// A section's or story's blocks in order. A section's may end with blocks owned by the pass (the endnote
-/// separator and endnotes, NOTE-10), so it holds references.
 pub struct Blocks<'a> {
     pub blocks: Vec<&'a Block>,
-    /// Where each story appended to a section's own blocks starts (the endnote separator and each endnote): no
-    /// paragraphs join across them (REV-6).
     pub stories: Vec<usize>,
 }
 
@@ -20,13 +15,11 @@ impl<'a> Blocks<'a> {
         Blocks { blocks: blocks.iter().collect(), stories: Vec::new() }
     }
 
-    /// Appends a story's blocks.
     pub fn append(&mut self, story: impl IntoIterator<Item = &'a Block>) {
         self.stories.push(self.blocks.len());
         self.blocks.extend(story);
     }
 
-    /// The last block laid out with block `i` (REV-6): `i`, unless its paragraph joins those after it.
     pub fn chain_end(&self, i: usize, view: MarkupView) -> usize {
         let story_end = self.stories.iter().copied().find(|&s| s > i).unwrap_or(self.blocks.len()).min(self.blocks.len());
         super::join::chain_end(&self.blocks[..story_end], i, view)
@@ -44,8 +37,6 @@ impl<'a> Blocks<'a> {
         self.blocks.get(i).copied()
     }
 
-    /// The neighbours' styles in `view` of the paragraph laid out from blocks `first..=last` (PARA-7: border boxes join
-    /// identical neighbours; REV-2). A paragraph joined to others has its last one's (REV-6).
     pub fn neighbours(&self, first: usize, last: usize, view: MarkupView) -> (Option<&'a ParaStyle>, Option<&'a ParaStyle>) {
         let style = |b: Option<&&'a Block>| match b {
             Some(Block::Para(p)) => Some(&**p.para_style_in(view)),
@@ -56,16 +47,13 @@ impl<'a> Blocks<'a> {
     }
 }
 
-/// A section: its properties and its blocks.
 pub struct SectionNode<'a> {
     pub index: usize,
     pub section: &'a Section,
     pub blocks: Blocks<'a>,
-    /// The section ends with a section break (its last paragraph carries it): it isn't the document's last.
     pub breaks: bool,
 }
 
-/// Note content and separators, by id.
 #[derive(Clone, Copy)]
 pub struct Notes<'a> {
     pub footnotes: &'a HashMap<i64, Vec<Block>>,

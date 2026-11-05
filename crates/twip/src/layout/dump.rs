@@ -1,5 +1,4 @@
-//! A layout as text, one line per drawn item, for comparing layouts item by item (`twip dump`, `dumpdiff`). Paragraph and table ids are renumbered in document order and line ids by first
-//! use, so the text doesn't depend on process-wide counters.
+//! Layout dump
 
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -10,8 +9,6 @@ use super::fragment::{BoxFragment, Child, Item, PageChild, PageFragment, RowFrag
 use super::snapshot::Snapshot;
 use super::traverse::paint_lines;
 
-/// Paragraph and table ids renumbered in document order: body, stories, footnotes, endnotes, separators.
-/// The paragraphs of text boxes (any depth), by id.
 fn box_paras(doc: &Document) -> std::collections::HashSet<u64> {
     fn walk(blocks: &[Block], inside: bool, out: &mut std::collections::HashSet<u64>) {
         for b in blocks {
@@ -83,7 +80,6 @@ fn ids(doc: &Document) -> HashMap<u64, usize> {
     out
 }
 
-/// The table rows of a page, in page coordinates, in flow order.
 pub(crate) fn rows<'a>(page: &'a PageFragment, out: &mut Vec<(&'a RowFragment, u64, f64, f64)>) {
     fn walk<'a>(children: &'a [Child], dx: f64, dy: f64, out: &mut Vec<(&'a RowFragment, u64, f64, f64)>) {
         for c in children {
@@ -111,8 +107,6 @@ pub(crate) fn rows<'a>(page: &'a PageFragment, out: &mut Vec<(&'a RowFragment, u
     }
 }
 
-/// The text boxes of a page: its floats that hold text, and its header and footer, by their boxes (page coordinates)
-/// and the paragraphs they hold.
 fn text_boxes(page: &PageFragment, out: &mut Vec<(&'static str, [f64; 4], Vec<u64>)>) {
     fn paras(children: &[Child], out: &mut Vec<u64>) {
         for c in children {
@@ -149,7 +143,6 @@ fn text_boxes(page: &PageFragment, out: &mut Vec<(&'static str, [f64; 4], Vec<u6
         let b: &BoxFragment = match c {
             PageChild::Body(b) => b,
             PageChild::Header(b) | PageChild::Footer(b) => {
-                // A header or footer, as a box holding its paragraphs: none of them is a body line.
                 let mut ps = Vec::new();
                 paras(&b.children, &mut ps);
                 if !ps.is_empty() {
@@ -163,7 +156,6 @@ fn text_boxes(page: &PageFragment, out: &mut Vec<(&'static str, [f64; 4], Vec<u6
     }
 }
 
-/// The dump text of a snapshot.
 pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
     let ids = ids(doc);
     let in_box = box_paras(doc);
@@ -179,9 +171,6 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
             let ps: Vec<String> = ps.iter().map(|&p| id(p).to_string()).collect();
             writeln!(s, "X {kind} {} {} {} {} paras {}", f(r[0]), f(r[1]), f(r[2]), f(r[3]), ps.join(" ")).unwrap();
         }
-        // Lines are numbered in paint order, text-box lines after the rest wherever FLOAT-16 paints their boxes. A line
-        // without ink (a tab alone, the empty line after a break, a line of spaces) gets an empty glyph record at its
-        // baseline and the end of what it holds, so it is listed with its x.
         let mut used = Vec::new();
         let mut boxed = std::collections::HashSet::new();
         let mut bare = Vec::new();
@@ -197,8 +186,6 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                 if para.is_some_and(|p| in_box.contains(&p.0)) {
                     boxed.insert(line);
                 }
-                // An inline picture (one with a caret stop at its left edge; a float drawn with the line has none) shows
-                // as U+FFFC there, on its line's baseline.
                 for it in placed.line.items.iter() {
                     let rect = match it {
                         Item::Image { rect, .. } => rect,
@@ -209,11 +196,9 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                         objects.push((line, dx + placed.x + rect[0], dy + placed.y + placed.line.baseline, para.map_or(0, |p| p.0)));
                     }
                 }
-                // A line without ink: nothing drawn, or only spaces. Its x is where its spaces, tabs and breaks end.
                 let blank = |it: &Item| matches!(it, Item::Glyphs(r) if r.chars.iter().all(|c| c.0.is_whitespace()));
                 if placed.line.items.iter().all(blank) {
                     let runs = placed.line.items.iter().filter_map(|it| match it {
-                        // An empty run marks the caret: it ends where it starts.
                         Item::Glyphs(r) => Some(r.glyphs.last().map_or(r.x, |&(g, x)| x + r.face.advance(g) * r.face.scale(r.size))),
                         _ => None,
                     });
@@ -287,7 +272,6 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
         base += used.len();
         let mut rs = Vec::new();
         rows(page, &mut rs);
-        // Rows without cells have no handles (and no edges): no row geometry is written for them.
         for (r, table, dx, dy) in rs.into_iter().filter(|(r, ..)| !r.edges.is_empty()) {
             let edges: Vec<String> = r.edges.iter().map(|(x, k)| format!("{}:{k}", f(*x + dx))).collect();
             writeln!(

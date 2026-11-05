@@ -37,7 +37,6 @@ pub fn lay_out(doc: &twip::internal::docx::Document, fonts: &twip::internal::fon
     (chars, images)
 }
 
-/// PDF coordinates sit on a 0.12pt grid (UNIT-7).
 pub const TOL: f64 = 0.13;
 /// Inside a line the reference PDF places glyphs with hinted 600-dpi advances (Times 12 'a': exact 5.326, drawn 5.28) and
 /// re-syncs along the line, so interior glyph x is checked loosely; line starts and baselines use [`TOL`]. This is a
@@ -132,7 +131,7 @@ pub fn golden(v: &Value) -> Vec<Vec<Ch>> {
         for l in p["lines"].as_array().into_iter().flatten() {
             seg += 1;
             if l["dir"].as_array().map(|d| d[0].as_i64() != Some(1)).unwrap_or(false) {
-                continue; // shortcut: rotated text (TABLE-33) isn't compared yet
+                continue;
             }
             let line_seg = seg;
             let spans = l["spans"].as_array().into_iter().flatten();
@@ -153,11 +152,6 @@ pub fn golden(v: &Value) -> Vec<Vec<Ch>> {
             // The baseline and segment the previous span went to.
             let mut cur = (line_y, line_seg);
             for s in spans {
-                // A span's own baseline when the file has it: an extractor line can join glyphs on different
-                // baselines (a taller check box beside text in the next cell), which are rows of their own. A
-                // superscript or subscript (FONT-8: about 2/3 of the size) stays with the span before it, as ours
-                // does, and a span within 1.5pt with the line (rows join within 1pt; nearer would flip on noise).
-                // shortcut: told apart by size and distance alone.
                 let small = s["size"].as_f64().unwrap_or(0.0) <= 0.8 * largest;
                 let (y, seg) = match s["y"].as_f64() {
                     _ if small => cur,

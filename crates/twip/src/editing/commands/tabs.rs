@@ -1,5 +1,4 @@
-//! Tab stops: the ruler's and the Tabs dialog's commands over the selected paragraphs, and the document's default
-//! spacing. A paragraph keeps the stops its style gives it; its own `w:tabs` adds stops and clears inherited ones.
+//! Tab stops
 
 use std::collections::HashMap;
 
@@ -15,12 +14,9 @@ use super::Outcome;
 use crate::editing::Editor;
 use crate::editing::step::Step;
 
-/// How close a position must be to a stop to name it, points.
 const NEAR: f64 = 0.5;
-/// The longest length a stop or the default spacing takes, 22 in.
 const MAX: f64 = 1584.0;
 
-/// A length rounded to the twips the file holds.
 fn twips(pt: f64) -> f64 {
     (pt * 20.0).round() / 20.0
 }
@@ -29,7 +25,6 @@ fn same(a: &Tab, b: &Tab) -> bool {
     (a.pos - b.pos).abs() < 0.025 && a.kind == b.kind && a.leader == b.leader
 }
 
-/// A stop as the ruler model shows it.
 fn info(t: &Tab, inherited: bool) -> TabStopInfo {
     let alignment = match t.kind {
         TabKind::Center => TabAlignment::Center,
@@ -56,7 +51,6 @@ fn tab(a: &AddTabStop) -> Tab {
         TabAlignment::Decimal => TabKind::Decimal,
         TabAlignment::Bar => TabKind::Bar,
     };
-    // shortcut: a heavy leader is kept as an underline, the only heavy-looking leader the model has.
     let leader = match a.leader.unwrap_or_default() {
         TabLeader::None => Leader::None,
         TabLeader::Dots => Leader::Dot,
@@ -67,7 +61,6 @@ fn tab(a: &AddTabStop) -> Tab {
     Tab { pos: twips(a.position.0), kind, leader }
 }
 
-/// A paragraph's own `w:tabs`: the stops it adds, and a clearing stop for each inherited one it drops.
 fn own_xml(own: &[Tab], w: &str) -> String {
     let tabs: String = own
         .iter()
@@ -96,7 +89,6 @@ fn own_xml(own: &[Tab], w: &str) -> String {
 }
 
 impl Editor {
-    /// The stops a paragraph has without its own `w:tabs`: its style's, its list's and its table style's.
     fn inherited_tabs(&self, para: ParaId) -> Vec<Tab> {
         let (Some(res), Some(p)) = (self.doc.resolver.clone(), self.index.para(&self.doc, para)) else { return Vec::new() };
         let cx = self.cx();
@@ -106,27 +98,22 @@ impl Editor {
         res.para_from_xml(pr.xml().as_deref(), region.as_ref(), &cx).style.tabs
     }
 
-    /// A paragraph's tab stops in position order, each saying whether it is inherited.
     pub(crate) fn tab_stops(&self, para: ParaId) -> Vec<TabStopInfo> {
         let Some(p) = self.index.para(&self.doc, para) else { return Vec::new() };
         let base = self.inherited_tabs(para);
         p.style.tabs.iter().filter(|t| t.kind != TabKind::Clear).map(|t| info(t, base.iter().any(|b| same(b, t)))).collect()
     }
 
-    /// The paragraphs the ruler shows: the selection's (the first one's values, and whether the others differ).
     pub(crate) fn ruler_paras(&mut self) -> Vec<ParaId> {
         self.selected_paras()
     }
 
-    /// Page `i`'s geometry as laid out now: the ruler's cells and rows.
     pub(crate) fn page_geometry(&mut self, i: usize) -> Option<std::rc::Rc<crate::editing::geometry::PageGeometry>> {
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
         self.pages.page(i, &self.index)
     }
 
-    /// Each selected paragraph's stops changed by `edit` (false: this paragraph has nothing to change), written as
-    /// its own stops over the inherited ones. Refused with `none` when no paragraph changes.
     fn edit_tabs(&mut self, label: &'static str, none: &str, edit: &dyn Fn(&mut Vec<Tab>) -> bool, fonts: &Fonts) -> Outcome {
         let mut own: HashMap<u64, Vec<Tab>> = HashMap::new();
         for para in self.selected_paras() {
@@ -136,7 +123,6 @@ impl Editor {
                 continue;
             }
             let base = self.inherited_tabs(para);
-            // An inherited stop no stop stands at any more is cleared; a stop the style doesn't give is the paragraph's.
             let mut mine: Vec<Tab> = base
                 .iter()
                 .filter(|b| !tabs.iter().any(|t| (t.pos - b.pos).abs() < 0.025))

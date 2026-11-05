@@ -2,7 +2,7 @@ $schema: './.moon/cache/schemas/project.json'
 id: root
 
 tasks:
-  # Planning ids and rulebook wording (tests/hygiene.mjs).
+  # Planning ids and the CI plan (tests/hygiene.mjs).
   hygiene:
     command: node tests/hygiene.mjs
     inputs: ['**/*']

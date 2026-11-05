@@ -1,5 +1,4 @@
-//! The geometry evaluator: outlines of every preset against a table of reference points, the text rectangles of
-//! FLOAT-10, and finite results for any size and adjust value.
+//! Geometry evaluator tests
 
 use super::{Geom, Geometry, Preset, Seg};
 use crate::drawing::units::Emu;
@@ -12,7 +11,6 @@ fn emu(pt: f64) -> Emu {
     Emu::from_pt(pt)
 }
 
-/// Points along every path, at most 0.1 pt apart.
 fn flatten(g: &Geom) -> Vec<[f64; 2]> {
     let mut out = Vec::new();
     for p in &g.paths {
@@ -67,7 +65,6 @@ fn flatten(g: &Geom) -> Vec<[f64; 2]> {
     out
 }
 
-/// Presets whose reference outline is not the standard's definition (none so far).
 const EXPECTED_DIFFERENT: &[&str] = &[];
 
 #[derive(serde::Deserialize)]
@@ -76,7 +73,6 @@ struct Reference {
     adj: std::collections::BTreeMap<String, i64>,
     w: f64,
     h: f64,
-    /// Tenths of a point from the shape's top left.
     pts: Vec<[i32; 2]>,
 }
 
@@ -106,14 +102,11 @@ fn every_preset_outline_lies_on_its_reference_points() {
 #[test]
 fn text_rectangles_of_the_four_basic_presets() {
     let at = |name: &str, adj: &[(String, i64)], w: i64, h: i64| preset(name, adj).evaluate(Emu(w), Emu(h)).text_rect.map(Emu::from_pt);
-    // FLOAT-10: roundRect insets min(w, h) × adj / 100000 × 29289 / 100000 on every side (49597 EMU for 1016000).
     let r = at("roundRect", &[], 2_540_000, 1_016_000);
     assert!((r[0].0 - 49597).abs() <= 1 && (r[1].0 - 49597).abs() <= 1, "{r:?}");
     assert!((2_540_000 - r[2].0 - 49597).abs() <= 1 && (1_016_000 - r[3].0 - 49597).abs() <= 1, "{r:?}");
-    // ellipse: 0.14645 of the width and height.
     let e = at("ellipse", &[], 1_000_000, 500_000);
     assert!((e[0].0 - 146_447).abs() <= 2 && (e[1].0 - 73_223).abs() <= 2, "{e:?}");
-    // triangle: l = w adj / 200000, t = h / 2, r = l + w / 2, b = h.
     let t = at("triangle", &[], 1_000_000, 600_000);
     assert_eq!(t.map(|v| v.0), [250_000, 300_000, 750_000, 600_000]);
     assert_eq!(at("rect", &[], 1_000, 2_000).map(|v| v.0), [0, 0, 1_000, 2_000]);

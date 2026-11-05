@@ -1,6 +1,4 @@
-//! Page bodies: geometry (HDR-4 to HDR-6, HDR-13), columns (COL-1), the attempts that settle floats and the shared
-//! note stream (FLOAT-11, COL-3), vertical alignment (SETUP-1), balancing (COL-5) and column separators. Each
-//! attempt owns its state.
+//! Page bodies
 
 use crate::docx::Compat;
 use std::collections::HashMap;
@@ -24,7 +22,6 @@ use super::units::{LU_PER_PT, Lu};
 
 const EPS: f64 = 1e-6;
 
-/// What page-dependent fields need from a finished pass (FIELD-1).
 #[derive(Clone, Default, PartialEq, Debug)]
 pub struct PassInfo {
     pub num_pages: Option<String>,
@@ -32,8 +29,6 @@ pub struct PassInfo {
     pub page_refs: Rc<HashMap<String, String>>,
 }
 
-/// Horizontal margins and the top margin of a page (gutter, mirror margins: HDR-13), of the section's page in the
-/// markup view (REV-2).
 pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64) {
     let s = s.section_in(ctx.env.text.review.view);
     let (mut left, mut right, mut top) = (s.left, s.right, s.top);
@@ -53,8 +48,6 @@ pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64
     (left, right, top)
 }
 
-/// Which header or footer a page shows (HDR-7): its variant (0 default, 1 first, 2 even) and the part it comes from
-/// (HDR-12: inherited from earlier sections per variant).
 pub fn story_ref(
     sections: &[Section],
     even_and_odd: bool,
@@ -63,12 +56,9 @@ pub fn story_ref(
     page_number: i64,
     footer: bool,
 ) -> (usize, Option<&String>) {
-    // shortcut: callers outside layout name the story the All-markup page shows; a section whose tracked change
-    // turned its title page on or off picks the other variant in Original.
     story_ref_in(sections, MarkupView::All, even_and_odd, si, page_in_section, page_number, footer)
 }
 
-/// [`story_ref`] for the section's page in `view` (REV-2).
 pub fn story_ref_in(
     sections: &[Section],
     view: MarkupView,
@@ -89,7 +79,6 @@ pub fn story_ref_in(
     (variant, part)
 }
 
-/// Column boxes of a section's columns on a page (COL-1), from `top`.
 pub fn columns(c: &Columns, geo: &BodyArea, top: f64) -> Vec<ColumnSpace> {
     let n = c.num.max(1);
     let mut out = Vec::new();
@@ -114,7 +103,6 @@ pub fn columns(c: &Columns, geo: &BodyArea, top: f64) -> Vec<ColumnSpace> {
     out
 }
 
-/// Every glyph run's (first glyph x, baseline, size) in `children`, page coordinates.
 fn glyph_runs(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(f64, f64, f64)>) {
     let item = |it: &Item, dx: f64, dy: f64, out: &mut Vec<(f64, f64, f64)>| {
         if let Item::Glyphs(r) = it {
@@ -123,7 +111,6 @@ fn glyph_runs(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(f64, f64, f64
     };
     for c in children {
         match c {
-            // COL-1: notes aren't column text, so a page's footnotes don't stretch the lines.
             Child::Box(b) if b.kind == BoxKind::Notes => {}
             Child::Box(b) => glyph_runs(&b.children, dx + b.offset.0, dy + b.offset.1, out),
             Child::Group { offset, children } => glyph_runs(children, dx + offset.0, dy + offset.1, out),
@@ -158,7 +145,6 @@ fn glyph_runs(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(f64, f64, f64
     }
 }
 
-/// `item` moved down by `dy`.
 fn item_down(it: &Item, dy: f64) -> Item {
     super::traverse::translated(it, 0.0, dy)
 }
@@ -185,8 +171,6 @@ pub(crate) fn row_down(r: &RowFragment, dy: f64) -> RowFragment {
     }
 }
 
-/// `c` moved down: by `shift(y)` of each line's, row's and item's own top (SETUP-1's "both" spreads the free space over
-/// paragraph gaps), or uniformly.
 fn child_down(c: &Child, shift: &dyn Fn(f64) -> f64) -> Child {
     match c {
         Child::Para(p) => Child::Para(super::fragment::ParaFragment {
@@ -213,45 +197,23 @@ fn child_down(c: &Child, shift: &dyn Fn(f64) -> f64) -> Child {
     }
 }
 
-/// Where a pass continues. A pass advances one committed body (or one composed page) at a time, so a job can stop at
-/// any of these points and resume there.
 #[derive(Clone, Debug)]
 pub enum Cursor {
-    /// Start section `si`, with the state carried from the previous one; `y`: where it would start on the current
-    /// page (a continuous break).
-    Section {
-        si: usize,
-        carry: FlowState,
-        y: Option<f64>,
-    },
-    /// Section `si`'s next body from `token`: at `top` on the current page (a continuous section), else at its top.
-    Body {
-        si: usize,
-        token: PageToken,
-        top: Option<f64>,
-    },
-    /// Compose page `i`'s header and footer.
+    Section { si: usize, carry: FlowState, y: Option<f64> },
+    Body { si: usize, token: PageToken, top: Option<f64> },
     Compose(usize),
     Done,
 }
 
-/// The state of one pass, owned so a job can keep it between `run` calls.
 pub struct PassRun {
-    /// The pass number (1–4; 5 is the stabilizing pass).
     pub k: usize,
-    /// The previous pass's values for page-dependent body fields (FIELD-1).
     pub known: Rc<PassInfo>,
-    /// Header and footer heights to lay out page bodies with, by page index: the previous pass's composed heights, or
-    /// the stabilizing pass's reservations (FIELD-6). Pages past its end measure their stories with this pass's
-    /// body values.
     pub hf_in: Rc<Vec<HfHeights>>,
-    /// Clip composed headers and footers to the heights the bodies used (the stabilizing pass).
     pub clip: bool,
     pub pages: Vec<PageRecord>,
     pub page_number: i64,
     pub memo: PassMemo,
     pub cursor: Cursor,
-    /// Set when composition starts: what the pass's own pages give page-dependent fields.
     pub info: Option<PassInfo>,
 }
 
@@ -271,15 +233,11 @@ impl PassRun {
     }
 }
 
-/// What a committed body leads to.
 pub enum Next {
-    /// The section continues on a new page (already started) from this token.
     Page(PageToken),
-    /// The section ended: the state carried on, and where the next section would start on this page.
     SectionEnd(FlowState, f64),
 }
 
-/// The document a pass pages, and its state.
 pub struct Paginator<'d, 'p> {
     pub ctx: LayoutCtx<'d>,
     pub sections: &'d [Section],
@@ -290,7 +248,6 @@ pub struct Paginator<'d, 'p> {
 }
 
 impl<'d> Paginator<'d, '_> {
-    /// Body field values on the current page (FIELD-1).
     pub fn fields(&self, si: usize) -> FieldValues {
         FieldValues {
             page: Some(self.run.page_number.to_string()),
@@ -307,7 +264,6 @@ impl<'d> Paginator<'d, '_> {
         self.run.pages.iter().filter(|p| p.section == si && !p.blank).count()
     }
 
-    /// Starts a page; `blank` = an inserted blank page.
     pub fn new_page(&mut self, si: usize, blank: bool) {
         self.run.page_number += 1;
         let s = self.sections[si].section_in(self.ctx.env.text.review.view);
@@ -327,8 +283,6 @@ impl<'d> Paginator<'d, '_> {
         });
     }
 
-    /// The header and footer heights of the current page for section `si`, measured with this pass's body values
-    /// (HDR-8 caps them).
     fn measure_hf(&self, si: usize, memos: &mut Memos) -> Result<HfHeights, Yield> {
         let view = self.ctx.env.text.review.view;
         let sec = &self.sections[si];
@@ -357,8 +311,6 @@ impl<'d> Paginator<'d, '_> {
         Ok(out)
     }
 
-    /// The current page's body space for section `si` (HDR-4 to HDR-6, HDR-13, COL-1), starting at `start` for a
-    /// continuous section. A page's first body takes its header and footer heights from `hf_in` when the pass has them.
     pub(crate) fn body_space(&self, si: usize, start: Option<f64>, balance: bool, memos: &mut Memos) -> Result<BodySpace, Yield> {
         let sec = &self.sections[si];
         let (left, right, top) = margins(sec, &self.ctx, self.run.page_number);
@@ -382,7 +334,7 @@ impl<'d> Paginator<'d, '_> {
             body_bottom = body_bottom.min(s.page_h - s.footer - height);
         }
         if s.top < 0.0 {
-            body_top = -s.top; // HDR-5
+            body_top = -s.top;
         }
         if s.bottom < 0.0 {
             body_bottom = s.page_h + s.bottom;
@@ -409,8 +361,6 @@ impl<'d> Paginator<'d, '_> {
         })
     }
 
-    /// Lays out and commits section `sec`'s next body from `token` (at `top` on the current page for a continuous
-    /// section); starts the next page when the section continues.
     pub fn body(&mut self, sec: &SectionNode<'d>, token: PageToken, top: Option<f64>, balance: bool, memos: &mut Memos) -> Result<Next, Yield> {
         let si = sec.index;
         let space = self.body_space(si, top, balance, memos)?;
@@ -418,8 +368,6 @@ impl<'d> Paginator<'d, '_> {
         let earlier: Vec<Rc<BoxFragment>> = self.run.pages.last().map(|p| p.bodies.iter().map(|b| b.body.clone()).collect()).unwrap_or_default();
         let env = BodyEnv { ctx: self.ctx, notes: self.notes, note_numbers: self.note_numbers, pass: &mut self.run.memo };
         let b = layout_body(sec, &space, &fields, &token, &earlier, env, memos)?;
-        // The table the body starts in, as the fill just laid it out at the first column's width (tables whose text
-        // varies by page aren't memoized and get none: no row exception for them).
         let start_table = match (&token.flow.at, sec.blocks.get(token.flow.block)) {
             (super::token::At::Row(_) | super::token::At::RowPart { .. }, Some(Block::Table(t))) => self.run.memo.table(t, space.columns[0].width),
             _ => None,
@@ -427,7 +375,6 @@ impl<'d> Paginator<'d, '_> {
         let page = self.run.pages.last_mut().expect("a page was started");
         page.body_area = page.body_area.or(Some((space.area.top.to_pt(), space.area.bottom.to_pt())));
         page.effects.merge(&b.effects);
-        // A paragraph the body ends in takes the blocks of the paragraphs joined to it (REV-6).
         let last = sec.blocks.chain_end(b.end.flow.block, self.ctx.env.text.review.view).min(sec.blocks.len().saturating_sub(1));
         let shown = sec.blocks.blocks.get(token.flow.block..=last).unwrap_or(&[]);
         let end = b.end.clone();
@@ -453,7 +400,7 @@ impl<'d> Paginator<'d, '_> {
         })
     }
 
-    /// COL-5: refills the section's last page at the balanced column height.
+    // Column balancing
     #[allow(
         clippy::type_complexity,
         reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
@@ -470,15 +417,11 @@ impl<'d> Paginator<'d, '_> {
     ) -> Result<Option<(f64, Vec<Child>, FlowToken, FlowState, PageEffects)>, Yield> {
         let (p0, c0) = saved;
         let top = cols[0].top.to_pt();
-        // COL-6: the empty paragraph holding the section break takes no space. In compat 15 one right after a table
-        // still takes its line, below the content of the column it ends in, past the balanced height if need be.
         let blocks = &sec.blocks;
         let n = blocks.len();
         let skip_last = matches!(blocks.get(n.wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && n > 1);
         let mark_line = skip_last && fill.ctx.env.text.compat == Compat::Generic && matches!(blocks.get(n.wrapping_sub(2)), Some(Block::Table(_)));
         let state = fill.at.clone();
-        // One fill at column height `h`: the result when the content ends in these columns, and each column's
-        // statistics.
         #[allow(
             clippy::type_complexity,
             reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
@@ -492,7 +435,6 @@ impl<'d> Paginator<'d, '_> {
             let mut children = Vec::new();
             let mut stats = Vec::new();
             let mut end = top;
-            // COL-3 (compat 15): the notes go to the page's stream at the bottom, not under each column.
             let stream = stream.map(|r| NoteArea { below: true, ..stream_area(r, cols.len(), note_width) });
             fill.at = AttemptState { known: state.known.clone(), stream, ..Default::default() };
             for (k, c) in cols.iter().enumerate() {
@@ -516,8 +458,6 @@ impl<'d> Paginator<'d, '_> {
                     size: (0.0, 0.0),
                     children: kids.into(),
                 }));
-                // A column ends below its last line and that paragraph's space-after, which a paragraph continued past a
-                // column break keeps for its last part (COL-5).
                 end = end.max(bottom + if s == Stop::Column && !pos.at.at_start() { 0.0 } else { carry.prev_after });
                 if fill.at.forced {
                     return Ok((None, stats));
@@ -526,7 +466,6 @@ impl<'d> Paginator<'d, '_> {
                     return Ok((Some((pos, carry, children, end, fill.at.effects.clone())), stats));
                 }
                 if k + 1 < cols.len() {
-                    // COL-2: a column top below the page's body top keeps a paragraph's space-before.
                     carry.keep_top = s == Stop::Column && carry.keep_top || s == Stop::Full && mid;
                 }
             }
@@ -535,26 +474,20 @@ impl<'d> Paginator<'d, '_> {
         let full = cols[0].bottom.to_pt() - top;
         let (first, stats) = try_h(fill, full, memos)?;
         if first.is_none() {
-            // Nothing balances: the fill stays as it was, ending at the full column height.
             fill.at = state;
             return Ok(None);
         }
-        // The height comes from an estimate, then grows (or in compat 15 shrinks) by a step: not always the smallest
-        // that holds the content. Layout units.
         let full_lu = i64::from(Lu::round_half_up(full).0);
         let widths: Vec<f64> = cols.iter().map(|c| c.width).collect();
         let wsum: f64 = widths.iter().sum::<f64>().max(1.0);
         let to_pt = |h: i64| h as f64 / LU_PER_PT;
         let mean = |st: &[ColStats]| {
             let (n, total) = st.iter().fold((0i64, 0i64), |(n, t), s| (n + s.lines, t + s.height));
-            if n > 0 { total / n } else { 49152 } // 240 twips without lines
+            if n > 0 { total / n } else { 49152 }
         };
         let mut h;
         let mut r;
         if fill.ctx.env.text.compat == Compat::Legacy {
-            // compat ≤ 14: the total height over the columns (by width from their used heights when they differ), at
-            // least the mean line height; while the content doesn't fit, grow by the mean line height of what is in
-            // the columns.
             let n = cols.len() as i64;
             h = if widths.iter().all(|w| (w - widths[0]).abs() < 0.01) {
                 (stats.iter().map(|s| s.height).sum::<i64>() + n - 1) / n
@@ -570,8 +503,6 @@ impl<'d> Paginator<'d, '_> {
                 r = try_h(fill, to_pt(h), memos)?;
             }
         } else {
-            // compat 15: the columns' mean height by width, down to a multiple of the smallest line or row; grow by
-            // that step while the content doesn't fit, or shrink by it while it still does.
             let step = |st: &[ColStats]| st.iter().filter(|s| s.lines > 0).map(|s| s.min).min().unwrap_or(1).max(1);
             let m = step(&stats);
             h = (widths.iter().zip(&stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
@@ -598,14 +529,12 @@ impl<'d> Paginator<'d, '_> {
             }
         }
         let Some((p, mut c, children, end, eff)) = r.0.or(first) else { unreachable!("the full height balanced before") };
-        // The section ends below its tallest column, including that column's last space-after (COL-5).
         c.prev = None;
         c.balanced_after = c.prev_after;
         c.prev_after = 0.0;
         Ok(Some((end, children, p, c, eff)))
     }
 
-    /// Draws a page's shared note stream (COL-3).
     fn draw_stream(fill: &mut PageFill, area: &NoteArea, cols: &[ColumnSpace], out: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
         if area.parts.is_empty() {
             return Ok(());
@@ -613,7 +542,6 @@ impl<'d> Paginator<'d, '_> {
         fill.at.notes_drawn = true;
         let top = cols[0].bottom.to_pt() - area.sep - area.height + 0.15;
         if let Some(w) = area.width {
-            // COL-3: one full-width column from the first column's left.
             out.push(fill.notes_box(area, &[(cols[0].x, &area.parts)], w, top, memos)?);
             return Ok(());
         }
@@ -623,7 +551,6 @@ impl<'d> Paginator<'d, '_> {
         Ok(())
     }
 
-    /// A page's floats: pictures, and text boxes with their content (FLOAT-10).
     fn draw_floats(fill: &PageFill, placed: &[super::float::Placed], memos: &mut Memos) -> Result<Vec<Child>, Yield> {
         let fields = FieldValues::default();
         let env = StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
@@ -635,16 +562,12 @@ impl<'d> Paginator<'d, '_> {
     }
 }
 
-/// The values among `fields` that `blocks` show: the [`BodyFields`] a body depends on, usually none. A body
-/// laid out with them on another page, or with other values of fields it doesn't show, is the same body. Also what a
-/// header or footer story shows (its `HfRecord` fields).
 pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields {
     fn walk(blocks: &mut dyn Iterator<Item = &Block>, out: &mut BodyFields, all: &BodyFields) {
         for b in blocks {
             match b {
                 Block::Para(p) => {
                     for i in &p.inlines {
-                        // A header's text boxes and frames show its fields (story::float_box).
                         if let Inline::Float(f, _) = i {
                             for tb in f.text_box.iter().chain(f.parts.iter().filter_map(|p| p.text_box.as_ref())) {
                                 walk(&mut tb.blocks.iter(), out, all);
@@ -693,7 +616,6 @@ pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields 
     out
 }
 
-/// What every page body of a pass shares: the context, the notes and their numbers (NOTE-4), and the pass's memo.
 pub struct BodyEnv<'d, 'p> {
     pub ctx: LayoutCtx<'d>,
     pub notes: Notes<'d>,
@@ -701,20 +623,13 @@ pub struct BodyEnv<'d, 'p> {
     pub pass: &'p mut PassMemo,
 }
 
-/// A laid-out page body.
 pub struct PageBody {
     pub fragment: Rc<BoxFragment>,
-    /// Where the flow is after the body: the next page's token, or past the section's last block.
     pub end: PageToken,
-    /// When the section ended on this page: where the next section would start.
     pub section_end: Option<f64>,
     pub effects: PageEffects,
 }
 
-/// Lays out one section's body on one page: isolated attempts until the floats met (FLOAT-11) and the shared note
-/// height (COL-3) agree with the ones the attempt started from, then the stream, floats, vertical alignment (SETUP-1),
-/// balancing (COL-5) and column separators. `earlier` holds the bodies of earlier sections on the page (COL-1's
-/// separators look at the page's text so far).
 pub fn layout_body(
     sec: &SectionNode,
     space: &BodySpace,
@@ -733,12 +648,9 @@ pub fn layout_body(
     let saved = (pos.clone(), carry.clone());
     let mut bottoms = Vec::new();
     let mut stop = Stop::Full;
-    // FLOAT-11: fill the page again until the floats met agree with the ones the text wrapped around.
     let mut known = Vec::new();
-    // COL-3: compat 15's one note stream across the columns.
     let shared = cols.len() > 1 && env.ctx.env.text.compat == Compat::Generic;
     let mut reserve = 0.0;
-    // LINE-16: the section's main text snaps to its line grid.
     let grid_env;
     let ctx = match s.line_grid {
         Some(g) => {
@@ -760,9 +672,6 @@ pub fn layout_body(
         at: AttemptState::default(),
     };
     let mut col_children: Vec<Vec<Child>> = Vec::new();
-    // FLOAT-11: a float that keeps its place (known) but whose anchor a pass pushes off the page is dropped, and the
-    // page then ends where that pass ended. Each pass fixes one more float: at most one pass per float and drop,
-    // and one more.
     let mut end: Option<FlowToken> = None;
     let mut drops = 0;
     let mut attempts = 6;
@@ -793,7 +702,6 @@ pub fn layout_body(
                         break;
                     }
                     if k + 1 < cols.len() {
-                        // COL-2: a column top below the page's body top keeps a paragraph's space-before.
                         carry.keep_top = st == Stop::Column && carry.keep_top || st == Stop::Full && space.mid_page;
                     }
                 }
@@ -808,7 +716,6 @@ pub fn layout_body(
                     end = Some(pos.clone());
                     drops += 1;
                 }
-                // TABLE-49: an unsettled table is placed again, from the flow, when the next attempt reaches it.
                 known = found.into_iter().filter(|f| f.settled).collect();
                 reserve = notes;
                 Ok(false)
@@ -842,8 +749,6 @@ pub fn layout_body(
     let mut effects = fill.at.effects.clone();
     let mut section_end = None;
     if stop == Stop::Done {
-        // PAGE-10: the section ends below its last space-after, so a continuous section's first paragraph keeps the
-        // ordinary gap to it (PARA-1). A balanced end already includes it (COL-5).
         let mut e = bottoms.iter().copied().fold(page_top, f64::max) + carry.prev_after;
         if space.balance && cols.len() > 1 {
             match Paginator::balance(&mut fill, sec, cols, &saved, space.mid_page, shared.then_some(reserve), space.note_width, memos)? {
@@ -852,15 +757,11 @@ pub fn layout_body(
                     pos = p;
                     carry = c;
                     effects = eff;
-                    // After balancing, which refills the section's content.
                     body = children;
                 }
                 None => e = cols[0].bottom.to_pt(),
             }
-            // The floats are drawn again after balancing. When no height balanced, the unbalanced fill keeps the
-            // floats it already had, so they appear twice (a known flaw, kept for now).
             body.extend(floats.iter().cloned());
-            // COL-3 (compat 15): and the page's note stream.
             if let Some(a) = &stream {
                 Paginator::draw_stream(&mut fill, a, cols, &mut body, memos)?;
             }
@@ -869,7 +770,6 @@ pub fn layout_body(
     } else if pos.block >= nblocks {
         section_end = Some(bottoms.iter().copied().fold(page_top, f64::max));
     }
-    // Inline shapes with text: their stories, where their lines put them.
     let mut texts = Vec::new();
     super::traverse::lines_in(&body, &mut |para, l, dx, dy| {
         for (r, pic) in l.line.texts.iter() {
@@ -884,7 +784,6 @@ pub fn layout_body(
             body.extend(super::story::inline_text_box(&pic, rect, para, &senv, memos)?);
         }
     }
-    // Sub-template bodies shown in place of their references, where their lines put them.
     let shown = super::expansion::shown(&body);
     body.extend(shown);
     separators(&s.section_in(env.ctx.env.text.review.view).columns, cols, page_top, earlier, &mut body);
@@ -909,8 +808,7 @@ pub fn layout_body(
     Ok(PageBody { fragment, end: PageToken { section: space.section, flow: pos, state: carry }, section_end, effects })
 }
 
-/// SETUP-1: shifts the section's body for `w:vAlign`. `bottom`: the last line box bottom plus the last paragraph's
-/// space-after. Not applied on a page with footnotes (the caller checks).
+// Vertical alignment
 fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: Vec<Child>) -> Vec<Child> {
     if va == "top" || starts.is_empty() {
         return body;
@@ -928,7 +826,6 @@ fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: 
             body.iter().map(|c| child_down(c, &|_| dy)).collect()
         }
         "both" => {
-            // The extra space is divided equally among the gaps between paragraphs.
             let gaps: Vec<f64> = starts[1..].iter().filter(|s| s.1).map(|s| s.0).collect();
             if gaps.is_empty() {
                 return body;
@@ -941,12 +838,8 @@ fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: 
     }
 }
 
-/// REV-4: a change bar beside every changed line of the body, `min(36, left margin / 2)` left of the body, 0.72 wide
-/// and black. A bar reaches down to the next line when the gap to it is no taller than the line, and the bars of
-/// consecutive changed lines join.
-// shortcut: headers and footers get no bars.
+// Change bars
 fn change_bars(space: &BodySpace, body: &mut Vec<Child>) {
-    /// Every placed line's top, bottom and whether it changed, in page coordinates.
     fn lines(children: &[Child], dy: f64, out: &mut dyn FnMut(f64, f64, bool)) {
         for c in children {
             match c {
@@ -988,8 +881,7 @@ fn change_bars(space: &BodySpace, body: &mut Vec<Child>) {
     body.push(Child::Items(bars.into()));
 }
 
-/// COL-1: separator lines between columns that hold text: the page's text so far (earlier sections' bodies and this
-/// section's) decides which columns are used and how far down the lines go.
+// Column separators
 fn separators(c: &Columns, cols: &[ColumnSpace], top: f64, earlier: &[Rc<BoxFragment>], body: &mut Vec<Child>) {
     if !c.separator || cols.len() < 2 {
         return;
@@ -1022,8 +914,6 @@ fn separators(c: &Columns, cols: &[ColumnSpace], top: f64, earlier: &[Rc<BoxFrag
     }
 }
 
-/// COL-5: a balanced column's content: its lines and table rows, their total height and the smallest, and the column's
-/// used height (layout units).
 struct ColStats {
     lines: i64,
     height: i64,
@@ -1055,13 +945,10 @@ impl ColStats {
     }
 }
 
-/// COL-3: a page's empty shared note stream, `reserve` high from the previous fill: over the `cols` columns, or one
-/// column `width` wide.
 fn stream_area(reserve: f64, cols: usize, width: Option<f64>) -> NoteArea {
     NoteArea { shared: Some(reserve), cols: if width.is_some() { 1 } else { cols }, width, ..Default::default() }
 }
 
-/// COL-3: whether `blocks` reference a footnote anywhere (in tables too).
 fn references_footnote(blocks: &[Block]) -> bool {
     blocks.iter().any(|b| match b {
         Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind: crate::docx::NoteKind::Foot, .. })),

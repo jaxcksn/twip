@@ -1,4 +1,4 @@
-//! A shape's text body properties (`wps:bodyPr`): insets, vertical anchor, autofit, wrapping, direction (FLOAT-10).
+//! Text body properties
 
 use roxmltree::Node;
 
@@ -11,7 +11,6 @@ pub enum VAnchor {
     Top,
     Centre,
     Bottom,
-    /// `just`, `dist` and unknown values lay out as top (FLOAT-10).
     Other,
 }
 
@@ -19,10 +18,11 @@ pub enum VAnchor {
 pub enum AutoFit {
     #[default]
     None,
-    /// `a:spAutoFit`: the shape's height follows its text.
     Shape,
-    /// `a:normAutofit`: kept; the text is laid out at 100 %.
-    Normal { font_scale: Pct, line_reduction: Pct },
+    Normal {
+        font_scale: Pct,
+        line_reduction: Pct,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -63,20 +63,15 @@ impl TextDirection {
     }
 }
 
-/// `wps:bodyPr` (or `a:bodyPr`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct BodyProps {
-    /// Left, top, right, bottom; absent: 91440 / 45720 / 91440 / 45720 EMU (7.2 / 3.6 pt).
     pub insets: [Emu; 4],
     pub anchor: VAnchor,
-    /// `wrap="none"`: one unlimited line per paragraph.
     pub no_wrap: bool,
     pub autofit: AutoFit,
     pub direction: TextDirection,
-    /// `@rot`: the text's own rotation on top of the shape's.
     pub rot: Angle,
     pub upright: bool,
-    /// A text warp (`a:prstTxWarp`), 3D text or columns: kept on save, not laid out.
     pub kept: bool,
 }
 

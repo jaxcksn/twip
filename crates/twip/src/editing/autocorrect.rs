@@ -1,8 +1,4 @@
-//! AutoCorrect as you type: after text is typed (or a paragraph ended), the words just finished are corrected in one
-//! step of their own, so an undo right after it takes back only the correction. The rules: the replacement list,
-//! symbols, smart quotes, dashes, fractions, ordinals, and capitals (two initial capitals, day names, the first letter
-//! of a sentence or of a table cell), and lists a paragraph's start begins (`1.` or `*` then a space). Only typing
-//! corrects: pasted and inserted text never do.
+//! AutoCorrect
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -17,7 +13,6 @@ use super::position::{Place, Position};
 use super::selection::Selection;
 use super::step::Step;
 
-/// The rules that are on, and the lists they use.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AutoCorrect {
     pub two_initial_capitals: bool,
@@ -29,17 +24,11 @@ pub struct AutoCorrect {
     pub ordinals: bool,
     pub fractions: bool,
     pub dashes: bool,
-    /// `1.` or `1)` then a space or tab starts a numbered list.
     pub numbered_lists: bool,
-    /// `*` or `-` then a space or tab starts a bulleted list.
     pub bulleted_lists: bool,
-    /// The replacement list; `None`: the shipped one.
     pub entries: Option<HashMap<String, String>>,
-    /// Abbreviations after which a sentence doesn't start (`e.g.`); `None`: the shipped list.
     pub first_letter_exceptions: Option<Vec<String>>,
-    /// Words whose two initial capitals stay; `None`: the shipped list.
     pub initial_caps_exceptions: Option<Vec<String>>,
-    /// Typed texts never corrected again (Never correct).
     pub never: Vec<String>,
 }
 
@@ -65,7 +54,6 @@ impl Default for AutoCorrect {
     }
 }
 
-/// The shipped lists, read once.
 struct Lists {
     entries: HashMap<&'static str, &'static str>,
     sentence: Vec<&'static str>,
@@ -84,7 +72,6 @@ fn lists() -> &'static Lists {
     })
 }
 
-/// Symbols replaced as soon as their last character is typed, anywhere (inside a word too).
 const SYMBOLS: [(&str, &str); 18] = [
     ("(c)", "©"),
     ("(r)", "®"),
@@ -108,28 +95,20 @@ const SYMBOLS: [(&str, &str); 18] = [
 
 const DAYS: [&str; 7] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
-/// What ended the typing a correction looks at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Trigger {
-    /// The last character of the text before the caret was just typed.
     Typed,
-    /// The paragraph was just ended (Enter): its whole text, with no character after it.
     ParagraphEnd,
 }
 
-/// One correction: replace `range` (in the text's units) with `with`, its `superscript` part (an ordinal's suffix)
-/// raised.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fix {
     pub range: Range<usize>,
     pub with: String,
     pub superscript: Option<Range<usize>>,
-    /// What was typed, for Revert and Never correct.
     pub from: String,
 }
 
-/// The list a paragraph's typed start begins, `true` for bullets: `1.` or `1)` then a space or tab a numbered one, `*`
-/// or `-` then one a bulleted one.
 fn list_start(before: &[char], ac: &AutoCorrect) -> Option<bool> {
     let (last, marker) = before.split_last()?;
     if !matches!(last, ' ' | '\t') {
@@ -142,35 +121,30 @@ fn list_start(before: &[char], ac: &AutoCorrect) -> Option<bool> {
     }
 }
 
-/// Whether typing `c` can finish something to correct: a word's end, a quote, a symbol's last character.
 pub fn may_trigger(c: char) -> bool {
     c.is_whitespace() || ends_word(c) || matches!(c, '"' | '\'' | ')' | '>' | '|')
 }
 
-/// Characters a word ends before (besides whitespace).
 fn ends_word(c: char) -> bool {
     matches!(c, ',' | '.' | ';' | ':' | '!' | '?')
 }
 
-/// The correction `before` (a paragraph's units up to the caret, one `char` each) takes, if any. `cell_start`: the
-/// paragraph is a table cell's first.
 pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &AutoCorrect) -> Option<Fix> {
     let n = before.len();
     let last = *before.last()?;
     let lists = lists();
     if trigger == Trigger::Typed {
-        // Smart quotes: a quote opens where a word can start, else closes.
+        // Smart quotes
         if ac.smart_quotes && matches!(last, '"' | '\'') {
             let prev = before[..n - 1].last().copied();
             let (open, close) = if last == '"' { ('\u{201C}', '\u{201D}') } else { ('\u{2018}', '\u{2019}') };
-            // A hyphen between a space and an opening quote is a dash.
             if ac.dashes && prev == Some('-') && n >= 3 && before[n - 3].is_whitespace() {
                 return Some(Fix { range: n - 2..n, with: format!("\u{2013}{open}"), superscript: None, from: format!("-{last}") });
             }
             let opens = prev.is_none_or(|p| p.is_whitespace() || matches!(p, '(' | '[' | '{' | '\u{2013}' | '\u{2014}' | '\u{c}' | '\u{2028}'));
             return Some(Fix { range: n - 1..n, with: (if opens { open } else { close }).to_string(), superscript: None, from: last.to_string() });
         }
-        // Symbols, longest first among those ending here.
+        // Symbols
         if ac.replace_text {
             let tail: String = before[n.saturating_sub(4)..].iter().collect::<String>().to_lowercase();
             if let Some((from, to)) = SYMBOLS.iter().filter(|(f, _)| tail.ends_with(f)).max_by_key(|(f, _)| f.len())
@@ -184,13 +158,11 @@ pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &Auto
             return None;
         }
     }
-    // The word just finished: back from its end to whitespace.
     let end = if trigger == Trigger::Typed { n - 1 } else { n };
     let start = before[..end].iter().rposition(|c| c.is_whitespace() || *c == super::text::OBJECT).map_or(0, |i| i + 1);
     if start >= end {
         return None;
     }
-    // Its core: without leading quotes or brackets and trailing punctuation.
     let lead = before[start..end].iter().take_while(|c| matches!(c, '"' | '\'' | '\u{201C}' | '\u{2018}' | '(' | '[')).count();
     let trail = before[start + lead..end]
         .iter()
@@ -205,7 +177,7 @@ pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &Auto
     let mut prefix = String::new();
     let mut changed = false;
     if !core.is_empty() && !ac.never.contains(&core) {
-        // The replacement list: as typed, else in lower case with the typed word's case.
+        // Replacement list
         if ac.replace_text {
             let lookup = |w: &str| match &ac.entries {
                 Some(m) => m.get(w).cloned(),
@@ -230,27 +202,27 @@ pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &Auto
                 changed = true;
             }
         }
-        // Fractions.
+        // Fractions
         if ac.fractions
             && let Some(f) = [("1/2", "½"), ("1/4", "¼"), ("3/4", "¾")].iter().find(|(f, _)| *f == with)
         {
             with = f.1.to_string();
             changed = true;
         }
-        // Ordinals: a number and its own suffix, the suffix raised.
+        // Ordinals
         if ac.ordinals
             && let Some(k) = ordinal_suffix(&with)
         {
             superscript = Some(k..with.chars().count());
             changed = true;
         }
-        // An apostrophe before a year: '26.
+        // Year apostrophe
         if ac.smart_quotes && lead == 1 && before[start] == '\u{2018}' && core.chars().all(|c| c.is_ascii_digit()) {
             range = start..ce;
             with = format!("\u{2019}{with}");
             changed = true;
         }
-        // Dashes: word--word is an em dash; word - word and word -- word an en dash.
+        // Dashes
         if ac.dashes {
             let w: Vec<char> = with.chars().collect();
             if let Some(i) = w.windows(2).position(|p| p == ['-', '-'])
@@ -275,7 +247,7 @@ pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &Auto
                 }
             }
         }
-        // Two initial capitals: THe → The (not a plural acronym such as CDs, nor an exception).
+        // Two initial capitals
         let letters: Vec<char> = with.chars().collect();
         if ac.two_initial_capitals
             && letters.len() >= 3
@@ -289,14 +261,14 @@ pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &Auto
             with = letters[..1].iter().chain(letters[1].to_lowercase().collect::<Vec<_>>().iter()).chain(letters[2..].iter()).collect();
             changed = true;
         }
-        // Day names.
+        // Day names
         let lower = with.to_lowercase();
         let day = lower.split(['\'', '\u{2019}']).next().unwrap_or("");
         if ac.day_names && DAYS.contains(&day) && with.starts_with(|c: char| c.is_lowercase()) {
             with = capitalised(&with);
             changed = true;
         }
-        // The first letter of a sentence (or of a table cell's text).
+        // Sentence start
         let sentence_start = before[..start].iter().rposition(|c| !c.is_whitespace()).is_none_or(|i| {
             let prev_word_start = before[..i].iter().rposition(|c| c.is_whitespace()).map_or(0, |j| j + 1);
             let prev: String = before[prev_word_start..=i].iter().collect();
@@ -318,13 +290,11 @@ pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &Auto
     (with != from || superscript.is_some()).then_some(Fix { range, with, superscript, from })
 }
 
-/// `w` with its first letter in upper case.
 fn capitalised(w: &str) -> String {
     let mut c = w.chars();
     c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
 }
 
-/// Whether `w` is in the exceptions (the host's, else the shipped ones), ignoring case.
 fn exception(w: &str, own: Option<&[String]>, shipped: &[&str]) -> bool {
     match own {
         Some(list) => list.iter().any(|e| e.eq_ignore_ascii_case(w)),
@@ -332,7 +302,6 @@ fn exception(w: &str, own: Option<&[String]>, shipped: &[&str]) -> bool {
     }
 }
 
-/// Where an ordinal's suffix starts (1st, 22nd, 103rd, 11th), in characters; `None` for anything else.
 fn ordinal_suffix(w: &str) -> Option<usize> {
     let digits = w.chars().take_while(char::is_ascii_digit).count();
     if digits == 0 || w.chars().count() != digits + 2 {
@@ -351,8 +320,6 @@ fn ordinal_suffix(w: &str) -> Option<usize> {
 }
 
 impl Editor {
-    /// Corrects what was just typed at the caret (`Trigger::Typed`), or the paragraph before the caret's that Enter
-    /// just ended (`Trigger::ParagraphEnd`), as one step of its own.
     pub fn auto_correct(&mut self, ac: &AutoCorrect, trigger: Trigger, fonts: &Fonts) -> Outcome {
         let Selection::Caret(caret) = self.selection else { return Outcome::Unchanged("a selection") };
         let Place::Text { para: here, offset, .. } = caret.place else { return Outcome::Unchanged("not in text") };
@@ -369,7 +336,6 @@ impl Editor {
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let text = super::text::UnitText::of(p);
         let before: Vec<char> = text.text.chars().take(at.0 as usize).collect();
-        // A list's start typed at a paragraph's start: the marker goes and the paragraph joins a list, one step.
         if trigger == Trigger::Typed
             && let Some(bullet) = list_start(&before, ac)
             && self.para_list(para).is_none()
@@ -391,7 +357,6 @@ impl Editor {
         let Some(fix) = correction(&before, trigger, cell_start, ac) else { return Outcome::Unchanged("nothing to correct") };
         let (a, b) = (Unit(fix.range.start as u32), Unit(fix.range.end as u32));
         let Some(run) = self.run_at(&Position::text(caret.story, para, Unit(a.0 + 1))) else { return Outcome::Unchanged("no run") };
-        // An ordinal already raised is left as it is.
         if fix.with == fix.from
             && let Some(s) = &fix.superscript
             && self
@@ -430,8 +395,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// The correction mark's view: the corrected text's boxes, and the options button (16 × 12 px, under the text's
-    /// middle) while the caret is in the text or just after it.
     pub fn correction_view(&mut self, pages: std::ops::Range<usize>) -> Option<super::view::CorrectionView> {
         let c = self.correction.clone()?;
         let story = self.caret().map(|p| p.story)?;
@@ -449,10 +412,6 @@ impl Editor {
         Some(super::view::CorrectionView { rects, button })
     }
 
-    /// Keeps the correction mark through typing after it, and while the caret only moves onto the corrected text (as
-    /// Word does: Ctrl+Left onto the word, then Alt+Shift+F10). Drops it when the caret leaves its paragraph or goes
-    /// before it, an edit lands before its end (`edited`: the input changed the document), or more than 14
-    /// characters were typed after it.
     pub fn follow_correction(&mut self, typed: usize, edited: bool) {
         let caret = self.caret().and_then(|p| p.para_offset());
         let Some(c) = &mut self.correction else { return };
@@ -464,12 +423,10 @@ impl Editor {
         }
     }
 
-    /// The correction mark, if one is showing.
     pub fn correction(&self) -> Option<&super::Correction> {
         self.correction.as_ref()
     }
 
-    /// The correction mark's text as it is now.
     pub fn correction_text(&self) -> Option<String> {
         let c = self.correction.as_ref()?;
         let p = self.index.para(&self.doc, c.para)?;
@@ -477,8 +434,6 @@ impl Editor {
         Some(t.text.chars().skip(c.range.start.0 as usize).take((c.range.end.0 - c.range.start.0) as usize).collect())
     }
 
-    /// Puts back what was typed in place of the correction (Revert, Never correct): an undo while the correction is the
-    /// last step, else a replacement of its text as a step of its own. The mark goes.
     pub fn revert_correction(&mut self, fonts: &Fonts) -> Outcome {
         let Some(c) = self.correction.take() else { return Outcome::Unchanged("no correction") };
         if self.history.next_undo() == Some("AutoCorrect") && c.typed == 0 {
@@ -495,7 +450,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// `run` raised to superscript: its direct formatting with `w:vertAlign` added, resolved again.
     fn raised(&self, para: crate::layout::ParaId, run: &crate::docx::Run) -> Option<crate::docx::Run> {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
@@ -511,8 +465,6 @@ impl Editor {
 mod tests {
     use super::*;
 
-    /// `typed` typed one character at a time, each followed by the correction it triggers: the text that results and
-    /// the superscript ranges.
     fn type_out(typed: &str, ac: &AutoCorrect) -> (String, Vec<Range<usize>>) {
         let mut text: Vec<char> = Vec::new();
         let mut sup: Vec<Range<usize>> = Vec::new();
@@ -532,7 +484,6 @@ mod tests {
 
     #[test]
     fn typing_corrects_as_the_cases_show() {
-        // (typed, result, superscript): from typing each case into a word processor with its defaults.
         let ac = AutoCorrect::default();
         let cases: &[(&str, &str, &[(usize, usize)])] = &[
             ("\"hello\" ", "\u{201C}Hello\u{201D} ", &[]),
@@ -591,11 +542,9 @@ mod tests {
         assert_eq!(type_out("teh (c) ", &off).0, "teh (c) ");
         let never = AutoCorrect { never: vec!["teh".into(), "(c)".into()], ..AutoCorrect::default() };
         assert_eq!(type_out("Word teh (c) ", &never).0, "Word teh (c) ");
-        // A paragraph ended with Enter corrects its last word.
         let words: Vec<char> = "Word word--".chars().collect();
         let f = correction(&words, Trigger::ParagraphEnd, false, &AutoCorrect::default()).expect("a dash");
         assert_eq!(f.with, "word\u{2014}");
-        // A table cell's first word.
         let cell = AutoCorrect { sentence_capitals: false, ..AutoCorrect::default() };
         assert_eq!(correction(&"hello ".chars().collect::<Vec<_>>(), Trigger::Typed, true, &cell).map(|f| f.with), Some("Hello".into()));
     }

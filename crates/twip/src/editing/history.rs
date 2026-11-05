@@ -1,5 +1,4 @@
-//! Undo and redo: transactions of steps, typing runs, the memory budget, and where the history is (what the saved
-//! position compares with).
+//! Undo and redo
 
 use std::collections::VecDeque;
 
@@ -10,31 +9,25 @@ use super::index::Level;
 use super::selection::Selection;
 use super::step::Step;
 
-/// The selection a transaction restores, with the table context it was in.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SelectionRecord {
     pub selection: Selection,
     pub chain: Vec<Level>,
 }
 
-/// One undo step: the steps that reverse it (applied last to first), and the selections before and after it.
 #[derive(Debug)]
 pub struct Transaction {
     pub undo: Vec<Step>,
     pub before: SelectionRecord,
     pub after: SelectionRecord,
-    /// What the undo menu shows: a command's name, or the label a host's batch gave.
     pub label: std::borrow::Cow<'static, str>,
     pub bytes: usize,
-    /// Unique in the history ([`History::position`]); the history gives it when recording.
     pub id: u64,
 }
 
-/// Consecutive typing in one paragraph, which joins one undo step; deleting keys don't join.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TypingRun {
     pub para: ParaId,
-    /// Where the next keystroke continues the run.
     pub at: Unit,
     pub kind: Typing,
 }
@@ -49,16 +42,12 @@ pub enum Typing {
 pub struct History {
     undo: VecDeque<Transaction>,
     redo: Vec<Transaction>,
-    /// The typing run the last undo step can still take.
     typing: Option<TypingRun>,
-    /// Estimated bytes the history may hold; at least [`MIN_STEPS`] steps are kept regardless.
     budget: usize,
     bytes: usize,
-    /// The last transaction id given.
     ids: u64,
 }
 
-/// Word's default undo depth.
 pub const MIN_STEPS: usize = 100;
 
 impl Default for History {
@@ -68,18 +57,14 @@ impl Default for History {
 }
 
 impl History {
-    /// Records a transaction. With `typing` continuing the last step's run, it joins that step (one undo).
     pub fn record(&mut self, mut tx: Transaction, typing: Option<TypingRun>) {
         self.redo.clear();
-        // A step a keystroke joins is another state of the document: it takes a new id too.
         self.ids += 1;
         let joins = match (typing, self.typing) {
-            // Typing joins; each Backspace or Delete is its own step.
             (Some(t), Some(last)) => t.kind == Typing::Insert && t.para == last.para && t.kind == last.kind && self.undo.back().is_some(),
             _ => false,
         };
         if joins && let Some(last) = self.undo.back_mut() {
-            // The new keystroke's inverse runs first when undoing, then the run's earlier ones.
             last.undo.append(&mut tx.undo);
             last.after = tx.after;
             last.id = self.ids;
@@ -98,12 +83,10 @@ impl History {
         }
     }
 
-    /// Ends the current typing run: the next typing starts a new undo step (a caret move, a command, a click).
     pub fn break_typing(&mut self) {
         self.typing = None;
     }
 
-    /// Whether `t` would continue the current typing run.
     pub fn continues(&self, para: ParaId, at: Unit, kind: Typing) -> bool {
         self.typing.is_some_and(|r| r.para == para && r.at == at && r.kind == kind)
     }
@@ -120,12 +103,10 @@ impl History {
         self.redo.pop()
     }
 
-    /// An undone transaction becomes redoable (its steps now redo it).
     pub fn push_redo(&mut self, tx: Transaction) {
         self.redo.push(tx);
     }
 
-    /// A redone transaction goes back on the undo stack without clearing redo.
     pub fn push_undo_keep_redo(&mut self, tx: Transaction) {
         self.bytes += tx.bytes;
         self.undo.push_back(tx);
@@ -151,14 +132,11 @@ impl History {
         self.bytes
     }
 
-    /// Where the history is: the id of the transaction undo would undo next, 0 with none. Undoing back to a position
-    /// returns to it; any other edit leaves it for good.
     pub fn position(&self) -> u64 {
         self.undo.back().map_or(0, |t| t.id)
     }
 }
 
-/// A rough size of what a step holds, for the history budget.
 pub fn step_bytes(s: &Step) -> usize {
     fn inlines(v: &[Inline]) -> usize {
         v.iter().map(|i| 48 + if let Inline::Text(t, _) = i { t.len() } else { 0 }).sum()

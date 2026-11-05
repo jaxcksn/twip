@@ -1,5 +1,4 @@
-//! Elements: enumeration order and parents, change lists across edits, undo and redo, and the
-//! change-list cost of a keystroke.
+//! Elements and change lists
 
 use serde_json::{Value, json};
 
@@ -28,16 +27,13 @@ fn elements_list_in_document_order_with_parents() {
     let all = elements(&mut e, &mut seq, json!({}));
     let codes: Vec<String> = all.iter().map(|x| x["code"].as_str().unwrap_or("").trim().to_string()).collect();
     let at = |code: &str| codes.iter().position(|c| c == code).unwrap_or_else(|| panic!("{code} not in {codes:?}"));
-    // Body before the header and footer, then the footnote, then the text box.
     assert!(at(r#"MERGEFIELD Statement.Cost_Amount \# "$,0.00""#) < at("MERGEFIELD Store.Name"));
     assert!(at("PAGE") < at("MERGEFIELD Recipient.First_Name"), "the footer before the footnote");
     assert!(at("MERGEFIELD Recipient.First_Name") < at("MERGEFIELD Manager.Badge"), "the footnote before the text box");
-    // The fields nested in the IF list after it, with it as their parent.
     let iff = at(r#"IF  = "Paid" "" """#);
     let status = at("MERGEFIELD Statement.Status");
     assert_eq!(status, iff + 1);
     assert_eq!(all[status]["parent"], all[iff]["id"]);
-    // Filters: by kind, by code text.
     assert_eq!(elements(&mut e, &mut seq, json!({ "match": { "in": "code", "text": "Calc.Old_Name" } })).len(), 40);
     assert_eq!(elements(&mut e, &mut seq, json!({ "kind": "plain_text" })).len(), 0);
     let ctl = open("FX-MERGE-CONTROLS.docx");
@@ -62,7 +58,6 @@ fn change_lists_follow_edits_undo_and_redo() {
     assert_eq!(r["elements"]["removed"], json!([id]), "{r}");
     let r = send(&mut e, &mut seq, json!({ "type": "redo" }));
     assert_eq!(r["elements"]["added"][0]["id"], id, "redo brings the same id back");
-    // Typing next to it changes nothing about it.
     let r = send(&mut e, &mut seq, json!({ "type": "text", "text": "x" }));
     assert!(r.get("elements").is_none(), "{r}");
 }
@@ -79,13 +74,11 @@ fn a_keystroke_costs_the_same_whatever_the_document() {
         send(&mut e, &mut seq, json!({ "type": "text", "text": "x" }));
         e.track_work
     }
-    // A paragraph holding five placeholders in a two-page and a sixty-page document.
     let small = work("FX-MERGE-FIELDS.docx", usize::MAX);
     let large = work("FX-MERGE-LARGE.docx", 1);
     assert!(small > 0 && small == large, "keystroke work {small} vs {large}");
 }
 
-/// Each paragraph's text with its control markers and block controls, by control tag (ids are the session's).
 fn shape(e: &Editor) -> Vec<String> {
     let tag = |c: &crate::docx::ControlId| {
         e.document()
@@ -112,8 +105,6 @@ fn shape(e: &Editor) -> Vec<String> {
         .collect()
 }
 
-/// Control edits through the editor survive a save and a reread: each paragraph's text, inline markers and
-/// block controls read back as they were.
 #[test]
 fn control_edits_save_and_read_back() {
     let mut failed = Vec::new();
@@ -224,7 +215,6 @@ fn control_edits_save_and_read_back() {
         }
         let want = shape(&e);
         let bytes = crate::docx::write::save(e.document()).expect("saves");
-        // Kept for the Word check (`word_check_files`).
         if let Some(d) = std::env::var_os("WORD_CHECK_DIR") {
             std::fs::write(std::path::Path::new(&d).join(format!("CTL-{}.docx", name.replace([' ', '\''], "-"))), &bytes).unwrap();
         }
@@ -245,8 +235,6 @@ fn control_edits_save_and_read_back() {
     );
 }
 
-/// Changed properties of read controls are written: an inline control's in its rewritten paragraph, a block's
-/// and a row's in place.
 #[test]
 fn changed_control_properties_are_written() {
     let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-MERGE-CONTROLS.docx")).unwrap();
@@ -272,10 +260,6 @@ fn changed_control_properties_are_written() {
     }
 }
 
-/// For a word-processor check, into `WORD_CHECK_DIR`: a new plain-text control
-/// showing placeholder text from model values alone (content and `showingPlcHdr`, no `docPart`), and
-/// `elements.json`, every file's elements there (kind, code, tag) to compare with Word's enumeration. Run
-/// `control_edits_save_and_read_back` and `roundtrip --edits all --keep` into the folder first.
 #[test]
 #[ignore = "writes files for the Word check"]
 fn word_check_files() {
@@ -311,7 +295,6 @@ fn word_check_files() {
     std::fs::write(dir.join("data.json"), serde_json::to_string_pretty(&data).unwrap()).unwrap();
 }
 
-/// A selection ending inside a field (a host's range) widens to the whole field, so typing over it replaces it.
 #[test]
 fn a_selection_partly_over_a_field_takes_it_whole() {
     let mut e = open("FX-MERGE-FIELDS.docx");
@@ -323,8 +306,6 @@ fn a_selection_partly_over_a_field_takes_it_whole() {
     assert_eq!(super::texts(&e)[2], "ShipX issued.");
 }
 
-/// Design mode draws an empty field's label: its first argument in «», or the host's label for its
-/// code; leaving design mode takes it away, and a save never writes it.
 #[test]
 fn design_mode_labels_empty_fields() {
     let mut e = open("FX-TEXT.docx");
@@ -349,21 +330,17 @@ fn design_mode_labels_empty_fields() {
     )
     .unwrap();
     assert!(!xml.contains("Cost amount") && !xml.contains("\u{ab}Cost_Amount"), "labels aren't saved");
-    // Undo in design mode, then leave it: no label comes back with the field.
     send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "undo"}}));
     send(&mut e, &mut seq, json!({"type": "mode", "mode": "editing"}));
     send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "redo"}}));
     assert!(!drawn(&mut e).contains("Cost"), "no label after leaving design mode");
 }
 
-/// Regions survive a save: rows of a table and a paragraph run wrapped, saved and read back
-/// with the same sections and items; the files go to `WORD_CHECK_DIR` too, to open in Word.
 #[test]
 fn regions_save_and_read_back() {
     let mut e = open("FX-TBL-BASIC.docx");
     let mut seq = 0;
     let ids = super::texts_ids(&e);
-    // T2's three rows, and the two paragraphs between the tables after it.
     send(&mut e, &mut seq, json!({ "type": "select", "para": ids[13].0, "start": 0, "end": 0 }));
     send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "select", "value": "table"}}));
     send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "wrapInRepeatingSection", "tag": "Rows"}}));
@@ -384,8 +361,6 @@ fn regions_save_and_read_back() {
     assert_eq!(kinds(&mut again, &mut seq), want);
 }
 
-/// A checkbox control's new tag is saved (a checkbox is its face, with no start and end markers in the paragraph), and
-/// a float anchored in a paragraph written again for a new control is kept (`roundtrip --edits merge`).
 #[test]
 fn checkbox_tags_and_floats_survive_control_edits() {
     let mut seq = 0;

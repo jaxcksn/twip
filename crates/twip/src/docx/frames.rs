@@ -1,5 +1,4 @@
-//! Frames (FRAME-1–FRAME-4): consecutive paragraphs with identical `w:framePr` become one text-box float anchored at
-//! the start of the next paragraph, which then starts at the frame's top (the frame takes no space in the flow).
+//! Frames
 
 use std::rc::Rc;
 
@@ -51,10 +50,8 @@ fn blocks(list: &mut Vec<Block>) {
 
 fn float(group: Vec<Paragraph>) -> Float {
     let fr = group[0].style.frame.clone().unwrap();
-    // FRAME-3: paragraph borders enlarge the frame to the right (text at x, exclusion at x + w + both sides).
     let side = |b: &Option<super::props::Border>| b.as_ref().map_or(0.0, |b| b.space + b.width);
     let (lx, rx) = (side(&group[0].style.border_left), side(&group[0].style.border_right));
-    // FRAME-4: a margin drop cap ends at the left margin.
     let margin_cap = fr.drop_cap.as_deref() == Some("margin");
     let start = group.first().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.first()).map(|r| r.start);
     let end = group.last().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.last()).map(|r| r.end);
@@ -80,7 +77,6 @@ fn float(group: Vec<Paragraph>) -> Float {
         image: None,
         alt: "".into(),
         lock_aspect: false,
-        // FRAME-1: height = content (with h as a minimum) unless hRule="exact".
         text_box: Some(TextBox {
             blocks,
             insets: [0.0, 0.0, lx + rx, 0.0],
@@ -94,7 +90,6 @@ fn float(group: Vec<Paragraph>) -> Float {
         v_relative: anchor(fr.v_anchor.as_deref(), "paragraph"),
         v_align: fr.y_align.clone().filter(|a| a != "inline"),
         v_offset: fr.y.unwrap_or(0.0),
-        // FRAME-3
         wrap: match fr.wrap.as_deref() {
             Some("notBeside") => "topAndBottom",
             Some("none") => "none",

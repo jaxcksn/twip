@@ -1,5 +1,4 @@
-//! Checkbox content controls: every click on the box toggles it, with the caret after it and nothing selected; a
-//! locked box, design mode and read only leave it alone.
+//! Checkbox content controls
 
 use super::super::commands::Command;
 use super::super::input::PointerKind;
@@ -14,18 +13,15 @@ fn fixture() -> Editor {
     e
 }
 
-/// The paragraph whose text ends with `label`.
 fn para(e: &Editor, label: &str) -> ParaId {
     let at = texts(e).iter().position(|t| t.ends_with(label)).unwrap_or_else(|| panic!("no {label}"));
     super::para_id(e, at)
 }
 
-/// The box's face: the first character of its paragraph.
 fn face(e: &Editor, label: &str) -> char {
     texts(e).into_iter().find(|t| t.ends_with(label)).and_then(|t| t.chars().next()).expect("a face")
 }
 
-/// The document point in the middle of the box before `label`.
 fn on_box(e: &mut Editor, label: &str) -> (f64, f64) {
     let p = para(e, label);
     let pages = e.page_geometries();
@@ -45,7 +41,6 @@ fn click(e: &mut Editor, at: (f64, f64), clicks: u8) {
     e.pointer_input(PointerKind::Up, at.0, at.1, clicks, Mods::default(), fonts());
 }
 
-/// Clicks of one multi-click: 1, then 2, ... `n`.
 fn clicks(e: &mut Editor, at: (f64, f64), n: u8) {
     for k in 1..=n {
         click(e, at, k);

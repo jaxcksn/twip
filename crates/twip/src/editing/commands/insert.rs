@@ -1,4 +1,4 @@
-//! Insert: tables, pictures, text boxes and notes go through their building blocks; links are HYPERLINK fields.
+//! Insert commands
 
 use crate::api::command::{Hyperlink, HyperlinkEdit, Picture};
 use crate::docx::{FieldId, Inline};
@@ -7,7 +7,6 @@ use crate::font::Fonts;
 use super::Outcome;
 use crate::editing::Editor;
 
-/// The link at the selection: its field, address and text.
 pub(crate) struct LinkHere {
     pub field: FieldId,
     pub address: String,
@@ -18,7 +17,6 @@ impl Editor {
     pub(in crate::editing) fn insert_picture_with(&mut self, p: Picture, fonts: &Fonts) -> Outcome {
         let Some(alt) = p.alt_text.filter(|a| !a.is_empty()) else { return self.insert_picture(p.data.0, fonts) };
         self.joined("Insert Picture", fonts, |e| match e.insert_picture(p.data.0, fonts) {
-            // The new picture is selected: its alternative text joins the same step.
             o @ Outcome::Changed(_) => match e.object_cmd(crate::editing::objects::ObjectCmd::AltText(alt, None), fonts) {
                 a @ Outcome::Changed(_) => a,
                 _ => o,
@@ -27,8 +25,6 @@ impl Editor {
         })
     }
 
-    /// A HYPERLINK field over the selection, its text `text`, else the selected text, else the address; blue and
-    /// underlined as the Hyperlink character style looks.
     pub(in crate::editing) fn insert_hyperlink(&mut self, h: Hyperlink, fonts: &Fonts) -> Outcome {
         let text = match h.text.filter(|t| !t.is_empty()) {
             Some(t) => t,
@@ -44,13 +40,11 @@ impl Editor {
         out
     }
 
-    /// The HYPERLINK field around the caret (or the selection's start), if there is one: the innermost.
     pub(crate) fn link_here(&self) -> Option<LinkHere> {
         let (a, _) = self.selection.ordered(&self.index)?;
         self.link_at(a)
     }
 
-    /// The innermost HYPERLINK field around `a`.
     pub(crate) fn link_at(&self, a: crate::editing::position::Position) -> Option<LinkHere> {
         let (para, at) = a.para_offset()?;
         let p = self.index.para(&self.doc, para)?;
@@ -74,7 +68,6 @@ impl Editor {
                     return None;
                 }
                 let Inline::FieldBegin { id, .. } = &p.inlines[s.begin] else { return None };
-                // `\l "name"` links to a bookmark: `#name`, after the address if there is one.
                 let mut address = code.args.first().cloned().unwrap_or_default();
                 if let Some(a) = code.switches.iter().find(|s| s.flag == 'l').and_then(|s| s.arg.as_deref()) {
                     address = format!("{address}#{a}");
@@ -95,7 +88,6 @@ impl Editor {
         }
     }
 
-    /// The link at the selection goes; its text stays.
     pub(in crate::editing) fn remove_hyperlink(&mut self, fonts: &Fonts) -> Outcome {
         let Some(link) = self.link_here() else { return Outcome::unavailable("no link at the selection") };
         let id = crate::editing::merge::api_id(crate::docx::ElementId::Field(link.field));
@@ -103,7 +95,6 @@ impl Editor {
     }
 }
 
-/// A HYPERLINK field's code for `address`.
 fn link_code(address: &str) -> String {
     format!(" HYPERLINK \"{}\" ", address.replace('"', ""))
 }

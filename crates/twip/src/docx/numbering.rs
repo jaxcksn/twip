@@ -1,4 +1,4 @@
-//! numbering.xml: list definitions, counters (LIST-12) and label text (LIST-9–LIST-11).
+//! Numbering
 
 use std::collections::HashMap;
 
@@ -106,7 +106,6 @@ impl Numbering {
     }
 }
 
-/// List counters in document order (LIST-12): per abstractNum, per level.
 #[derive(Default)]
 pub struct Counters {
     values: HashMap<i64, [Option<i64>; 9]>,
@@ -137,7 +136,6 @@ impl Counters {
                 vals[k] = None;
             }
         }
-        // A level shown before its parents appeared counts from the parents' start values (LIST-12: "1.1.", then "2.").
         for k in 0..ilvl {
             if vals[k].is_none() {
                 vals[k] = Some(abs.levels[k].as_ref().map_or(1, |l| l.start));
@@ -166,7 +164,6 @@ impl Counters {
     }
 }
 
-/// A number in an OOXML number format (LIST-9, FIELD-3).
 pub fn format_number(v: i64, fmt: &str) -> String {
     match fmt {
         "decimalZero" => {

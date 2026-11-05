@@ -1,6 +1,4 @@
-//! Smart cut and paste: cutting a word leaves one space between its neighbours (none before
-//! punctuation or at a paragraph's start); pasting a word adds the missing space on each side (none before
-//! punctuation or at a paragraph's edge), never doubling a pasted space.
+//! Smart cut and paste
 
 use super::Editor;
 use super::text::UnitText;
@@ -14,8 +12,6 @@ fn punct(c: char) -> bool {
 }
 
 impl Editor {
-    /// The characters just before the selection's start and just after its end, in their paragraphs (`None` at a
-    /// paragraph's edge).
     fn around(&self) -> Option<(Option<char>, Option<char>)> {
         let (a, b) = self.selection.ordered(&self.index)?;
         let (pa, oa) = a.para_offset()?;
@@ -26,7 +22,6 @@ impl Editor {
         Some((before, tb.chars().nth(ob.0 as usize)))
     }
 
-    /// The spaces smart paste adds around pasted inline text `t`: (before, after).
     pub(super) fn smart_spaces(&self, t: &str) -> (bool, bool) {
         let (Some(first), Some(last)) = (t.chars().next(), t.chars().last()) else { return (false, false) };
         if t.contains('\n') {
@@ -36,8 +31,6 @@ impl Editor {
         (before.is_some_and(word) && word(first), after.is_some_and(word) && word(last))
     }
 
-    /// Before a cut: the selection widened by the space it would leave doubled, or before punctuation or a paragraph's
-    /// edge. Only for a selection of whole words in one paragraph.
     pub(super) fn smart_cut(&mut self) {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return };
         let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset()) else { return };

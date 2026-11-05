@@ -1,5 +1,4 @@
-//! Pages holding several sections (continuous breaks between one, two and three columns): clicks, drags and caret
-//! movement reach and cross every section.
+//! Multi-section pages
 
 use super::super::Editor;
 use super::super::commands::{Dir, MoveBy};
@@ -21,22 +20,18 @@ fn text_of(e: &Editor, p: ParaId) -> String {
     e.index().para(e.document(), p).map(|q| UnitText::of(q).text).unwrap_or_default()
 }
 
-/// The caret's (focus's) paragraph text.
 fn caret_text(e: &Editor) -> String {
     e.selection().focus().and_then(|p| p.para_offset()).map(|(p, _)| text_of(e, p)).unwrap_or_default()
 }
 
-/// The section number a paragraph's text names (`S3 P1 ...` is 3).
 fn section(text: &str) -> Option<u32> {
     text.strip_prefix('S')?.split(' ').next()?.parse().ok()
 }
 
-/// The body paragraph whose text starts with `prefix`.
 fn para(e: &Editor, prefix: &str) -> ParaId {
     super::texts_ids(e).into_iter().find(|&p| text_of(e, p).starts_with(prefix)).unwrap_or_else(|| panic!("no paragraph {prefix}"))
 }
 
-/// Every body line on the first page: its paragraph and its box (page points).
 fn body_lines(e: &mut Editor) -> Vec<(ParaId, f64, f64, f64, f64)> {
     let (_, g) = e.page_geometries().into_iter().next().expect("a page");
     g.lines
@@ -78,17 +73,14 @@ fn sections_click_blank_space_picks_nearest_line() {
     for n in 1..=4 {
         let own: Vec<_> = lines.iter().filter(|l| section(&text_of(&e, l.0)) == Some(n)).collect();
         let (top, bottom) = own.iter().fold((f64::MAX, f64::MIN), |(t, b), l| (t.min(l.3), b.max(l.4)));
-        // Right of the text (beside a short column, or past a short line), halfway down the section's lines.
         click(&mut e, right + 10.0, (top + bottom) / 2.0);
         assert_eq!(section(&caret_text(&e)), Some(n), "beside section {n}");
     }
-    // Below the last line on the page: the last section.
     let page_h = e.page_geometries()[0].1.h;
     click(&mut e, lines[0].1 + 20.0, page_h - 10.0);
     assert_eq!(section(&caret_text(&e)), Some(4), "below the last section");
 }
 
-/// The sections the caret visits pressing `dir` by `by` until it stops moving (at most 300 presses).
 fn walk(e: &mut Editor, by: MoveBy, dir: Dir) -> Vec<u32> {
     let mut seen = vec![section(&caret_text(e)).expect("in a section")];
     for _ in 0..300 {

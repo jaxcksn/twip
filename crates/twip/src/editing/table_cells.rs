@@ -1,5 +1,4 @@
-//! More structural table commands: Delete Cells (shift left or up), Distribute Columns and Rows, and
-//! splitting a cell into rows. Each is one step on the targeted table.
+//! Table cell commands
 
 use crate::docx::props::Width;
 use crate::docx::{Row, VMerge};
@@ -11,12 +10,9 @@ use super::table::Grid;
 use super::tables::empty_cell;
 
 impl Editor {
-    /// Delete Cells: the target's cells go; with `up` the cells below in those columns move up (empty cells fill the
-    /// bottom), else the cells to their right move left (the row ends early).
     pub(super) fn delete_cells_cmd(&mut self, up: bool, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
-        // Cells shift across the rows below: none of them may cut a region.
         if super::tables::cuts_region(t, tg.rows.0, t.rows.len() - 1, false) {
             return self.region_boundary();
         }
@@ -25,7 +21,6 @@ impl Editor {
         let (r0, r1) = tg.rows;
         let mut rows: Vec<Row> = t.rows.clone();
         if up {
-            // shortcut: only where every row has one cell per grid column in the target's columns (no spans or merges).
             let simple = (0..rows.len())
                 .all(|r| (c0..=c1).all(|c| g.cell_at(r, c).is_some_and(|k| g.rows[r][k].1.max(1) == 1 && rows[r].cells[k].v_merge == VMerge::None)));
             if !simple {
@@ -62,7 +57,6 @@ impl Editor {
             if rows.iter().zip(&t.rows).all(|(a, b)| a.cells.len() == b.cells.len()) {
                 return Outcome::Unchanged("no whole cells in the target");
             }
-            // A merge continuation whose start moved away (or went) stands alone (every merge keeps a start).
             let mut shifted = t.clone();
             shifted.rows = rows.clone();
             let g = Grid::of(&shifted);
@@ -78,8 +72,6 @@ impl Editor {
         self.rebuild("Delete Cells", tg.table, rows, grid, (r0, c0.saturating_sub(1)), fonts)
     }
 
-    /// Distribute Columns: the target's columns (every column when the target is one cell) share their total width
-    /// equally.
     pub(super) fn distribute_columns(&mut self, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
@@ -102,8 +94,6 @@ impl Editor {
         self.rebuild("Distribute Columns", tg.table, rows, grid, (tg.rows.0, tg.cols.0), fonts)
     }
 
-    /// Distribute Rows: the target's rows (every row when the target is one cell) get the same "at least" height,
-    /// their average as drawn.
     pub(super) fn distribute_rows(&mut self, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
@@ -126,8 +116,6 @@ impl Editor {
         self.rebuild("Distribute Rows", tg.table, rows, grid, (tg.rows.0, tg.cols.0), fonts)
     }
 
-    /// Split a cell into `n` rows: its row becomes `n` rows; the target cell's content stays in the first, the new
-    /// ones empty, and the row's other cells merge vertically over them.
     pub(super) fn split_cell_rows(&mut self, n: usize, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         if n < 2 {

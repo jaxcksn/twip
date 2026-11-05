@@ -1,4 +1,4 @@
-//! Comment bodies as formatted runs, to and from the blocks the document keeps.
+//! Rich comment text
 
 use std::rc::Rc;
 
@@ -6,7 +6,6 @@ use crate::docx::resolve::Resolver;
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Block, BreakKind, Inline, Paragraph, Run};
 
-/// A comment's body: paragraphs of formatted runs.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RichText {
     pub paragraphs: Vec<RichParagraph>,
@@ -17,7 +16,6 @@ pub struct RichParagraph {
     pub runs: Vec<RichRun>,
 }
 
-/// Text in one formatting. A tab is `\t` and a line break `\n`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RichRun {
     pub text: String,
@@ -25,7 +23,6 @@ pub struct RichRun {
     pub italic: bool,
     pub underline: bool,
     pub strike: bool,
-    /// The address the text links to.
     pub link: Option<String>,
 }
 
@@ -36,7 +33,6 @@ impl RichRun {
 }
 
 impl RichText {
-    /// Plain text: one run per line, each line a paragraph.
     pub fn plain(text: &str) -> RichText {
         let paragraphs = text
             .split('\n')
@@ -46,13 +42,10 @@ impl RichText {
         RichText { paragraphs }
     }
 
-    /// The text, paragraphs separated by newlines.
     pub fn to_plain(&self) -> String {
         self.paragraphs.iter().map(|p| p.runs.iter().map(|r| r.text.as_str()).collect::<String>()).collect::<Vec<_>>().join("\n")
     }
 
-    /// The body of a comment: paragraphs in the CommentText style when the document has it, runs with their
-    /// formatting as direct properties, links as HYPERLINK fields.
     pub fn to_blocks(&self, res: &Resolver, cx: &Cx) -> Vec<Block> {
         let w = &cx.w;
         let mut pp = Props::parse(None, "pPr", cx);
@@ -107,8 +100,6 @@ impl RichText {
             .collect()
     }
 
-    /// A comment body's text and formatting: the paragraphs of its blocks (a table's cells' in order), each text's
-    /// bold, italic, underline and strike, and the address of a HYPERLINK field around it.
     pub fn from_blocks(blocks: &[Block]) -> RichText {
         fn walk(blocks: &[Block], out: &mut Vec<RichParagraph>) {
             for b in blocks {
@@ -124,7 +115,6 @@ impl RichText {
     }
 }
 
-/// Text with tabs and line breaks as their inlines.
 fn text_inlines(text: &str, run: &Run) -> Vec<Inline> {
     let mut out = Vec::new();
     for (k, line) in text.split('\n').enumerate() {
@@ -145,7 +135,6 @@ fn text_inlines(text: &str, run: &Run) -> Vec<Inline> {
 
 fn paragraph(p: &Paragraph) -> RichParagraph {
     use crate::docx::fields;
-    // Each inline's link: the address of the HYPERLINK field whose result holds it.
     let mut link: Vec<Option<String>> = vec![None; p.inlines.len()];
     let mut code = vec![false; p.inlines.len()];
     for s in fields::spans(&p.inlines) {

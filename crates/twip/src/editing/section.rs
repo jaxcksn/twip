@@ -1,5 +1,4 @@
-//! Section and page commands: orientation and paper size. One [`Step::SectionPage`] on the focus's section; layout
-//! runs in full.
+//! Section page setup
 
 use crate::font::Fonts;
 
@@ -10,14 +9,11 @@ use super::step::Step;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SectionCmd {
-    /// Landscape (`true`) or portrait: width and height swap when they disagree with it.
     Orientation(bool),
-    /// Paper width and height in portrait, points (kept in the section's orientation).
     Size(f64, f64),
 }
 
 impl Editor {
-    /// The focus's section: a body position's own; in a header or footer, the first section showing it.
     pub(super) fn focus_section(&self) -> usize {
         let Some(focus) = self.selection.focus() else { return 0 };
         match focus.story {
@@ -45,7 +41,6 @@ impl Editor {
             SectionCmd::Orientation(landscape) => {
                 if (page.page_w > page.page_h) != landscape {
                     (page.page_w, page.page_h) = (page.page_h, page.page_w);
-                    // The margins turn with the page.
                     (page.top, page.right, page.bottom, page.left) = (page.left, page.top, page.right, page.bottom);
                 }
                 "Orientation"

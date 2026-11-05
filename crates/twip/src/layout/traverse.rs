@@ -1,39 +1,25 @@
-//! The three orders consumers read fragments in, each defined here once.
-//!
-//! - **Paint**: cell shading (the background phase), then body flow, notes, floats, headers and footers; within a
-//!   line, its items in the order the line was drawn (border rects, highlight and shading, glyphs and pictures,
-//!   underline and strikethrough).
-//! - **Semantic**: document order by paragraph, for tagged PDF, accessibility and tests.
-//! - **Spatial**: per page, lines and table rows with their rectangles, for hit testing and the caret.
-//!
-//! Text pushed entirely below its page (HDR-9) is in no traversal. The predicate is applied per glyph run.
+//! Fragment traversals
 
 use crate::docx::NoteKind;
 
 use super::fragment::{BoxFragment, BoxKind, CellPlace, Child, GlyphRun, Item, LineFragment, PageChild, PageFragment, PlacedLine, RowFragment};
 use super::ids::{FloatId, ParaId, TableId, Unit};
 
-/// An item and where its coordinates are relative to: add `dx`, `dy` for page coordinates. `line` numbers the drawn
-/// line the item belongs to within one traversal (a placed line, a line-number label, a group of loose items), so
-/// consumers can group glyph runs into lines; 0 for items that belong to none (shading, borders).
 #[derive(Clone, Copy)]
 pub struct Placed<'a> {
     pub dx: f64,
     pub dy: f64,
     pub item: &'a Item,
     pub line: u32,
-    /// Inside a shape with a fill: drawn in its own colours on a dark page (DRAW-27).
     pub own_colours: bool,
 }
 
 impl Placed<'_> {
-    /// The item in page coordinates.
     pub fn absolute(&self) -> Item {
         translated(self.item, self.dx, self.dy)
     }
 }
 
-/// `item` moved by (dx, dy).
 pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
     let r4 = |r: &[f64; 4]| [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy];
     match item {
@@ -59,13 +45,11 @@ pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
     }
 }
 
-/// Whether a glyph run at page offset `dy` is entirely below a page of height `h` (HDR-9).
 fn below_page(item: &Item, dy: f64, h: f64) -> bool {
     matches!(item, Item::Glyphs(r) if r.baseline + dy - r.size >= h)
 }
 
-/// Numbers drawn lines as a traversal meets them, and reports each placed line with its number, paragraph and offset
-/// (also the lines that draw nothing).
+// Paint order
 struct Lines<'a, 'f> {
     n: u32,
     placed: &'f mut dyn FnMut(u32, Option<ParaId>, &'a PlacedLine, f64, f64),
@@ -86,7 +70,6 @@ fn line_items<'a>(para: Option<ParaId>, p: &'a PlacedLine, dx: f64, dy: f64, lin
     }
 }
 
-/// The background phase: cell shading in `children`, skipping the boxes `skip` names (they have their own phase).
 fn backgrounds<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool, out: &mut dyn FnMut(Placed<'a>)) {
     for c in children {
         match c {
@@ -108,8 +91,6 @@ fn backgrounds<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKi
     }
 }
 
-/// Everything in `children` but backgrounds, in flow order; floats and note areas are left to their own phases when
-/// `skip` says so.
 fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool, lines: &mut Lines<'a, '_>, out: &mut dyn FnMut(Placed<'a>)) {
     for c in children {
         match c {
@@ -152,7 +133,6 @@ fn row<'a>(r: &'a RowFragment, dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool
     }
 }
 
-/// The boxes of kind `want` anywhere in `children`, with their parents' offsets.
 fn boxes_of<'a>(children: &'a [Child], dx: f64, dy: f64, want: &dyn Fn(&BoxKind) -> bool, out: &mut Vec<(&'a BoxFragment, f64, f64)>) {
     for c in children {
         match c {
@@ -165,7 +145,6 @@ fn boxes_of<'a>(children: &'a [Child], dx: f64, dy: f64, want: &dyn Fn(&BoxKind)
     }
 }
 
-/// Whether a float's children draw a shape with a fill: its content keeps its colours on a dark page (DRAW-27).
 fn filled(children: &[Child]) -> bool {
     fn shapes(items: &[Item]) -> bool {
         items.iter().any(|i| match i {
@@ -190,13 +169,10 @@ fn is_notes(k: &BoxKind) -> bool {
     matches!(k, BoxKind::Notes)
 }
 
-/// The page's items in paint order, each with its offset to page coordinates.
 pub fn paint<'a>(page: &'a PageFragment, out: &mut dyn FnMut(Placed<'a>)) {
     paint_lines(page, out, &mut |_, _, _, _, _| {});
 }
 
-/// [`paint`], also reporting every placed line as the traversal meets it: its [`Placed::line`] number, its paragraph,
-/// the line and the offset of its coordinates. A line that draws nothing is reported too.
 pub fn paint_lines<'a>(
     page: &'a PageFragment,
     out: &mut dyn FnMut(Placed<'a>),
@@ -214,7 +190,6 @@ pub fn paint_lines<'a>(
     for b in bodies() {
         backgrounds(&b.children, b.offset.0, b.offset.1, &neither, &mut visible);
     }
-    // FLOAT-16: floats behind the text (the body's and the headers' and footers'), lowest first, under the body text.
     let stories = || {
         page.children.iter().map(|c| match c {
             PageChild::Body(b) => &**b,
@@ -258,14 +233,12 @@ pub fn paint_lines<'a>(
     }
 }
 
-/// Every line of `children` outside floats, with its paragraph and the offset of its coordinates.
 pub fn lines_in<'a>(children: &'a [Child], placed: &mut dyn FnMut(Option<ParaId>, &'a PlacedLine, f64, f64)) {
     let mut each = |_: u32, para: Option<ParaId>, l: &'a PlacedLine, dx: f64, dy: f64| placed(para, l, dx, dy);
     let mut lines = Lines { n: 0, placed: &mut each };
     flow(children, 0.0, 0.0, &is_float, &mut lines, &mut |_| {});
 }
 
-/// The items of `children` in paint order, in their own coordinates (what a turned group draws).
 pub fn items_of(children: &[Child]) -> Vec<Item> {
     let mut v = Vec::new();
     let mut out = |p: Placed| v.push(p.absolute());
@@ -274,15 +247,12 @@ pub fn items_of(children: &[Child]) -> Vec<Item> {
     v
 }
 
-/// A float box's paint layer (FLOAT-16); other boxes sort first, in their found order.
 fn layer_of(k: &BoxKind) -> Option<super::fragment::Layer> {
     match k {
         BoxKind::Float { layer, .. } => Some(*layer),
         _ => None,
     }
 }
-/// One float's items in paint order (its backgrounds, then its content), in page coordinates: what an object drag's
-/// ghost draws.
 pub fn paint_float(page: &PageFragment, id: FloatId) -> Vec<Item> {
     let mut found = Vec::new();
     for c in page.children.iter() {
@@ -302,14 +272,12 @@ pub fn paint_float(page: &PageFragment, id: FloatId) -> Vec<Item> {
     v
 }
 
-/// The page's items in paint order, in page coordinates.
 pub fn paint_items(page: &PageFragment) -> Vec<Item> {
     let mut v = Vec::new();
     paint(page, &mut |p| v.push(p.absolute()));
     v
 }
 
-/// A body's text pushed entirely below a page of height `h` (HDR-9), by paragraph: what the traversals leave out.
 pub fn excluded_in(body: &BoxFragment, h: f64) -> Vec<(ParaId, std::ops::Range<Unit>)> {
     let mut out = Vec::new();
     let mut each = |p: Placed| {
@@ -327,7 +295,6 @@ pub fn excluded_in(body: &BoxFragment, h: f64) -> Vec<(ParaId, std::ops::Range<U
     out
 }
 
-/// The glyph runs of a page excluded by HDR-9 (for tests and diagnostics): their paragraph and source units.
 pub fn excluded(page: &PageFragment) -> Vec<(Option<ParaId>, Vec<Unit>)> {
     let mut all = Vec::new();
     let mut each = |p: Placed| {
@@ -337,7 +304,6 @@ pub fn excluded(page: &PageFragment) -> Vec<(Option<ParaId>, Vec<Unit>)> {
             all.push((r.para, r.chars.iter().filter_map(|c| c.2).collect()));
         }
     };
-    // Paint skips them, so walk the flow directly (glyph runs are never in the background phase).
     for c in page.children.iter() {
         match c {
             PageChild::Body(b) => {
@@ -351,8 +317,7 @@ pub fn excluded(page: &PageFragment) -> Vec<(Option<ParaId>, Vec<Unit>)> {
     all
 }
 
-/// A line on a page, for hit testing and the caret: its rectangle (page coordinates) and the paragraph units it
-/// shows (those with a source). A line showing several paragraphs (REV-6) has one per paragraph.
+// Spatial order
 #[derive(Clone, Debug)]
 pub struct SpatialLine {
     pub rect: [f64; 4],
@@ -360,7 +325,6 @@ pub struct SpatialLine {
     pub units: Option<(Unit, Unit)>,
 }
 
-/// A table row on a page: its table, index, rectangle and column edges (page coordinates).
 #[derive(Clone, Debug)]
 pub struct SpatialRow {
     pub table: TableId,
@@ -371,15 +335,10 @@ pub struct SpatialRow {
 }
 
 pub enum Spatial {
-    /// The page shows provisional content: positions on it don't resolve.
     Provisional,
-    Page {
-        lines: Vec<SpatialLine>,
-        rows: Vec<SpatialRow>,
-    },
+    Page { lines: Vec<SpatialLine>, rows: Vec<SpatialRow> },
 }
 
-/// The page's lines and rows in visual order (top to bottom, then left to right).
 pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
     if provisional {
         return Spatial::Provisional;
@@ -388,12 +347,10 @@ pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
     fn add(lines: &mut Vec<SpatialLine>, para: Option<ParaId>, p: &PlacedLine, dx: f64, dy: f64, h: f64) {
         {
             let (x, y) = (dx + p.x, dy + p.y);
-            // HDR-9: a line pushed entirely below the page isn't on it.
             let mut runs = p.line.items.iter().filter(|it| matches!(it, Item::Glyphs(_))).peekable();
             if runs.peek().is_some() && runs.all(|it| below_page(it, y, h)) {
                 return;
             }
-            // One entry per paragraph the line shows: several where the view joins paragraphs (REV-6).
             let first = lines.len();
             for it in p.line.items.iter() {
                 let Item::Glyphs(r) = it else { continue };
@@ -401,7 +358,6 @@ pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
                 let k = match lines[first..].iter().position(|l| l.para == q) {
                     Some(k) => first + k,
                     None => {
-                        // The line's first entry starts at its left edge, a later one where its text does.
                         let left = if lines.len() == first { x } else { r.x + x };
                         lines.push(SpatialLine { rect: [left, y, left, y + p.line.pitch], para: q, units: None });
                         lines.len() - 1
@@ -461,14 +417,11 @@ pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
     Spatial::Page { lines, rows }
 }
 
-/// A page's content by containment, for editing: hit testing, caret places and table targets.
-/// Coordinates are the page's.
+// Spatial tree
 pub struct SpatialTree<'a> {
-    /// Bodies, then the floats and notes met in them, then headers and footers.
     pub stories: Vec<SpatialStory<'a>>,
 }
 
-/// One story's part on the page: a section body, a header or footer, a note, or a float (picture or text box).
 pub struct SpatialStory<'a> {
     pub story: StoryRef<'a>,
     pub rect: [f64; 4],
@@ -489,8 +442,6 @@ pub enum SpatialNode<'a> {
     Table(TableNode<'a>),
 }
 
-/// A drawn line: its glyph runs are relative to (`x`, `y`), the line's top left. `para` is the paragraph laid out;
-/// the glyph runs and atoms name the paragraphs they show, several where the view joins paragraphs (REV-6).
 pub struct LineNode<'a> {
     pub para: Option<ParaId>,
     pub x: f64,
@@ -505,27 +456,21 @@ pub struct TableNode<'a> {
 
 pub struct RowNode<'a> {
     pub row: usize,
-    /// The row's part on this page, and the row's top.
     pub rect: [f64; 4],
     pub top: f64,
-    /// A header row repeated on a continuation page (TABLE-46): it shows the first occurrence's text.
     pub repeat: bool,
-    /// Column borders crossing the row: x and grid boundary index.
     pub edges: Vec<(f64, usize)>,
     pub cells: Vec<CellNode<'a>>,
 }
 
 pub struct CellNode<'a> {
-    /// Index in the model row, grid columns, merge state and hidden units (TABLE-34).
     pub place: &'a CellPlace,
-    /// The cell's box, its clip line, and the closing paragraph's caret place (x, top, height): page coordinates.
     pub rect: [f64; 4],
     pub clip: Option<f64>,
     pub closing: Option<(ParaId, [f64; 3])>,
     pub nodes: Vec<SpatialNode<'a>>,
 }
 
-/// The page's [`SpatialTree`]; `None` for a provisional page, whose positions don't resolve.
 pub fn spatial_tree(page: &PageFragment, provisional: bool) -> Option<SpatialTree<'_>> {
     if provisional {
         return None;
@@ -570,7 +515,6 @@ struct SpatialWalk<'a> {
 impl<'a> SpatialWalk<'a> {
     fn line(&self, para: Option<ParaId>, p: &'a PlacedLine, dx: f64, dy: f64, out: &mut Vec<SpatialNode<'a>>) {
         let (x, y) = (dx + p.x, dy + p.y);
-        // HDR-9: a line pushed entirely below the page isn't on it.
         let mut runs = p.line.items.iter().filter(|it| matches!(it, Item::Glyphs(_))).peekable();
         if runs.peek().is_some() && runs.all(|it| below_page(it, y, self.h)) {
             return;
@@ -578,8 +522,6 @@ impl<'a> SpatialWalk<'a> {
         out.push(SpatialNode::Line(LineNode { para, x, y, line: &p.line }));
     }
 
-    /// A story's box: the bounds of its lines and rows (header, footer and note boxes place their content
-    /// absolutely, so their own offset says nothing).
     fn story(&mut self, story: StoryRef<'a>, b: &'a BoxFragment, dx: f64, dy: f64) {
         let (x, y) = (dx + b.offset.0, dy + b.offset.1);
         let mut nodes = Vec::new();
@@ -592,7 +534,6 @@ impl<'a> SpatialWalk<'a> {
                 SpatialNode::Table(t) => t.rows.iter().for_each(|row| add(row.rect)),
             }
         }
-        // As wide as the box, from its leftmost content.
         let rect = if r[0].is_finite() { [r[0], r[1], r[2].max(r[0] + b.size.0), r[3]] } else { [x, y, x + b.size.0, y + b.size.1] };
         self.stories.push(SpatialStory { story, rect, nodes });
     }
@@ -604,7 +545,6 @@ impl<'a> SpatialWalk<'a> {
                     BoxKind::Float { anchor, float, rect, .. } => {
                         let n = self.stories.len();
                         self.story(StoryRef::Float { float: *float, anchor: *anchor }, b, dx, dy);
-                        // A cell's float is placed in its unit: `rect` is relative to the parents' offsets.
                         self.stories[n].rect = [rect[0] + dx, rect[1] + dy, rect[2] + dx, rect[3] + dy];
                     }
                     BoxKind::Notes => {
@@ -661,9 +601,7 @@ impl<'a> SpatialWalk<'a> {
     }
 }
 
-/// The characters a page's bodies show, by paragraph and unit: (paragraph, unit, character), in flow order. Artefacts
-/// are left out: headers and footers, repeated header rows (TABLE-46), line numbers and text without a source (list
-/// numbers, separators), and text pushed below the page (HDR-9).
+// Semantic order
 pub fn semantic_chars(page: &PageFragment, out: &mut Vec<(ParaId, Unit, char)>) {
     fn run(it: &Item, dy: f64, h: f64, out: &mut Vec<(ParaId, Unit, char)>) {
         if let Item::Glyphs(r) = it
@@ -705,7 +643,6 @@ pub fn semantic_chars(page: &PageFragment, out: &mut Vec<(ParaId, Unit, char)>) 
             }
         }
     }
-    // Headers and footers repeat on every page: artefacts.
     for c in page.children.iter() {
         let PageChild::Body(b) = c else { continue };
         walk(&b.children, b.offset.1, page.h, out);
@@ -802,17 +739,14 @@ mod tests {
     #[test]
     fn paint_order_is_background_flow_notes_floats_headers() {
         let colours: Vec<u32> = paint_items(&page()).iter().map(|it| if let Item::Rect { colour, .. } = it { *colour } else { 99 }).collect();
-        // background (1), body flow: paragraph (4), cell content (2), row borders (3); notes (5); floats (6); header (7).
         assert_eq!(colours, vec![1, 4, 2, 3, 5, 6, 7]);
     }
 
     #[test]
     fn offsets_accumulate() {
         let items = paint_items(&page());
-        // The paragraph line: column x 72 + line x 5.
         let Item::Rect { rect, .. } = &items[1] else { panic!() };
         assert_eq!(rect[0], 77.0);
-        // The note line: notes box y 700.
         let Item::Rect { rect, .. } = &items[4] else { panic!() };
         assert_eq!(rect[1], 700.0);
     }

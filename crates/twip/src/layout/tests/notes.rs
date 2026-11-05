@@ -1,5 +1,4 @@
-//! A note moves with its reference when a keep-with-next chain is rewound (discarded attempts discard their
-//! effects).
+//! Notes in rewound chains
 
 use crate::docx::model::next_para_id;
 use crate::docx::{Block, Inline, NoteKind};
@@ -9,7 +8,6 @@ use crate::layout::fragment::{BoxKind, Child, PageChild, PageFragment};
 
 use super::{fixture, fonts};
 
-/// Whether a page draws a box for footnote `id`.
 fn shows_note(page: &PageFragment, id: i64) -> bool {
     fn walk(children: &[Child], id: i64) -> bool {
         children.iter().any(|c| match c {
@@ -22,7 +20,6 @@ fn shows_note(page: &PageFragment, id: i64) -> bool {
 
 #[test]
 fn rewound_note_follows_reference() {
-    // A keepNext heading at the bottom of page 1 moves to page 2 with the paragraph it keeps with.
     const ID: i64 = 9001;
     let Some(mut doc) = fixture(r"K1\K1b_keepnext.docx") else { return };
     let blocks = &mut doc.sections[0].blocks;

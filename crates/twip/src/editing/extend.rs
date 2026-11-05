@@ -1,7 +1,4 @@
-//! Extend mode and block selection: F8 turns extend mode on, and each F8 after it selects the word,
-//! the sentence, the paragraph, then the document; movement extends the selection while it is on. Ctrl+Shift+F8 turns
-//! block mode on: movement then selects a vertical block, the lines between the anchor and the focus cut at their x.
-//! Esc ends either mode and keeps the selection; an edit ends it too.
+//! Extend mode and block selection
 
 use crate::layout::{ParaId, Unit};
 
@@ -10,16 +7,13 @@ use super::commands::Outcome;
 use super::position::Position;
 use super::selection::{Granularity, Selection};
 
-/// The modes F8 and Ctrl+Shift+F8 start.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Modes {
-    /// Extend mode's level: 0 off, 1 on, 2 word, 3 sentence, 4 paragraph, 5 document.
     pub extend: u8,
     pub block: bool,
 }
 
 impl Editor {
-    /// F8: extend mode on, then each press selects the next larger unit.
     pub(super) fn extend_mode(&mut self) -> Outcome {
         self.modes.block = false;
         let level = (self.modes.extend + 1).min(5);
@@ -37,7 +31,6 @@ impl Editor {
                 return Outcome::Moved;
             }
         };
-        // The unit around the selection's start, grown to cover what is already selected.
         let start = self.selection.ordered(&self.index).map_or(focus, |(a, _)| a);
         let end = self.selection.ordered(&self.index).map_or(focus, |(_, b)| b);
         let (a, _) = self.span(start, unit);
@@ -46,8 +39,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// A character typed in extend mode: the selection's focus goes past the next occurrence of it after the focus, in
-    /// the same story (case-sensitive); nothing changes when there is none.
     pub(super) fn extend_to_char(&mut self, ch: char) -> Outcome {
         let Some(focus) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
         let anchor = self.selection.anchor().unwrap_or(focus);
@@ -70,16 +61,13 @@ impl Editor {
         Outcome::Unchanged("not found")
     }
 
-    /// Ctrl+Shift+F8: block mode on.
     pub(super) fn block_mode(&mut self) -> Outcome {
         self.modes = Modes { extend: 0, block: true };
         Outcome::Moved
     }
 
-    /// Esc in extend or block mode: the mode ends, the selection stays. False when neither is on.
     pub(super) fn end_modes(&mut self) -> bool {
         let on = self.modes != Modes::default();
-        // Block mode's Esc leaves the caret at the block's start; extend mode's keeps the selection.
         if self.modes.block
             && let Selection::Block { anchor, .. } = self.selection
         {
@@ -90,7 +78,6 @@ impl Editor {
         on
     }
 
-    /// A text selection made while block mode is on, as a block.
     pub(super) fn as_block(&self, s: Selection) -> Selection {
         match s {
             Selection::Text { anchor, focus, .. } if self.modes.block => Selection::Block { anchor, focus },
@@ -98,8 +85,6 @@ impl Editor {
         }
     }
 
-    /// The block's piece of each line between the anchor's and the focus's lines (same story and table cell), as
-    /// paragraph unit ranges with their boxes: (page, rect, para, start, end).
     pub(super) fn block_pieces(&mut self) -> Vec<(usize, [f64; 4], ParaId, Unit, Unit)> {
         let Selection::Block { anchor, focus } = self.selection else { return Vec::new() };
         let (Some(ax), Some(fx)) = (self.nav().caret_x(anchor), self.nav().caret_x(focus)) else { return Vec::new() };
@@ -111,7 +96,6 @@ impl Editor {
         let n = self.nav().pages.len();
         'pages: for page in 0..n {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
-            // Each paragraph's part of each line (a line shows several where the view joins them, REV-6).
             let parts = geo
                 .lines
                 .iter()
@@ -145,7 +129,6 @@ impl Editor {
         out
     }
 
-    /// The block's text, one line per row of the block.
     pub(super) fn block_text(&mut self) -> String {
         let pieces = self.block_pieces();
         pieces

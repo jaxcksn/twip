@@ -1,9 +1,4 @@
-//! Paragraphs laid out as one when the markup view hides the paragraph mark between them (REV-6).
-//!
-//! A chain of such paragraphs is laid out as one synthetic paragraph: their inlines in order, each hidden mark kept as
-//! one hidden unit between them, with the last paragraph's properties and mark. Its pieces' sources are units of the
-//! joined paragraph; a [`JoinMap`] turns them back into each paragraph's own units, so drawn lines name the paragraphs
-//! and offsets of the document.
+//! Joined paragraphs
 
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -17,11 +12,8 @@ use super::ids::{ParaId, Unit};
 use super::space::ShapeSpace;
 use super::text::{FieldValues, ShapedPara, shape_space};
 
-/// What a hidden mark's unit holds in the joined paragraph: drawn nothing, as the view hides its run.
 const MARK: &str = "\u{b6}";
 
-/// Where a joined paragraph's units come from: the first paragraph's start at unit 0, then each later paragraph and
-/// the joined unit its own units start at. A paragraph's hidden mark is the joined unit before the next one's start.
 #[derive(Clone, Debug, PartialEq)]
 pub struct JoinMap {
     first: ParaId,
@@ -29,7 +21,6 @@ pub struct JoinMap {
 }
 
 impl JoinMap {
-    /// The paragraph a joined unit belongs to, and its unit there (a hidden mark is its paragraph's end).
     pub fn source(&self, u: Unit) -> (ParaId, Unit) {
         match self.rest[..self.rest.partition_point(|s| s.1 <= u)].last() {
             Some(&(p, start)) => (p, Unit(u.0 - start.0)),
@@ -37,27 +28,20 @@ impl JoinMap {
         }
     }
 
-    /// The first paragraph.
     pub fn first(&self) -> ParaId {
         self.first
     }
 
-    /// Each paragraph in order, with the joined units it spans: from its first unit up to the next paragraph's first
-    /// (`None` for the last).
     pub fn parts(&self) -> impl Iterator<Item = (ParaId, Unit, Option<Unit>)> + '_ {
         let starts = std::iter::once((self.first, Unit(0))).chain(self.rest.iter().copied());
         starts.enumerate().map(|(k, (p, s))| (p, s, self.rest.get(k).map(|r| r.1)))
     }
 }
 
-/// Whether `view` hides a block's paragraph mark.
 fn hides_mark(b: &Block, view: MarkupView) -> bool {
     matches!(b, Block::Para(p) if view.hides(&p.mark.rev))
 }
 
-/// The last block laid out with block `i`: the first paragraph after it whose mark the view shows, over every
-/// paragraph between whose mark it hides (REV-6). A chain that meets a table or the end of `blocks` ends at the
-/// paragraph before it, whose mark stays. `i` itself when its mark shows or it isn't a paragraph.
 pub fn chain_end<B: Borrow<Block>>(blocks: &[B], i: usize, view: MarkupView) -> usize {
     let para = |k: usize| blocks.get(k).is_some_and(|b| matches!(b.borrow(), Block::Para(_)));
     let mut j = i;
@@ -67,8 +51,6 @@ pub fn chain_end<B: Borrow<Block>>(blocks: &[B], i: usize, view: MarkupView) -> 
     j
 }
 
-/// The first of the paragraphs right before block `i` whose marks the view hides, else `i`: the first block that may
-/// lay out with block `i` (whatever block `i` is, so a block that was a paragraph before an edit counts).
 pub fn chain_start<B: Borrow<Block>>(blocks: &[B], i: usize, view: MarkupView) -> usize {
     let mut s = i.min(blocks.len());
     while s > 0 && hides_mark(blocks[s - 1].borrow(), view) {
@@ -77,7 +59,6 @@ pub fn chain_start<B: Borrow<Block>>(blocks: &[B], i: usize, view: MarkupView) -
     s
 }
 
-/// Paragraphs laid out as one: the joined paragraph and where its units come from.
 #[derive(Debug)]
 pub struct Joined {
     pub para: Paragraph,
@@ -85,8 +66,6 @@ pub struct Joined {
 }
 
 impl Joined {
-    /// `paras` (two or more, in order) joined: their inlines with each hidden mark as one hidden unit between them,
-    /// and the last one's properties, mark, list label and identity (REV-6).
     fn new(paras: &[&Paragraph]) -> Option<Joined> {
         let (&last, before) = paras.split_last()?;
         let &first = before.first()?;
@@ -104,8 +83,6 @@ impl Joined {
         let para = Paragraph {
             style: last.style.clone(),
             mark: last.mark.clone(),
-            // shortcut: list numbers aren't recounted for the view, so the last paragraph's number still counts the
-            // numbered paragraphs joined before it; recount numbering per view to fix.
             list: last.list.clone(),
             inlines,
             src: None,
@@ -116,7 +93,6 @@ impl Joined {
     }
 }
 
-/// A paragraph as layout sees it: a block's own, or several joined (REV-6).
 #[derive(Clone, Debug)]
 pub enum LaidPara<'a> {
     One(&'a Paragraph),
@@ -131,8 +107,6 @@ impl LaidPara<'_> {
         }
     }
 
-    /// Its [`ShapeSpace`]: the values of its fields and note numbers, where its units come from, and a previewed float
-    /// it anchors. [`Self::shape_space`] for a paragraph in a table cell (BREAK-10) or not.
     pub fn shape_space_in(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, ctx: &LayoutCtx, in_cell: bool) -> ShapeSpace {
         ShapeSpace { in_cell, ..self.shape_space(fields, notes, ctx) }
     }
@@ -147,7 +121,6 @@ impl LaidPara<'_> {
     }
 }
 
-/// The paragraph `chain` (consecutive paragraph blocks, as [`chain_end`] finds them) lays out as.
 pub fn laid_para<B: Borrow<Block>>(chain: &[B]) -> Option<LaidPara<'_>> {
     let paras: Vec<&Paragraph> = chain.iter().filter_map(|b| if let Block::Para(p) = b.borrow() { Some(p) } else { None }).collect();
     match paras[..] {
@@ -157,14 +130,12 @@ pub fn laid_para<B: Borrow<Block>>(chain: &[B]) -> Option<LaidPara<'_>> {
     }
 }
 
-/// A block as layout sees it.
 #[derive(Clone, Debug)]
 pub enum LaidBlock<'a> {
     Para(LaidPara<'a>),
     Table(&'a Table),
 }
 
-/// A story's blocks as laid out: each table, and each paragraph with the ones joined to it (REV-6).
 pub fn laid<B: Borrow<Block>>(blocks: &[B], view: MarkupView) -> Vec<LaidBlock<'_>> {
     let mut out = Vec::with_capacity(blocks.len());
     let mut i = 0;
@@ -184,7 +155,6 @@ pub fn laid<B: Borrow<Block>>(blocks: &[B], view: MarkupView) -> Vec<LaidBlock<'
     out
 }
 
-/// The paragraph piece `i` of `shaped` comes from: its own for a joined paragraph's piece, else `para`.
 pub fn piece_para(shaped: &ShapedPara, i: usize, para: ParaId) -> ParaId {
     match (&shaped.join, shaped.pieces.get(i).and_then(|p| p.src)) {
         (Some(j), Some(u)) => j.source(u).0,
@@ -197,7 +167,6 @@ mod tests {
     use super::*;
     use crate::docx::review::{AuthorId, MarkKind, RevisionId, RevisionMark};
 
-    /// Plain paragraphs with these texts, those marked `true` with a deleted mark.
     fn blocks(paras: &[(&str, bool)]) -> Vec<Block> {
         let texts: Vec<String> = paras.iter().map(|p| p.0.to_string()).collect();
         let mut d = super::super::tests::plain_doc(&texts).expect("the plain fixture");
@@ -225,14 +194,12 @@ mod tests {
         assert_eq!(chain_end(&blocks, 0, view), 2);
         assert_eq!(chain_start(&blocks, 2, view), 0);
         assert_eq!(chain_start(&blocks, 3, view), 3);
-        // The last mark has no paragraph after it: it stays.
         assert_eq!(chain_end(&blocks, 3, view), 3);
         assert_eq!(chain_end(&blocks, 0, MarkupView::All), 0);
         let laid = laid(&blocks, view);
         assert_eq!(laid.len(), 2);
         let LaidBlock::Para(LaidPara::Joined(j)) = &laid[0] else { panic!("a joined paragraph") };
         assert_eq!(ParaId(j.para.id), id(&blocks[2]));
-        // "ab", its mark, the empty paragraph's mark, "cde".
         assert_eq!(j.para.inlines.iter().map(Inline::units).sum::<usize>(), 7);
         let (a, b, c) = (id(&blocks[0]), id(&blocks[1]), id(&blocks[2]));
         let m = &j.map;

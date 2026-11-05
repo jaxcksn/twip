@@ -1,11 +1,4 @@
-//! `twip dumpdiff <a dir> <b dir> [--features f1,f2,...]`: compares two layout dumps document by document.
-//! Per page, `line N` ids are renumbered by each line's position (first baseline y, then first x) and
-//! the item lines are sorted, because item order is an artefact of how an engine emits items, while every item's
-//! geometry must match. Each document is `exact` (identical as written), `order-only` (identical after
-//! canonicalizing) or `different`. With `--features`, only documents whose features are within the list count.
-//!
-//! Line ids are renumbered per page: they only group runs into lines, and a cached table row's lines can share ids
-//! across the pages a header row repeats on (TABLE-46), which says nothing about layout.
+//! Layout dump comparison
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;

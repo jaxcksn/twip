@@ -1,5 +1,4 @@
-//! Fields and content controls as the host sees them: every element in document order,
-//! the selection's element context, and the signatures change lists compare.
+//! Fields and content controls
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -12,29 +11,20 @@ use super::index::DocIndex;
 use super::position::{Position, StoryId};
 use super::selection::Selection;
 
-/// The longest display text an element carries.
 const DISPLAY: usize = 200;
 
-/// One field or content control.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Element {
     pub id: ElementId,
-    /// The field's own code (its nested fields left out); `None` for a control.
     pub code: Option<String>,
     pub props: Option<ControlProps>,
-    /// A field's result text, a control's content text.
     pub display: String,
     pub story: StoryId,
-    /// The innermost element it is inside.
     pub parent: Option<ElementId>,
-    /// A locked field, or a control whose content is locked.
     pub locked: bool,
-    /// The paragraph holding a field's or inline control's markers (or a checkbox's face); `None` for block, row and
-    /// cell controls.
     pub at: Option<ParaId>,
 }
 
-/// The host's name for an element: `f12`, `c7`.
 pub fn id_str(id: ElementId) -> String {
     match id {
         ElementId::Field(f) => format!("f{}", f.0),
@@ -42,7 +32,6 @@ pub fn id_str(id: ElementId) -> String {
     }
 }
 
-/// [`id_str`] read back.
 pub fn parse_id(s: &str) -> Option<ElementId> {
     let n = s.get(1..)?.parse().ok()?;
     match s.as_bytes().first()? {
@@ -52,7 +41,6 @@ pub fn parse_id(s: &str) -> Option<ElementId> {
     }
 }
 
-/// A control kind's name in the host API.
 pub fn kind_name(k: &ControlKind) -> &'static str {
     match k {
         ControlKind::PlainText { .. } => "plain_text",
@@ -73,8 +61,6 @@ impl Element {
         self.props.as_ref().map_or("field", |p| kind_name(&p.kind))
     }
 
-    /// What a change list compares: a field's result counts, a control's
-    /// content text doesn't (typing in a control doesn't change the control).
     pub fn signature(&self) -> u64 {
         let mut h = std::hash::DefaultHasher::new();
         self.code.hash(&mut h);
@@ -101,12 +87,9 @@ pub(super) fn story_name(s: StoryId, idx: &DocIndex) -> String {
     }
 }
 
-/// What to list.
 #[derive(Clone, Debug, Default)]
 pub struct Filter {
-    /// `field` or a control kind's name.
     pub kind: Option<String>,
-    /// (`code` | `tag` | `alias`, text contained, case-sensitive).
     pub matching: Option<(String, String)>,
     pub story: Option<String>,
 }
@@ -127,9 +110,6 @@ impl Filter {
     }
 }
 
-/// Every story's blocks in document order: the body; each section's headers and footers (default,
-/// first, even; header before footer); footnotes; endnotes. Text boxes are walked where their anchors are, and
-/// listed after the notes; building blocks come last ([`enumerate`]).
 fn stories<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(StoryId, &'d [Block])> {
     let mut out: Vec<(StoryId, &[Block])> = Vec::new();
     for s in &doc.sections {
@@ -161,7 +141,6 @@ fn stories<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(StoryId, &'d [Block])>
 struct Walk<'d> {
     doc: &'d Document,
     out: Vec<Element>,
-    /// Text boxes met on the way, listed after the notes.
     boxes: Vec<(FloatId, &'d [Block])>,
 }
 
@@ -179,7 +158,6 @@ impl<'d> Walk<'d> {
                 Block::Para(p) => &p.controls,
                 Block::Table(t) => &t.controls,
             };
-            // Block-level controls starting at this block: listed once, before their content.
             let keep = open.iter().zip(ids).take_while(|(a, b)| a == b).count();
             open.truncate(keep);
             for &c in &ids[keep..] {
@@ -273,7 +251,6 @@ fn clip(s: String) -> String {
     if s.chars().count() <= DISPLAY { s } else { s.chars().take(DISPLAY).collect() }
 }
 
-/// The text of the consecutive blocks from `blocks[0]` that carry control `c`.
 fn member_text(blocks: &[Block], c: crate::docx::ControlId) -> String {
     let mut out = Vec::new();
     for b in blocks {
@@ -289,20 +266,17 @@ fn member_text(blocks: &[Block], c: crate::docx::ControlId) -> String {
     clip(out.join("\n"))
 }
 
-/// Every element, in document order, as `filter` keeps them.
 pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element> {
     let mut w = Walk { doc, out: Vec::new(), boxes: Vec::new() };
     for (story, blocks) in stories(doc, idx) {
         w.blocks(blocks, story, &[]);
     }
-    // Text boxes after the notes, in the order their anchors came (nested boxes after their box).
     let mut k = 0;
     while k < w.boxes.len() {
         let (f, blocks) = w.boxes[k];
         w.blocks(blocks, StoryId::TextBox(f), &[]);
         k += 1;
     }
-    // Building blocks last, in glossary order.
     for (k, part) in doc.glossary.iter().flat_map(|g| g.parts.iter().enumerate()) {
         if part.state != crate::docx::PartState::Removed {
             w.blocks(&part.body, StoryId::BuildingBlock(k as u32), &[]);
@@ -311,7 +285,6 @@ pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element
     w.out.into_iter().filter(|e| filter.keeps(e, idx)).collect()
 }
 
-/// The elements a selection is in or exactly covers, innermost first: `(element, exact)`.
 pub fn context(doc: &Document, idx: &DocIndex, sel: &Selection) -> Vec<(ElementId, bool)> {
     let Some(focus) = sel.focus() else { return Vec::new() };
     let anchor = sel.anchor().unwrap_or(focus);
@@ -324,7 +297,6 @@ pub fn context(doc: &Document, idx: &DocIndex, sel: &Selection) -> Vec<(ElementI
         out.extend(inline_context(p, lo, hi));
         out.extend(p.controls.iter().rev().map(|c| (ElementId::Control(*c), false)));
     }
-    // The cells, rows and tables around it, innermost first.
     for level in idx.chain_of(&focus).iter().rev() {
         let Some(t) = idx.table(doc, level.table) else { continue };
         if let Some(c) = t.rows.get(level.row).and_then(|r| r.cells.get(level.cell)) {
@@ -338,8 +310,6 @@ pub fn context(doc: &Document, idx: &DocIndex, sel: &Selection) -> Vec<(ElementI
     out
 }
 
-/// The inline elements of `p` around units `lo..=hi`, innermost first. A field holds positions strictly inside it
-/// (its result is one unit); a control holds its edges too (its markers take no units).
 fn inline_context(p: &Paragraph, lo: u32, hi: u32) -> Vec<(ElementId, bool)> {
     let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
     let mut found: Vec<(u32, ElementId, bool)> = Vec::new();
@@ -377,12 +347,10 @@ fn inline_context(p: &Paragraph, lo: u32, hi: u32) -> Vec<(ElementId, bool)> {
     found.into_iter().map(|(_, e, x)| (e, x)).collect()
 }
 
-/// The elements now, by id: what change lists compare.
 pub fn by_id(doc: &Document, idx: &DocIndex) -> HashMap<ElementId, Element> {
     enumerate(doc, idx, &Filter::default()).into_iter().map(|e| (e.id, e)).collect()
 }
 
-/// Elements added, removed and changed between `before` and `after` among `ids`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Changes {
     pub added: Vec<Element>,
@@ -395,7 +363,6 @@ impl Changes {
         self.added.is_empty() && self.removed.is_empty() && self.changed.is_empty()
     }
 
-    /// Folds a later change list in: an element added then changed stays added; added then removed is no change.
     pub fn then(&mut self, later: Changes) {
         for e in later.added {
             self.removed.retain(|r| *r != e.id);
@@ -422,13 +389,10 @@ impl Changes {
     }
 }
 
-/// The elements of paragraph `para` as [`enumerate`] gives them, its ancestors' chain taken from where it is: what a
-/// text-only transaction changes (work in proportion to the edit).
 pub fn in_para(doc: &Document, idx: &DocIndex, para: ParaId) -> Vec<Element> {
     let Some(p) = idx.para(doc, para) else { return Vec::new() };
     let Some(slot) = idx.para_slot(para) else { return Vec::new() };
     let story = idx.story(slot.container);
-    // The chain outermost first: the controls of each enclosing table, row and cell, then the paragraph's own.
     let pos = Position::text(story, para, crate::layout::Unit(0));
     let mut parents: Vec<ElementId> = Vec::new();
     for level in idx.chain_of(&pos) {
@@ -447,8 +411,6 @@ pub fn in_para(doc: &Document, idx: &DocIndex, para: ParaId) -> Vec<Element> {
     w.out
 }
 
-/// What a transaction touched, from the steps that undo it: the paragraphs whose text changed (and the elements its
-/// removed text held), or, for structural steps, everything.
 pub enum Touched {
     Paras(Vec<ParaId>, Vec<ElementId>),
     All,
@@ -469,10 +431,7 @@ pub fn touched(inverses: &[super::step::Step]) -> Touched {
                 }));
             }
             Step::Para { para, .. } | Step::FieldViews { para, .. } => paras.push(*para),
-            // Images, numbering definitions and settings hold no elements.
             Step::AddImage { .. } | Step::Numbering { .. } | Step::DefaultTab(_) => {}
-            // A split (its inverse a join): both paragraphs. A join (its inverse a split): the joined paragraph, and
-            // whatever the second paragraph's block controls were (they may have gone with it).
             Step::Join { first, second } => paras.extend([*first, *second]),
             Step::Split { para, second, .. } => {
                 paras.push(*para);

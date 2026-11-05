@@ -1,5 +1,4 @@
-//! Interaction budgets: editor time through the caret's page, without waiting for background layout
-//! (ignored by default: run them alone in a release build, `cargo test --release --lib perf -- --ignored`; under the parallel test run their timings mean nothing).
+//! Interaction budgets
 
 use std::time::Instant;
 
@@ -13,7 +12,6 @@ fn p95(mut v: Vec<f64>) -> f64 {
     v[((v.len() - 1) as f64 * 0.95).round() as usize]
 }
 
-/// Sends one message and returns its editor time in ms.
 fn send(e: &mut Editor, seq: &mut u64, mut msg: Value) -> f64 {
     *seq += 1;
     msg["seq"] = (*seq).into();
@@ -24,7 +22,6 @@ fn send(e: &mut Editor, seq: &mut u64, mut msg: Value) -> f64 {
     ms
 }
 
-/// A column border of `table` on page 0, at row `row`'s middle: boundary `k`'s x and the row's middle y.
 fn border(e: &mut Editor, table: usize, row: usize, k: usize) -> (f64, f64) {
     let st = crate::editing::inspect::inspect(e, "geometry", true);
     let r = st["geometry"]["rows"].as_array().unwrap().iter().find(|r| r["table"] == table && r["page"] == 0 && r["row"] == row).unwrap().clone();
@@ -34,7 +31,6 @@ fn border(e: &mut Editor, table: usize, row: usize, k: usize) -> (f64, f64) {
 #[test]
 #[ignore = "timing: run alone in a release build, `cargo test --release --lib perf -- --ignored`"]
 fn pointer_hits_and_drag_moves_are_within_budget() {
-    // A pointer event's editor time p95 ≤ 0.5 ms; a border drag's moves ≤ 16 ms.
     let mut e = open("FX-TBL-BASIC.docx");
     e.complete(fonts());
     let mut seq = 0;
@@ -57,8 +53,6 @@ fn pointer_hits_and_drag_moves_are_within_budget() {
 #[test]
 #[ignore = "timing: run alone in a release build, `cargo test --release --lib perf -- --ignored`"]
 fn live_float_drag_moves_are_within_budget() {
-    // Live layout: each move of a dragged float places it and lays its page out again (as the frame after it
-    // would), p95 ≤ 16 ms.
     let mut e = open("FX-OBJ.docx");
     e.complete(fonts());
     let mut seq = 0;
@@ -82,7 +76,6 @@ fn live_float_drag_moves_are_within_budget() {
 #[test]
 #[ignore = "timing: run alone in a release build, `cargo test --release --lib perf -- --ignored`"]
 fn table_structure_and_resize_commits_are_within_budget() {
-    // Inserting a row and committing a column resize on FX-TBL-LARGE, p95 ≤ 50 ms each.
     let mut e = open("FX-TBL-LARGE.docx");
     e.complete(fonts());
     let mut seq = 0;

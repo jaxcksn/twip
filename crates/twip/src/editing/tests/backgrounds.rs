@@ -1,6 +1,4 @@
-//! Pictures behind the text: a header's page-sized background takes no press, hover or object step meant for the
-//! body (and the body's floats none meant for the header), and a body picture behind the text yields to the text over
-//! it.
+//! Background pictures
 
 use std::rc::Rc;
 
@@ -24,7 +22,6 @@ fn page(e: &mut Editor, i: usize) -> Rc<PageGeometry> {
     e.page_geometries().into_iter().find(|(p, _)| *p == i).map(|(_, g)| g).expect("the page")
 }
 
-/// A pointer event at page `pg`'s point.
 fn at(e: &mut Editor, kind: PointerKind, pg: usize, (x, y): (f64, f64), clicks: u8) {
     let (dx, dy) = e.stack().to_doc(pg, x, y).expect("on the stack");
     e.pointer_input(kind, dx, dy, clicks, Mods::default(), fonts());
@@ -40,17 +37,14 @@ fn hover(e: &mut Editor, pg: usize, p: (f64, f64)) -> Cursor {
     e.view(0..0).cursor
 }
 
-/// The page's header background: its float and box.
 fn background(g: &PageGeometry) -> (FloatId, [f64; 4]) {
     g.stories.iter().find_map(|s| s.float.filter(|_| matches!(s.host, StoryId::HeaderFooter(_))).map(|f| (f, s.rect))).expect("a header float")
 }
 
-/// The body's picture behind its text.
 fn behind(g: &PageGeometry) -> (FloatId, [f64; 4]) {
     g.stories.iter().find_map(|s| s.float.filter(|_| s.host == StoryId::Body).map(|f| (f, s.rect))).expect("a body float")
 }
 
-/// The middle of a body line's `k`th character, clear of the body's float.
 fn on_body_text(g: &PageGeometry, k: usize) -> (f64, f64) {
     let body_floats = || g.stories.iter().filter(|s| s.float.is_some() && s.host == StoryId::Body);
     let clear = |l: &&super::super::geometry::GLine| body_floats().all(|s| l.bottom < s.rect[1] || l.top > s.rect[3]);
@@ -58,7 +52,6 @@ fn on_body_text(g: &PageGeometry, k: usize) -> (f64, f64) {
     ((l.stops[k].x + l.stops[k + 1].x) / 2.0, (l.top + l.bottom) / 2.0)
 }
 
-/// A point in the body clear of its text: after its shortest line.
 fn past_body_text(g: &PageGeometry) -> (f64, f64) {
     let [_, y0, _, y1] = behind_rect(g);
     let (x, l) = g
@@ -72,7 +65,6 @@ fn past_body_text(g: &PageGeometry) -> (f64, f64) {
     (x + 20.0, (l.top + l.bottom) / 2.0)
 }
 
-/// The body float's box, or nothing (a page without it).
 fn behind_rect(g: &PageGeometry) -> [f64; 4] {
     g.stories.iter().find(|s| s.float.is_some() && s.host == StoryId::Body).map_or([0.0; 4], |s| s.rect)
 }
@@ -81,7 +73,6 @@ fn body_caret(e: &Editor) -> bool {
     matches!(e.selection(), Selection::Caret(p) if p.story == StoryId::Body)
 }
 
-/// A double-click on the page's header text: header editing.
 fn edit_header(e: &mut Editor, pg: usize) {
     let g = page(e, pg);
     let l = g.lines.iter().find(|l| matches!(g.stories[l.story].story, StoryId::HeaderFooter(_))).expect("header text");
@@ -101,12 +92,10 @@ fn presses_in_the_body_over_the_header_background_place_a_body_caret() {
         click(&mut e, pg, p, 1);
         assert!(body_caret(&e), "page {pg}: {:?}", e.selection());
         assert_eq!(hover(&mut e, pg, p), Cursor::Text, "page {pg}");
-        // Past the text, as on a page without the background.
         let q = past_body_text(&g);
         assert_eq!(hover(&mut e, pg, q), Cursor::Text, "page {pg}, past the text");
         click(&mut e, pg, q, 1);
         assert!(body_caret(&e), "page {pg}, past the text: {:?}", e.selection());
-        // The selection bar.
         assert_eq!(hover(&mut e, pg, (36.0, p.1)), Cursor::RowSelect, "page {pg}, the margin");
     }
 }
@@ -133,10 +122,8 @@ fn in_header_editing_the_background_is_selected_and_dragged() {
     let mut e = fixture();
     edit_header(&mut e, 0);
     let (f, [x0, y0, x1, _]) = background(&page(&mut e, 0));
-    // Above the header text, at the page's right.
     let p = (x1 - 20.0, y0 + 10.0);
     assert_eq!(hover(&mut e, 0, p), Cursor::Move);
-    // Without the object grid it moves as far as the pointer.
     e.view_settings.object_grid = crate::api::services::ObjectGrid::Off;
     at(&mut e, PointerKind::Down, 0, p, 1);
     assert_eq!(e.selection(), Selection::Object(ObjectRef::Floating(f)));
@@ -156,10 +143,8 @@ fn in_header_editing_the_body_floats_take_nothing() {
     edit_header(&mut e, 0);
     let g = page(&mut e, 0);
     let (header, (body, [_, y0, x1, y1])) = (background(&g).0, behind(&g));
-    // On the body's float, over the header's background: the background's.
     click(&mut e, 0, (x1 - 10.0, (y0 + y1) / 2.0), 1);
     assert_eq!(e.selection(), Selection::Object(ObjectRef::Floating(header)));
-    // On body text, over the background: the background's too; never the body's float or text.
     click(&mut e, 0, on_body_text(&g, 3), 1);
     assert_eq!(e.selection(), Selection::Object(ObjectRef::Floating(header)));
     let five = e.key_command("Digit5", Mods { ctrl: true, alt: true, ..Mods::default() }).expect("Ctrl+Alt+5");
@@ -175,7 +160,6 @@ fn text_over_a_behind_picture_takes_the_press_and_the_picture_the_rest() {
     let mut e = fixture();
     let g = page(&mut e, 0);
     let (f, [x0, y0, x1, y1]) = behind(&g);
-    // A character of a body line drawn over the picture.
     let on_text = g
         .lines
         .iter()
@@ -185,7 +169,6 @@ fn text_over_a_behind_picture_takes_the_press_and_the_picture_the_rest() {
     assert_eq!(hover(&mut e, 0, on_text), Cursor::Text);
     click(&mut e, 0, on_text, 1);
     assert!(body_caret(&e), "{:?}", e.selection());
-    // In the margin, where no line is.
     let off_text = (x1 - 10.0, (y0 + y1) / 2.0);
     assert_eq!(hover(&mut e, 0, off_text), Cursor::Move);
     click(&mut e, 0, off_text, 1);

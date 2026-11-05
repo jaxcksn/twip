@@ -1,6 +1,4 @@
-//! Primitive mutations: each applies to the document, has an exact inverse, maps positions and yields a layout hint.
-//! Commands are built from steps only, so undo, redo, selection mapping and incremental layout treat
-//! every edit alike. Steps never re-read the document; untouched blocks keep their ids.
+//! Edit steps
 
 use std::collections::HashSet;
 use std::ops::Range;
@@ -12,10 +10,6 @@ use crate::layout::{Change, ParaId, TableId, Unit};
 use super::index::{Container, DocIndex};
 use super::position::{Place, Position};
 
-/// Where a [`Step::Text`] range starts and ends among the zero-unit inlines at its edges, which it otherwise leaves
-/// (past those at its start, before those at its end): it takes `lead` more at its start and `trail` more at its end,
-/// and starts `under` before the last of those at its start. An inverse undoes exactly what its step did: it takes
-/// the markers the step inserted, and puts deleted content back before the markers that were after it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Edges {
     pub lead: u32,
@@ -25,78 +19,38 @@ pub struct Edges {
 
 #[derive(Clone, Debug)]
 pub enum Step {
-    /// Replace units `range` of `para` with `with` (typing, deletion, run formatting). A range leaves the zero-unit
-    /// inlines on its edges (control and field markers, anchors) where they are, unless `edges` says otherwise.
     Text { para: ParaId, range: Range<Unit>, with: Vec<Inline>, edges: Edges },
-    /// Split `para` at `at`; the units after it move to `second`, inserted right after it. `second` comes with no
-    /// inlines, except as a join's inverse, which gives it exactly the inlines it had.
     Split { para: ParaId, at: Unit, second: Paragraph },
-    /// Join `second`, the paragraph right after `first` in its container, onto `first`.
     Join { first: ParaId, second: ParaId },
-    /// Replace blocks `range` of a container (insert or delete paragraphs and tables, replace a nested table).
     Blocks { container: Container, range: Range<usize>, with: Vec<Block> },
-    /// Replace rows `range` of a table, and its grid when given (row and column operations, merges, resizes).
     Rows { table: TableId, range: Range<usize>, with: Vec<Row>, grid: Option<Vec<f64>> },
-    /// Replace a paragraph's properties, its mark's formatting and its list label (paragraph formatting, numbering).
     Para { para: ParaId, style: Rc<crate::docx::ParaStyle>, mark: crate::docx::Run, list: Option<crate::docx::ListLabel> },
-    /// Replace a paragraph's inlines with the same content in other runs (formatting resolved again): units, and so
-    /// positions, don't change.
     Restyle { para: ParaId, inlines: Vec<Inline> },
-    /// Replace a table's preferred width (a border drag that changes the table's width).
     TableWidth { table: TableId, width: crate::docx::props::Width },
-    /// An image's data replaced, and whether it fills a placeholder.
     ImageData { index: usize, data: Vec<u8>, filled: bool },
-    /// A header or footer part added (`blocks` given) to a section's reference `slot` (0 default, 1 first page, 2 even
-    /// pages), or taken out again.
     HeaderPart { name: String, section: usize, footer: bool, slot: usize, blocks: Option<Vec<Block>> },
-    /// Glossary building block `k` replaced by `part` (made, renamed, removed or brought back); `None` takes out the
-    /// last one, made by the step this undoes.
     BuildingBlock { k: u32, part: Option<Box<crate::docx::BuildingBlock>> },
-    /// A table's own properties replaced (Table Properties and Table Design commands).
     TableProps { table: TableId, props: TableProps },
-    /// Add (`blocks` given) or remove a footnote or endnote: inserting a note, deleting its reference mark.
     Note { kind: crate::docx::NoteKind, id: i64, blocks: Option<Vec<Block>> },
-    /// A section's page replaced (Page Setup, margins, orientation, size, columns, different first page), and its
-    /// tracked change: set by recording, dropped by resolving, else the one it has.
     SectionPage { section: usize, page: crate::docx::SectionPage, change: Option<Rc<crate::docx::review::SectionChange>> },
-    /// A content control's properties replaced, or the control added (`control` given) or removed.
-    /// Its markers and memberships move with the content holding them; layout doesn't change.
     Control { id: crate::docx::ControlId, control: Option<crate::docx::Control> },
-    /// A data part replaced, added (`part` given, none with its item id) or removed. Layout doesn't
-    /// change.
     DataPart { item_id: String, part: Option<crate::docx::DataPart> },
-    /// A comment's metadata and body replaced, or the comment added (`after` given, none with its id) or removed. Its
-    /// range markers and reference are inlines, moved by `Text` steps; layout doesn't change.
     Comment { id: crate::docx::review::CommentId, after: Option<crate::docx::review::Comment> },
-    /// Fields' views in `para` replaced (a field update shows their results again). Fields not in it are left.
     FieldViews { para: ParaId, views: Vec<(crate::docx::FieldId, crate::docx::FieldView)> },
-    /// An image added as image `index`, the next (`data` given), or the last one, `index`, taken out again.
     AddImage { index: usize, data: Option<Vec<u8>> },
-    /// The numbering definitions lists resolve with replaced, and the lists added since reading (a new list). Layout
-    /// doesn't change until paragraphs use them.
     Numbering { resolver: Option<Rc<crate::docx::resolve::Resolver>>, added: Vec<crate::docx::AddedList> },
-    /// The document's default tab spacing (`w:defaultTabStop`), points.
     DefaultTab(f64),
-    /// The section break ending section `section` taken out (`back` none): its blocks go to the start of the next
-    /// section, whose properties they take, as in Word. With `back`, the inverse: the break put back.
     SectionBreak { section: usize, back: Option<Box<SectionBack>> },
 }
 
-/// What [`Step::SectionBreak`] puts back: section `section` again before the one it went into, from that one's first
-/// `blocks` blocks.
 #[derive(Clone, Debug)]
 pub struct SectionBack {
     pub blocks: usize,
-    /// Its properties (its blocks empty).
     pub section: crate::docx::Section,
-    /// The sections as read it held ([`Document::section_sources`]).
     pub sources: usize,
-    /// Whether its page was edited ([`Document::edited_sections`]).
     pub edited: bool,
 }
 
-/// What [`Step::TableProps`] replaces: the table's style and look, width, alignment and indent, and its borders as
-/// resolved.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableProps {
     pub style_id: Option<String>,
@@ -105,19 +59,15 @@ pub struct TableProps {
     pub jc: crate::docx::props::Jc,
     pub ind: f64,
     pub borders: [Option<crate::docx::props::Border>; 6],
-    /// Rows and columns per style band (`w:tblStyleRowBandSize`, `w:tblStyleColBandSize`).
     pub bands: (i64, i64),
-    /// Its position (`w:tblpPr`), when it is placed out of the text.
     pub floating: Option<crate::docx::props::TablePos>,
 }
 
 impl Step {
-    /// How many of `images`' pictures the content this step puts in holds (a split or join moves content: none).
     pub fn pictures_of(&self, images: &HashSet<usize>) -> i64 {
         self.pictures_where(&|k| images.contains(&k))
     }
 
-    /// How many pictures whose image `images` takes the content this step puts in holds.
     pub fn pictures_where(&self, images: &dyn Fn(usize) -> bool) -> i64 {
         fn inlines(v: &[Inline], images: &dyn Fn(usize) -> bool) -> i64 {
             v.iter()
@@ -145,14 +95,11 @@ impl Step {
         }
     }
 
-    /// Whether it can change layout: control properties, data parts, comments, images added and numbering
-    /// definitions don't (the steps that use them do).
     pub fn lays_out(&self) -> bool {
         !matches!(self, Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. } | Step::AddImage { .. } | Step::Numbering { .. })
     }
 }
 
-/// What steps touched: what a transaction's change summary lists.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Targets {
     pub paras: HashSet<ParaId>,
@@ -163,7 +110,6 @@ pub struct Targets {
 }
 
 impl Targets {
-    /// Adds what `s` names: what it changes in place, and the content it puts in.
     pub fn add(&mut self, s: &Step) {
         use crate::docx::ElementId;
         match s {
@@ -268,7 +214,6 @@ impl Targets {
         self.revisions.extend(rev.ins.iter().chain(&rev.del).map(|m| m.id).chain(rev.fmt.as_ref().map(|f| f.mark.id)));
     }
 
-    /// Adds what `other` touched.
     pub fn extend(&mut self, other: Targets) {
         self.paras.extend(other.paras);
         self.tables.extend(other.tables);
@@ -295,55 +240,27 @@ impl TableProps {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum StepError {
-    /// The step names content that isn't in the document (a stale step: a bug in the command that built it).
     Missing,
-    /// The range or offset isn't inside its paragraph, container or table.
     OutOfRange,
-    /// The document is read only: edits are refused before they run, and no step reaches it.
     ReadOnly,
 }
 
-/// What applying a step did: its exact inverse, how positions move, and layout's hint (`None`: layout compares).
 pub struct Applied {
     pub inverse: Step,
     pub map: Map,
     pub hint: Option<Change>,
 }
 
-/// How positions move through an applied step.
 #[derive(Clone, Debug)]
 pub enum Map {
-    Text {
-        para: ParaId,
-        start: Unit,
-        old_end: Unit,
-        new_end: Unit,
-    },
-    Split {
-        para: ParaId,
-        at: Unit,
-        len: Unit,
-        second: ParaId,
-    },
-    Join {
-        first: ParaId,
-        second: ParaId,
-        offset: Unit,
-    },
-    /// Paragraphs and tables removed; positions in them go to `fallback`. Row-end marks of `table` from `rows.end` on
-    /// shift by `shift`.
-    Removed {
-        paras: HashSet<ParaId>,
-        tables: HashSet<TableId>,
-        rows: Option<(TableId, Range<usize>, isize)>,
-        fallback: Option<Position>,
-    },
-    /// Positions don't move (a property change).
+    Text { para: ParaId, start: Unit, old_end: Unit, new_end: Unit },
+    Split { para: ParaId, at: Unit, len: Unit, second: ParaId },
+    Join { first: ParaId, second: ParaId, offset: Unit },
+    Removed { paras: HashSet<ParaId>, tables: HashSet<TableId>, rows: Option<(TableId, Range<usize>, isize)>, fallback: Option<Position> },
     Same,
 }
 
 impl Map {
-    /// `pos` after the step.
     pub fn apply(&self, pos: Position) -> Position {
         match (self, pos.place) {
             (Map::Text { para, start, old_end, new_end }, Place::Text { para: p, offset, affinity }) if p == *para => {
@@ -384,13 +301,12 @@ impl Map {
     }
 }
 
-// ---------------- inlines by units ----------------
+// Inlines by units
 
 pub fn para_len(p: &Paragraph) -> Unit {
     Unit(p.inlines.iter().map(Inline::units).sum::<usize>() as u32)
 }
 
-/// The formatting run an inline carries.
 pub fn run_of(i: &Inline) -> Option<&Run> {
     match i {
         Inline::Text(_, r)
@@ -411,8 +327,6 @@ pub fn run_of(i: &Inline) -> Option<&Run> {
     }
 }
 
-/// Splits a text inline straddling unit `u` so an inline boundary falls there. Returns the index of the first inline
-/// at or after `u`: past zero-unit inlines at `u` when `after_markers`, before them otherwise.
 fn cut(inlines: &mut Vec<Inline>, u: Unit, after_markers: bool) -> usize {
     let mut at = 0u32;
     let mut k = 0;
@@ -436,12 +350,7 @@ fn cut(inlines: &mut Vec<Inline>, u: Unit, after_markers: bool) -> usize {
     inlines.len()
 }
 
-/// Replaces units `range` of `p` with `with`; returns the removed inlines. Inserted text joins an adjacent text in the
-/// same run, and texts a cut split rejoin, so an inverse restores the original inlines exactly. (Typing after deleting
-/// a paragraph's text keeps that text's formatting through the editor's pending format, not through the model.)
-/// Also returns how many zero-unit inlines (not texts) follow the inserted ones at their place (see [`Edges`]).
 fn splice(p: &mut Paragraph, range: Range<Unit>, edges: Edges, with: Vec<Inline>) -> (Vec<Inline>, u32) {
-    // Edges count markers, not the empty texts that may sit among them.
     let back = |inlines: &[Inline], mut k: usize, mut n: u32| {
         while n > 0 && k > 0 {
             k -= 1;
@@ -475,7 +384,6 @@ fn splice(p: &mut Paragraph, range: Range<Unit>, edges: Edges, with: Vec<Inline>
                 prev.push_str(s);
                 continue;
             }
-            // Only the last inserted inline may join the text after it, or later ones would land behind that text.
             if k + 1 == n
                 && let Some(Inline::Text(next, nr)) = p.inlines.get_mut(at)
                 && std::rc::Rc::ptr_eq(nr, r)
@@ -489,10 +397,8 @@ fn splice(p: &mut Paragraph, range: Range<Unit>, edges: Edges, with: Vec<Inline>
         at += 1;
     }
     let after = p.inlines[at..].iter().take_while(|i| i.units() == 0).filter(|i| !matches!(i, Inline::Text(..))).count() as u32;
-    // Texts the cut split, now adjacent again in the same run, rejoin: an inverse step restores the original inlines.
     merge_at(&mut p.inlines, at);
     merge_at(&mut p.inlines, a);
-    // Empty texts left by the cut go, unless they are all the paragraph has.
     let has_units = p.inlines.iter().any(|i| i.units() > 0);
     let mut kept_one = false;
     p.inlines.retain(|i| match i {
@@ -508,7 +414,6 @@ fn splice(p: &mut Paragraph, range: Range<Unit>, edges: Edges, with: Vec<Inline>
     (removed, after)
 }
 
-/// Joins inlines `k - 1` and `k` when both are text in the same run.
 fn merge_at(inlines: &mut Vec<Inline>, k: usize) {
     if k == 0 || k >= inlines.len() {
         return;
@@ -526,9 +431,8 @@ fn units_of(inlines: &[Inline]) -> u32 {
     inlines.iter().map(Inline::units).sum::<usize>() as u32
 }
 
-// ---------------- hints ----------------
+// Hints
 
-/// Layout's hint for a change inside top-level block `block` of a container.
 fn hint_in(idx: &DocIndex, container: Container, block: usize, added: isize) -> Option<Change> {
     let (section, b, row) = idx.top_block(container, block)?;
     let flow = matches!(container, Container::Section(_))
@@ -544,7 +448,7 @@ pub(super) fn para_hint(idx: &DocIndex, para: ParaId, added: isize) -> Option<Ch
     hint_in(idx, s.container, s.block, added)
 }
 
-// ---------------- apply ----------------
+// Apply
 
 impl Step {
     pub fn apply(self, doc: &mut Document, idx: &mut DocIndex) -> Result<Applied, StepError> {
@@ -555,7 +459,6 @@ impl Step {
                     return Err(StepError::OutOfRange);
                 }
                 let added = units_of(&with);
-                // The zero-unit inlines `with` begins and ends with: its inverse takes them too.
                 let marker = |i: &&Inline| i.units() == 0 && !matches!(i, Inline::Text(..));
                 let lead = with.iter().take_while(marker).count();
                 let trail = if lead == with.len() { 0 } else { with.iter().rev().take_while(marker).count() };
@@ -581,19 +484,14 @@ impl Step {
                 if at > len {
                     return Err(StepError::OutOfRange);
                 }
-                // Everything from the cut on, with the zero-unit inlines at the paragraph's end (a control's end there
-                // goes with its content); those at the cut stay with the first part.
                 let tail: Vec<Inline> = if at < len {
                     let k = cut(&mut p.inlines, at, true);
                     p.inlines.drain(k..).collect()
                 } else {
                     Vec::new()
                 };
-                // Its fields and controls are the new paragraph's now (indexed when it is added below).
                 idx.moved_inlines(para, &tail);
                 if !second.inlines.is_empty() {
-                    // Undoing a join: the second paragraph gets exactly what it had; zero-unit inlines of its own (anchors,
-                    // bookmarks, a control's end at its end) the cut left at the first's end are taken back.
                     let keep = p.inlines.iter().rposition(|i| i.units() > 0 || !second.inlines.contains(i)).map_or(0, |k| k + 1);
                     if keep < p.inlines.len() {
                         let taken: Vec<Inline> = p.inlines.drain(keep..).collect();
@@ -625,7 +523,6 @@ impl Step {
                 }
                 let blocks = idx.blocks_mut(doc, a.container).ok_or(StepError::Missing)?;
                 let Block::Para(tail) = blocks.remove(b.block) else { return Err(StepError::Missing) };
-                // The inverse split gets the exact inlines back (see `Split`).
                 let inlines = tail.inlines.clone();
                 let p = match blocks.get_mut(a.block) {
                     Some(Block::Para(p)) => p,
@@ -634,7 +531,6 @@ impl Step {
                 let at = para_len(p);
                 splice(p, at..at, Edges::default(), inlines);
                 idx.replaced_blocks(doc, a.container, &[Block::Para(tail.clone())]);
-                // The joined paragraph's floats moved paragraphs.
                 idx.replaced_inlines(doc, first, &[]);
                 let hint = match a.container {
                     Container::Section(_) => idx.top_block(a.container, a.block).map(|(section, f, _)| Change {
@@ -682,7 +578,6 @@ impl Step {
                     return Err(StepError::OutOfRange);
                 }
                 let old = std::mem::replace(&mut p.inlines, inlines);
-                // A float taken out or put back (deleting a floating object) is indexed again.
                 idx.replaced_inlines(doc, para, &old);
                 Ok(Applied { inverse: Step::Restyle { para, inlines: old }, map: Map::Same, hint: para_hint(idx, para, 0) })
             }
@@ -718,7 +613,6 @@ impl Step {
                 idx.replaced_blocks(doc, Container::Story(story), &removed);
                 let (mut paras, mut tables) = (HashSet::new(), HashSet::new());
                 removed.iter().for_each(|b| ids(b, &mut paras, &mut tables));
-                // Notes have no layout hint: layout compares (as for typing in a note).
                 Ok(Applied {
                     inverse: Step::Note { kind, id, blocks: old },
                     map: Map::Removed { paras, tables, rows: None, fallback: None },
@@ -803,7 +697,6 @@ impl Step {
                 let old = match (at, part) {
                     (Some(k), Some(p)) => Some(std::mem::replace(&mut doc.data_parts[k], p)),
                     (None, Some(p)) => {
-                        // A part read from the package and added back by an undo isn't removed on save any more.
                         if let Some(src) = &p.src {
                             doc.removed_data.retain(|r| r != src);
                         }
@@ -899,8 +792,6 @@ impl Step {
                         Step::SectionBreak { section, back: None }
                     }
                 };
-                // Every section after it is renumbered: the index is built again. Positions name paragraphs, so they
-                // don't move; layout compares (the sections differ in number).
                 let parts = idx.parts().to_vec();
                 let flow = idx.flow;
                 *idx = DocIndex::build_with_parts(doc, &parts);
@@ -912,7 +803,6 @@ impl Step {
                 let old = s.page();
                 s.set_page(page);
                 let old_change = std::mem::replace(&mut s.change, change);
-                // Saving writes the section's page and its change.
                 doc.edited_sections.insert(section);
                 Ok(Applied { inverse: Step::SectionPage { section, page: old, change: old_change }, map: Map::Same, hint: None })
             }
@@ -938,7 +828,6 @@ impl Step {
                 }
                 let added = with.len();
                 let single = range.len() == 1 && added == 1;
-                // Widths at the file's precision (whole twips), so what saving and reading back gives is what is kept.
                 let twip = |w: f64| (w * 20.0).round() / 20.0;
                 let with: Vec<Row> = with
                     .into_iter()
@@ -955,7 +844,6 @@ impl Step {
                 let removed: Vec<Row> = t.rows.splice(range.clone(), with).collect();
                 let old_grid = grid.map(|g| std::mem::replace(&mut t.grid, g));
                 let (mut paras, mut tables) = (HashSet::new(), HashSet::new());
-                // Content of replaced rows that survives (same paragraph ids in the new rows) keeps its positions.
                 let mut kept = HashSet::new();
                 for r in &t.rows[range.start..range.start + added] {
                     r.cells.iter().flat_map(|c| c.blocks.iter()).for_each(|b| ids(b, &mut kept, &mut HashSet::new()));
@@ -972,7 +860,6 @@ impl Step {
                     first: b,
                     old_end: b + 1,
                     new_end: b + 1,
-                    // A nested table's rows are all inside one row of the outermost table.
                     row: match row {
                         Some(r) => Some(r),
                         None => single.then_some(range.start),
@@ -1009,7 +896,6 @@ fn ids(b: &Block, paras: &mut HashSet<ParaId>, tables: &mut HashSet<TableId>) {
     }
 }
 
-/// The first text position in `container` from block `from` on (descending into tables), else the last before it.
 pub fn first_position(doc: &Document, idx: &DocIndex, container: Container, from: usize) -> Option<Position> {
     let blocks = idx.blocks(doc, container)?;
     let story = idx.story(container);

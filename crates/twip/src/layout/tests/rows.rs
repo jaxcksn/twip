@@ -1,5 +1,4 @@
-//! A row taller than two pages splits into parts that together show its content once, under a repeated header row
-//! (TABLE-40 to TABLE-46).
+//! Table rows
 
 use std::collections::HashMap;
 
@@ -12,7 +11,6 @@ use crate::layout::traverse::semantic_chars;
 
 use super::{fixture, fonts};
 
-/// The table's row fragments on a page.
 fn rows_of(page: &PageFragment, table: TableId) -> Vec<RowFragment> {
     fn walk(children: &[Child], table: TableId, out: &mut Vec<RowFragment>) {
         for c in children {
@@ -90,9 +88,6 @@ fn row_split_three_pages() {
 
 #[test]
 fn a_cell_float_counts_in_the_centred_content_unless_the_flag_says_not_to_align() {
-    // TABLE-30: two centred cells in a 60pt row, one anchoring a 40pt layoutInCell float at its paragraph's top
-    // (compat 12). With doNotVertAlignCellWithSp that cell keeps its text at the top; without it the float's bottom
-    // is its content height, so its text sits (60 − 40)/2 = 10pt down.
     let tc = |inner: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p>{inner}</w:p></w:tc>"#);
     let float = r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="254000" cy="508000"/><wp:wrapNone/><wp:docPr id="1" name="Box"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:txbx><w:txbxContent><w:p/></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
     let ys = |b: &str, flag: bool| {
@@ -119,7 +114,6 @@ fn a_cell_float_counts_in_the_centred_content_unless_the_flag_says_not_to_align(
 
 #[test]
 fn a_right_to_left_table_draws_its_first_cell_on_the_right() {
-    // TABLE-23: w:bidiVisual, two 100pt cells, jc absent: right-aligned, the first cell rightmost, each 100pt apart.
     let body = r#"<w:tbl><w:tblPr><w:bidiVisual/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
     let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
     let s = layout(&doc, &fonts());
@@ -137,9 +131,6 @@ fn a_right_to_left_table_draws_its_first_cell_on_the_right() {
 
 #[test]
 fn a_column_a_row_does_not_reach_keeps_its_grid_width() {
-    // TABLE-15: grid 1000 × 3; the first row skips column 1 and ends after column 2, so column 3 is an after region
-    // of its grid width; the second row skips columns 1-2; the third has three 300-twip cells of text. Column 3 stays
-    // 50pt wide instead of shrinking to its text.
     let cell = |w: &str, t: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
     let body = format!(
         r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:trPr><w:gridBefore w:val="1"/><w:wBefore w:w="800" w:type="dxa"/></w:trPr>{}</w:tr><w:tr><w:trPr><w:gridBefore w:val="2"/><w:wBefore w:w="2000" w:type="dxa"/></w:trPr><w:tc><w:p><w:r><w:t>T1R2C1</w:t></w:r></w:p></w:tc></w:tr><w:tr>{}{}{}</w:tr></w:tbl><w:p/>"#,
@@ -160,7 +151,6 @@ fn a_column_a_row_does_not_reach_keeps_its_grid_width() {
 
 #[test]
 fn a_right_to_left_paragraph_swaps_left_and_right() {
-    // JUST-4: w:bidi with jc absent aligns right; with jc right (end), left.
     let x = |ppr: &str| {
         let body = format!(r#"<w:p><w:pPr>{ppr}</w:pPr><w:r><w:t>a</w:t></w:r></w:p>"#);
         let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
@@ -178,7 +168,6 @@ fn a_right_to_left_paragraph_swaps_left_and_right() {
     assert_eq!(x(r#"<w:bidi/><w:jc w:val="right"/>"#).0, x("").0, "jc right is left-aligned");
 }
 
-/// `src` with its body's first empty paragraph replaced by `body`.
 pub(super) fn with_body(src: &[u8], body: &str) -> Vec<u8> {
     use std::io::{Read, Write};
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).unwrap();
@@ -199,8 +188,6 @@ pub(super) fn with_body(src: &[u8], body: &str) -> Vec<u8> {
 
 #[test]
 fn a_row_whose_extra_space_below_overhangs_moves_whole() {
-    // TABLE-44: a one-line row under double spacing, 20pt above the body bottom: its text (13.43pt) fits, its pitch
-    // (26.86pt) doesn't, so the cell keeps nothing and the row starts the next page (TABLE-42).
     let body = r#"<w:p><w:pPr><w:spacing w:after="0" w:line="12560" w:lineRule="exact"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="480" w:lineRule="auto"/></w:pPr><w:r><w:t>z</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
     let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
     let page = glyphs(&doc).iter().position(|p| p.iter().any(|c| c.0 == 'z'));
@@ -209,8 +196,6 @@ fn a_row_whose_extra_space_below_overhangs_moves_whole() {
 
 #[test]
 fn a_cell_line_whose_extra_space_below_overhangs_goes_on() {
-    // TABLE-44: three one-line paragraphs under double spacing (pitch 26.86pt) with 70pt of room: the third line's
-    // text ends at 67.14pt, its pitch at 80.57pt, so it continues on the next page and the first two stay.
     let p = |c: char| format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="480" w:lineRule="auto"/></w:pPr><w:r><w:t>{c}</w:t></w:r></w:p>"#);
     let body = format!(
         r#"<w:p><w:pPr><w:spacing w:after="0" w:line="11560" w:lineRule="exact"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>{}{}{}</w:tc></w:tr></w:tbl><w:p/>"#,
@@ -226,8 +211,6 @@ fn a_cell_line_whose_extra_space_below_overhangs_goes_on() {
 
 #[test]
 fn a_merged_region_splits_with_its_last_row() {
-    // TABLE-32: a two-row region whose four 20pt lines start 50pt above the body bottom: two stay, the other two go
-    // on at the top of the next page in its last row's continuation, beside that row's own cell.
     let p = |c: char| format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>{c}</w:t></w:r></w:p>"#);
     let tc = |merge: &str, inner: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{merge}</w:tcPr>{inner}</w:tc>"#);
     let body = format!(
@@ -246,8 +229,6 @@ fn a_merged_region_splits_with_its_last_row() {
 
 #[test]
 fn an_exact_row_clips_above_its_bottom_margin() {
-    // TABLE-34, TABLE-28: a 20pt exact row with a 20pt bottom margin is 40pt tall but clips at 20pt: "b", 15pt below
-    // the first line, has its ink below 20pt and is hidden, though it would show above the row's 40pt bottom.
     let p = |before: u32, c: char| {
         format!(r#"<w:p><w:pPr><w:spacing w:before="{before}" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:t>{c}</w:t></w:r></w:p>"#)
     };
@@ -262,7 +243,6 @@ fn an_exact_row_clips_above_its_bottom_margin() {
     assert!(!drawn('b'), "the second line is clipped at the exact height");
 }
 
-/// Each page's drawn characters with their baselines.
 pub(super) fn glyphs(doc: &crate::docx::Document) -> Vec<Vec<(char, f64)>> {
     let s = layout(doc, &fonts());
     s.pages()
@@ -279,7 +259,6 @@ pub(super) fn glyphs(doc: &crate::docx::Document) -> Vec<Vec<(char, f64)>> {
         .collect()
 }
 
-/// Text boxes in table cells and at their content bottom (FLOAT-10, FLOAT-14).
 mod floats {
     use crate::docx::{blank, write};
     use crate::layout::fragment::Item;
@@ -288,7 +267,6 @@ mod floats {
 
     use super::super::fonts;
 
-    /// A one-page document with `body` (namespaces for text boxes declared).
     fn doc(body: &str) -> crate::docx::Document {
         let xml = format!(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body>{body}<w:sectPr/></w:body></w:document>"#
@@ -298,7 +276,6 @@ mod floats {
         crate::docx::read(&bytes).expect("reads")
     }
 
-    /// A paragraph anchoring a 100pt-wide text box of height `h` (pt), no insets, holding `text`.
     fn text_box(wrap: &str, h: f64, text: &str) -> String {
         format!(
             r#"<w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="{}"/>{wrap}<wp:docPr id="1" name="Box"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"><a:noAutofit/></wps:bodyPr></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>"#,
@@ -306,14 +283,12 @@ mod floats {
         )
     }
 
-    /// `content` in a one-cell table whose 100pt-tall row aligns it `v_align`.
     fn in_cell(v_align: &str, content: &str) -> String {
         format!(
             r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="2000" w:hRule="atLeast"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/><w:vAlign w:val="{v_align}"/></w:tcPr>{content}</w:tc></w:tr></w:tbl><w:p/>"#
         )
     }
 
-    /// The baseline and characters of each glyph run on the first page.
     fn runs(d: &crate::docx::Document) -> Vec<(f64, String)> {
         let s = layout(d, &fonts());
         paint_items(&s.pages()[0])
@@ -328,7 +303,6 @@ mod floats {
 
     #[test]
     fn float_10_a_text_box_aligns_its_text_down_by_its_anchor() {
-        // FLOAT-10: in a 100pt box, centred text goes down by half the room below it, bottom text by all of it.
         let at = |anchor: &str| {
             let tb = text_box(r#"<wp:wrapNone/>"#, 100.0, "Boxed").replace("<wps:bodyPr ", &format!(r#"<wps:bodyPr anchor="{anchor}" "#));
             baseline_of(&doc(&tb), "Boxed")
@@ -345,15 +319,12 @@ mod floats {
 
     #[test]
     fn float_14_vertical_alignment_moves_a_cell_float_with_its_text() {
-        // TABLE-30: the 40pt box is the cell's content height, so a 100pt row centres it 30pt down.
         let at = |v: &str| baseline_of(&doc(&in_cell(v, &text_box("<wp:wrapNone/>", 40.0, "Boxed"))), "Boxed").expect("the box text");
         assert!((at("center") - at("top") - 30.0).abs() < 0.01, "centred {} vs top {}", at("center"), at("top"));
     }
 
     #[test]
     fn float_14_a_wrapping_cell_float_makes_an_auto_row_taller() {
-        // A 60pt box in an auto row: square-wrapped, the row ends at its bottom (60pt down); wrapNone, below the
-        // paragraph (about 22pt).
         let after = |wrap: &str| {
             let body = format!(
                 r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>{}</w:tc></w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
@@ -367,8 +338,6 @@ mod floats {
 
     #[test]
     fn float_14_cell_text_wraps_a_float_laid_out_in_the_cell() {
-        // The paragraph anchoring a 100pt-wide square-wrapped box puts its text right of the box; wrapNone, at the
-        // cell's left.
         let x = |wrap: &str| {
             let b = text_box(wrap, 40.0, "Boxed").replacen("<w:p>", "<w:p><w:r><w:t>Cell</w:t></w:r>", 1);
             let s = layout(&doc(&in_cell("top", &b)), &fonts());
@@ -386,8 +355,6 @@ mod floats {
 
     #[test]
     fn float_14_a_body_level_float_over_the_first_row_moves_the_table_below_it() {
-        // Compat ≤ 14: a 40pt square-wrapped box with layoutInCell="0" over the first row puts the table below it; with
-        // layoutInCell="1" the row grows instead and its text stays at the top.
         let cell = |in_cell: &str| {
             let b = text_box(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 40.0, "Boxed")
                 .replace(r#"layoutInCell="1""#, &format!(r#"layoutInCell="{in_cell}""#));
@@ -402,9 +369,6 @@ mod floats {
 
     #[test]
     fn float_6_an_anchor_after_a_page_break_is_placed_on_the_next_page() {
-        // The paragraph goes on after its page break, so the 360pt box anchored after the break, with text after it,
-        // sits at the top of page 2 with that text, and the next paragraph's long word, too wide for either side of it,
-        // goes below it. With only the mark after the anchor, the break's line holds it: the box stays on page 1.
         let b = text_box(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 60.0, "Boxed")
             .replace(r#"cx="1270000""#, r#"cx="4572000""#)
             .replacen("<wp:posOffset>0</wp:posOffset>", "<wp:posOffset>685800</wp:posOffset>", 1)
@@ -436,8 +400,6 @@ mod floats {
 
     #[test]
     fn float_14_a_body_level_float_over_a_later_row_moves_the_rows_from_there_below_it() {
-        // Compat ≤ 14: a 40pt square-wrapped box with layoutInCell="0", 30pt below the first row's top, misses that row
-        // but covers the second, which starts at the box's bottom (70pt down); wrapNone, right below the first row.
         let gap = |wrap: &str| {
             let b = text_box(wrap, 40.0, "Boxed")
                 .replace(r#"layoutInCell="1""#, r#"layoutInCell="0""#)
@@ -458,8 +420,6 @@ mod floats {
 
     #[test]
     fn float_14_a_line_relative_float_stays_in_its_cell_whatever_layout_in_cell() {
-        // Compat ≤ 14: layoutInCell="0" moves a paragraph-relative box out of the cell, so the centred cell doesn't
-        // move it; a line-relative one stays in the cell and moves with the text.
         let at = |v: &str, rel: &str| {
             let b = text_box("<wp:wrapNone/>", 40.0, "Boxed")
                 .replace(r#"layoutInCell="1""#, r#"layoutInCell="0""#)
@@ -472,7 +432,6 @@ mod floats {
 
     #[test]
     fn float_10_a_text_box_drops_glyphs_below_its_content_bottom() {
-        // A 4pt-tall box: the letters' ink starts above its bottom, the full stop's below it.
         let d = doc(&text_box("<wp:wrapNone/>", 4.0, "Hk."));
         let shown: String = runs(&d).into_iter().map(|(_, t)| t).collect();
         assert!(shown.contains("Hk") && !shown.contains('.'), "shown {shown:?}");
@@ -481,8 +440,6 @@ mod floats {
 
 #[test]
 fn a_split_rows_continuation_keeps_its_first_paragraphs_space_before() {
-    // TABLE-41: a cell's "a" ends page 1 and its next paragraph "b" starts the row's continuation on page 2; b's 12pt
-    // space-before stays above it there.
     let y = |before: u32| {
         let body = format!(
             r#"<w:p><w:pPr><w:spacing w:after="0" w:line="12560" w:lineRule="exact"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:before="{before}" w:after="0"/></w:pPr><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
@@ -497,8 +454,6 @@ fn a_split_rows_continuation_keeps_its_first_paragraphs_space_before() {
 
 #[test]
 fn a_nested_row_splits_inside_its_cell() {
-    // TABLE-41: a nested row's first cell holds "a" and "b", its second "c"; one line of room is left: "a" and "c"
-    // stay on page 1 and "b" continues on page 2, where the nested row goes on.
     let cell = |w: u32, paras: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{paras}</w:tc>"#);
     let p = |t: char| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
     let nested = format!(
@@ -517,8 +472,6 @@ fn a_nested_row_splits_inside_its_cell() {
 
 #[test]
 fn an_art_border_takes_its_art_width_across_rows() {
-    // TABLE-37: an art border of w:sz 12 is 12pt in layout, a single one 1.5pt: the second row's text is the table's
-    // top border and its insideH lower, 2 × 10.5pt.
     let baseline = |val: &str| {
         let b = format!(r#"w:val="{val}" w:sz="12" w:space="0" w:color="000000""#);
         let body = format!(
@@ -533,8 +486,6 @@ fn an_art_border_takes_its_art_width_across_rows() {
 
 #[test]
 fn with_cell_spacing_a_cells_top_border_leaves_the_row_above_alone() {
-    // TABLE-39: a 4.5pt double top border on the second row's cell moves its text down by 4.5pt only; the first
-    // row's bottom edge stays its own (none), not the winner against the cell below.
     let baseline = |top: &str| {
         let body = format!(
             r#"<w:tbl><w:tblPr><w:tblCellSpacing w:w="100" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:tcBorders>{top}</w:tcBorders></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
@@ -548,8 +499,6 @@ fn with_cell_spacing_a_cells_top_border_leaves_the_row_above_alone() {
 
 #[test]
 fn a_header_row_after_row_0_joins_the_first_row_run() {
-    // TABLE-3: with the firstRow bit, row 0 starts the first-row run and a header row right after it joins: the
-    // second row takes firstRow's 20pt, the third is the first band (14pt).
     let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
     let styles = format!(
         r#"<w:styles xmlns:w="{w}"><w:style w:type="table" w:styleId="TS"><w:name w:val="TS"/><w:tblPr><w:tblStyleRowBandSize w:val="1"/></w:tblPr><w:tblStylePr w:type="firstRow"><w:rPr><w:sz w:val="40"/></w:rPr></w:tblStylePr><w:tblStylePr w:type="band1Horz"><w:rPr><w:sz w:val="28"/></w:rPr></w:tblStylePr></w:style></w:styles>"#
@@ -577,8 +526,6 @@ fn a_header_row_after_row_0_joins_the_first_row_run() {
 
 #[test]
 fn a_rows_top_border_takes_its_width_in_whole_twips() {
-    // TABLE-27, TABLE-37: a w:sz 3 border (0.375pt) takes 0.35pt above each row, so the second row's text is 0.3pt
-    // higher than under w:sz 4 borders (0.5pt), not 0.25pt.
     let baseline = |sz: u32| {
         let b = format!(r#"w:val="single" w:sz="{sz}" w:space="0" w:color="000000""#);
         let body = format!(

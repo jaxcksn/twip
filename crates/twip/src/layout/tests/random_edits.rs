@@ -1,5 +1,5 @@
-//! Seeded random edits through `DocumentLayout`: after every edit, the
-//! completed incremental layout equals a fresh `layout(doc, fonts)` item for item, status included.
+//! Random edits
+
 #![allow(clippy::single_element_loop, reason = "document lists with one shipped document; add more as they ship")]
 
 use std::path::Path;
@@ -15,7 +15,6 @@ use crate::layout::{Budget, Change, DocumentLayout, LayoutStatus, Step, dump, la
 
 use super::{doc, fonts};
 
-/// xorshift64: deterministic, seedable.
 pub struct Rng(u64);
 
 impl Rng {
@@ -35,12 +34,10 @@ impl Rng {
     }
 }
 
-/// The first text inline of a paragraph.
 fn text_of(p: &mut Paragraph) -> Option<&mut String> {
     p.inlines.iter_mut().find_map(|i| if let Inline::Text(t, _) = i { Some(t) } else { None })
 }
 
-/// A paragraph (and its block index) in section `si` with text, in a cell when `cell`.
 fn pick_para(d: &mut Document, si: usize, rng: &mut Rng) -> Option<usize> {
     let blocks = &d.sections[si].blocks;
     let paras: Vec<usize> =
@@ -48,7 +45,6 @@ fn pick_para(d: &mut Document, si: usize, rng: &mut Rng) -> Option<usize> {
     (!paras.is_empty()).then(|| paras[rng.below(paras.len())])
 }
 
-/// What one edit did: its hint, and whether it must force a full layout.
 struct Edit {
     hint: Option<Change>,
     forces_full: bool,
@@ -59,12 +55,10 @@ fn change(si: usize, first: usize, old_end: usize, new_end: usize) -> Option<Cha
     Some(Change { section: si, first, old_end, new_end, row: None })
 }
 
-/// Applies one random edit to `d`.
 fn random_edit(d: &mut Document, rng: &mut Rng) -> Option<Edit> {
     let si = rng.below(d.sections.len());
     let n = d.sections[si].blocks.len();
     if rng.below(20) == 0 {
-        // Changes that must force a full layout.
         let what = match rng.below(4) {
             0 => {
                 d.settings.default_tab += 9.0;
@@ -82,7 +76,6 @@ fn random_edit(d: &mut Document, rng: &mut Rng) -> Option<Edit> {
                 "footnote text"
             }
             _ => {
-                // A style's spacing: every paragraph sharing the first paragraph's style.
                 let Some(Block::Para(first)) = d.sections[si].blocks.iter().find(|b| matches!(b, Block::Para(_))) else { return None };
                 let old = first.style.clone();
                 let mut st = (*old).clone();
@@ -117,7 +110,6 @@ fn random_edit(d: &mut Document, rng: &mut Rng) -> Option<Edit> {
             Some(Edit { hint: change(si, bi, bi + 1, bi + 1), forces_full: false, what: format!("type in block {bi}") })
         }
         2 => {
-            // Split a paragraph (Enter).
             let bi = pick_para(d, si, rng)?;
             let Block::Para(p) = &d.sections[si].blocks[bi] else { unreachable!() };
             let mut second = p.clone();
@@ -127,7 +119,6 @@ fn random_edit(d: &mut Document, rng: &mut Rng) -> Option<Edit> {
             Some(Edit { hint: change(si, bi, bi + 1, bi + 2), forces_full: false, what: format!("split block {bi}") })
         }
         3 => {
-            // Join a paragraph with the next one.
             let bi = pick_para(d, si, rng)?;
             if !matches!(d.sections[si].blocks.get(bi + 1), Some(Block::Para(_))) {
                 return None;
@@ -138,7 +129,6 @@ fn random_edit(d: &mut Document, rng: &mut Rng) -> Option<Edit> {
             Some(Edit { hint: change(si, bi, bi + 2, bi + 1), forces_full: false, what: format!("join block {bi}") })
         }
         4 => {
-            // Insert or delete 30–60 paragraphs (whole pages).
             let k = 30 + rng.below(31);
             let bi = pick_para(d, si, rng)?;
             if rng.below(2) == 0 || n < k + 2 {
@@ -158,7 +148,6 @@ fn random_edit(d: &mut Document, rng: &mut Rng) -> Option<Edit> {
             }
         }
         5 => {
-            // Edit text in a table cell.
             let tables: Vec<usize> = (0..n).filter(|&i| matches!(d.sections[si].blocks[i], Block::Table(_))).collect();
             if tables.is_empty() {
                 return None;
@@ -212,7 +201,6 @@ fn random_edit(d: &mut Document, rng: &mut Rng) -> Option<Edit> {
             Some(Edit { hint: change(si, bi, bi + 1, bi + 1), forces_full: false, what: format!("page break in block {bi}") })
         }
         _ => {
-            // A header story edit.
             let blocks = d.stories.values_mut().next()?;
             let p = blocks.iter_mut().find_map(|b| if let Block::Para(p) = b { Some(p) } else { None })?;
             match text_of(p) {
@@ -227,12 +215,10 @@ fn random_edit(d: &mut Document, rng: &mut Rng) -> Option<Edit> {
     }
 }
 
-/// Runs `steps` random edits on `d` from `seed`, checking every completed layout against a fresh one.
 fn run_edits(name: &str, d: Document, fonts: &Fonts, seed: u64, steps: usize) {
     run_edits_with(name, d, fonts, seed, steps, Budget::Unlimited);
 }
 
-/// [`run_edits`], completing each job in runs of `budget`.
 pub(super) fn run_edits_with(name: &str, mut d: Document, fonts: &Fonts, seed: u64, steps: usize, budget: Budget) {
     let mut rng = Rng::new(seed);
     let mut dl = DocumentLayout::new();
@@ -282,7 +268,6 @@ pub(super) fn run_edits_with(name: &str, mut d: Document, fonts: &Fonts, seed: u
 
 pub(super) fn documents() -> Vec<(String, Document)> {
     let mut out = Vec::new();
-    // The showcase takes several passes (header and footer heights): its edits start from the baseline's values.
     for p in [
         concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tables.docx"),
         concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx"),
@@ -328,7 +313,6 @@ fn random_edits_on_long_documents() {
     }
 }
 
-/// The same edits with every job restarting from the first page.
 #[test]
 fn restart_from_first_page() {
     let fonts = fonts();
@@ -342,7 +326,6 @@ fn restart_from_first_page() {
     r.unwrap_or_else(|e| std::panic::resume_unwind(e));
 }
 
-/// Typing reuses pages (the point of incremental layout).
 #[test]
 fn typing_reuses_pages() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/big.docx"))) else { return };
@@ -362,7 +345,6 @@ fn typing_reuses_pages() {
     assert!(reused as usize + 5 >= pages / 2, "typing mid-document reused {reused} of {pages} pages");
 }
 
-/// Many seeds (run with `--ignored`): a stress run.
 #[test]
 #[ignore]
 fn random_edits_stress() {
@@ -381,7 +363,6 @@ fn random_edits_stress() {
     }
 }
 
-/// The review fixtures in every markup view (REV-1, REV-2): incremental layout equals a full layout of the view.
 #[test]
 fn random_edits_in_every_markup_view() {
     use crate::docx::review::MarkupView;
@@ -397,8 +378,6 @@ fn random_edits_in_every_markup_view() {
     }
 }
 
-/// Hinted edits in chosen rows of every table (header rows, merged regions, rows on later pages): the row exception
-/// reuses pages after the edited row only when they lay out the same.
 #[test]
 fn table_row_edits() {
     let fonts = fonts();
@@ -437,7 +416,6 @@ fn table_row_edits() {
                     continue;
                 };
                 match text_of(p) {
-                    // One character: the row keeps its height, so later pages keep their breaks and are candidates.
                     Some(t) => t.insert(0, 'x'),
                     None => {
                         let run = p.mark.clone();
@@ -461,9 +439,6 @@ fn table_row_edits() {
     }
 }
 
-/// Edits inside and around paragraphs the view joins (REV-6): typing in either paragraph of a joined pair, changing
-/// the last one's properties, joining and splitting pairs by their marks, and pairs across page breaks. Each layout,
-/// hinted or not and run in one-page steps, equals a full one, paragraphs and units of every glyph included.
 #[test]
 fn edits_inside_joined_paragraphs() {
     use crate::docx::props::Jc;
@@ -473,7 +448,6 @@ fn edits_inside_joined_paragraphs() {
     let Some(base) = super::plain_doc(&texts) else { return };
     let hint = |i: usize, old: usize, new: usize| Some(Change { section: 0, first: i, old_end: old, new_end: new, row: None });
     type EditFn = fn(&mut Document) -> Option<(usize, usize, usize)>;
-    /// Marks paragraph `i`'s mark deleted (`del`) or inserted, or unmarks it.
     fn set_mark(d: &mut Document, i: usize, del: bool, on: bool) -> Option<(usize, usize, usize)> {
         let Block::Para(p) = d.sections[0].blocks.get_mut(i)? else { return None };
         let m = Rc::make_mut(&mut p.mark);
@@ -544,7 +518,6 @@ fn edits_inside_joined_paragraphs() {
         for budget in [Budget::Unlimited, Budget::Pages(1)] {
             let mut d = base.clone();
             d.review.view = view;
-            // Deleted marks join 2 to 4 and 10 to 14 (a chain across pages); an inserted one 7 and 8 in Original.
             for i in [2, 3, 10, 11, 12, 13] {
                 set_mark(&mut d, i, true, true);
             }

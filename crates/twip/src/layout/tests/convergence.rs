@@ -1,4 +1,4 @@
-//! Convergence of pass-dependent values and the stabilizing pass (FIELD-6, HDR-10).
+//! Convergence
 
 use std::path::PathBuf;
 
@@ -9,7 +9,6 @@ use crate::layout::record::PageRecord;
 
 use super::{doc, fixture, fixtures, fonts};
 
-/// The fixtures of headers and footers with page fields (HDR-10).
 fn hf9() -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = std::fs::read_dir(fixtures().join("HF9"))
         .map(|d| d.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "docx")).collect())
@@ -18,7 +17,6 @@ fn hf9() -> Vec<PathBuf> {
     v
 }
 
-/// Whether page `pg`'s composed header and footer heights are the ones its first body was laid out with.
 fn heights_agree(pg: &PageRecord) -> bool {
     let used = pg.bodies.first().map_or([None, None], |b| b.space.hf);
     (0..2).all(|k| match (&pg.hf[k], used[k]) {
@@ -41,7 +39,6 @@ fn converged_header_heights() {
     }
 }
 
-/// Runs `f` with the alternating-height hook (and the failing-verification hook) set, resetting them afterwards.
 fn with_hooks<T>(height: f64, fail: bool, f: impl FnOnce() -> T) -> T {
     HF_ALTERNATE.set(height);
     FAIL_VERIFY.set(fail);
@@ -64,7 +61,6 @@ fn forced_non_convergence() {
     assert_eq!(&pages[..], &with_header[..]);
 }
 
-/// Diagnostic (run with `--ignored --nocapture`): the status of every reference dump document.
 #[test]
 #[ignore]
 fn status_census() {
@@ -84,8 +80,6 @@ fn status_census() {
     eprintln!("{counts:?}");
 }
 
-/// A body records only the values of the page fields it shows: none for plain text, the page number for a
-/// PAGE field.
 #[test]
 fn bodies_record_the_fields_they_show() {
     use crate::docx::Block;

@@ -1,5 +1,4 @@
-//! Degenerate and damaged input degrades gracefully and never panics. Each
-//! case runs under `catch_unwind`, so a failure names its case.
+//! Robustness
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -15,7 +14,6 @@ use super::{doc, fixture, fixtures, fonts};
 
 const SAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-OBJ.docx");
 
-/// Lays out `d` under `catch_unwind`; `Err` names what went wrong.
 fn try_layout(d: &Document, fonts: &Fonts) -> Result<(), String> {
     match catch_unwind(AssertUnwindSafe(|| layout(d, fonts))) {
         Err(_) => Err("panicked".into()),
@@ -132,7 +130,6 @@ fn odd_documents_lay_out() {
     assert!(failures.is_empty(), "odd documents that didn't lay out:\n{}", failures.join("\n"));
 }
 
-/// The first `n` fixture documents, in path order.
 fn fixture_paths(n: usize) -> Vec<PathBuf> {
     let Ok(dirs) = std::fs::read_dir(fixtures()) else { return Vec::new() };
     let mut dirs: Vec<PathBuf> = dirs.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
@@ -158,7 +155,6 @@ fn truncated_files_never_panic() {
         let Ok(bytes) = std::fs::read(&path) else { continue };
         let mut variants: Vec<(String, Vec<u8>)> =
             (1..=10).map(|k| (format!("truncated at {k}/11"), bytes[..bytes.len() * k / 11].to_vec())).collect();
-        // Flip bytes after `word/document.xml`'s local file header name: its compressed data.
         let name = b"word/document.xml";
         if let Some(at) = bytes.windows(name.len()).position(|w| w == name) {
             for k in 0..5 {

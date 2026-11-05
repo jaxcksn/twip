@@ -1,5 +1,4 @@
-//! DrawingML shapes laid out: every shape of a float drawn as a shape item at its mapped place (FLOAT-15, DRAW-4), with
-//! its rotation and flips, in paint order (FLOAT-16).
+//! DrawingML shapes
 
 use crate::layout::fragment::{Item, ShapeItem};
 use crate::layout::traverse::paint_items;
@@ -40,7 +39,6 @@ fn doc(body: &str) -> Option<crate::docx::Document> {
     crate::docx::read(&bytes(body)?).ok()
 }
 
-/// A one-section letter-size document package with `body`.
 pub(crate) fn bytes(body: &str) -> Option<Vec<u8>> {
     let ct = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
     let rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
@@ -76,7 +74,6 @@ fn shapes_without_text_draw_at_their_place_with_their_rotation_and_flips() {
 
 #[test]
 fn every_shape_of_a_nested_group_draws_at_its_mapped_place() {
-    // A 200 x 100 pt group with a 100 x 100 child frame (x scale 2); inside, a group whose child frame scales y by 1.5.
     let inner = format!(
         r#"<wpg:grpSp><wpg:cNvPr id="9" name="g"/><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="{}" y="0"/><a:ext cx="{}" cy="{}"/><a:chOff x="0" y="0"/><a:chExt cx="{}" cy="{}"/></a:xfrm></wpg:grpSpPr>{}</wpg:grpSp>"#,
         50 * PT,
@@ -100,7 +97,7 @@ fn every_shape_of_a_nested_group_draws_at_its_mapped_place() {
     let snap = crate::layout::layout(&d, &fonts());
     let items = paint_items(&snap.pages()[0]);
     let s = shapes(&items);
-    assert_eq!(s.len(), 2, "both shapes of the group draw (FLOAT-15)");
+    assert_eq!(s.len(), 2, "both shapes of the group draw");
     assert!(close(s[0].rect, [92.0, 110.0, 132.0, 140.0]), "{:?}", s[0].rect);
     assert_eq!(s[0].path, vec![0]);
     assert!(close(s[1].rect, [172.0, 130.0, 192.0, 160.0]), "{:?}", s[1].rect);
@@ -132,7 +129,6 @@ fn behind_text_floats_draw_under_the_text_in_relative_height_order() {
             }
             v
         });
-    // FLOAT-16: the behind floats lowest relativeHeight first, then the text, then the float in front.
     assert_eq!(order, ["00AA00", "AA0000", "text", "0000AA"]);
 }
 
@@ -193,7 +189,6 @@ fn float_rect(snap: &crate::layout::Snapshot) -> [f64; 4] {
 
 #[test]
 fn a_shape_turned_a_quarter_is_placed_as_its_turned_box_except_in_compat_12() {
-    // FLOAT-17: 100 x 200 pt at (72, 560) turned 90°: placed at 22..222 x 610..710 (its centre stays).
     let shape = box_wsp(100, 200, r#" rot="5400000""#, "<wps:bodyPr/>", "Turned");
     let body = format!("<w:p>{}</w:p>", anchor(72, 560, 100, 200, 1, false, 1, &shape));
     let d = settings_doc(&body, 15).expect("the document reads");
@@ -210,15 +205,12 @@ fn a_shape_turned_a_quarter_is_placed_as_its_turned_box_except_in_compat_12() {
 
 #[test]
 fn an_autofit_box_grows_from_its_stored_size_and_a_box_that_does_not_wrap_widens() {
-    // FLOAT-10: stored 20 pt high; the frame (insets 3.6 + 3.6, pen 0.5 + 0.5) is 12.8 of it, so the height is 7.2 +
-    // the content.
     let auto = box_wsp(200, 20, "", "<wps:bodyPr><a:spAutoFit/></wps:bodyPr>", "One line");
     let body = format!("<w:p>{}</w:p>", anchor(72, 100, 200, 20, 1, false, 1, &auto));
     let d = settings_doc(&body, 15).expect("the document reads");
     let r = float_rect(&crate::layout::layout(&d, &fonts()));
     let h = r[3] - r[1];
     assert!(h > 20.0 && h < 40.0, "grows to its one line: {h}");
-    // FLOAT-18: a box 30 pt wide with a long line that doesn't wrap widens to it.
     let wide = box_wsp(30, 40, "", r#"<wps:bodyPr wrap="none"/>"#, "A line far wider than thirty points");
     let body = format!("<w:p>{}</w:p>", anchor(72, 100, 30, 40, 1, false, 1, &wide));
     let d = settings_doc(&body, 15).expect("the document reads");
@@ -228,7 +220,6 @@ fn an_autofit_box_grows_from_its_stored_size_and_a_box_that_does_not_wrap_widens
 
 #[test]
 fn vertical_text_is_turned_into_its_frame() {
-    // FLOAT-19: vert270 turns the text 270°.
     let v = box_wsp(90, 72, "", r#"<wps:bodyPr vert="vert270"/>"#, "Upward");
     let body = format!("<w:p>{}</w:p>", anchor(72, 100, 90, 72, 1, false, 1, &v));
     let d = settings_doc(&body, 15).expect("the document reads");
@@ -238,8 +229,6 @@ fn vertical_text_is_turned_into_its_frame() {
 
 #[test]
 fn effects_resolve_from_the_effect_list_and_the_style() {
-    // DRAW-17: a star with its own glow, soft edge and shadow; a rect taking the theme's third effect (Word's default
-    // theme: an outer shadow) through its style reference.
     let effects = r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"><a:alpha val="40000"/></a:srgbClr></a:outerShdw><a:glow rad="101600"><a:srgbClr val="FFC000"/></a:glow><a:softEdge rad="63500"/></a:effectLst>"#;
     let star = sp(0, 0, 90, 60, "star5", "", "FF0000").replace("</a:ln></wps:spPr>", &format!("</a:ln>{effects}</wps:spPr>"));
     let styled = r#"<wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr><wps:style><a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="3"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></wps:style><wps:bodyPr/></wps:wsp>"#;

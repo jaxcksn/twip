@@ -1,5 +1,4 @@
-//! Underline and strikethrough over tabs and spaces (FONT-15): a tab is decorated across its width wherever it falls
-//! (a signature line), the spaces that end a line aren't (unless `w:ulTrailSpace`), and `words` skips spaces and tabs.
+//! Tab and space decorations
 
 use std::path::Path;
 

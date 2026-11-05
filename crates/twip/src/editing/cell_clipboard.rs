@@ -1,7 +1,4 @@
-//! Copying and pasting cell blocks. A copied block is a small table of its cells; it
-//! remembers whether it was whole rows or the whole table. Pasting it overwrites a selected block (repeated to fill
-//! it), nests it over one selected cell, overwrites to the right and down from a caret in a cell (adding rows past the
-//! table's end), and puts copied whole rows above the target row. A whole table nests at the caret like any blocks.
+//! Cell block clipboard
 
 use crate::docx::{Block, Row, Table};
 use crate::font::Fonts;
@@ -13,7 +10,6 @@ use super::selection::{CellShape, Selection};
 use super::table::Grid;
 use super::tables::empty_cell;
 
-/// What a copied cell block was.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CellCopy {
     pub whole_rows: bool,
@@ -21,7 +17,6 @@ pub struct CellCopy {
 }
 
 impl Editor {
-    /// The fragment of a selected cell block: its rows' cells over the block's columns, as a table.
     pub(super) fn copy_cells(&mut self, id: u64) -> Option<Fragment> {
         let tg = self.table_target()?;
         let Selection::Cells { shape, .. } = self.selection else { return None };
@@ -67,21 +62,14 @@ impl Editor {
         })
     }
 
-    /// Pastes a copied cell block over the cells at the target; `None` when the plain path applies (outside a table, or a
-    /// whole table at a caret, which nests like any blocks).
     pub(super) fn paste_cells(&mut self, f: &Fragment, fonts: &Fonts) -> Option<Outcome> {
         let copy = f.cells?;
         let Some(Block::Table(src)) = f.blocks.first() else { return None };
-        // Pasted cells and rows take no content controls (they are written through a table rebuild, which adds no
-        // control); their fields get new ids.
-        // shortcut: controls in pasted cells are dropped; carry them as `paste_fragment` does if templates need it.
         let mut stripped = vec![Block::Table(src.clone())];
         super::clipboard::adopt(&mut stripped, &Default::default());
         super::clipboard::strip_controls(&mut stripped);
         let Some(Block::Table(src)) = stripped.first() else { return None };
-        // Rows wider than the table they join bring their extra grid columns (at the copy's widths).
         let wide = |grid: &[f64]| -> Vec<f64> { grid.iter().chain(src.grid.iter().skip(grid.len())).copied().collect() };
-        // Whole rows pasted in the paragraph right after a table join that table.
         if copy.whole_rows
             && !matches!(self.selection, Selection::Cells { .. })
             && let Some((para, _)) = self.selection.focus().and_then(|p| p.para_offset())
@@ -112,7 +100,7 @@ impl Editor {
             let row = &src.rows[r % src.rows.len().max(1)];
             row.cells.get(j % row.cells.len().max(1)).map(|c| c.blocks.iter().map(fresh).collect())
         };
-        // Whole rows at a row's start, or over selected rows: inserted above the target row.
+        // Whole rows
         let at_row_start = !block && self.selection.focus().is_some_and(|p| p.para_offset().is_some_and(|(_, o)| o.0 == 0)) && tg.cols.0 == 0;
         let over_rows = matches!(self.selection, Selection::Cells { shape: CellShape::Rows, .. });
         if copy.whole_rows && (at_row_start || over_rows) {
@@ -130,7 +118,7 @@ impl Editor {
             return Some(self.rebuild("Paste Rows", tg.table, rows, wide(&t.grid), (tg.rows.0, 0), fonts));
         }
         if block && single {
-            // Over one selected cell: the copy nests there as a table, after the cell's content.
+            // One selected cell
             let k = g.cell_at(tg.rows.0, tg.cols.0)?;
             let mut sub = src.clone();
             sub.id = crate::docx::next_para_id();
@@ -142,7 +130,7 @@ impl Editor {
             return Some(self.rebuild("Paste Cells", tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts));
         }
         if block {
-            // Over a block: each cell takes the copy's cell at the same place, the copy repeated to fill the block.
+            // Cell block
             for (i, r) in (tg.rows.0..=tg.rows.1).enumerate() {
                 let ks: Vec<usize> = (0..rows[r].cells.len())
                     .filter(|&k| g.rows[r].get(k).is_some_and(|&(c, s, _)| c + s.max(1) > tg.cols.0 && c <= tg.cols.1))
@@ -155,8 +143,7 @@ impl Editor {
             }
             return Some(self.rebuild("Paste Cells", tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts));
         }
-        // At a caret in a cell: overwrite to the right and down from it, adding rows past the table's end.
-        // shortcut: columns past the table's right edge are dropped rather than added.
+        // Caret in a cell
         let k0 = g.cell_at(tg.rows.0, tg.cols.0)?;
         for i in 0..src.rows.len() {
             let r = tg.rows.0 + i;

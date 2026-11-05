@@ -1,6 +1,4 @@
-//! The text services follow the markup view (REV-1): find, the word count, spelling, the reading structure and the
-//! text a paragraph shows act on the text the view shows; copy takes the accepted text in every view; and PDF export draws the
-//! view's layout without the comment tints.
+//! Text services by markup view
 
 use std::path::Path;
 

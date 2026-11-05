@@ -1,5 +1,4 @@
-//! The preset table's compact form: each preset's definition as a byte string (LEB128 varints), decoded once on first
-//! use. A definition of `Op`s and `Arg`s takes about a sixth of the room this way.
+//! Packed preset definitions
 
 use super::{Arg, Cmd, CxnDef, Formula, GeomDef, HandleDef, Op, PathDef, PathFill, Var};
 
@@ -118,7 +117,6 @@ impl Out {
 }
 
 #[cfg_attr(target_os = "emscripten", allow(dead_code))]
-/// A definition as bytes.
 pub fn encode(d: &GeomDef) -> Vec<u8> {
     let mut o = Out(Vec::new());
     o.u(d.av.len() as u64);
@@ -225,7 +223,6 @@ fn leak<T>(v: Vec<T>) -> &'static [T] {
     Box::leak(v.into_boxed_slice())
 }
 
-/// A definition from bytes; its parts live for the program (each preset is decoded once).
 pub fn decode(b: &[u8]) -> GeomDef<'static> {
     let mut r = In { b, at: 0 };
     let av = (0..r.n())

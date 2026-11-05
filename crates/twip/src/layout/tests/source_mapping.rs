@@ -1,6 +1,4 @@
-//! Drawn characters map back to the document: every glyph character with a source is the
-//! document's character at that caret unit, and the semantic traversal shows each text character of a paragraph
-//! once, in order.
+//! Source mapping
 
 use std::collections::HashMap;
 
@@ -11,8 +9,6 @@ use crate::layout::{Snapshot, layout};
 
 use super::{fonts, gate_set};
 
-/// Every paragraph of the document by id: sections, tables, stories, notes, separators and text boxes, with whether it
-/// is in a text box (whose overflow FLOAT-10 clips).
 fn paragraphs(d: &Document) -> HashMap<ParaId, (&Paragraph, bool)> {
     fn walk<'a>(blocks: &'a [Block], in_box: bool, out: &mut HashMap<ParaId, (&'a Paragraph, bool)>) {
         for b in blocks {
@@ -47,12 +43,9 @@ fn paragraphs(d: &Document) -> HashMap<ParaId, (&Paragraph, bool)> {
     out
 }
 
-/// A paragraph's text characters by caret unit (one unit per text character, one per other drawn
-/// inline, none for bookmarks and anchored objects), with whether each is hidden. Atoms have no entry.
 fn text_units(p: &Paragraph) -> HashMap<u32, (char, bool)> {
     let mut out = HashMap::new();
     let mut u = 0u32;
-    // A field's code and an evaluated field's result aren't drawn: as hidden text, not expected.
     let shown = crate::docx::fields::layout_shown(&p.inlines);
     for (i, shown) in p.inlines.iter().zip(shown) {
         if let Inline::Text(s, run) = i {
@@ -67,8 +60,6 @@ fn text_units(p: &Paragraph) -> HashMap<u32, (char, bool)> {
     out
 }
 
-/// Whether drawn character `drawn` shows document character `c` (caps and small caps draw it in capitals; symbol
-/// fonts map private-use characters to Unicode; soft and non-breaking hyphens draw as '-').
 fn shows(drawn: char, c: char) -> bool {
     drawn == c
         || drawn.to_uppercase().eq(c.to_uppercase())
@@ -79,7 +70,7 @@ fn shows(drawn: char, c: char) -> bool {
 fn check(name: &str, d: &Document, s: &Snapshot) -> Vec<String> {
     let paras = paragraphs(d);
     let mut problems = Vec::new();
-    // Round trip: every character with a source is the document's character at that unit.
+    // Round trip
     for (pi, page) in s.pages().iter().enumerate() {
         for it in crate::layout::traverse::paint_items(page) {
             let crate::layout::fragment::Item::Glyphs(r) = it else { continue };
@@ -99,7 +90,7 @@ fn check(name: &str, d: &Document, s: &Snapshot) -> Vec<String> {
             }
         }
     }
-    // Semantic: each text unit once, in order, all the paragraph's shown text.
+    // Semantic traversal
     let mut seen: HashMap<ParaId, Vec<(u32, char)>> = HashMap::new();
     for page in s.pages() {
         let mut chars = Vec::new();
@@ -122,8 +113,6 @@ fn check(name: &str, d: &Document, s: &Snapshot) -> Vec<String> {
         let mut want: Vec<u32> = units.iter().filter(|(u, (_, hidden))| !hidden && !excluded_here(**u)).map(|(u, _)| *u).collect();
         want.sort();
         let got_units: Vec<u32> = got.iter().map(|x| x.0).collect();
-        // Spaces that end a line may be left undrawn (hanging spaces, BREAK-2), soft hyphens show only where a line
-        // breaks, and a text box clips its overflow (FLOAT-10); every other text character is shown.
         if in_box {
             continue;
         }
@@ -153,13 +142,11 @@ fn run(every: usize) {
     assert!(problems.is_empty(), "{} problems:\n{}", problems.len(), problems.iter().take(30).cloned().collect::<Vec<_>>().join("\n"));
 }
 
-/// Every 25th reference dump document (the whole set: `source_mapping_all`).
 #[test]
 fn source_mapping_round_trip_and_semantic_sample() {
     run(25);
 }
 
-/// Every reference dump document (run with `--ignored`).
 #[test]
 #[ignore]
 fn source_mapping_all() {

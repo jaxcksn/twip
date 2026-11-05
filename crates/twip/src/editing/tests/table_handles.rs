@@ -1,5 +1,4 @@
-//! Table affordances: the zones the pointer shows handles for, the "+" buttons, a border drag's and a resize's
-//! readouts, the selection's status line, positioning a table, and moving it by its handle.
+//! Table affordances
 
 use super::super::Editor;
 use super::super::commands::{Command, Outcome};
@@ -14,13 +13,10 @@ use crate::api::value::{HorizontalPosition, HorizontalReference, Points, Vertica
 use crate::docx::props::TableAnchor;
 use crate::layout::TableId;
 
-/// One pixel at 100%, in points.
 const PX: f64 = 0.75;
 const ALT: Mods = Mods { ctrl: false, shift: false, alt: true, meta: false };
 const NONE: Mods = Mods { ctrl: false, shift: false, alt: false, meta: false };
 
-/// A letter page with inch margins: a paragraph, a fixed 3 × 4 table (columns 1, 1.25 and 1.5 in; its first row a
-/// header row), and a paragraph.
 fn page() -> Editor {
     let cell = |w: u32| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#);
     let row = |header: bool| {
@@ -42,7 +38,6 @@ fn page() -> Editor {
     e
 }
 
-/// The table's id, its rows' boxes and its first row's edges (x by grid boundary) on page 0.
 struct Drawn {
     table: TableId,
     rows: Vec<[f64; 4]>,
@@ -69,13 +64,11 @@ impl Drawn {
     }
 }
 
-/// A pointer event at a page 0 point.
 fn at(e: &mut Editor, kind: PointerKind, x: f64, y: f64, mods: Mods) {
     let (dx, dy) = e.stack().to_doc(0, x, y).expect("on the stack");
     e.pointer_input(kind, dx, dy, if kind == PointerKind::Down { 1 } else { 0 }, mods, fonts());
 }
 
-/// What the pointer shows after moving there with no button.
 fn hover(e: &mut Editor, x: f64, y: f64) -> Option<TableHover> {
     at(e, PointerKind::Move, x, y, NONE);
     e.table_hover
@@ -87,7 +80,6 @@ fn click(e: &mut Editor, x: f64, y: f64) {
     e.complete(fonts());
 }
 
-/// A drag from one page 0 point by `by`, in 8 steps with `mods`; released when `release`.
 fn drag(e: &mut Editor, from: (f64, f64), by: (f64, f64), mods: Mods, release: bool) {
     at(e, PointerKind::Down, from.0, from.1, NONE);
     for k in 1..=8 {
@@ -116,12 +108,10 @@ fn each_zone_from_a_point() {
     let z = |zone| Some(TableHover { table: t, zone: Some(zone) });
     let mid = |r: [f64; 4]| (r[1] + r[3]) / 2.0;
     let cell = ((d.edges[1] + d.edges[2]) / 2.0, mid(d.rows[1]));
-    // From over the table: the "+" zones are live from there.
     let from_table = |e: &mut Editor, x: f64, y: f64| {
         hover(e, cell.0, cell.1);
         hover(e, x, y)
     };
-    // Above the table with the pointer coming from elsewhere: no zone, the text above.
     assert_eq!(hover(&mut e, d.edges[1], y0 - 12.0 * PX), None, "not shown yet");
     assert_eq!(hover(&mut e, cell.0, cell.1), Some(TableHover { table: t, zone: None }), "over a cell");
     assert_eq!(hover(&mut e, d.edges[1], y0 - 12.0 * PX), z(TableZone::InsertColumn(1)), "above border 1");
@@ -135,7 +125,6 @@ fn each_zone_from_a_point() {
     let last = d.rows[3];
     assert_eq!(hover(&mut e, last[2] + 3.0 * PX, last[3] + 3.0 * PX), z(TableZone::Resize), "the resize handle");
     assert_eq!(hover(&mut e, d.edges[1], mid(d.rows[1])), z(TableZone::Border(1)), "column border 1");
-    // Away from the table: nothing shows, and the zones above it are gone with it.
     assert_eq!(hover(&mut e, 300.0, 700.0), None, "away");
     assert_eq!(e.view(0..1).table, None, "no handles");
     assert_eq!(hover(&mut e, d.edges[1], y0 - 12.0 * PX), None, "above, hidden again");
@@ -149,10 +138,8 @@ fn the_caret_in_a_table_shows_its_handles_without_hover() {
     at(&mut e, PointerKind::Move, 300.0, 700.0, NONE);
     let v = e.view(0..1).table.expect("handles");
     assert_eq!((v.page, v.corner, v.end, v.mark), (0, Some([d.rows[0][0], d.rows[0][1]]), Some([d.rows[3][2], d.rows[3][3]]), None));
-    // The "+" zones aren't: a click on the text above the table reaches the text.
     click(&mut e, d.edges[2], d.top() - 12.0 * PX);
     assert!(matches!(e.selection(), Selection::Caret(_)) && e.history.next_undo().is_none(), "{:?}", e.selection());
-    // Hovered from the table, they are, and the "+" shows with its line down the table.
     hover(&mut e, d.edges[2], (d.rows[1][1] + d.rows[1][3]) / 2.0);
     assert_eq!(hover(&mut e, d.edges[2], d.top() - 12.0 * PX).and_then(|h| h.zone), Some(TableZone::InsertColumn(2)));
     let mark = e.view(0..1).table.and_then(|t| t.mark);
@@ -177,7 +164,6 @@ fn a_plus_inserts_a_column_selected_in_one_step() {
     assert_eq!(e.history.next_undo(), Some("Insert Columns"));
     e.execute(Command::Undo, fonts());
     assert_eq!((grid(&e, d.table), e.history.next_undo()), (before.clone(), None), "one step");
-    // At the left edge: left of column 1.
     hover(&mut e, d.edges[1], d.rows[1][1] + 2.0);
     click(&mut e, d.edges[0] + 3.0 * PX, d.top() - 12.0 * PX);
     assert_eq!((grid(&e, d.table), e.selection()), (vec![72.0, 72.0, 90.0, 108.0], col(0)));
@@ -203,7 +189,6 @@ fn a_column_border_drag_shows_the_two_widths_and_the_change() {
     let mut e = page();
     let d = Drawn::of(&mut e);
     let from = (d.edges[1], (d.rows[1][1] + d.rows[1][3]) / 2.0);
-    // Each readout's label and tone (a chip has none: muted).
     let readouts = |e: &mut Editor| -> Vec<(String, Tone)> {
         e.view(0..1)
             .measures
@@ -303,7 +288,6 @@ fn set_table_position_saves_reopens_and_undoes() {
     assert_eq!(floating(&again, t), Some(p), "read back");
     e.execute(Command::Undo, fonts());
     assert_eq!((floating(&e, d.table), e.history.next_undo()), (None, None), "one step");
-    // A reference a table can't take.
     let mut bad = position(0.0, 0.0);
     bad.horizontal = Some(HorizontalPosition { relative_to: HorizontalReference::Character, align: None, offset: None });
     assert!(matches!(e.execute(Command::SetTablePosition(Some(bad)), fonts()), Outcome::Refused(_)));
@@ -324,7 +308,6 @@ fn a_reference_given_alone_keeps_the_table_where_it_is() {
     let p = floating(&e, d.table).expect("positioned");
     assert_eq!((p.h_page, p.v_anchor), (true, TableAnchor::Page));
     let now = Drawn::of(&mut e);
-    // Within two twips: offsets are whole twips, and a page-anchored tblpY is one twip more than its offset.
     assert!((now.left() - d.left()).abs() < 0.1 && (now.top() - d.top()).abs() < 0.1, "{:?} → {:?}", d.rows[0], now.rows[0]);
     assert_eq!(e.history.next_undo(), Some("Table Position"));
     e.execute(Command::Undo, fonts());
@@ -336,12 +319,10 @@ fn the_move_handle_drags_the_table_to_the_snapped_point() {
     let mut e = page();
     let d = Drawn::of(&mut e);
     let handle = (d.left() - 12.0 * PX, d.top() - 12.0 * PX);
-    // A click selects the table and changes nothing.
     hover(&mut e, d.edges[1], d.rows[1][1] + 2.0);
     click(&mut e, handle.0, handle.1);
     assert!(matches!(e.selection(), Selection::Cells { shape: CellShape::Table, .. }));
     assert_eq!((floating(&e, d.table), e.history.next_undo()), (None, None));
-    // Dragged so its middle comes 2 pt right of the page's: it snaps there.
     let [x0, y0, x1, y1] = [d.left(), d.top(), d.rows[0][2], d.rows[3][3]];
     let dx = 306.0 - (x0 + x1) / 2.0 + 2.0;
     drag(&mut e, handle, (dx, 100.0), NONE, false);

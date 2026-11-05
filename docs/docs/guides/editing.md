@@ -39,8 +39,8 @@ offer their actions in the canvas. All of it is drawn by the engine in the chrom
 
 - Hovering a table shows its move handle and its resize handle. The move handle selects the table on a click and moves
   it on a drag; the resize handle resizes it, with a dashed preview and the table's size.
-- Dropping a table moved by its handle positions it where it was dropped, and text wraps around it
-  ([TABLE-52](../rulebook/table.md#table-52)). `setTablePosition(position)` does the same from code: `horizontal` from
+- Dropping a table moved by its handle positions it where it was dropped, and text wraps around it.
+  `setTablePosition(position)` does the same from code: `horizontal` from
   the `column`, `margin` or `page`, `vertical` from the `paragraph`, `margin` or `page`, each an `offset` or an `align`,
   and `wrapDistance` from the text; what isn't given is kept, and `null` puts the table back in the text. The state's
   `commands.setTablePosition.value` is the caret's table's position, absent for a table in the text.

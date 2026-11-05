@@ -1,5 +1,4 @@
-//! Saving shapes: the properties the user changed are written in place of the ones read, everything else is copied
-//! (DRAW-1 to DRAW-17 are what the properties mean).
+//! Shape saving
 
 use std::ops::Range;
 
@@ -12,18 +11,13 @@ use crate::drawing::{Shape, ShapeKind, Spans};
 
 use super::props::esc;
 
-/// One replacement in a drawing's source text: a byte range (from the drawing's start) and what goes there.
 pub(super) type Edit = (Range<usize>, String);
 
-/// The edits that write `now`'s shape properties where they differ from `was`'s (both read from the same source):
-/// `text` is the drawing's source text. `None` when nothing changed or the float has no shape tree.
 pub(super) fn changed(was: &Float, now: &Float, text: &str) -> Option<Vec<Edit>> {
     let (Some(a), Some(b), Some(src)) = (was.shape.as_deref(), now.shape.as_deref(), was.src.as_ref()) else { return None };
     shape_changed(a, b, src.start, text)
 }
 
-/// Where a shape that had no story and has one now (typing into it) takes its `wps:txbx`: before its
-/// `wps:bodyPr`, from the drawing's start.
 pub(super) fn story_added(was: &Float, now: &Float) -> Option<usize> {
     use crate::drawing::ShapeText;
     let (a, b, src) = (was.shape.as_deref()?, now.shape.as_deref()?, was.src.as_ref()?);
@@ -31,14 +25,10 @@ pub(super) fn story_added(was: &Float, now: &Float) -> Option<usize> {
     added.then(|| a.spans.body.as_ref().map(|r| r.start - src.start)).flatten()
 }
 
-/// Whether a float's source text is VML (`w:pict` or `w:object`, no DrawingML).
 pub(super) fn is_vml(text: &str) -> bool {
     !text.contains("<wp:") && (text.contains("<v:") || text.contains(":pict"))
 }
 
-/// DRAW-26: a VML object's text with `now`'s placement and paint where they differ from `was`'s: its first
-/// shape element's `style` (`margin-left`, `margin-top`, `width`, `height`, `rotation`, `flip`, `z-index`) and its
-/// `fillcolor`, `strokecolor` and `strokeweight`. Everything else is kept.
 pub(super) fn vml_patch(text: &str, was: &Float, now: &Float) -> String {
     use crate::drawing::paint::Fill as F;
     let Some((start, end)) = first_vml_shape(text) else { return text.to_string() };
@@ -112,7 +102,6 @@ pub(super) fn vml_patch(text: &str, was: &Float, now: &Float) -> String {
     format!("{}{tag}{}", &text[..start], &text[end..])
 }
 
-/// The first VML shape element's start tag (`v:shapetype`s define types, not shapes).
 fn first_vml_shape(text: &str) -> Option<(usize, usize)> {
     let mut at = 0;
     while let Some(k) = text[at..].find("<v:") {
@@ -126,7 +115,6 @@ fn first_vml_shape(text: &str) -> Option<(usize, usize)> {
     None
 }
 
-/// An attribute's value in a start tag.
 fn attr(tag: &str, name: &str) -> Option<String> {
     let key = format!(" {name}=\"");
     let v0 = tag.find(&key)? + key.len();
@@ -134,7 +122,6 @@ fn attr(tag: &str, name: &str) -> Option<String> {
     Some(tag[v0..v1].to_string())
 }
 
-/// `tag` with attribute `name` set to `value`.
 fn set_attr(tag: &str, name: &str, value: &str) -> String {
     let key = format!(" {name}=\"");
     match tag.find(&key) {
@@ -150,7 +137,6 @@ fn set_attr(tag: &str, name: &str, value: &str) -> String {
     }
 }
 
-/// A CSS declaration list with `key` set to `value` (in place, or added at the end).
 fn css_set(css: &str, key: &str, value: &str) -> String {
     let mut found = false;
     let mut out: Vec<String> = css
@@ -170,14 +156,12 @@ fn css_set(css: &str, key: &str, value: &str) -> String {
     out.join(";")
 }
 
-/// [`changed`] for two shape trees whose drawing's source text `text` starts at `base`.
 pub(super) fn shape_changed(a: &Shape, b: &Shape, base: usize, text: &str) -> Option<Vec<Edit>> {
     let mut edits = Vec::new();
     shape_edits(a, b, base, text, &mut edits);
     (!edits.is_empty()).then_some(edits)
 }
 
-/// Whether `now`'s shape properties differ from `was`'s (the writer then patches the drawing).
 pub(super) fn differs(was: &Float, now: &Float) -> bool {
     match (was.shape.as_deref(), now.shape.as_deref()) {
         (Some(a), Some(b)) => (a.xfrm.rot, a.xfrm.flip_h, a.xfrm.flip_v, &a.kind) != (b.xfrm.rot, b.xfrm.flip_h, b.xfrm.flip_v, &b.kind),
@@ -185,7 +169,6 @@ pub(super) fn differs(was: &Float, now: &Float) -> bool {
     }
 }
 
-/// Applies `edits` to `src` (the drawing's text), last first.
 pub(super) fn apply(src: &str, mut edits: Vec<Edit>) -> String {
     edits.sort_by_key(|(r, _)| std::cmp::Reverse(r.start));
     let mut s = src.to_string();
@@ -200,15 +183,12 @@ pub(super) fn apply(src: &str, mut edits: Vec<Edit>) -> String {
 fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit>) {
     let rel = |r: &Range<usize>| r.start.saturating_sub(base)..r.end.saturating_sub(base);
     let sp = &a.spans;
-    // A moved group child, or a group grown to hold one: the whole `a:xfrm`.
     let frame = |s: &Shape| (s.xfrm.off, s.xfrm.ext, s.group().map(|g| (g.child_off, g.child_ext)));
     if frame(a) != frame(b)
         && let Some(x) = &sp.xfrm
     {
         out.push((rel(x), xfrm_xml(b)));
-    }
-    // Rotation and flips (the extent and offset of the top shape are the anchor's: FLOAT-17 writes them).
-    else if (a.xfrm.rot, a.xfrm.flip_h, a.xfrm.flip_v) != (b.xfrm.rot, b.xfrm.flip_h, b.xfrm.flip_v)
+    } else if (a.xfrm.rot, a.xfrm.flip_h, a.xfrm.flip_v) != (b.xfrm.rot, b.xfrm.flip_h, b.xfrm.flip_v)
         && let Some(x) = &sp.xfrm
     {
         let r = rel(x);
@@ -248,8 +228,6 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
     }
 }
 
-/// Fill, line and effects: a changed one replaces its element, or goes after the geometry (fill), the fill (line) or
-/// the line (effects) when the shape had none; one set back to `None` is removed (the style reference decides again).
 fn props_edits(
     sp: &Spans,
     (fa, fb): (&Option<Fill>, &Option<Fill>),
@@ -296,7 +274,6 @@ fn props_edits(
     }
 }
 
-/// A shape's whole `a:xfrm`: rotation, flips, offset and extent, and a group's child frame.
 fn xfrm_xml(s: &Shape) -> String {
     let x = &s.xfrm;
     let mut t = xfrm_tag(s, false);
@@ -311,7 +288,6 @@ fn xfrm_xml(s: &Shape) -> String {
     t
 }
 
-/// The `a:xfrm` start tag with the new rotation and flips (its children are kept).
 fn xfrm_tag(b: &Shape, closed: bool) -> String {
     let mut tag = String::from("<a:xfrm");
     if b.xfrm.rot.0 != 0 {
@@ -333,7 +309,6 @@ fn geometry_xml(g: &Geometry) -> String {
             let av: String = adj.iter().map(|(n, v)| format!(r#"<a:gd name="{}" fmla="val {v}"/>"#, esc(n))).collect();
             format!(r#"<a:prstGeom prst="{}"><a:avLst>{av}</a:avLst></a:prstGeom>"#, preset.name())
         }
-        // A custom geometry is never edited: its element is kept (no edit is made for it).
         Geometry::Custom(_) => String::new(),
     }
 }
@@ -440,7 +415,6 @@ pub fn fill_xml(f: &Fill) -> String {
     }
 }
 
-/// A picture fill. Its image is named by the relationship the writer gives the document's image (as new pictures').
 fn blip_xml(b: &BlipFill, tag: &str) -> String {
     let src = if b.src.iter().any(|v| v.0 != 0) { rect4("srcRect", &b.src) } else { String::new() };
     let mode = match &b.mode {
@@ -579,11 +553,8 @@ const WPG: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingG
 const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
-/// The `w:txbxContent` content of the shape at a path of a new tree, when it has a story.
 pub(super) type Stories<'a> = &'a dyn Fn(&[u16]) -> Option<String>;
 
-/// The `a:graphicData` of a new drawing holding `s` (as Word writes new objects). `txbx` gives each shape's
-/// story by its path; `w` is the WordprocessingML prefix with its colon.
 pub(super) fn graphic_data(s: &Shape, txbx: Stories, w: &str) -> String {
     let (uri, ns) = match &s.kind {
         ShapeKind::Group(_) => (WPG, format!(r#" xmlns:wpg="{WPG}" xmlns:wps="{WPS}" xmlns:pic="{PIC}" xmlns:r="{R}""#)),
@@ -593,9 +564,6 @@ pub(super) fn graphic_data(s: &Shape, txbx: Stories, w: &str) -> String {
     format!(r#"<a:graphicData uri="{uri}">{}</a:graphicData>"#, shape_xml(s, &mut Vec::new(), txbx, w, Some(&ns)))
 }
 
-/// A shape tree's XML: `wps:wsp`, `pic:pic` or a group (`wpg:wgp` at the top, `wpg:grpSp` inside), `path` its place
-/// in the tree. `ns` declares the namespaces on the outer element; the top shape (an empty path) has no `cNvPr`: the
-/// anchor's `docPr` names it.
 fn shape_xml(s: &Shape, path: &mut Vec<u16>, txbx: Stories, w: &str, ns: Option<&str>) -> String {
     let top = path.is_empty();
     let ns = ns.unwrap_or("");
@@ -652,12 +620,10 @@ fn shape_xml(s: &Shape, path: &mut Vec<u16>, txbx: Stories, w: &str, ns: Option<
             let fill = opt(g.fill.as_ref().map(fill_xml));
             format!("<{tag}{ns}>{nv}<wpg:cNvGrpSpPr/><wpg:grpSpPr>{}{fill}</wpg:grpSpPr>{kids}</{tag}>", xfrm(Some(g)))
         }
-        // A kept graphic is never made new.
         ShapeKind::Raw(_) => String::new(),
     }
 }
 
-/// `wps:style`: the theme references (DRAW-8).
 fn style_xml(st: &crate::drawing::paint::StyleRefs) -> String {
     let r = |tag: &str, v: &Option<(u32, Option<Colour>)>| match v {
         Some((idx, c)) => format!(r#"<a:{tag} idx="{idx}">{}</a:{tag}>"#, c.as_ref().map(colour_xml).unwrap_or_default()),
@@ -710,7 +676,6 @@ mod round_trip {
 
     const DRAWING: &str = r#"<w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionV><wp:extent cx="1143000" cy="762000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="1" name="Star"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/></a:xfrm><a:prstGeom prst="star5"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:effectLst><a:reflection blurRad="6350" stA="50000" endA="300" endPos="55000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/></a:effectLst><a:scene3d><a:camera prst="orthographicFront"/><a:lightRig rig="threePt" dir="t"/></a:scene3d></wps:spPr><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing>"#;
 
-    /// A document holding one star drawing, in `mc:AlternateContent` with a VML fallback when `alternate`.
     fn doc(alternate: bool) -> crate::docx::Document {
         let shape = match alternate {
             false => format!("<w:r>{DRAWING}</w:r>"),
@@ -739,7 +704,6 @@ mod round_trip {
         s
     }
 
-    /// `doc(alternate)` saved with its star's fill made green.
     fn refilled(alternate: bool) -> String {
         let mut d = doc(alternate);
         let Block::Para(p) = &mut d.sections[0].blocks[0] else { panic!() };
@@ -789,14 +753,12 @@ mod round_trip {
         let Block::Para(p) = &again.sections[0].blocks[0] else { panic!() };
         let read: Vec<_> = p.inlines.iter().filter_map(|i| if let Inline::Float(f, _) = i { f.shape.as_deref().cloned() } else { None }).collect();
         assert_eq!(read.len(), 3, "{xml}");
-        // New anchors are written at the paragraph's start (as re-anchored ones), before the star read.
         for (shape, back) in made.iter().zip(&read) {
             assert_eq!(back.kind, shape.kind);
             assert_eq!(back.xfrm.ext, shape.xfrm.ext);
         }
     }
 
-    /// A document with one VML rectangle at (72, 144) pt, 90 x 60 pt, filled #4472c4.
     fn vml_doc() -> crate::docx::Document {
         let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office""#;
         let rect = r##"<w:r><w:pict><v:rect id="R" style="position:absolute;margin-left:72pt;margin-top:144pt;width:90pt;height:60pt;z-index:3;mso-position-horizontal-relative:page;mso-position-vertical-relative:page" fillcolor="#4472c4" strokecolor="black" strokeweight="1pt"/></w:pict></w:r>"##;
@@ -826,7 +788,6 @@ mod round_trip {
         assert!(matches!(f.shape.as_deref().and_then(|s| s.sp()).and_then(|s| s.fill.clone()), Some(Fill::Solid(c)) if c == Colour::srgb(0x4472C4)));
         let original = document_xml(&crate::docx::write::save(&vml_doc()).expect("saves"));
         assert!(original.contains(r##"fillcolor="#4472c4""##), "unedited VML is copied");
-        // Moved and refilled: the VML's style and fillcolor change, nothing else.
         f.h_offset = 100.0;
         f.shape.as_deref_mut().and_then(|s| s.sp_mut()).expect("a shape").fill = Some(Fill::Solid(Colour::srgb(0x00FF00)));
         let saved = document_xml(&crate::docx::write::save(&d).expect("saves"));

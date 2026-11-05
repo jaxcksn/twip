@@ -1,4 +1,4 @@
-//! A warm cache stays correct when a setting or the fonts change.
+//! Setting sweeps
 
 use std::path::Path;
 
@@ -16,10 +16,8 @@ fn toggle(d: &mut Document, name: &str) {
     }
 }
 
-/// A named change to a document.
 type Sweep = (&'static str, fn(&mut Document));
 
-/// One change per `TextEnv` and `LayoutEnv` field.
 fn sweeps() -> Vec<Sweep> {
     vec![
         ("compat mode", |d| d.settings.compat_mode = if d.settings.compat_mode >= 15 { 14 } else { 15 }),
@@ -70,7 +68,6 @@ fn settings_sweeps_with_a_warm_cache() {
             change(&mut changed);
             let want = dump::page_text(&layout(&changed, &fonts), &changed);
             assert_eq!(dump::page_text(&layout_with(&changed, &fonts, &mut cache), &changed), want, "{name}: warm cache");
-            // And through DocumentLayout, whose baseline was laid out with the old setting.
             let mut dl = DocumentLayout::new();
             dl.edit(Revision(1), None);
             dl.complete(&d, &fonts);
@@ -88,7 +85,6 @@ fn added_font_with_a_warm_cache() {
     let mut cache = LayoutCache::new();
     layout_with(&d, &fonts, &mut cache);
     let before = fonts.revision();
-    // Any font file this machine has that the catalog lacks.
     let candidates = [r"C:\Windows\Fonts\consola.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"];
     let Some(extra) = candidates.into_iter().find(|p| Path::new(p).exists()) else { return };
     fonts.add_file(extra);

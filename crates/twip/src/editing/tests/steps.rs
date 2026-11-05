@@ -1,5 +1,4 @@
-//! Steps: every step kind applied then inverted restores the document exactly; incremental layout after each
-//! step equals a full layout.
+//! Step inversion
 
 use crate::docx::{Block, Document, Inline};
 use crate::layout::{DocumentLayout, ParaId, Revision, TableId, Unit, dump, layout};
@@ -41,7 +40,6 @@ fn tables(doc: &Document) -> Vec<TableId> {
     out
 }
 
-/// Steps of every kind at several places in the document.
 fn steps(doc: &Document, idx: &DocIndex) -> Vec<Step> {
     let mut out = Vec::new();
     let ps = paras(doc);
@@ -79,7 +77,6 @@ fn steps(doc: &Document, idx: &DocIndex) -> Vec<Step> {
     out
 }
 
-/// Fresh ids for copied content (a copy is new content).
 fn renew(b: &mut Block) {
     match b {
         Block::Para(p) => p.id = crate::docx::next_para_id(),

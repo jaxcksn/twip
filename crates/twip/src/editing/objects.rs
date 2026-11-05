@@ -1,5 +1,4 @@
-//! Object selection: what a click selects among pictures and text boxes, and what typing and deleting do to a
-//! selected object.
+//! Object selection
 
 use crate::docx::Inline;
 use crate::font::Fonts;
@@ -16,9 +15,6 @@ use super::stories::{inline_at, reachable};
 use super::view::{Axis, Grid, GuideLine, Guides, Measure, Outline, Pt, Px, Tone};
 
 impl Editor {
-    /// The object a press selects, in paint order, among those of the story being edited: a floating picture anywhere
-    /// on it, a text box on its border band (the border to 4 px inside; on the left edge beside a line, that line
-    /// instead), an inline picture on its box. A float behind the text takes only presses where no line is over it.
     pub(super) fn object_hit(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<Selection> {
         let stack = self.stack();
         let (page, px, py) = stack.page_at(x, y)?;
@@ -32,11 +28,9 @@ impl Editor {
             let [x0, y0, x1, y1] = s.rect;
             let in_box = px >= x0 - one && px <= x1 + one && py >= y0 - one && py <= y1 + one;
             let text_box = self.index.text_box(&self.doc, self.index.box_story(f)).is_some();
-            // A shape is hit on its ink, wherever its rotation draws it; a text box on its box.
             if !reachable(ctx, s.host) || text_box && !in_box || !text_box && !self.shape_hit(page, f, px, py, 3.0 * one, in_box) {
                 continue;
             }
-            // Behind the text, a line over it takes the press.
             let text_over = || {
                 geo.lines.iter().any(|l| {
                     l.story != si
@@ -54,7 +48,6 @@ impl Editor {
             }
             let left = px - x0 < band;
             if !(left || x1 - px < band || py - y0 < band || y1 - py < band) {
-                // Inside a text box: its text.
                 return None;
             }
             if left
@@ -78,7 +71,6 @@ impl Editor {
         None
     }
 
-    /// The object whose story is `TextBox(f)`: float `f`, or the inline shape whose text goes by `f`.
     pub(super) fn story_object(&self, f: FloatId) -> ObjectRef {
         let found = self.index.float_anchor(f).and_then(|para| {
             let p = self.index.para(&self.doc, para)?;
@@ -96,7 +88,6 @@ impl Editor {
         found.unwrap_or(ObjectRef::Floating(f))
     }
 
-    /// The path of float `f`'s topmost shape under (x, y) on `page` (empty: the float's own shape).
     fn child_at(&self, page: usize, f: FloatId, x: f64, y: f64, slop: f64) -> Option<crate::drawing::ChildPath> {
         let snap = self.snapshot();
         let items = crate::layout::traverse::paint_float(snap.pages().get(page)?, f);
@@ -106,7 +97,6 @@ impl Editor {
         })
     }
 
-    /// The selected float's selected group child, if any.
     pub(super) fn selected_child(&self) -> Option<&[u16]> {
         match (&self.object_child, self.selection) {
             (Some((f, c)), Selection::Object(ObjectRef::Floating(g))) if *f == g => Some(c),
@@ -114,7 +104,6 @@ impl Editor {
         }
     }
 
-    /// The selected floats: the selected one first, then those added to it.
     pub fn selected_floats(&self) -> Vec<FloatId> {
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Vec::new() };
         let mut v = vec![f];
@@ -126,8 +115,6 @@ impl Editor {
         v
     }
 
-    /// Shift or Ctrl and a press on another float of the selected float's story: it joins the selection, or leaves
-    /// it when it was in it. True when handled.
     pub(super) fn object_toggle(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
         let Selection::Object(ObjectRef::Floating(p)) = self.selection else { return false };
         let Some(Selection::Object(ObjectRef::Floating(f))) = self.object_hit(x, y, fonts) else { return false };
@@ -147,8 +134,6 @@ impl Editor {
         true
     }
 
-    /// Whether a press at (x, y) on `page` hits float `f`'s shapes: inside a filled path or within `slop` of an
-    /// outline. A float drawn without shapes (a frame, a picture made by the editor) is hit on its box (`in_box`).
     fn shape_hit(&self, page: usize, f: FloatId, x: f64, y: f64, slop: f64, in_box: bool) -> bool {
         let snap = self.snapshot();
         let Some(frag) = snap.pages().get(page) else { return in_box };
@@ -157,8 +142,6 @@ impl Editor {
         if shapes.peek().is_none() { in_box } else { shapes.any(|s| s.hit(x, y, slop)) }
     }
 
-    /// Before typing over a selected object: the caret goes before an inline picture (keeping it), or to a float's
-    /// anchor paragraph's start (keeping the float).
     pub(super) fn object_to_caret(&mut self) {
         let Selection::Object(o) = self.selection else { return };
         let (para, offset) = match o {
@@ -172,8 +155,6 @@ impl Editor {
         self.set_selection(Selection::Caret(Position::text(story, para, offset)));
     }
 
-    /// Delete or Backspace with an object selected: the object goes. An inline picture is deleted as the one
-    /// unit it is; a float is taken out of its anchor paragraph.
     pub(super) fn delete_object(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let Selection::Object(o) = self.selection else { return None };
         match o {
@@ -202,70 +183,49 @@ impl Editor {
     }
 }
 
-/// A pointer drag on an object: moving a float, or resizing a float or an inline picture by one of its eight handles.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ObjectDrag {
     pub obj: ObjectRef,
-    /// `None`: a move. `Some(k)`: handle `k`, clockwise from the top-left corner (0 top-left, 1 top, 2 top-right, 3
-    /// right, 4 bottom-right, 5 bottom, 6 bottom-left, 7 left).
     pub handle: Option<usize>,
-    /// Where the press was and where the pointer is, in document points.
     pub start: (f64, f64),
     pub now: (f64, f64),
-    /// The float's box when the press was (page coordinates) and its page.
     pub rect: [f64; 4],
     pub page: usize,
-    /// Ctrl: resize about the centre.
     pub ctrl: bool,
-    /// Shift, as the pointer moves: a move keeps to one axis (the one moved along more); a corner keeps the ratio.
     pub shift: bool,
-    /// Live layout: the float is laid out where the pointer last put it, anchored in `previewed`.
     pub live: bool,
     pub previewed: Option<crate::layout::ParaId>,
-    /// A move: snapping on, or off while Alt is held; how far snapping moves the box from where the pointer puts it,
-    /// and the line each axis snapped to.
     pub snapping: Snapping,
     pub snap: [f64; 2],
     pub snapped: [Option<SnapLine>; 2],
 }
 
-/// Picture Format commands.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ObjectCmd {
-    /// `inline`, `square`, `tight`, `through`, `topAndBottom`, `behind` or `front`.
     Wrap(String),
-    /// The anchor locked or unlocked (a float only).
     LockAnchor(bool),
-    /// Width and height, in points.
     Size(f64, f64),
-    /// The picture's own size (its pixels at its resolution).
     ResetSize,
-    /// Alternative text, and whether the object is decorative (unchanged when `None`).
     AltText(String, Option<bool>),
 }
 
-/// The checkbox a click or Space toggled, and the caret it left after it: Space there toggles it again.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ToggledCheckbox {
     pub face: Position,
     pub after: Position,
 }
 
-/// An API position or wrap value's OOXML name (`leftMargin`, `bothSides`): their serde names are those words.
 fn ooxml<T: serde::Serialize>(v: T) -> String {
     serde_json::to_value(v).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
 }
 
-/// The API value an OOXML name is; one the API doesn't name reads as the default.
 fn from_ooxml<T: serde::de::DeserializeOwned + Default>(s: &str) -> T {
     serde_json::from_value(serde_json::Value::String(s.into())).unwrap_or_default()
 }
 
-/// Handle `k`'s side: -1 left or top, 1 right or bottom, 0 neither.
 const HANDLES: [(f64, f64); 8] = [(-1.0, -1.0), (0.0, -1.0), (1.0, -1.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (-1.0, 0.0)];
 
 impl ObjectDrag {
-    /// A drag pressed at `at`: nothing held or snapped yet.
     fn new(obj: ObjectRef, handle: Option<usize>, at: (f64, f64), rect: [f64; 4], page: usize, ctrl: bool) -> ObjectDrag {
         ObjectDrag {
             obj,
@@ -284,9 +244,6 @@ impl ObjectDrag {
         }
     }
 
-    /// The box the drag shows now: moved by the pointer's travel (with Shift along one axis), or resized (side
-    /// handles stretch one dimension; a locked corner, or any with Shift, keeps the ratio, following the axis with the
-    /// larger relative change), at least 1 pt.
     pub fn rect(&self, locked: bool) -> [f64; 4] {
         let (mut dx, mut dy) = (self.now.0 - self.start.0, self.now.1 - self.start.1);
         let [x0, y0, x1, y1] = self.rect;
@@ -327,8 +284,6 @@ impl ObjectDrag {
 }
 
 impl Editor {
-    /// The resize handle of the selected object under a point (within 4 px): the object, its box (page
-    /// coordinates), its page and the handle, clockwise from the top-left corner. Objects that can't change have none.
     pub(super) fn handle_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(ObjectRef, [f64; 4], usize, usize)> {
         let stack = self.stack();
         let (page, px, py) = stack.page_at(x, y)?;
@@ -342,7 +297,6 @@ impl Editor {
         }
         .filter(|(o, _)| !self.object_fixed(*o))?;
         let [x0, y0, x1, y1] = rect;
-        // A handle's place along one axis: the box's low edge, its high edge or its middle.
         let at = |side: f64, lo: f64, hi: f64| match side {
             s if s < 0.0 => lo,
             s if s > 0.0 => hi,
@@ -355,8 +309,6 @@ impl Editor {
         Some((obj, rect, page, k))
     }
 
-    /// A press on a float's handle (while it is selected) or on an object; true when
-    /// handled.
     pub(super) fn object_press(&mut self, x: f64, y: f64, ctrl: bool, fonts: &Fonts) -> bool {
         if let Some((obj, rect, page, k)) = self.handle_at(x, y, fonts) {
             self.object_drag = Some(ObjectDrag::new(obj, Some(k), (x, y), rect, page, ctrl));
@@ -370,7 +322,6 @@ impl Editor {
         let Some(s) = self.object_hit(x, y, fonts) else { return false };
         let was = self.selection;
         self.set_selection(s);
-        // A press on the selected group selects its child under the pointer; any other press, the whole object.
         let (_, px, py) = stack.page_at(x, y).unwrap_or((page, x, y));
         self.object_also = None;
         self.object_child = match s {
@@ -382,7 +333,6 @@ impl Editor {
         };
         self.drag = None;
         self.activate_placeholder();
-        // A press on a child of the selected group moves that child.
         if let Selection::Object(obj @ ObjectRef::Floating(f)) = s
             && self.selected_child().is_some()
             && !self.object_fixed(obj)
@@ -398,7 +348,6 @@ impl Editor {
             self.build_snaps(page, Dragged::Float(f));
             self.requests.push(Request::CapturePointer);
         }
-        // An inline picture moves as the character it is: drag-and-drop to a new place in the text (Ctrl: a copy).
         if let Selection::Object(obj @ ObjectRef::Inline { para, offset }) = s
             && !self.object_fixed(obj)
             && self.mode != super::Mode::ReadOnly
@@ -411,12 +360,10 @@ impl Editor {
         true
     }
 
-    /// The release of an object drag: one step, or none when the pointer didn't move.
     pub(super) fn object_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.object_drag.take()?;
         self.requests.push(Request::ReleasePointer);
         let label = if d.handle.is_some() { "Resize Object" } else { "Move Object" };
-        // Placed from the geometry the preview showed; the preview then ends, the edit laying out the same.
         let out = match d.obj {
             _ if d.now == d.start => Outcome::Unchanged("no drag"),
             ObjectRef::Floating(f) => self.place_float(f, d.page, d.rect, d.rect(self.float_locked(f)), label, d.handle.is_none(), fonts),
@@ -429,10 +376,6 @@ impl Editor {
         Some(out)
     }
 
-    /// A pointer move during an object drag. With live layout a float is laid out where the drag puts it now, the text
-    /// wrapping around it there, while the document keeps it where it was until the release (one step, as without).
-    // shortcut: an inline picture's resize shows its ghost, not live layout; previewing it needs the picture's size in
-    // its paragraph's shape space as the float's is.
     pub(super) fn object_move(&mut self, x: f64, y: f64, mods: super::keymap::Mods) {
         let Some(mut d) = self.object_drag else { return };
         (d.now, d.shift) = ((x, y), mods.shift);
@@ -440,7 +383,6 @@ impl Editor {
         if d.handle.is_none() {
             (d.snap, d.snapped) = ([0.0; 2], [None; 2]);
             if d.snapping == Snapping::On {
-                // Snapped after Shift keeps the move to one axis, along that axis only.
                 let (dx, dy) = (d.now.0 - d.start.0, d.now.1 - d.start.1);
                 let free = if !d.shift {
                     [true, true]
@@ -463,7 +405,6 @@ impl Editor {
         };
         d.live |= self.live_layout && d.now != d.start;
         if d.live {
-            // As the release would leave it: moved, resized, and (a move) re-anchored.
             let to = d.rect(self.float_locked(f));
             let preview = self.moved_float(f, d.page, d.rect, to).and_then(|mut float| {
                 let anchor = self.index.float_anchor(f)?;
@@ -477,7 +418,6 @@ impl Editor {
         self.object_drag = Some(d);
     }
 
-    /// Esc or a lost pointer during an object drag: nothing changes. True when one was going.
     pub(super) fn object_cancel(&mut self) -> bool {
         let Some(d) = self.object_drag.take() else { return false };
         self.end_preview(d);
@@ -485,15 +425,12 @@ impl Editor {
         true
     }
 
-    /// A live drag's preview, ended: the document is laid out as it is.
     fn end_preview(&mut self, d: ObjectDrag) {
         if let (true, ObjectRef::Floating(f)) = (d.live, d.obj) {
             self.preview_layout(f, None, d.previewed);
         }
     }
 
-    /// A picture that can't be resized or moved ([`crate::docx::Document::fixed`]): no handles, no drag, no nudge, no
-    /// size change.
     pub(super) fn object_fixed(&self, o: ObjectRef) -> bool {
         let image = match o {
             ObjectRef::Inline { para, offset } => match self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)) {
@@ -510,8 +447,6 @@ impl Editor {
         image.is_some_and(|i| self.doc.fixed.contains(&i))
     }
 
-    /// Whether corner handles keep the object's ratio: a picture whose aspect ratio is locked; text boxes and
-    /// unlocked pictures resize freely.
     pub(super) fn object_locked(&self, o: ObjectRef) -> bool {
         match o {
             ObjectRef::Floating(f) => self.float_locked(f),
@@ -530,7 +465,6 @@ impl Editor {
                 .is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f && fl.lock_aspect)))
     }
 
-    /// A float drawn behind the text (`behindDoc`).
     fn float_behind(&self, f: FloatId) -> bool {
         self.index
             .float_anchor(f)
@@ -538,12 +472,10 @@ impl Editor {
             .is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f && fl.behind)))
     }
 
-    /// An inline picture's box on a page: the rectangle layout drew it in.
     pub(super) fn inline_box(&self, geo: &super::geometry::PageGeometry, para: crate::layout::ParaId, offset: Unit) -> Option<[f64; 4]> {
         geo.lines.iter().find_map(|l| l.pictures.iter().find(|(p, u, _)| *p == para && *u == offset).map(|(_, _, r)| *r))
     }
 
-    /// An inline picture at `offset` of `para` resized to `w` × `h` (at least 1 pt), one step.
     fn set_picture_size(&mut self, para: crate::layout::ParaId, offset: Unit, w: f64, h: f64, fonts: &Fonts) -> Outcome {
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let mut inlines = p.inlines.clone();
@@ -558,7 +490,6 @@ impl Editor {
         }) else {
             return Outcome::Unchanged("no picture");
         };
-        // Whole EMUs' worth of points is finer than anything shown; whole twips keep saving and reading back equal.
         let (w, h) = (((w.max(1.0)) * 20.0).round() / 20.0, ((h.max(1.0)) * 20.0).round() / 20.0);
         if (pic.w - w).abs() < 1e-9 && (pic.h - h).abs() < 1e-9 {
             return Outcome::Unchanged("same size");
@@ -574,9 +505,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Alt Text: the selected picture's alternative text, one step.
-    /// The selected object's alternative text, and its decorative mark: a decorative object has none, and screen
-    /// readers skip it. The mark is on the drawing; an object without one can't take it.
     fn set_alt_text(&mut self, o: ObjectRef, text: &str, decorative: Option<bool>, fonts: &Fonts) -> Outcome {
         let text = if decorative == Some(true) { "" } else { text };
         let mark = |shape: &mut Option<Box<crate::drawing::Shape>>| match (decorative, shape) {
@@ -624,8 +552,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Insert Picture: the image at the caret as an inline picture at its own size, scaled down to the text
-    /// width when wider, and selected. One step; the image data stays with the document.
     pub(super) fn insert_picture(&mut self, data: Vec<u8>, fonts: &Fonts) -> Outcome {
         let (Some((pw, ph, dx, dy)), Some(_)) = (crate::docx::image::image_info(&data), crate::docx::image::image_type(&data)) else {
             return Outcome::Unchanged("not a picture");
@@ -656,8 +582,6 @@ impl Editor {
         out
     }
 
-    /// Insert Text Box: a 2 in × 1 in text box anchored at the caret's paragraph, in front of the text, its
-    /// left at the caret's column and its top at the paragraph's; the caret goes into it. One step.
     pub(super) fn insert_text_box(&mut self, fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
@@ -668,7 +592,6 @@ impl Editor {
         }
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let Some(run) = self.run_at(&caret) else { return Outcome::Unchanged("no run") };
-        // The box's paragraph: Normal, empty.
         let r = res.para_from_xml(None, None, &cx);
         let text_run = res.run_from_xml(&r.base, None, &cx);
         let pid = crate::docx::next_para_id();
@@ -711,7 +634,6 @@ impl Editor {
             behind: false,
             allow_overlap: true,
             layout_in_cell: true,
-            // Above every float read (paint order).
             order: usize::MAX / 2,
             z: u32::MAX,
             src: None,
@@ -732,8 +654,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Ctrl+Alt+5 (`None`): the first floating object in the story being edited; Tab / Shift+Tab (`Some(back)`): the
-    /// next or previous one, round. Esc then returns to the text (the float's anchor).
     pub(super) fn object_focus(&mut self, back: Option<bool>) -> Outcome {
         fn walk(blocks: &[crate::docx::Block], out: &mut Vec<FloatId>) {
             for b in blocks {
@@ -766,8 +686,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Picture Format commands on the selected object: wrapping, the anchor lock, size, and the picture's own
-    /// size back.
     pub(super) fn object_cmd(&mut self, c: ObjectCmd, fonts: &Fonts) -> Outcome {
         let Selection::Object(o) = self.selection else { return Outcome::Unchanged("no object selected") };
         if let ObjectCmd::AltText(text, decorative) = &c {
@@ -834,7 +752,6 @@ impl Editor {
         }
     }
 
-    /// A float's model, in its anchor paragraph.
     pub(super) fn float_of(&self, f: FloatId) -> Option<&crate::docx::Float> {
         let p = self.index.para(&self.doc, self.index.float_anchor(f)?)?;
         p.inlines.iter().find_map(|i| match i {
@@ -843,7 +760,6 @@ impl Editor {
         })
     }
 
-    /// A float replaced by `n` (the one with its id), selected. One step; none when nothing differs.
     pub(super) fn set_float(&mut self, n: crate::docx::Float, label: &'static str, fonts: &Fonts) -> Outcome {
         let f = FloatId(n.id);
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
@@ -868,14 +784,10 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Position: the selected float's place on each axis given (an alignment, an offset, or where it is now measured
-    /// from the new reference), and its overlap and table-cell options. One step.
     pub(super) fn set_object_position(&mut self, p: crate::api::command::ObjectPosition, fonts: &Fonts) -> Outcome {
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no floating object selected") };
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
-        // Offsets in whole twips, as the reader keeps them (FLOAT-6).
         let twips = |v: f64| (v * 20.0).trunc() / 20.0;
-        // Per axis: re-measured from its new reference, staying where it is drawn.
         let mut stay = [false; 2];
         if let Some(h) = p.horizontal {
             n.h_relative = ooxml(h.relative_to);
@@ -903,8 +815,6 @@ impl Editor {
         n.layout_in_cell = p.layout_in_cell.unwrap_or(n.layout_in_cell);
         let was = if stay.contains(&true) { self.float_box(f, fonts) } else { None };
         let Some((page, r)) = was else { return self.set_float(n, "Position", fonts) };
-        // One step: the new references, then the move back onto where it was (the difference holds whatever the
-        // references' origins are).
         self.begin_batch(Some("Position".into()));
         let changed = matches!(self.set_float(n, "Position", fonts), Outcome::Changed(_));
         if changed
@@ -917,7 +827,6 @@ impl Editor {
         self.end_batch(true, fonts)
     }
 
-    /// Wrap options: the sides text wraps on around the selected float, and its distance from the text. One step.
     pub(super) fn set_object_wrap_options(&mut self, w: crate::api::command::ObjectWrapOptions, fonts: &Fonts) -> Outcome {
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no floating object selected") };
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
@@ -932,7 +841,6 @@ impl Editor {
         self.set_float(n, "Wrap Options", fonts)
     }
 
-    /// The selected float's place and wrapping options, as the state reports them.
     pub(super) fn object_placement(&self) -> Option<crate::api::state::ObjectPlacement> {
         use crate::api::value::{HorizontalPosition, Points, VerticalPosition};
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return None };
@@ -956,13 +864,11 @@ impl Editor {
         })
     }
 
-    /// An arrow key with a float selected moves it 0.75 pt, plain or with Ctrl. One step per press.
     pub(super) fn nudge(&mut self, f: FloatId, dx: f64, dy: f64, fonts: &Fonts) -> Outcome {
         let Some((page, r)) = self.float_box(f, fonts) else { return Outcome::Unchanged("float not drawn") };
         self.place_float(f, page, r, [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy], "Move Object", false, fonts)
     }
 
-    /// Where a float is drawn: the nearest page drawing it, and its box there.
     pub(super) fn float_box(&mut self, f: FloatId, fonts: &Fonts) -> Option<(usize, [f64; 4])> {
         let n = self.pages.len();
         let near = self.near;
@@ -973,8 +879,6 @@ impl Editor {
         })
     }
 
-    /// Wrap Text on an inline picture: it becomes a float with `wrap`, anchored in its paragraph where it was, staying
-    /// where it is drawn (offsets from the column and the paragraph, as Word gives it). One step.
     fn float_inline(&mut self, para: crate::layout::ParaId, offset: Unit, wrap: &str, fonts: &Fonts) -> Outcome {
         let Some(Inline::Picture(pic, run)) = self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)).cloned() else {
             return Outcome::Unchanged("no picture");
@@ -989,7 +893,6 @@ impl Editor {
             "front" => ("none", false),
             w => (w, false),
         };
-        // A shape's text goes with it (a new id: the index drops the old one's as the picture goes).
         let id = crate::docx::next_para_id();
         let float = crate::docx::Float {
             id,
@@ -1008,14 +911,12 @@ impl Editor {
             v_offset: 0.0,
             wrap: wrap.into(),
             wrap_text: "bothSides".into(),
-            // Word's: none above and below, 0.125 in at the sides.
             dist: [0.0, 0.0, 9.0, 9.0],
             effect: [0.0; 4],
             poly: None,
             behind,
             allow_overlap: true,
             layout_in_cell: true,
-            // Above every float read (paint order).
             order: usize::MAX / 2,
             z: u32::MAX,
             src: None,
@@ -1025,7 +926,6 @@ impl Editor {
             shape: pic.shape.clone(),
             rot_swap: false,
         };
-        // One undo step: the conversion, then the move onto where the picture was.
         self.begin_batch(Some("Wrap Text".into()));
         let mut tx = self.begin("Wrap Text");
         let removed = self.step(&mut tx, Step::Text { para, range: offset..Unit(offset.0 + 1), with: Vec::new(), edges: Default::default() });
@@ -1042,7 +942,6 @@ impl Editor {
         let f = FloatId(id);
         self.selection = Selection::Object(ObjectRef::Floating(f));
         self.commit(tx, None, fonts);
-        // Laid out at its references' origins: moved by the difference, which holds whatever the references are.
         if let (Some((page, r)), Some((on, now))) = (was, self.float_box(f, fonts))
             && on == page
         {
@@ -1051,8 +950,6 @@ impl Editor {
         self.end_batch(true, fonts)
     }
 
-    /// In Line with Text on a floating picture or shape: an inline one where its anchor is, a shape's text with it.
-    /// Groups stay floating. One step.
     fn inline_float(&mut self, f: FloatId, fonts: &Fonts) -> Outcome {
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };
@@ -1090,8 +987,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// A float moved or resized from box `old` to `new` (page coordinates on `page`): its offsets keep their reference
-    /// (page, margin, column or paragraph), an aligned position becoming an offset.
     pub(super) fn place_float(
         &mut self,
         f: FloatId,
@@ -1113,7 +1008,6 @@ impl Editor {
             return Outcome::Unchanged("no float");
         };
         **fl = moved;
-        // A float dragged to a new place (not nudged) re-anchors.
         let to = if reanchor { self.reanchor(page, anchor, new, fl) } else { None };
         let mut tx = self.begin(label);
         let ok = match to {
@@ -1140,31 +1034,24 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Where float `fl`, anchored in `anchor` and dragged to box `new` on `page`, re-anchors unless its anchor is
-    /// locked: the paragraph at its new top (in its anchor's container) when that is another one, its paragraph-relative
-    /// offset then measured from there.
     fn reanchor(&mut self, page: usize, anchor: crate::layout::ParaId, new: [f64; 4], fl: &mut crate::docx::Float) -> Option<crate::layout::ParaId> {
         if fl.locked {
             return None;
         }
         let (dest, top) = self.anchor_at(page, anchor, new[1]).filter(|&(p, _)| p != anchor)?;
         if matches!(fl.v_relative.as_str(), "paragraph" | "line") {
-            // Whole twips, as the reader truncates them (FLOAT-6).
             fl.v_offset = ((new[1] - top) * 20.0).trunc() / 20.0;
             fl.v_align = None;
         }
         Some(dest)
     }
 
-    /// A float as moving or resizing it from box `old` to `new` (page coordinates on `page`) leaves it, in its anchor:
-    /// its offsets keep their reference (page, margin, column or paragraph), an aligned position becoming an offset.
     fn moved_float(&mut self, f: FloatId, page: usize, old: [f64; 4], new: [f64; 4]) -> Option<crate::docx::Float> {
         let anchor = self.index.float_anchor(f)?;
         let section = self.snapshot().info().get(page).map_or(0, |i| i.section);
         let sec = self.doc.sections.get(section).cloned();
         let anchor_top = self.pages.page(page, &self.index).and_then(|g| g.lines_of(anchor).map(|(_, l)| l.top).reduce(f64::min));
         let mut fl = self.float_of(f)?.clone();
-        // The reference's origin: from the offset when there is one, else from the reference's name.
         let (ox, oy) = match &sec {
             Some(s) => (
                 match fl.h_relative.as_str() {
@@ -1183,7 +1070,6 @@ impl Editor {
             ),
             None => (old[0] - fl.h_offset, old[1] - fl.v_offset),
         };
-        // Offsets in whole twips, as the reader truncates them (FLOAT-6), so saving and reading back keeps them.
         let twips = |v: f64| (v * 20.0).trunc() / 20.0;
         if (new[0] - old[0]).abs() > 1e-9 {
             fl.h_offset = twips(new[0] - ox);
@@ -1201,8 +1087,6 @@ impl Editor {
         Some(fl)
     }
 
-    /// The paragraph a float whose top is at `y` on `page` anchors to: the last line starting at or above `y` (else
-    /// the first below) among the lines in the same container as `anchor`; with that paragraph's top on the page.
     pub(super) fn anchor_at(&mut self, page: usize, anchor: crate::layout::ParaId, y: f64) -> Option<(crate::layout::ParaId, f64)> {
         let container = self.index.para_slot(anchor)?.container;
         let geo = self.pages.page(page, &self.index)?;
@@ -1213,7 +1097,6 @@ impl Editor {
             .filter(|l| l.top <= y + 1e-6)
             .max_by(|a, b| a.top.total_cmp(&b.top))
             .or_else(|| lines.iter().min_by(|a, b| a.top.total_cmp(&b.top)))?;
-        // A line showing several paragraphs (REV-6) anchors to the one it starts with.
         let para = l.para()?;
         let top = lines.iter().filter(|m| m.shows(para)).map(|m| m.top).fold(f64::MAX, f64::min);
         Some((para, top))
@@ -1221,7 +1104,6 @@ impl Editor {
 }
 
 impl Editor {
-    /// A checkbox content control's face under a point: its paragraph and unit.
     fn checkbox_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<Position> {
         let stack = self.stack();
         let (page, px, py) = stack.page_at(x, y)?;
@@ -1243,8 +1125,6 @@ impl Editor {
         None
     }
 
-    /// The face of the checkbox a click at a point toggles: none in design mode, read only, or when the control's
-    /// content is locked (the click is then a click on text).
     pub(super) fn checkbox_toggles_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<Position> {
         if matches!(self.mode, super::Mode::Design | super::Mode::ReadOnly) {
             return None;
@@ -1255,7 +1135,6 @@ impl Editor {
         self.doc.controls.get(c).is_some_and(|k| k.props.lock.editable()).then_some(p)
     }
 
-    /// A click on a checkbox toggles it, the caret after it; true when it did.
     pub(super) fn checkbox_press(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
         let Some(p) = self.checkbox_toggles_at(x, y, fonts) else { return false };
         self.drag = None;
@@ -1263,8 +1142,6 @@ impl Editor {
         true
     }
 
-    /// The checkbox Space toggles: the one selected, or the one a click (or Space) just toggled while the caret is
-    /// still where the toggle left it.
     pub(super) fn selected_checkbox(&self) -> Option<Position> {
         if let Selection::Caret(c) = self.selection
             && let Some(t) = self.toggled_checkbox.filter(|t| t.after == c)
@@ -1287,7 +1164,6 @@ impl Editor {
         }
     }
 
-    /// Toggles the checkbox whose face is at `p`, the caret after it.
     pub(super) fn toggle_checkbox(&mut self, p: Position, fonts: &Fonts) -> Outcome {
         let Some((para, u)) = p.para_offset() else { return Outcome::Unchanged("no checkbox") };
         let Some(Inline::Sym { ch, font, run, control: Some(c) }) = self.index.para(&self.doc, para).and_then(|q| inline_at(q, u)).cloned() else {
@@ -1320,7 +1196,6 @@ impl Editor {
     }
 }
 
-/// A length in the ruler unit's numbers, two decimals (`1.25`).
 fn amount(pt: f64, unit: crate::api::services::RulerUnit) -> String {
     use crate::api::services::RulerUnit as U;
     let per = match unit {
@@ -1333,7 +1208,6 @@ fn amount(pt: f64, unit: crate::api::services::RulerUnit) -> String {
     format!("{:.2}", pt / per)
 }
 
-/// The ruler unit's name after a size (` in`, ` cm`).
 fn unit_suffix(unit: crate::api::services::RulerUnit) -> &'static str {
     use crate::api::services::RulerUnit as U;
     match unit {
@@ -1345,18 +1219,15 @@ fn unit_suffix(unit: crate::api::services::RulerUnit) -> &'static str {
     }
 }
 
-/// A size chip's label: width × height in the ruler unit (`2.50 × 1.63 in`).
 pub(super) fn size_label(w: f64, h: f64, unit: crate::api::services::RulerUnit) -> String {
     format!("{} × {}{}", amount(w, unit), amount(h, unit), unit_suffix(unit))
 }
 
-/// A rotation chip's label: whole degrees from -179 to 180 (`30°`).
 pub(super) fn angle_label(deg: f64) -> String {
     let d = (deg.round() + 180.0).rem_euclid(360.0) - 180.0;
     format!("{}°", if d == -180.0 { 180.0 } else { d })
 }
 
-/// The object grid's step: a quarter inch, or a quarter centimetre in a metric unit.
 fn grid_step(unit: crate::api::services::RulerUnit) -> f64 {
     use crate::api::services::RulerUnit as U;
     match unit {
@@ -1365,23 +1236,19 @@ fn grid_step(unit: crate::api::services::RulerUnit) -> f64 {
     }
 }
 
-/// What a drag moves, whose own edges offer no snap lines: a floating object, or a table by its handle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Dragged {
     Float(FloatId),
     Table(crate::layout::TableId),
 }
 
-/// What object drags show besides the object: by page, the guides and grid and the readouts, and the original box.
 pub(super) type Feedback = (Vec<(usize, Guides)>, Vec<(usize, Measure)>, Option<Outline>);
 
 impl Editor {
-    /// How near a line a dragged edge snaps: 7 px at the zoom, in points.
     pub(super) fn snap_threshold(&self) -> Pt {
         Pt(7.0 * 0.75 / self.viewport.zoom.max(0.1))
     }
 
-    /// A page's size and its section's margins (left, top, right, bottom), page points.
     fn page_frame(&self, page: usize) -> Option<([f64; 2], [f64; 4])> {
         let snap = self.snapshot();
         let p = snap.pages().get(page)?;
@@ -1390,7 +1257,6 @@ impl Editor {
         Some(([p.w, p.h], [left, s.top, p.w - s.right, p.h - s.bottom]))
     }
 
-    /// The object grid of a page with these margins: from the margins' top left, when the setting shows it.
     fn grid_from(&self, margins: [f64; 4], dragging: bool) -> Option<Grid> {
         use crate::api::services::ObjectGrid as G;
         let shows = match self.view_settings.object_grid {
@@ -1401,9 +1267,6 @@ impl Editor {
         shows.then(|| Grid { origin: [Pt(margins[0]), Pt(margins[1])], step: Pt(grid_step(self.view_settings.unit)) })
     }
 
-    /// Builds the snap lines of `page` for a move of `dragged`: the margins and page centre, the tables' edges, the
-    /// other objects' edges and centres (floats and inline pictures and shapes, by their bounds when turned) and the
-    /// grid when it shows.
     pub(super) fn build_snaps(&mut self, page: usize, dragged: Dragged) {
         use crate::layout::fragment::Item;
         let Some((size, margins)) = self.page_frame(page) else { return };
@@ -1435,7 +1298,6 @@ impl Editor {
             match it {
                 Item::Shape(s) if s.float == 0 && s.path.is_empty() => objects.push(super::snap::turned_bounds(s.rect, s.rot)),
                 Item::Image { rect, .. } if !in_float(rect) => objects.push(*rect),
-                // Text, rules and turned content offer no lines.
                 _ => {}
             }
         }
@@ -1444,9 +1306,6 @@ impl Editor {
         self.snaps.fill(&super::snap::Sources { size, margins, tables: &tables, objects: &objects, grid });
     }
 
-    /// What the object or shape drag under way shows on `visible`: guides where a move snapped, the grid, the margin
-    /// distances and the dotted line from the anchor (`anchor`: the view's anchor); the original box and a size or
-    /// angle chip by the pointer while resized or turned. With the grid always on, every visible page shows it.
     pub(super) fn object_feedback(&mut self, visible: std::ops::Range<usize>, anchor: Option<(usize, [f64; 2])>) -> Feedback {
         use crate::api::services::MeasureDetail as D;
         let (mut guides, mut measures, mut original) = (Vec::new(), Vec::new(), None);
@@ -1472,8 +1331,6 @@ impl Editor {
                         (x0 > rx).then_some([Pt(rx), Pt(ry), Pt(x0), Pt(ry)])
                     });
                     guides.push((d.page, Guides { lines: lines(&self.snaps, d.snapped), grid: self.snaps.grid, anchor_link }));
-                    // The distances to the margins at the box's middle: accent when equal; at the standard level only
-                    // then (all of them while Alt is held), always at the full level.
                     let (left, right) = (x0 - ml, mr - x1);
                     let equal = (left - right).abs() < 1.5 * one;
                     let shown = match set.detail {

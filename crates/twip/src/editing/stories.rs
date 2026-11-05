@@ -1,5 +1,4 @@
-//! Stories other than the body: the editing context, entering and leaving headers and footers,
-//! notes as one story, reference-mark jumps, and vertical moves across stories.
+//! Header, footer and note stories
 
 use crate::docx::{Block, Inline, NoteKind, Paragraph};
 use crate::font::Fonts;
@@ -11,14 +10,10 @@ use super::geometry::PageGeometry;
 use super::position::{Position, StoryId};
 use super::selection::{ObjectRef, Selection};
 
-/// Whether a click while `ctx` is edited can reach what host story `s` shows (a text box goes by its host, see
-/// [`super::index::DocIndex::host`]): headers and footers only while one is edited, the other stories (body, notes)
-/// only while none is.
 pub(super) fn reachable(ctx: StoryId, s: StoryId) -> bool {
     matches!(ctx, StoryId::HeaderFooter(_)) == matches!(s, StoryId::HeaderFooter(_))
 }
 
-/// The inline holding unit `u`.
 pub(super) fn inline_at(p: &Paragraph, u: Unit) -> Option<&Inline> {
     let mut at = 0;
     for i in &p.inlines {
@@ -31,7 +26,6 @@ pub(super) fn inline_at(p: &Paragraph, u: Unit) -> Option<&Inline> {
     None
 }
 
-/// The top and bottom of the page's body area: above it is the header area, below it the footer's.
 fn body_band(geo: &PageGeometry) -> Option<(f64, f64)> {
     geo.body_area
 }
@@ -40,8 +34,6 @@ fn is_note(s: StoryId) -> bool {
     matches!(s, StoryId::Footnote(_) | StoryId::Endnote(_))
 }
 
-/// A header or footer Edit Header or Edit Footer made because the page had none: left with no change since, it goes
-/// away again. `tx` is the history's position right after it was made.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Provisional {
     story: StoryId,
@@ -49,8 +41,6 @@ pub(super) struct Provisional {
 }
 
 impl Editor {
-    /// The story being edited: a header or footer while the selection is in one (or in a text box or on an object
-    /// there), else the body (whose context also reaches notes and the text boxes anchored in them).
     pub(super) fn editing(&self) -> StoryId {
         let s = match self.selection {
             Selection::Cells { table, .. } => self.index.table_slot(table).map(|s| self.index.story(s.container)),
@@ -64,7 +54,6 @@ impl Editor {
         }
     }
 
-    /// A press that enters or leaves a header or footer, or that the body ignores while one is edited; true when handled.
     pub(super) fn story_click(&mut self, x: f64, y: f64, clicks: u8, fonts: &Fonts) -> bool {
         let stack = self.stack();
         let Some((page, px, py)) = stack.page_at(x, y) else { return false };
@@ -75,15 +64,12 @@ impl Editor {
         let hit = |want_hf: bool| geo.hit_text(px, py, &|s| matches!(s, StoryId::HeaderFooter(_)) == want_hf);
         let to = match (hf, in_body) {
             (false, false) if clicks >= 2 => {
-                // The header above the body, the footer below it.
                 let below = body_band(&geo).is_some_and(|(_, b)| py > b);
                 let side = |s: StoryId| geo.stories.iter().any(|g| g.story == s && body_band(&geo).is_some_and(|(t, _)| (g.rect[1] >= t) == below));
                 let Some(h) = geo.hit_text(px, py, &|s| matches!(s, StoryId::HeaderFooter(_)) && side(s)) else {
-                    // A page without a header (or footer) there: one is made and entered.
                     let _ = self.edit_header_footer(Some(page), below, fonts);
                     return true;
                 };
-                // Esc goes back to where this double-click's first click put the body caret.
                 self.body_return = Some(self.selection);
                 h
             }
@@ -92,7 +78,6 @@ impl Editor {
                 self.body_return = None;
                 h
             }
-            // While a header or footer is edited, a single click or a drag in the body does nothing, except on its floats.
             (true, true) if self.object_hit(x, y, fonts).is_none() => return true,
             _ => return false,
         };
@@ -103,18 +88,14 @@ impl Editor {
         true
     }
 
-    /// Esc: leaves a header or footer for the body, selects the text box being edited, or leaves object selection.
     pub(super) fn escape(&mut self) -> Outcome {
-        // Esc during a text drag cancels it.
         if self.text_drag.take().is_some() {
             self.requests.push(super::input::Request::ReleasePointer);
             return Outcome::Moved;
         }
-        // Esc ends extend and block mode, keeping the selection.
         if self.end_modes() {
             return Outcome::Moved;
         }
-        // Esc during an object drag cancels it: nothing changes.
         if self.object_cancel() || self.shape_cancel() || self.shape_insert.take().is_some() {
             return Outcome::Moved;
         }
@@ -122,7 +103,6 @@ impl Editor {
             self.requests.push(super::input::Request::ReleasePointer);
             return Outcome::Moved;
         }
-        // Esc with a group's child selected selects the group.
         if self.selected_child().is_some() {
             self.object_child = None;
             return Outcome::Moved;
@@ -151,11 +131,7 @@ impl Editor {
         }
     }
 
-    /// Edit Header or Edit Footer: the caret goes to the start of the header or footer `page` (the caret's page
-    /// when `None`) shows; when it shows none, one is made first, as a step: an empty paragraph in the Header or Footer
-    /// style, referenced by the first section (later sections without their own inherit it, HDR-12).
     pub(super) fn edit_header_footer(&mut self, page: Option<usize>, footer: bool, fonts: &Fonts) -> Outcome {
-        // Going from a header just made, unchanged, to another: the first one goes away first.
         self.end_provisional(fonts);
         let page = page.or_else(|| self.caret_view().map(|c| c.page)).unwrap_or(self.near);
         let Some(info) = self.snapshot().info().get(page).cloned() else { return Outcome::Unchanged("no page") };
@@ -188,7 +164,6 @@ impl Editor {
                     id: crate::docx::next_para_id(),
                     controls: Vec::new(),
                 };
-                // `word/headerN.xml` or `word/footerN.xml`, numbered past every header and footer part there is.
                 let kind = if footer { "footer" } else { "header" };
                 let n = (1..)
                     .find(|n| {
@@ -238,17 +213,12 @@ impl Editor {
         out
     }
 
-    /// After each input: a header or footer Edit Header made, left with no change since, is undone, and its undo
-    /// isn't kept for redo, so the document is as it was. A change to it, or any later edit, keeps it.
-    // shortcut: redo steps from before the header was made aren't restored (making it cleared them).
     pub(super) fn settle_provisional(&mut self, fonts: &Fonts) {
         if self.provisional.is_some_and(|p| self.editing() != p.story) {
             self.end_provisional(fonts);
         }
     }
 
-    /// Ends the provisional header or footer: undone when nothing changed since it was made, the selection staying
-    /// where the input put it (outside the part; removing a part moves nothing else).
     fn end_provisional(&mut self, fonts: &Fonts) {
         let Some(p) = self.provisional.filter(|_| self.batch.is_none()) else { return };
         self.provisional = None;
@@ -261,7 +231,6 @@ impl Editor {
         }
     }
 
-    /// Close Header and Footer: back to the body selection the header was entered from.
     pub(super) fn close_header_footer(&mut self) -> Outcome {
         if !matches!(self.editing(), StoryId::HeaderFooter(_)) {
             return Outcome::Unchanged("not in a header or footer");
@@ -276,8 +245,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// A double-click on a note reference goes to its note, before the note's own mark; on a note's mark, back to the
-    /// reference, before it. True when it jumped.
     pub(super) fn note_jump(&mut self, p: Position) -> bool {
         let Some((para, u)) = p.para_offset() else { return false };
         let Some(q) = self.index.para(&self.doc, para) else { return false };
@@ -303,7 +270,6 @@ impl Editor {
         true
     }
 
-    /// The place before a note's reference mark.
     fn note_reference(&self, kind: NoteKind, id: i64) -> Option<Position> {
         self.index.para_ids().find_map(|pid| {
             let p = self.index.para(&self.doc, pid)?;
@@ -322,7 +288,6 @@ impl Editor {
         })
     }
 
-    /// The notes of one kind in order (separator stories excluded): all of them are one story for navigation.
     fn notes(&self, kind: NoteKind) -> Vec<StoryId> {
         let map = match kind {
             NoteKind::Foot => &self.doc.footnotes,
@@ -340,7 +305,6 @@ impl Editor {
             .collect()
     }
 
-    /// Past a note's start or end by character or word: the previous note's end or the next note's start.
     pub(super) fn next_note_edge(&mut self, from: StoryId, forward: bool) -> Option<Position> {
         let kind = match from {
             StoryId::Footnote(_) => NoteKind::Foot,
@@ -353,9 +317,6 @@ impl Editor {
         self.nav().story_edge(*to, !forward)
     }
 
-    /// Up or Down past a story's first or last line crosses stories: from a header or footer to the next
-    /// header or footer down the pages, and from a note to the next note or the body. The nearest
-    /// line beyond the caret's, on its page and then the following ones, at the goal x.
     pub(super) fn cross_vertical(&mut self, focus: Position, x: f64, down: bool, fonts: &Fonts) -> Option<Position> {
         let ok: fn(StoryId) -> bool = match focus.story {
             StoryId::HeaderFooter(_) => |s| matches!(s, StoryId::HeaderFooter(_)),
@@ -396,8 +357,6 @@ impl Editor {
         }
     }
 
-    /// Page Up/Down in a header or footer: the previous or next page's header or footer, the one on the caret's side
-    /// of the body.
     pub(super) fn page_header_footer(&mut self, focus: Position, forward: bool, fonts: &Fonts) -> Option<Position> {
         let at = self.nav().line_of(focus)?;
         let cur = &at.geo.lines[at.line];

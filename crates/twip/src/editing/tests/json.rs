@@ -1,6 +1,4 @@
-//! The alpha's JSON host messages and replies, kept for the scenario files and the tests written in them: each message
-//! is parsed into an input and applied through the editor's typed calls, and the reply is built from the editor's
-//! state. Hosts use the `api` session.
+//! JSON host messages
 
 use std::collections::HashMap;
 
@@ -21,70 +19,30 @@ use super::super::{Editor, Mode};
 
 #[derive(Clone, Debug, PartialEq)]
 enum Input {
-    Key {
-        code: String,
-        mods: Mods,
-    },
+    Key { code: String, mods: Mods },
     Text(String),
-    /// Document coordinates (points in the page stack).
-    Pointer {
-        kind: PointerKind,
-        x: f64,
-        y: f64,
-        clicks: u8,
-        mods: Mods,
-    },
-    Hover {
-        x: f64,
-        y: f64,
-    },
+    Pointer { kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods },
+    Hover { x: f64, y: f64 },
     Wheel,
     Viewport(Viewport),
-    /// A command, as the API types it (`{"type": "command", "command": {"type": "setBold", "value": true}}`).
     Command(Box<Command>),
     Copy,
     Cut,
-    /// `token`: the id of a fragment this editor copied, pasted with its formatting.
-    Paste {
-        text: Option<String>,
-        token: Option<String>,
-    },
+    Paste { text: Option<String>, token: Option<String> },
     Focus,
     Undo,
     Redo,
-    /// `mac` switches to the macOS keymap layer.
-    Platform {
-        mac: bool,
-    },
-    /// A question about the document: answered in the reply, nothing changes.
-    Query {
-        q: String,
-        args: Value,
-    },
-    /// Commands applied as one undo step labelled `label`; a refused one rolls them all back.
-    Batch {
-        label: String,
-        commands: Vec<Command>,
-    },
+    Platform { mac: bool },
+    Query { q: String, args: Value },
+    Batch { label: String, commands: Vec<Command> },
     Author(String),
     Mode(Mode),
-    /// The external drop caret at a point (`{ x, y, page? }`), or none (`null`).
     Drop(Value),
-    /// Units `start..end` of a paragraph selected (find, spelling).
-    Select {
-        para: crate::layout::ParaId,
-        start: crate::layout::Unit,
-        end: crate::layout::Unit,
-    },
+    Select { para: crate::layout::ParaId, start: crate::layout::Unit, end: crate::layout::Unit },
     SelectElement(crate::api::value::ElementId),
-    ReplaceAll {
-        find: String,
-        with: String,
-        case: bool,
-    },
+    ReplaceAll { find: String, with: String, case: bool },
 }
 
-/// A message the editor can't use.
 struct BadInput(String);
 
 fn num(v: &Value, k: &str) -> Result<f64, BadInput> {
@@ -97,12 +55,10 @@ fn mods(v: &Value) -> Mods {
     Mods { ctrl: flag("ctrl"), shift: flag("shift"), alt: flag("alt"), meta: flag("meta") }
 }
 
-/// `v` as a typed value: `what` names it in the error.
 fn typed<T: serde::de::DeserializeOwned>(v: Option<&Value>, what: &str) -> Result<T, BadInput> {
     serde_json::from_value(v.cloned().unwrap_or(Value::Null)).map_err(|e| BadInput(format!("bad `{what}`: {e}")))
 }
 
-/// A message's sequence number and input.
 fn parse(v: &Value) -> Result<(u64, Input), BadInput> {
     let seq = v.get("seq").and_then(Value::as_u64).ok_or_else(|| BadInput("missing `seq`".into()))?;
     let ty = v.get("type").and_then(Value::as_str).ok_or_else(|| BadInput("missing `type`".into()))?;
@@ -171,9 +127,7 @@ fn parse(v: &Value) -> Result<(u64, Input), BadInput> {
 }
 
 impl Editor {
-    /// Parses and applies a JSON message (or an array of them), returning the reply JSON.
     pub(crate) fn apply_json(&mut self, json: &str, fonts: &Fonts) -> String {
-        // The host this answers takes no records: only the last message's are kept.
         self.commits.clear();
         let v: Value = match serde_json::from_str(json) {
             Ok(v) => v,
@@ -193,7 +147,6 @@ impl Editor {
         self.reply(answer).to_string()
     }
 
-    /// Applies one input, returning its answer. A non-increasing `seq` is rejected unapplied.
     fn apply_input(&mut self, seq: u64, input: Input, fonts: &Fonts) -> Result<Option<Value>, BadInput> {
         if seq <= self.seq && self.seq > 0 {
             return Err(BadInput(format!("seq {seq} after {}", self.seq)));
@@ -227,7 +180,6 @@ impl Editor {
                 self.mac = mac;
                 None
             }
-            // A refused command is answered with why; what it made is the answer.
             Input::Command(cmd) => {
                 let out = self.execute(*cmd, fonts);
                 self.answer_of(out)
@@ -241,7 +193,6 @@ impl Editor {
                 None
             }
             Input::Paste { text, token } => {
-                // The token names our fragment; the text must match too (another editor's copy can carry the same id).
                 let ours = self.clipboard.clone().filter(|f| {
                     token.as_deref().and_then(|t| t.parse::<u64>().ok()) == Some(f.id)
                         && text.as_ref().is_none_or(|t| t.replace("\r\n", "\n") == f.text().replace("\r\n", "\n"))
@@ -252,7 +203,6 @@ impl Editor {
                     }
                     (Some(f), _) => {
                         self.history.break_typing();
-                        // A paste recorded as a move is one undo step with its move.
                         self.begin_batch(None);
                         let out = self.paste_fragment(&f, fonts);
                         self.paste_moved(&f, &out, fonts);
@@ -306,12 +256,10 @@ impl Editor {
                 None
             }
         };
-        // A building block's refusal outside a command (a locked drag, a read-only paste) is the answer too.
         let refused = self.refused.take().map(|why| json!({ "error": why }));
         Ok(answer.or(refused))
     }
 
-    /// The answer for a command's outcome: why it was refused, else what it made.
     fn answer_of(&mut self, out: Outcome) -> Option<Value> {
         match out {
             Outcome::Refused(e) => Some(json!({ "error": e.message })),
@@ -319,8 +267,6 @@ impl Editor {
         }
     }
 
-    /// Commands as one transaction and one undo step. A refused command undoes the ones before it, and the answer
-    /// says which.
     fn batch(&mut self, label: String, commands: Vec<Command>, fonts: &Fonts) -> Option<Value> {
         self.begin_batch(Some(label.into()));
         let mut answer = None;
@@ -336,7 +282,6 @@ impl Editor {
         answer
     }
 
-    /// The reply after a batch of messages.
     fn reply(&mut self, answer: Option<Value>) -> Value {
         let snapshot = self.layout.snapshot();
         let status = match snapshot.status() {
@@ -368,7 +313,6 @@ impl Editor {
         r
     }
 
-    /// Answers a host query; nothing changes.
     fn query(&mut self, q: &str, args: &Value, fonts: &Fonts) -> Value {
         let s = |k: &str| args.get(k).and_then(Value::as_str).map(str::to_string);
         match q {
@@ -396,7 +340,6 @@ impl Editor {
                 structure(&self.doc.sections.iter().flat_map(|s| s.blocks.iter().cloned()).collect::<Vec<_>>(), depth)
             }
             "hit" => {
-                // The position at a point, the innermost element there, and whether it can be edited.
                 let hit = self.doc_point(args).and_then(|(x, y)| self.hit_test(x, y, fonts));
                 let Some(((para, offset), element, editable)) = hit.and_then(|(p, e, ok)| Some((p.para_offset()?, e, ok))) else {
                     return json!({ "error": "bad estimate: x" });
@@ -420,7 +363,6 @@ impl Editor {
         }
     }
 
-    /// A document point from `{ x, y, page? }` (page coordinates when `page` is given).
     fn doc_point(&self, at: &Value) -> Option<(f64, f64)> {
         let (x, y) = (at.get("x")?.as_f64()?, at.get("y")?.as_f64()?);
         match at.get("page").and_then(Value::as_u64) {
@@ -429,8 +371,6 @@ impl Editor {
         }
     }
 
-    /// The `structure` query for one element: a region's rows as a table of just those rows, or a block
-    /// control's blocks.
     fn structure_query(&mut self, args: &Value) -> Value {
         let depth = args.get("depth").and_then(Value::as_u64).unwrap_or(8) as usize;
         let id = crate::api::value::ElementId(args.get("id").and_then(Value::as_str).unwrap_or("").to_string());
@@ -519,7 +459,6 @@ fn changes(c: &Changes, idx: &DocIndex) -> Value {
     })
 }
 
-/// The element context as the reply carries it.
 fn context(doc: &Document, idx: &DocIndex, sel: &Selection, sigs: &HashMap<ElementId, Element>) -> Value {
     Value::Array(
         elements::context(doc, idx, sel)
@@ -544,7 +483,6 @@ fn context(doc: &Document, idx: &DocIndex, sel: &Selection, sigs: &HashMap<Eleme
     )
 }
 
-/// The block structure of `blocks`, to `depth` table levels.
 fn structure(blocks: &[Block], depth: usize) -> Value {
     Value::Array(
         blocks

@@ -1,4 +1,4 @@
-//! The reuse report (`prof::take_reuse`): what an edit's layout moved, reused or laid out again.
+//! Reuse report
 
 use std::path::Path;
 
@@ -14,8 +14,6 @@ fn at(r: &[[u64; 3]; 3], piece: Piece, outcome: Outcome) -> u64 {
     r[piece as usize][outcome as usize]
 }
 
-/// One character typed mid-document in `big.docx`, laid out incrementally: the edited paragraph is laid out again,
-/// and later pages are reused.
 #[test]
 fn prof_reuse_counts_one_keystroke() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/big.docx"))) else { return };
@@ -36,8 +34,6 @@ fn prof_reuse_counts_one_keystroke() {
     assert!(at(&r, Piece::Page, Outcome::Reused) > 0, "later pages are reused: {r:?}");
 }
 
-/// A baseline that took several passes (the showcase's header and footer heights): typing in its three-column section
-/// starts from the baseline's values, stays incremental and equals a full layout.
 #[test]
 fn multi_pass_baseline_typing_is_incremental() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx"))) else { return };
@@ -63,13 +59,10 @@ fn multi_pass_baseline_typing_is_incremental() {
     let why: Vec<_> = crate::prof::take().into_iter().filter(|t| t.0.starts_with("full:")).collect();
     eprintln!("reuse after one keystroke in the showcase's columns: {r:?} of {pages} pages; full layouts: {why:?}");
     assert_eq!(FULL_JOBS.get(), full, "the edit didn't fall back to a full layout");
-    // The pages before the edit's are the baseline's: only from there on is anything laid out again.
     assert!((at(&r, Piece::Page, Outcome::Laid) as usize) < pages / 2, "pages laid out again: {r:?} of {pages}");
     assert_eq!(dump::page_text(&dl.snapshot(), &d), dump::page_text(&layout(&d, &fonts), &d));
 }
 
-/// Keystroke after keystroke in the showcase (body fields, several passes): each starts from the last layout's values
-/// (a seeded one-pass layout keeps them for the next), none falls back to a full layout, and the result equals one.
 #[test]
 fn consecutive_keystrokes_stay_incremental() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx"))) else { return };
@@ -98,14 +91,10 @@ fn consecutive_keystrokes_stay_incremental() {
     }
 }
 
-/// Typing that keeps a paragraph's height, in body text and in a table cell: only that paragraph and the page it is on
-/// are laid out again; no other paragraph, no row drawn again, no other page.
 #[test]
 fn same_height_edit_lays_out_one_paragraph() {
     let Some(d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-LONG-50.docx"))) else { return };
     let fonts = fonts();
-    // The first body paragraph after the headings (on page 1, not split by a page break: a split paragraph is cached,
-    // and counted, once per part), and the first cell paragraph.
     let blocks = &d.sections[0].blocks;
     let body = blocks
         .iter()
@@ -127,7 +116,6 @@ fn same_height_edit_lays_out_one_paragraph() {
                 _ => None,
             }),
         };
-        // A character for one: the line keeps its length class (the paragraph keeps its lines).
         text.expect("text").insert(0, 'x');
         crate::prof::take_reuse();
         dl.edit(Revision(2), Some(Change { section: 0, first: bi, old_end: bi + 1, new_end: bi + 1, row }));
@@ -140,9 +128,6 @@ fn same_height_edit_lays_out_one_paragraph() {
     }
 }
 
-/// Enter near the start of a 50-page document: of the paragraphs and rows after it, at most 5% are laid out again
-/// (the rest move with the text, or sit on reused pages, which the report counts as pages), and the result equals a
-/// full layout. Those laid out again are the paragraphs a page break now splits elsewhere.
 #[test]
 fn reflow_moves_later_paragraphs() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-LONG-50.docx"))) else { return };

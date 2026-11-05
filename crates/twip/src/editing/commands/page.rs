@@ -1,4 +1,4 @@
-//! Page layout of the selection's section, and headers and footers.
+//! Page layout, headers and footers
 
 use crate::api::command::{Columns, HeaderFooterDistance, Margins, PageNumber, PageNumberFormat, PageNumberPlace};
 use crate::api::value::{Alignment, HorizontalAlignment};
@@ -10,7 +10,6 @@ use crate::editing::Editor;
 use crate::editing::step::Step;
 
 impl Editor {
-    /// The focus's section's page setup changed by `edit`, as one step.
     pub(in crate::editing) fn set_page(&mut self, label: &'static str, edit: impl FnOnce(&mut SectionPage), fonts: &Fonts) -> Outcome {
         let section = self.focus_section();
         let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
@@ -81,8 +80,6 @@ impl Editor {
         )
     }
 
-    /// A page number field at the caret, or in the caret's page's header or footer (entered, and made when the page
-    /// has none), aligned there when an alignment is given. One step.
     pub(in crate::editing) fn insert_page_number(&mut self, p: PageNumber, fonts: &Fonts) -> Outcome {
         self.joined("Page Number", fonts, |e| {
             match p.place {

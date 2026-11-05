@@ -1,4 +1,4 @@
-//! Clipboard and history: cut, copy, paste, undo, redo and repeat.
+//! Clipboard and history
 
 use crate::api::command::{PasteAs, PasteOptions};
 use crate::font::Fonts;
@@ -19,7 +19,6 @@ impl Editor {
         if self.copy().is_none() {
             return Outcome::Unchanged("nothing selected");
         }
-        // A cell block: whole rows, columns or the table go; other blocks are emptied.
         if let Selection::Cells { table, anchor, focus, .. } = self.selection {
             let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
             let cols = table::Grid::of(t).cols;
@@ -33,9 +32,7 @@ impl Editor {
                 (false, false) => self.delete(Dir::Forward, false, fonts),
             };
         }
-        // With tracking, whole paragraphs or a sentence cut are a move once pasted: what was selected goes.
         let moving = self.tracking() && self.moves_whole();
-        // Smart cut: the space the cut would leave doubled goes too.
         if !moving {
             self.smart_cut();
         }
@@ -47,8 +44,6 @@ impl Editor {
         out
     }
 
-    /// Pastes what was last copied or cut here, with its formatting or as text.
-    // shortcut: the system clipboard is the host's; a host pastes what it read there through `Session::paste`.
     pub(in crate::editing) fn paste_held(&mut self, p: PasteOptions, fonts: &Fonts) -> Outcome {
         let Some(f) = self.clipboard.clone() else { return Outcome::unavailable("nothing to paste") };
         if p.as_ == Some(PasteAs::Text) {
@@ -59,7 +54,6 @@ impl Editor {
         out
     }
 
-    /// Plain text, with the spaces a pasted word needs beside its neighbours.
     pub(in crate::editing) fn paste_text(&mut self, t: &str, fonts: &Fonts) -> Outcome {
         self.history.break_typing();
         let (sb, sa) = self.smart_spaces(t);
@@ -69,7 +63,6 @@ impl Editor {
         r
     }
 
-    /// F4: redo, or with nothing to redo, the last insertion or break again.
     pub(in crate::editing) fn repeat_last(&mut self, fonts: &Fonts) -> Outcome {
         if self.history.redo_depth() > 0 {
             return self.undo(false, fonts);

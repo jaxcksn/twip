@@ -1,9 +1,4 @@
-//! Breaking a shaped paragraph into lines (BREAK-1 to BREAK-9), placing them horizontally (JUST-1 to JUST-6, TAB-1 to
-//! TAB-10), sizing them (LINE-1 to LINE-15), the PARA-7 border box, and drawing each line once as a shared
-//! [`LineFragment`].
-//!
-//! Where the rules live: `fit_line` (BREAK-1 to BREAK-4), tabs (TAB-1 to TAB-10), `plan_justified` (BREAK-6), `align`
-//! (JUST-1 to JUST-6), `size` (LINE-1 to LINE-15, LIST-7), `apply_borders` (PARA-7) and the line drawing.
+//! Line breaking
 
 use crate::docx::Compat;
 use std::cell::OnceCell;
@@ -24,29 +19,20 @@ use super::units::{LU_PER_PT, Lu};
 
 const EPS: f64 = 1e-6;
 
-/// One line of a paragraph: pieces `start..end` (relative to the lines' start piece), their x positions (from the
-/// column's left edge) and drawn widths.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
     pub start: usize,
     pub end: usize,
     pub xs: Vec<f64>,
     pub widths: Vec<f64>,
-    /// LINE-1: max(A + E) and max(D).
     pub ascent: f64,
     pub descent: f64,
-    /// Line pitch and the baseline's distance from the line top (LINE-6 to LINE-12).
     pub pitch: f64,
     pub baseline: f64,
-    /// Extra space below the text from multiple spacing: needn't fit at a page bottom (PAGE-2).
     pub below: f64,
-    /// The line ends with a page or column break.
     pub hard: Option<Kind>,
-    /// A soft hyphen ends the line: draw a hyphen after it.
     pub hyphen: bool,
-    /// Tab leaders on this line: (index into `xs`, leader).
     pub leaders: Vec<(usize, Leader)>,
-    /// Rectangles drawn with the line (paragraph borders), relative to the line top and the column's left edge.
     pub rects: Vec<([f64; 4], u32)>,
 }
 
@@ -70,23 +56,16 @@ impl Line {
     }
 }
 
-/// Horizontal context of a paragraph's lines.
 #[derive(Clone, Copy)]
 pub struct Frame {
-    /// Column (or cell content) width.
     pub width: f64,
     pub default_tab: f64,
     pub compat: Compat,
     pub expand_shift_return: bool,
-    /// COMPAT-3 `splitPgBreakAndParaMark` (compat <= 14): the mark after a page break moves on as an empty line.
     pub split_page_break: bool,
-    /// TABLE-51: a fitted cell's paragraph doesn't wrap; its lines end only at breaks and start at the left.
     pub no_wrap: bool,
-    /// Where tab stops are measured from: 0, or a compat <= 14 piece's interval start beside a float (FLOAT-7).
     pub tab_origin: f64,
-    /// JUST-7: compat ≤ 14 `w:wpJustification`.
     pub wp_justification: bool,
-    /// LINE-16: the line grid pitch, layout units.
     pub line_grid: Option<i32>,
 }
 
@@ -107,31 +86,21 @@ impl Frame {
     }
 }
 
-/// A paragraph's lines at one width, and their drawings, built on first use and shared.
 #[derive(Debug)]
 pub struct ParaLines {
     pub shaped: Rc<ShapedPara>,
     pub lines: Vec<Line>,
-    /// The first piece these lines start at (0 unless continued).
     pub from: usize,
     pub width: f64,
-    /// The x the lines are drawn at ([`ParaSpace::x0`]).
     pub x0: f64,
     pub para: ParaId,
-    /// The neighbours' border keys the lines' borders were drawn against (PARA-7): the previous paragraph's (the
-    /// paragraph's own for a continuation) and the next one's.
     pub borders: (BorderKey, BorderKey),
-    /// Lazily built drawings, one per line. A cache filled behind `&self`: lines are measured far more often than
-    /// they are drawn (table autofit, keep-with-next tests), so drawing waits for the first placement.
     drawn: Box<[OnceCell<Rc<LineFragment>>]>,
     compat: Compat,
-    /// How revisions draw ([`ParaSpace::env`]).
     review: ReviewView,
-    /// `w:ulTrailSpace` ([`ParaSpace::env`]).
     ul_trail_space: bool,
     theme: std::rc::Rc<crate::drawing::theme::Theme>,
     colour_map: crate::drawing::theme::ColourMap,
-    /// The dark fill behind the story's text ([`super::env::TextEnv::backdrop`]).
     backdrop: Option<u32>,
 }
 
@@ -141,34 +110,28 @@ impl PartialEq for ParaLines {
     }
 }
 
-/// PAGE-11: the line holds only line and page breaks and ends with a page break.
 pub fn breaks_only(pieces: &[Piece], l: &Line) -> bool {
     l.hard == Some(Kind::PageBreak) && l.start < l.end && pieces[l.start..l.end].iter().all(|q| matches!(q.kind, Kind::LineBreak | Kind::PageBreak))
 }
 
 impl ParaLines {
-    /// The pieces the lines index into.
     pub fn pieces(&self) -> &[Piece] {
         &self.shaped.pieces[self.from.min(self.shaped.pieces.len())..]
     }
 
-    /// The notes referenced on line `i` (NOTE-5).
     pub fn notes(&self, i: usize) -> Vec<(NoteKind, i64)> {
         let l = &self.lines[i];
         (l.start..l.end).filter_map(|k| self.shaped.note(self.from + k)).collect()
     }
 
-    /// PAGE-11: line `i` holds only breaks, ends with a page break, and a later line of the paragraph has content.
     pub fn leading_page_break(&self, i: usize) -> bool {
         breaks_only(self.pieces(), &self.lines[i]) && self.lines[i + 1..].iter().any(|m| m.start < m.end)
     }
 
-    /// Line `i` drawn (with its top at 0, the column's left edge at [`ParaSpace::x0`]).
     pub fn fragment(&self, i: usize, para: &Paragraph, fonts: &Fonts) -> Rc<LineFragment> {
         self.drawn[i].get_or_init(|| Rc::new(draw_line(&self.origin(), &self.lines[i], para, fonts))).clone()
     }
 
-    /// Where these lines are drawn from.
     pub fn origin(&self) -> LineOrigin<'_> {
         LineOrigin {
             shaped: &self.shaped,
@@ -190,8 +153,6 @@ impl ParaLines {
     }
 }
 
-/// What a paragraph's lines depend on: its shaped pieces (by identity: the shaped paragraph's own key covers its
-/// content) and the line space.
 #[derive(Debug)]
 pub struct LinesKey {
     shaped: Rc<ShapedPara>,
@@ -200,8 +161,6 @@ pub struct LinesKey {
 
 #[cfg(test)]
 thread_local! {
-    /// Test fault (`cache_keys::omitted_key_is_caught`): the key leaves out `ParaSpace.width`, which verify mode
-    /// must catch.
     pub static OMIT_WIDTH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -219,7 +178,6 @@ pub struct LinesProbe<'a> {
 
 impl CacheKey for LinesKey {
     type Probe<'a> = LinesProbe<'a>;
-    // A paragraph's lines are cached as one: the paragraph is the piece.
     const PIECE: Option<crate::prof::Piece> = Some(crate::prof::Piece::Para);
 
     fn bucket(p: &LinesProbe) -> u64 {
@@ -243,13 +201,11 @@ impl CacheKey for LinesKey {
     }
 }
 
-/// Breaks a shaped paragraph into lines at a width (cached by the shaped paragraph and [`ParaSpace`]).
 pub fn break_lines(shaped: &Rc<ShapedPara>, para: &Paragraph, space: &ParaSpace, fonts: &Fonts, memos: &mut Memos) -> Result<Rc<ParaLines>, Yield> {
     let probe = LinesProbe { shaped, space };
     cached(memos, |c| &mut c.lines, probe, ParaLines::bytes, |m| break_lines_uncached(shaped, para, space, fonts, m))
 }
 
-/// [`break_lines`] without the cache.
 pub fn break_lines_uncached(
     shaped: &Rc<ShapedPara>,
     para: &Paragraph,
@@ -261,13 +217,11 @@ pub fn break_lines_uncached(
     let pieces = &shaped.pieces[from..];
     let frame = Frame::new(space);
     let view = space.env.review.view;
-    // REV-2
     let (style, mark) = (para.para_style_in(view), para.mark_in(view));
     let mut lines =
         super::job::unit("line breaking", || crate::prof::time("break", || break_paragraph(shaped, pieces, style, mark, &frame, fonts, from > 0)));
     let prev = if from > 0 { border_key(style) } else { space.borders.0.clone() };
     apply_borders(&mut lines, style, prev.as_deref(), space.borders.1.as_deref(), space.width, false);
-    // shortcut: line breaking is one unit per paragraph until jobs keep partial lines (JobMemo).
     memos.meter.unit_done();
     let n = lines.len();
     Ok(ParaLines {
@@ -288,13 +242,12 @@ pub fn break_lines_uncached(
     })
 }
 
-/// The border settings that make paragraphs share one box (PARA-7: identical settings).
+// Paragraph borders
 pub fn border_key(s: &ParaStyle) -> BorderKey {
     let k = [s.border_top.clone(), s.border_left.clone(), s.border_bottom.clone(), s.border_right.clone(), s.border_between.clone()];
     k.iter().any(|b| b.is_some()).then(|| Rc::new(k))
 }
 
-/// The neighbour keys a paragraph's lines depend on (PARA-7): only a bordered paragraph's box depends on them.
 pub fn neighbour_borders(style: &ParaStyle, prev: Option<&ParaStyle>, next: Option<&ParaStyle>) -> (BorderKey, BorderKey) {
     match border_key(style) {
         None => (None, None),
@@ -302,7 +255,6 @@ pub fn neighbour_borders(style: &ParaStyle, prev: Option<&ParaStyle>, next: Opti
     }
 }
 
-/// PARA-7: how much a paragraph's top border adds to its first line, after a paragraph with border key `prev`.
 pub fn top_border_extra(s: &ParaStyle, prev: Option<&[Option<crate::docx::props::Border>; 5]>) -> f64 {
     let key = border_key(s);
     match &s.border_top {
@@ -311,8 +263,6 @@ pub fn top_border_extra(s: &ParaStyle, prev: Option<&[Option<crate::docx::props:
     }
 }
 
-/// PARA-7: the extra space goes into the first and last line; the borders are drawn with them. `top_pitched`: the
-/// first line's pitch and baseline already hold the top border's extra ([`top_border_extra`]).
 pub fn apply_borders(
     lines: &mut [Line],
     s: &ParaStyle,
@@ -329,20 +279,16 @@ pub fn apply_borders(
     let same_prev = key.is_some() && prev == key.as_deref();
     let same_next = key.is_some() && next == key.as_deref();
     let thick = |b: &crate::docx::props::Border| if b.style == "double" { 3.0 * b.width } else { b.width };
-    // shortcut: the box's horizontal extent (text edge − space − width) is an approximation (PARA-7).
     let lx = s.border_left.as_ref().map_or(0.0, |b| b.space + thick(b));
     let rx = s.border_right.as_ref().map_or(0.0, |b| b.space + thick(b));
-    // From the paragraph's leftmost indent: a hanging first line (a heading's number) is inside the box (PARA-7).
     let left = s.ind_left + s.ind_first.min(0.0);
     let (x0, x1) = (left - lx, width - s.ind_right + rx);
     let color = |b: &crate::docx::props::Border| b.color.unwrap_or(0);
-    // A border across `[a, b]` (horizontal: y; else x) from `from` to `to`: one rect, or a double border's two.
     let edge = |rects: &mut Vec<([f64; 4], u32)>, b: &crate::docx::props::Border, horizontal: bool, a: f64, from: f64, to: f64| {
         let parts: Vec<(f64, f64)> =
             if b.style == "double" { vec![(a, a + b.width), (a + 2.0 * b.width, a + 3.0 * b.width)] } else { vec![(a, a + b.width)] };
         for (p, q) in parts {
             let r = if horizontal { [from, p, to, q] } else { [p, from, q, to] };
-            // PARA-7: a patterned line as its dashes (TABLE-37).
             if super::table::dash_pattern(&b.style).is_empty() {
                 rects.push((r, color(b)));
             } else {
@@ -381,7 +327,6 @@ pub fn apply_borders(
             let sx1 = s.border_right.as_ref().map_or(width - s.ind_right, |b| x1 - thick(b));
             let top = if i == 0 { shade_top } else { 0.0 };
             let bottom = if i + 1 == n { shade_bottom.unwrap_or(h) } else { h };
-            // Under the borders and the text: first.
             l.rects.insert(0, ([sx0, top, sx1, bottom], fill));
         }
     }
@@ -396,22 +341,17 @@ struct Fit {
     leaders: Vec<(usize, Leader)>,
 }
 
-/// Breaks and places a paragraph's pieces.
-/// `continued`: the pieces continue a paragraph from an earlier column (no first-line indent).
 pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, frame: &Frame, fonts: &Fonts, continued: bool) -> Vec<Line> {
     let mut lines = Vec::new();
     let right = frame.width - style.ind_right;
     let justify_smart = matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && !frame.no_wrap;
-    // TABLE-51: a fitted cell's lines don't wrap.
     let wrap_right = if frame.no_wrap { f64::INFINITY } else { right + wp_extension(style, frame) };
     let mut start = 0;
     let n = pieces.len();
-    // Precomputed BREAK-6 line ends, per hard-break segment.
     let mut planned: Vec<usize> = Vec::new();
     if justify_smart {
         planned = plan_justified(pieces, style, frame, continued);
     }
-    // BREAK-6 with tabs: chosen line by line, from where the tabs put the text.
     let with_tabs = justify_smart && pieces.iter().any(|p| p.kind == Kind::Tab);
     let mut first = !continued;
     loop {
@@ -436,8 +376,6 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         }
         start = end;
     }
-    // COL-2, LINE-4, COMPAT-3: after a paragraph-final column break, line break, or page break with
-    // splitPgBreakAndParaMark, the mark goes on a line of its own.
     if let Some(last) = lines.last() {
         let trailing = last.end == n && matches!(last.hard, Some(Kind::ColumnBreak | Kind::LineBreak))
             || last.end == n && matches!(last.hard, Some(Kind::PageBreak)) && frame.split_page_break;
@@ -448,7 +386,6 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         }
     }
     if lines.is_empty() || n == 0 {
-        // An empty paragraph: one line from the mark (LINE-4, STYLE-5).
         lines.clear();
         let mut line = Line::empty(0);
         size(&mut line, sp, pieces, style, mark, fonts, true, frame);
@@ -457,8 +394,6 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
     lines
 }
 
-/// JUST-7: how far past its right edge a compat ≤ 14 `wpJustification` justified line may run: 562/14400 of the
-/// text width (indents out, the first-line indent kept, at most 31680 twips), in whole twips.
 fn wp_extension(style: &ParaStyle, frame: &Frame) -> f64 {
     if !frame.wp_justification || style.jc != Jc::Both {
         return 0.0;
@@ -467,9 +402,6 @@ fn wp_extension(style: &ParaStyle, frame: &Frame) -> f64 {
     (w * 562.0 / 14400.0).round() / 20.0
 }
 
-/// TABLE-51: a fitted cell's line spreads the difference between its text and the fit width (the line's room less 1pt)
-/// evenly over its pieces, so the text ends at the fit width.
-/// shortcut: spread over pieces in equal steps; how the change is shared among the characters isn't known.
 fn fit_text(line: &mut Line, pieces: &[Piece], fit: f64) {
     let n = line.xs.len();
     let content = (0..n)
@@ -485,9 +417,7 @@ fn fit_text(line: &mut Line, pieces: &[Piece], fit: f64) {
     }
 }
 
-/// One band of a paragraph wrapped around floats (FLOAT-7): the free `intervals` (column coordinates), filled one after
-/// another word by word, each a segment sharing the band's height. When the band can't take the next word, the
-/// trial height a compat <= 14 retry steps down by (FLOAT-4).
+// Wrap bands
 #[allow(
     clippy::too_many_arguments,
     reason = "the measured line-breaking helpers take the shaped paragraph, its pieces, style and frame separately, as they were ported"
@@ -514,20 +444,14 @@ pub fn band(
             break;
         }
         let first = if first_line && segs.is_empty() { style.ind_first } else { 0.0 };
-        // FLOAT-7: beside a float the interval's edge stands in for the left indent; the first-line indent still adds.
         let left = if a > EPS { a.max(style.ind_left) + first } else { a.max(style.ind_left + first) };
-        // An interval reaching the column's edge keeps the right indent, a negative one too.
         let right = if b >= frame.width - EPS { right_edge } else { b.min(right_edge) };
         if right - left <= EPS {
             continue;
         }
         gap.get_or_insert(right - left);
-        // FLOAT-7: compat <= 14 lays a piece beside a float out as a line of its own: its tab stops count from the
-        // interval start.
         let piece_frame = Frame { tab_origin: if frame.compat == Compat::Legacy { a } else { 0.0 }, ..*frame };
         let frame = &piece_frame;
-        // BREAK-6 in the interval too (compat-15 justified), unless its segment has tabs; an interval as wide as the
-        // column is a whole line, chosen per line as `break_paragraph` does with tabs.
         let planned = if matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && s < n {
             let seg_end = segment_end(pieces, s);
             if !pieces[s..seg_end].iter().any(|p| p.kind == Kind::Tab) {
@@ -551,15 +475,12 @@ pub fn band(
             Line { end: fit.end.min(n), xs: fit.xs, widths: fit.widths, hard: fit.hard, hyphen: fit.hyphen, leaders: fit.leaders, ..Line::empty(s) };
         align(&mut line, sp, pieces, style, frame, left, right, fit.end >= n);
         s = fit.end;
-        // FLOAT-7: a text-wrapping break ends its interval, not the line: the text goes on in the next interval.
         let hard = line.hard.is_some_and(|k| k != Kind::LineBreak);
         segs.push(line);
         if hard || s >= n {
             break;
         }
     }
-    // FLOAT-4 (compat <= 14): the trial height is what was placed when the fit failed, else the failing item's own
-    // height: the piece the first gap's width ends in (an inline picture's height alone, a font's line height).
     let own = |k: usize| pieces[k].ascent + pieces[k].descent;
     if segs.is_empty() {
         let mut x = 0.0;
@@ -569,8 +490,6 @@ pub fn band(
         });
         return Err(k.or((start..n).find(|&k| pieces[k].kind != Kind::Anchor)).map_or(0.0, own));
     }
-    // FLOAT-4 (compat <= 14): tabs alone before content that fits in no gap don't make the line fit; the line retries
-    // lower with their height.
     if !force
         && frame.compat == Compat::Legacy
         && s < n
@@ -582,7 +501,6 @@ pub fn band(
         let a = placed.clone().map(|k| pieces[k].ascent).fold(0.0, f64::max);
         return Err(a + placed.map(|k| pieces[k].descent).fold(0.0, f64::max));
     }
-    // The band's height covers every segment (LINE-1 over the band's pieces).
     let mut merged = segs[0].clone();
     merged.end = s;
     size(&mut merged, sp, pieces, style, mark, fonts, s >= n, frame);
@@ -596,7 +514,7 @@ pub fn band(
     Ok((segs, s))
 }
 
-/// A `w:ptab`'s stop (TAB-10): left, centre or right of the text area or of the paragraph's indents, whatever stops it passes.
+// Tabs
 fn ptab_stop(t: &crate::docx::PTab, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leader) {
     let (l, r) = if t.margin { (0.0, frame.width) } else { (style.ind_left, frame.width - style.ind_right) };
     let pos = match t.align {
@@ -607,7 +525,6 @@ fn ptab_stop(t: &crate::docx::PTab, style: &ParaStyle, frame: &Frame) -> (f64, T
     (pos, t.align, t.leader)
 }
 
-/// The stop a tab at `pen` goes to (TAB-1 to TAB-3), and its kind.
 fn next_stop(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leader) {
     let o = frame.tab_origin;
     let (stop, kind, leader) = stop_from(pen - o, style, frame);
@@ -621,14 +538,11 @@ fn stop_from(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leade
         None => {
             let inc = frame.default_tab.max(1.0);
             let q = pen / inc;
-            // TAB-2: in compat 15 a pen exactly on a negative multiple stays there (a zero-width tab); compat <= 14
-            // goes on to the next multiple.
             let on_negative = pen < -EPS && (q - q.round()).abs() * inc < EPS;
             let s = if frame.compat == Compat::Generic && on_negative { q.round() * inc } else { (q.floor() + 1.0) * inc };
             (s, TabKind::Left, Leader::None)
         }
     };
-    // TAB-3: a hanging indent's left edge acts as a left stop, and default stops before it don't count.
     if pen < style.ind_left - EPS && (stop > style.ind_left + EPS || custom.is_none()) {
         stop = style.ind_left;
         kind = TabKind::Left;
@@ -640,7 +554,6 @@ fn stop_from(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leade
     (stop, kind, leader)
 }
 
-/// A right/center/decimal tab waiting for its text (TAB-5).
 struct Pending {
     idx: usize,
     stop: f64,
@@ -652,7 +565,6 @@ fn text_of<'a>(sp: &'a ShapedPara, p: &Piece) -> &'a str {
     &sp.text[p.text.0 as usize..p.text.1 as usize]
 }
 
-/// Resolves a pending tab over pieces `p.idx+1..upto`, shifting them; returns the new pen.
 #[allow(
     clippy::too_many_arguments,
     reason = "the measured line-breaking helpers take the shaped paragraph, its pieces, style and frame separately, as they were ported"
@@ -669,7 +581,6 @@ fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], w
             let mut found = false;
             for &k in &seg {
                 let t = text_of(sp, &pieces[k]);
-                // TAB-5: the decimal point only; a comma is text like any other (a thousands separator).
                 if t.contains('.') {
                     found = true;
                     break;
@@ -681,11 +592,10 @@ fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], w
         _ => 0.0,
     };
     let mut tw = (p.stop - p.pen_at_tab) - d;
-    // TAB-6: text that would pass the right limit narrows the tab so it ends there; a decimal tab collapses.
     if p.pen_at_tab + tw + w - trail > right + EPS && p.stop <= right + EPS {
         tw = if p.kind == TabKind::Decimal { 0.0 } else { right - (p.pen_at_tab + w) + trail };
     }
-    let tw = tw.max(0.0); // TAB-8
+    let tw = tw.max(0.0);
     ws[p.idx - start] = tw;
     let mut x = p.pen_at_tab + tw;
     for &k in &seg {
@@ -695,7 +605,7 @@ fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], w
     x
 }
 
-/// Greedy first-fit (BREAK-1 to BREAK-4) from `start`, or up to `limit_end` when the justified planner chose the end.
+// Greedy fit
 #[allow(
     clippy::too_many_arguments,
     reason = "the measured line-breaking helpers take the shaped paragraph, its pieces, style and frame separately, as they were ported"
@@ -714,16 +624,13 @@ fn fit_line(
     let mut xs: Vec<f64> = Vec::new();
     let mut ws: Vec<f64> = Vec::new();
     let mut pen = left;
-    // LIST-1: a right-aligned number ends at the first-line position, a centred one is centred there.
     if start == 0 && style.list_jc != "left" {
         let w: f64 = pieces.iter().take_while(|p| p.kind == Kind::ListNumber).map(|p| p.width).sum();
         pen -= if style.list_jc == "right" { w } else { w / 2.0 };
     }
     let mut pending: Option<Pending> = None;
-    // Break opportunities: (index after the break, soft hyphen).
     let mut breaks: Vec<(usize, bool)> = Vec::new();
     let mut leaders: Vec<(usize, Leader)> = Vec::new();
-    // BREAK-9: the word squeezed in past the right edge (its first piece) and the line's space shrink available.
     let mut squeeze: Option<(usize, f64)> = None;
     let mut past_custom = false;
     let n = pieces.len();
@@ -745,8 +652,6 @@ fn fit_line(
                 if let Some((w, cap)) = squeeze {
                     shrink_spaces(sp, pieces, start, w, cap, right, &mut xs, &mut ws);
                 }
-                // FLOAT-6: when only anchors follow a page break, the break's line holds them (their floats stay on
-                // this page), unless the mark moves on with them (COMPAT-3).
                 let mut end = i + 1;
                 if p.kind == Kind::PageBreak && !frame.split_page_break && end < n && pieces[end..].iter().all(|q| q.kind == Kind::Anchor) {
                     for _ in end..n {
@@ -765,16 +670,11 @@ fn fit_line(
                     Some(Object::PTab(t)) => ptab_stop(t, style, frame),
                     _ => next_stop(pen, style, frame),
                 };
-                // TAB-7: a default stop past the right edge starts the next line with the tab, unless (compat <= 14) a
-                // custom stop past the edge came first on this line.
                 let stop_custom = style.tabs.iter().any(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
                 let custom = p.object.is_some() || stop_custom;
                 if !custom && stop > right + EPS && !past_custom && i > start && limit_end.is_none() {
                     return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
                 }
-                // TAB-7 (compat 15): a right, centre or decimal stop past the right edge moves to it when its text runs
-                // to the paragraph's end (centred text then ends there too). Any other custom stop past the edge ends
-                // the line before the tab; a tab first on its line stays, and its text starts the next line.
                 let edge = frame.width - style.ind_right;
                 if frame.compat == Compat::Generic && p.object.is_none() && stop_custom && stop > edge {
                     if kind != TabKind::Left && !pieces[i + 1..].iter().any(|q| q.kind == Kind::Tab) {
@@ -785,7 +685,6 @@ fn fit_line(
                     } else if i > start && limit_end.is_none() {
                         return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
                     } else {
-                        // The tab first on its line fills it to the edge.
                         stop = edge;
                         kind = TabKind::Left;
                     }
@@ -808,9 +707,6 @@ fn fit_line(
                 continue;
             }
             Kind::Space | Kind::Anchor => {
-                // BREAK-4 (compat <= 14): after a character forced onto a line it overflows (wider than the line), a
-                // space doesn't hang (BREAK-2): it starts the next line, where spaces hang again. Compat 15 hangs it.
-                // The character ends past the line, not just the spaces hanging after it.
                 let ink = (start..i).rev().find(|&j| pieces[j].kind != Kind::Space);
                 if p.kind == Kind::Space
                     && frame.compat == Compat::Legacy
@@ -825,8 +721,6 @@ fn fit_line(
                 xs.push(pen);
                 ws.push(p.width);
                 pen += p.width;
-                // BREAK-1: float anchors alone are no content: a line doesn't end after them, so an object too wide for
-                // the line stays on it.
                 if p.break_after && !pieces[start..=i].iter().all(|q| q.kind == Kind::Anchor) {
                     breaks.push((i + 1, false));
                 }
@@ -835,7 +729,6 @@ fn fit_line(
             }
             _ => {}
         }
-        // A character or object: the fit test (BREAK-1), with a pending right/center tab pulling text left.
         let right_edge = match &pending {
             Some(pt) if pt.kind == TabKind::Right => {
                 let w: f64 = ws[pt.idx - start + 1..].iter().sum::<f64>() + p.width;
@@ -848,15 +741,11 @@ fn fit_line(
             _ => pen + p.width,
         };
         let forced = limit_end.is_some();
-        // TAB-7 (compat <= 14): a right stop past the right limit is used as is: the text runs to the stop, past the
-        // margin. After any other custom stop past the limit the line doesn't wrap: text is centred on a centre stop,
-        // and later default stops are used where they are.
         let limit = match &pending {
             Some(pt) if pt.kind == TabKind::Right && pt.stop > right => pt.stop,
             _ if past_custom => f64::INFINITY,
             _ => right,
         };
-        // BREAK-9: the word crossing the right edge may squeeze in (`shrink` is 0 where the rule doesn't apply).
         let over = right_edge > limit + EPS && !forced && p.kind != Kind::ListNumber;
         let word = breaks.last().map_or(start, |b| b.0);
         let room: f64 = match squeeze {
@@ -870,7 +759,6 @@ fn fit_line(
         if over && right_edge <= limit + room + EPS {
             squeeze = Some((word, room));
         } else if over {
-            // Back up to the last break opportunity whose soft hyphen (if any) fits with its hyphen.
             while let Some(&(at, soft)) = breaks.last() {
                 if at <= start {
                     breaks.pop();
@@ -897,12 +785,9 @@ fn fit_line(
                 }
                 return Fit { end: at, xs, widths: ws, hard: None, hyphen: soft, leaders };
             }
-            // FLOAT-7: in a wrap interval a word that doesn't fit leaves the interval empty.
             if strict {
                 return Fit { end: start, xs: Vec::new(), widths: Vec::new(), hard: None, hyphen: false, leaders: Vec::new() };
             }
-            // BREAK-4: no break fits; split at the last character that fits (at least one; a list number or float
-            // anchors before it are none).
             if i > start && pieces[start..i].iter().any(|q| !matches!(q.kind, Kind::ListNumber | Kind::Anchor)) {
                 if let Some(pt) = pending.take() {
                     resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i, right);
@@ -928,13 +813,11 @@ fn fit_line(
     Fit { end: i, xs, widths: ws, hard: None, hyphen, leaders }
 }
 
-/// BREAK-9: the first piece whose space may give way before the squeezed-in word `word`: the line's start, or just
-/// after its last tab (spaces before a tab only move the tab's text, which the tab takes back).
+// Space squeeze
 fn squeeze_from(pieces: &[Piece], start: usize, word: usize) -> usize {
     pieces[start..word].iter().rposition(|q| q.kind == Kind::Tab).map_or(start, |t| start + t + 1)
 }
 
-/// BREAK-9: what piece `k` may give up when its line squeezes.
 fn shrink(sp: &ShapedPara, pieces: &[Piece], k: usize) -> f64 {
     let p = &pieces[k];
     let st = &sp.styles[p.style as usize];
@@ -945,8 +828,6 @@ fn shrink(sp: &ShapedPara, pieces: &[Piece], k: usize) -> f64 {
     (p.width - st.squeeze_avg * st.size * st.run.scale / 100.0 / 2.0).max(0.0)
 }
 
-/// BREAK-9: shrinks the spaces before the squeezed-in word `word`, in proportion to what each may give up, until the
-/// line's last non-space ends at `limit`.
 #[allow(clippy::too_many_arguments, reason = "the line's pieces, the squeezed word and its room, and the positions it rewrites")]
 fn shrink_spaces(sp: &ShapedPara, pieces: &[Piece], start: usize, word: usize, cap: f64, limit: f64, xs: &mut [f64], ws: &mut [f64]) {
     let Some(last) = (0..xs.len()).rev().find(|&k| pieces[start + k].kind != Kind::Space) else { return };
@@ -971,8 +852,7 @@ fn hyphen_width(sp: &ShapedPara, p: &Piece) -> f64 {
     }
 }
 
-/// BREAK-6: line ends for a compat-15 justified paragraph, as piece indices, planned per hard-break segment over
-/// space-separated words; empty (greedy for the whole paragraph) when the paragraph has a tab.
+// Justified line ends
 fn plan_justified(pieces: &[Piece], style: &ParaStyle, frame: &Frame, continued: bool) -> Vec<usize> {
     let mut ends = Vec::new();
     let right = frame.width - style.ind_right;
@@ -1008,12 +888,8 @@ fn plan_justified(pieces: &[Piece], style: &ParaStyle, frame: &Frame, continued:
     ends
 }
 
-/// BREAK-6 on a line of a justified paragraph with tabs: the end that beats the greedy one, if any. Only the spaces
-/// after the last tab before an end shrink or stretch for it; an end's natural width is the line laid out to it, so a
-/// right, centre or decimal tab's text that runs past its stop counts where it ends. `None` keeps the greedy end.
 #[allow(clippy::too_many_arguments, reason = "the same inputs as fit_line, which it runs per end")]
 fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64, right: f64, style: &ParaStyle, frame: &Frame) -> Option<usize> {
-    // shortcut: a paragraph with a positional tab keeps greedy breaking.
     if pieces.iter().any(|p| p.kind == Kind::Tab && p.object.is_some()) {
         return None;
     }
@@ -1023,7 +899,6 @@ fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64,
         return None;
     }
     let lu = |x: f64| x * LU_PER_PT;
-    // An end: the index of the word it ends before, with its natural line end and capacities (in layout units).
     let end_at = |e: usize| -> (f64, i64, i64) {
         let all = fit_line(sp, pieces, start, left, right, style, frame, Some(e), false);
         let ink = (start..e).rev().find(|&k| !matches!(pieces[k].kind, Kind::Space | Kind::Anchor));
@@ -1041,9 +916,7 @@ fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64,
         (lu(x) - lu(right), shrink, stretch)
     };
     let is_end = |e: usize| (pieces[e - 1].break_after || pieces[e - 1].kind == Kind::Tab) && pieces[e].kind != Kind::Space;
-    // The segment's own end is a candidate too: its last line may fit only with shrinking.
     let is_end = |e: usize| e == seg_end || is_end(e);
-    // A longer end takes on no tab: the greedy line may have ended before one past the edge (TAB-7).
     let longest = (greedy.end + 1..=seg_end)
         .filter(|&e| is_end(e))
         .take_while(|&e| !pieces[greedy.end..e].iter().any(|p| p.kind == Kind::Tab))
@@ -1068,7 +941,6 @@ fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64,
     (best != greedy.end).then_some(best)
 }
 
-/// The end of the hard-break segment (its break included) that `from` is in.
 fn segment_end(pieces: &[Piece], from: usize) -> usize {
     pieces[from..]
         .iter()
@@ -1077,20 +949,13 @@ fn segment_end(pieces: &[Piece], from: usize) -> usize {
         .unwrap_or(pieces.len())
 }
 
-/// Where a justified line ends (BREAK-6).
 enum LineChoice {
-    /// No words left in the segment.
     Empty,
-    /// The rest fits without shrinking: the segment's last line.
     Last,
-    /// Not even one word fits: the greedy breaker splits it (BREAK-4).
     Abort,
-    /// The line ends at this piece (after the spaces that follow its last word).
     End(usize),
 }
 
-/// The spaces before a word on a justified line (BREAK-6): their width in points, and the shrink and stretch they
-/// give in layout units.
 #[derive(Clone, Copy, Default)]
 struct Gap {
     width: f64,
@@ -1098,11 +963,8 @@ struct Gap {
     stretch: i64,
 }
 
-/// Comparisons in layout units allow for the rounding of summed point widths.
 const LU_EPS: f64 = 1e-6;
 
-/// BREAK-6: the cost of a justified line end that overflows by `over` layout units (short of the edge when negative),
-/// given its spaces' shrink and stretch; `None` when it is infeasible.
 fn end_demerits(over: f64, shrink: i64, stretch: i64) -> Option<i64> {
     let (used, cap) = if over > LU_EPS { (over, shrink) } else { (-over.min(0.0), stretch) };
     if cap <= 0 {
@@ -1112,16 +974,11 @@ fn end_demerits(over: f64, shrink: i64, stretch: i64) -> Option<i64> {
     (l <= 4700).then(|| (1000 + l * l * l / 100_000).pow(2))
 }
 
-/// BREAK-6: where a justified line starting at `from` ends in `column` points: a per-line choice, so it serves a full
-/// line and an interval beside a float alike.
 fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) -> LineChoice {
-    // Words (start, end, width) and the gap before each word: its width, and how far its spaces may shrink and stretch
-    // (BREAK-6: a quarter and a half of each space's width in layout units, rounded half up).
     let mut words: Vec<(usize, usize, f64)> = Vec::new();
     let mut gaps: Vec<Gap> = Vec::new();
     let mut k = from;
     let mut gap = Gap::default();
-    // BREAK-3: spaces next to a no-break space join the words around them.
     let mut joined = false;
     while k < seg_end {
         let p = &pieces[k];
@@ -1143,15 +1000,11 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
         while k < seg_end && !matches!(pieces[k].kind, Kind::Space | Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak) {
             w += pieces[k].width;
             k += 1;
-            // A break opportunity inside it (after a hyphen) ends a word too, with no gap to the next (BREAK-3).
             if pieces[k - 1].break_after && !pieces[k - 1].soft_hyphen {
                 break;
             }
         }
-        // Leading spaces take their width but never shrink or stretch (BREAK-6).
         if joined && let (Some(last), Some(g)) = (words.last_mut(), gaps.last_mut()) {
-            // ponytail: the joined gap's shrink and stretch count with the gap before the joined word (lost when
-            // that word starts the line).
             last.1 = k;
             last.2 += gap.width + w;
             g.shrink += gap.shrink;
@@ -1166,25 +1019,19 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
     if words.is_empty() {
         return LineChoice::Empty;
     }
-    // In layout units: the natural width of words 0..e and the shrink and stretch their interior spaces give.
     let column = column * LU_PER_PT;
     let natural = |e: usize| -> f64 { (0..e).map(|j| (words[j].2 + gaps[j].width) * LU_PER_PT).sum() };
     let shrink = |e: usize| -> i64 { gaps[1..e].iter().map(|g| g.shrink).sum() };
     let stretch = |e: usize| -> i64 { gaps[1..e].iter().map(|g| g.stretch).sum() };
     let fits = |e: usize| natural(e) <= column + LU_EPS;
-    // BREAK-6: the rest of the segment fits without shrinking: its last line.
     if fits(words.len()) {
         return LineChoice::Last;
     }
-    // The longest end that fits when the spaces shrink (the crossing word stays while its overflow is at most the
-    // shrink), and the longest that fits as is.
     let longest = (1..=words.len()).take_while(|&e| natural(e) - column <= shrink(e) as f64 + LU_EPS).last().unwrap_or(0);
     let greedy = (1..=words.len()).take_while(|&e| fits(e)).last().unwrap_or(0);
     if longest == 0 {
         return LineChoice::Abort;
     }
-    // BREAK-6: cost every end from the longest back to the greedy one; the longest is kept unless a later end costs
-    // strictly less. An end without capacity, or using more than 4.7 times it, is infeasible.
     let demerits = |e: usize| end_demerits(natural(e) - column, shrink(e), stretch(e));
     let mut best = longest;
     let mut best_cost = demerits(longest);
@@ -1195,7 +1042,6 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
             best_cost = c;
         }
     }
-    // The line ends after word best-1, including the spaces that follow it (they hang, BREAK-2).
     let mut end = words[best - 1].1;
     while end < seg_end && pieces[end].kind == Kind::Space {
         end += 1;
@@ -1203,7 +1049,7 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
     LineChoice::End(end)
 }
 
-/// Justification and alignment (JUST-1 to JUST-6).
+// Alignment
 #[allow(
     clippy::too_many_arguments,
     reason = "the measured line-breaking helpers take the shaped paragraph, its pieces, style and frame separately, as they were ported"
@@ -1214,7 +1060,6 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
         return;
     }
     let idx = |k: usize| line.start + k;
-    // Trailing spaces (and the break) hang (BREAK-2).
     let mut content_end = n;
     while content_end > 0
         && matches!(pieces[idx(content_end - 1)].kind, Kind::Space | Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak | Kind::Anchor)
@@ -1224,8 +1069,6 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
     let line_end_x = if content_end == 0 { left } else { line.xs[content_end - 1] + line.widths[content_end - 1] }
         + if line.hyphen { hyphen_width(sp, &pieces[idx(n - 1)]) } else { 0.0 };
     let ends_with_line_break = line.end > 0 && pieces.get(line.end - 1).is_some_and(|p| p.kind == Kind::LineBreak);
-    // JUST-4: a right-to-left paragraph (w:bidi) swaps left and right alignment; the lines of its justified paragraph
-    // that don't stretch align right.
     let jc = match style.jc {
         Jc::Left if style.bidi => Jc::Right,
         Jc::Right if style.bidi => Jc::Left,
@@ -1243,7 +1086,6 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
         Jc::Both => {
             let justify = !is_last && (line.hard.is_none() || line.hard == Some(Kind::LineBreak));
             let justify = justify && !(ends_with_line_break && (frame.compat == Compat::Legacy || !frame.expand_shift_return));
-            // BREAK-6 may leave the last line compressed.
             let overflow = line_end_x - right;
             if !(justify || (frame.compat == Compat::Generic && overflow > EPS)) {
                 if style.bidi {
@@ -1251,7 +1093,6 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 }
                 return;
             }
-            // JUST-6: after the last tab, skipping leading spaces.
             let last_tab = (0..content_end).rev().find(|&k| pieces[idx(k)].kind == Kind::Tab).map(|k| k + 1).unwrap_or(0);
             let mut first = last_tab;
             while first < content_end && pieces[idx(first)].kind == Kind::Space {
@@ -1265,20 +1106,12 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 return;
             }
             let extra = right - line_end_x;
-            if extra > 0.0 && justify {
-                // JUST-1: shared equally among the spaces.
-                let q = extra / spaces.len() as f64;
-                for &k in &spaces {
-                    line.widths[k] += q;
-                }
-            } else if extra < 0.0 && justify && frame.wp_justification {
-                // JUST-7: the line squeezes back into the column, its spaces sharing the overflow equally.
+            if justify && (extra > 0.0 || (extra < 0.0 && frame.wp_justification)) {
                 let q = extra / spaces.len() as f64;
                 for &k in &spaces {
                     line.widths[k] += q;
                 }
             } else if extra < 0.0 && frame.compat == Compat::Generic {
-                // JUST-2: each space shrinks by at most a quarter; the unused capacity is shared equally.
                 let caps: Vec<f64> = spaces.iter().map(|&k| line.widths[k] / 4.0).collect();
                 let c: f64 = caps.iter().sum();
                 let used = (-extra).min(c);
@@ -1301,7 +1134,6 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             }
         }
         Jc::Center | Jc::Right => {
-            // JUST-4.
             let free = right - line_end_x;
             if free > 0.0 {
                 let off = if jc == Jc::Center { free / 2.0 } else { free };
@@ -1311,7 +1143,6 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             }
         }
         Jc::Distribute => {
-            // JUST-5: shared per character, excluding the last.
             let chars: Vec<usize> = (0..content_end).filter(|&k| pieces[idx(k)].kind != Kind::Tab).collect();
             if chars.len() > 1 {
                 let extra = right - line_end_x;
@@ -1332,10 +1163,7 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
     }
 }
 
-/// LINE-13: the height a line multiple scales on a line with a picture, besides its text runs' (`run_h`). Compat 15:
-/// each picture counts its own run's font height. Compat <= 14, only when no text run gives one: each picture counts
-/// the font height of the nearest text or space before it on the line; with none, the line's last run's font (the
-/// paragraph mark's on a paragraph's last line).
+// Line height
 fn picture_line_height(sp: &ShapedPara, line: &[Piece], mark: &Run, fonts: &Fonts, last: bool, compat: Compat, run_h: f64) -> f64 {
     let height = |run: &Run| {
         fonts.face(&run.ascii, run.bold, run.italic).map_or(0.0, |f| {
@@ -1363,24 +1191,17 @@ fn picture_line_height(sp: &ShapedPara, line: &[Piece], mark: &Run, fonts: &Font
     }
 }
 
-/// LINE-7: `h` points times the line multiple `m` (`w:line` / 240), rounded half up to a layout unit in integers:
-/// `(h_lu × line + 120) div 240`.
 fn times_line(h: f64, m: f64) -> f64 {
     let (h, line) = (Lu::round_half_up(h).0 as i64, (m * 240.0).round() as i64);
     Lu(((h * line + 120).div_euclid(240)) as i32).to_pt()
 }
 
-/// Vertical size of a line: LINE-1 to LINE-5, LIST-7, FLOAT-5, then the line spacing rule (LINE-6 to LINE-13).
 fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, fonts: &Fonts, last: bool, frame: &Frame) {
     let compat = frame.compat;
     let (mut asc, mut desc) = (0.0f64, 0.0f64);
-    // STYLE-4: a compat ≤ 14 cell mark laid out at its paragraph's size, not its own.
     let mark_size = style.mark_size.unwrap_or(mark.size);
     let mut object = false;
-    // The same without raised or lowered text's shift (w:position): what a line multiple scales, so the line grows by
-    // the shift once (LINE-13).
     let (mut un_asc, mut un_desc, mut un_text_asc, mut un_text_desc) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
-    // LINE-13: the tallest text run's own height (ascent + descent), what a line multiple scales.
     let mut run_h = 0.0f64;
     let (mut em_up, mut em_down) = (0.0f64, 0.0f64);
     let mut num_asc = 0.0f64;
@@ -1395,10 +1216,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 asc = asc.max(p.ascent);
                 desc = desc.max(p.descent);
                 let st = &sp.styles[p.style as usize];
-                let r = st.run.position; // w:position only: a superscript's raise is scaled
+                let r = st.run.position;
                 let (a0, d0) = ((p.ascent - r).max(0.0), (p.descent + r).max(0.0));
-                // LINE-15: an emphasis mark sits over the line's tallest text, adding its height to the line (in
-                // proportion to the marked text's size; an under-dot below), unscaled by a line multiple.
                 if p.kind == Kind::Text {
                     match st.run.em.as_deref() {
                         Some("underDot") => em_down = em_down.max(super::text::EM_MARK * st.size),
@@ -1421,21 +1240,16 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 num_asc = num_asc.max(p.ascent);
             }
             Kind::LineBreak => brk = Some((p.ascent, p.descent)),
-            // LINE-5: spaces and tabs don't raise a line.
             Kind::Space | Kind::Tab => {}
             _ => {}
         }
     }
-    // LINE-4: a line holding only a line break (or spaces before it) takes the break's font.
     if !has_content && let Some((a, d)) = brk {
         asc = a;
         desc = d;
         un_asc = a;
         un_desc = d;
-    }
-    // LINE-4, LIST-7, STYLE-5: an empty line (or only spaces), and a paragraph's last line holding only its number, take
-    // the paragraph mark's font; a line with text never does (LINE-2).
-    else if (!has_content || (last && !has_text))
+    } else if (!has_content || (last && !has_text))
         && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
     {
         let (a, d, e) = sp.metrics(&f, mark, mark_size);
@@ -1444,8 +1258,6 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         un_asc = un_asc.max(a + e);
         un_desc = un_desc.max(d);
     }
-    // LINE-4: a paragraph's last line holding pictures but no text is at least the mark's single height, all of it above
-    // the baseline (the pictures' bottom stays on the line's bottom).
     if last
         && object
         && un_text_asc + un_text_desc + num_asc == 0.0
@@ -1454,24 +1266,19 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         let (a, d, e) = sp.metrics(&f, mark, mark_size);
         asc = asc.max(a + e + d);
     }
-    let asc = asc.max(num_asc); // LIST-7: the number's ascent, not its descent
-    // LIST-7: a line multiple scales the text's height, not a taller number's; a line holding only the number scales
-    // the number's ascent (or the mark's, when taller) with the mark's descent.
+    let asc = asc.max(num_asc);
     let un_asc = if !has_text { un_asc.max(num_asc) } else { un_asc };
     let (asc, desc) = (asc + em_up, desc + em_down);
     let h = asc + desc;
     line.ascent = asc;
     line.descent = desc;
-    // LINE-13: on a line holding a picture the multiple scales the text's height only: the mark's when the line has no
-    // text, and in compat 15 the mark's too when it's taller (not on text-only lines, where H = h).
     let mut text_h = if has_text && run_h > 0.0 { run_h } else { un_asc + un_desc };
     if object {
         text_h = run_h.max(picture_line_height(sp, &pieces[line.start..line.end.min(pieces.len())], mark, fonts, last, compat, run_h));
     }
+    // Line spacing
     match style.line_rule {
         LineRule::Auto => {
-            // Height h + (m − 1)·H; below single the cut comes off the top (a picture rises above the line, LINE-13)
-            // and m·descent stays under the baseline.
             let m = style.line;
             line.pitch = h + times_line(text_h, m) - text_h;
             if m >= 1.0 {
@@ -1488,8 +1295,6 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         }
         LineRule::Exact => {
             line.pitch = style.line;
-            // LINE-10, LINE-11.
-            // The baseline is X − trunc(X / 5) layout units below the top.
             let x = Lu::round_half_up(style.line).0;
             line.baseline = Lu(x - x / 5).to_pt()
                 + match style.text_alignment.as_str() {
@@ -1500,8 +1305,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 };
         }
     }
-    // LINE-16: a line on the document grid takes max(ceil(h / P) P, trunc(P m / 240)); the extra's floor half goes
-    // below the text (and needn't fit at a page bottom, PAGE-2), the rest above, with an at-least value's excess.
+    // Document grid
     if let Some(p) = frame.line_grid
         && style.snap_to_grid
         && style.line_rule != LineRule::Exact
@@ -1521,9 +1325,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     }
 }
 
-/// A run's text colour: its revision's colour in All markup (REV-3); else automatic text is white on a dark fill behind
-/// it (FONT-15): the run's shading, else `behind` (the paragraph's shading, or the story's backdrop), a highlight not
-/// counting; else black (`None`).
+// Text colour
 fn ink(r: &RunStyle, review: &ReviewView, behind: Option<u32>) -> Option<u32> {
     if let Some(c) = revision_colour(r, review) {
         return Some(c);
@@ -1531,20 +1333,15 @@ fn ink(r: &RunStyle, review: &ReviewView, behind: Option<u32>) -> Option<u32> {
     r.color.or_else(|| r.shading.or(behind).filter(|c| super::env::is_dark(*c)).map(|_| 0xFFFFFF))
 }
 
-/// The fill behind a line's text besides its runs' own (FONT-15): the paragraph's shading, else the story's dark fill.
 fn behind(o: &LineOrigin, src: &Paragraph) -> Option<u32> {
     src.para_style_in(o.review.view).shading.or(o.backdrop)
 }
 
-/// REV-3: in All markup, an inserted, deleted or moved run draws in its author's colour, a move in the move colour.
-/// A deleted insertion takes its deletion's.
 fn revision_colour(r: &RunStyle, review: &ReviewView) -> Option<u32> {
     let m = r.rev.del.as_ref().or(r.rev.ins.as_ref()).filter(|_| review.view == MarkupView::All)?;
     Some(if matches!(m.kind, MarkKind::MoveFrom | MarkKind::MoveTo) { AuthorPalette::MOVE } else { review.palette.color(m.author) })
 }
 
-/// REV-4: whether a line shows a revision: a property change of its paragraph (a list numbering change alone isn't one),
-/// revised text on it (or hidden by the view where it sits), or, on the last line, a revised paragraph mark.
 fn line_changed(o: &LineOrigin, line: &Line, src: &Paragraph) -> bool {
     let view = o.review.view;
     let last = line.end >= o.pieces().len();
@@ -1562,13 +1359,10 @@ fn line_changed(o: &LineOrigin, line: &Line, src: &Paragraph) -> bool {
     src.inlines.iter().any(|i| {
         let (a, n) = (at, i.units() as u32);
         at += n;
-        // Hidden content counts on the line it would sit at the end of.
         i.run().is_some_and(|r| !r.rev.is_empty() && n > 0 && if view.hides(&r.rev) { a <= hi && a + n >= lo } else { a < hi && a + n > lo })
     })
 }
 
-/// What drawing a paragraph's line needs: its shaped pieces from the lines' start piece, the width and origin the lines
-/// were laid out for, the compat mode (NOTE-3's separator length) and the paragraph's identity.
 pub struct LineOrigin<'a> {
     pub shaped: &'a ShapedPara,
     pub from: usize,
@@ -1577,11 +1371,8 @@ pub struct LineOrigin<'a> {
     pub compat: Compat,
     pub para: ParaId,
     pub review: &'a ReviewView,
-    /// `w:ulTrailSpace` (FONT-15).
     pub ul_trail_space: bool,
-    /// The colours inline shapes resolve against (DRAW-7).
     pub palette: crate::drawing::paint::Palette<'a>,
-    /// The dark fill behind the story's text (FONT-15).
     pub backdrop: Option<u32>,
 }
 
@@ -1591,7 +1382,7 @@ impl LineOrigin<'_> {
     }
 }
 
-/// Draws a line with its top at 0 and the column's left edge at the origin's x.
+// Drawing
 pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) -> LineFragment {
     {
         let sp = o.shaped;
@@ -1600,7 +1391,6 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         let (x0, top) = (o.x0, 0.0);
         let base = top + line.baseline;
         let mut out: Vec<Item> = Vec::with_capacity(line.rects.len() + 2);
-        // Runs are sized for the rest of the line: one allocation each instead of growing.
         let (mut glyphs_left, mut chars_left) = (line.start..line.end).fold((0, 0), |(g, c), ix| {
             let (a, b) = pieces[ix].glyphs;
             (g + (b - a) as usize, c + text_of(sp, &pieces[ix]).len())
@@ -1621,7 +1411,6 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         let mut atoms: Vec<Atom> = Vec::new();
         let mut texts: Vec<([f64; 4], crate::docx::Picture)> = Vec::new();
         let mut expansions: Vec<([f64; 4], Rc<super::expansion::Expansion>)> = Vec::new();
-        // REV-6: a joined paragraph's pieces keep their own paragraphs and units (generated text, its first's).
         let join = sp.join.as_deref();
         let source = |p: &Piece| match (join, p.src) {
             (Some(j), Some(u)) => {
@@ -1631,8 +1420,6 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             (Some(j), None) => (j.first(), None),
             (None, u) => (para, u),
         };
-        // A paragraph that draws no characters on the line still gets a caret position there: a run without glyphs, in
-        // the paragraph mark's font, drawn before the piece it is at.
         let mut places = caret_places(o, line).into_iter().peekable();
         let mark = src.mark_in(o.review.view);
         let face = places.peek().and_then(|_| fonts.face(&mark.ascii, mark.bold, mark.italic));
@@ -1652,12 +1439,10 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
             let (q, first) = source(p);
             if matches!(p.kind, Kind::Separator | Kind::ContSeparator) {
-                // NOTE-3: the separator rule.
                 let len = if p.kind == Kind::ContSeparator && o.compat == Compat::Legacy { o.width } else { 144.0 };
                 out.push(Item::rect([x, base - 2.7, x + len, base - 2.1], 0));
                 continue;
             }
-            // A unit drawn without characters ends where the next piece starts.
             let next_x = line.xs.get(k + 1).map(|&nx| x0 + nx);
             if p.kind == Kind::Tab {
                 flush(&mut run, &mut out);
@@ -1669,7 +1454,6 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
             if let (Kind::Object, Some(Object::Expansion(e))) = (p.kind, p.object.map(|o| &sp.objects[o as usize])) {
                 flush(&mut run, &mut out);
-                // Sits on the baseline, as a picture does.
                 let rect = [x, base - e.size.1, x + e.size.0, base];
                 expansions.push((rect, e.clone()));
                 if let Some(unit) = first {
@@ -1678,14 +1462,11 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 continue;
             }
             if p.kind == Kind::Object {
-                // FLOAT-5: an inline picture's bottom sits on the baseline.
                 if let Some(Object::Picture(pic)) = p.object.map(|o| &sp.objects[o as usize]) {
                     flush(&mut run, &mut out);
-                    // FLOAT-5: inside its effect extents, raised or lowered with its run.
                     let bottom = base - sp.styles[p.style as usize].run.position - pic.effect[3];
                     let x0 = x + pic.effect[0];
                     let rect = [x0, bottom - pic.h, x0 + pic.w, bottom];
-                    // DRAW-1: an inline object with a shape tree draws its shapes; a picture made without one, its image.
                     match pic.shape.as_deref() {
                         Some(shape) => out.extend(super::story::shape_items(shape, rect, 0, false, o.palette).into_iter().map(Item::Shape)),
                         None => out.push(Item::Image { rect, key: ImageKey { index: pic.image, generation: 0 } }),
@@ -1699,7 +1480,6 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 }
                 continue;
             }
-            // A break draws nothing; its unit still gets a caret stop where it sits (the end of its line).
             if matches!(p.kind, Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak) {
                 if let Some(unit) = first {
                     atoms.push(Atom { x0: x, x1: x, para: q, unit, brk: true });
@@ -1754,14 +1534,12 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         }
         flush(&mut run, &mut out);
         draw_decorations(o, line, base, rects_end, behind_text, &mut out);
-        // The places left are at the line's end: its aligned start when it has no pieces.
         let end = match (line.xs.last(), line.widths.last()) {
             (Some(x), Some(w)) => x0 + x + w,
             _ => {
                 let s = src.para_style_in(o.review.view);
                 let left = s.ind_left + if o.from == 0 { s.ind_first } else { 0.0 };
                 let right = o.width - s.ind_right;
-                // JUST-4: a right-to-left paragraph's left and right swap.
                 x0 + match (s.jc, s.bidi) {
                     (Jc::Center, _) => (left + right) / 2.0,
                     (Jc::Right, false) | (Jc::Left | Jc::Both, true) => right,
@@ -1787,10 +1565,6 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
     }
 }
 
-/// The paragraphs that draw no characters on a line but have their caret position on it, in order, each with the
-/// line's piece it is before (`None`: the line's end). A line without pieces (an empty paragraph) has its paragraph's.
-/// REV-6: a joined paragraph's paragraph that draws nothing at all (empty, or hidden by the view) has its place before
-/// the next paragraph's first piece, or at the end of the last line.
 fn caret_places(o: &LineOrigin, line: &Line) -> Vec<(Option<usize>, ParaId)> {
     let mut out = Vec::new();
     if let Some(j) = o.shaped.join.as_deref() {
@@ -1813,7 +1587,6 @@ fn caret_places(o: &LineOrigin, line: &Line) -> Vec<(Option<usize>, ParaId)> {
     out
 }
 
-/// TAB-9: leader glyphs on a grid from the drawing origin's left edge, whole glyphs only.
 fn draw_leader(o: &LineOrigin, line: &Line, k: usize, x0: f64, base: f64, out: &mut Vec<Item>) {
     {
         let sp = o.shaped;
@@ -1822,7 +1595,6 @@ fn draw_leader(o: &LineOrigin, line: &Line, k: usize, x0: f64, base: f64, out: &
         let Some(leader) = line.leaders.iter().find(|(j, _)| *j == k).and_then(|(_, l)| l.glyph()) else { return };
         let Some(face) = &st.face else { return };
         let Some(g) = face.glyph(leader) else { return };
-        // TAB-9: the grid pitch is the advance rounded to 1/600 in.
         let w = (face.advance(g) * face.scale(st.size) * 600.0 / 72.0).round() * 72.0 / 600.0;
         if w <= 0.0 {
             return;
@@ -1851,7 +1623,6 @@ fn draw_leader(o: &LineOrigin, line: &Line, k: usize, x0: f64, base: f64, out: &
     }
 }
 
-/// A glyph run under construction.
 struct GlyphRunBuilder {
     face: Rc<crate::font::Face>,
     size: f64,
@@ -1878,14 +1649,11 @@ impl GlyphRunBuilder {
     }
 }
 
-/// A line's highlight and run shading behind its text (inserted into `out` at `bg_at`), underlines and strikethrough
-/// over it, as rectangles (FONT-15), with REV-3's revision marks in All markup.
 fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind: Option<u32>, out: &mut Vec<Item>) {
     let (sp, x0, review) = (o.shaped, o.x0, o.review);
     let pieces = &o.pieces()[line.start..line.end];
     let content = pieces.iter().rposition(|p| p.kind != Kind::Space).map_or(0, |k| k + 1);
     let (mut bg, mut fg) = (Vec::new(), Vec::new());
-    // Pieces of one run draw one decoration: adjacent rectangles join.
     let push = |v: &mut Vec<Item>, r: [f64; 4], c: u32| {
         let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc } if *lc == c && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
         match v.iter_mut().rev().take(4).find(joins) {
@@ -1895,7 +1663,6 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
     };
     for (k, p) in pieces.iter().enumerate() {
         let st = &sp.styles[p.style as usize];
-        // FONT-15: a tab is decorated across its width, like text.
         let Some(face) = st.face.as_ref().filter(|_| matches!(p.kind, Kind::Text | Kind::Space | Kind::Tab | Kind::ListNumber)) else { continue };
         let (r, label) = (&st.run, p.kind == Kind::ListNumber);
         let (x, w) = (x0 + line.xs[k], line.widths[k]);
@@ -1908,15 +1675,12 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
         if let Some(fill) = fill {
             push(&mut bg, [x, y - face.ascent * em, x + w, y + face.descent * em], fill);
         }
-        // FONT-15: the spaces that end a line take no underline (unless `w:ulTrailSpace`) and no strikethrough.
         let trailing = k >= content;
         if trailing && !o.ul_trail_space {
             continue;
         }
         let ink = ink(r, review, behind).unwrap_or(0);
         let line_at = |v: &mut Vec<Item>, y: f64, t: f64| push(v, [x, y - t / 2.0, x + w, y + t / 2.0], ink);
-        // REV-3: in All markup an insertion is underlined (a move's destination twice) and a deletion struck through (a
-        // move's source twice).
         let marked = review.view == MarkupView::All && !label;
         let kind = |m: &Option<Rc<crate::docx::review::RevisionMark>>| m.as_ref().filter(|_| marked).map(|m| m.kind);
         let (ins, del) = (kind(&r.rev.ins), kind(&r.rev.del));
@@ -1931,7 +1695,6 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
                     line_at(&mut fg, uy + 2.0 * t, t);
                 }
                 "thick" => line_at(&mut fg, uy + t / 2.0, 2.0 * t),
-                // shortcut: dotted, dashed and wavy underlines draw solid; dash them when someone needs the look.
                 _ => line_at(&mut fg, uy, t),
             }
         }
@@ -1951,8 +1714,6 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
     out.extend(fg);
 }
 
-/// Draws `text` in `run` ending at `x_end` on baseline `y` (LNUM-1 line numbers): one run per piece, all of one label;
-/// nothing if it would start left of 0.
 pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, fonts: &Fonts) -> Vec<Item> {
     let sp = super::text::shape_run(text, run, fonts);
     let w: f64 = sp.pieces.iter().map(|p| p.width).sum();

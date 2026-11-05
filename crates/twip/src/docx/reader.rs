@@ -98,7 +98,6 @@ fn raw(n: Node) -> Rc<str> {
     n.document().input_text()[n.range()].into()
 }
 
-/// `w:background`'s colour (PAGE-12): `w:color`, or `w:themeColor` through the theme and its colour mapping (DRAW-7).
 // shortcut: `w:themeTint` and `w:themeShade` are not applied to a theme page colour.
 fn page_colour(b: Node, theme: &crate::drawing::theme::Theme, map: &crate::drawing::theme::ColourMap) -> Option<u32> {
     use crate::drawing::colour::SchemeSlot::*;
@@ -139,11 +138,9 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let drawing_theme = Rc::new(crate::drawing::theme::Theme::parse(theme_xml.as_deref()));
     let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
     let settings = read_settings(settings_xml.as_deref());
-    // DRAW-7: the settings' colour mapping.
     let colour_map = crate::drawing::theme::ColourMap::parse(
         settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok()).as_ref().map(|d| d.root_element()),
     );
-    // STYLE-11: theme colours resolve through the theme and the mapping.
     let colours = ThemeColours::new(&drawing_theme, &colour_map);
     let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
     let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
@@ -323,7 +320,6 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     for (name, identity) in &people_part {
         r.people.author(name, identity.as_ref());
     }
-    // LNUM-1: the LineNumber character style if present, else the default paragraph font.
     doc.line_number_run = Some({
         let mut rp = r.res.styles.doc_rpr.clone();
         if r.res.styles.get("LineNumber").is_some() {
@@ -370,8 +366,6 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     Ok(doc)
 }
 
-/// COL-6: whether paragraph `p` holds anything that is laid out: text, a tab or break, a symbol, an object, a note
-/// reference or a field (empty runs and bookmarks aren't).
 fn has_content(p: Node) -> bool {
     p.descendants().any(|d| {
         d.tag_name().namespace() == Some(W)
@@ -414,7 +408,6 @@ fn child_xfrm(n: Node, props: &str) -> Option<Xfrm> {
     })
 }
 
-/// FLOAT-15: child coordinates (EMU) to points from the outer group's top left: `p = origin + (c − from) × scale`.
 struct Map {
     origin: (f64, f64),
     from: (f64, f64),
@@ -495,7 +488,6 @@ fn read_settings(xml: Option<&str>) -> Settings {
     s
 }
 
-/// The table context a paragraph is read in: the cell's table-style region (STYLE-4).
 #[derive(Clone)]
 struct TableCtx {
     region: Rc<Region>,
@@ -528,9 +520,7 @@ struct Reader {
     para_no: u64,
     para_count: u64,
     float_order: usize,
-    /// A paragraph whose mark is hidden, waiting to join the next one (STYLE-7).
     pending_hidden: Option<Paragraph>,
-    /// COL-6: the paragraph being read is an empty section-break paragraph after a paragraph: its number isn't counted.
     uncounted: bool,
     part: String,
     rels: HashMap<String, (String, String)>,
@@ -923,7 +913,6 @@ impl Reader {
         for n in container.children().filter(|c| c.is_element()) {
             if is_w(n, "p") {
                 let sect = child(n, "pPr").and_then(|p| child(p, "sectPr"));
-                // COL-6: an empty section-break paragraph after a paragraph of its section isn't numbered.
                 self.uncounted = sect.is_some() && matches!(out.last(), Some((Some(Block::Para(_)), None))) && !has_content(n);
                 let para = self.read_paragraph(n, pkg, table);
                 self.uncounted = false;
@@ -1069,7 +1058,6 @@ impl Reader {
         if let Some(v) = child(s, "vAlign").and_then(val) {
             sec.v_align = v.to_string();
         }
-        // LINE-16: the pitch is the twips x 204.8, truncated, at least one twip.
         if let Some(g) = child(s, "docGrid").filter(|g| matches!(attr(*g, "type"), Some("lines" | "linesAndChars" | "snapToChars"))) {
             sec.line_grid = Some((int(attr(g, "linePitch")).unwrap_or(0).max(1) * 2048 / 10) as i32);
         }
@@ -1141,7 +1129,7 @@ impl Reader {
             Rc::make_mut(&mut mark).rev = mark_rev;
         }
 
-        // List label (LIST-6): mark formatting, then the level's rPr.
+        // List label
         let list = match (&level, num_id) {
             (Some(l), Some(id)) => {
                 if !self.uncounted && self.res.label_shows(id, ilvl, from_style, style_id.as_deref()) {
@@ -1177,7 +1165,6 @@ impl Reader {
         let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, lossy }));
         let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), controls: Vec::new() };
 
-        // STYLE-7: a hidden paragraph mark joins this paragraph to the next visible one.
         let mut para = match self.pending_hidden.take() {
             Some(mut prev) => {
                 prev.inlines.extend(para.inlines);
@@ -1189,8 +1176,6 @@ impl Reader {
                     })),
                     (a, b) => a.or(b),
                 };
-                // shortcut: the joined paragraph keeps the second (visible) mark's paragraph properties and the first's
-                // list label; STYLE-7 doesn't say which paragraph's properties win.
                 Paragraph {
                     style: para.style,
                     mark: para.mark,
@@ -1225,7 +1210,6 @@ impl Reader {
             if e.tag_name().namespace() == Some(W) {
                 match e.tag_name().name() {
                     "r" => self.read_run(e, base, pkg, out),
-                    // BREAK-3: a break directly in the paragraph, outside any run, is one in a run of its own.
                     "br" | "cr" => {
                         let run = self.direct_run(e, base, &mut RunProps::default());
                         let kind = match attr(e, "type") {
@@ -1314,8 +1298,6 @@ impl Reader {
     }
 
     fn read_run(&mut self, r: Node, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
-        // STYLE-10: a run's `w:rPr` elements apply in order: the leading ones merge, a later one formats the content
-        // after it, a trailing one does nothing.
         let mut direct = RunProps::default();
         for c in r.children().filter(|c| c.is_element()).take_while(|c| is_w(*c, "rPr")) {
             direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
@@ -1349,7 +1331,7 @@ impl Reader {
                 continue;
             }
             let name = c.tag_name().name();
-            // Complex fields (FIELD-1): each `fldChar` is a marker, the code's `instrText` its text.
+            // Complex fields
             if name == "fldChar" {
                 let id = self.fields.last().map(|f| f.id);
                 match attr(c, "fldCharType") {
@@ -1427,7 +1409,6 @@ impl Reader {
                 continue;
             }
             if run.hidden {
-                // STYLE-7: hidden runs take no space.
                 continue;
             }
             match name {
@@ -1528,7 +1509,6 @@ impl Reader {
         (plain.ascii, plain.h_ansi, plain.east_asia, plain.cs, plain.hint) =
             (base.ascii.clone(), base.h_ansi.clone(), base.east_asia.clone(), base.cs.clone(), base.hint.clone());
         let mut run = (*self.run_style(&plain)).clone();
-        // Whether its face goes through the East Asian slot (FONT-12): the hint is all of its fonts the symbol's run keeps.
         run.hint_east_asia = shown.hint_east_asia && sym_ch.is_none_or(|_| !text.is_empty());
         if self.record {
             // What new runs in this formatting are written with: the control's `w:rPr` without its `w:rFonts`.
@@ -1596,8 +1576,6 @@ impl Reader {
         self.fields.last().is_some_and(|f| !f.in_result)
     }
 
-    /// A field's markers are all in: its kind from its code, and (an evaluated kind) the run its value is drawn in
-    /// (FIELD-4: the result's first run with `\* MERGEFORMAT`, else the code's).
     fn close_field(&mut self, out: &mut [Inline], f: OpenField, end_run: &Run) {
         let Some(span) = super::fields::span_at(out, f.begin) else { return };
         let code = super::fields::code_text(out, span);
@@ -1653,8 +1631,6 @@ impl Reader {
         if !code.is_empty() {
             out.push(Inline::Text(code, run.clone()));
         }
-        // FIELD-4: a simple field has no separator run; its marker takes the paragraph's style formatting, which an
-        // error text is drawn in.
         out.push(Inline::FieldSep { id, run: self.run_style(&self.run_props(base, None)) });
         self.fields.push(OpenField {
             id,
@@ -1759,8 +1735,6 @@ impl Reader {
         out
     }
 
-    /// DRAW-25: a VML object (`w:pict`, `w:object`): positioned (`position:absolute`), a float placed as its style
-    /// says; else an inline object.
     fn read_pict(&mut self, pict: Node, run: &Run, pkg: &mut Package, out: &mut Vec<Inline>) {
         let mut src = DrawingSource { reader: self, pkg };
         let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
@@ -1774,7 +1748,6 @@ impl Reader {
             let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
             let blocks = self.read_blocks(t, pkg, None);
             (self.fields, self.wrap) = saved;
-            // FLOAT-10: the pen allowance of the shape's stroke.
             let outline = shape
                 .sp()
                 .and_then(|s| s.line.as_ref())
@@ -1893,7 +1866,6 @@ impl Reader {
         let pos = |name: &str| item.children().find(|c| is(*c, WP, name));
         let (mut h_rel, h_align, mut h_off) = position(pos("positionH"));
         let (mut v_rel, v_align, mut v_off) = position(pos("positionV"));
-        // FLOAT-6: with simplePos, an axis without an alignment is at wp:simplePos on the page.
         if item.attribute("simplePos").is_some_and(|v| on_off_str(Some(v))) {
             let sp = pos("simplePos");
             let at = |n: &str| sp.and_then(|p| emu(p.attribute(n))).unwrap_or(0.0);
@@ -1917,7 +1889,7 @@ impl Reader {
         };
         let wrap_text = wrap_el.and_then(|w| w.attribute("wrapText")).unwrap_or("bothSides").to_string();
         let dist = |n: &str| emu(item.attribute(n)).unwrap_or(0.0);
-        // FLOAT-15: a group shape draws each of its pictures and text boxes in its own box.
+        // Group shape
         let group = item.descendants().find(|n| n.tag_name().name() == "wgp");
         let mut parts = Vec::new();
         if let Some(g) = group {
@@ -1948,7 +1920,6 @@ impl Reader {
                 dist: [dist("distT"), dist("distB"), dist("distL"), dist("distR")],
                 effect: {
                     let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
-                    // FLOAT-7: EMU to twips, truncated.
                     let e = |n: &str| ee.and_then(|e| e.attribute(n)?.parse::<f64>().ok()).map_or(0.0, |v| (v / 635.0).trunc() / 20.0);
                     [e("l"), e("t"), e("r"), e("b")]
                 },
@@ -1978,8 +1949,6 @@ impl Reader {
             }),
             run.clone(),
         ));
-        // FLOAT-17: a shape turned a quarter is positioned and wrapped as its box turned about its centre: an offset
-        // places the unturned box, which then turns; an alignment aligns the turned box.
         if let Some(Inline::Float(f, _)) = out.last_mut() {
             let deg = f.shape.as_ref().map_or(0.0, |s| s.xfrm.rot.normalized().degrees()) % 180.0;
             if (45.0..135.0).contains(&deg) && self.settings.compat_mode != 12 {
@@ -1996,8 +1965,6 @@ impl Reader {
         }
     }
 
-    /// The DrawingML object of a `wp:inline` or `wp:anchor` (its graphic read into a shape tree); presets the engine
-    /// has no definition for are warned about and drawn as `rect` (DRAW-1).
     fn drawing_shape(&mut self, item: Node, pkg: &mut Package) -> crate::drawing::Shape {
         let mut src = DrawingSource { reader: self, pkg };
         let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
@@ -2011,8 +1978,6 @@ impl Reader {
     /// A run's formatting from its direct properties `direct` over `base` (its first `w:rPr` kept for saving and
     /// revisions).
     fn direct_run(&mut self, r: Node, base: &RunProps, direct: &mut RunProps) -> Run {
-        // FIELD-5: a table of contents' result shows its entries without the Hyperlink character style;
-        // other character styles and direct formatting show. The source keeps it.
         let toc = self.fields.iter().any(|f| f.toc && f.in_result);
         if toc && direct.style.as_deref() == Some("Hyperlink") {
             direct.style = None;
@@ -2030,9 +1995,6 @@ impl Reader {
     fn text_box(&mut self, shape: Node, t: Node, pkg: &mut Package) -> TextBox {
         let body = shape.descendants().find(|n| n.tag_name().name() == "bodyPr");
         let ins = |n: &str, dflt: f64| body.and_then(|b| emu(b.attribute(n))).unwrap_or(dflt);
-        // FLOAT-10: the pen allowance is half the line's width on each side (all of it with `algn="in"`), whatever the
-        // line's fill; a line without a width has none. `outline` is twice the allowance.
-        // `shape` is the `wp:anchor` of a stand-alone box, or the `wps:wsp` of a group's child: its first `spPr` is the shape's.
         let ln = shape.descendants().find(|c| c.tag_name().name() == "spPr").and_then(|p| p.children().find(|c| is(*c, A, "ln")));
         let w = ln.and_then(|l| l.attribute("w")).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
         let inside = ln.and_then(|l| l.attribute("algn")) == Some("in");
@@ -2050,8 +2012,6 @@ impl Reader {
         TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
     }
 
-    /// FLOAT-15: the pictures and text boxes of group `g` (or of a group inside it), `map` taking its child
-    /// coordinates to points from the outer group's top left; nested groups map through their own offsets.
     fn group_parts(&mut self, g: Node, map: &Map, path: &mut crate::drawing::ChildPath, pkg: &mut Package, out: &mut Vec<GroupPart>) {
         // The children the shape tree keeps, in its order (drawing/read.rs `child`).
         let kept = |c: &Node| matches!(c.tag_name().name(), "wsp" | "sp" | "cxnSp" | "pic" | "grpSp" | "graphicFrame");
@@ -2119,7 +2079,6 @@ impl Reader {
             let previous = child(c, "tblGrid").map(widths).unwrap_or_default();
             Rc::new(GridChange { mark: self.mark(c, MarkKind::Format), previous })
         });
-        // TABLE-3: the table's own w:tblLook, never its style's (a table without one has the default look).
         let look =
             direct.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
         let row_nodes: Vec<(Node, Vec<ControlId>)> = self.rows_of(t, &[]);
@@ -2154,9 +2113,6 @@ impl Reader {
                 let mut tcp = region.tc.clone();
                 let tc_pr = child(*cn, "tcPr");
                 tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
-                // TABLE-2: left and right margins of a table with no table style at all (no tblStyle and no default
-                // "Normal Table") and no tcMar or tblCellMar are 10 twips, not 0; with a table style, even one that sets no
-                // margins, they stay 0.
                 let unset = if style_id.is_none() { 0.5 } else { 0.0 };
                 let tm = &tbl.margins;
                 let rev = self.cell_revisions(tc_pr, &region.tc, tm, unset);
@@ -2218,16 +2174,12 @@ impl Reader {
         Table {
             style_id,
             width: tbl.width.unwrap_or(Width::Auto),
-            // TABLE-3: a row's `w:jc` aligns the table when its `w:tblPr` has none.
-            // shortcut: only when every row has the same one; rows aligned differently aren't placed apart.
-            // TABLE-23 (compat 15): a table that isn't floating is aligned by its first row's w:jc when it has one.
             jc: first_row_jc
                 .filter(|_| self.res.styles.compat == Compat::Generic && tbl.floating.is_none())
                 .or(tbl.jc)
                 .or(row_jc.flatten())
                 .unwrap_or(Jc::Left),
             ind: tbl.ind.unwrap_or(0.0),
-            // TABLE-23: a table naming no existing style takes the default one, whose indent counts as set.
             ind_set: tbl.ind.is_some() || direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
@@ -2290,8 +2242,6 @@ impl Reader {
     }
 }
 
-/// A cell's margins (top, left, bottom, right) from its properties, else its table's `tm`; left and right default to
-/// `unset` (TABLE-2).
 fn cell_margins(tcp: &TcProps, tm: &Margins, unset: f64) -> [f64; 4] {
     let m = |v: Option<f64>, d: Option<f64>| v.or(d).unwrap_or(0.0);
     let side = |v: Option<f64>, d: Option<f64>| v.or(d).unwrap_or(unset);

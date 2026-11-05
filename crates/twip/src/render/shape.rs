@@ -1,4 +1,4 @@
-//! Drawing a shape item (DRAW-3 and the paint rules): its geometry's paths filled and stroked under its transform.
+//! Shape drawing
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -13,8 +13,6 @@ use crate::drawing::paint::{BlipMode, Cap, Compound, Dash, GradientKind, Gradien
 use crate::drawing::units::Pct;
 use crate::layout::fragment::{ImageKey, ShapeItem};
 
-/// Skia paths of evaluated geometries, kept while the geometry is: the key is the geometry's address and the entry
-/// holds the geometry, so the address can't be reused while it is cached.
 #[derive(Default)]
 pub struct PathCache {
     paths: HashMap<usize, (Rc<Geom>, Rc<Vec<Path>>)>,
@@ -33,11 +31,9 @@ impl PathCache {
     }
 }
 
-/// DRAW-23: a picture's adjustments as a colour filter and alpha on `paint`, in document order.
 fn picture_adjust(adjust: &[crate::drawing::paint::ResolvedBlipAdjust], paint: &mut Paint) {
     use crate::drawing::paint::ResolvedBlipAdjust as A;
     use skia_safe::color_filters;
-    // Rec. 709 luminance weights, as the gray transform's (DRAW-6): `exp/s64` biLevel at 50% turns green white.
     const L: [f32; 3] = [0.2126, 0.7152, 0.0722];
     let gray: [f32; 20] = [L[0], L[1], L[2], 0.0, 0.0, L[0], L[1], L[2], 0.0, 0.0, L[0], L[1], L[2], 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
     let mut filter: Option<skia_safe::ColorFilter> = None;
@@ -57,7 +53,6 @@ fn picture_adjust(adjust: &[crate::drawing::paint::ResolvedBlipAdjust], paint: &
             }
             A::Grayscale => then(Some(color_filters::matrix_row_major(&gray, None))),
             A::Lum { bright, contrast } => {
-                // Contrast scales about the middle (k = 1 / (1 - c) above 0, 1 + c below), brightness adds.
                 let k = if *contrast > 0.0 { 1.0 / (1.0 - contrast.min(0.999)) } else { 1.0 + contrast } as f32;
                 let o = (0.5 - 0.5 * f64::from(k) + bright) as f32;
                 then(Some(color_filters::matrix_row_major(
@@ -92,23 +87,16 @@ fn picture_adjust(adjust: &[crate::drawing::paint::ResolvedBlipAdjust], paint: &
     }
 }
 
-/// A blur's Gaussian sigma for an effect radius (DRAW-18: fitted on `exp/s63`).
 fn sigma(radius: f64) -> f32 {
     (radius * SIGMA_PER_RADIUS) as f32
 }
 
-/// DRAW-18: Word's blur radius is about two sigmas of a Gaussian.
 const SIGMA_PER_RADIUS: f64 = 0.5;
-/// DRAW-20: a glow grows the silhouette by this part of its radius, blurred over this part.
 const GLOW_GROW: f64 = 0.5;
 const GLOW_SOFT: f64 = 0.5;
-/// DRAW-21: soft edges erode the silhouette by this part of the radius and blur it over this part (sigma, as a part
-/// of the radius, is half of it): Word's edge is at half opacity 0.85 r in, sigma 0.32 r (`exp/s63` soft_3/8/15).
 const SOFT_ERODE: f64 = 0.85;
 const SOFT_FADE: f64 = 0.64;
 
-/// Where a shape's effects can reach on the page: its turned box grown by its line and every effect's distance and
-/// blur. Effect layers are this big, not the page.
 fn reach(s: &ShapeItem, m: &Matrix) -> Rect {
     let [x0, y0, x1, y1] = s.rect;
     let e = &s.effects;
@@ -117,12 +105,10 @@ fn reach(s: &ShapeItem, m: &Matrix) -> Rect {
     };
     let pad = s.line.width + shadow(&e.outer) + e.glow.map_or(0.0, |g| 3.0 * g.0) + 3.0 * e.blur.unwrap_or(0.0) + e.soft_edge.unwrap_or(0.0) + 4.0;
     let b = m.map_rect(Rect::new(0.0, 0.0, (x1 - x0) as f32, (y1 - y0) as f32)).0;
-    // A skewed or scaled shadow can reach further: the box's size again on each side.
     let grow = pad as f32 + if e.outer.is_some() { b.width().max(b.height()) } else { 0.0 };
     b.with_outset((grow, grow))
 }
 
-/// The shape's own coordinates (from its box's top left) to the page's: flipped and turned about the box's centre.
 fn shape_matrix(s: &ShapeItem) -> Matrix {
     let [x0, y0, x1, y1] = s.rect;
     let (cx, cy) = (((x0 + x1) / 2.0) as f32, ((y0 + y1) / 2.0) as f32);
@@ -133,7 +119,6 @@ fn shape_matrix(s: &ShapeItem) -> Matrix {
     m
 }
 
-/// A shadow's scale and skew about its alignment point on `b` (DRAW-18).
 fn align_matrix(b: [f64; 4], sh: &crate::drawing::paint::ResolvedShadow) -> Matrix {
     use crate::drawing::paint::RectAlign::*;
     let (xm, ym) = ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
@@ -157,8 +142,6 @@ fn align_matrix(b: [f64; 4], sh: &crate::drawing::paint::ResolvedShadow) -> Matr
 }
 
 fn skia_path(segs: &[Seg]) -> Path {
-    // DRAW-14: a rectangle's outline starts at its bottom left corner and runs along its bottom first (where a dash
-    // pattern begins).
     if let [Seg::Move(a), Seg::Line(b), Seg::Line(c), Seg::Line(d), Seg::Close] = *segs
         && a[1] == b[1]
         && b[0] == c[0]
@@ -204,8 +187,6 @@ fn colour(c: Rgba) -> Color {
     Color::from_argb(c.a, c.r, c.g, c.b)
 }
 
-/// DRAW-3: the colour of a path filled `darken` (each sRGB channel × 0.6), `darkenLess` (× 0.8), `lighten` (40 % of
-/// the way to white) or `lightenLess` (20 %).
 fn shaded(c: Rgba, mode: PathFill) -> Rgba {
     let (k, white) = match mode {
         PathFill::Darken => (0.6, 0.0),
@@ -219,22 +200,17 @@ fn shaded(c: Rgba, mode: PathFill) -> Rgba {
 }
 
 impl Renderer {
-    /// Draws a shape item: each path of its geometry filled (by its fill mode) and stroked, rotated about the box's
-    /// centre and flipped (DRAW-4), with its effects in Word's order (DRAW-17): the outer shadow and the glow under
-    /// the shape, the inner shadow over its fill, and soft edges and blur on the whole of it.
     pub(super) fn shape(&mut self, canvas: &Canvas, s: &ShapeItem, images: &[Vec<u8>]) {
         let [x0, y0, x1, y1] = s.rect;
         let m = shape_matrix(s);
         let e = &s.effects;
         let area = reach(s, &m);
-        // DRAW-21: blur blurs everything the shape draws; soft edges fade its edges, as a mask over all of it.
         let blur = e.blur.filter(|r| *r > 0.0);
         if let Some(r) = blur {
             let mut p = Paint::default();
             p.set_image_filter(skia_safe::image_filters::blur((sigma(r), sigma(r)), None, None, None));
             canvas.save_layer(&skia_safe::canvas::SaveLayerRec::default().paint(&p).bounds(&area));
         }
-        // The outer shadow stays outside soft edges: Word casts it from the faded shape, and fades the shape and its glow.
         let soft = e.soft_edge.filter(|r| *r > 0.0);
         if let Some(sh) = &e.outer {
             self.outer_shadow(canvas, s, &m, sh, soft, &area);
@@ -248,7 +224,6 @@ impl Renderer {
         canvas.save();
         canvas.concat(&m);
         let paths = self.paths.get(&s.geom);
-        // DRAW-22: a picture's outline lies outside the picture: drawn twice as wide under it.
         let picture = s.picture;
         let line = if picture { ResolvedLine { width: s.line.width * 2.0, ..s.line.clone() } } else { s.line.clone() };
         for (gp, path) in s.geom.paths.iter().zip(paths.iter()) {
@@ -275,8 +250,6 @@ impl Renderer {
         }
     }
 
-    /// The shape's silhouette in `paint`: its filled paths (if it has a fill) and its outline (if it has one), in the
-    /// shape's own coordinates. What shadows, glow and soft edges are made from.
     fn silhouette(&mut self, canvas: &Canvas, s: &ShapeItem, paint: &Paint) {
         let paths = self.paths.get(&s.geom);
         for (gp, path) in s.geom.paths.iter().zip(paths.iter()) {
@@ -294,9 +267,6 @@ impl Renderer {
         }
     }
 
-    /// DRAW-18: the outer (or preset) shadow: the silhouette in the shadow colour, scaled and skewed about its
-    /// alignment point, moved `dist` towards `dir` and blurred by `blur`; turned with the shape when it rotates with
-    /// it, else moved in the page's directions.
     fn outer_shadow(
         &mut self,
         canvas: &Canvas,
@@ -312,7 +282,6 @@ impl Renderer {
         if sh.blur > 0.0 && soft.is_none() {
             p.set_mask_filter(skia_safe::MaskFilter::blur(skia_safe::BlurStyle::Normal, sigma(sh.blur), true));
         }
-        // A soft-edged shape's shadow: its silhouette eroded and faded as the shape is, then blurred.
         if let Some(r) = soft {
             let fade = f64::from(sigma(r * SOFT_FADE));
             let total = (fade * fade + f64::from(sigma(sh.blur)).powi(2)).sqrt() as f32;
@@ -323,7 +292,6 @@ impl Renderer {
         }
         let (dx, dy) = (sh.dist * sh.dir.to_radians().cos(), sh.dist * sh.dir.to_radians().sin());
         let [x0, y0, x1, y1] = s.rect;
-        // A translucent shadow is one layer: where the fill's and the outline's silhouettes overlap it is no darker.
         let translucent = sh.colour.a < 255 && soft.is_none();
         if translucent {
             canvas.save_layer_alpha_f(*area, f32::from(sh.colour.a) / 255.0);
@@ -347,7 +315,6 @@ impl Renderer {
         }
     }
 
-    /// DRAW-20: the glow: the silhouette grown by `r` and blurred, in the glow colour, under the shape.
     fn glow(&mut self, canvas: &Canvas, s: &ShapeItem, m: &Matrix, r: f64, c: Rgba) {
         canvas.save();
         canvas.concat(m);
@@ -373,8 +340,6 @@ impl Renderer {
         canvas.restore();
     }
 
-    /// DRAW-19: the inner shadow: inside the fill only, the outside of the shape moved `dist` away from `dir` and
-    /// blurred, in the shadow colour: the edges towards `dir` darken (in the shape's coordinates: it turns with it).
     fn inner_shadow(&mut self, canvas: &Canvas, s: &ShapeItem, sh: &crate::drawing::paint::ResolvedShadow) {
         let paths = self.paths.get(&s.geom);
         let mut inside = Path::new();
@@ -404,8 +369,6 @@ impl Renderer {
         canvas.restore();
     }
 
-    /// DRAW-21: soft edges: what the shape drew (the open layer) kept where its silhouette, shrunk by half of `r` and
-    /// blurred, covers it: the edges fade to nothing over `r`.
     fn soft_edge(&mut self, canvas: &Canvas, s: &ShapeItem, m: &Matrix, r: f64, area: &Rect) {
         let mut mask = Paint::default();
         mask.set_blend_mode(skia_safe::BlendMode::DstIn);
@@ -416,7 +379,6 @@ impl Renderer {
         ink.set_anti_alias(true);
         ink.set_color(Color::BLACK);
         self.silhouette(canvas, s, &ink);
-        // Eroded: the outline band cleared, half of it inside.
         let mut clear = Paint::default();
         clear.set_anti_alias(true);
         clear.set_blend_mode(skia_safe::BlendMode::Clear);
@@ -445,7 +407,6 @@ impl Renderer {
                 gradient(canvas, path, &stops, *kind, size, if *rot_with_shape { 0.0 } else { rot }, (tile, *flip));
             }
             Fill::Pattern { preset, fg, bg } => {
-                // DRAW-11: the tile's cells are 0.75 pt, on a grid that starts at the page's top left.
                 let bits = crate::drawing::patterns::tile(*preset);
                 let (fg, bg) = (shaded(*fg, mode), shaded(*bg, mode));
                 let mut px = Vec::with_capacity(64 * 4);
@@ -472,21 +433,16 @@ impl Renderer {
                     .or_insert_with(|| image.and_then(|i| images.get(i)).and_then(|b| Image::from_encoded(Data::new_copy(b))))
                     .clone();
                 let Some(img) = img else {
-                    // A picture without decodable data: a light frame, as an undecodable inline picture.
                     let mut frame = Paint::default();
                     frame.set_color(Color::from_rgb(0xc8, 0xc8, 0xc8)).set_style(PaintStyle::Stroke);
                     canvas.draw_path(path, &frame);
                     return;
                 };
                 let (iw, ih) = (f64::from(img.width()), f64::from(img.height()));
-                // DRAW-22: srcRect: the part of the image used (negative insets add empty margins); fillRect: where it
-                // goes, insets in fractions of the box.
                 let sr = [src[0].fraction() * iw, src[1].fraction() * ih, iw - src[2].fraction() * iw, ih - src[3].fraction() * ih];
                 let fr = match blip {
                     BlipMode::Stretch(f) => [f[0].fraction(), f[1].fraction(), f[2].fraction(), f[3].fraction()],
                     BlipMode::Tile { tx, ty, sx, sy, align, .. } => {
-                        // DRAW-12: tiles the image's size at 96 dpi scaled by sx, sy, aligned in the box, then moved by
-                        // tx, ty. A tile's `flip` is not drawn.
                         let (tw, th) = (iw * 0.75 * sx.fraction(), ih * 0.75 * sy.fraction());
                         let col = |a: u8| match a {
                             0 => 0.0,
@@ -519,7 +475,6 @@ impl Renderer {
                     }
                 };
                 let dst = [fr[0] * size[0], fr[1] * size[1], size[0] - fr[2] * size[0], size[1] - fr[3] * size[1]];
-                // The source rectangle's part inside the image, and where that part lands in the destination.
                 let (sw, sh) = ((sr[2] - sr[0]).max(1e-9), (sr[3] - sr[1]).max(1e-9));
                 let at = |v: f64, lo: f64, span: f64, d0: f64, d1: f64| d0 + (v - lo) / span * (d1 - d0);
                 let (cx0, cy0, cx1, cy1) = (sr[0].max(0.0), sr[1].max(0.0), sr[2].min(iw), sr[3].min(ih));
@@ -548,13 +503,9 @@ impl Renderer {
     }
 }
 
-/// DRAW-10: how far a two-stop gradient has blended at sixteenths of the way from one stop to the other (in linear
-/// light).
 const TWO_STOP_BLEND: [f64; 17] =
     [0.0, 0.018, 0.0472, 0.0843, 0.1404, 0.209, 0.2927, 0.3873, 0.4934, 0.5922, 0.6913, 0.778, 0.8485, 0.9054, 0.949, 0.9779, 1.0];
 
-/// DRAW-10: a gradient's colour at `t` (0–1). Two stops blend in linear light along [`TWO_STOP_BLEND`]; more stops
-/// blend linearly in sRGB between neighbours. Opacity blends linearly.
 fn gradient_at(stops: &[(f64, Rgba)], t: f64) -> Rgba {
     let (Some(first), Some(last)) = (stops.first(), stops.last()) else { return Rgba::default() };
     if t <= first.0 {
@@ -581,19 +532,11 @@ fn gradient_at(stops: &[(f64, Rgba)], t: f64) -> Rgba {
     Rgba { r: m(a.r, b.r), g: m(a.g, b.g), b: m(a.b, b.b), a: m(a.a, b.a) }
 }
 
-/// The gradient as Skia stops: enough samples that Skia's linear blending between them follows [`gradient_at`].
 fn skia_stops(stops: &[(f64, Rgba)]) -> (Vec<skia_safe::Color4f>, Vec<f32>) {
     let n = 48;
     (0..=n).map(|i| i as f64 / n as f64).map(|t| (skia_safe::Color4f::from(colour(gradient_at(stops, t))), t as f32)).unzip()
 }
 
-/// DRAW-10: fills `path` (in a `size` box from its top left) with a gradient. Linear: along the direction `ang`
-/// (clockwise from the x axis), or with `scaled` along (h·cos ang, w·sin ang), from the box's first point on that
-/// direction to its last. Circle: from the box's centre to its corners. Rect and shape: contours that are the box (rect)
-/// or the outline (shape) scaled from the focus (`fillToRect`; shape: the centre; a shape whose outline is its box is
-/// filled as rect) out to full size. `rot` turns the gradient back against the shape's rotation (`rotWithShape="0"`).
-/// A linear gradient with a `tileRect` spans that rectangle (insets of the box, negative outward) and repeats past
-/// it, mirrored with `flip`.
 fn gradient(canvas: &Canvas, path: &Path, stops: &[(f64, Rgba)], kind: GradientKind, size: [f64; 2], rot: f64, (tile, flip): (&[Pct; 4], TileFlip)) {
     let [w, h] = size;
     let t = tile.map(|p| p.fraction());
@@ -637,7 +580,6 @@ fn gradient(canvas: &Canvas, path: &Path, stops: &[(f64, Rgba)], kind: GradientK
             canvas.draw_path(path, &paint);
         }
         GradientKind::Path { path: kind @ (GradientPath::Rect | GradientPath::Shape), focus } => {
-            // Bands from the outside in, each a contour at its colour.
             let fr = match kind {
                 GradientPath::Rect => {
                     let f = focus.map(|p| p.fraction());
@@ -667,7 +609,6 @@ fn gradient(canvas: &Canvas, path: &Path, stops: &[(f64, Rgba)], kind: GradientK
     }
 }
 
-/// DRAW-14: a preset dash in line widths (dash, space, …).
 fn dash_lengths(d: PresetDash) -> &'static [f64] {
     match d {
         PresetDash::Solid => &[],
@@ -684,8 +625,6 @@ fn dash_lengths(d: PresetDash) -> &'static [f64] {
     }
 }
 
-/// DRAW-14: a stroke paint for `line` at width `w` (points): its cap, join and miter limit, and its dashes in widths,
-/// each dash one width shorter and each space one width longer under round and square caps (the caps add them back).
 fn pen(line: &ResolvedLine, w: f64) -> Paint {
     let mut paint = Paint::default();
     paint.set_anti_alias(true).set_style(PaintStyle::Stroke).set_stroke_width(w as f32);
@@ -732,16 +671,12 @@ fn pen(line: &ResolvedLine, w: f64) -> Paint {
     paint
 }
 
-/// The region within `d` of `path`'s outline, as `pen` draws it.
 fn band(path: &Path, line: &ResolvedLine, d: f64) -> Path {
     let mut b = PathBuilder::new();
     skia_safe::path_utils::fill_path_with_paint(path, &pen(line, 2.0 * d), &mut b, None, None);
     b.detach()
 }
 
-/// DRAW-15: the bands of a compound line, as signed offsets from the outline in line widths (negative: outside the
-/// shape): `dbl` 1 : 1 : 1, `thickThin` 3 : 1 : 1 and `thinThick` 1 : 1 : 3 (the thick band outside, resp. inside), `tri`
-/// 1 : 1 : 2 : 1 : 1. A pen inside the path (`algn="in"`) takes [0, 1].
 fn bands(line: &ResolvedLine) -> Vec<(f64, f64)> {
     let mut v = match line.compound {
         Compound::Single => vec![(-0.5, 0.5)],
@@ -756,8 +691,6 @@ fn bands(line: &ResolvedLine) -> Vec<(f64, f64)> {
     v
 }
 
-/// DRAW-14, DRAW-15: the region a line covers: its bands, each the part of the right width on its side of the
-/// outline (an open path has no sides: its bands are centred).
 fn line_region(path: &Path, line: &ResolvedLine, closed: bool) -> Option<Path> {
     use skia_safe::PathOp;
     let w = line.width;
@@ -792,18 +725,14 @@ fn line_region(path: &Path, line: &ResolvedLine, closed: bool) -> Option<Path> {
     region
 }
 
-/// DRAW-16: an open line with its ends: the line shortened under each end, as the region its pen covers, then the
-/// ends' outlines placed on the endpoints along the line's direction there (each its own region).
 fn with_ends(path: &Path, line: &ResolvedLine) -> Option<Vec<Path>> {
     use crate::drawing::geom::ends::{EndOutline, end_shape};
     use skia_safe::ContourMeasureIter;
     let contours: Vec<_> = ContourMeasureIter::new(path, false, None).collect();
     let (first, last) = (contours.first()?, contours.last()?);
     let w = line.width;
-    // The head end goes on the path's first point, the tail end on its last.
     let head = line.head.map(|e| end_shape(e, w));
     let tail = line.tail.map(|e| end_shape(e, w));
-    // The shortened line: the first contour from the head's cut, the last to the tail's.
     let mut b = PathBuilder::new();
     for (i, c) in contours.iter().enumerate() {
         let from = if i == 0 { head.as_ref().map_or(0.0, |h| h.cut as f32) } else { 0.0 };
@@ -852,9 +781,6 @@ fn with_ends(path: &Path, line: &ResolvedLine) -> Option<Vec<Path>> {
 }
 
 impl Renderer {
-    /// Strokes `path` with `line` (DRAW-9, DRAW-14): a single solid line centred on the path as a stroke (a hairline,
-    /// width 0, one device pixel wide); a compound line, an inside pen or a line filled with a gradient, pattern or
-    /// picture as the region it covers, filled with that paint.
     #[allow(clippy::too_many_arguments)]
     fn stroke(&mut self, canvas: &Canvas, path: &Path, line: &ResolvedLine, size: [f64; 2], rot: f64, origin: [f64; 2], images: &[Vec<u8>]) {
         if line.paint.is_none() {
@@ -899,7 +825,6 @@ mod tests {
     #[test]
     fn two_stops_blend_along_the_curve_in_linear_light_and_more_stops_linearly() {
         let (a, b) = (Rgba::rgb(0x156082), Rgba::rgb(0xFFC000));
-        // The two-stop midpoint is the linear-light blend at 0.4934: (187, 154, 94) as the reference draws it.
         let mid = gradient_at(&[(0.0, a), (1.0, b)], 0.5);
         assert!((i32::from(mid.r) - 187).abs() <= 1 && (i32::from(mid.g) - 154).abs() <= 1 && (i32::from(mid.b) - 94).abs() <= 1, "{mid:?}");
         let three = gradient_at(&[(0.0, Rgba::rgb(0x000000)), (0.5, Rgba::rgb(0x808080)), (1.0, Rgba::rgb(0xFFFFFF))], 0.25);

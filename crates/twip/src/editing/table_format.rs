@@ -1,7 +1,4 @@
-//! Table formatting commands: cell alignment, shading, borders and margins; row heights, can't split
-//! and header rows; column widths; the table's width, alignment, indent, style and style options. Cell and row
-//! commands apply to the target's cells (a cell block, or the caret's cell) of the innermost table; each command is
-//! one step.
+//! Table formatting commands
 
 use crate::docx::props::{Border, Jc, Look, Width};
 use crate::font::Fonts;
@@ -13,33 +10,21 @@ use super::table::Grid;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TableFormat {
-    /// `top`, `center` or `bottom`.
     CellAlign(String),
-    /// A fill (RGB), or none.
     CellShading(Option<u32>),
-    /// Borders on some edges of the target's cells; `None` with [`Edges::None`] takes them all off.
     CellBorders(Edges, Border),
-    /// Top, left, bottom and right margins, in points.
     CellMargins([f64; 4]),
-    /// Repeat Header Rows on for the table's rows from the first through the target's last, or off for every row.
     HeaderRow(bool),
-    /// The target rows' height and rule (`atLeast`, `exact`); `None`: auto.
     RowHeight(Option<(f64, String)>),
-    /// Allow Row to Break Across Pages off (`true`) or on for the target rows.
     RowCantSplit(bool),
-    /// The target columns' width, in points: the other columns keep theirs, the table grows or shrinks.
     ColumnWidth(f64),
     TableWidth(Width),
     TableAlign(Jc),
-    /// The table's indent from the margin, in points.
     TableIndent(f64),
-    /// A table style by id: the cells, rows and paragraphs take its formatting again.
     TableStyle(String),
-    /// Table Style Options (header row, total row, first and last column, banded rows and columns).
     TableLook(Look),
 }
 
-/// Which edges of a cell block a border goes on (the Borders menu's choices).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Edges {
     All,
@@ -51,11 +36,9 @@ pub enum Edges {
     Bottom,
     Left,
     Right,
-    /// No Border: every edge of the block's cells.
     None,
 }
 
-/// "No border", written as `nil` so that it overrides the table's and the style's borders.
 fn nil() -> Border {
     Border { style: "nil".into(), width: 0.0, space: 0.0, shadow: false, color: None }
 }
@@ -79,7 +62,6 @@ impl Editor {
         self.table_format_on(tg, f, fonts)
     }
 
-    /// [`Editor::table_format`] on an explicit target.
     pub(super) fn table_format_on(&mut self, tg: super::tables::Target, f: &TableFormat, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
         let g = Grid::of(t);
@@ -89,7 +71,6 @@ impl Editor {
         let mut restyle = false;
         let cx = self.cx();
         let w = cx.w.clone();
-        // A direct property in the cell's `w:tcPr` (re-resolution keeps it over the style region).
         let set_direct = |cell: &mut crate::docx::Cell, local: &str, xml: String| {
             let mut p = crate::docx::write::props::Props::parse(cell.direct.0.as_deref(), "tcPr", &cx);
             p.set(local, xml);
@@ -136,7 +117,6 @@ impl Editor {
                 }
             }
             TableFormat::CellBorders(edges, b) => {
-                // Each side of each block cell: whether it is on the block's outside, and whether it gets the border.
                 let (c0, c1) = tg.cols;
                 let want = |outside: bool, horizontal: bool, side: Edges| match edges {
                     Edges::All | Edges::None => true,
@@ -147,8 +127,7 @@ impl Editor {
                     e => outside && *e == side,
                 };
                 let value = if *edges == Edges::None { nil() } else { b.clone() };
-                // Shared edges: a block side on its outside sets the neighbouring cell's facing side too.
-                let mut shared: Vec<(usize, usize, usize)> = Vec::new(); // (row, cell, side: 0 top 1 left 2 bottom 3 right)
+                let mut shared: Vec<(usize, usize, usize)> = Vec::new();
                 let mut touched: Vec<(usize, usize)> = Vec::new();
                 for r in r0..=r1 {
                     for (k, &(c, s, _)) in g.rows[r].iter().enumerate() {
@@ -251,7 +230,6 @@ impl Editor {
                         return Outcome::Unchanged("no such style");
                     }
                     props.style_id = Some(id.clone());
-                    // The table's own properties again: the new style's, its direct ones over them.
                     let mut tbl = res.styles.table_region(Some(id), &[]).tbl.clone();
                     let direct = t
                         .direct
@@ -270,7 +248,6 @@ impl Editor {
                 if let TableFormat::TableLook(l) = f {
                     props.look = Some(*l);
                 }
-                // Every cell is re-resolved from its region at its place (cells made without properties too).
                 for c in rows.iter_mut().flat_map(|r| r.cells.iter_mut()) {
                     if c.direct.0.is_none() {
                         c.direct = crate::docx::Raw(Some(std::rc::Rc::from(format!("<{w}tcPr/>").as_str())));

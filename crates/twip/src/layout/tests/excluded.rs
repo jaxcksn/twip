@@ -1,5 +1,4 @@
-//! Text pushed entirely below its page (HDR-9) is recorded in the snapshot's exclusion list and left out by every
-//! traversal.
+//! Excluded text
 
 use super::{fixture, fonts};
 use crate::layout::fragment::Item;

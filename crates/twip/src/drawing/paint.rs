@@ -1,4 +1,4 @@
-//! Fills, lines and effects as a document writes them, and resolved to colours for drawing.
+//! Fills, lines and effects
 
 use roxmltree::Node;
 
@@ -7,7 +7,6 @@ use super::theme::{ColourMap, Theme};
 use super::units::{Angle, Emu, Pct};
 use crate::docx::xml::A;
 
-/// Looks up an image relationship id (`r:embed`) to an index into the document's images.
 pub type ImageLookup<'a> = &'a mut dyn FnMut(&str) -> Option<usize>;
 
 fn a_child<'a, 'i>(n: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
@@ -30,27 +29,19 @@ fn bool_attr(n: Node, k: &str) -> Option<bool> {
     n.attribute(k).map(|v| matches!(v, "1" | "true"))
 }
 
-/// A rectangle of insets in 100000ths of the box (`a:fillToRect`, `a:tileRect`, `a:srcRect`, `a:fillRect`): left, top,
-/// right, bottom.
 fn rel_rect(n: Option<Node>) -> [Pct; 4] {
     n.map_or([Pct(0); 4], |n| ["l", "t", "r", "b"].map(|k| pct_attr(n, k).unwrap_or_default()))
 }
 
-// ---- fills ---------------------------------------------------------------------------------------------------------
+// Fills
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fill {
-    /// `a:noFill`.
     None,
     Solid(Colour),
     Gradient(Gradient),
-    Pattern {
-        preset: PatternPreset,
-        fg: Colour,
-        bg: Colour,
-    },
+    Pattern { preset: PatternPreset, fg: Colour, bg: Colour },
     Blip(BlipFill),
-    /// `a:grpFill`: the enclosing group's fill.
     Group,
 }
 
@@ -63,9 +54,7 @@ pub enum GradientPath {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GradientKind {
-    /// `a:lin`: the direction and whether it is scaled with the shape's aspect.
     Linear { angle: Angle, scaled: bool },
-    /// `a:path`: the focus rectangle (`a:fillToRect`).
     Path { path: GradientPath, focus: [Pct; 4] },
 }
 
@@ -100,9 +89,7 @@ pub struct Gradient {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BlipMode {
-    /// `a:stretch/a:fillRect`: the image stretched into the box inset by these fractions.
     Stretch([Pct; 4]),
-    /// `a:tile`.
     Tile { tx: Emu, ty: Emu, sx: Pct, sy: Pct, flip: TileFlip, align: RectAlign },
 }
 
@@ -117,9 +104,7 @@ pub enum BlipAdjust {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlipFill {
-    /// The image, an index into the document's images; `None`: missing or unreadable (drawn as a placeholder).
     pub image: Option<usize>,
-    /// `a:srcRect`: the part of the image used, insets in 100000ths of the image (negative: margins).
     pub src: [Pct; 4],
     pub mode: BlipMode,
     pub adjust: Vec<BlipAdjust>,
@@ -127,7 +112,6 @@ pub struct BlipFill {
 }
 
 impl BlipFill {
-    /// `a:blipFill` / `pic:blipFill`.
     pub fn parse(n: Node, image: ImageLookup) -> BlipFill {
         let blip = a_child(n, "blip");
         let rid = blip.and_then(|b| b.attribute((crate::docx::xml::R, "embed")));
@@ -173,8 +157,6 @@ impl BlipFill {
 }
 
 impl Fill {
-    /// A fill element (`a:noFill`, `a:solidFill`, `a:gradFill`, `a:pattFill`, `a:blipFill`, `a:grpFill`); `None` for
-    /// anything else. Picture fills in a theme have no images to name.
     pub fn parse(n: Node) -> Option<Fill> {
         Fill::parse_with(n, &mut |_| None)
     }
@@ -228,7 +210,6 @@ impl Fill {
         })
     }
 
-    /// The first fill element among `n`'s children (`a:spPr`, `a:ln`, `a:glow`…).
     pub fn child_of(n: Node, image: ImageLookup) -> Option<Fill> {
         n.children().filter(Node::is_element).find_map(|c| Fill::parse_with(c, image))
     }
@@ -276,12 +257,11 @@ impl RectAlign {
     }
 }
 
-// ---- lines ---------------------------------------------------------------------------------------------------------
+// Lines
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Dash {
     Preset(PresetDash),
-    /// `a:custDash`: dash and space lengths in 100000ths of the line width.
     Custom(Vec<(Pct, Pct)>),
 }
 
@@ -306,7 +286,6 @@ pub enum Cap {
 pub enum Join {
     Round,
     Bevel,
-    /// `a:miter/@lim`, 100000ths of the line width.
     Miter(Pct),
 }
 
@@ -353,7 +332,6 @@ impl LineEnd {
     }
 }
 
-/// `a:ln` as written: absent properties fall back to the style reference's line (DRAW-8).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Line {
     pub width: Option<Emu>,
@@ -362,7 +340,6 @@ pub struct Line {
     pub compound: Option<Compound>,
     pub cap: Option<Cap>,
     pub join: Option<Join>,
-    /// `algn="in"`: the pen lies inside the path.
     pub inset: Option<bool>,
     pub head: Option<LineEnd>,
     pub tail: Option<LineEnd>,
@@ -414,7 +391,6 @@ impl Line {
         }
     }
 
-    /// The explicit properties over `base`'s.
     fn over(&self, base: &Line) -> Line {
         Line {
             width: self.width.or(base.width),
@@ -430,7 +406,7 @@ impl Line {
     }
 }
 
-// ---- effects -------------------------------------------------------------------------------------------------------
+// Effects
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OuterShadow {
@@ -456,7 +432,6 @@ pub struct InnerShadow {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PresetShadow {
-    /// `shdw1` to `shdw20`.
     pub preset: u8,
     pub dist: Emu,
     pub dir: Angle,
@@ -469,7 +444,6 @@ pub struct Glow {
     pub colour: Colour,
 }
 
-/// `a:effectLst`: the effects drawn; `kept` marks effects that are kept on save but not drawn.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EffectList {
     pub outer: Option<OuterShadow>,
@@ -478,7 +452,6 @@ pub struct EffectList {
     pub glow: Option<Glow>,
     pub soft_edge: Option<Emu>,
     pub blur: Option<Emu>,
-    /// Reflection, fill overlay or another effect not drawn (DRAW-24).
     pub kept: bool,
 }
 
@@ -528,15 +501,13 @@ impl EffectList {
     }
 }
 
-// ---- style references ----------------------------------------------------------------------------------------------
+// Style references
 
-/// `wps:style`: theme style indices and the colour that replaces `phClr` in them (DRAW-8).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StyleRefs {
     pub line: Option<(u32, Option<Colour>)>,
     pub fill: Option<(u32, Option<Colour>)>,
     pub effect: Option<(u32, Option<Colour>)>,
-    /// `a:fontRef`: the colour of the shape's text by default.
     pub font: Option<Colour>,
 }
 
@@ -547,9 +518,8 @@ impl StyleRefs {
     }
 }
 
-// ---- resolution ----------------------------------------------------------------------------------------------------
+// Resolution
 
-/// The theme and colour map colours resolve against.
 #[derive(Clone, Copy)]
 pub struct Palette<'a> {
     pub theme: &'a Theme,
@@ -586,7 +556,6 @@ impl Paint {
     }
 }
 
-/// A fill resolved: theme colours to sRGB, `phClr` to `ph`, `a:grpFill` to `group`.
 pub fn paint(f: &Fill, p: Palette, ph: Option<Rgba>, group: &Paint) -> Paint {
     match f {
         Fill::None => Paint::None,
@@ -618,7 +587,6 @@ pub fn paint(f: &Fill, p: Palette, ph: Option<Rgba>, group: &Paint) -> Paint {
     }
 }
 
-/// The theme style list entry `idx` refers to: 0 none, 1… the list, 1001… the background fills (fills only).
 pub fn style_entry<'a, T>(list: &'a [T], bg: Option<&'a [T]>, idx: u32) -> Option<&'a T> {
     match idx {
         0 => None,
@@ -627,7 +595,6 @@ pub fn style_entry<'a, T>(list: &'a [T], bg: Option<&'a [T]>, idx: u32) -> Optio
     }
 }
 
-/// DRAW-8: the shape's fill: its own, else its style reference's (with the reference colour as `phClr`), else none.
 pub fn resolve_fill(own: Option<&Fill>, style: Option<&StyleRefs>, p: Palette, group: &Paint) -> Paint {
     if let Some(f) = own {
         return paint(f, p, None, group);
@@ -637,10 +604,8 @@ pub fn resolve_fill(own: Option<&Fill>, style: Option<&StyleRefs>, p: Palette, g
     style_entry(&p.theme.fills, Some(&p.theme.bg_fills), *idx).map_or(Paint::None, |f| paint(f, p, ph, group))
 }
 
-/// A line resolved for drawing (DRAW-9).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedLine {
-    /// Points; a hairline (0) is drawn one device pixel wide.
     pub width: f64,
     pub paint: Paint,
     pub dash: Dash,
@@ -672,8 +637,6 @@ impl ResolvedLine {
     }
 }
 
-/// DRAW-8, DRAW-9: the shape's line: its own properties over its style reference's line (`phClr` the reference
-/// colour). A line without a fill from either is not drawn; a line without a width is 0.75 pt.
 pub fn resolve_line(own: Option<&Line>, style: Option<&StyleRefs>, p: Palette, group: &Paint) -> ResolvedLine {
     let reference = style.and_then(|s| s.line.as_ref());
     let ph = reference.and_then(|(_, c)| c.as_ref()).map(|c| p.colour(c, None));
@@ -684,7 +647,6 @@ pub fn resolve_line(own: Option<&Line>, style: Option<&StyleRefs>, p: Palette, g
         None if has_ref => base,
         None => return ResolvedLine::none(),
     };
-    // phClr in the shape's own line means the reference colour too.
     let paint = line.fill.as_ref().map_or(Paint::None, |f| paint(f, p, ph, group));
     ResolvedLine {
         width: line.width.map_or(0.75, Emu::to_pt),
@@ -699,10 +661,8 @@ pub fn resolve_line(own: Option<&Line>, style: Option<&StyleRefs>, p: Palette, g
     }
 }
 
-/// Effects resolved for drawing.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ResolvedEffects {
-    /// Blur radius, distance (points), direction (degrees), scale, skew (degrees), alignment, colour, rotate with shape.
     pub outer: Option<ResolvedShadow>,
     pub inner: Option<ResolvedShadow>,
     pub glow: Option<(f64, Rgba)>,
@@ -728,7 +688,6 @@ impl ResolvedEffects {
     }
 }
 
-/// DRAW-8: the shape's effects: its own effect list, else its style reference's.
 pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: Palette) -> ResolvedEffects {
     let (list, ph) = match own {
         Some(e) => (Some(e), None),
@@ -768,12 +727,6 @@ pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: P
     }
 }
 
-/// A preset shadow (`a:prstShdw`) as an outer shadow.
-// shortcut: every preset is drawn as an unblurred offset shadow at its distance and direction; the presets' own
-// perspective and scale (shdw1-shdw20) need the s63 numbers: fit them there and give each its parameters.
-/// DRAW-18: a preset shadow as an outer shadow of its distance, direction and colour.
-// shortcut: Word draws each of the 20 presets with its own shape (perspective, double, box: `exp/s63` prst_shdw3-13,
-// 15-18, 20 differ); a table of their parameters would replace this.
 fn preset_shadow(s: &PresetShadow, colour: Rgba) -> ResolvedShadow {
     ResolvedShadow {
         blur: 0.0,

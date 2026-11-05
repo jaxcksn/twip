@@ -1,5 +1,4 @@
-//! Character and paragraph formatting. Direct properties are patched as
-//! written and re-resolved through the document's resolver, so an edit resolves exactly as reading would.
+//! Character and paragraph formatting
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -17,10 +16,8 @@ use super::index::Container;
 use super::step::Step;
 use super::{Editor, Tx};
 
-/// The root a document without a source part (a new one) writes its properties under.
 const NEW_ROOT: &str = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#;
 
-/// A character property a toggle command turns on or off (Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+=, Ctrl+Shift+=, Strikethrough).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Toggle {
     Bold,
@@ -32,7 +29,6 @@ pub enum Toggle {
 }
 
 impl Toggle {
-    /// The undo label of setting it.
     fn label(self) -> &'static str {
         match self {
             Toggle::Bold => "Bold",
@@ -44,7 +40,6 @@ impl Toggle {
         }
     }
 
-    /// Sets the property in a run's `w:rPr` (both script forms for bold and italic, as Word writes them).
     fn set(self, p: &mut Props, w: &str, on: bool) {
         let flag = |name: &str| if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") };
         match self {
@@ -58,7 +53,6 @@ impl Toggle {
             }
             Toggle::Underline => p.set("u", format!("<{w}u {w}val=\"{}\"/>", if on { "single" } else { "none" })),
             Toggle::Strike => p.set("strike", flag("strike")),
-            // Subscript and superscript exclude each other: turning one on replaces the other.
             Toggle::Subscript | Toggle::Superscript => {
                 let v = match (self, on) {
                     (_, false) => "baseline",
@@ -71,7 +65,6 @@ impl Toggle {
     }
 }
 
-/// An inline carrying `run` instead of its own.
 pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
     let run = run.clone();
     match i {
@@ -95,19 +88,13 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
         },
         Inline::FieldSep { id, .. } => Inline::FieldSep { id: *id, run },
         Inline::FieldEnd { id, .. } => Inline::FieldEnd { id: *id, run },
-        // Anchored objects, separators and bookmarks keep what they have.
         other => other.clone(),
     }
 }
 
 impl Editor {
-    /// Resolves the transaction's stale paragraphs again (and those directly in its stale tables' cells), as steps
-    /// of the same transaction: a paragraph whose properties or runs resolve differently in their context now gets
-    /// what reading the saved document would give it.
     pub(super) fn reresolve_stale(&mut self, tx: &mut Tx) {
         let Some(res) = self.doc.resolver.clone() else { return };
-        // Cells of stale tables: their properties again from their style region at their place now (banding, first
-        // and last rows and columns) and their direct `w:tcPr`. Cells made from nothing (no direct XML) keep theirs.
         let cx = self.cx();
         for &table in &tx.stale_tables.clone() {
             let Some(t) = self.index.table(&self.doc, table) else { continue };
@@ -188,8 +175,6 @@ impl Editor {
         }
     }
 
-    /// The paragraph Enter starts at the end of `para`: in its style's next style when that differs, its
-    /// direct properties otherwise kept. `None` when the style has no other next style.
     pub(super) fn next_style_paragraph(&self, para: ParaId, mut second: crate::docx::Paragraph) -> Option<crate::docx::Paragraph> {
         let res = self.doc.resolver.clone()?;
         let p = self.index.para(&self.doc, para)?;
@@ -207,20 +192,17 @@ impl Editor {
         Cx::of_xml(self.doc.source.as_ref().map_or(NEW_ROOT, |s| s.xml.as_str()))
     }
 
-    /// The table-style region of the cell a paragraph is in.
     pub(super) fn region_of_para(&self, para: ParaId, res: &Resolver) -> Option<Region> {
         let slot = self.index.para_slot(para)?;
         let Container::Cell { table, row, cell } = slot.container else { return None };
         Some(res.region_of(self.index.table(&self.doc, table)?, row, cell))
     }
 
-    /// What a paragraph's runs resolve over (docDefaults, its cell's region, its style chain).
     pub(super) fn run_base(&self, para: ParaId, res: &Resolver, cx: &Cx) -> Option<RunProps> {
         let p = self.index.para(&self.doc, para)?;
         Some(res.para_from_xml(p.style.direct.0.as_deref(), self.region_of_para(para, res).as_ref(), cx).base)
     }
 
-    /// The unit ranges of each paragraph a text selection covers, in document order.
     pub(super) fn selected_ranges(&mut self) -> Vec<(ParaId, Unit, Unit)> {
         if let super::selection::Selection::Block { .. } = self.selection {
             return self.block_pieces().into_iter().map(|(_, _, p, a, b)| (p, a, b)).collect();
@@ -256,7 +238,6 @@ impl Editor {
         out
     }
 
-    /// The paragraphs a paragraph command applies to: the selection's, or the caret's.
     pub(super) fn selected_paras(&mut self) -> Vec<ParaId> {
         let mut v: Vec<ParaId> = self.selected_ranges().into_iter().map(|r| r.0).collect();
         if v.is_empty() {
@@ -266,7 +247,6 @@ impl Editor {
         v
     }
 
-    /// What is inserted next has the caret's formatting patched by `edit`.
     pub(super) fn pending_props(&mut self, edit: &dyn Fn(&mut Props, &str)) {
         let Some(res) = self.doc.resolver.clone() else { return };
         let cx = self.cx();
@@ -278,7 +258,6 @@ impl Editor {
         self.pending = Some(res.run_from_xml(&base, p.xml().as_deref(), &cx));
     }
 
-    /// What is typed next takes `font` (Insert Symbol).
     pub(super) fn pending_font(&mut self, font: &str) {
         let Some(res) = self.doc.resolver.clone() else { return };
         let cx = self.cx();
@@ -292,7 +271,6 @@ impl Editor {
         self.pending = Some(res.run_from_xml(&base, p.xml().as_deref(), &cx));
     }
 
-    /// The runs holding units a..b of a paragraph.
     pub(super) fn runs_in(&self, (para, a, b): (ParaId, Unit, Unit)) -> Vec<Run> {
         let Some(p) = self.index.para(&self.doc, para) else { return Vec::new() };
         let mut at = 0u32;
@@ -311,9 +289,6 @@ impl Editor {
         out
     }
 
-    /// A character formatting command: `edit` patches each affected run's direct properties (it sees the run). Over
-    /// the selection; at a collapsed caret, inside a word the word's letters, at a paragraph's end the mark
-    /// too, and in every case what is typed next.
     pub(super) fn format_runs(&mut self, label: &'static str, edit: &dyn Fn(&mut Props, &str, &RunStyle), fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
@@ -355,8 +330,6 @@ impl Editor {
         for (para, a, b) in ranges {
             let Some(base) = self.run_base(para, &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            // The units a..b with each run replaced, zero-unit inlines strictly inside kept in place (Step::Text replaces
-            // those too).
             let mut cache: HashMap<*const RunStyle, Run> = HashMap::new();
             let mut with = Vec::new();
             let mut at = 0u32;
@@ -392,8 +365,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// A paragraph formatting command: `edit` patches each selected paragraph's direct properties (it sees the
-    /// paragraph as it is); paragraphs it leaves resolving the same are untouched.
     pub(super) fn format_paras(&mut self, label: &'static str, edit: &dyn Fn(&mut Props, &Cx, &crate::docx::Paragraph), fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
@@ -413,13 +384,11 @@ impl Editor {
                 self.abort(tx);
                 return Outcome::Unchanged("formatting failed");
             }
-            // A new paragraph style changes what its runs resolve over.
             tx.stale_paras.push(para);
         }
         self.commit(tx, None, fonts)
     }
 
-    /// The character and paragraph formatting commands besides the toggles and alignment.
     pub(super) fn format(&mut self, f: &Format, fonts: &Fonts) -> Outcome {
         let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
         match f {
@@ -436,7 +405,6 @@ impl Editor {
                 )
             }
             Format::GrowFont(grow) => {
-                // The font size list: the next size up or down from each run's own.
                 const SIZES: [f64; 16] = [8.0, 9.0, 10.0, 10.5, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0];
                 let grow = *grow;
                 self.format_runs(
@@ -478,13 +446,8 @@ impl Editor {
                     fonts,
                 )
             }
-            Format::ClearFormatting => {
-                // The runs' direct formatting goes (their character style too); paragraphs keep theirs.
-                // shortcut: only the runs are cleared; the paragraph isn't reset to Normal.
-                self.format_runs("Clear Formatting", &|p, _, _| *p = Props::parse(None, "rPr", &Cx::of_xml(NEW_ROOT)), fonts)
-            }
+            Format::ClearFormatting => self.format_runs("Clear Formatting", &|p, _, _| *p = Props::parse(None, "rPr", &Cx::of_xml(NEW_ROOT)), fonts),
             Format::Indent(more) => {
-                // Increase / Decrease Indent: the left indent by half an inch, not below zero.
                 let more = *more;
                 self.format_paras(
                     "Indent",
@@ -534,25 +497,17 @@ impl Editor {
     }
 }
 
-/// The formatting commands of [`Editor::format`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Format {
-    /// A toggle property set on or off over the selection (a setter: the value is given, not flipped).
     Set(Toggle, bool),
     FontSize(f64),
-    /// Grow Font (true) or Shrink Font (false): the next size in the font size list.
     GrowFont(bool),
-    /// A colour (RGB), or automatic.
     FontColor(Option<u32>),
-    /// A highlight colour name (`yellow`, `green`, …), or none.
     Highlight(Option<String>),
     FontFamily(String),
     ClearFormatting,
-    /// Increase (true) or Decrease Indent.
     Indent(bool),
     ParaStyle(String),
-    /// Borders on the selected paragraphs: `box`, `bottom` or `none` (a ½ pt single line).
     ParaBorders(String),
-    /// Paragraph shading (RGB), or none.
     ParaShading(Option<u32>),
 }

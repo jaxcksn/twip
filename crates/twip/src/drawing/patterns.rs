@@ -1,9 +1,7 @@
-//! The preset patterns of `a:pattFill` (DRAW-11): 8 × 8 cells per tile, a set bit (most significant = left) in the
-//! foreground colour.
+//! Preset patterns
 
 use super::paint::PatternPreset;
 
-/// The tile of `p`: eight rows, top first.
 pub fn tile(p: PatternPreset) -> [u8; 8] {
     use PatternPreset::*;
     match p {

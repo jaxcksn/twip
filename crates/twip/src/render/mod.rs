@@ -62,11 +62,8 @@ pub struct Renderer {
     pub theme: theme::Theme,
     /// Overlay colours the host set; they win over the theme's.
     pub overlay_colours: Option<Palette>,
-    /// How the document's colours are drawn (DRAW-27).
     pub appearance: appearance::Appearance,
-    /// The document's page colour (PAGE-12), on screen only.
     pub page_colour: Option<u32>,
-    /// The item being drawn is inside a shape with a fill: it keeps its colours (DRAW-27).
     own_colours: bool,
 }
 
@@ -152,7 +149,6 @@ impl Renderer {
         }
     }
 
-    /// The colour document colour `c` is drawn in (DRAW-27).
     pub(super) fn ink(&self, c: u32) -> Color {
         rgb(if self.own_colours { c } else { self.appearance.map(c) })
     }
@@ -168,7 +164,6 @@ impl Renderer {
         self.typefaces.insert(key, FontMgr::new().new_from_data(Data::new_copy(data), 0));
     }
 
-    /// `face`'s typeface: a variable font's at the face's instance (FONT-17).
     fn typeface(&mut self, face: &Face) -> Option<Typeface> {
         let key = (std::sync::Arc::as_ptr(&face.data) as usize, face.index, face.instance);
         self.typefaces
@@ -214,7 +209,7 @@ impl Renderer {
         let k = f.px_per_pt;
         let mut shadow = Paint::default();
         shadow.set_anti_alias(true);
-        // PAGE-12, DRAW-27: the page in its colour.
+        // Page colour
         self.own_colours = false;
         let mut paper = Paint::default();
         paper.set_color(self.ink(self.page_colour.unwrap_or(0xFF_FFFF)));
@@ -467,7 +462,6 @@ mod tests {
 
     #[test]
     fn marks_on_a_dark_page_hold_against_it() {
-        // DRAW-27: overlays drawn on the page take its colours, so they keep their contrast with the dark page.
         let r = Renderer { appearance: appearance::Appearance::Dark { page: appearance::PageMode::Dark }, ..Renderer::default() };
         let page = r.ink(0xFF_FFFF);
         for c in [0xE6_0000, 0x00_78D4, 0xD1_3438, 0xC1_9C00] {

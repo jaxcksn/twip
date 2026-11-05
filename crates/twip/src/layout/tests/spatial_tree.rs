@@ -1,5 +1,4 @@
-//! The spatial tree's containment equals the model's: every line of
-//! a paragraph is reported inside exactly the table cells that contain that paragraph, in every story.
+//! Spatial tree
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -8,7 +7,6 @@ use crate::docx::{Block, Document};
 use crate::layout::traverse::{SpatialNode, StoryRef, spatial_tree};
 use crate::layout::{ParaId, TableId, layout};
 
-/// (table, row, model cell index) from the story root down.
 type Chain = Vec<(TableId, usize, usize)>;
 
 fn model_chains(blocks: &[Block], chain: &mut Chain, out: &mut HashMap<ParaId, Chain>) {
@@ -54,7 +52,6 @@ fn tree_chains(nodes: &[SpatialNode], chain: &mut Chain, out: &mut Vec<(ParaId, 
     }
 }
 
-/// The repo's own fixtures, plus any in `tests/fixtures/editor`. A listed fixture that is missing fails.
 fn documents() -> Vec<(PathBuf, Document)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let mut paths: Vec<PathBuf> = ["tables.docx", "objects.docx", "lists.docx", "pagination.docx"].iter().map(|f| root.join(f)).collect();
@@ -89,7 +86,6 @@ fn every_line_sits_in_the_cells_that_contain_its_paragraph() {
         for (pi, page) in snapshot.pages().iter().enumerate() {
             let tree = spatial_tree(page, false).expect("a full layout has no provisional pages");
             for story in &tree.stories {
-                // Text boxes and frames are stories of their own; their paragraphs live inside the anchor's inlines.
                 if matches!(story.story, StoryRef::Float { .. }) {
                     continue;
                 }
@@ -121,7 +117,6 @@ fn a_cell_closing_paragraph_after_a_nested_table_has_a_caret_place() {
                 found += closings(&story.nodes);
             }
         }
-        // A row split across pages shows its closing place once, on the part with the cell's last content.
         assert!(found >= expected, "{}: {found} closing caret places for {expected} closing paragraphs", path.display());
     }
 }

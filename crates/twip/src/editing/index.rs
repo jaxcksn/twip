@@ -1,8 +1,4 @@
-//! The document index: paragraph, table and float ids to their story, container chain and block index.
-//!
-//! Every position, selection, command and hit test reads containment from here, so they can't disagree about which
-//! table and nesting level content is in. Steps update the index for the containers they change; in tests the result
-//! is compared with a fresh build after every step.
+//! Document index
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -12,7 +8,6 @@ use crate::layout::{FloatId, ParaId, TableId};
 
 use super::position::{Place, Position, StoryId};
 
-/// A block list: a section's body, a story's root (header, footer, note, text box), or a table cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Container {
     Section(usize),
@@ -20,14 +15,12 @@ pub enum Container {
     Cell { table: TableId, row: usize, cell: usize },
 }
 
-/// Where a block is: its container and index in it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Slot {
     pub container: Container,
     pub block: usize,
 }
 
-/// One enclosing table cell; `depth` is the table's nesting level (1 for an outermost table).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Level {
     pub table: TableId,
@@ -36,8 +29,6 @@ pub struct Level {
     pub depth: usize,
 }
 
-/// Where an element is: the paragraph holding a field's or inline control's markers (or a checkbox's
-/// face), or a block, row or cell a control wraps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Loc {
     Para(ParaId),
@@ -50,19 +41,13 @@ pub enum Loc {
 pub struct DocIndex {
     paras: HashMap<ParaId, Slot>,
     tables: HashMap<TableId, Slot>,
-    /// Floating objects by their anchor paragraph.
     floats: HashMap<FloatId, ParaId>,
-    /// The boxes of chains of linked text boxes: their chain's id, and whether the box holds its story.
     links: HashMap<FloatId, (u32, bool)>,
-    /// Fields and content controls by where they are: a control around several blocks or rows is in each.
     elements: HashMap<ElementId, HashSet<Loc>>,
-    /// Header and footer part names; `StoryId::HeaderFooter(k)` names `parts[k]`. Only appended to, so ids stay valid.
     parts: Vec<String>,
-    /// The building block laid out as the main flow (its one section) while it is edited.
     pub flow: Option<u32>,
 }
 
-/// A float that is a box of a chain of linked text boxes: the chain's id and whether it holds the story.
 fn link_of(i: &Inline) -> Option<(u64, (u32, bool))> {
     use crate::drawing::ShapeText;
     let Inline::Float(f, _) = i else { return None };
@@ -74,7 +59,6 @@ fn link_of(i: &Inline) -> Option<(u64, (u32, bool))> {
     }
 }
 
-/// A float's id and its story, or an inline shape's with text (`None`: no inline holding one).
 fn story_of(i: &Inline) -> Option<(u64, Option<&TextBox>)> {
     match i {
         Inline::Float(f, _) => Some((f.id, f.text_box.as_ref())),
@@ -88,8 +72,6 @@ impl DocIndex {
         DocIndex::build_with_parts(doc, &[])
     }
 
-    /// [`DocIndex::build`] with header and footer parts numbered in `parts`' order first (an edited document's index
-    /// keeps the numbers it gave parts made since reading), then the rest in name order.
     pub fn build_with_parts(doc: &Document, parts: &[String]) -> DocIndex {
         let mut parts = parts.to_vec();
         parts.extend(doc.stories.keys().filter(|k| !parts.contains(k)).cloned().collect::<Vec<_>>());
@@ -143,7 +125,7 @@ impl DocIndex {
         }
     }
 
-    // ---------------- elements ----------------
+    // Elements
 
     fn add_loc(&mut self, e: ElementId, at: Loc) {
         self.elements.entry(e).or_default().insert(at);
@@ -170,7 +152,6 @@ impl DocIndex {
         p.controls.iter().for_each(|&c| self.remove_loc(ElementId::Control(c), at));
     }
 
-    /// A table's row- and cell-level controls (rows and cells are addressed by index).
     fn add_row_elements(&mut self, t: &Table) {
         let id = TableId(t.id);
         for (ri, r) in t.rows.iter().enumerate() {
@@ -181,7 +162,6 @@ impl DocIndex {
         }
     }
 
-    /// Every row and cell place of table `id` leaves the index.
     fn remove_row_elements(&mut self, id: TableId) {
         self.elements.retain(|_, s| {
             s.retain(|l| !matches!(l, Loc::Row(t, _) | Loc::Cell(t, _, _) if *t == id));
@@ -189,12 +169,10 @@ impl DocIndex {
         });
     }
 
-    /// Where an element is; `None` once nothing in the document holds it.
     pub fn element(&self, e: ElementId) -> Option<&HashSet<Loc>> {
         self.elements.get(&e)
     }
 
-    /// The elements of a moved paragraph's inlines left `para` (a split moved them to the new paragraph).
     pub fn moved_inlines(&mut self, para: ParaId, moved: &[Inline]) {
         inline_elements(moved).for_each(|e| self.remove_loc(e, Loc::Para(para)));
     }
@@ -245,10 +223,8 @@ impl DocIndex {
         }
     }
 
-    // ---------------- updates (steps call these) ----------------
+    // Updates
 
-    /// `removed` blocks left `container` and its current blocks were (re)placed: removed content is dropped,
-    /// every block of the container gets its index, and blocks not indexed at their slot are indexed recursively.
     pub fn replaced_blocks(&mut self, doc: &Document, container: Container, removed: &[Block]) {
         removed.iter().for_each(|b| self.remove_block(b));
         let Some(blocks) = self.blocks(doc, container) else { return };
@@ -277,8 +253,6 @@ impl DocIndex {
         }
     }
 
-    /// A table's rows changed: everything inside it is indexed again (cells are addressed by row and cell index, so
-    /// kept content may now be in other rows).
     pub fn replaced_rows(&mut self, doc: &Document, table: TableId, removed: &[crate::docx::Row]) {
         for c in removed.iter().flat_map(|r| r.cells.iter()) {
             c.blocks.iter().for_each(|b| self.remove_block(b));
@@ -293,7 +267,6 @@ impl DocIndex {
         }
     }
 
-    /// A header or footer part added (made, or back by an undo): its story number, kept if it had one.
     pub fn added_part(&mut self, doc: &Document, name: &str) {
         let k = match self.parts.iter().position(|p| p == name) {
             Some(k) => k,
@@ -307,12 +280,10 @@ impl DocIndex {
         }
     }
 
-    /// Building block `k`'s body (made, or back by an undo) joins the index.
     pub fn added_building_block(&mut self, k: u32, body: &[Block]) {
         self.add_blocks(Container::Story(StoryId::BuildingBlock(k)), body);
     }
 
-    /// A header or footer part taken out: its blocks leave the index (its story number stays reserved).
     pub fn removed_part(&mut self, removed: &[Block]) {
         removed.iter().for_each(|b| self.remove_block(b));
     }
@@ -321,7 +292,6 @@ impl DocIndex {
         &self.parts
     }
 
-    /// A paragraph's inlines changed: its floating objects (and text boxes) are indexed again.
     pub fn replaced_inlines(&mut self, doc: &Document, para: ParaId, removed: &[Inline]) {
         self.remove_floats(removed);
         inline_elements(removed).for_each(|e| self.remove_loc(e, Loc::Para(para)));
@@ -332,7 +302,7 @@ impl DocIndex {
         }
     }
 
-    // ---------------- lookups ----------------
+    // Lookups
 
     pub fn para_slot(&self, id: ParaId) -> Option<Slot> {
         self.paras.get(&id).copied()
@@ -346,7 +316,6 @@ impl DocIndex {
         self.floats.get(&id).copied()
     }
 
-    /// The header or footer story showing part `name`.
     pub fn header_footer(&self, name: &str) -> Option<StoryId> {
         self.parts.iter().position(|p| p == name).map(|k| StoryId::HeaderFooter(k as u32))
     }
@@ -355,7 +324,6 @@ impl DocIndex {
         self.parts.get(k as usize).map(String::as_str)
     }
 
-    /// The story a container belongs to.
     pub fn story(&self, container: Container) -> StoryId {
         match container {
             Container::Section(_) => StoryId::Body,
@@ -364,8 +332,6 @@ impl DocIndex {
         }
     }
 
-    /// The story whose area of the page shows story `s`: a text box's is its anchor's (outward through text boxes in
-    /// text boxes); any other story is its own.
     pub fn host(&self, mut s: StoryId) -> StoryId {
         while let StoryId::TextBox(f) = s
             && let Some(slot) = self.float_anchor(f).and_then(|p| self.para_slot(p))
@@ -375,7 +341,6 @@ impl DocIndex {
         s
     }
 
-    /// The enclosing table cells of a container, outermost first (the table context chain).
     pub fn chain(&self, container: Container) -> Vec<Level> {
         let mut out = Vec::new();
         let mut c = container;
@@ -393,7 +358,6 @@ impl DocIndex {
         out
     }
 
-    /// The chain of the container holding a position.
     pub fn chain_of(&self, pos: &Position) -> Vec<Level> {
         match pos.place {
             Place::Text { para, .. } => self.para_slot(para).map(|s| self.chain(s.container)).unwrap_or_default(),
@@ -405,7 +369,6 @@ impl DocIndex {
         }
     }
 
-    /// Indices from the story root down to the container (section index for the body; block, row, cell per table).
     fn path(&self, container: Container) -> Vec<usize> {
         match container {
             Container::Section(i) => vec![i],
@@ -421,7 +384,6 @@ impl DocIndex {
         }
     }
 
-    /// A sortable key for a position in its story (document order).
     fn order_key(&self, pos: &Position) -> Vec<usize> {
         match pos.place {
             Place::Text { para, offset, .. } => match self.para_slot(para) {
@@ -443,12 +405,11 @@ impl DocIndex {
         }
     }
 
-    /// Document order of two positions of one story.
     pub fn cmp(&self, a: &Position, b: &Position) -> Ordering {
         self.order_key(a).cmp(&self.order_key(b))
     }
 
-    // ---------------- model access ----------------
+    // Model access
 
     pub fn blocks<'d>(&self, doc: &'d Document, container: Container) -> Option<&'d Vec<Block>> {
         match container {
@@ -498,8 +459,6 @@ impl DocIndex {
         }
     }
 
-    /// The story a float's box shows: a later box of a chain of linked text boxes shows its chain's, held by the
-    /// chain's first box; any other float its own.
     pub fn box_story(&self, f: FloatId) -> FloatId {
         match self.links.get(&f) {
             Some(&(c, false)) => self.links.iter().find(|(_, l)| **l == (c, true)).map_or(f, |(h, _)| *h),
@@ -546,7 +505,6 @@ impl DocIndex {
         }
     }
 
-    /// The top-level body block a container is in, as (section, block): what layout hints name.
     pub fn top_block(&self, container: Container, block: usize) -> Option<(usize, usize, Option<usize>)> {
         match container {
             Container::Section(i) => Some((i, block, None)),
@@ -563,14 +521,11 @@ impl DocIndex {
         }
     }
 
-    /// Every paragraph id indexed (for integrity checks).
     pub fn para_ids(&self) -> impl Iterator<Item = ParaId> + '_ {
         self.paras.keys().copied()
     }
 }
 
-/// The elements whose markers are in `inlines`: fields by their begin marker, inline controls by their start marker,
-/// checkboxes by their face.
 fn inline_elements(inlines: &[Inline]) -> impl Iterator<Item = ElementId> + '_ {
     inlines.iter().filter_map(|i| match i {
         Inline::FieldBegin { id, .. } => Some(ElementId::Field(*id)),
@@ -579,7 +534,6 @@ fn inline_elements(inlines: &[Inline]) -> impl Iterator<Item = ElementId> + '_ {
     })
 }
 
-/// A building block that hasn't been removed.
 fn live_part(b: &crate::docx::BuildingBlock) -> Option<&crate::docx::BuildingBlock> {
     (b.state != crate::docx::PartState::Removed).then_some(b)
 }

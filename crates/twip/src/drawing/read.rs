@@ -1,5 +1,4 @@
-//! Reading a drawing's graphic (`a:graphic` of a `wp:inline` or `wp:anchor`) into a [`Shape`] tree. Nothing here
-//! fails: a graphic the engine does not draw becomes a raw graphic, kept on save.
+//! Graphic reading
 
 use std::rc::Rc;
 
@@ -12,14 +11,11 @@ use super::units::{Angle, Emu};
 use super::{GroupShape, NonVisual, PicShape, RawGraphic, Shape, ShapeKind, ShapeText, SpShape, Spans, Xfrm};
 use crate::docx::xml::{A, R, W, WP};
 
-/// What the reader of the document supplies: images by relationship id, and a SmartArt diagram's stored drawing by
-/// the diagram's data relationship id (`dgm:relIds/@r:dm`).
 pub trait Source {
     fn image(&mut self, rid: &str) -> Option<usize>;
     fn diagram(&mut self, dm: &str) -> Option<Shape>;
 }
 
-/// A reading in progress: the document's source, and the preset names it has no definition for (drawn as `rect`).
 pub struct Ctx<'c> {
     pub source: &'c mut dyn Source,
     pub unknown_presets: Vec<String>,
@@ -88,7 +84,6 @@ fn geometry(sp_pr: Option<Node>, ctx: &mut Ctx) -> Geometry {
     Geometry::default()
 }
 
-/// The fill, line and effects of a shape properties element, and whether it holds 3D.
 struct Props {
     fill: Option<Fill>,
     line: Option<Line>,
@@ -195,7 +190,6 @@ fn group(n: Node, canvas: bool, ctx: &mut Ctx) -> Shape {
     Shape { nv, xfrm, kind: ShapeKind::Group(GroupShape { child_off, child_ext, fill, children, canvas }), spans }
 }
 
-/// A child of a group or canvas: a shape, picture, nested group or graphic frame.
 fn child(c: Node, ctx: &mut Ctx) -> Option<Shape> {
     Some(match c.tag_name().name() {
         "wsp" | "sp" | "cxnSp" => sp(c, ctx),
@@ -215,8 +209,6 @@ fn child(c: Node, ctx: &mut Ctx) -> Option<Shape> {
     })
 }
 
-/// The shape of a `wp:inline` or `wp:anchor` (`item`): its graphic read into a tree, its extent from `wp:extent`,
-/// its non-visual properties from `wp:docPr`.
 pub fn read(item: Node, ctx: &mut Ctx) -> Shape {
     let extent = item.children().find(|c| c.is_element() && c.tag_name().name() == "extent" && c.tag_name().namespace() == Some(WP));
     let ext = ["cx", "cy"].map(|k| extent.and_then(|e| e.attribute(k)).and_then(Emu::parse).unwrap_or_default());
@@ -240,7 +232,6 @@ pub fn read(item: Node, ctx: &mut Ctx) -> Shape {
         },
         None => raw(&uri, item),
     };
-    // The anchor or inline gives the top-level shape's size and identity; its own offset is not used (FLOAT-15).
     s.xfrm.ext = ext;
     s.xfrm.off = [Emu(0); 2];
     let mut nv = nv_of(doc_pr);
@@ -258,8 +249,6 @@ fn raw(uri: &str, n: Node) -> Shape {
     }
 }
 
-/// A SmartArt diagram's stored drawing (`dsp:drawing`, the part a diagram's data names in `dsp:dataModelExt`): its
-/// shapes as a group the diagram's size.
 pub fn diagram_drawing(xml: &str, ctx: &mut Ctx) -> Option<Shape> {
     let doc = roxmltree::Document::parse(xml).ok()?;
     let tree = doc.descendants().find(|n| n.is_element() && n.tag_name().name() == "spTree")?;
@@ -268,7 +257,6 @@ pub fn diagram_drawing(xml: &str, ctx: &mut Ctx) -> Option<Shape> {
         .filter(|c| c.is_element())
         .filter_map(|c| child(c, ctx))
         .map(|mut s| {
-            // The drawing part is not the document part: its spans mean nothing to saving.
             s.spans = Spans::default();
             s
         })
@@ -276,7 +264,6 @@ pub fn diagram_drawing(xml: &str, ctx: &mut Ctx) -> Option<Shape> {
     if children.is_empty() {
         return None;
     }
-    // The children are in EMU from the diagram's top left: the child frame is their bounding box from the origin.
     let (mut cx, mut cy) = (Emu(0), Emu(0));
     for c in &children {
         cx = cx.max(c.xfrm.off[0] + c.xfrm.ext[0]);

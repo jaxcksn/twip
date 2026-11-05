@@ -1,4 +1,4 @@
-//! Character formatting: setters over the selection, and at a caret over the word there and what is typed next.
+//! Character formatting
 
 use crate::api::command::CaseChange;
 use crate::api::value::{AutoOr, Color, HighlightColor, Points, UnderlineStyle};
@@ -10,7 +10,6 @@ use crate::editing::format::{Format, Toggle};
 use crate::editing::step::Step;
 use crate::editing::{Editor, Tx};
 
-/// `w:u`'s value for an underline style.
 pub(crate) fn underline_value(style: UnderlineStyle) -> &'static str {
     match style {
         UnderlineStyle::None => "none",
@@ -25,7 +24,6 @@ pub(crate) fn underline_value(style: UnderlineStyle) -> &'static str {
     }
 }
 
-/// `w:highlight`'s value for a highlight colour.
 pub(crate) fn highlight_value(c: HighlightColor) -> &'static str {
     match c {
         HighlightColor::Yellow => "yellow",
@@ -51,7 +49,6 @@ impl Editor {
         self.format(&Format::Set(t, on), fonts)
     }
 
-    /// An on/off run property (`w:dstrike`, `w:smallCaps`, `w:caps`, `w:vanish`).
     pub(in crate::editing) fn set_flag(&mut self, label: &'static str, name: &'static str, on: bool, fonts: &Fonts) -> Outcome {
         self.format_runs(label, &|p, w, _| p.set(name, if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") }), fonts)
     }
@@ -91,8 +88,6 @@ impl Editor {
         )
     }
 
-    /// The selected text in another case, its formatting kept. Each selected piece of a paragraph is changed on its
-    /// own (a sentence starts at the piece's start, and after `.`, `!` or `?`).
     pub(in crate::editing) fn change_case(&mut self, to: CaseChange, fonts: &Fonts) -> Outcome {
         if self.selection.is_collapsed() {
             return Outcome::unavailable("nothing selected");
@@ -103,7 +98,6 @@ impl Editor {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mut with = Vec::new();
             let mut at = 0u32;
-            // Where the next letter starts a word or a sentence.
             let (mut word, mut sentence) = (true, true);
             for i in &p.inlines {
                 let n = i.units() as u32;
@@ -139,7 +133,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// The selection's ends carried through the transaction's steps.
     fn keep_selection_through(&mut self, tx: &Tx) {
         let map = |p: crate::editing::position::Position| tx.maps.iter().fold(p, |p, m| m.apply(p));
         if let crate::editing::selection::Selection::Text { anchor, focus, unit } = self.selection {
@@ -147,7 +140,6 @@ impl Editor {
         }
     }
 
-    // shortcut: the format painter isn't built yet.
     pub(in crate::editing) fn copy_formatting(&mut self) -> Outcome {
         Outcome::unsupported("the format painter")
     }
@@ -157,7 +149,6 @@ impl Editor {
     }
 }
 
-/// `text` in case `to`; `word` and `sentence` say whether the next letter starts one, and carry on to the next piece.
 fn recase(text: &str, to: CaseChange, word: &mut bool, sentence: &mut bool) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {

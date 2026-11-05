@@ -1,9 +1,7 @@
-//! Line ends (DRAW-16): the head and tail of an open path, sized by the line's width.
+//! Line ends
 
 use crate::drawing::paint::{EndKind, EndSize, LineEnd};
 
-/// An end's outline in the end's own frame: x runs from the endpoint back along the line, y across it; points, for a
-/// line `w` wide. `cut` is how far the line is shortened under the end.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EndShape {
     pub outline: EndOutline,
@@ -12,11 +10,8 @@ pub struct EndShape {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EndOutline {
-    /// A closed polygon.
     Polygon(Vec<[f64; 2]>),
-    /// An ellipse centred on the endpoint: half-length along the line, half-width across.
     Oval { rx: f64, ry: f64 },
-    /// An open polyline stroked at the line's width (the `arrow` end).
     Open(Vec<[f64; 2]>),
 }
 
@@ -28,14 +23,7 @@ fn size(s: EndSize) -> f64 {
     }
 }
 
-/// DRAW-16: an end's length is 2, 3 or 5 line widths (`len` sm, med, lg), its width 2, 3 or 5 line widths (`w`). A
-/// triangle has its tip on the endpoint and its base at the length, the line stopping half a width short of the
-/// base; a stealth end is that triangle notched to 1, 2 or 3 widths from the tip (`len` sm, med, lg) on the line,
-/// where the line stops; a
-/// diamond and an oval are centred on the endpoint, the line running to it; an arrow is an open V of the line's
-/// width, the line stopping a width short of the endpoint.
 pub fn end_shape(e: LineEnd, w: f64) -> EndShape {
-    // Ends of lines thinner than 2 pt are sized as for 2 pt.
     let w = w.max(2.0);
     let (l, hw) = (size(e.length) * w, size(e.width) * w / 2.0);
     match e.kind {

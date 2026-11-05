@@ -1,4 +1,4 @@
-//! Shapes in the editor: the selected shape's rotate and adjust handles, where they are and what a press on one hits.
+//! Shape editing
 
 use crate::layout::FloatId;
 use crate::layout::fragment::{Item, ShapeItem};
@@ -8,17 +8,13 @@ use super::selection::ObjectRef;
 use super::snap::SnapLine;
 use super::view::ShapeFrame;
 
-/// A handle of the selected shape other than the eight resize handles.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum ShapeHandle {
     Rotate,
-    /// The geometry's adjust handle at this index of `Geom.handles`.
     Adjust(usize),
-    /// The selected group child itself: a drag moves it in its group.
     Move,
 }
 
-/// `p` turned `deg` degrees clockwise about `c`.
 fn turned(p: [f64; 2], c: [f64; 2], deg: f64) -> [f64; 2] {
     let (s, k) = deg.to_radians().sin_cos();
     let (dx, dy) = (p[0] - c[0], p[1] - c[1]);
@@ -26,7 +22,6 @@ fn turned(p: [f64; 2], c: [f64; 2], deg: f64) -> [f64; 2] {
 }
 
 impl Editor {
-    /// The selected shape's item on `page`: the selected group child's, else the float's own (none for a group).
     fn selected_shape(&self, f: FloatId, page: usize) -> Option<std::rc::Rc<ShapeItem>> {
         let child = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
         let snap = self.snapshot();
@@ -37,11 +32,6 @@ impl Editor {
         })
     }
 
-    /// The selected shape's frame on each of `pages`: its box and rotation, its rotate knob's centre 24 px above the
-    /// top's middle and its adjust handles, all turned with it. A group's frame is its box. None for a
-    /// multi-selection, an object that can't change, one without a shape tree (a frame), or while it is dragged.
-    // shortcut: inline pictures have no rotate knob; turning one needs an inline picture's shape tree and a turned
-    // inline layout, which the inline picture path doesn't have.
     pub(super) fn shape_frames(&mut self, pages: std::ops::Range<usize>) -> Vec<ShapeFrame> {
         let floats = self.selected_floats();
         let [f] = floats[..] else { return Vec::new() };
@@ -72,14 +62,12 @@ impl Editor {
         out
     }
 
-    /// The selected shape's rotate or adjust handle at a document point (within 4 px), with its float and frame.
     pub(super) fn shape_handle_at(&mut self, x: f64, y: f64) -> Option<(FloatId, ShapeHandle, ShapeFrame)> {
         let (page, px, py) = self.stack().page_at(x, y)?;
         let f = *self.selected_floats().first()?;
         let reach = 4.0 * 0.75 / self.viewport.zoom.max(0.1);
         let near = |p: [f64; 2]| (p[0] - px).abs() <= reach && (p[1] - py).abs() <= reach;
         let frame = self.shape_frames(page..page + 1).into_iter().next()?;
-        // Adjust handles first: Word draws them over the rotate handle.
         let h = match frame.adjust.iter().position(|p| near(*p)) {
             Some(i) => ShapeHandle::Adjust(i),
             None if near(frame.rotate) => ShapeHandle::Rotate,
@@ -89,26 +77,20 @@ impl Editor {
     }
 }
 
-/// The rotate knob's centre above the top's middle, px.
 const KNOB: f64 = 24.0;
 
-/// A rotate or adjust handle (or a group child) being dragged.
 #[derive(Clone, Debug)]
 pub(super) struct ShapeDrag {
     f: FloatId,
-    /// The float's shape box on the press's page (its own box, unturned).
     root: [f64; 4],
     child: crate::drawing::ChildPath,
     pub handle: ShapeHandle,
-    /// The shape as drawn when the press was.
     pub item: std::rc::Rc<ShapeItem>,
-    /// Where the press was and where the pointer is (a moved child's: snapped), in the press's page's coordinates.
     start: [f64; 2],
     pub now: [f64; 2],
     pub page: usize,
     shift: bool,
     previewed: Option<crate::layout::ParaId>,
-    /// The line each axis of a moved child snapped to.
     pub snapped: [Option<SnapLine>; 2],
 }
 
@@ -125,8 +107,6 @@ impl ShapeDrag {
         ShapeDrag { f, root, child, handle, item, start: at, now: at, page, shift: false, previewed: None, snapped: [None; 2] }
     }
 
-    /// The angle a rotation turns the shape to as drawn, degrees: settled on a right angle within 4° of one, or with
-    /// Shift on a multiple of 15°.
     pub fn angle(&self) -> f64 {
         let [x0, y0, x1, y1] = self.item.rect;
         let c = [(x0 + x1) / 2.0, (y0 + y1) / 2.0];
@@ -140,18 +120,14 @@ impl ShapeDrag {
     }
 }
 
-/// Shape insert mode: the kind the next press inserts, and the drag sizing it.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ShapeInsert {
     kind: crate::drawing::NewShape,
-    /// The press's page and point.
     start: Option<(usize, [f64; 2])>,
     now: [f64; 2],
     shift: bool,
 }
 
-/// Sets the rotation of float `n`'s shape at `child` to `deg` (normalised); the float's own shape turned a quarter
-/// swaps the placed box about its centre (FLOAT-17, not in compat 12).
 fn rotate_to(n: &mut crate::docx::Float, child: &[u16], deg: f64, compat: i64) -> bool {
     let deg = deg.rem_euclid(360.0);
     let Some(s) = n.shape.as_deref_mut().and_then(|s| s.at_mut(child)) else { return false };
@@ -173,9 +149,6 @@ fn rotate_to(n: &mut crate::docx::Float, child: &[u16], deg: f64, compat: i64) -
     true
 }
 
-/// Moves the group child at `path` of float `n` (its shape box at `root`, page points) by the page vector `by`, and
-/// grows its groups to hold it (the float's box too, its offsets keeping the rest in place).
-// shortcut: a turned float's box grows along its own axes about its old origin, and groups never shrink.
 fn move_child(n: &mut crate::docx::Float, path: &[u16], root: [f64; 4], by: [f64; 2]) -> Option<()> {
     let (_, parent) = path.split_last()?;
     let tree = n.shape.as_deref()?;
@@ -185,7 +158,6 @@ fn move_child(n: &mut crate::docx::Float, path: &[u16], root: [f64; 4], by: [f64
         let (sin, cos) = (-deg).to_radians().sin_cos();
         (by[0] * cos - by[1] * sin, by[0] * sin + by[1] * cos)
     };
-    // The page vector in the parent group's children's coordinates: unturned, unmirrored, unscaled.
     let (mut ux, mut uy) = unturn(rot);
     if fh {
         ux = -ux;
@@ -193,7 +165,6 @@ fn move_child(n: &mut crate::docx::Float, path: &[u16], root: [f64; 4], by: [f64
     if fv {
         uy = -uy;
     }
-    // The moved child's text box moves with it (drawn at its leaf; this keeps the stored box).
     let (rx, ry) = unturn(tree.xfrm.rot.normalized().degrees());
     let c = n.shape.as_deref_mut()?.at_mut(path)?;
     c.xfrm.off[0].0 += (ux / sx * 12700.0).round() as i64;
@@ -207,7 +178,6 @@ fn move_child(n: &mut crate::docx::Float, path: &[u16], root: [f64; 4], by: [f64
         let off = s.xfrm.off;
         let grow = g.fit_children(&mut s.xfrm);
         if k == 0 {
-            // The float's box grows; its shape's own offset stays as written.
             s.xfrm.off = off;
             let pt = |e: i64| e as f64 / 12700.0;
             let (l, t) = (pt(grow[0]), pt(grow[1]));
@@ -233,13 +203,10 @@ fn move_child(n: &mut crate::docx::Float, path: &[u16], root: [f64; 4], by: [f64
 
 pub use crate::api::drawing::Arrange;
 
-/// Shift snaps a rotation to 15°.
 const SNAP: f64 = 15.0;
-/// A rotation settles on a right angle this near it, degrees.
 const SETTLE: f64 = 4.0;
 
 impl Editor {
-    /// A press on the selected shape's rotate or adjust handle starts its drag. True when handled.
     pub(super) fn shape_press(&mut self, x: f64, y: f64) -> bool {
         let Some((f, handle, frame)) = self.shape_handle_at(x, y) else { return false };
         let Some((_, px, py)) = self.stack().page_at(x, y) else { return false };
@@ -251,8 +218,6 @@ impl Editor {
         true
     }
 
-    /// A press at (`px`, `py`) on `page` on float `f`'s selected group child starts moving it in its group. True when
-    /// it did.
     pub(super) fn child_move_press(&mut self, f: FloatId, page: usize, px: f64, py: f64) -> bool {
         let Some(child) = self.selected_child().map(<[u16]>::to_vec) else { return false };
         let (Some(item), Some(root)) = (self.selected_shape(f, page), self.shape_root(f, page)) else { return false };
@@ -262,7 +227,6 @@ impl Editor {
         true
     }
 
-    /// Float `f`'s shape box on `page`: its placed box, unturned when the box is placed turned (FLOAT-17).
     fn shape_root(&mut self, f: FloatId, page: usize) -> Option<[f64; 4]> {
         let swap = self.float_of(f)?.rot_swap;
         let geo = self.pages.page(page, &self.index)?;
@@ -275,7 +239,6 @@ impl Editor {
         })
     }
 
-    /// A group's frame as an item, for its rotation (it draws no shape of its own).
     fn group_item(&mut self, f: FloatId, page: usize) -> Option<std::rc::Rc<ShapeItem>> {
         let geo = self.pages.page(page, &self.index)?;
         let rect = geo.stories.iter().find(|s| s.float == Some(f))?.rect;
@@ -290,14 +253,12 @@ impl Editor {
         Some(std::rc::Rc::new(s))
     }
 
-    /// The float as the drag leaves it: its shape (or group child) turned, or its adjust values set.
     fn dragged_float(&self, d: &ShapeDrag) -> Option<crate::docx::Float> {
         let mut n = self.float_of(d.f)?.clone();
         let compat = self.doc.settings.compat_mode;
         let s = n.shape.as_deref_mut()?.at_mut(&d.child)?;
         match d.handle {
             ShapeHandle::Rotate => {
-                // The shape's own rotation changes by as much as the drawn one (a child's composes with its groups').
                 let own = s.xfrm.rot.degrees() + d.angle() - d.item.rot;
                 rotate_to(&mut n, &d.child, own, compat);
             }
@@ -313,13 +274,10 @@ impl Editor {
         Some(n)
     }
 
-    /// A pointer move during a handle drag: the float is laid out as the release would leave it.
     pub(super) fn shape_move(&mut self, x: f64, y: f64, mods: super::keymap::Mods) {
         let Some(mut d) = self.shape_drag.take() else { return };
-        // Taken on the press's page, wherever the pointer is.
         let (ox, oy) = self.stack().to_doc(d.page, 0.0, 0.0).unwrap_or((0.0, 0.0));
         (d.now, d.shift, d.snapped) = ([x - ox, y - oy], mods.shift, [None; 2]);
-        // A moved child snaps by its bounds, unless Alt is held.
         if d.handle == ShapeHandle::Move && !mods.alt {
             let [x0, y0, x1, y1] = super::snap::turned_bounds(d.item.rect, d.item.rot);
             let (dx, dy) = (d.now[0] - d.start[0], d.now[1] - d.start[1]);
@@ -333,7 +291,6 @@ impl Editor {
         self.shape_drag = Some(d);
     }
 
-    /// The release of a handle drag: one step, or none when the pointer didn't move.
     pub(super) fn shape_release(&mut self, fonts: &crate::font::Fonts) -> Option<super::commands::Outcome> {
         let d = self.shape_drag.take()?;
         self.requests.push(super::input::Request::ReleasePointer);
@@ -352,14 +309,10 @@ impl Editor {
             ),
             None => super::commands::Outcome::Unchanged("no drag"),
         };
-        // A selected child stays selected.
         self.object_child = child;
         Some(out)
     }
 
-    /// Typing with one shape selected that has no story and room for text (a non-empty text rectangle) first
-    /// gives it a story, a centred paragraph as Word's, and puts the caret there. One step; false when the
-    /// selection is anything else.
     pub(super) fn shape_story_for_typing(&mut self, fonts: &crate::font::Fonts) -> bool {
         use crate::drawing::{ShapeKind, ShapeText};
         let floats = self.selected_floats();
@@ -411,11 +364,6 @@ impl Editor {
         true
     }
 
-    /// A new floating shape `kind`, Word's template, `wrapNone` and in front of the text, selected
-    /// afterwards. `at`: its page and box (page points), anchored to the paragraph of the caret's story whose line is
-    /// at its top, measured from the column and that paragraph; `None`: 72 x 72 pt (a line 72 x 0) at the caret's
-    /// paragraph, its left at the column's. One step.
-    // shortcut: the column is the section's first (its left margin).
     pub(super) fn insert_shape(
         &mut self,
         kind: crate::drawing::NewShape,
@@ -426,7 +374,6 @@ impl Editor {
         self.insert_shape_in(kind, at, [72.0, if line { 0.0 } else { 72.0 }], fonts)
     }
 
-    /// [`Editor::insert_shape`] at the caret, `size` (points) large.
     pub(super) fn insert_shape_sized(
         &mut self,
         kind: crate::drawing::NewShape,
@@ -448,7 +395,6 @@ impl Editor {
         if kind == NewShape::TextBox {
             return Outcome::unavailable("a text box is inserted by Insert Text Box");
         }
-        // With an object selected, the caret is where typing would put it.
         self.object_to_caret();
         let Some(caret) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
         let Some((caret_para, _)) = caret.para_offset() else { return Outcome::Unchanged("caret at a row end") };
@@ -499,7 +445,6 @@ impl Editor {
             behind: false,
             allow_overlap: true,
             layout_in_cell: true,
-            // Above every float read (paint order).
             order: usize::MAX / 2,
             z: u32::MAX,
             src: None,
@@ -520,13 +465,10 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// The next press inserts shape `kind`: a click 72 x 72 pt (a line 72 x 0) at the pointer, a drag the box
-    /// it spans (Shift: square). Esc leaves the mode.
     pub fn begin_shape_insert(&mut self, kind: crate::drawing::NewShape) {
         self.shape_insert = Some(ShapeInsert { kind, start: None, now: [0.0; 2], shift: false });
     }
 
-    /// A pointer event in shape insert mode. True when it was one.
     pub(super) fn shape_insert_pointer(&mut self, kind: super::input::PointerKind, x: f64, y: f64, shift: bool, fonts: &crate::font::Fonts) -> bool {
         use super::input::{PointerKind as K, Request};
         let Some(mut s) = self.shape_insert else { return false };
@@ -567,7 +509,6 @@ impl Editor {
         true
     }
 
-    /// Esc or a lost pointer during a handle drag: nothing changes. True when one was going.
     pub(super) fn shape_cancel(&mut self) -> bool {
         let Some(d) = self.shape_drag.take() else { return false };
         self.preview_layout(d.f, None, d.previewed);
@@ -576,10 +517,8 @@ impl Editor {
     }
 }
 
-/// Formatting operations. Each applies to every selected float (or the selected group child) and is one step.
+// Formatting operations
 impl Editor {
-    /// `edit` on each of `ids` (by its model and the shape path it applies to), as one step `label`; the selection
-    /// (its child and the floats added to it) is kept. Unchanged when no edit changed anything.
     fn edit_floats(
         &mut self,
         label: &'static str,
@@ -627,7 +566,6 @@ impl Editor {
         out
     }
 
-    /// `edit` on the selected shape (the group child when one is selected) of each selected float.
     fn edit_shapes(
         &mut self,
         label: &'static str,
@@ -638,7 +576,6 @@ impl Editor {
         self.edit_floats(label, &ids, |n, path| n.shape.as_deref_mut().and_then(|s| s.at_mut(path)).is_some_and(&mut edit), fonts)
     }
 
-    /// Change Shape: a new preset, its adjust values at their defaults; text, fill, line and effects kept.
     pub fn set_shape_preset(&mut self, preset: crate::drawing::geom::Preset, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         self.edit_shapes(
             "Change Shape",
@@ -647,7 +584,6 @@ impl Editor {
         )
     }
 
-    /// One adjust value (`index` in the preset's order).
     pub fn set_shape_adjust(&mut self, index: usize, value: i64, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         self.edit_shapes(
             "Adjust Shape",
@@ -662,7 +598,6 @@ impl Editor {
         )
     }
 
-    /// The explicit fill (`None`: the style reference's again): a shape's, or a group's for its `grpFill` children.
     pub fn set_shape_fill(&mut self, fill: Option<crate::drawing::paint::Fill>, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use crate::drawing::ShapeKind;
         self.edit_shapes(
@@ -682,7 +617,6 @@ impl Editor {
         )
     }
 
-    /// The explicit outline (`None`: the style reference's again).
     pub fn set_shape_line(&mut self, line: Option<crate::drawing::paint::Line>, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use crate::drawing::ShapeKind;
         self.edit_shapes(
@@ -702,7 +636,6 @@ impl Editor {
         )
     }
 
-    /// The explicit effects (`None`: the style reference's again).
     pub fn set_shape_effects(&mut self, effects: Option<crate::drawing::paint::EffectList>, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use crate::drawing::ShapeKind;
         self.edit_shapes(
@@ -722,8 +655,6 @@ impl Editor {
         )
     }
 
-    /// The text body (insets, anchor, autofit, wrap, direction); a float's own story follows its insets, anchor and
-    /// autofit.
     pub fn set_shape_body(&mut self, body: crate::drawing::text::BodyProps, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use crate::drawing::text::{AutoFit, VAnchor};
         let ids = self.selected_floats();
@@ -749,7 +680,6 @@ impl Editor {
         )
     }
 
-    /// Rotation, degrees clockwise (0 to 360).
     pub fn set_object_rotation(&mut self, deg: f64, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         if !(0.0..=360.0).contains(&deg) {
             return super::commands::Outcome::unavailable("a rotation is 0 to 360 degrees");
@@ -759,7 +689,6 @@ impl Editor {
         self.edit_floats("Rotate", &ids, |n, path| rotate_to(n, path, deg, compat), fonts)
     }
 
-    /// Flip Horizontal or Vertical.
     pub fn flip_object(&mut self, horizontal: bool, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         self.edit_shapes(
             "Flip",
@@ -776,9 +705,6 @@ impl Editor {
         )
     }
 
-    /// Arrange: forward and backward swap paint order (`relativeHeight`) with the next float that way; to the front
-    /// and back go past every float; in front of and behind the text set `behindDoc`.
-    // shortcut: forward and backward take the next float in paint order, overlapping or not.
     pub fn arrange_object(&mut self, how: Arrange, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         let ids = self.selected_floats();
         let Some(&f) = ids.first() else { return super::commands::Outcome::unavailable("no floating object selected") };
@@ -789,7 +715,6 @@ impl Editor {
             }
             _ => {}
         }
-        // Every float's paint order, lowest first.
         let mut all: Vec<(u32, FloatId)> = Vec::new();
         fn walk(blocks: &[crate::docx::Block], out: &mut Vec<(u32, FloatId)>) {
             for b in blocks {
@@ -815,7 +740,6 @@ impl Editor {
             Arrange::Backward => i.checked_sub(1).map(|j| vec![(f, all[j].0), (all[j].1, z)]).unwrap_or_default(),
             _ => Vec::new(),
         };
-        // Equal heights swapped stay equal: the one moved goes one past.
         if let [(_, a), (_, b)] = &mut set[..]
             && a == b
         {
@@ -834,10 +758,8 @@ impl Editor {
     }
 }
 
-/// Group and ungroup.
+// Group and ungroup
 impl Editor {
-    /// Removes floats `ids` from their anchors and puts `new` in `anchor`'s paragraph (at its start), as one step;
-    /// then places each new float at its page box (the step after, in the same batch). Selects the new floats.
     fn replace_floats(
         &mut self,
         label: &'static str,
@@ -878,7 +800,6 @@ impl Editor {
         let made: Vec<FloatId> = new.iter().map(|(f, _)| FloatId(f.id)).collect();
         self.selection = super::selection::Selection::Object(ObjectRef::Floating(made[0]));
         self.commit(tx, None, fonts);
-        // Laid out at its references' origins: moved to where it belongs.
         for (fl, to) in &new {
             let f = FloatId(fl.id);
             if let Some((page, now)) = self.float_box(f, fonts) {
@@ -891,10 +812,6 @@ impl Editor {
         self.end_batch(true, fonts)
     }
 
-    /// Group: the selected floats (two or more, of one story, on one page, each with a shape tree) become one group
-    /// float, anchored where the first is, its box their union, its wrap the first's; the children keep their place,
-    /// size, turn and text, in paint order. The group is selected. One step.
-    // shortcut: a turned group's children aren't turned back first.
     pub fn group_objects(&mut self, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use super::commands::Outcome;
         use crate::drawing::units::Emu;
@@ -927,7 +844,6 @@ impl Editor {
         let (mut children, mut parts) = (Vec::new(), Vec::new());
         for (k, (m, _, r)) in members.iter().enumerate() {
             let mut s = m.shape.as_deref().cloned().expect("checked");
-            // The shape's own box: the placed box unturned (FLOAT-17), about its centre.
             let (w, h) = if m.rot_swap { (m.h, m.w) } else { (m.w, m.h) };
             let (cx, cy) = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
             let (bx, by) = (cx - w / 2.0 - u[0], cy - h / 2.0 - u[1]);
@@ -970,9 +886,6 @@ impl Editor {
         self.replace_floats("Group", &ids, anchor, vec![(g, u)], fonts)
     }
 
-    /// Ungroup: the selected group float becomes one float per child, each at its place in the group (DML §4) and
-    /// with its turn and text, anchored and wrapped as the group was. The children are selected. One step.
-    // shortcut: a turned or flipped group's children don't take its turn or flips.
     pub fn ungroup_objects(&mut self, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use super::commands::Outcome;
         use crate::drawing::units::Emu;
@@ -1032,7 +945,6 @@ impl Editor {
                 order: usize::MAX / 2,
                 ..m.clone()
             };
-            // A quarter-turned child is placed as its box turned (FLOAT-17).
             rotate_to(&mut n, &[], deg, compat);
             let (cx, cy) = ((rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0);
             let to = [cx - n.w / 2.0, cy - n.h / 2.0, cx + n.w / 2.0, cy + n.h / 2.0];
@@ -1045,11 +957,8 @@ impl Editor {
     }
 }
 
-/// The shape commands of the API, on the operations above.
+// API shape commands
 impl Editor {
-    /// Runs a shape command (`InsertShape`, `SetShape*`, `SetPictureAdjust`, `SetObjectRotation`, `FlipObject`,
-    /// `ArrangeObject`, `GroupObjects`, `UngroupObjects`, `SelectGroupChild`). The session has checked the arguments
-    /// it can check alone (`api::session::commands`).
     pub(super) fn shape_command(&mut self, cmd: super::commands::Command, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use super::commands::{Command as C, Outcome};
         use crate::api::drawing::FlipAxis;
@@ -1066,7 +975,6 @@ impl Editor {
             C::SetShapePreset(p) => self.set_shape_preset(p.0, fonts),
             C::SetShapeAdjust(a) => self.set_shape_adjust(a.index as usize, a.value, fonts),
             C::SetShapeFill(v) => {
-                // A picture's bytes go in with the commit (`pending_image`): its index is given after the conversion.
                 let mut images = Vec::new();
                 let fill = match v.to_model(&mut |data| {
                     crate::docx::image::image_info(data).map(|_| {
@@ -1087,7 +995,6 @@ impl Editor {
                 self.set_shape_fill(fill, fonts)
             }
             C::SetShapeLine(change) => {
-                // One outline per selected shape, each changed from its own.
                 let line = self.selected_line();
                 match change.apply(line.as_ref(), &mut |_| None) {
                     Ok(l) => self.set_shape_line(l, fonts),
@@ -1139,7 +1046,6 @@ impl Editor {
         }
     }
 
-    /// The selected shape (the group child when one is selected), if it is an `Sp`.
     fn selected_sp(&self) -> Option<crate::drawing::SpShape> {
         let f = *self.selected_floats().first()?;
         let path = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
@@ -1166,8 +1072,6 @@ impl Editor {
         }
     }
 
-    /// SelectGroupChild: the next or previous child of the selected group (from the selected child, round). A view
-    /// change.
     fn select_group_child(&mut self, next: bool) -> super::commands::Outcome {
         use super::commands::Outcome;
         let floats = self.selected_floats();
@@ -1191,7 +1095,6 @@ impl Editor {
 }
 
 impl Editor {
-    /// The document's theme colours, through its colour mapping.
     pub fn theme_colours(&self) -> Vec<crate::api::value::Color> {
         crate::api::drawing::ThemeColour::ALL
             .iter()
@@ -1204,7 +1107,6 @@ impl Editor {
     }
 }
 
-/// What the state reports about the selected shape.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ShapeInfo {
     pub kind: Option<crate::api::state::ObjectKind>,
@@ -1221,7 +1123,6 @@ pub struct ShapeInfo {
 }
 
 impl Editor {
-    /// The selected shape (the group child when one is selected) as the state reports it; `None` without a shape tree.
     pub fn shape_info(&self) -> Option<ShapeInfo> {
         use crate::api::drawing::{EffectsValue, FillState, FillValue, LineState, LineValue, ShapePreset, ShapeState, ShapeTextState};
         use crate::api::state::ObjectKind as K;
@@ -1253,7 +1154,6 @@ impl Editor {
             floating,
             ..ShapeInfo::default()
         };
-        // Style references: the theme's entry, its `phClr` the reference's colour.
         let style = |r: &Option<(u32, Option<crate::drawing::colour::Colour>)>| r.as_ref().map(|(i, c)| (*i, c.clone()));
         match &s.kind {
             ShapeKind::Sp(sp) => {

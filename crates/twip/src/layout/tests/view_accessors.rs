@@ -1,19 +1,13 @@
-//! Layout reads run, paragraph, section and table-grid properties through the markup view's accessors (REV-2):
-//! `run_in`, `para_style_in`, `mark_in`, `section_in` and `table_grid_in`. A scan of the layout input points for
-//! direct reads, with the reads that are right as they are listed.
+//! Markup view accessors
 
 use std::path::Path;
 
-/// The files whose reads are scanned.
 const FILES: [&str; 9] = ["text.rs", "line.rs", "flow.rs", "table.rs", "story.rs", "page.rs", "document.rs", "node.rs", "incremental.rs"];
 
-/// Direct reads of a paragraph's properties or mark, or a table's grid, by the receivers layout names them with.
 const FIELDS: [&str; 8] = ["p.style", "para.style", "src.style", "n.style", "p.mark", "para.mark", "src.mark", "t.grid"];
 
-/// A section's page properties: read through `section_in`, never off a `Section`.
 const PAGE: [&str; 11] = ["page_w", "page_h", "top", "bottom", "left", "right", "header", "footer", "gutter", "columns", "title_pg"];
 
-/// Direct reads that are right: (file, the line's code, why).
 const ALLOWED: [(&str, &str, &str); 10] = [
     ("text.rs", "self.style_index(p.style)", "a piece's style index"),
     ("text.rs", "self.east_asia_face(p.style)", "a piece's style index"),
@@ -31,13 +25,11 @@ fn ident(c: Option<char>) -> bool {
     c.is_some_and(|c| c.is_alphanumeric() || c == '_')
 }
 
-/// The direct reads on one line of code.
 fn reads(code: &str) -> Vec<String> {
     let mut out = Vec::new();
     for f in FIELDS {
         for (at, _) in code.match_indices(f) {
             let rest = &code[at + f.len()..];
-            // A piece's style index, and the revision marks themselves (no view changes them).
             let fine = rest.starts_with(" as ") || rest.starts_with(".rev") || rest.starts_with(".change");
             if !ident(code[..at].chars().next_back()) && !ident(rest.chars().next()) && !fine {
                 out.push(f.to_string());
@@ -61,7 +53,6 @@ fn layout_reads_properties_through_the_view() {
     let mut found = Vec::new();
     for file in FILES {
         let text = std::fs::read_to_string(dir.join(file)).expect("a layout source");
-        // The file's tests aren't layout input points.
         let code = text.split("#[cfg(test)]\nmod tests").next().unwrap_or(&text);
         for (n, line) in code.lines().enumerate() {
             let code = line.split("//").next().unwrap_or("");

@@ -1,12 +1,4 @@
-//! Incremental layout: the baseline, accumulated changes, the restart frontier and page reuse, behind
-//! [`DocumentLayout`].
-//!
-//! **Equivalence by construction.** An incremental job runs the same passes as a fresh layout. Its first pass starts at
-//! the restart page with the baseline's earlier pages copied, and takes a baseline page instead of laying one out only
-//! when every input of that page is equal; later passes, when needed, run in full. Copied pages are a fresh
-//! first pass's pages only if the baseline converged in its first pass, so a baseline that needed more passes gives a
-//! full layout, as do changes outside the blocks (settings, section properties, stories, notes, fonts) and body fields
-//! that take the previous pass's values. Every result therefore equals `layout(doc, fonts)`.
+//! Incremental layout
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -31,8 +23,6 @@ use super::space::BodyFields;
 use super::text::same_para;
 use super::token::{At, PageToken};
 
-/// An edit's extent, from the editor: in section `section`, blocks `first..old_end` before the
-/// edit became `first..new_end`. `row`: the edited row when the edit stayed inside one table row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Change {
     pub section: usize,
@@ -42,36 +32,27 @@ pub struct Change {
     pub row: Option<usize>,
 }
 
-/// What `through` lays out to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     Page(usize),
     Position { para: ParaId, unit: Unit },
 }
 
-/// The changed blocks since the baseline: baseline blocks `first..old_end` of `section` are current blocks
-/// `first..new_end`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Span {
     section: usize,
     first: usize,
     old_end: usize,
     new_end: usize,
-    /// When every edit stayed inside one table row of the single block `first`: the last edited row (the row
-    /// exception).
     row: Option<usize>,
-    /// With `row`: the first edited row (the rows between may be unchanged).
     first_row: usize,
 }
 
 impl Span {
-    /// Current minus baseline block count after the span.
     fn delta(&self) -> isize {
         self.new_end as isize - self.old_end as isize
     }
 
-    /// The span covering this one and `c` (an edit in current coordinates); `None` in another section. Blocks between
-    /// the two count as changed (conservative).
     fn merge(self, c: Span) -> Option<Span> {
         if c.section != self.section {
             return None;
@@ -90,20 +71,15 @@ impl Span {
     }
 }
 
-/// Every edit since the baseline's revision.
 #[derive(Clone, Debug, Default)]
 struct Accumulated {
     span: Option<Span>,
-    /// An edit came without a hint: find the change by comparing the document with the shadow.
     unknown: bool,
-    /// A full layout is needed.
     full: bool,
 }
 
-/// The blocks as the baseline laid them out; `None`: stale (copying it would cost a pause, so it compares as changed).
 type Shadow = Vec<Vec<Option<Block>>>;
 
-/// What the baseline was laid out from besides the blocks: any change to it means a full layout.
 struct Extras {
     sections: Vec<Section>,
     stories: std::collections::BTreeMap<String, Vec<Block>>,
@@ -112,13 +88,10 @@ struct Extras {
     separators: HashMap<String, Vec<Block>>,
     env: LayoutEnv,
     fonts: u64,
-    /// Endnote order (NOTE-10): the blocks appended to the last section.
     endnote_order: Vec<i64>,
-    /// The document has page-dependent body fields.
     body_fields: bool,
 }
 
-/// A section's properties without its blocks. Exhaustive, so a field added to the model is decided on here.
 fn props(s: &Section) -> Section {
     let Section {
         break_kind,
@@ -185,7 +158,6 @@ impl Extras {
         }
     }
 
-    /// Whether the document's non-block inputs are the baseline's.
     fn same(&self, doc: &Document, fonts: &Fonts) -> bool {
         self.fonts == fonts.revision()
             && self.sections.len() == doc.sections.len()
@@ -198,24 +170,17 @@ impl Extras {
     }
 }
 
-/// A top-level table's layout for the document of the job that made it: section, block, width (bits), layout.
 type LatestTable = (usize, usize, u64, Rc<super::table::TableLayout>);
 
-/// The most recent layout that completed `Converged`.
 struct Baseline {
     finished: Rc<Finished>,
     extras: Extras,
     shadow: Shadow,
     note_numbers: HashMap<(NoteKind, i64), String>,
-    /// Its job's note references, for the next job when its edit has none.
     notes: super::document::JobNotes,
-    /// The table an edit inside its rows laid out, as it is in this baseline's document: the next edit in its
-    /// rows lays out only those rows.
     table: Option<LatestTable>,
 }
 
-/// Block equality for change detection: paragraphs as [`same_para`] (source positions excluded), tables by their
-/// properties and their cells' blocks.
 fn same_block(a: &Block, b: &Block) -> bool {
     match (a, b) {
         (Block::Para(p), Block::Para(q)) => same_para(p, q),
@@ -232,10 +197,8 @@ fn same_block(a: &Block, b: &Block) -> bool {
     }
 }
 
-/// Tables with more cells than this are left stale in the shadow: copying one per keystroke would cost a pause.
 const SHADOW_CELLS: usize = 1000;
 
-/// The shadow copy of a block.
 fn shadow_of(b: &Block) -> Option<Block> {
     match b {
         Block::Table(t) if t.rows.iter().map(|r| r.cells.len()).sum::<usize>() > SHADOW_CELLS => None,
@@ -247,8 +210,6 @@ fn shadow(doc: &Document) -> Shadow {
     doc.sections.iter().map(|s| s.blocks.iter().map(|b| Some(b.clone())).collect()).collect()
 }
 
-/// The change between the shadow and the document: `Ok(None)` if nothing changed, `Err(())` if more than one section
-/// changed or the sections differ in number.
 fn compare(doc: &Document, shadow: &Shadow) -> Result<Option<Span>, ()> {
     if doc.sections.len() != shadow.len() {
         return Err(());
@@ -271,10 +232,6 @@ fn compare(doc: &Document, shadow: &Shadow) -> Result<Option<Span>, ()> {
     Ok(found)
 }
 
-/// The span extended to every block whose measurement depends on a changed block: the paragraphs joined to it
-/// (REV-6: a paragraph before it whose mark the view hides lays out with it), and a bordered paragraph next to those
-/// (PARA-7 neighbour keys). Border boxes depend only on immediate neighbours; a joined paragraph's border is its last
-/// paragraph's.
 fn close(span: Span, blocks: &[Block], view: MarkupView) -> Span {
     let bordered = |i: usize| matches!(blocks.get(i), Some(Block::Para(p)) if border_key(p.para_style_in(view)).is_some());
     let mut s = span;
@@ -296,18 +253,7 @@ fn close(span: Span, blocks: &[Block], view: MarkupView) -> Span {
     s
 }
 
-/// The restart page. Let *g* be the first block of the closed span. While the block before *g* is a
-/// `keepNext` paragraph in the same section, move *g* back to it. The restart page is the latest baseline page whose
-/// start is strictly before (*section*, *g*): the page where the block before *g* ends, covering pull-back, keep chains
-/// and page-level decisions (by starting at a page boundary). Pages without a body (blank pages)
-/// fall back to an earlier page; with none, the first page.
-///
-/// Backward dependencies this rule covers: pull-back; keep-with-next chains before the span; floats, note streams,
-/// vertical alignment, balancing and separators (page-level). Header and footer content from elsewhere is recomposed,
-/// and a changed header height fails convergence; body page fields mean a full layout. A new rule that lets later
-/// content change earlier placement must be added here.
 fn restart_page(base: &[PageRecord], span: &Span, blocks: &[Block], view: MarkupView) -> usize {
-    // A joined paragraph (REV-6) keeps with the next by its last paragraph's style, and starts at its first.
     let mut g = chain_start(blocks, span.first.min(blocks.len()), view);
     while g > 0 && matches!(&blocks[g - 1], Block::Para(p) if p.para_style_in(view).keep_next) {
         g = chain_start(blocks, g - 1, view);
@@ -320,10 +266,6 @@ fn restart_page(base: &[PageRecord], span: &Span, blocks: &[Block], view: Markup
     r
 }
 
-/// The rows rule: for an edit inside row `row` of one table, the latest baseline page starting strictly
-/// before (table, `Row(row)`), when the new table's column geometry and position, and rows `..row`'s heights and top
-/// borders, equal the baseline's (that page's recorded table layout). `None` when the rule doesn't apply. Header rows
-/// repeat on every page the table continues on, so an edit in one gives no row restart.
 #[allow(clippy::too_many_arguments)]
 fn row_restart(
     base: &[PageRecord],
@@ -341,7 +283,6 @@ fn row_restart(
     let row = span.row?;
     let blocks = &doc.sections.get(span.section)?.blocks;
     let Some(Block::Table(table)) = blocks.get(span.first) else { return None };
-    // The paragraph before the table (PARA-4), as the column fill passes it.
     let prev = match span.first.checked_sub(1).and_then(|i| blocks.get(i)) {
         Some(Block::Para(p)) => Some(&**p.para_style_in(doc.review.view)),
         _ => None,
@@ -350,9 +291,6 @@ fn row_restart(
         pg.bodies.first().filter(|b| (b.token.section, b.token.flow.block) == (span.section, span.first) && b.start_table.is_some())
     }
     let key = (span.section, span.first, 2u8, row);
-    // The page to restart at, if any; the table is laid out (and the pass given it) whenever a page records it,
-    // which means its text doesn't vary by page: an edit on its first page has no restart page, and the pass would
-    // otherwise lay the whole table out.
     let p = base.iter().rposition(|pg| inside(pg, span).is_some_and(|b| start_key(&b.token) < key));
     let rec = p.or_else(|| base.iter().position(|pg| inside(pg, span).is_some()))?;
     let width = base[rec].bodies[0].space.columns[0].width;
@@ -360,14 +298,9 @@ fn row_restart(
     let ctx = LayoutCtx { fonts, env: &env, preview, expansions };
     let fields = super::text::FieldValues::default();
     let story = super::story::StoryEnv { ctx, fields: &fields, notes };
-    // Laid out through the document's cache, without storing the new version (an incremental pass's);
-    // the job's pass takes it from its memo.
     cache.store_tables = false;
     let mut meter = super::job::Meter::unlimited();
     let mut memos = Memos { cache, job: None, meter: &mut meter };
-    // With the table as the baseline's document has it (laid out by the job that made the baseline), only the edited
-    // rows are measured and laid out again. The pages' records can't stand in: a record taken over from an
-    // older baseline holds the table as it was then.
     let new = match latest.filter(|l| (l.0, l.1, l.2) == (span.section, span.first, width.to_bits())) {
         Some(l) => super::table::relayout_rows(table, width, &story, prev, &l.3, span.first_row.min(row)..=row, &mut memos),
         None => super::table::layout(table, width, &story, prev, false, &mut memos),
@@ -376,8 +309,6 @@ fn row_restart(
     memos.cache.store_tables = true;
     let new = new?;
     *relaid = Some((span.section, span.first, width.to_bits(), new.clone()));
-    // The job's pass lays the table out at this width too: it takes this layout instead of building its key again
-    // (exact: a table with per-page text has no recorded layout, so it never gets here).
     memo.seed(table, width, new.clone());
     let p = p?;
     let old = base[p].bodies[0].start_table.as_ref()?;
@@ -391,7 +322,6 @@ fn row_restart(
     same.then_some(p)
 }
 
-/// A page's start key for lookup: document order of its first body's token.
 fn start_key(t: &PageToken) -> (usize, usize, u8, usize) {
     let (kind, i) = match &t.flow.at {
         At::Start => (0, 0),
@@ -402,7 +332,6 @@ fn start_key(t: &PageToken) -> (usize, usize, u8, usize) {
     (t.section, t.flow.block, kind, i)
 }
 
-/// A token of the baseline in current block coordinates.
 fn shifted(t: &PageToken, span: Option<&Span>) -> PageToken {
     let mut t = t.clone();
     if let Some(s) = span
@@ -414,7 +343,6 @@ fn shifted(t: &PageToken, span: Option<&Span>) -> PageToken {
     t
 }
 
-/// Whether the values of the fields `used` shows are the same in `now`.
 fn same_used(used: &BodyFields, now: &BodyFields) -> bool {
     (used.page.is_none() || (used.page == now.page && used.page_fmt == now.page_fmt))
         && (used.section.is_none() || used.section == now.section)
@@ -425,32 +353,21 @@ fn same_used(used: &BodyFields, now: &BodyFields) -> bool {
 
 #[cfg(test)]
 thread_local! {
-    /// Test hooks. Thread-local so tests running in parallel don't interfere. Forces every job to
-    /// restart from the first page.
+    // Test hooks
     pub(crate) static FORCE_FIRST_PAGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// Jobs that laid out from the first page with nothing reused (full layouts).
     pub(crate) static FULL_JOBS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-    /// Pages reused from a baseline.
     pub(crate) static REUSED_PAGES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// Baseline pages offered to a job's first pass.
 pub struct Reuse {
     base: Rc<Finished>,
-    /// The closed span; `None`: no block changed.
     span: Option<Span>,
-    /// Candidates come after this baseline page.
     restart: usize,
-    /// Header and footer stories are unchanged (a story edit means a full layout, so always true for a running job).
     stories_same: bool,
-    /// Each baseline page's start key in current coordinates; a page without a body takes the previous page's key, so
-    /// the list is sorted.
     keys: Vec<(usize, usize, u8, usize)>,
-    /// Notes whose number changed since the baseline (NOTE-4): a page showing a reference to one is laid out again.
     renumbered: std::collections::HashSet<(NoteKind, i64)>,
 }
 
-/// The section, top-level block and row of a paragraph inside a top-level table.
 fn table_row_of(doc: &Document, para: ParaId) -> Option<(usize, usize, usize)> {
     doc.sections.iter().enumerate().find_map(|(si, s)| {
         s.blocks.iter().enumerate().find_map(|(bi, b)| match b {
@@ -460,7 +377,6 @@ fn table_row_of(doc: &Document, para: ParaId) -> Option<(usize, usize, usize)> {
     })
 }
 
-/// Whether `b` is paragraph `para` or holds it (in a table cell, nested tables included).
 fn holds(b: &Block, para: ParaId) -> bool {
     match b {
         Block::Para(p) => p.id == para.0,
@@ -468,7 +384,6 @@ fn holds(b: &Block, para: ParaId) -> bool {
     }
 }
 
-/// Whether `blocks` (nested tables included) reference one of `notes`.
 fn references(blocks: &[Block], notes: &std::collections::HashSet<(NoteKind, i64)>) -> bool {
     blocks.iter().any(|b| match b {
         Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind, id, .. } if notes.contains(&(*kind, *id)))),
@@ -477,11 +392,8 @@ fn references(blocks: &[Block], notes: &std::collections::HashSet<(NoteKind, i64
 }
 
 impl Reuse {
-    /// Reuses a baseline page for the page starting at `token`, if one passes the reuse checks; returns where
-    /// the pass continues.
     pub fn reuse_page(&mut self, run: &mut PassRun, cx: &PassCx, si: usize, token: &PageToken, memos: &mut Memos) -> Result<Option<Cursor>, Yield> {
-        // Content: the page starts after the closed span, or at a row after the edited ones of the one
-        // edited table (the row exception, checked against the table's layout below).
+        // Content
         let in_table = self.row_exception(si, token);
         if let Some(s) = &self.span
             && si == s.section
@@ -504,7 +416,6 @@ impl Reuse {
                 break;
             }
             let [body] = &pg.bodies[..] else { continue };
-            // Content, on the baseline's side: a page starting inside the span showed changed blocks.
             if let Some(s) = &self.span
                 && body.token.section == s.section
                 && body.token.flow.block < s.old_end
@@ -512,49 +423,43 @@ impl Reuse {
             {
                 continue;
             }
+            // Continuation
             let t = shifted(&body.token, self.span.as_ref());
-            // Continuation: the same token, state included.
             if t != *token {
                 continue;
             }
-            // A body that ends its section with the next one continuous shares its page: not reusable alone.
             if body.section_end.is_some() && doc.sections.get(si + 1).is_some_and(|n| n.break_kind == SectionBreak::Continuous) {
                 continue;
             }
-            // Constraints: the same body space on this page.
+            // Constraints
             let p = cx.paginator(run);
             let space = p.body_space(si, None, balance, memos)?;
             if space != body.space {
                 continue;
             }
-            // Effects and derived values: the fields it shows, and its notes' numbers.
+            // Effects
             if !same_used(&body.fields, &p.fields(si)) {
                 continue;
             }
             if !pg.effects.notes_shown.iter().all(|(k, id, n)| cx.notes.numbers.get(&(*k, *id)) == Some(n)) {
                 continue;
             }
-            // The row exception: the edited table lays out the same from the page's first row on.
+            // Row exception
             if let Some(r) = in_table {
                 let (Some(old), Some(Block::Table(table))) = (&body.start_table, doc.sections[si].blocks.get(token.flow.block)) else { continue };
-                // The pass laid the table out on an earlier page (the edited table starts before this one).
                 let Some(new) = run.memo.table(table, space.columns[0].width) else { continue };
                 let same = old.cols == new.cols
                     && old.x0 == new.x0
                     && old.bottom_border == new.bottom_border
                     && old.rows.len() == new.rows.len()
                     && old.rows.get(r..) == new.rows.get(r..)
-                    // A vertically merged region crossing row r is drawn from its first cell, above r (TABLE-32).
                     && new.rows.get(r).is_some_and(|row| row.cells.iter().all(|c| c.v_merge != VMerge::Continue))
-                    // Header rows repeat at the top of every page the table continues on (TABLE-46): an edited one
-                    // changes those pages, and they must lay out the same.
                     && self.span.and_then(|s| s.row).is_some_and(|e| e >= new.rows.iter().take_while(|row| row.header).count())
                     && old.rows.iter().take_while(|row| row.header).eq(new.rows.iter().take_while(|row| row.header));
                 if !same {
                     continue;
                 }
             }
-            // A reference to a renumbered note shows its new number.
             if !self.renumbered.is_empty() {
                 let blocks = &doc.sections[si].blocks;
                 let end = shifted(&body.end, self.span.as_ref()).flow.block;
@@ -586,10 +491,6 @@ impl Reuse {
         Ok(None)
     }
 
-    /// The row a page starting at `token` starts at, when the row exception may make it reusable: `At::Row(r)` into
-    /// the edited table is valid when the edited row is before `r` and the column geometry, position, bottom border,
-    /// and rows `r..`'s heights and top borders are equal (the caller compares the layouts). `At::RowPart` into an
-    /// edited table is never valid.
     fn row_exception(&self, si: usize, token: &PageToken) -> Option<usize> {
         let s = self.span.as_ref()?;
         let edited = s.row?;
@@ -601,8 +502,6 @@ impl Reuse {
         }
     }
 
-    /// Reuses page `i`'s header and footer from its baseline page when they show the same stories with the same values
-    /// at the same place.
     pub fn reuse_composed(&mut self, run: &mut PassRun, cx: &PassCx, i: usize) -> bool {
         let Some(j) = run.pages[i].reused else { return false };
         if !self.stories_same || run.clip {
@@ -637,22 +536,15 @@ impl Reuse {
     }
 }
 
-/// A running job and how it started.
 struct Running {
     job: LayoutJob,
     reuse: Option<Reuse>,
-    /// The span the job laid out, in current coordinates (`None` for a full layout or no change).
     span: Option<Span>,
-    /// Whether the job reuses the baseline (its non-block inputs are the baseline's).
     incremental: bool,
-    /// The table its edit's rows were laid out again in ([`Baseline::table`]).
     relaid: Option<LatestTable>,
-    /// Whether its first pass started from the baseline's pass values ([`LayoutJob::seed`]).
     seeded: bool,
 }
 
-/// The layout state of one document: the published snapshot, the baseline, the changes since
-/// it, the cache and at most one job.
 pub struct DocumentLayout {
     cache: LayoutCache,
     published: Rc<Snapshot>,
@@ -661,20 +553,13 @@ pub struct DocumentLayout {
     baseline: Option<Baseline>,
     acc: Accumulated,
     job: Option<Running>,
-    /// The published snapshot reflects every edit (nothing to do until the next one).
     current: bool,
-    /// Pages the last completed job took from the baseline (copied or reused), and its page count.
     reused: (usize, usize),
-    /// Published page fragments by their first body's id: a page published again with the same bodies, header and
-    /// footer and numbering keeps its fragment (and so its converted items).
     frames: HashMap<FragmentId, Frame>,
-    /// Live layout's previewed float ([`LayoutCtx::preview`]).
     preview: Option<Rc<super::Preview>>,
-    /// The sub-template bodies shown in place of their references ([`LayoutCtx::expansions`]).
     expansions: Option<Rc<super::expansion::Expansions>>,
 }
 
-/// A published page fragment with the numbering and header and footer it was published with.
 type Frame = (Rc<PageFragment>, PageMeta, [Option<HfRecord>; 2]);
 
 impl Default for DocumentLayout {
@@ -701,20 +586,14 @@ impl DocumentLayout {
         }
     }
 
-    /// The latest published snapshot.
     pub fn snapshot(&self) -> Rc<Snapshot> {
         self.published.clone()
     }
 
-    /// The revision of the last edit: a snapshot of an older one predates it.
     pub fn revision(&self) -> Revision {
         self.revision
     }
 
-    /// Live layout: from `revision` on, the document is laid out with `preview` (`None`: as the document is). Nothing
-    /// in the document changes. `hints` are the extents of the paragraphs the change concerns (the float's anchor in the
-    /// document, and its previewed anchors before and now), as for an edit; one without (a header's or footer's
-    /// paragraph) lays everything out again. False when the preview is the one already laid out (nothing to do).
     pub fn preview(&mut self, revision: Revision, preview: Option<super::Preview>, hints: &[Option<Change>]) -> bool {
         if self.preview.as_deref() == preview.as_ref() {
             return false;
@@ -724,15 +603,11 @@ impl DocumentLayout {
             self.edit(revision, h);
         }
         if hints.iter().any(Option::is_none) {
-            // shortcut: a header or footer float is previewed by a full layout; a story hint would lay out less.
             self.acc.full = true;
         }
         true
     }
 
-    /// From `revision` on, the document is laid out with `expansions` (the editor's sub-template bodies shown in place of
-    /// their references). Nothing in the document changes. `hints` are the extents of the paragraphs whose expansion
-    /// changed, as for an edit; one without lays everything out again. False when they are the ones already laid out.
     pub fn set_expansions(&mut self, revision: Revision, expansions: Option<Rc<super::expansion::Expansions>>, hints: &[Option<Change>]) -> bool {
         if self.expansions == expansions {
             return false;
@@ -747,8 +622,6 @@ impl DocumentLayout {
         true
     }
 
-    /// The document changed to `revision` (already applied): merges the change into the accumulated span and abandons
-    /// any running job (its committed pages stay in the published snapshot, provisional).
     pub fn edit(&mut self, revision: Revision, hint: Option<Change>) {
         self.revision = revision;
         self.job = None;
@@ -776,13 +649,10 @@ impl DocumentLayout {
         };
     }
 
-    /// The cache, for inspection.
     pub fn cache(&self) -> &LayoutCache {
         &self.cache
     }
 
-    /// Pages the last completed job took from the baseline (before the restart page or reused after the change), and
-    /// its page count.
     pub fn reused_pages(&self) -> (usize, usize) {
         self.reused
     }
@@ -790,7 +660,6 @@ impl DocumentLayout {
     fn start(&mut self, doc: &Document, fonts: &Fonts) -> Running {
         let rev = self.revision;
         let new_job = || LayoutJob::new(doc, rev);
-        // `why` names the reason in the stage timers (`--features prof`).
         let full = |job, why: &'static str| {
             crate::prof::time(why, || ());
             #[cfg(test)]
@@ -822,17 +691,12 @@ impl DocumentLayout {
                 None => None,
             }
         };
-        // Body fields that take the previous pass's value (NUMPAGES, PAGEREF): the job starts from the baseline's values
-        // (below), which a baseline that converged in one pass doesn't have.
         let fields = b.extras.body_fields
             || span.is_some_and(|s| crate::docx::fields::blocks_page_dependent(&doc.sections[s.section].blocks[s.first..s.new_end]));
-        // A baseline whose last pass started from values (a later pass, or a seed) is a fixed point the job can start from.
         let seeded = b.finished.passes > 1 || *b.finished.known != PassInfo::default();
         if fields && !seeded {
             return full(new_job(), "full:body-fields");
         }
-        // The baseline's note numbers and no page-dependent field, unless an edited block held or holds a note
-        // reference (a block the shadow doesn't keep counts as one): the whole-document scans are skipped.
         let same_notes = span.is_none_or(|s| {
             let old = &b.shadow[s.section][s.first..s.old_end];
             old.iter().all(|o| o.as_ref().is_some_and(|x| !super::document::has_note_refs(x)))
@@ -842,9 +706,6 @@ impl DocumentLayout {
         if b.extras.endnote_order != job.endnotes() {
             return full(job, "full:endnotes");
         }
-        // A baseline that took several passes (header and footer heights, body fields, fields in text boxes) is a fixed point: the
-        // first pass starts from its values, and is the last when the edit leaves them as they were. Otherwise the job
-        // is replaced by a full one (`step_job`), so the result never depends on where the passes started.
         if seeded {
             job.seed((*b.finished.known).clone(), b.finished.records.iter().map(|p| p.hf_full).collect());
         }
@@ -881,7 +742,6 @@ impl DocumentLayout {
             }
             None => base.len() - 1,
         };
-        // The job's first pass resumes at page r: earlier pages are the baseline's.
         let run = &mut job.run;
         run.pages = base[..r]
             .iter()
@@ -919,16 +779,12 @@ impl DocumentLayout {
         Running { job, reuse: Some(reuse), span, incremental: true, relaid, seeded }
     }
 
-    /// Runs the job (starting one for the latest revision if needed) until it finishes or `budget` is used up, then
-    /// publishes per the publish rule.
     pub fn run(&mut self, doc: &Document, fonts: &Fonts, budget: Budget) -> Step {
         let (step, progressed) = self.step_job(doc, fonts, budget);
         self.publish(doc, fonts, step, progressed);
         step
     }
 
-    /// Runs the job (starting one for the latest revision if needed) without publishing: the step, and whether it
-    /// committed a page.
     fn step_job(&mut self, doc: &Document, fonts: &Fonts, budget: Budget) -> (Step, bool) {
         if self.current {
             return (Step::Done, false);
@@ -944,7 +800,6 @@ impl DocumentLayout {
         self.cache.store_tables = !running.incremental;
         let step = crate::prof::time("layout:run", || running.job.run(doc, &ctx, &mut self.cache, running.reuse.as_mut(), budget));
         self.cache.store_tables = true;
-        // A seeded first pass that didn't agree with the baseline's values: lay out from scratch instead.
         if step == Step::Done && running.seeded && running.job.finished().is_some_and(|f| f.passes != 1) {
             crate::prof::time("full:seed-missed", || ());
             #[cfg(test)]
@@ -956,8 +811,6 @@ impl DocumentLayout {
         (step, running.job.committed().len() > before)
     }
 
-    /// The publish rule: a finished job is published (a converged one becomes the baseline);
-    /// a running one is published, pending, if this request committed a page.
     fn publish(&mut self, doc: &Document, fonts: &Fonts, step: Step, progressed: bool) {
         match step {
             Step::Done => self.complete_job(doc, fonts),
@@ -974,12 +827,9 @@ impl DocumentLayout {
         }
     }
 
-    /// Runs until the page holding `target` is laid out (or the job is done), then publishes once.
     pub fn through(&mut self, doc: &Document, fonts: &Fonts, target: Target) {
         let mut progressed = false;
         loop {
-            // One page at a time: runs stop only at page boundaries (no page attempt restarts), and the target is checked
-            // after each page.
             let (step, p) = crate::prof::time("layout:step", || self.step_job(doc, fonts, Budget::Pages(1)));
             progressed |= p;
             if step == Step::Done || self.reached(doc, target) {
@@ -989,17 +839,12 @@ impl DocumentLayout {
         }
     }
 
-    /// Whether the running job has laid out the page holding `target`. A position is laid out once the top-level
-    /// block holding its paragraph is (a paragraph in a table cell is found through its table).
     fn reached(&self, doc: &Document, target: Target) -> bool {
         let Some(r) = &self.job else { return true };
         let pages = r.job.committed();
-        // The last page may still be filling.
         let complete = pages.len().saturating_sub(1);
         match target {
             Target::Page(i) => complete > i,
-            // In a top-level table: laid out once a page's body ends past the target's row (the rest of a long table
-            // waits for background layout).
             Target::Position { para, .. } if let Some((section, block, row)) = table_row_of(doc, para) => pages[..complete].iter().any(|pg| {
                 pg.bodies.iter().any(|b| {
                     let (s, blk, kind, i) = start_key(&b.end);
@@ -1011,8 +856,6 @@ impl DocumentLayout {
             Target::Position { para, .. } => pages[..complete].iter().any(|pg| {
                 pg.bodies.iter().any(|b| {
                     let Some(blocks) = doc.sections.get(b.token.section).map(|s| &s.blocks) else { return false };
-                    // The blocks the body finished: from its start to before its end's block (all of them when the
-                    // section ended on this page).
                     let last = if b.section_end.is_some() { blocks.len() } else { b.end.flow.block };
                     let first = b.token.flow.block.min(last);
                     blocks[first..last.min(blocks.len())].iter().any(|blk| holds(blk, para))
@@ -1021,7 +864,6 @@ impl DocumentLayout {
         }
     }
 
-    /// Runs the job to completion and publishes it.
     pub fn complete(&mut self, doc: &Document, fonts: &Fonts) {
         loop {
             let (step, p) = self.step_job(doc, fonts, Budget::Unlimited);
@@ -1032,7 +874,6 @@ impl DocumentLayout {
         }
     }
 
-    /// The fragment of committed page `pg`: the one published before for the same page, or a new one.
     fn fragment(&mut self, pg: &PageRecord, section_page: usize) -> (Rc<PageFragment>, PageMeta) {
         let meta = PageMeta { section: pg.section, number: pg.number, section_page, blank: pg.blank };
         let Some(key) = pg.bodies.first().and_then(|b| b.body.id) else { return finish_page(pg, section_page) };
@@ -1048,7 +889,6 @@ impl DocumentLayout {
         (frag, meta)
     }
 
-    /// The fragments of committed pages, sharing the ones published before.
     fn fragments(&mut self, records: &[&PageRecord]) -> Vec<(Rc<PageFragment>, PageMeta)> {
         let mut seen = HashMap::<usize, usize>::new();
         let out: Vec<_> = records
@@ -1058,7 +898,6 @@ impl DocumentLayout {
                 self.fragment(pg, section_page)
             })
             .collect();
-        // shortcut: the memo is pruned to the pages just published when it grows past a few layouts' worth.
         if self.frames.len() > 4 * records.len() + 64 {
             let keep: std::collections::HashSet<FragmentId> = records.iter().filter_map(|p| p.bodies.first().and_then(|b| b.body.id)).collect();
             self.frames.retain(|k, _| keep.contains(k));
@@ -1071,7 +910,6 @@ impl DocumentLayout {
         LayoutRevision(self.layout_revision)
     }
 
-    /// Publishes a running job's committed pages, followed by the previous snapshot's later pages (provisional).
     fn publish_pending(&mut self) {
         let Some(r) = self.job.take() else { return };
         let prev = self.published.clone();
@@ -1087,7 +925,6 @@ impl DocumentLayout {
         self.published = Rc::new(Snapshot::new(self.revision, lrev, LayoutStatus::Pending { stale_from: n }, pages, excluded));
     }
 
-    /// Publishes a finished job; a converged layout becomes the baseline.
     fn complete_job(&mut self, doc: &Document, fonts: &Fonts) {
         let Some(r) = self.job.take() else { return };
         let incremental = r.incremental;
@@ -1097,7 +934,6 @@ impl DocumentLayout {
         let note_numbers = r.job.note_numbers().clone();
         let notes = r.job.job_notes().clone();
         let Some(finished) = r.job.into_finished() else { return };
-        // Pages that came back unchanged share the fragment published before.
         let records: Vec<&PageRecord> = finished.records.iter().collect();
         let pages = self.fragments(&records);
         let finished = Finished { pages, ..finished };
@@ -1111,15 +947,12 @@ impl DocumentLayout {
             self.acc = Accumulated { full: true, ..Default::default() };
             return;
         }
-        // The new baseline: its shadow follows the document (the span's blocks copied, or everything after a full
-        // layout), and its non-block inputs are the old baseline's when the job reused it.
         let (extras, shadow, table) = match (incremental, self.baseline.take()) {
             (true, Some(mut b)) => {
                 if let Some(s) = span {
                     let new: Vec<Option<Block>> = doc.sections[s.section].blocks[s.first..s.new_end].iter().map(shadow_of).collect();
                     b.shadow[s.section].splice(s.first..s.old_end, new);
                 }
-                // The table this job laid out again, else the baseline's while the edit didn't reach it.
                 let kept = b.table.and_then(|mut t| match span {
                     Some(s) if s.section == t.0 && t.1 >= s.old_end => {
                         t.1 = (t.1 as isize + s.delta()) as usize;

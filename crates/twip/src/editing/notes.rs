@@ -1,6 +1,4 @@
-//! Footnotes and endnotes as edits: Insert Footnote and Insert Endnote put a reference mark at the caret and
-//! a new note after the others, and move the caret into it; deleting a note's last reference mark deletes the note,
-//! in the same step.
+//! Footnotes and endnotes
 
 use std::rc::Rc;
 
@@ -22,7 +20,6 @@ fn story(kind: NoteKind, id: i64) -> StoryId {
     }
 }
 
-/// The note references a step's content holds.
 fn refs_in(blocks: &[Block], out: &mut Vec<(NoteKind, i64)>) {
     for b in blocks {
         match b {
@@ -53,7 +50,6 @@ impl Editor {
             NoteKind::End => ("EndnoteReference", "EndnoteText"),
         };
         let has = |s: &str| res.styles.by_id.contains_key(s);
-        // A reference mark in the reference style, else superscript.
         let mark_prop = |p: &mut Props| {
             if has(ref_style) {
                 p.set("rStyle", format!("<{w}rStyle {w}val=\"{ref_style}\"/>"));
@@ -90,7 +86,6 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("stale caret");
         }
-        // The note: one paragraph in the note text style, its own mark and a space.
         let mut pp = Props::parse(None, "pPr", &cx);
         if has(text_style) {
             pp.set("pStyle", format!("<{w}pStyle {w}val=\"{text_style}\"/>"));
@@ -118,7 +113,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Notes whose last reference mark the transaction deleted go too, as steps of the same transaction.
     pub(super) fn drop_orphan_notes(&mut self, tx: &mut Tx) {
         let mut gone = Vec::new();
         for s in &tx.undo {
@@ -153,7 +147,6 @@ impl Editor {
 }
 
 impl Editor {
-    /// Content controls the transaction left without content go too, in the same transaction: only those in the content its steps removed are looked at, so typing costs nothing more.
     pub(super) fn drop_orphan_controls(&mut self, tx: &mut Tx) {
         use crate::docx::{Block, ControlId, ElementId, Inline};
         fn inlines(v: &[Inline], out: &mut Vec<ControlId>) {
@@ -204,7 +197,6 @@ impl Editor {
                     }
                 }
                 Step::Note { blocks: Some(b), .. } | Step::HeaderPart { blocks: Some(b), .. } => blocks(b, &mut gone),
-                // A control the transaction added (a paste's, a new repeating item's) whose content didn't land.
                 Step::Control { id, control: None } => gone.push(*id),
                 _ => {}
             }

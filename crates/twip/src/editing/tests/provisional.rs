@@ -1,5 +1,4 @@
-//! A header or footer made by entering it (the page had none) goes away when it's left unchanged, by any way out: the
-//! document, its history and its saved package are as they were. A change keeps it.
+//! Provisional headers and footers
 
 use super::super::Editor;
 use super::super::commands::Command;
@@ -14,7 +13,6 @@ fn fixture() -> Editor {
     e
 }
 
-/// The parts a save writes.
 fn parts(e: &Editor) -> Vec<String> {
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
@@ -23,7 +21,6 @@ fn parts(e: &Editor) -> Vec<String> {
     names
 }
 
-/// What leaving must give back: the saved parts, the changed state and both history depths.
 fn state(e: &Editor) -> (Vec<String>, bool, usize, usize) {
     (parts(e), e.is_dirty(), e.history().undo_depth(), e.history().redo_depth())
 }
@@ -36,7 +33,6 @@ fn editing_header_footer(e: &Editor) -> bool {
     matches!(e.selection().focus().map(|p| p.story), Some(StoryId::HeaderFooter(_)))
 }
 
-/// A double-click on the first body line.
 fn double_click_body(e: &mut Editor) {
     let (pg, g) = e.page_geometries().into_iter().next().expect("a page");
     let l = g.lines.iter().find(|l| g.stories[l.story].story == StoryId::Body && l.stops.len() > 2).expect("a body line");
@@ -83,7 +79,6 @@ fn provisional_double_click_keeps_the_clicked_place() {
     let mut e = fixture();
     e.execute(Command::EditHeader, fonts());
     double_click_body(&mut e);
-    // Before the header the caret was at the document's start; the double-click put it past the line's first stop.
     let at = e.selection().focus().and_then(|p| p.para_offset()).expect("a caret");
     assert!(at.1.0 > 0, "the caret is where the body was clicked, not where it was before the header");
 }

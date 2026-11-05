@@ -1,4 +1,4 @@
-//! styles.xml and the theme's fonts: style chains and the cascade of STYLE-1–STYLE-4.
+//! Styles
 
 use super::model::Compat;
 use std::collections::HashMap;
@@ -24,14 +24,8 @@ pub struct Region {
     pub tbl: TblProps,
     pub tc: TcProps,
     pub tr: TrProps,
-    /// The size a cell's text takes when its size comes from a 12pt default paragraph style (STYLE-4): the active
-    /// regions' and table style's `w:sz`, else docDefaults', unless that is 10pt. None in the default table style, in
-    /// one that sets no paragraph, run or region property, and in compat 15.
     pub size_over_normal: Option<f64>,
-    /// The region's `w:pPr` or `w:rPr` holds a property (STYLE-4).
     pub sets_text: bool,
-    /// compat ≤ 14, no named table style, an 11pt docDefaults size and a 12pt default paragraph style: a mark set
-    /// directly to 11pt is laid out at its paragraph's size (STYLE-4).
     pub mark_at_style: bool,
 }
 
@@ -80,7 +74,6 @@ pub struct Style {
     pub origin: StyleOrigin,
 }
 
-/// Table-style conditional regions, lowest precedence first (TABLE-3).
 pub const REGION_ORDER: [&str; 12] =
     ["band1Horz", "band2Horz", "band1Vert", "band2Vert", "lastCol", "firstCol", "lastRow", "firstRow", "seCell", "swCell", "neCell", "nwCell"];
 
@@ -143,18 +136,14 @@ impl ThemeFonts {
 
 #[derive(Clone, Debug, Default)]
 pub struct Styles {
-    /// The document's theme colours (STYLE-11): what direct formatting edited later resolves `w:themeColor` with.
     pub colours: ThemeColours,
     pub by_id: HashMap<String, Style>,
-    /// Paragraph style ids in styles.xml order (STYLE-6 linkage).
     pub paragraph_order: Vec<String>,
     pub default_paragraph: Option<String>,
     pub default_table: Option<String>,
     pub doc_rpr: RunProps,
     pub doc_ppr: ParaProps,
-    /// compat 15: no table-style size exception (STYLE-4).
     pub compat: Compat,
-    /// `w:useWord2002TableStyleRules` in compat ≤ 14: corner regions don't keep a look bit (TABLE-3).
     pub word2002_rules: bool,
 }
 
@@ -169,8 +158,6 @@ impl Styles {
         let root = doc.root_element();
         match child(root, "docDefaults") {
             Some(dd) => {
-                // STYLE-2: a missing rPrDefault or pPrDefault takes Word's own default, each on its own (an empty one
-                // is there).
                 s.app_defaults();
                 if let Some(r) = child(dd, "rPrDefault") {
                     s.doc_rpr = RunProps::parse(child(r, "rPr"), &colours);
@@ -214,7 +201,6 @@ impl Styles {
             if kind == StyleKind::Paragraph {
                 s.paragraph_order.push(style.id.clone());
                 if default {
-                    // STYLE-2: with several marked defaults the last one wins.
                     s.default_paragraph = Some(style.id.clone());
                 }
             }
@@ -229,7 +215,6 @@ impl Styles {
         s
     }
 
-    /// STYLE-2: Word's own defaults when a document has no docDefaults (this build: Aptos 12pt, after 8pt, line 1.16).
     fn app_defaults(&mut self) {
         let mut r = RunProps::default();
         let aptos = Some(FontRef::Name("Aptos".into()));
@@ -247,7 +232,6 @@ impl Styles {
         self.by_id.get(id)
     }
 
-    /// The paragraph style a paragraph uses (STYLE-2): its `pStyle` if that exists, else the default paragraph style.
     pub fn paragraph_style<'a>(&'a self, id: Option<&'a str>) -> Option<&'a str> {
         match id {
             Some(id) if self.by_id.get(id).is_some_and(|s| s.kind == StyleKind::Paragraph) => Some(id),
@@ -278,13 +262,11 @@ impl Styles {
         p
     }
 
-    /// A paragraph or character style chain as one level for toggles (STYLE-3).
     pub fn chain_rpr(&self, id: Option<&str>) -> RunProps {
         let chain = self.chain(id);
         RunProps::fold_chain(chain.iter().map(|s| &s.base.rpr))
     }
 
-    /// The table style a table uses: its `tblStyle`, else the default table style ("Normal Table", TABLE-2).
     pub fn table_style<'a>(&'a self, id: Option<&'a str>) -> Option<&'a str> {
         match id {
             Some(id) if self.by_id.contains_key(id) => Some(id),
@@ -292,8 +274,6 @@ impl Styles {
         }
     }
 
-    /// A table style's properties for one cell: the base region, then the active conditional regions in precedence order
-    /// (TABLE-3), each through the `basedOn` chain. Toggles don't XOR between regions.
     pub fn table_region(&self, id: Option<&str>, active: &[&str]) -> Region {
         let chain = self.chain(id);
         let mut out = Region::default();
@@ -317,12 +297,10 @@ impl Styles {
             }
         }
         out.rpr = RunProps::fold_chain(rprs.into_iter());
-        // STYLE-4's exception (compat ≤ 14): a table style that sets some paragraph, run or region property.
         let sets = chain.iter().any(|s| s.base.sets_text || !s.regions.is_empty());
         if self.compat == Compat::Legacy && id.is_some() && id != self.default_table.as_deref() && sets {
             out.size_over_normal = out.rpr.size.or(self.doc_rpr.size).filter(|s| *s != 10.0);
         }
-        // STYLE-4: the 11pt mark in a cell of a table without a named style (compat ≤ 14).
         out.mark_at_style = self.compat == Compat::Legacy
             && (id.is_none() || id == self.default_table.as_deref())
             && self.doc_rpr.size == Some(11.0)

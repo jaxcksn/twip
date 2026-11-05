@@ -1,5 +1,4 @@
-//! Fonts: a catalog over font files (our own matching over the name/OS/2 tables, so the same files give the same faces on
-//! every platform), vertical metrics (FONT-1) and HarfBuzz shaping (harfrust; FONT-2–FONT-4).
+//! Fonts
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -20,8 +19,6 @@ struct Entry {
     path: Option<String>,
     data: Option<Arc<Vec<u8>>>,
     index: u32,
-    /// A variable font's named instance (FONT-17): its number from 1, and its axis values (user space). 0 and none
-    /// for a static face.
     instance: u32,
     variations: Vec<([u8; 4], f32)>,
 }
@@ -38,12 +35,9 @@ pub struct Face {
     pub sim_italic: bool,
     pub data: Arc<Vec<u8>>,
     pub index: u32,
-    /// A variable font's named instance, from 1 (0 for a static face), and its axis values: what the face draws
-    /// with (FONT-17).
     pub instance: u32,
     pub variations: Vec<([u8; 4], f32)>,
     pub upem: f64,
-    /// FONT-1: ascent A, descent D, external leading E.
     pub ascent: f64,
     pub descent: f64,
     pub leading: f64,
@@ -55,9 +49,7 @@ pub struct Face {
     pub underline_thick: f64,
     pub strike_pos: f64,
     pub strike_thick: f64,
-    /// An East Asian font: OS/2 code pages include Japanese, Chinese or Korean (FONT-12).
     pub east_asian: bool,
-    /// OS/2 xAvgCharWidth, em fraction (0 without OS/2): balanced space runs (FONT-14).
     pub avg_width: f64,
     font: harfrust::Font,
     /// Memos: character → glyph, glyph → advance, and shape plans by (kern, ligatures, script). Building a plan
@@ -172,10 +164,6 @@ impl Face {
             f.east_asian = len >= 86 && u32_at(d, o + 78) & (0x1F << 17) != 0;
 
             if f.east_asian {
-                // LINE-14: an East Asian font's line is 1.3 × its win height W, half the extra above, half below,
-                // and no line gap (MS Gothic 6–72pt: +0.30 × size, split evenly; Yu Gothic 12pt: baseline 14.16 =
-                // 11.82 + 0.15 × 15.44; SimSun as MS Gothic, its line gap unused). Line spacing scales this height.
-                // The extra is whole font units, rounded half up: MS Mincho (upem 256, W 256) adds 38, not 38.4.
                 let (wa, wd) = (u16_at(d, o + 74) as f64, u16_at(d, o + 76) as f64);
                 let extra = (0.15 * (wa + wd) + 0.5).floor();
                 (asc, desc, gap) = (wa + extra, wd + extra, 0.0);
@@ -234,8 +222,6 @@ impl Face {
         (e.height != 0).then_some(e.y_bearing as f64)
     }
 
-    /// Shapes `text` with HarfBuzz (font units, unrounded: FONT-2). `kern` = pair kerning on (FONT-3); `ligatures` = the
-    /// `w14:ligatures` bits (FONT-4).
     pub fn shape(&self, text: &str, kern: bool, ligatures: u8) -> Vec<Glyph> {
         crate::prof::time("shape", || self.shape_uncached(text, kern, ligatures))
     }
@@ -305,7 +291,7 @@ pub struct Fonts {
 }
 
 /// The last fallback, shipped so bullets and symbols draw where no installed font has them (the browser, Linux):
-/// the characters Symbol and Wingdings codes show (FONT-13) and checkbox faces, from DejaVu Sans 2.37 (licence in
+/// the characters Symbol and Wingdings codes show and checkbox faces, from DejaVu Sans 2.37 (licence in
 /// `licenses/dejavu-fonts.txt`), renamed so it never stands in for an installed DejaVu. Made with fontTools:
 /// `pyftsubset DejaVuSans.ttf --unicodes=2022,25E6,25AA,25A0,25A1,25CF,25CB,25C6,2756,27A2,2794,2713,2714,2610-2612,2605,
 /// 2660,2663,2665,2666,2190,2192,221A,2211,25FB,2751,B0,B1,D7,F7 --layout-features= --no-hinting --desubroutinize`,
@@ -669,13 +655,6 @@ impl Fonts {
     }
 }
 
-/// A variable font's named instances as faces (FONT-17), from its `fvar` table, or none. Each is named as Windows'
-/// GDI names it, the name Word writes in documents: the typographic family, then the names of the instance's axis
-/// values from `STAT` in its axis order, without elidable ones and Regular, Bold, Italic and Oblique (Bold and Italic
-/// are styles), cut at 31 characters ("Bahnschrift Light Condensed", "Segoe UI Variable Display Semib"; the Bold
-/// instance is "Bahnschrift" bold). Without `STAT`, the subfamily's words stand for the axis values. The weight,
-/// width and italic come from the instance's `wght`, `wdth`, `ital` and `slnt` values, else `base`'s. Each face's
-/// names: its GDI name, the name before the cut, and the subfamily form.
 fn named_instances(fvar: &[u8], stat: Option<&[u8]>, names: &HashMap<u16, Vec<String>>, base: &Entry) -> Vec<(Entry, Vec<String>)> {
     let fixed = |o: usize| u32_at(fvar, o) as i32 as f32 / 65536.0;
     let (axes, axis_count, axis_size) = (u16_at(fvar, 4) as usize, u16_at(fvar, 8) as usize, u16_at(fvar, 10) as usize);

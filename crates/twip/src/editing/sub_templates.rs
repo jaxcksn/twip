@@ -1,6 +1,4 @@
-//! Sub-templates: fields the application declares as references to glossary building blocks, by field type, the
-//! argument holding the name and the building block category. A reference resolves to the live building block of
-//! that name; whether its body can show in its place depends on where the field is.
+//! Sub-templates
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -21,15 +19,12 @@ use super::position::StoryId;
 use super::selection::Selection;
 use super::step::Step;
 
-/// A reference rule as the editor matches it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rule {
-    /// Upper-cased, as field codes' names are.
     field_type: String,
     argument: usize,
     category: String,
     gallery: Option<Gallery>,
-    /// As the application gave it, for the state.
     api: ReferenceRule,
 }
 
@@ -44,18 +39,15 @@ impl Rule {
         }
     }
 
-    /// The sub-template a parsed field code names, when the code is this rule's.
     fn name(&self, code: &FieldCode) -> Option<String> {
         (code.name == self.field_type).then(|| code.args.get(self.argument).cloned()).flatten()
     }
 }
 
-/// Whether a reference's building block resolves, or why its body can't show.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Resolution {
     Resolved,
     Missing,
-    /// Only a building block whose name differs in case matches: its name.
     NearMatch(String),
     Cycle,
     TooDeep,
@@ -63,44 +55,31 @@ pub enum Resolution {
     NotInBody,
 }
 
-/// One reference field.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reference {
     pub name: String,
-    /// The building block it names, by index in the glossary's parts.
     pub part: Option<u32>,
     pub resolution: Resolution,
-    /// The paragraph holding the field.
     pub at: ParaId,
-    /// The table row it is alone in, when its body is one table row.
     pub row: Option<(TableId, usize)>,
 }
 
-/// The references, and a revision that changes whenever they do.
 #[derive(Clone, Debug, Default)]
 pub struct References {
     pub by_field: HashMap<FieldId, Reference>,
     pub revision: u64,
 }
 
-/// A sub-template being edited: its body is laid out as a document of its own, one section on the template's pages.
-/// The template's layout, geometry and expansions wait here until it shows again.
 pub struct Surface {
     pub part: u32,
-    /// The document the body is laid out as: one section, with no headers or footers. Its blocks are the body only
-    /// while a layout runs ([`Editor::with_flow`]); its images and controls are the document's then too.
     doc: Document,
     template: DocumentLayout,
     template_pages: Pages,
     template_expansions: Option<Rc<Expansions>>,
-    /// The template's selection when the sub-template was entered.
     template_return: Selection,
-    /// A template edit was made while the sub-template showed (an undo, a command naming a template element): the
-    /// template lays out again when it shows.
     template_touched: bool,
 }
 
-/// An empty paragraph in the default paragraph style, as a new body holds.
 fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Paragraph> {
     let res = doc.resolver.as_ref()?;
     let r = res.para_from_xml(None, None, cx);
@@ -116,10 +95,8 @@ fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Para
     })
 }
 
-/// How deep sub-templates nest inside each other's bodies.
 pub const MAX_DEPTH: usize = 16;
 
-/// A section's first column's width.
 pub fn column_width(s: &Section) -> f64 {
     let text = s.page_w - s.left - s.right - s.gutter;
     match (&s.columns.cols[..], s.columns.equal || s.columns.cols.is_empty()) {
@@ -129,12 +106,10 @@ pub fn column_width(s: &Section) -> f64 {
     }
 }
 
-/// The rule a parsed field code matches, and the name it gives.
 fn rule_for<'r>(rules: &'r [Rule], code: &FieldCode) -> Option<(&'r Rule, String)> {
     rules.iter().find_map(|r| r.name(code).map(|n| (r, n)))
 }
 
-/// Whether paragraph `p` holds nothing but field `f` (and marks that take no room).
 fn alone(p: &Paragraph, f: FieldId) -> bool {
     let Some(s) = fields::spans(&p.inlines).into_iter().find(|s| matches!(p.inlines[s.begin], Inline::FieldBegin { id, .. } if id == f)) else {
         return false;
@@ -146,7 +121,6 @@ fn empty(p: &Paragraph) -> bool {
     p.inlines.iter().all(|i| i.units() == 0)
 }
 
-/// Whether a body is one table of one row (with the empty paragraph a body must end with).
 fn one_row(body: &[Block]) -> bool {
     match body {
         [Block::Table(t)] => t.rows.len() == 1,
@@ -155,7 +129,6 @@ fn one_row(body: &[Block]) -> bool {
     }
 }
 
-/// The table row whose only content is paragraph `at`.
 fn alone_in_row(doc: &Document, idx: &DocIndex, at: ParaId) -> Option<(TableId, usize)> {
     let Container::Cell { table, row, cell } = idx.para_slot(at)?.container else { return None };
     let t = idx.table(doc, table)?;
@@ -170,9 +143,6 @@ fn alone_in_row(doc: &Document, idx: &DocIndex, at: ParaId) -> Option<(TableId, 
     only.then_some((table, row))
 }
 
-/// The references that sit inside other sub-templates' bodies, followed from the template's own: one in a body
-/// already on its path is a cycle, one past [`MAX_DEPTH`] too deep. A reference is decided by the first path that
-/// reaches it.
 fn mark_paths(idx: &DocIndex, refs: &mut HashMap<FieldId, Reference>) {
     let story = |r: &Reference| idx.para_slot(r.at).map(|s| idx.story(s.container));
     let mut inside: HashMap<u32, Vec<FieldId>> = HashMap::new();
@@ -218,7 +188,6 @@ fn mark_paths(idx: &DocIndex, refs: &mut HashMap<FieldId, Reference>) {
     }
 }
 
-/// Every reference field and what it resolves to.
 pub fn resolve(doc: &Document, idx: &DocIndex, rules: &[Rule]) -> HashMap<FieldId, Reference> {
     let mut out = HashMap::new();
     if rules.is_empty() {
@@ -251,8 +220,7 @@ pub fn resolve(doc: &Document, idx: &DocIndex, rules: &[Rule]) -> HashMap<FieldI
 }
 
 impl Editor {
-    /// Set Sub-template Rules: replaces the rules, re-kinds the fields they match and resolves the references again.
-    /// View only.
+    // Rules and view
     pub(super) fn set_sub_template_rules(&mut self, r: SubTemplateRules) -> Outcome {
         let rules: Vec<Rule> = r.rules.into_iter().map(Rule::new).collect();
         if rules == self.sub_template_rules {
@@ -264,7 +232,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Set Sub-template View: the references' bodies shown in their place, or their fields. View only.
     pub(super) fn set_sub_template_view(&mut self, v: SubTemplateView) -> Outcome {
         let fields: Vec<FieldId> = match v.ids {
             None => self.references.by_field.keys().copied().collect(),
@@ -291,12 +258,10 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Whether the editor's layout shows any sub-template body in place of its reference.
     pub fn shows_expansions(&self) -> bool {
         self.references.by_field.iter().any(|(f, r)| r.resolution == Resolution::Resolved && !self.collapsed.contains(f))
     }
 
-    /// The rules as the application set them.
     pub fn sub_template_rules(&self) -> Vec<ReferenceRule> {
         self.sub_template_rules.iter().map(|r| r.api.clone()).collect()
     }
@@ -305,14 +270,10 @@ impl Editor {
         &self.references
     }
 
-    /// Whether reference field `f`'s body shows in its place.
     pub fn reference_expanded(&self, f: FieldId) -> bool {
         !self.collapsed.contains(&f)
     }
 
-    /// Fields re-kinded by the rules (and laid out again where one changed), then the references resolved.
-    /// The width paragraph `at`'s text has: its section's column or its cell's text, or `outer` (the width its body is
-    /// laid out at) in a building block, less its indents.
     fn reference_width(&self, at: ParaId, outer: f64) -> f64 {
         let indents = self.index.para(&self.doc, at).map_or(0.0, |p| p.style.ind_left.max(0.0) + p.style.ind_right.max(0.0));
         let base = match self.index.para_slot(at).map(|s| s.container) {
@@ -323,8 +284,6 @@ impl Editor {
         (base - indents).max(1.0)
     }
 
-    /// Reference `f`'s body laid out at `width` with the references in it expanded, when it shows: resolved, not
-    /// collapsed, and not already on `path` or deeper than [`MAX_DEPTH`].
     fn expand(&self, f: FieldId, r: &Reference, width: f64, path: &mut Vec<u32>, fonts: &Fonts) -> Option<Rc<Expansion>> {
         let part = r.part?;
         if r.resolution != Resolution::Resolved || self.collapsed.contains(&f) || path.len() >= MAX_DEPTH || path.contains(&part) {
@@ -345,8 +304,6 @@ impl Editor {
         Some(Rc::new(Expansion { field: f, part, size: (width, height), content }))
     }
 
-    /// The template's layout shows the references' bodies as they are now: laid out again when anything they
-    /// depend on changed since (the rules, a reference, a body, which are collapsed).
     pub(super) fn sync_expansions(&mut self, fonts: &Fonts) {
         if !self.expansions_stale {
             return;
@@ -354,8 +311,6 @@ impl Editor {
         self.expansions_stale = false;
         let now = (!self.references.by_field.is_empty()).then(|| {
             let mut out = Expansions { revision: self.expansions.as_ref().map_or(0, |e| e.revision) + 1, ..Expansions::default() };
-            // The flow's own references: the template's body, or the sub-template's being edited (which can't show
-            // itself again).
             let flow = self.editing_sub_template().map_or(StoryId::Body, StoryId::BuildingBlock);
             let mut path: Vec<u32> = self.editing_sub_template().into_iter().collect();
             let outer = self.surface.as_ref().map_or(0.0, |s| column_width(&s.doc.sections[0]));
@@ -364,7 +319,6 @@ impl Editor {
                 if !top || r.resolution != Resolution::Resolved || self.collapsed.contains(f) {
                     continue;
                 }
-                // shortcut: a sub-template row shows its cells' text without expanding references inside them.
                 if let Some(row) = r.row
                     && let Some(Block::Table(t)) = r.part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)?.body.first())
                     && let Some(body) = t.rows.first()
@@ -379,7 +333,6 @@ impl Editor {
             }
             Rc::new(out)
         });
-        // The paragraphs whose expansion may have changed: those holding a reference, before and now.
         let mut paras: Vec<ParaId> = self.expansions.iter().chain(now.iter()).flat_map(|e| e.paras.keys().copied()).collect();
         paras.extend(self.references.by_field.values().filter(|r| r.row.is_some()).map(|r| r.at));
         paras.sort_unstable_by_key(|p| p.0);
@@ -391,19 +344,15 @@ impl Editor {
         self.expansions = now;
     }
 
-    /// Whether any live building block is in a declared category.
     pub fn has_sub_templates(&self) -> bool {
         let parts = self.doc.glossary.as_ref().map_or(&[][..], |g| g.parts.as_slice());
         parts.iter().any(|b| b.state != crate::docx::PartState::Removed && self.sub_template_rules.iter().any(|r| r.category == b.category))
     }
 
-    /// The sub-template being edited, by its index in the glossary's parts.
     pub fn editing_sub_template(&self) -> Option<u32> {
         self.surface.as_ref().map(|s| s.part)
     }
 
-    /// Runs `f` with the layout and the document it lays out: the template, or while a sub-template is edited, the
-    /// document holding its body (the body, images and controls moved into it for the call, and back).
     pub(super) fn with_flow<R>(&mut self, f: impl FnOnce(&mut DocumentLayout, &Document) -> R) -> R {
         let Some(s) = &mut self.surface else { return f(&mut self.layout, &self.doc) };
         let Some(part) = self.doc.glossary.as_mut().and_then(|g| g.parts.get_mut(s.part as usize)) else {
@@ -423,9 +372,7 @@ impl Editor {
         out
     }
 
-    /// Edits sub-template `part` in the same editor: its body on its own pages, sized as the section of the
-    /// reference it was entered from (`from`), else the template's first. The template's selection, layout and
-    /// geometry are kept until it shows again. Switching from one sub-template to another keeps the template's.
+    // Sub-template editing
     pub(super) fn enter_sub_template(&mut self, part: u32, from: Option<FieldId>) -> Outcome {
         if self.editing_sub_template() == Some(part) {
             return Outcome::Unchanged("already on it");
@@ -444,7 +391,6 @@ impl Editor {
             })
             .unwrap_or(0);
         let Some(section) = self.doc.sections.get_mut(si) else { return Outcome::Unchanged("no section") };
-        // The section's properties without its blocks or its headers and footers.
         let blocks = std::mem::take(&mut section.blocks);
         let mut sec = section.clone();
         section.blocks = blocks;
@@ -481,7 +427,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Edit Sub-template: the named one, in its category or the rules' first with the name. Fails when none has it.
     pub(super) fn edit_sub_template(&mut self, n: &crate::api::command::SubTemplateName, fonts: &Fonts) -> Outcome {
         let categories: Vec<&str> = match &n.category {
             Some(c) => vec![c.as_str()],
@@ -499,7 +444,6 @@ impl Editor {
         out
     }
 
-    /// The live building block `name` in `category`, or in the rules' categories in order.
     fn named_part(&self, name: &str, category: Option<&str>) -> Option<u32> {
         let g = self.doc.glossary.as_ref()?;
         match category {
@@ -509,7 +453,6 @@ impl Editor {
         .map(|k| k as u32)
     }
 
-    /// Runs one building block step as a transaction labelled `label`.
     fn part_step(&mut self, label: &'static str, steps: Vec<Step>, fonts: &Fonts) -> Outcome {
         let mut tx = self.begin(label);
         for s in steps {
@@ -521,8 +464,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// New Sub-template: a building block named `name` in its category (default: the first rule's), empty or with the
-    /// body of the DOCX `from`, its ids made afresh and its styles joining the document's by name.
     pub(super) fn create_sub_template(&mut self, c: crate::api::command::CreateSubTemplate, fonts: &Fonts) -> Outcome {
         let invalid = |m: &str| Outcome::Refused(crate::api::error::Error::invalid(m));
         let Some(category) = c.category.clone().or_else(|| self.sub_template_rules.first().map(|r| r.category.clone())) else {
@@ -550,10 +491,6 @@ impl Editor {
         self.part_step("New Sub-template", steps, fonts)
     }
 
-    /// A DOCX's body as a building block's, and its controls: its images join the document's (paragraph, field and
-    /// control ids are already unique in the session); its styles are matched to the document's by id.
-    // shortcut: an imported body's styles and lists are matched by id, not by name as a glossary's are; a style the
-    // document lacks draws with the defaults.
     fn imported_body(&mut self, bytes: &[u8]) -> Option<(Vec<Block>, Vec<(crate::docx::ControlId, crate::docx::Control)>)> {
         let read = crate::docx::read_editable(bytes).ok()?;
         let mut blocks: Vec<Block> = read.sections.into_iter().flat_map(|s| s.blocks).collect();
@@ -584,8 +521,6 @@ impl Editor {
         Some((blocks, read.controls.into_iter().collect()))
     }
 
-    /// Rename Sub-template: its building block, and with `updateReferences` the name argument of every reference to
-    /// it, in one step.
     pub(super) fn rename_sub_template(&mut self, r: crate::api::command::RenameSubTemplate, fonts: &Fonts) -> Outcome {
         let invalid = |m: String| Outcome::Refused(crate::api::error::Error::invalid(m));
         let Some(k) = self.named_part(&r.name, r.category.as_deref()) else { return invalid(format!("no sub-template {}", r.name)) };
@@ -609,7 +544,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Remove Sub-template: its building block goes (kept for undo); the editor leaves it first when on it.
     pub(super) fn remove_sub_template(&mut self, n: &crate::api::command::SubTemplateName, fonts: &Fonts) -> Outcome {
         let Some(k) = self.named_part(&n.name, n.category.as_deref()) else {
             return Outcome::Refused(crate::api::error::Error::invalid(format!("no sub-template {}", n.name)));
@@ -622,7 +556,6 @@ impl Editor {
         self.part_step("Remove Sub-template", vec![Step::BuildingBlock { k, part: Some(Box::new(gone)) }], fonts)
     }
 
-    /// The template's layout, geometry, expansions and selection a surface kept, as they were.
     fn park_out(&mut self, s: Surface) -> (DocumentLayout, Pages, Option<Rc<Expansions>>, Selection) {
         if s.template_touched {
             self.expansions_stale = true;
@@ -630,9 +563,6 @@ impl Editor {
         (s.template, s.template_pages, s.template_expansions, s.template_return)
     }
 
-    /// Back to the template from a sub-template: its layout and geometry as they were, laid out again where the
-    /// sub-template's body shows (and wholly when the template was edited meanwhile), and `selection` (default: the
-    /// one it had).
     pub(super) fn close_sub_template_to(&mut self, selection: Option<Selection>) -> Outcome {
         let Some(s) = self.surface.take() else { return Outcome::Unchanged("not on a sub-template") };
         let touched = s.template_touched;
@@ -642,7 +572,6 @@ impl Editor {
         self.pages.shows = None;
         self.index.flow = None;
         self.expansions = expansions;
-        // The body may have changed: its references lay out again.
         self.expansions_stale = true;
         self.generation += 1;
         if touched {
@@ -655,7 +584,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// After undo or redo: the editor shows where the selection went, a sub-template or the template.
     pub(super) fn follow_selection(&mut self) {
         let story = self.selection.focus().map(|p| p.story);
         match (story, self.editing_sub_template()) {
@@ -672,7 +600,6 @@ impl Editor {
         }
     }
 
-    /// A transaction while a sub-template shows that changed the template too: it lays out again when it shows.
     pub(super) fn note_template_edits(&mut self, inverses: &[Step]) {
         let Some(part) = self.editing_sub_template() else { return };
         let template = match elements::touched(inverses) {
@@ -686,7 +613,6 @@ impl Editor {
         }
     }
 
-    /// The reference (and its building block) whose body shows under document point `x`, `y`.
     pub(super) fn expansion_at(&mut self, x: f64, y: f64) -> Option<(FieldId, u32)> {
         let (page, px, py) = self.stack().page_at(x, y)?;
         let snapshot = self.layout.snapshot();
@@ -707,8 +633,6 @@ impl Editor {
         found
     }
 
-    /// A click on a sub-template's body shown in place of its reference selects the reference field; a double-click
-    /// edits the sub-template.
     pub(super) fn expansion_click(&mut self, x: f64, y: f64, clicks: u8, fonts: &Fonts) -> bool {
         let Some((f, part)) = self.expansion_at(x, y) else { return false };
         if clicks >= 2 {
@@ -718,8 +642,6 @@ impl Editor {
         matches!(self.select_element(&id, false, fonts), Outcome::Moved | Outcome::Changed(_))
     }
 
-    /// Typing, pasting or dropping into a reference whose sub-template's body shows in its place: refused, the
-    /// application told which sub-template. Deleting the reference isn't refused.
     pub(super) fn refuse_expanded(&mut self) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return false };
@@ -751,7 +673,6 @@ impl Editor {
             fields::evaluate(&mut self.doc, crate::docx::now_utc());
         }
         if changed {
-            // Field results change wherever a rule matched or stopped matching.
             self.relayout(vec![None]);
         }
         let now = resolve(&self.doc, &self.index, &self.sub_template_rules);
@@ -763,7 +684,6 @@ impl Editor {
         self.warn_references();
     }
 
-    /// The application hears once of each reference that can't show for a reason it may not know of.
     fn warn_references(&mut self) {
         use crate::docx::diagnostics::WarningCode as W;
         let mut found: Vec<(W, String)> = self
@@ -785,13 +705,10 @@ impl Editor {
         }
     }
 
-    /// After a transaction or its undo (`inverses`): the references again, when it touched a reference's paragraph,
-    /// a building block's body, or a paragraph whose fields a rule matches.
     pub(super) fn refresh_references(&mut self, inverses: &[Step]) {
         if self.sub_template_rules.is_empty() {
             return;
         }
-        // A field whose code was edited took its kind from its code again; a rule may match it.
         let at: HashSet<ParaId> = self.references.by_field.values().map(|r| r.at).collect();
         let needed = match elements::touched(inverses) {
             elements::Touched::All => true,
@@ -812,7 +729,6 @@ impl Editor {
     }
 }
 
-/// The command a test sets rules with.
 #[cfg(test)]
 pub fn rules(field_type: &str, category: &str) -> crate::api::command::Command {
     crate::api::command::Command::SetSubTemplateRules(SubTemplateRules {

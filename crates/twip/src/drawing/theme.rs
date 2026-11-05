@@ -1,5 +1,4 @@
-//! The document theme's colour scheme and format scheme, and the document's colour map (DRAW-7, DRAW-8). The theme's
-//! fonts are read with the styles (`docx::styles::ThemeFonts`).
+//! Theme and colour map
 
 use roxmltree::Node;
 
@@ -7,23 +6,18 @@ use super::colour::{Rgba, SchemeSlot};
 use super::paint::{EffectList, Fill, Line};
 use crate::docx::xml::{A, W, is};
 
-/// The colour scheme (dk1, lt1, dk2, lt2, accent1–6, hlink, folHlink) and the format scheme's style lists.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
     pub colours: [Rgba; 12],
-    /// `a:fillStyleLst`, `a:lnStyleLst`, `a:effectStyleLst`, `a:bgFillStyleLst`: referenced 1-based by `idx`.
     pub fills: Vec<Fill>,
     pub lines: Vec<Line>,
     pub effects: Vec<EffectList>,
     pub bg_fills: Vec<Fill>,
 }
 
-/// The default theme's colours, used without a theme part.
 const DEFAULT_COLOURS: [u32; 12] =
     [0x000000, 0xFFFFFF, 0x0E2841, 0xE8E8E8, 0x156082, 0xE97132, 0x196B24, 0x0F9ED5, 0xA02B93, 0x4EA72E, 0x467886, 0x96607D];
 
-/// The default theme's format scheme (Word 2024's Office theme): what style references resolve to in a document
-/// without a theme part.
 const DEFAULT_FMT: &str = r#"<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fmtScheme name="Office"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:lumMod val="110000"/><a:satMod val="105000"/><a:tint val="67000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="103000"/><a:tint val="73000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="109000"/><a:tint val="81000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:satMod val="103000"/><a:lumMod val="102000"/><a:tint val="94000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:satMod val="110000"/><a:lumMod val="100000"/><a:shade val="100000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="99000"/><a:satMod val="120000"/><a:shade val="78000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad="57150" dist="19050" dir="5400000" algn="ctr" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="63000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/><a:satMod val="170000"/></a:schemeClr></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="93000"/><a:satMod val="150000"/><a:shade val="98000"/><a:lumMod val="102000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:tint val="98000"/><a:satMod val="130000"/><a:shade val="90000"/><a:lumMod val="103000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="63000"/><a:satMod val="120000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>"#;
 
 impl Default for Theme {
@@ -42,7 +36,6 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// `theme1.xml`; without one (or unreadable), the default colours and format scheme.
     pub fn parse(xml: Option<&str>) -> Theme {
         let mut t = Theme::default();
         let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return t };
@@ -61,7 +54,6 @@ impl Theme {
         t
     }
 
-    /// The `a:fmtScheme` under `root`, if any, in place of the format scheme.
     fn format_scheme(&mut self, root: Node) {
         if let Some(fs) = root.descendants().find(|n| is(*n, A, "fmtScheme")) {
             let list = |name: &str| fs.children().find(|c| is(*c, A, name)).into_iter().flat_map(|l| l.children().filter(Node::is_element));
@@ -73,13 +65,11 @@ impl Theme {
         }
     }
 
-    /// A concrete slot's colour (dk1–lt2, accents, links); the mapped slots and `phClr` are mapped before this.
     pub fn colour(&self, slot: SchemeSlot) -> Rgba {
         slot.theme_index().map_or(Rgba::BLACK, |i| self.colours[i])
     }
 }
 
-/// `w:clrSchemeMapping`: which theme colour the mapped slots (bg1, tx1, bg2, tx2, and the accents and links) name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ColourMap {
     pub bg1: SchemeSlot,
@@ -107,8 +97,6 @@ impl Default for ColourMap {
 }
 
 impl ColourMap {
-    /// `w:settings/w:clrSchemeMapping` (values `dark1`, `light1`, `dark2`, `light2`, `accent1`–`6`, `hyperlink`,
-    /// `followedHyperlink`); missing attributes keep the default.
     pub fn parse(settings_root: Option<Node>) -> ColourMap {
         let mut m = ColourMap::default();
         let Some(n) = settings_root.and_then(|r| r.children().find(|c| is(*c, W, "clrSchemeMapping"))) else { return m };
@@ -137,7 +125,6 @@ impl ColourMap {
         m
     }
 
-    /// The concrete slot a scheme colour names (DRAW-7).
     pub fn map(&self, s: SchemeSlot) -> SchemeSlot {
         use SchemeSlot::*;
         match s {
