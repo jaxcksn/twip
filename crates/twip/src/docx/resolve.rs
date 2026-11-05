@@ -16,7 +16,6 @@ pub struct Resolver {
     pub styles: Styles,
     pub numbering: Numbering,
     pub theme: ThemeFonts,
-    /// (abstractNum, ilvl) → the paragraph style linked to that level (STYLE-6).
     pub style_links: HashMap<(i64, i64), String>,
 }
 
@@ -29,7 +28,6 @@ impl std::fmt::Debug for Resolver {
 /// A paragraph's resolved properties, and what its runs resolve over.
 pub struct ParaResolved {
     pub style: ParaStyle,
-    /// docDefaults → table style region → paragraph style chain: each run's base (a toggle level each, STYLE-3).
     pub base: RunProps,
     pub level: Option<Level>,
     pub num_id: Option<i64>,
@@ -46,7 +44,6 @@ impl Resolver {
         r
     }
 
-    /// STYLE-6: the paragraph style linked to each list level.
     fn compute_style_links(&mut self) {
         for (a, abs) in &self.numbering.abstracts {
             for (i, l) in abs.levels.iter().enumerate() {
@@ -80,7 +77,6 @@ impl Resolver {
             (Some(FontRef::Theme(t)), Some(below)) if self.theme.ea_unset(t) => self.font(&Some(below.clone())),
             (e, _) => self.font(e),
         };
-        // STYLE-8: a named font over an inherited empty slot still leaves the slot empty.
         let east_asia_unset = p.east_asia_below.is_none()
             && matches!(p.east_asia.as_ref().filter(|e| matches!(e, FontRef::Theme(_))).or(p.east_asia_theme.as_ref()),
                 Some(FontRef::Theme(t)) if self.theme.ea_unset(t));
@@ -111,7 +107,6 @@ impl Resolver {
             spacing: p.spacing.unwrap_or(0.0),
             scale: p.scale.unwrap_or(100.0),
             kern: p.kern.unwrap_or(0.0),
-            // FONT-4: bit 16 for contextual alternates.
             ligatures: p.ligatures.unwrap_or(0) | if p.cntxt_alts == Some(true) { 16 } else { 0 },
             lang: p.lang.clone().unwrap_or_default(),
             style_id: p.style.clone(),
@@ -146,7 +141,6 @@ impl Resolver {
             keep_next: p.keep_next.unwrap_or(false),
             keep_lines: p.keep_lines.unwrap_or(false),
             page_break_before: p.page_break_before.unwrap_or(false),
-            // Absent = on: a document with no widowControl anywhere keeps widow control (PAGE-3).
             widow_control: p.widow_control.unwrap_or(true),
             suppress_auto_hyphens: p.suppress_auto_hyphens.unwrap_or(false),
             suppress_line_numbers: p.suppress_line_numbers.unwrap_or(false),
@@ -180,8 +174,6 @@ impl Resolver {
         p
     }
 
-    /// A paragraph's properties (STYLE-6: which list applies, and whether its indent sits above or below the style's),
-    /// in a table cell's region when it is in one.
     pub fn paragraph(&self, direct: &ParaProps, region: Option<&Region>) -> ParaResolved {
         let style_id = self.styles.paragraph_style(direct.style.as_deref()).map(str::to_string);
         let style_ppr = self.styles.chain_ppr(style_id.as_deref());
@@ -225,22 +217,18 @@ impl Resolver {
         }
         let style_rpr = self.styles.chain_rpr(style_id.as_deref());
         base.merge_level(&style_rpr);
-        // STYLE-4: a 12pt size that comes from the default paragraph style itself gives way to the table style's.
         if let Some(size) = region.and_then(|t| t.size_over_normal) {
             let sizer = self.styles.chain(style_id.as_deref()).into_iter().rev().find(|s| s.base.rpr.size.is_some());
             if sizer.is_some_and(|s| Some(&s.id) == self.styles.default_paragraph.as_ref() && s.base.rpr.size == Some(12.0)) {
                 base.size = Some(size);
             }
         }
-        // STYLE-4: such a cell's 11pt mark is laid out at the paragraph's size (an empty cell paragraph is a 12pt line).
         if region.is_some_and(|t| t.mark_at_style) && direct.mark_size == Some(11.0) {
             style.mark_size = base.size;
         }
         ParaResolved { style, base, level, num_id, ilvl, from_style, style_id }
     }
 
-    /// Whether a paragraph in list `num_id` shows its label: always for direct numbering; for a style's, only in the
-    /// style linked to that level (STYLE-6).
     pub fn label_shows(&self, num_id: i64, ilvl: i64, from_style: bool, style_id: Option<&str>) -> bool {
         !from_style || {
             let a = self.numbering.abstract_of(num_id, &self.styles).unwrap_or(-1);
@@ -291,9 +279,6 @@ impl Resolver {
         r
     }
 
-    /// The table-style region of cell (`ri`, `ci`) of a table with `size` (rows, cells in its row) whose first `headers`
-    /// rows are header rows (row 0 counting as one with the look's firstRow bit, so header rows after it extend the
-    /// run): the conditional formats `look` turns on, banding included (TABLE-3, STYLE-4).
     pub fn cell_region(
         &self,
         style_id: Option<&str>,
@@ -376,7 +361,6 @@ mod tests {
         for b in blocks {
             match b {
                 Block::Para(p) => {
-                    // A paragraph joined to the one before by a hidden mark (STYLE-7) holds runs resolved in that paragraph.
                     if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
                         continue;
                     }
@@ -423,8 +407,6 @@ mod tests {
 
     #[test]
     fn a_12pt_normal_gives_way_to_a_table_style_that_sets_text_properties() {
-        // STYLE-4: (docDefaults, Normal) sizes in half-points, the table style T1's contents, the cell paragraph's
-        // style, compat 15 → the cell text's size in a T1 table and in a table with the default table style.
         let size = |dd: u32, normal: u32, table: &str, p_style: Option<&str>, compat15: bool| {
             let sz = |v: u32| format!(r#"<w:rPr><w:sz w:val="{v}"/></w:rPr>"#);
             let xml = format!(
@@ -458,8 +440,6 @@ mod tests {
 
     #[test]
     fn an_11pt_cell_mark_is_laid_out_at_its_paragraphs_size_in_compat_14() {
-        // STYLE-4: (docDefaults, Normal) half-points, the mark's direct size, the table style, compat 15 → the size the
-        // cell paragraph's mark is laid out at (None: its own).
         let mark = |dd: u32, normal: u32, own: f64, table: Option<&str>, compat15: bool| {
             let xml = format!(
                 r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="{dd}"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0"><w:rPr><w:sz w:val="{normal}"/></w:rPr></w:style><w:style w:type="table" w:default="1" w:styleId="T0"/><w:style w:type="table" w:styleId="T1"><w:basedOn w:val="T0"/></w:style></w:styles>"#
@@ -483,8 +463,6 @@ mod tests {
 
     #[test]
     fn a_named_east_asian_font_over_an_empty_theme_slot_leaves_it_empty() {
-        // STYLE-8: (docDefaults rFonts, Normal's rFonts) under a run naming eastAsia="Times New Roman", with an empty
-        // minor East Asian theme font → whether the run's East Asian slot is the empty one.
         let unset = |dd: &str, normal: &str| {
             let xml = format!(
                 r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts {dd}/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0"><w:rPr><w:rFonts {normal}/></w:rPr></w:style></w:styles>"#

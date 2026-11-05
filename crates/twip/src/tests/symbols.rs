@@ -1,6 +1,4 @@
-//! Symbol fonts (FONT-13): where Symbol and Wingdings aren't installed, their bullets and symbols draw the characters
-//! their codes show, in a face that has them (the shipped fallback when nothing installed does), and the page's text
-//! carries those characters.
+//! Symbol fonts
 
 use std::path::Path;
 use std::rc::Rc;

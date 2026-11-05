@@ -1,4 +1,4 @@
-//! Review: tracking, revisions and comments.
+//! Review
 
 use crate::api::command::{AuthorFilter, CommentEdit, CommentReply, CommentResolve};
 use crate::api::review::Body;
@@ -12,7 +12,6 @@ use crate::editing::comments::{CommentCmd, RichParagraph, RichRun, RichText};
 use crate::editing::revisions::resolve::Scope;
 use crate::editing::selection::{Granularity, Selection};
 
-/// A body as the comment store keeps it.
 fn rich(b: &Body) -> RichText {
     match b {
         Body::Text(t) => RichText::plain(t),
@@ -39,7 +38,6 @@ fn rich(b: &Body) -> RichText {
     }
 }
 
-/// A comment id as the document numbers it.
 fn comment_id(id: &CommentId) -> Option<review::CommentId> {
     crate::api::record::parse_comment_id(id)
 }
@@ -65,7 +63,6 @@ impl Editor {
         self.resolve_revisions(accept, &scope, fonts)
     }
 
-    /// A comment command; what it makes (a new comment) is its result.
     fn comment(&mut self, c: CommentCmd, fonts: &Fonts) -> Outcome {
         self.comment_cmd(c, fonts)
     }
@@ -105,7 +102,6 @@ impl Editor {
         self.comment(CommentCmd::Activate(id), fonts)
     }
 
-    /// The comment's thread range selected and shown.
     pub(in crate::editing) fn select_comment(&mut self, id: &CommentId, fonts: &Fonts) -> Outcome {
         let Some(id) = comment_id(id).filter(|id| self.doc.comments.by_id.contains_key(id)) else { return Outcome::invalid("no such comment") };
         let Some((a, b)) = self.comment_range(id) else { return Outcome::unavailable("the comment has no range") };
@@ -115,7 +111,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// The colour an author's revisions and comments show in, by the author's name.
     pub(in crate::editing) fn set_author_color_by_name(&mut self, author: &str, color: u32) -> Outcome {
         match self.doc.people.persons.iter().position(|p| *p.name == *author) {
             Some(i) => self.set_author_color(review::AuthorId(i as u32), color),

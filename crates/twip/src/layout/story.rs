@@ -1,5 +1,4 @@
-//! Stories laid out without pagination (cells, headers and footers, notes, text boxes): one unit per line or table
-//! row. The paragraph algorithms are the body's (HDR-3, TABLE-29).
+//! Story layout
 
 use crate::docx::Compat;
 use std::collections::HashMap;
@@ -25,33 +24,21 @@ use super::units::Lu;
 
 const EPS: f64 = 1e-6;
 
-/// One line or table row of a story. `content` is drawn relative to the unit's top-left (the story's left edge, the
-/// unit's top), so a unit can be placed anywhere and rebased when a split moves it.
 #[derive(Clone, Debug)]
 pub struct StoryUnit {
     pub top: f64,
     pub height: f64,
-    /// Space below the text that needn't fit at a page bottom (PAGE-2).
     pub below: f64,
-    /// The paragraph's space-after, on its last line (0 on other lines and table rows): a table row's split keeps a
-    /// cell line ending a paragraph only if this fits below it too (TABLE-44).
     pub after: f64,
     pub content: Rc<[Child]>,
-    /// The block (paragraph or table) this unit belongs to, within its story, and whether that paragraph has
-    /// widow/orphan control (NOTE-7: widow control applies inside each note paragraph).
     pub block: usize,
     pub widow: bool,
-    /// The paragraph's keepNext and keepLines (TABLE-43: a cell split keeps them in compat 15).
     pub keep_next: bool,
     pub keep_lines: bool,
-    /// Notes referenced on this line (NOTE-8: references in table cells place their notes like body lines).
     pub notes: Box<[(NoteKind, i64)]>,
-    /// A nested table's row: what a row split redraws it from (TABLE-41).
     pub row: Option<Rc<NestedRow>>,
 }
 
-/// A nested table row as a story unit: its table, its row, the table's offset in the story (TABLE-25) and, for the
-/// continuation of a row split on an earlier page, what each cell still holds (TABLE-41).
 #[derive(Clone, Debug)]
 pub struct NestedRow {
     pub table: Rc<TableLayout>,
@@ -63,15 +50,11 @@ pub struct NestedRow {
 #[derive(Clone, Debug, Default)]
 pub struct StoryLayout {
     pub units: Vec<StoryUnit>,
-    /// The height, including the first space-before and the last space-after (HDR-3, TABLE-29).
     pub height: f64,
-    /// In a cell: the lowest bottom of the floats laid out in it (not compat ≤ 14's layoutInCell="0" ones), drawn or
-    /// not, from the content top; else 0 (TABLE-30).
     pub float_bottom: f64,
 }
 
 impl PartialEq for StoryLayout {
-    /// Layouts are equal when their units are in the same places with the same drawings (shared or equal lines).
     fn eq(&self, o: &Self) -> bool {
         self.height == o.height
             && self.float_bottom == o.float_bottom
@@ -84,7 +67,6 @@ impl PartialEq for StoryLayout {
     }
 }
 
-/// What a story's content shows that depends on where it is laid out: page-dependent field values and note numbers.
 #[derive(Clone, Copy)]
 pub struct StoryEnv<'a> {
     pub ctx: LayoutCtx<'a>,
@@ -92,11 +74,6 @@ pub struct StoryEnv<'a> {
     pub notes: &'a HashMap<(NoteKind, i64), String>,
 }
 
-/// A child of a cached story or table, named by its own cached result: a paragraph by its `ShapedPara` (keyed by the
-/// paragraph's content and identity, its field values and its note numbers), a nested table by its `TableLayout`.
-/// Compared by identity. As LayoutNG reuses a box's result only while no descendant needs layout, a parent's entry
-/// hits only while every child's entry does, so a parent never copies its children's content into its key: an edit
-/// in one cell misses that cell, its table and their ancestors, and nothing else.
 #[derive(Clone, Debug)]
 pub enum ChildId {
     Para(Rc<ShapedPara>),
@@ -113,8 +90,6 @@ impl PartialEq for ChildId {
     }
 }
 
-/// The children of `blocks` (as laid out, REV-6), shaped (and nested tables laid out: at `width`, or measured when
-/// `None`) through the cache.
 pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, cell: Option<CellEnds>, memos: &mut Memos) -> Result<Vec<ChildId>, Yield> {
     let mut out = Vec::with_capacity(blocks.len());
     for b in blocks {
@@ -131,21 +106,14 @@ pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, cell:
     Ok(out)
 }
 
-/// A cell story's ends (PARA-4): whether its first paragraph drops its space-before and its last its space-after,
-/// against their neighbours in document order outside the cell; and its table's layout, which its nested tables take.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CellEnds {
     pub before: bool,
     pub after: bool,
-    /// The cell's table is laid out fixed (TABLE-5).
     pub fixed: bool,
-    /// `w:tcFitText`: each paragraph on one line (TABLE-51).
     pub fit: bool,
 }
 
-/// TABLE-5: a nested table is laid out with its outermost table's layout, fixed or autofit, whatever its own; a
-/// negative indent counts as 0 (TABLE-25).
-/// ponytail: copies the nested table when either differs; keep a converted copy if that shows in profiles.
 pub fn as_nested(t: &Table, cell: Option<CellEnds>) -> std::borrow::Cow<'_, Table> {
     match cell {
         Some(c) if c.fixed != t.fixed || t.ind < 0.0 => std::borrow::Cow::Owned(Table { fixed: c.fixed, ind: t.ind.max(0.0), ..t.clone() }),
@@ -153,10 +121,6 @@ pub fn as_nested(t: &Table, cell: Option<CellEnds>) -> std::borrow::Cow<'_, Tabl
     }
 }
 
-/// What a story (a cell, header, footer, note, separator or text box), or a cell's content widths (`width` 0:
-/// width-free), depends on: its children, the width, whether it is a cell and its ends (PARA-4), the
-/// `TextEnv` and the font revision. Field values and note numbers are in the children's keys, except those of its
-/// floats' text boxes: a story with one keys the field values too (HDR-3: a footer cell's text box PAGE).
 #[derive(Clone, Debug, PartialEq)]
 pub struct StoryKey {
     children: Vec<ChildId>,
@@ -209,14 +173,10 @@ impl CacheKey for StoryKey {
     }
 }
 
-// shortcut: entry sizes are rough (the units, not the lines they share); refine with memory budgets.
 fn story_bytes(s: &StoryLayout) -> usize {
     std::mem::size_of::<StoryLayout>() + s.units.len() * (std::mem::size_of::<StoryUnit>() + 32)
 }
 
-/// Lays out blocks top-down in a box of `width` without pagination: one unit per line or table row, in the box's
-/// coordinates. The height includes the first space-before and the last space-after (HDR-3, TABLE-29). Cached by
-/// [`StoryKey`].
 pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnds>, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
@@ -224,8 +184,6 @@ pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEn
     cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, m))
 }
 
-/// [`layout`] without the cache, with the blocks' children already resolved (shaped paragraphs, tables laid out at
-/// `width`); blocks without one are resolved here.
 pub fn layout_with(
     blocks: &[LaidBlock],
     resolved: &[ChildId],
@@ -242,16 +200,12 @@ pub fn layout_with(
     let mut prev_after = 0.0;
     let (in_cell, ends) = (cell.is_some(), cell.unwrap_or_default());
     let contextual = contextual_in(text, in_cell);
-    // A cell's wrapping floats: (unit, child, top and bottom of the wrap exclusion in the story's coordinates).
     let mut wrapping: Vec<(usize, usize, f64, f64)> = Vec::new();
     let mut float_bottom = 0.0f64;
-    // FLOAT-14: the lowest bottom of the wrapping floats the cell's content height holds.
     let mut held = 0.0f64;
-    // HDR-11: the table just before (its style, layout and bottom border), while nothing came between.
     let mut prev_table: Option<(&Table, f64)> = None;
     for (bi, b) in blocks.iter().enumerate() {
         match b {
-            // STYLE-7: a hidden paragraph isn't laid out, except as a cell's last.
             LaidBlock::Para(laid) if super::paragraph::vanished(laid.para()) && !(cell.is_some() && bi + 1 == blocks.len()) => {}
             LaidBlock::Para(laid) => {
                 let p = laid.para();
@@ -264,7 +218,6 @@ pub fn layout_with(
                     _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some()), env.ctx.fonts, memos)?,
                 };
                 let style = p.para_style_in(view);
-                // LINE-16: headers, footers, notes and text boxes don't snap to the grid; cells only with the option.
                 let line_grid = text.line_grid.filter(|_| in_cell && text.adjust_line_height_in_table);
                 let ps = ParaSpace {
                     width,
@@ -276,8 +229,6 @@ pub fn layout_with(
                 };
                 let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
                 let (mut before, mut after) = (space_before(text, style), space_after(text, style));
-                // PARA-5: a cell's first paragraph takes no automatic space-before, its last no automatic space-after
-                // unless it is a list paragraph.
                 if in_cell && style.before_auto && bi == 0 {
                     before = 0.0;
                 }
@@ -285,7 +236,6 @@ pub fn layout_with(
                     after = 0.0;
                 }
                 let g = match prev {
-                    // PARA-4: a cell's first paragraph against the paragraph before the cell.
                     None if bi == 0 && ends.before => 0.0,
                     None => before,
                     Some(_) if !contextual => gap_plain(text, prev_after, before),
@@ -295,8 +245,7 @@ pub fn layout_with(
                 let id = para_id(p);
                 let para_top = y;
                 let fr = float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width), compat: text.compat };
-                // FLOAT-14: the wrapping floats the paragraph lays out in the cell from its column (or character) and
-                // its paragraph (or line) without a vertical alignment, by anchor piece, placed against its top.
+                // Wrapping floats
                 let mut own: Vec<(usize, Placed)> = Vec::new();
                 if in_cell && !ends.fit {
                     for (k, q) in lines.pieces().iter().enumerate() {
@@ -338,13 +287,7 @@ pub fn layout_with(
                         }
                     };
                     if in_cell {
-                        // A float anchored in a cell, whatever its wrap: drawn from the anchor line (FLOAT-14:
-                        // positioned in the cell, `move_floats` places compat ≤ 14's layoutInCell="0" ones like the
-                        // body's). A wrapping one placed from its paragraph or line without an alignment holds the
-                        // cell's content height down to its bottom.
-                        // shortcut: only its anchor paragraph wraps a float, and only one placed as `own` says: another
-                        // that a line of text would have to wrap isn't drawn (below); `page` is taken as the cell's
-                        // content box rather than the cell inside its borders.
+                        // Anchored floats
                         for k in start..end.max(start + 1) {
                             if lines.pieces().get(k).is_none_or(|q| q.kind != Kind::Anchor) {
                                 continue;
@@ -390,15 +333,12 @@ pub fn layout_with(
                 prev_table = None;
             }
             LaidBlock::Table(t) => {
-                y += prev_after; // TABLE-48: the space-after before a table applies to its border edge
+                y += prev_after;
                 let tl = match resolved.get(bi) {
                     Some(ChildId::Table(tb)) => tb.clone(),
                     _ => super::table::layout(&as_nested(t, cell), width, env, None, false, memos)?,
                 };
                 let (rows, h) = super::table::table_units(&tl);
-                // HDR-11: outside cells, a table right after another of the same style and layout continues it: one
-                // border between them, not the first one's bottom border and then this one's top.
-                // shortcut: each keeps its own borders and cell margins; only the first's bottom border goes.
                 if !in_cell
                     && let Some((p, bottom)) = prev_table
                     && p.style_id == t.style_id
@@ -406,7 +346,6 @@ pub fn layout_with(
                 {
                     y -= bottom;
                 }
-                // TABLE-25.
                 let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t) } else { 0.0 };
                 for mut u in rows {
                     u.block = bi;
@@ -424,7 +363,6 @@ pub fn layout_with(
             }
         }
     }
-    // PARA-4, TABLE-29: a cell's last paragraph against the paragraph after the cell.
     if !ends.after {
         y += prev_after;
     }
@@ -432,8 +370,7 @@ pub fn layout_with(
     Ok(StoryLayout { units, height: y.max(held), float_bottom })
 }
 
-/// Drops the `wrapping` floats (unit, child, exclusion top and bottom) that a unit with text overlaps: its text would
-/// have to wrap them, which cells don't do (FLOAT-14 shortcut).
+// Cell floats
 fn unwrapped_floats(units: &mut [StoryUnit], wrapping: &[(usize, usize, f64, f64)]) {
     let has_text = |u: &StoryUnit| {
         u.content.iter().any(|c| match c {
@@ -453,8 +390,6 @@ fn unwrapped_floats(units: &mut [StoryUnit], wrapping: &[(usize, usize, f64, f64
     }
 }
 
-/// FLOAT-14: a cell paragraph's lines wrapped around the floats it lays out in the cell (cell coordinates, the
-/// paragraph's first line at `top`): bands of segments as in the body (FLOAT-2 to FLOAT-4), with no column bottom.
 fn wrap_bands(
     lines: &ParaLines,
     p: &Paragraph,
@@ -503,8 +438,6 @@ fn wrap_bands(
             s = e;
             continue;
         }
-        // FLOAT-4 (compat <= 14): beside square floats the line retries lower in steps of its trial height; else it
-        // moves down to the next obstacle edge.
         let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
         yy = match trial.filter(|&t| ps.env.compat == Compat::Legacy && square && t > EPS) {
             Some(t) => yy + t,
@@ -514,12 +447,9 @@ fn wrap_bands(
     bands
 }
 
-/// A float's height: the picture's, or a text box's (spAutoFit, FLOAT-10): the stored height less its text frame's
-/// height, plus the content's (at most 1584 pt), in one pass from the stored size.
 pub fn float_height(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<f64, Yield> {
     Ok(match &f.text_box {
         Some(tb) if tb.auto_fit => {
-            // FLOAT-17: a quarter-turned box grows along its own height, which is the placed box's width.
             let (w0, h0) = if f.rot_swap { (f.h, f.w) } else { (f.w, f.h) };
             let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, w0, h0]);
             let w = (fr[2] - fr[0]).max(1.0);
@@ -527,19 +457,15 @@ pub fn float_height(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<f64,
             let fields = FieldValues::default();
             let content = layout(&blocks, w, &StoryEnv { fields: &fields, ..*env }, None, memos)?.height.min(1584.0);
             let h = h0 - (fr[3] - fr[1]) + content;
-            // FRAME-1: a frame's `h` without hRule="exact" is a minimum.
             if f.auto_w || f.shape.is_none() && tb.insets[1] == 0.0 && tb.insets[3] == 0.0 && tb.outline == 0.0 { h.max(f.h) } else { h }
         }
         _ => f.h,
     })
 }
 
-/// A float drawn at `rect`: its shape tree's shapes and pictures (DRAW-1, DRAW-4), then its text boxes' content
-/// (FLOAT-10). A float without a shape tree (a frame, an object made in the editor) draws its picture and a black
-/// outline of its text box.
+// Float drawing
 pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memos: &mut Memos) -> Result<Child, Yield> {
     let [x0, y0, x1, y1] = rect;
-    // FLOAT-17: a quarter-turned float is drawn at its own box, unturned about the placed box's centre.
     let shape_rect = if f.rot_swap {
         let (cx, cy, hw, hh) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (y1 - y0) / 2.0, (x1 - x0) / 2.0);
         [cx - hw, cy - hh, cx + hw, cy + hh]
@@ -580,7 +506,6 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
             outline(tb.outline, rect, &mut groups);
         }
     }
-    // FLOAT-15: a group's text boxes, each in its own box (DRAW-4: at its place and turn in the group).
     let leaves = f.shape.as_deref().map(|s| s.leaves(shape_rect)).unwrap_or_default();
     for part in &f.parts {
         let r = [x0 + part.rect[0], y0 + part.rect[1], x0 + part.rect[2], y0 + part.rect[3]];
@@ -610,8 +535,7 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
     }))
 }
 
-/// A box of a chain of linked text boxes, as a text box with its shape's insets and pen allowance (FLOAT-10): the
-/// first box's own, or a later box's from its `bodyPr` and line.
+// Linked text boxes
 fn chain_box(f: &Float) -> crate::docx::TextBox {
     if let Some(tb) = &f.text_box {
         return crate::docx::TextBox { blocks: Vec::new(), ..tb.clone() };
@@ -626,16 +550,12 @@ fn chain_box(f: &Float) -> crate::docx::TextBox {
     crate::docx::TextBox { blocks: Vec::new(), insets, outline, auto_fit: false, v_anchor: 0 }
 }
 
-/// The size of float `f`'s text frame (FLOAT-10), as a box of a chain of linked text boxes.
 pub(super) fn text_frame_size(f: &Float) -> [f64; 2] {
     let (w, h) = if f.rot_swap { (f.h, f.w) } else { (f.w, f.h) };
     let fr = layout_frame(&chain_box(f), f.shape.as_deref(), [0.0, 0.0, w, h]);
     [fr[2] - fr[0], fr[3] - fr[1]]
 }
 
-/// FLOAT-21: which of the story's units each box of a chain shows: in order, as many as its frame holds, the last box the rest
-/// (clipped as a text box clips). `widow`: a paragraph with widow control leaves no single line at the bottom of a box
-/// or at the top of the next (compat 15; compat <= 14 doesn't).
 fn chain_slices(story: &StoryLayout, heights: &[f64], widow: bool) -> Vec<std::ops::Range<usize>> {
     let units = &story.units;
     let n = units.len();
@@ -670,9 +590,6 @@ fn chain_slices(story: &StoryLayout, heights: &[f64], widow: bool) -> Vec<std::o
     out
 }
 
-/// FLOAT-21: box `k` of chain `c` (float `f`, its shape at `rect`): its part of the chain's story, laid out at the first box's
-/// width.
-// shortcut: every box breaks its lines at the first box's width, and a turned or vertical box isn't turned.
 fn linked_text(
     c: &super::env::Chain,
     k: usize,
@@ -691,7 +608,6 @@ fn linked_text(
     let base = story.units.get(range.start).map_or(0.0, |u| u.top);
     for u in &story.units[range] {
         let y = fr[1] + u.top - base;
-        // FLOAT-10: a line is drawn if its box starts above the content bottom, clipped there per glyph.
         if y >= fr[3] - EPS {
             continue;
         }
@@ -702,8 +618,6 @@ fn linked_text(
     Ok(())
 }
 
-/// FLOAT-20: an inline shape's story laid out in its box `rect` (the line drew the shape): a box of its own, in front, that
-/// editing knows as the story of the shape's id.
 pub fn inline_text_box(
     pic: &crate::docx::Picture,
     rect: [f64; 4],
@@ -726,9 +640,7 @@ pub fn inline_text_box(
     })))
 }
 
-/// DRAW-1, DRAW-4, DRAW-8: the drawn shapes of `shape` placed at `rect`, each with its geometry evaluated on its size
-/// and its paint resolved against the document's theme. Hidden shapes and graphics the engine keeps without drawing
-/// (charts, ink) draw nothing.
+// Shapes
 pub(super) fn shape_items(
     shape: &crate::drawing::Shape,
     rect: [f64; 4],
@@ -765,7 +677,6 @@ pub(super) fn shape_items(
         if leaf.shape.nv.hidden {
             continue;
         }
-        // DRAW-14: these presets join their lines with miters where a line asks for round joins or none.
         let mut line = line;
         if line.join == paint::Join::Round && leaf.shape.geometry().and_then(|g| g.preset()).is_some_and(|p| MITER_PRESETS.contains(&p.name())) {
             line.join = paint::Join::Miter(crate::drawing::units::Pct(800_000));
@@ -788,7 +699,6 @@ pub(super) fn shape_items(
     out
 }
 
-/// DRAW-14: the presets whose lines join with miters (limit 8) unless the line asks for bevel or miter joins.
 const MITER_PRESETS: &[&str] = &[
     "bentUpArrow",
     "chevron",
@@ -822,8 +732,6 @@ const MITER_PRESETS: &[&str] = &[
     "upDownArrowCallout",
 ];
 
-/// A shape's fill when it is one opaque colour (its own or its style's), as its text sees it.
-// shortcut: gradient, pattern and picture fills give no backdrop; automatic text over them stays black.
 fn solid_fill(shape: &crate::drawing::Shape, env: &StoryEnv) -> Option<u32> {
     use crate::drawing::paint::{self, Paint};
     let sp = shape.sp()?;
@@ -834,10 +742,6 @@ fn solid_fill(shape: &crate::drawing::Shape, env: &StoryEnv) -> Option<u32> {
     }
 }
 
-/// FLOAT-17: a shape's text: laid out in its unturned frame (`rect`, the shape's own box) and drawn turned about the
-/// box's centre by the shape's rotation `deg` plus `bodyPr/@rot`, 180° more with `flipV` (`flipH` changes nothing).
-/// `bodyPr/@upright` with the shape turned a quarter (45° to 135° mod 180°) lays the text out level in the frame turned
-/// about its own centre; with any other turn, level in the unturned frame.
 #[allow(clippy::too_many_arguments)]
 fn turned_text(
     tb: &crate::docx::TextBox,
@@ -849,7 +753,6 @@ fn turned_text(
     groups: &mut Vec<Child>,
     memos: &mut Memos,
 ) -> Result<(), Yield> {
-    // FONT-15: automatic text is white over a shape's dark solid fill.
     let (dark_text, dark_env);
     let env = match shape.and_then(|s| solid_fill(s, env)).filter(|c| super::env::is_dark(*c)) {
         Some(fill) => {
@@ -862,7 +765,6 @@ fn turned_text(
     let body = shape.and_then(|s| s.sp()).map(|s| &s.body);
     let turn = (deg + body.map_or(0.0, |b| b.rot.degrees()) + if flip_v { 180.0 } else { 0.0 }).rem_euclid(360.0);
     let mut frame = layout_frame(tb, shape, rect);
-    // FLOAT-19: vertical text is laid out in the text frame turned a quarter about its centre, then turned into it.
     use crate::drawing::text::TextDirection as D;
     let dir = body.map_or(D::Horizontal, |b| b.direction);
     if dir != D::Horizontal {
@@ -902,8 +804,7 @@ fn turned_text(
     Ok(())
 }
 
-/// A text box outline of width `o` centred on the edge of `rect`, as four black strips (an object without a shape
-/// tree).
+// Text boxes
 fn outline(o: f64, rect: [f64; 4], groups: &mut Vec<Child>) {
     if o <= 0.0 {
         return;
@@ -914,8 +815,6 @@ fn outline(o: f64, rect: [f64; 4], groups: &mut Vec<Child>) {
     groups.push(Child::Items(outline.iter().map(|r| Item::rect(*r, 0)).collect()));
 }
 
-/// FLOAT-10: how far the text rectangle of `shape`'s geometry (DRAW-1) lies inside its `w` × `h` box: left, top,
-/// right, bottom. A frame or a shape without a geometry has none.
 fn text_inset(shape: Option<&crate::drawing::Shape>, w: f64, h: f64) -> [f64; 4] {
     use crate::drawing::units::Emu;
     let Some(g) = shape.and_then(crate::drawing::Shape::geometry) else { return [0.0; 4] };
@@ -923,8 +822,6 @@ fn text_inset(shape: Option<&crate::drawing::Shape>, w: f64, h: f64) -> [f64; 4]
     [r[0], r[1], w - r[2], h - r[3]]
 }
 
-/// FLOAT-10: the text frame of a text box in `rect`: inside the geometry's text rectangle, the insets and the pen
-/// allowance (half of `outline` on each side).
 fn inner_frame(tb: &crate::docx::TextBox, shape: Option<&crate::drawing::Shape>, rect: [f64; 4]) -> [f64; 4] {
     let g = text_inset(shape, rect[2] - rect[0], rect[3] - rect[1]);
     let h = tb.outline / 2.0;
@@ -935,7 +832,6 @@ fn inner_frame(tb: &crate::docx::TextBox, shape: Option<&crate::drawing::Shape>,
     [x0, y0, x1, y1]
 }
 
-/// A text box's content in `rect` (FLOAT-10), appended to `groups`; `shape` gives its geometry.
 fn text_box(
     tb: &crate::docx::TextBox,
     shape: Option<&crate::drawing::Shape>,
@@ -947,8 +843,6 @@ fn text_box(
     lay_text(tb, layout_frame(tb, shape, rect), env, groups, memos)
 }
 
-/// The frame a text box's lines are laid out in: its text frame, a hair wider when the box doesn't wrap (FLOAT-18:
-/// the box is as wide as its longest line, which then stays whole).
 fn layout_frame(tb: &crate::docx::TextBox, shape: Option<&crate::drawing::Shape>, rect: [f64; 4]) -> [f64; 4] {
     let mut fr = inner_frame(tb, shape, rect);
     if shape.and_then(|s| s.sp()).is_some_and(|s| s.body.no_wrap) {
@@ -957,16 +851,12 @@ fn layout_frame(tb: &crate::docx::TextBox, shape: Option<&crate::drawing::Shape>
     fr
 }
 
-/// A text box's content laid out in its text frame `fr` (FLOAT-10), appended to `groups`.
 fn lay_text(tb: &crate::docx::TextBox, fr: [f64; 4], env: &StoryEnv, groups: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
     lay_lines(tb, fr, None, env, groups, memos)
 }
 
-/// FLOAT-19: a vertical text frame's line pitch, as a multiple of the horizontal pitch.
-// shortcut: one factor fitted on Arial at 10 and 11 pt; the vertical metrics themselves are not known.
 const VERTICAL_PITCH: f64 = 1.032;
 
-/// The top of a unit's first line box to its baseline (FLOAT-19 scales it with the pitch).
 fn first_baseline(children: &[Child]) -> Option<f64> {
     children.iter().find_map(|c| match c {
         Child::Line { placed, .. } => Some(placed.y + placed.line.baseline),
@@ -976,7 +866,6 @@ fn first_baseline(children: &[Child]) -> Option<f64> {
     })
 }
 
-/// [`lay_text`], with `vertical` = (pitch factor, lines from the frame's bottom up) for a vertical frame (FLOAT-19).
 fn lay_lines(
     tb: &crate::docx::TextBox,
     fr: [f64; 4],
@@ -987,31 +876,23 @@ fn lay_lines(
 ) -> Result<(), Yield> {
     let w = (fr[2] - fr[0]).max(1.0);
     let blocks: Vec<&Block> = tb.blocks.iter().collect();
-    // A text box or frame shows its story's fields: a header's PAGE counts in its frames (the page number gallery's
-    // framed PAGE); body text boxes get none (page::draw_floats).
     let story = layout(&blocks, w, env, None, memos)?;
     let (cx, mut cy) = (fr[0], fr[1]);
     let content_bottom = fr[3];
-    // FLOAT-10: centred or bottom text takes all or half (in whole layout units, down) of the room below it, never
-    // less than none; compat ≤ 14 with doNotVertAlignInTxbx keeps it at the top.
-    // shortcut: floats inside the text box don't count as its content.
     let text = &env.ctx.env.text;
     if !tb.auto_fit && tb.v_anchor > 0 && !(text.compat == Compat::Legacy && text.do_not_vert_align_in_txbx) {
         let free = Lu::round_half_up(content_bottom - cy - story.height).0.max(0);
         cy += Lu(if tb.v_anchor == 2 { free } else { free / 2 }).to_pt();
     }
     for u in &story.units {
-        // FLOAT-10: a line is drawn if its box starts above the content bottom.
         if !tb.auto_fit && cy + u.top >= content_bottom - EPS {
             continue;
         }
-        // FLOAT-10: the content bottom clips per glyph, as an exact row's bottom does (TABLE-34).
         let bottom = if tb.auto_fit { f64::INFINITY } else { content_bottom - (cy + u.top) + super::table::INK_SLACK };
         let children = super::table::clip_x(&u.content, f64::NEG_INFINITY, f64::INFINITY, bottom).unwrap_or_else(|| u.content.clone());
         let y = match vertical {
             None => cy + u.top,
             Some((k, reverse)) => {
-                // The line box grows by the factor, its baseline with it.
                 let b = first_baseline(&u.content).unwrap_or(0.8 * u.height);
                 let top = u.top * k + (k - 1.0) * b;
                 if reverse { content_bottom - (top + u.height * k) + (cy - fr[1]) } else { cy + top }
@@ -1022,9 +903,7 @@ fn lay_lines(
     Ok(())
 }
 
-/// A header or footer story's anchored floats, drawn in page coordinates (FLOAT-6): `top` is where the story's first
-/// unit starts on the page. They don't change the story's height. Floats in its table cells are drawn by the cells.
-/// shortcut: a line-relative float is placed against its paragraph's first line; header floats don't wrap the body.
+// Header and footer floats
 pub fn hf_floats(
     blocks: &[&Block],
     story: &StoryLayout,
@@ -1037,8 +916,6 @@ pub fn hf_floats(
     for (bi, b) in blocks.iter().enumerate() {
         let Block::Para(p) = b else { continue };
         let Some(u) = story.units.iter().find(|u| u.block == bi) else { continue };
-        // The story's first paragraph is measured from above its space-before (as Word places footer stamps).
-        // shortcut: later paragraphs from their first line; not checked against Word.
         let para_top = top + u.top - if bi == 0 { space_before(&env.ctx.env.text, p.para_style_in(env.ctx.env.text.review.view)) } else { 0.0 };
         for f in env.ctx.floats_of(p) {
             let fitted = fit_frame(f, fr.column.1, env, memos)?;
@@ -1051,11 +928,7 @@ pub fn hf_floats(
     Ok(out)
 }
 
-/// FRAME-1: a frame without `w` is as wide as its content (trailing spaces excluded), at most `width`, with the
-/// fields of the story it is in. `None` for any other float.
 pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<Option<Float>, Yield> {
-    // FLOAT-18: a text box with `bodyPr/@wrap="none"` takes its longest paragraph as one line: its width is the stored
-    // width less its text frame's width plus that line's, at most `width`.
     let no_wrap = f.shape.as_deref().and_then(|s| s.sp()).is_some_and(|s| s.body.no_wrap) && !f.rot_swap;
     if let Some(tb) = f.text_box.as_ref().filter(|_| no_wrap) {
         let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, f.w, f.h]);
@@ -1067,7 +940,6 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
     Ok(Some(Float { w: w.min(width) + tb.insets[0] + tb.insets[2], ..f.clone() }))
 }
 
-/// The right edge of a story's widest line laid out at `width`, trailing spaces excluded (FRAME-1, FLOAT-18).
 fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<f64, Yield> {
     let view = env.ctx.env.text.review.view;
     let mut w: f64 = 0.0;
@@ -1090,13 +962,11 @@ fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &m
     Ok(w)
 }
 
-/// The header and footer height cap (HDR-8).
+// Header and footer height
 pub fn hf_limit(compat: Compat, page_h: f64) -> f64 {
     if compat == Compat::Legacy { page_h / 2.0 } else { f64::INFINITY }
 }
 
-/// The units of a story that end within `limit` of its top (HDR-8 keeps whole lines), placed at (`x0`, `top`), and the
-/// height they take: the story's height when nothing was cut.
 pub fn stack_limited(story: &StoryLayout, x0: f64, top: f64, limit: f64) -> (Vec<Child>, f64) {
     let mut out = Vec::new();
     let mut kept = 0.0;

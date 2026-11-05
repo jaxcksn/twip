@@ -1,4 +1,4 @@
-//! Breaking a shaped paragraph at another width doesn't shape it again.
+//! Rebreaking
 
 use crate::docx::Block;
 use crate::layout::cache::LayoutCache;

@@ -1,4 +1,4 @@
-//! A published snapshot never changes, and provisional pages don't resolve positions until laid out.
+//! Snapshot immutability
 
 use std::path::Path;
 
@@ -10,7 +10,6 @@ use crate::layout::{Budget, Change, DocumentLayout, LayoutStatus, Step, Target, 
 use super::random_edits::Rng;
 use super::{doc, fonts};
 
-/// A held snapshot's dump, status and revisions stay the same through 100 later edits.
 #[test]
 fn snapshot_unchanged_by_later_edits() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-OBJ.docx"))) else { return };
@@ -41,7 +40,6 @@ fn snapshot_unchanged_by_later_edits() {
     assert_eq!((held.revision(), held.layout_revision()), (rev, lrev));
 }
 
-/// While a job is pending, provisional pages don't resolve spatially; `through` lays them out.
 #[test]
 fn provisional_pages_do_not_resolve() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/big.docx"))) else { return };
@@ -49,7 +47,6 @@ fn provisional_pages_do_not_resolve() {
     let mut dl = DocumentLayout::new();
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
-    // Enter near the start leaves later pages provisional while the job runs.
     let Block::Para(p) = d.sections[0].blocks[2].clone() else { return };
     let mut q = p;
     q.id = crate::docx::model::next_para_id();
@@ -57,8 +54,6 @@ fn provisional_pages_do_not_resolve() {
     q.inlines.clear();
     d.sections[0].blocks.insert(3, Block::Para(q));
     dl.edit(Revision(2), Some(Change { section: 0, first: 3, old_end: 3, new_end: 4, row: None }));
-    // Small steps until a page is committed and a pending snapshot published (a step that commits none publishes
-    // nothing).
     for _ in 0..100 {
         assert_eq!(dl.run(&d, &fonts, Budget::Units(1)), Step::Yielded, "the job finished in small steps");
         if matches!(dl.snapshot().status(), LayoutStatus::Pending { .. }) {

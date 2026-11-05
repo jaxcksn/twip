@@ -1,4 +1,4 @@
-//! Typing, deletion, Enter, undo and navigation on real fixtures, natively.
+//! Editing basics
 
 use super::super::commands::{Command, Dir, MoveBy};
 use super::super::position::{Place, StoryId};
@@ -20,7 +20,6 @@ fn typing_inserts_at_the_caret_and_one_undo_removes_the_run() {
     let after = texts(&e);
     assert!(after[0].starts_with("Hello"), "{:?}", after[0]);
     assert_eq!(after[0], format!("Hello{}", before[0]));
-    // A continuous typing run is one undo step.
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e), before);
     e.execute(Command::Redo, fonts());
@@ -40,7 +39,6 @@ fn enter_splits_and_backspace_joins_back() {
     assert_eq!(format!("{}{}", split[0], split[1]), before[0]);
     e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
     assert_eq!(texts(&e), before);
-    // Undo the join, then the split.
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e), split);
     e.execute(Command::Undo, fonts());
@@ -62,9 +60,7 @@ fn a_selection_is_replaced_by_typing() {
 
 #[test]
 fn end_on_a_wrapped_line_shows_at_its_end_and_typing_goes_to_the_next_line_start() {
-    // End sets end-of-line affinity; Right from there moves one character.
     let mut e = open("FX-TEXT.docx");
-    // The third paragraph is long (the first is the heading).
     for _ in 0..2 {
         e.execute(crate::editing::tests::mv(MoveBy::Para, Dir::Forward, false), fonts());
     }
@@ -113,7 +109,6 @@ fn ctrl_end_and_ctrl_home_reach_the_story_ends() {
 fn tab_in_the_last_cell_of_a_nested_table_adds_a_row_to_that_table_only() {
     let mut e = open("FX-NEST-2.docx");
     let fonts = fonts();
-    // Find a nested table's last cell's paragraph and put the caret there.
     let doc = e.document();
     let mut target = None;
     fn find(blocks: &[crate::docx::Block], depth: usize, out: &mut Option<(u64, u64, usize)>) {
@@ -162,8 +157,6 @@ fn tab_in_the_last_cell_of_a_nested_table_adds_a_row_to_that_table_only() {
 
 #[test]
 fn every_click_on_a_line_lands_in_its_paragraph() {
-    // Hit testing by containment: clicking the middle of every drawn line resolves to that line's paragraph,
-    // at every nesting level.
     for name in ["FX-NEST-3.docx", "FX-TBL-MERGED.docx", "FX-TEXT.docx"] {
         let mut e = open(name);
         e.complete(fonts());
@@ -186,7 +179,6 @@ fn every_click_on_a_line_lands_in_its_paragraph() {
 
 #[test]
 fn a_thousand_typed_characters_add_under_a_megabyte_of_undo_history() {
-    // Memory, by the history's own accounting of what its steps hold.
     let mut e = open("FX-TEXT.docx");
     let before = e.history().bytes();
     type_text(&mut e, &"abcdefghij".repeat(100));
@@ -196,7 +188,6 @@ fn a_thousand_typed_characters_add_under_a_megabyte_of_undo_history() {
 
 #[test]
 fn added_rows_and_typing_in_them_save_and_reopen() {
-    // A row added by Tab and one by Enter at a row's end mark are written, with their text, and read back.
     let mut e = open("FX-TBL-BASIC.docx");
     let last = |e: &super::super::Editor| texts(e).iter().position(|t| t == "T2 R3 C3").expect("the second table's last cell");
     let p = last(&e);
@@ -213,7 +204,6 @@ fn added_rows_and_typing_in_them_save_and_reopen() {
 
 #[test]
 fn a_click_on_any_drawn_line_lands_in_that_lines_paragraph() {
-    // Containment-first hit testing; every line of every (nested, merged) table is reachable.
     use super::super::input::PointerKind;
     use super::super::keymap::Mods;
     for f in ["FX-NEST-3.docx", "FX-TBL-MERGED.docx", "FX-TBL-BASIC.docx", "FX-NEST-DEEP.docx", "FX-NEST-MIXED.docx", "FX-OBJ-CELL.docx"] {
@@ -223,12 +213,10 @@ fn a_click_on_any_drawn_line_lands_in_that_lines_paragraph() {
         let mut checked = 0;
         for (page, g) in e.page_geometries() {
             for l in g.lines.iter().filter(|l| !l.repeat && !l.chain.is_empty() && g.stories[l.story].story == StoryId::Body) {
-                // Between the first two stops (or just right of a lone one): never on a cell's left-edge zone.
                 let x = match l.stops.get(1) {
                     Some(s) => (l.stops[0].x + s.x) / 2.0,
                     None => l.stops[0].x + 1.0,
                 };
-                // A line pushed out of its own cell (an indent wider than the cell) is under another cell: containment wins there.
                 let y = (l.top + l.bottom) / 2.0;
                 let own = g.cells.iter().find(|c| c.chain == l.chain).expect("the line's cell");
                 if x < own.rect[0] || x > own.rect[2] {
@@ -238,7 +226,6 @@ fn a_click_on_any_drawn_line_lands_in_that_lines_paragraph() {
                 for kind in [PointerKind::Down, PointerKind::Up] {
                     e.pointer_input(kind, dx, dy, 1, Mods::default(), fonts());
                 }
-                // A click on an inline picture selects it.
                 let got = match e.selection() {
                     crate::editing::selection::Selection::Object(crate::editing::selection::ObjectRef::Inline { para, .. }) => Some(para),
                     s => s.focus().and_then(|p| p.para_offset()).map(|(p, _)| p),
@@ -266,7 +253,6 @@ fn a_click_on_any_drawn_line_lands_in_that_lines_paragraph() {
 
 #[test]
 fn a_click_on_any_story_line_lands_in_that_line() {
-    // Body, notes and text boxes take a click; headers and footers a double-click.
     use super::super::input::PointerKind;
     use super::super::keymap::Mods;
     let mut e = open("FX-STORIES.docx");
@@ -306,7 +292,6 @@ fn a_click_on_any_story_line_lands_in_that_line() {
 
 #[test]
 fn a_deleted_float_stays_deleted_after_saving() {
-    // Delete with a float selected removes it; saving drops its drawing, the text kept.
     let count = |e: &super::super::Editor| {
         fn walk(b: &[crate::docx::Block]) -> usize {
             b.iter()
@@ -345,7 +330,6 @@ fn a_deleted_float_stays_deleted_after_saving() {
 
 #[test]
 fn edits_in_every_story_save_and_reopen() {
-    // Typing in a header, a footnote, an endnote and a text box is written to their parts and read back.
     use crate::docx::{Block, Inline};
     fn first_para(b: &[Block]) -> Option<&crate::docx::Paragraph> {
         b.iter().find_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
@@ -393,7 +377,6 @@ fn edits_in_every_story_save_and_reopen() {
 
 #[test]
 fn a_nudged_float_saves_its_new_offsets() {
-    // A moved float's posOffset is patched in place and read back.
     let floats = |e: &super::super::Editor| -> Vec<(f64, f64)> {
         e.document()
             .sections
@@ -431,8 +414,6 @@ fn a_nudged_float_saves_its_new_offsets() {
 
 #[test]
 fn a_resized_float_saves_its_new_size() {
-    // A corner drag's new size (a locked picture: its ratio kept) is patched into the drawing's extent
-    // and read back by the reader.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ-LOCK.docx", "resize-save");
     r.step(&json!({ "click": { "float": 1 } }));
@@ -461,8 +442,6 @@ fn a_resized_float_saves_its_new_size() {
 
 #[test]
 fn resized_columns_and_rows_save_and_reopen() {
-    // A column border drag's grid and cell widths, and a row border drag's "at least" height, are
-    // written and read back.
     use serde_json::json;
     let tables = |e: &super::super::Editor| -> Vec<(Vec<f64>, Vec<Option<(f64, String)>>, Vec<Option<crate::docx::props::Width>>)> {
         fn walk(b: &[crate::docx::Block], out: &mut Vec<(Vec<f64>, Vec<Option<(f64, String)>>, Vec<Option<crate::docx::props::Width>>)>) {
@@ -489,7 +468,6 @@ fn resized_columns_and_rows_save_and_reopen() {
     assert_eq!(edited[1].0, vec![186.0, 126.0, 156.0]);
     assert!(edited[1].1[1].as_ref().is_some_and(|(_, rule)| rule == "atLeast"), "{:?}", edited[1].1);
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
-    // For opening the saved file in Word: RT_KEEP names a folder to write it to.
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TBL-BASIC.resize.docx"), &bytes).expect("writes");
     }
@@ -504,7 +482,6 @@ fn resized_columns_and_rows_save_and_reopen() {
 
 #[test]
 fn a_reanchored_float_saves_in_its_new_paragraph() {
-    // The drawing leaves its old paragraph and is written at the start of the new one, its offset patched.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ.docx", "reanchor-save");
     r.step(&json!({ "drag": { "from": { "float": 1 }, "to": { "float": 1, "dy": -150 } } }));
@@ -516,7 +493,6 @@ fn a_reanchored_float_saves_in_its_new_paragraph() {
         std::fs::write(std::path::Path::new(&d).join("FX-OBJ.reanchor.docx"), &bytes).expect("writes");
     }
     let mut again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
-    // Offsets read back within the file's rounding (EMU, 1/20 pt).
     let back = floats(&mut again);
     for (a, b) in back.as_array().unwrap().iter().zip(edited.as_array().unwrap()) {
         for k in ["anchor", "wrap", "w", "h"] {
@@ -531,7 +507,6 @@ fn a_reanchored_float_saves_in_its_new_paragraph() {
 
 #[test]
 fn a_border_moved_in_selected_rows_saves() {
-    // The grid gains a column; spans, widths and the grid are written and read back.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-TBL-BASIC.docx", "obs48-save");
     r.step(&json!({ "click": { "para": 13, "offset": 2 } }));
@@ -551,7 +526,6 @@ fn a_border_moved_in_selected_rows_saves() {
 
 #[test]
 fn table_formats_save_and_reopen() {
-    // Cell alignment, shading and header rows are written as direct properties and read back.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-TBL-BASIC.docx", "table-format-save");
     r.step(&json!({ "drag": { "from": { "para": 13, "offset": 2 }, "to": { "para": 17, "offset": 2 } } }));
@@ -573,8 +547,6 @@ fn table_formats_save_and_reopen() {
 
 #[test]
 fn an_inserted_footnote_saves_and_deleting_its_reference_deletes_it() {
-    // Insert Footnote puts the caret in the new note; the reference and the note are written; deleting the
-    // reference deletes the note in the same step, and saving drops it.
     let note_texts = |e: &super::super::Editor| -> Vec<String> {
         let mut v: Vec<(i64, String)> = e
             .document()
@@ -609,7 +581,6 @@ fn an_inserted_footnote_saves_and_deleting_its_reference_deletes_it() {
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(note_texts(&again), edited);
     assert_eq!(texts(&again), texts(&e));
-    // Back in the body, Delete over the reference mark deletes the note with it; undo brings both back.
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(4))));
     e.execute(crate::editing::tests::del(super::super::commands::Dir::Forward, false), fonts());
     assert_eq!(note_texts(&e), before);
@@ -622,7 +593,6 @@ fn an_inserted_footnote_saves_and_deleting_its_reference_deletes_it() {
 
 #[test]
 fn notes_inserted_in_a_document_without_notes_save() {
-    // The notes parts, their relationships and content types are created.
     let mut e = open("FX-TEXT.docx");
     assert!(e.document().footnotes.is_empty() && e.document().endnotes.is_empty());
     let para = super::super::tests::para_id(&e, 1);
@@ -649,7 +619,6 @@ fn notes_inserted_in_a_document_without_notes_save() {
 
 #[test]
 fn deleted_and_split_cells_save_and_reopen() {
-    // Delete Cells shifting left (the row ends early) and Split Cells into rows (vertical merges) are written.
     use serde_json::json;
     for cmd in [json!({ "type": "deleteCells", "value": "left" }), json!({ "type": "splitCells", "columns": 1, "rows": 2 })] {
         let mut r = super::scenarios::Run::open("FX-TBL-BASIC.docx", "cells-save");
@@ -682,9 +651,7 @@ fn deleted_and_split_cells_save_and_reopen() {
 
 #[test]
 fn editing_works_in_every_layout_status() {
-    // A stabilized or inconsistent layout is reported (inspect `sync.status`), and typing, undo and saving work.
     use crate::layout::document::{FAIL_VERIFY, HF_ALTERNATE};
-    // The layout gate's fixtures (`TWIP_REFERENCE_FIXTURES`); skipped where they aren't.
     let path = std::env::var_os("TWIP_REFERENCE_FIXTURES").map(std::path::PathBuf::from).unwrap_or_default().join("HF9").join("HF9_f_pagenum.docx");
     let Ok(bytes) = std::fs::read(path) else { return };
     for (fail, want) in [(false, "stabilized"), (true, "inconsistent")] {
@@ -708,7 +675,6 @@ fn editing_works_in_every_layout_status() {
     }
 }
 
-/// big.docx (FX-LARGE): opened without waiting for background layout.
 fn open_large() -> super::super::Editor {
     let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/big.docx")).expect("big.docx");
     super::super::Editor::open(&bytes, fonts()).expect("opens")
@@ -716,8 +682,6 @@ fn open_large() -> super::super::Editor {
 
 #[test]
 fn down_right_after_enter_lands_where_the_finished_layout_puts_it() {
-    // Enter near the start, then Down at once (no background layout between): the caret is where it is when
-    // layout has finished first.
     let run = |settle: bool| {
         let mut e = open_large();
         if settle {
@@ -730,7 +694,6 @@ fn down_right_after_enter_lands_where_the_finished_layout_puts_it() {
             e.complete(fonts());
         }
         e.execute(crate::editing::tests::mv(super::super::commands::MoveBy::Line, super::super::commands::Dir::Forward, false), fonts());
-        // As a paragraph number and offset: ids differ between opens.
         let (p, u) = e.selection().focus().and_then(|f| f.para_offset()).expect("a caret");
         ((0..texts(&e).len()).position(|k| super::super::tests::para_id(&e, k) == p), u)
     };
@@ -739,7 +702,6 @@ fn down_right_after_enter_lands_where_the_finished_layout_puts_it() {
 
 #[test]
 fn a_late_selection_keeps_its_characters_through_an_early_reflow() {
-    // A selection far down; an edit at the start reflows every page; the selection covers the same text.
     let mut e = open_large();
     e.complete(fonts());
     let n = texts(&e).len();
@@ -762,8 +724,6 @@ fn a_late_selection_keeps_its_characters_through_an_early_reflow() {
 
 #[test]
 fn a_click_on_a_provisional_page_resolves_against_the_finished_layout() {
-    // After an edit near the start, the later pages are provisional; a click on one lays out through it first
-    // and resolves where it does once layout has finished.
     use super::super::input::PointerKind;
     use super::super::keymap::Mods;
     let edited = |settle: bool| {
@@ -799,7 +759,6 @@ fn a_click_on_a_provisional_page_resolves_against_the_finished_layout() {
 
 #[test]
 fn a_row_inserted_in_a_repeating_section_saves_as_its_own_item() {
-    // The section's wrappers are written around its rows again, the new row its own item.
     use crate::docx::ControlKind;
     let shape = |e: &super::super::Editor| -> Vec<Vec<String>> {
         let d = e.document();
@@ -847,7 +806,6 @@ fn a_row_inserted_in_a_repeating_section_saves_as_its_own_item() {
 
 #[test]
 fn a_toggled_checkbox_saves_its_state() {
-    // `w14:checked` and the face are written; the control is kept.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-REPEAT-REGION.docx", "checkbox-save");
     r.step(&json!({ "click": { "para": 7, "offset": 0 } }));
@@ -864,7 +822,6 @@ fn a_toggled_checkbox_saves_its_state() {
     assert_eq!(boxes, 3);
 }
 
-/// The body's floats in document order (they're the only kind FX-OBJ's body has besides inline pictures).
 fn body_floats(e: &super::super::Editor) -> Vec<crate::docx::Float> {
     e.document()
         .sections
@@ -889,7 +846,6 @@ fn body_pictures(e: &super::super::Editor) -> Vec<(f64, f64)> {
 
 #[test]
 fn wrapping_and_the_anchor_lock_save() {
-    // Wrap Text and Lock Anchor patch the drawing (its wrap element, `behindDoc`, `locked`) in place.
     use crate::editing::selection::ObjectRef;
     let mut e = open("FX-OBJ.docx");
     let ids: Vec<crate::layout::FloatId> = body_floats(&e).iter().map(|f| crate::layout::FloatId(f.id)).collect();
@@ -914,7 +870,6 @@ fn wrapping_and_the_anchor_lock_save() {
         assert_eq!((&a.wrap, &a.wrap_text, a.behind, a.locked), (&b.wrap, &b.wrap_text, b.behind, b.locked));
     }
     assert_eq!(texts(&again), texts(&e));
-    // One step each: undoing all four gives the document back.
     for _ in 0..4 {
         e.execute(Command::Undo, fonts());
     }
@@ -924,7 +879,6 @@ fn wrapping_and_the_anchor_lock_save() {
 
 #[test]
 fn an_inline_picture_resizes_by_its_handle_and_saves() {
-    // A corner handle drag keeps a locked picture's ratio; saving patches its extents in place.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ-LOCK.docx", "inline-resize");
     let was = body_pictures(&r.e);
@@ -947,7 +901,6 @@ fn an_inline_picture_resizes_by_its_handle_and_saves() {
 
 #[test]
 fn reset_size_gives_a_picture_its_own_size() {
-    // Reset Picture size: the image's pixels at its resolution (96 dpi without one).
     use crate::editing::selection::ObjectRef;
     let mut e = open("FX-OBJ.docx");
     let (para, offset) = e
@@ -984,7 +937,6 @@ fn reset_size_gives_a_picture_its_own_size() {
     assert_eq!((pic(&e).0, pic(&e).1), want);
 }
 
-/// The selected object's outline on the first pages, as the view draws it (laid out first, as a frame is).
 fn object_box(e: &mut super::super::Editor) -> [f64; 4] {
     while e.idle(fonts()) {}
     match e.view(0..3).selection {
@@ -995,8 +947,6 @@ fn object_box(e: &mut super::super::Editor) -> [f64; 4] {
 
 #[test]
 fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
-    // Wrap Text on an inline picture makes it a float anchored in its paragraph, drawn where it was; In Line with
-    // Text puts it back in the text. Each is one undo step, and the float saves and reads back.
     use crate::api::value::ObjectWrap;
     use crate::editing::selection::ObjectRef;
     use serde_json::json;
@@ -1012,7 +962,6 @@ fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
     assert!(was.iter().zip(&now).all(|(a, b)| (a - b).abs() < 0.1), "stays where it was: {was:?} -> {now:?}");
     let f = body_floats(&r.e).into_iter().find(|f| f.src.is_none()).expect("the new float");
     assert_eq!((f.wrap.as_str(), f.h_relative.as_str(), f.v_relative.as_str(), f.image.is_some()), ("square", "column", "paragraph", true));
-    // Saved as an anchor and read back.
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-OBJ.inline-to-float.docx"), &bytes).expect("writes");
@@ -1020,19 +969,16 @@ fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!((body_pictures(&again).len(), body_floats(&again).len()), (pictures - 1, floats + 1));
     assert_eq!(texts(&again), texts(&r.e));
-    // One step: undone, the picture is in line again; redone, floating.
     r.e.execute(Command::Undo, fonts());
     assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures, floats));
     r.e.execute(Command::Redo, fonts());
     assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures - 1, floats + 1));
-    // Back in line: an inline picture again, selected, the same size.
     r.e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(f.id))));
     assert!(matches!(r.e.execute(Command::SetObjectWrap(ObjectWrap::Inline), fonts()), super::super::Outcome::Changed(_)));
     assert!(matches!(r.e.selection(), Selection::Object(ObjectRef::Inline { .. })), "{:?}", r.e.selection());
     assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures, floats));
     let back = object_box(&mut r.e);
     assert!(((back[2] - back[0]) - (was[2] - was[0])).abs() < 0.01 && ((back[3] - back[1]) - (was[3] - was[1])).abs() < 0.01);
-    // A text box can't go in line.
     r.e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(body_floats(&r.e)[0].id))));
     let fl = body_floats(&r.e)[0].clone();
     if fl.text_box.is_some() {
@@ -1042,7 +988,6 @@ fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
 
 #[test]
 fn an_inline_picture_drags_to_a_new_place_in_the_text() {
-    // Like selected text: dropped elsewhere it moves there (one step), selected; Ctrl+drag copies it.
     use crate::editing::selection::ObjectRef;
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ-LOCK.docx", "inline-drag");
@@ -1064,7 +1009,6 @@ fn an_inline_picture_drags_to_a_new_place_in_the_text() {
     r.e.execute(Command::Undo, fonts());
     assert!(at(&r.e, Unit(0)));
     assert_eq!(text(&r.e), before);
-    // Ctrl: a copy.
     r.step(&json!({ "click": { "picture": 0 } }));
     r.step(&json!({ "drag": { "from": { "picture": 0 }, "to": { "para": 1, "offset": 20 } }, "mods": { "ctrl": true } }));
     assert_eq!(body_pictures(&r.e).len(), pictures + 1);
@@ -1072,8 +1016,6 @@ fn an_inline_picture_drags_to_a_new_place_in_the_text() {
 
 #[test]
 fn an_object_drag_shows_a_ghost_and_the_anchor_it_would_take() {
-    // While a float is dragged its ghost goes where the drag puts it (the float itself stays) and the anchor shows
-    // the paragraph the release anchors it to; the outline has no handles until the release.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ.docx", "ghost");
     r.e.live_layout = false;
@@ -1082,7 +1024,6 @@ fn an_object_drag_shows_a_ghost_and_the_anchor_it_would_take() {
     let anchor = r.e.view(0..3).anchor.expect("an anchor shows");
     assert!(matches!(r.e.view(0..3).selection, super::super::view::SelectionView::Object(_, true)), "handles after a click");
     r.step(&json!({ "press": { "float": 1 } }));
-    // A press that hasn't moved is no drag yet: the handles stay.
     assert!(matches!(r.e.view(0..3).selection, super::super::view::SelectionView::Object(_, true)), "handles on a press");
     r.step(&json!({ "move_to": { "float": 1, "dy": -150 }, "mods": { "alt": true } }));
     let v = r.e.view(0..3);
@@ -1092,7 +1033,6 @@ fn an_object_drag_shows_a_ghost_and_the_anchor_it_would_take() {
     assert!(g.float.is_some());
     assert!(matches!(v.selection, super::super::view::SelectionView::Object(_, false)), "no handles mid-drag");
     assert!(v.anchor.expect("an anchor shows").1[1] < anchor.1[1] - 50.0, "the anchor follows: {:?} -> {:?}", anchor, v.anchor);
-    // Shift: along one axis only.
     r.e.pointer_input(
         super::super::input::PointerKind::Move,
         (g.to[0] + g.to[2]) / 2.0 + 40.0,
@@ -1107,14 +1047,10 @@ fn an_object_drag_shows_a_ghost_and_the_anchor_it_would_take() {
 
 #[test]
 fn live_layout_lays_the_dragged_float_out_where_the_pointer_is() {
-    // While dragged, layout draws the float where the pointer is and the text wraps around it there (no ghost), the
-    // document unchanged; the release is the one step the drag makes, and Esc mid-drag lays it out where it was.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ.docx", "live");
     let was = body_floats(&r.e);
     let id = was[1].id;
-    // The dragged float's drawn top and the lines, laid out as a frame would (found by its id: re-anchoring changes its
-    // place in document order, which the geometry numbers floats by).
     let drawn = |e: &mut super::super::Editor| {
         while e.idle(fonts()) {}
         let n = body_floats(e).iter().position(|f| f.id == id);
@@ -1141,7 +1077,6 @@ fn live_layout_lays_the_dragged_float_out_where_the_pointer_is() {
     assert!((after - mid).abs() < 0.5 && after_lines == mid_lines, "the release lays out as the preview did: {after} vs {mid}, {differ:?}");
     r.e.execute(Command::Undo, fonts());
     assert_eq!(body_floats(&r.e), was, "one undo step");
-    // Esc mid-drag: laid out where it was, nothing recorded.
     r.step(&json!({ "click": { "float": 1 } }));
     r.step(&json!({ "press": { "float": 1 } }));
     r.step(&json!({ "move_to": { "float": 1, "dy": -150 } }));
@@ -1153,8 +1088,6 @@ fn live_layout_lays_the_dragged_float_out_where_the_pointer_is() {
 
 #[test]
 fn a_live_drags_outline_stays_on_the_float_where_layout_keeps_it() {
-    // Dragged far above the top margin, a wrapped paragraph-relative float is laid out no higher than the margin
-    // (FLOAT-6): the outline is where it is laid out, not where the pointer is.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ.docx", "live-clamp");
     let f = crate::layout::FloatId(body_floats(&r.e)[1].id);
@@ -1170,8 +1103,6 @@ fn a_live_drags_outline_stays_on_the_float_where_layout_keeps_it() {
 
 #[test]
 fn position_commands_place_the_float_and_the_state_reports_it() {
-    // Align right of the margin; re-measured from the page vertically it stays put; wrap options; each one undo step
-    // and read back after saving.
     use crate::api::command::{ObjectPosition, ObjectWrapOptions};
     use crate::api::value::*;
     use crate::editing::selection::ObjectRef;
@@ -1195,7 +1126,6 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
     let sec = &e.document().sections[0];
     assert!((now[2] - (sec.page_w - sec.right)).abs() < 0.1, "right of the margin: {now:?}");
     assert!((now[1] - before[1]).abs() < 0.1, "vertically where it was");
-    // Fixed on the page: vertically relative to the page, staying where it is.
     e.execute(
         Command::SetObjectPosition(ObjectPosition {
             vertical: Some(VerticalPosition { relative_to: VerticalReference::Page, align: None, offset: None }),
@@ -1215,7 +1145,6 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
     );
     let p = e.object_selection().and_then(|o| o.placement).expect("a placement");
     assert_eq!((p.wrap_side, p.distance.left), (WrapSide::Largest, Points(18.0)));
-    // Saved and read back.
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     let (a, b) = (&body_floats(&again)[1], &body_floats(&e)[1]);
@@ -1224,13 +1153,11 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
         (&b.h_relative, &b.h_align, &b.v_relative, &b.wrap_text, b.dist[2])
     );
     assert!((a.v_offset - b.v_offset).abs() < 0.06);
-    // One step each.
     for _ in 0..3 {
         e.execute(Command::Undo, fonts());
     }
     let back = object_box(&mut e);
     assert!(back.iter().zip(&before).all(|(a, b)| (a - b).abs() < 0.1), "{before:?} -> {back:?}");
-    // An inline picture has no position.
     let (para, offset) = e
         .index()
         .para_ids()
@@ -1246,8 +1173,6 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
 
 #[test]
 fn an_inserted_picture_saves_with_its_image() {
-    // Insert Picture puts the image at the caret, selected; saving writes the drawing, the media part, its
-    // relationship and content type, in the body and in a header (each part its own relationships).
     use crate::editing::selection::ObjectRef;
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let mut e = open("FX-STORIES.docx");
@@ -1255,14 +1180,12 @@ fn an_inserted_picture_saves_with_its_image() {
         e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     assert!(matches!(e.selection(), Selection::Object(ObjectRef::Inline { .. })), "{:?}", e.selection());
-    // And one in the first header: its first paragraph's start.
     let header = e.document().stories.keys().filter(|n| n.contains("header")).min().cloned().expect("a header");
     let story = e.index().header_footer(&header).expect("its story");
     let para =
         e.index().para_ids().find(|id| e.index().para_slot(*id).is_some_and(|s| e.index().story(s.container) == story)).expect("a header paragraph");
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(story, para, Unit(0))));
     e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
-    // Not an image: nothing happens.
     assert!(matches!(
         e.execute(
             Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(b"not an image".to_vec()), alt_text: None }),
@@ -1298,7 +1221,6 @@ fn an_inserted_picture_saves_with_its_image() {
         assert!((a.0 - b.0).abs() < 0.01 && (a.1 - b.1).abs() < 0.01 && a.2 == b.2, "{:?} vs {:?}", (a.0, a.1), (b.0, b.1));
     }
     assert_eq!(texts(&again), texts(&e));
-    // Undo takes both out.
     e.execute(Command::Undo, fonts());
     e.execute(Command::Undo, fonts());
     assert!(pictures(&e).is_empty());
@@ -1306,8 +1228,6 @@ fn an_inserted_picture_saves_with_its_image() {
 
 #[test]
 fn an_inserted_text_box_takes_typing_and_saves() {
-    // Insert Text Box anchors a new box at the caret's paragraph with the caret in it; typing goes in;
-    // saving writes the anchor and its content from the model, and reading it back gives the box and its text.
     let mut e = open("FX-TEXT.docx");
     let before = body_floats(&e).len();
     assert!(matches!(e.execute(Command::InsertTextBox, fonts()), super::super::Outcome::Changed(_)));
@@ -1338,7 +1258,6 @@ fn an_inserted_text_box_takes_typing_and_saves() {
     let (a, b) = (&body_floats(&again)[before], &body_floats(&e)[before]);
     assert!((a.w - b.w).abs() < 0.01 && (a.h - b.h).abs() < 0.01 && a.wrap == b.wrap && a.h_relative == b.h_relative, "{a:?}");
     assert_eq!(texts(&again), texts(&e));
-    // Undo: the typing, then the box.
     e.execute(Command::Undo, fonts());
     e.execute(Command::Undo, fonts());
     assert_eq!(body_floats(&e).len(), before);
@@ -1356,7 +1275,6 @@ fn same_lines(a: &[String], b: &[String]) {
     }
 }
 
-/// Every body table's own and its rows' and cells' formatting, comparable across a save.
 fn table_formatting(e: &super::super::Editor) -> Vec<String> {
     fn walk(blocks: &[crate::docx::Block], out: &mut Vec<String>) {
         for b in blocks {
@@ -1384,8 +1302,6 @@ fn table_formatting(e: &super::super::Editor) -> Vec<String> {
 
 #[test]
 fn table_properties_save_and_reopen() {
-    // Borders (shared edges kept consistent), margins, row height, can't split, column width, and the
-    // table's width, alignment and indent, each one step, written in place and read back.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-TBL-BASIC.docx", "table-properties-save");
     let before = table_formatting(&r.e);
@@ -1407,7 +1323,6 @@ fn table_properties_save_and_reopen() {
     }
     let edited = table_formatting(&r.e);
     assert_ne!(edited, before);
-    // A block side on the outside also sets the facing side of the cell beyond it (the row above's bottom).
     let t =
         r.e.document().sections[0].blocks.iter().filter_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).nth(1).unwrap();
     let top = t.rows.iter().position(|row| row.height.as_ref().is_some_and(|h| h.1 == "exact")).expect("a row made exact");
@@ -1422,7 +1337,6 @@ fn table_properties_save_and_reopen() {
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     same_lines(&table_formatting(&again), &edited);
     assert_eq!(texts(&again), texts(&r.e));
-    // Undoing every step gives the tables back.
     for _ in 0..steps.len() {
         r.e.execute(Command::Undo, fonts());
     }
@@ -1431,8 +1345,6 @@ fn table_properties_save_and_reopen() {
 
 #[test]
 fn a_table_style_and_its_options_restyle_the_cells() {
-    // Table Style and Table Style Options: every cell (and its paragraphs) re-resolved from the style's
-    // regions; saved as tblStyle and tblLook, read back the same.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("../tables.docx", "table-style-save");
     let first_table = |e: &super::super::Editor| -> crate::docx::Table {
@@ -1445,7 +1357,6 @@ fn a_table_style_and_its_options_restyle_the_cells() {
     };
     let t0 = first_table(&r.e);
     assert_eq!(t0.style_id.as_deref(), Some("TableGrid"));
-    // A click in the first table's first cell: its paragraph's number is the count of body paragraphs before it.
     let para = r.e.document().sections[0].blocks.iter().take_while(|b| matches!(b, crate::docx::Block::Para(_))).count();
     r.step(&json!({ "click": { "para": para, "offset": 0 } }));
     r.step(&json!({"command": {"type": "setTableStyle", "value": "GridTable4-Accent1"}}));
@@ -1466,7 +1377,6 @@ fn a_table_style_and_its_options_restyle_the_cells() {
     assert_eq!(texts(&again), texts(&r.e));
 }
 
-/// Each header and footer part's text, by name.
 fn story_texts(e: &super::super::Editor) -> Vec<(String, String)> {
     e.document()
         .stories
@@ -1485,8 +1395,6 @@ fn story_texts(e: &super::super::Editor) -> Vec<(String, String)> {
 
 #[test]
 fn a_new_header_and_footer_save() {
-    // Edit Header and Edit Footer on a document without them make each (one step), with the caret
-    // in it; saving writes the parts, their relationships, content types and the section's references.
     let mut e = open("FX-TEXT.docx");
     assert!(e.document().stories.is_empty());
     assert!(matches!(e.execute(Command::EditHeader, fonts()), super::super::Outcome::Changed(_)));
@@ -1496,7 +1404,6 @@ fn a_new_header_and_footer_save() {
     assert!(matches!(e.selection().focus().map(|p| p.story), Some(StoryId::Body)));
     e.execute(Command::EditFooter, fonts());
     type_text(&mut e, "New footer");
-    // Edit Header again goes into the header made, not a new one.
     e.execute(Command::EditHeader, fonts());
     let edited = story_texts(&e);
     assert_eq!(edited.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(), vec!["New footer", "New header"], "{edited:?}");
@@ -1508,7 +1415,6 @@ fn a_new_header_and_footer_save() {
     assert_eq!(story_texts(&again), edited);
     assert!(again.document().sections[0].headers[0].is_some() && again.document().sections[0].footers[0].is_some());
     assert_eq!(texts(&again), texts(&e));
-    // Undo takes the typing and the parts out again.
     for _ in 0..4 {
         e.execute(Command::Undo, fonts());
     }
@@ -1517,7 +1423,6 @@ fn a_new_header_and_footer_save() {
 
 #[test]
 fn a_double_click_in_an_empty_header_area_makes_the_header() {
-    // A double-click in the top margin of a page without a header enters a new one; Esc goes back.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-PAGES.docx", "new-header-click");
     r.step(&json!({ "click": { "para": 0, "offset": 0, "dy": -40 }, "clicks": 2 }));
@@ -1529,8 +1434,6 @@ fn a_double_click_in_an_empty_header_area_makes_the_header() {
 
 #[test]
 fn new_lists_save_with_their_definitions() {
-    // Lists made by Numbering and Bullets are written with their definitions: into the numbering part
-    // when there is one, into a new part (with its relationship and content type) when there isn't.
     let labels = |e: &super::super::Editor| -> Vec<Option<String>> {
         e.document()
             .sections
@@ -1564,11 +1467,8 @@ fn new_lists_save_with_their_definitions() {
 
 #[test]
 fn a_placeholder_activates_and_fills() {
-    // A click on an unfilled placeholder selects it and reports it; filling it fits the image into
-    // its box (one step); saving keeps the control's tag and alias, replaces the picture and clears showingPlcHdr.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-PLACEHOLDER.docx", "placeholder");
-    // The placeholder's picture among those drawn.
     let st = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
     let pics = st["geometry"]["pictures"].as_array().cloned().unwrap_or_default();
     let k = (0..pics.len())
@@ -1579,13 +1479,11 @@ fn a_placeholder_activates_and_fills() {
         .expect("a drawn placeholder");
     let info = r.e.selected_placeholder().unwrap();
     assert_eq!((info.key.as_str(), info.label.as_str()), ("Signature.Recipient Sig", "Recipient Sig"));
-    // The click reported it.
     let pt = pics[k]["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>();
     let (x, y) = ((pt[0] + pt[2]) / 2.0, (pt[1] + pt[3]) / 2.0);
     let out = r.e.apply_json(&json!({ "type": "pointer", "kind": "down", "x": x, "y": y, "clicks": 1, "seq": 1000 }).to_string(), fonts());
     assert!(out.contains("\"placeholder\"") && out.contains("Signature.Recipient Sig"), "{out}");
     r.e.apply_json(&json!({ "type": "pointer", "kind": "up", "x": x, "y": y, "seq": 1001 }).to_string(), fonts());
-    // Fill every placeholder with that key: a 108 x 72 pt picture fits the 214.15 x 39.65 box by its height.
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let out = r.e.execute(
         Command::FillPlaceholder(crate::api::command::FillPlaceholder { key: Some(info.key.clone()), image: crate::api::value::Bytes(data.clone()) }),
@@ -1637,15 +1535,12 @@ fn a_placeholder_activates_and_fills() {
     assert!(again.document().images.contains(&data), "the filled image is saved");
     assert!(again.document().placeholders.is_empty(), "read back as filled");
     assert_eq!(texts(&again), texts(&r.e));
-    // Undo gives the placeholder back.
     r.e.execute(Command::Undo, fonts());
     assert!(r.e.document().filled.is_empty());
 }
 
 #[test]
 fn the_host_sets_how_placeholders_look() {
-    // A look for a key (or the default) puts the placeholder in the view with that colour, label and icon;
-    // without one it isn't overlaid; a filled placeholder never is.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-PLACEHOLDER.docx", "placeholder-look");
     let views = |r: &mut super::scenarios::Run| {
@@ -1659,15 +1554,12 @@ fn the_host_sets_how_placeholders_look() {
     let v = views(&mut r);
     assert_eq!(v.len(), 1, "{v:?}");
     assert_eq!((v[0].label.as_str(), v[0].color), ("Sign here", 0x40_C0_00_00));
-    // The icon's shapes: the path and the circle (its own fill); the unfilled rect is left out.
     let shapes = v[0].icon.as_ref().expect("an icon");
     assert_eq!((shapes.view_box, shapes.paths.len(), shapes.paths[1].1), ([0.0, 0.0, 24.0, 24.0], 2, Some(0xFF33_3333)));
     assert!(v[0].rect[2] - v[0].rect[0] > 200.0, "the placeholder's box: {:?}", v[0].rect);
-    // The default look, with the alias as its label, for every other placeholder.
     r.step(&json!({ "command": { "type": "setPlaceholderLooks", "looks": [{ "match": "default", "look": { "fill": "#00AA00" } }] } }));
     let v = views(&mut r);
     assert_eq!((v.len(), v[0].label.as_str(), v[0].color), (1, "Recipient Sig", 0x40_00_AA_00));
-    // Filled: not a placeholder any more.
     let data = open("FX-OBJ.docx").document().images.last().cloned().unwrap();
     r.e.execute(
         Command::FillPlaceholder(crate::api::command::FillPlaceholder {
@@ -1679,7 +1571,6 @@ fn the_host_sets_how_placeholders_look() {
     assert!(views(&mut r).is_empty());
 }
 
-/// The text inside each content control of a saved document, by tag (in document order).
 fn controls_by_tag(bytes: &[u8]) -> Vec<(String, String)> {
     use std::io::Read;
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
@@ -1707,8 +1598,6 @@ fn controls_by_tag(bytes: &[u8]) -> Vec<(String, String)> {
 
 #[test]
 fn content_controls_survive_edits() {
-    // Block, run and cell-level content controls keep their wrappers and hold what was
-    // edited inside them.
     use serde_json::json;
     let run = |steps: &[serde_json::Value]| -> Vec<(String, String)> {
         let mut r = super::scenarios::Run::open("FX-CONTROLS.docx", "controls");
@@ -1782,7 +1671,6 @@ fn content_controls_survive_edits() {
     eprintln!("{report}");
     for line in report.lines() {
         for tag in ["blk", "name", "cell"] {
-            // A pasted copy of a whole control is a second control.
             let want = if tag == "name" && line.starts_with("copy the name line") { 2 } else { 1 };
             assert_eq!(line.matches(&format!("(\"{tag}\"")).count(), want, "control {tag} lost or doubled: {line}");
         }
@@ -1791,8 +1679,6 @@ fn content_controls_survive_edits() {
 
 #[test]
 fn placeholders_cant_be_resized_or_moved() {
-    // A placeholder's picture (the control a click acts on) is fixed: selected, it shows no handles, a drag from its
-    // corner doesn't resize it, and Size doesn't apply. Filled and read back, it stays fixed.
     use serde_json::json;
     let size = |e: &super::super::Editor| -> Vec<(f64, f64)> {
         let d = e.document();
@@ -1864,7 +1750,6 @@ fn placeholders_cant_be_resized_or_moved() {
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert!(!again.document().fixed.is_empty(), "filled controls stay fixed");
-    // An ordinary picture keeps its handles.
     let mut o = super::scenarios::Run::open("FX-OBJ.docx", "not fixed");
     assert!(o.e.document().fixed.is_empty());
     let st = crate::editing::inspect::inspect(&mut o.e, "geometry", true);
@@ -1875,8 +1760,6 @@ fn placeholders_cant_be_resized_or_moved() {
 
 #[test]
 fn sdt_locked_picture_controls_cant_be_deleted() {
-    // A picture control with w:lock sdtLocked ("Content control cannot be deleted"): Delete on it, a deletion or
-    // typing over a selection holding it, and Cut leave the document as it was; without the lock, Delete takes it.
     use serde_json::json;
     let bytes = {
         use std::io::{Read, Write};
@@ -1926,11 +1809,9 @@ fn sdt_locked_picture_controls_cant_be_deleted() {
         assert_eq!(texts(&r.e), before, "{name}");
     }
     assert_eq!(pictures(&r.e), n);
-    // Other edits still go: typing elsewhere.
     r.step(&json!({ "click": { "para": 0, "offset": 0 } }));
     r.step(&json!({ "type": "Q" }));
     assert_ne!(texts(&r.e), before);
-    // Without the lock, Delete takes it.
     let mut o = super::scenarios::Run::open("FX-PLACEHOLDER.docx", "deletable");
     let m = pictures(&o.e);
     select_picture(&mut o);
@@ -1940,7 +1821,6 @@ fn sdt_locked_picture_controls_cant_be_deleted() {
 
 #[test]
 fn alt_text_saves() {
-    // Alt Text: the selected picture's description, one step, written into its wp:docPr and read back.
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ.docx", "alt-text");
     r.step(&json!({ "click": { "picture": 0 } }));
@@ -1966,8 +1846,6 @@ fn alt_text_saves() {
 
 #[test]
 fn decorative_pictures_read_set_and_save() {
-    // A picture marked decorative (the wp:docPr extension) is read so; marking one clears its alt text, and both
-    // survive a save.
     use serde_json::json;
     let pictures = |d: &crate::docx::Document| -> Vec<(String, bool)> {
         d.sections
@@ -1990,7 +1868,6 @@ fn decorative_pictures_read_set_and_save() {
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(pictures(again.document()), [(String::new(), true), (String::new(), true)], "both decorative after a save");
-    // And back: no longer decorative.
     let mut r = super::scenarios::Run::open("FX-A11Y-STRUCTURE.docx", "decorative-off");
     r.step(&json!({ "click": { "picture": 1 } }));
     r.e.execute(Command::SetAltText(crate::api::command::AltText { text: "Divider".into(), decorative: Some(false) }), fonts());
@@ -2001,8 +1878,6 @@ fn decorative_pictures_read_set_and_save() {
 
 #[test]
 fn extend_mode_grows_and_extends() {
-    // F8, then F8 again selects the word, the sentence, the paragraph, the document; arrows extend; Esc keeps
-    // the selection and ends the mode; an edit ends it too.
     use serde_json::json;
     let mut e = super::super::Editor::open(&blank_with("The quick brown fox jumps. Over the lazy dog.\nSecond paragraph here."), fonts()).unwrap();
     let sel = |e: &mut super::super::Editor| e.selected_text();
@@ -2020,13 +1895,10 @@ fn extend_mode_grows_and_extends() {
     assert!(sel(&mut e).starts_with("The quick brown fox jumps. Over the lazy dog."));
     e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Extend), fonts());
     assert!(sel(&mut e).contains("Second paragraph here."), "the document");
-    // Esc: the selection stays, the mode ends: an arrow collapses it again.
     e.execute(Command::Escape, fonts());
     assert!(!e.selection().is_collapsed());
     e.execute(crate::editing::tests::mv(crate::editing::commands::MoveBy::Char, crate::editing::commands::Dir::Back, false), fonts());
     assert!(e.selection().is_collapsed());
-    // F8 then arrows extend from the caret; a typed character extends to its next occurrence (case-sensitive) and
-    // the mode stays on.
     e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Extend), fonts());
     for _ in 0..3 {
         e.execute(crate::editing::tests::mv(crate::editing::commands::MoveBy::Char, crate::editing::commands::Dir::Forward, false), fonts());
@@ -2043,7 +1915,6 @@ fn extend_mode_grows_and_extends() {
 
 #[test]
 fn block_selection_selects_copies_formats_and_deletes() {
-    // Ctrl+Shift+F8, then arrows select a vertical block: each line's piece between the two x positions.
     use crate::editing::commands::{Dir, MoveBy};
     let text = "abcdefgh\nijklmnop\nqrstuvwx\nyz";
     let mut e = super::super::Editor::open(&super::blank_in(text, "Courier New"), fonts()).unwrap();
@@ -2082,7 +1953,6 @@ fn block_selection_selects_copies_formats_and_deletes() {
     assert_eq!(texts(&e), ["abfgh", "ijnop", "qrvwx", "yz"]);
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e), before);
-    // Esc in block mode: the caret at the block's start.
     e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Block), fonts());
     mv(&mut e, MoveBy::Line, Dir::Forward);
     mv(&mut e, MoveBy::Char, Dir::Forward);
@@ -2093,8 +1963,6 @@ fn block_selection_selects_copies_formats_and_deletes() {
 
 #[test]
 fn go_back_returns_to_earlier_edits() {
-    // Shift+F5 goes to the last edit location, again to the one before, round them; the locations
-    // follow later edits.
     use crate::editing::commands::{Dir, MoveBy};
     let mut e = super::super::Editor::open(&blank_with("First paragraph.\nSecond paragraph.\nThird paragraph."), fonts()).unwrap();
     let mv = |e: &mut super::super::Editor, by, dir| {
@@ -2105,14 +1973,12 @@ fn go_back_returns_to_earlier_edits() {
         let k = e.document().sections[0].blocks.iter().position(|b| matches!(b, crate::docx::Block::Para(q) if q.id == p.0)).unwrap();
         (k, u.0)
     };
-    // An edit at the end of the first paragraph, then one at the start of the third.
     mv(&mut e, MoveBy::Story, Dir::Back);
     mv(&mut e, MoveBy::LineEdge, Dir::Forward);
     e.execute(Command::InsertText("!".into()), fonts());
     mv(&mut e, MoveBy::Story, Dir::Forward);
     mv(&mut e, MoveBy::LineEdge, Dir::Back);
     e.execute(Command::InsertText("> ".into()), fonts());
-    // Elsewhere: the second paragraph (Ctrl+Up to this one's start, then to the one before).
     mv(&mut e, MoveBy::Para, Dir::Back);
     mv(&mut e, MoveBy::Para, Dir::Back);
     assert_eq!(para_no(&e).0, 1);
@@ -2124,7 +1990,6 @@ fn go_back_returns_to_earlier_edits() {
     assert_eq!(para_no(&e), (1, 0), "then where the caret was");
     e.execute(Command::GoBack, fonts());
     assert_eq!(para_no(&e), (2, 2), "round again");
-    // A later edit before the first location moves it along.
     mv(&mut e, MoveBy::Story, Dir::Back);
     e.execute(Command::InsertText("123".into()), fonts());
     mv(&mut e, MoveBy::Para, Dir::Forward);
@@ -2138,8 +2003,6 @@ fn go_back_returns_to_earlier_edits() {
 
 #[test]
 fn drag_and_drop_moves_and_copies_text() {
-    // A press inside the selection and a release without moving collapses it there; a drag moves the
-    // text (one undo step) and selects it; Ctrl+drag copies; a drop onto the selection changes nothing.
     use serde_json::json;
     let doc = blank_with("The quick brown fox.\nJumps over.");
     let select_quick = |r: &mut super::scenarios::Run| {
@@ -2149,12 +2012,10 @@ fn drag_and_drop_moves_and_copies_text() {
         }
         assert_eq!(r.e.selected_text(), "quick");
     };
-    // A click inside: the caret goes there.
     let mut r = super::scenarios::Run::from_bytes(&doc, "dnd-click");
     select_quick(&mut r);
     r.step(&json!({ "click": { "para": 0, "offset": 6 } }));
     assert!(r.e.selection().is_collapsed());
-    // A drag to the second paragraph's end: moved, selected there, one undo.
     let mut r = super::scenarios::Run::from_bytes(&doc, "dnd-move");
     select_quick(&mut r);
     let before = texts(&r.e);
@@ -2165,13 +2026,11 @@ fn drag_and_drop_moves_and_copies_text() {
     assert_eq!(r.e.selected_text().trim(), "quick");
     r.e.execute(Command::Undo, fonts());
     assert_eq!(texts(&r.e), before, "one undo step");
-    // Ctrl+drag copies.
     let mut r = super::scenarios::Run::from_bytes(&doc, "dnd-copy");
     select_quick(&mut r);
     r.step(&json!({ "drag": { "from": { "para": 0, "offset": 6 }, "to": { "para": 1, "offset": 0 } }, "mods": { "ctrl": true } }));
     let t = texts(&r.e);
     assert!(t[0].contains("quick") && t[1].contains("quick"), "{t:?}");
-    // Onto the selection itself: nothing changes.
     let mut r = super::scenarios::Run::from_bytes(&doc, "dnd-self");
     select_quick(&mut r);
     let before = texts(&r.e);
@@ -2179,7 +2038,6 @@ fn drag_and_drop_moves_and_copies_text() {
     assert_eq!(texts(&r.e), before);
 }
 
-/// A table built by typing: Insert Table rows x cols, then each cell's text (row by row, Tab between).
 fn typed_table(cells: &[&[&str]]) -> super::super::Editor {
     let mut e = super::super::Editor::open(&blank_with(""), fonts()).unwrap();
     e.execute(Command::InsertTable(crate::api::command::TableSize { rows: cells.len() as u32, columns: cells[0].len() as u32 }), fonts());
@@ -2214,10 +2072,8 @@ fn table_texts(e: &super::super::Editor) -> Vec<Vec<String>> {
 
 #[test]
 fn rows_move_up_and_down() {
-    // Alt+Shift+Up / Down move the caret's row; the caret goes with it; one undo each.
     use crate::editing::keymap::Mods;
     let mut e = typed_table(&[&["a1", "a2"], &["b1", "b2"], &["c1", "c2"]]);
-    // The caret is in the last cell (c2): up one row.
     let up = e.key_command("ArrowUp", Mods { alt: true, shift: true, ..Mods::default() }).unwrap();
     e.execute(up, fonts());
     assert_eq!(table_texts(&e), [["a1", "a2"], ["c1", "c2"], ["b1", "b2"]]);
@@ -2236,7 +2092,6 @@ fn rows_move_up_and_down() {
 
 #[test]
 fn double_click_auto_fits_a_column() {
-    // The column fits its content; the others keep their widths; the table's width changes.
     let mut e = typed_table(&[
         &["h1", "h2", "h3"],
         &["A longer piece of text in column one that wraps onto a second line here.", "short", "medium length text"],
@@ -2267,7 +2122,6 @@ fn double_click_auto_fits_a_column() {
 
 #[test]
 fn ctrl_alt_5_and_tab_go_through_floats() {
-    // Ctrl+Alt+5 selects the first floating object; Tab the next, Shift+Tab back; Esc to the text.
     use crate::editing::keymap::Mods;
     let mut e = open("FX-OBJ.docx");
     let five = e.key_command("Digit5", Mods { ctrl: true, alt: true, ..Mods::default() }).unwrap();
@@ -2287,8 +2141,6 @@ fn ctrl_alt_5_and_tab_go_through_floats() {
 
 #[test]
 fn the_caret_shows_after_the_document_gets_shorter_than_its_last_page() {
-    // The caret was drawn on the last page; select all and type leaves one page. Its page search starts from the
-    // page it was last on, which no longer exists (FUZZ-FX-TEXT-11-b: Page Up did nothing after drawn frames).
     let mut e = open("FX-TEXT.docx");
     e.execute(crate::editing::tests::mv(MoveBy::Story, Dir::Forward, false), fonts());
     e.complete(fonts());
@@ -2315,7 +2167,6 @@ fn after_a_page_break_the_caret_shows_on_the_next_page() {
     let typed = e.caret_view().expect("caret");
     assert_eq!(typed.page, p0 + 1);
     assert!(typed.x > 40.0, "the caret is after the typed text: {typed:?}");
-    // Up from the next paragraph returns to the typed line, not the line before the break.
     e.execute(Command::InsertParagraph, fonts());
     e.execute(super::mv(MoveBy::Line, Dir::Back, false), fonts());
     assert_eq!(e.caret_view().expect("caret").page, p0 + 1);
@@ -2323,8 +2174,6 @@ fn after_a_page_break_the_caret_shows_on_the_next_page() {
 
 #[test]
 fn a_page_break_with_split_pg_break_and_para_mark_keeps_its_paragraph() {
-    // COMPAT-3: in compat 14 or below with splitPgBreakAndParaMark the mark after a break is on the next page already;
-    // Ctrl+Enter only inserts the break, and the caret, Down and Up reach the mark's line there.
     let mut doc = crate::docx::read_editable(&blank_with("Conversation\nB")).unwrap();
     doc.settings.compat_mode = 11;
     doc.settings.compat.insert("splitPgBreakAndParaMark".into());
@@ -2342,8 +2191,6 @@ fn a_page_break_with_split_pg_break_and_para_mark_keeps_its_paragraph() {
 
 #[test]
 fn tab_changes_the_level_of_list_items() {
-    // Tab at a numbered list's first item nests it; Tab over a selection of items nests them all (it doesn't replace
-    // them with a tab); Shift+Tab brings them back.
     use super::super::position::Position;
     use crate::editing::keymap::Mods;
     let mut e = open("FX-LISTS.docx");
@@ -2375,7 +2222,6 @@ fn tab_changes_the_level_of_list_items() {
 
 #[test]
 fn tab_in_a_cells_list_item_changes_its_level() {
-    // A list in a table cell: Tab at an item's start nests it rather than going to the next cell.
     use crate::editing::keymap::Mods;
     let mut e = open("FX-LISTS.docx");
     let found = (0..e.document().sections.len()).find_map(|si| {
@@ -2395,9 +2241,6 @@ fn tab_in_a_cells_list_item_changes_its_level() {
 
 #[test]
 fn select_all_delete_across_sections() {
-    // Select All, Delete over sections with tables: everything goes, the section breaks too, as in Word: one empty
-    // paragraph in one section with the last section's page. It saves with that one `w:sectPr`, and Undo puts it all
-    // back.
     let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-feature-showcase.docx")).unwrap();
     let mut e = super::super::Editor::open(&bytes, fonts()).unwrap();
     let before = texts(&e);
@@ -2422,8 +2265,6 @@ fn select_all_delete_across_sections() {
 
 #[test]
 fn backspace_and_delete_take_a_section_break() {
-    // Backspace at a section's start, Delete at its end: the break goes, the paragraphs either side join, and the
-    // text before takes the section after's page, as in Word. Saving writes one `w:sectPr` fewer; Undo puts it back.
     use crate::docx::Block;
     let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-feature-showcase.docx")).unwrap();
     let mut e = super::super::Editor::open(&bytes, fonts()).unwrap();
@@ -2448,9 +2289,7 @@ fn backspace_and_delete_take_a_section_break() {
         let again = super::super::Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
         assert_eq!((pages(&again), texts(&again)), (pages(&e), texts(&e)), "reopened");
     }
-    // Sections 0 and 1 merged with section 1's page, then sections 2 and 3 with section 3's.
     assert_eq!(pages(&e), vec![was[1].clone(), was[3].clone()]);
-    // A last section has no break after it.
     let (p, len) = para(&e, n - 3, true);
     e.selection = Selection::Caret(super::super::position::Position::text(StoryId::Body, p, len));
     e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());

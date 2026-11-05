@@ -1,10 +1,4 @@
-//! Per-page geometry from the layout's spatial tree: hit testing, caret rectangles, selection rectangles and table
-//! targets. Built once per page fragment and cached by its `FragmentId`, so a page a new snapshot
-//! shares keeps its geometry.
-//!
-//! Lines and cells carry their container chain, (table, row, model cell) from the story root down: hit testing finds
-//! the deepest cell containing the point and only considers lines of exactly that chain, so a click resolves to the
-//! nesting level that contains it.
+//! Page geometry
 
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -17,11 +11,8 @@ use crate::layout::{FloatId, ParaId, TableId, Unit};
 use super::index::DocIndex;
 use super::position::{Affinity, StoryId};
 
-/// (table, row, model cell index).
 pub type CellKey = (TableId, usize, usize);
 
-/// A caret stop: a paragraph's unit boundary's x on a line. `end` marks its paragraph's last stop on the line (after
-/// its last character there).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Stop {
     pub x: f64,
@@ -30,47 +21,35 @@ pub struct Stop {
     pub end: bool,
 }
 
-/// A drawn line. It shows one paragraph, or several where the markup view joins paragraphs (REV-6): its stops say
-/// whose units they are.
 #[derive(Debug)]
 pub struct GLine {
     pub story: usize,
     pub chain: Rc<[CellKey]>,
-    /// The paragraphs it shows, in order.
     pub paras: Vec<ParaId>,
     pub top: f64,
     pub bottom: f64,
-    /// Its inline pictures as layout draws them: paragraph, unit and box (page coordinates).
     pub pictures: Vec<(ParaId, Unit, [f64; 4])>,
-    /// Stops in x order (left to right).
     pub stops: Vec<Stop>,
-    /// In a repeated header row's copy: clicks resolve to the original row's positions, and the caret and
-    /// navigation use the original.
     pub repeat: bool,
 }
 
 impl GLine {
-    /// Whether the line shows `para`.
     pub fn shows(&self, para: ParaId) -> bool {
         self.paras.contains(&para)
     }
 
-    /// The first paragraph it shows.
     pub fn para(&self) -> Option<ParaId> {
         self.paras.first().copied()
     }
 
-    /// `para`'s first unit on the line (its leftmost stop).
     pub fn first_of(&self, para: ParaId) -> Option<Unit> {
         self.stops.iter().find(|s| s.para == para).map(|s| s.unit)
     }
 
-    /// `para`'s last unit on the line (its rightmost stop).
     pub fn last_of(&self, para: ParaId) -> Option<Unit> {
         self.stops.iter().rfind(|s| s.para == para).map(|s| s.unit)
     }
 
-    /// Where `para`'s part of the line starts and ends: its leftmost and rightmost stops' x.
     pub fn span_of(&self, para: ParaId) -> Option<(f64, f64)> {
         Some((self.stops.iter().find(|s| s.para == para)?.x, self.stops.iter().rfind(|s| s.para == para)?.x))
     }
@@ -83,21 +62,17 @@ impl GLine {
         self.stops.last().map_or(0.0, |s| s.x)
     }
 
-    /// The stop nearest `x`. Where two paragraphs meet at one x (REV-6), a point right of it is in the later one.
     pub fn nearest(&self, x: f64) -> Option<Stop> {
         let (k, s) = self.stops.iter().enumerate().min_by(|a, b| (a.1.x - x).abs().total_cmp(&(b.1.x - x).abs()))?;
         let same = self.stops[k..].iter().take_while(|t| (t.x - s.x).abs() < 0.01);
         Some(*if x > s.x { same.filter(|t| t.para != s.para).last().unwrap_or(s) } else { s })
     }
 
-    /// The x of `para`'s unit `u` on this line (the closest stop at or before it).
     pub fn x_of(&self, para: ParaId, u: Unit) -> Option<f64> {
         self.stops.iter().filter(|s| s.para == para && s.unit <= u).max_by_key(|s| s.unit).map(|s| s.x)
     }
 }
 
-/// One paragraph's part of a line while its stops are collected: its stops, its end (x, unit), and the caret places
-/// of a line where it draws no characters (a run without glyphs, or after a list label).
 struct Part {
     para: ParaId,
     stops: Vec<Stop>,
@@ -109,7 +84,6 @@ struct Part {
 #[derive(Debug)]
 pub struct GCell {
     pub story: usize,
-    /// The chain down to and including this cell.
     pub chain: Rc<[CellKey]>,
     pub rect: [f64; 4],
     pub col: usize,
@@ -117,14 +91,12 @@ pub struct GCell {
     pub v_merge: VMerge,
     pub clip: Option<f64>,
     pub hidden: Vec<(ParaId, Unit, Unit)>,
-    /// A closing paragraph after a nested table: its caret place (x, top, height).
     pub closing: Option<(ParaId, [f64; 3])>,
 }
 
 #[derive(Debug)]
 pub struct GRow {
     pub story: usize,
-    /// The chain of the table's container (the cells enclosing the table).
     pub outer: Rc<[CellKey]>,
     pub table: TableId,
     pub row: usize,
@@ -137,20 +109,15 @@ pub struct GRow {
 #[derive(Debug)]
 pub struct GStory {
     pub story: StoryId,
-    /// The story whose area shows this one: a float's is the story it is anchored in (the body, a header or footer, a
-    /// note); any other story is its own. Whether a click reaches the story goes by it.
     pub host: StoryId,
-    /// A floating object's box (a picture or a text box).
     pub float: Option<FloatId>,
     pub rect: [f64; 4],
 }
 
-/// What a page shows, for editing.
 #[derive(Debug, Default)]
 pub struct PageGeometry {
     pub w: f64,
     pub h: f64,
-    /// The first section's body top and bottom: above it is the header area, below it the footer's.
     pub body_area: Option<(f64, f64)>,
     pub stories: Vec<GStory>,
     pub lines: Vec<GLine>,
@@ -158,39 +125,28 @@ pub struct PageGeometry {
     pub rows: Vec<GRow>,
     paras: HashSet<ParaId>,
     tables: HashSet<TableId>,
-    /// Each paragraph's unit after its last line break so far (the empty line after a trailing break starts there).
     after_break: std::collections::HashMap<ParaId, Unit>,
 }
 
-/// A table selection zone under a point.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Zone {
-    /// Inside a cell's left edge: selects the cell (table, row, model cell).
     Cell(TableId, usize, usize),
-    /// Left of a row, outside its table: selects the row.
     Row(TableId, usize),
-    /// Just inside the top of a table's first row: selects the column of that cell.
     Column(TableId, usize, usize),
-    /// The move handle above and left of a table's top left corner: selects or moves the table.
     Table(TableId),
-    /// Above grid boundary `k` of the table the pointer is over: inserts a column there.
     InsertColumn(TableId, usize),
-    /// Left of the bottom border of row `k` − 1 of the table the pointer is over: inserts a row there.
     InsertRow(TableId, usize),
 }
 
-/// A text position under a point.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextHit {
     pub story: StoryId,
     pub para: ParaId,
     pub unit: Unit,
     pub affinity: Affinity,
-    /// In a repeated header row's copy (positions are the original row's).
     pub repeat: bool,
 }
 
-/// A caret's place on a page: x, top and bottom.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CaretRect {
     pub x: f64,
@@ -199,7 +155,6 @@ pub struct CaretRect {
 }
 
 impl PageGeometry {
-    /// `shows`: the building block the page shows as the main flow (while one is edited), else `None`.
     pub fn build(page: &PageFragment, idx: &DocIndex, shows: Option<u32>) -> Option<PageGeometry> {
         let tree = spatial_tree(page, false)?;
         let mut g = PageGeometry { w: page.w, h: page.h, body_area: page.body_area, ..PageGeometry::default() };
@@ -220,14 +175,11 @@ impl PageGeometry {
             g.stories.push(GStory { story, host: idx.host(story), float, rect: s.rect });
             g.nodes(&s.nodes, si, &Rc::from([]), false);
         }
-        // Sub-template bodies shown in place of their references are views of other building blocks: nothing drawn
-        // in them is a place on the page.
         let viewed = |s: StoryId| matches!(s, StoryId::BuildingBlock(k) if Some(k) != shows);
         let table_viewed = |t: TableId| idx.table_slot(t).is_some_and(|s| viewed(idx.story(s.container)));
         g.lines.retain(|l| !l.para().and_then(|p| idx.para_slot(p)).is_some_and(|s| viewed(idx.story(s.container))));
         g.rows.retain(|r| !table_viewed(r.table) && !r.outer.iter().any(|k| table_viewed(k.0)));
         g.cells.retain(|c| !c.chain.iter().any(|k| table_viewed(k.0)));
-        // Endnotes are laid out in the body's flow: their lines get their own story, boxed by those lines.
         for i in 0..g.lines.len() {
             let si = g.lines[i].story;
             if g.stories[si].story != StoryId::Body || !g.lines[i].chain.is_empty() {
@@ -258,10 +210,6 @@ impl PageGeometry {
         Some(g)
     }
 
-    /// Several sections' bodies on one page: each body story's box is the band its lines and rows take, split
-    /// halfway between neighbouring bands, so a point resolves to the section drawn there. The first band reaches the
-    /// page's top and the last its bottom, so a page with one section keeps the whole page. A body with nothing on
-    /// the page gets no area.
     fn split_bodies(&mut self) {
         let bodies: Vec<usize> =
             (0..self.stories.len()).filter(|&i| self.stories[i].story == StoryId::Body && self.stories[i].float.is_none()).collect();
@@ -335,7 +283,6 @@ impl PageGeometry {
 
     fn line(&mut self, l: &LineNode, story: usize, chain: &Rc<[CellKey]>, repeat: bool) {
         let Some(own) = l.para else { return };
-        // Each paragraph's part of the line, in the order drawn (one, unless the view joins paragraphs, REV-6).
         let mut parts: Vec<Part> = Vec::new();
         fn part(parts: &mut Vec<Part>, para: ParaId) -> &mut Part {
             let k = match parts.iter().position(|p| p.para == para) {
@@ -352,13 +299,11 @@ impl PageGeometry {
             let Part { stops, end, empty_at, label_end, para } = part(&mut parts, r.para.unwrap_or(own));
             let para = *para;
             if r.chars.is_empty() {
-                // An empty line's caret position, or a paragraph's that draws nothing here.
                 empty_at.get_or_insert(l.x + r.x);
                 continue;
             }
             let scale = r.face.scale(r.size);
             let end_x = r.glyphs.last().map_or(r.chars[r.chars.len() - 1].1, |&(g, x)| x + r.face.advance(g) * scale);
-            // Characters of one cluster (ligatures) share an origin: spread them over the cluster's width.
             let mut xs: Vec<f64> = r.chars.iter().map(|c| c.1).collect();
             let mut k = 0;
             while k < xs.len() {
@@ -373,7 +318,6 @@ impl PageGeometry {
                 k = e;
             }
             if r.chars.iter().all(|c| c.2.is_none()) {
-                // A list label (no units): an empty item's caret goes after it.
                 *label_end = Some(label_end.map_or(l.x + end_x, |e: f64| e.max(l.x + end_x)));
             }
             for (k, c) in r.chars.iter().enumerate() {
@@ -385,7 +329,6 @@ impl PageGeometry {
                 }
             }
         }
-        // Pictures and tabs: a stop before each, and the paragraph's end on the line after the last.
         let mut breaks: Vec<(ParaId, Unit)> = Vec::new();
         for a in l.line.atoms.iter().filter(|a| a.brk) {
             match breaks.iter_mut().find(|b| b.0 == a.para) {
@@ -398,7 +341,6 @@ impl PageGeometry {
         }
         for a in l.line.atoms.iter() {
             let Part { stops, end, .. } = part(&mut parts, a.para);
-            // A break ends its line: the line's last caret place is before it (End, a click past the line's end).
             let after = if a.brk { a.unit } else { Unit(a.unit.0 + 1) };
             if !a.brk {
                 stops.push(Stop { x: l.x + a.x0, para: a.para, unit: a.unit, end: false });
@@ -410,14 +352,12 @@ impl PageGeometry {
         let mut done: Vec<(ParaId, Vec<Stop>)> = Vec::new();
         for p in parts {
             let mut own = p.stops;
-            // A stop for the end unit already there (an atom's) gives way to the end stop.
             if let Some((_, eu)) = p.end {
                 own.retain(|s| s.unit != eu);
             }
             match p.end {
                 Some((x, u)) => own.push(Stop { x, para: p.para, unit: u, end: true }),
                 None => match p.empty_at.or(p.label_end) {
-                    // An empty line: the paragraph's start, or after a trailing break its end (the units before it).
                     Some(x) => {
                         let unit = l
                             .line
@@ -435,20 +375,16 @@ impl PageGeometry {
         if done.is_empty() {
             return;
         }
-        // Paragraphs side by side (REV-6) in order: by where they start, and where two meet at one x, as drawn.
         let left = |s: &[Stop]| s.iter().map(|s| s.x).fold(f64::INFINITY, f64::min);
         done.sort_by(|a, b| left(&a.1).total_cmp(&left(&b.1)));
         let paras: Vec<ParaId> = done.iter().map(|d| d.0).collect();
         let mut stops: Vec<Stop> = done.into_iter().flat_map(|d| d.1).collect();
         let order = |q: ParaId| paras.iter().position(|&p| p == q);
         stops.sort_by(|a, b| a.x.total_cmp(&b.x).then(order(a.para).cmp(&order(b.para))).then(a.unit.cmp(&b.unit)));
-        // A field's drawn value or label is one unit: only its first glyph is a stop, so a click on its far half
-        // goes after it (to the next unit's stop).
         stops.dedup_by(|b, a| a.para == b.para && a.unit == b.unit && !b.end);
         if !repeat {
             self.paras.extend(paras.iter().copied());
         }
-        // The drawn picture items, each the atom that starts where it does.
         let pictures = l
             .line
             .items
@@ -474,19 +410,15 @@ impl PageGeometry {
         self.tables.contains(&t)
     }
 
-    /// The lines showing `para`, in flow order (not repeated header copies).
     pub fn lines_of(&self, para: ParaId) -> impl Iterator<Item = (usize, &GLine)> {
         self.lines.iter().enumerate().filter(move |(_, l)| l.shows(para) && !l.repeat)
     }
 
-    /// The line showing unit `u` of `para` with the given affinity: at a wrap the same unit ends one line (upstream)
-    /// and starts the next (downstream).
     pub fn line_at(&self, para: ParaId, u: Unit, affinity: Affinity) -> Option<usize> {
         let first = |l: &GLine| l.first_of(para).unwrap_or_default();
         let last = |l: &GLine| l.last_of(para).unwrap_or_default();
         let mut found: Vec<usize> = self.lines_of(para).filter(|(_, l)| first(l) <= u && u <= last(l)).map(|(i, _)| i).collect();
         if found.is_empty() {
-            // A unit without a stop of its own (inside a field): the last line starting at or before it.
             return self.lines_of(para).filter(|(_, l)| first(l) <= u).map(|(i, _)| i).last();
         }
         if found.len() > 1 {
@@ -499,22 +431,18 @@ impl PageGeometry {
         found.first().copied()
     }
 
-    /// The caret rectangle for unit `u` of `para`.
     pub fn caret(&self, para: ParaId, u: Unit, affinity: Affinity) -> Option<CaretRect> {
         if let Some(i) = self.line_at(para, u, affinity) {
             let l = &self.lines[i];
             let x = l.x_of(para, u)?;
             return Some(CaretRect { x, top: l.top, bottom: l.bottom });
         }
-        // A closing paragraph after a nested table.
         self.cells.iter().find_map(|c| match c.closing {
             Some((p, [x, top, h])) if p == para => Some(CaretRect { x, top, bottom: top + h }),
             _ => None,
         })
     }
 
-    /// The story under a point: a floating text box whose host `want` accepts, else the first story whose box contains
-    /// it and that `want` accepts (the body, or the header or footer being edited).
     fn story_at(&self, x: f64, y: f64, want: &dyn Fn(StoryId) -> bool) -> Option<usize> {
         let inside = |r: &[f64; 4]| x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
         let float = self.stories.iter().enumerate().rev().find(|(_, s)| s.float.is_some() && want(s.host) && inside(&s.rect) && self.has_lines(s));
@@ -522,7 +450,6 @@ impl PageGeometry {
             return Some(i);
         }
         let candidates: Vec<usize> = (0..self.stories.len()).filter(|&i| self.stories[i].float.is_none() && want(self.stories[i].story)).collect();
-        // The smallest box containing the point: a note area inside the body's box is the note's.
         let area = |r: &[f64; 4]| (r[2] - r[0]) * (r[3] - r[1]);
         candidates
             .iter()
@@ -537,7 +464,6 @@ impl PageGeometry {
         self.lines.iter().any(|l| Some(l.story) == si)
     }
 
-    /// The deepest cell of `story` containing the point.
     pub fn cell_at(&self, story: usize, x: f64, y: f64) -> Option<&GCell> {
         self.cells
             .iter()
@@ -545,15 +471,8 @@ impl PageGeometry {
             .max_by_key(|c| c.chain.len())
     }
 
-    /// The table selection zone under a point, sizes in points (`px`: one pixel at the zoom): a cell's zone is 2 to
-    /// 8 px right of its left border, a row's from 3 px left of its table across the margin, a column's the top 4 px
-    /// inside the first row. The innermost table's zones win. The move handle is the 15 px square ending 5 px above
-    /// and left of a table's top left corner. Around `hovered`, the table the pointer is over: up to 22 px above its
-    /// first row, the insert zones within 7 px of each column border; up to 24 px left of it, the insert zones within
-    /// 7 px of each row's bottom border.
     pub fn zone(&self, x: f64, y: f64, px: f64, hovered: Option<TableId>) -> Option<Zone> {
         let deepest = |v: &mut Vec<(usize, Zone)>| v.iter().max_by_key(|(d, _)| *d).map(|(_, z)| *z);
-        // A row's left: its leftmost cell's.
         let row_left = |r: &GRow| {
             self.cells
                 .iter()
@@ -600,7 +519,6 @@ impl PageGeometry {
                 return Some(Zone::InsertRow(r.table, r.row + 1));
             }
         }
-        // Row zones: left of a row's table (its leftmost cell), down to the story's or containing cell's left.
         for r in &self.rows {
             if y < r.rect[1] || y >= r.rect[3] {
                 continue;
@@ -609,7 +527,6 @@ impl PageGeometry {
             if !left.is_finite() || x > left - 3.0 * px {
                 continue;
             }
-            // Outside the cell that holds a nested table, the outer row's zone applies.
             let outer_left = r.outer.last().and_then(|k| self.cells.iter().find(|c| c.chain.last() == Some(k))).map_or(0.0, |c| c.rect[0]);
             if x >= outer_left {
                 found.push((r.outer.len(), Zone::Row(r.table, r.row)));
@@ -618,10 +535,7 @@ impl PageGeometry {
         deepest(&mut found)
     }
 
-    /// A point in the selection bar (from the page's left edge to `left`, the text column's left edge
-    /// less 2 px): the body line beside it, nearest vertically. Beside a table row it is the row's zone, not the bar.
     pub fn selection_bar(&self, x: f64, y: f64, left: f64) -> Option<usize> {
-        // The body (of the section) beside the point.
         let si = self.stories.iter().position(|s| s.story == StoryId::Body && s.float.is_none() && y >= s.rect[1] && y <= s.rect[3])?;
         if x < 0.0 || x > left {
             return None;
@@ -643,14 +557,10 @@ impl PageGeometry {
             .min_by(|&a, &b| vdist(&self.lines[a]).total_cmp(&vdist(&self.lines[b])))
     }
 
-    /// The text position under a point: in the deepest cell containing it, the nearest line of exactly that
-    /// cell's chain (or the cell's closing paragraph), then the nearest stop. Past a line's end the caret sits at the
-    /// end with upstream affinity.
     pub fn hit_text(&self, x: f64, y: f64, want: &dyn Fn(StoryId) -> bool) -> Option<TextHit> {
         let si = self.story_at(x, y, want)?;
         let story = self.stories[si].story;
         let mut cell = self.cell_at(si, x, y);
-        // A vertical merge's continuation row: its merged cell's text, in the row that starts the merge.
         if let Some(c) = cell
             && c.v_merge == VMerge::Continue
             && let Some(&(t, row, _)) = c.chain.last()
@@ -667,7 +577,6 @@ impl PageGeometry {
         let chain: &[CellKey] = cell.map_or(&[], |c| &c.chain);
         let candidates = self.lines.iter().filter(|l| l.story == si && &*l.chain == chain);
         let best = candidates.min_by(|a, b| line_dist(a, x, y).total_cmp(&line_dist(b, x, y)));
-        // Below an inner table in its cell, or a cell whose only lines are in nested tables: the closing paragraph.
         if let Some(c) = cell
             && let Some((p, [_, top, _])) = c.closing
             && best.is_none_or(|l| y > l.bottom && top <= y + 1.0)
@@ -676,7 +585,6 @@ impl PageGeometry {
         }
         let line = match best {
             Some(l) => l,
-            // A cell with no lines of its own: the nearest line inside it.
             None => self
                 .lines
                 .iter()
@@ -713,7 +621,6 @@ fn dist(r: &[f64; 4], x: f64, y: f64) -> f64 {
     dx + dy
 }
 
-/// Vertical distance first, then horizontal (a click beside a line picks that line).
 fn line_dist(l: &GLine, x: f64, y: f64) -> f64 {
     let dy = if y < l.top {
         l.top - y
@@ -732,19 +639,15 @@ fn line_dist(l: &GLine, x: f64, y: f64) -> f64 {
     dy * 1000.0 + dx
 }
 
-/// The geometry of a snapshot's pages, built on first use and kept by page fragment identity across snapshots
-/// (a reused page keeps its geometry).
 #[derive(Default)]
 pub struct Pages {
     snapshot: Option<Rc<crate::layout::Snapshot>>,
-    /// The building block the pages show as the main flow (while one is edited).
     pub shows: Option<u32>,
     by_page: Vec<Option<Rc<PageGeometry>>>,
     cache: std::collections::HashMap<crate::layout::FragmentId, Rc<PageGeometry>>,
 }
 
 impl Pages {
-    /// Switches to a newer snapshot: geometry of pages it shares by identity is kept, the rest is dropped.
     pub fn sync(&mut self, snapshot: &Rc<crate::layout::Snapshot>) {
         if self.snapshot.as_ref().is_some_and(|s| Rc::ptr_eq(s, snapshot)) {
             return;
@@ -767,7 +670,6 @@ impl Pages {
         self.by_page.is_empty()
     }
 
-    /// Page `i`'s geometry; `None` past the end or for a provisional page.
     pub fn page(&mut self, i: usize, idx: &DocIndex) -> Option<Rc<PageGeometry>> {
         if let Some(Some(g)) = self.by_page.get(i) {
             return Some(g.clone());
@@ -789,9 +691,6 @@ impl Pages {
         Some(g)
     }
 
-    /// The page and line showing unit `u` of `para` with `affinity`, searching from `near`. Where a paragraph continues
-    /// on the next page, the unit that ends one page's last line starts the next page's first: downstream, the caret
-    /// shows there.
     pub fn line_showing(
         &mut self,
         para: ParaId,
@@ -801,7 +700,6 @@ impl Pages {
         idx: &DocIndex,
     ) -> Option<(usize, Rc<PageGeometry>, usize)> {
         let pages = self.pages_of(para, near, idx);
-        // A page whose lines all end before `u` (a page break inside the paragraph) only answers if no later page shows it.
         let mut before = None;
         for (k, &page) in pages.iter().enumerate() {
             let Some(geo) = self.page(page, idx) else { continue };
@@ -827,10 +725,8 @@ impl Pages {
         before
     }
 
-    /// The pages showing `para`, searching outward from `near` (where the caret was last).
     pub fn pages_of(&mut self, para: ParaId, near: usize, idx: &DocIndex) -> Vec<usize> {
         let n = self.len();
-        // `near` may be from before the document got shorter.
         let near = near.min(n.saturating_sub(1));
         let mut out = Vec::new();
         for d in 0..n {
@@ -839,7 +735,6 @@ impl Pages {
                     out.push(i);
                 }
             }
-            // A paragraph's pages are contiguous: once found, stop at the first page past them on both sides.
             if !out.is_empty() && d > 0 {
                 let lo = *out.iter().min().unwrap_or(&0);
                 let hi = *out.iter().max().unwrap_or(&0);

@@ -31,7 +31,6 @@ fn main() {
                 return exit_on_error(Err("usage: dump <out dir> <docx or folders...>".into()));
             };
             let fonts = twip::internal::font::Fonts::system();
-            // REV-1: the No-markup view, as a PDF export prints it.
             let result = cli::dump::run(std::path::Path::new(out), paths, |doc| {
                 let mut doc = doc.clone();
                 doc.review.view = twip::internal::docx::review::MarkupView::NoMarkup;

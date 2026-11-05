@@ -1,5 +1,4 @@
-//! What application controls show: the formatting at the selection with mixed values explicit, the context (table,
-//! object, story), and each command's availability and value. One pass over the selection per state build.
+//! Formatting and command state
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -24,7 +23,6 @@ use super::keymap::{Bound, KeyContext, Mods, Toggle};
 use super::position::StoryId;
 use super::selection::{ObjectRef, Selection};
 
-/// What is selected besides text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ObjectKind {
     Picture,
@@ -32,50 +30,36 @@ pub enum ObjectKind {
     TextBox,
 }
 
-/// The selected picture or text box.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SelectedObject {
     pub kind: ObjectKind,
     pub width: f64,
     pub height: f64,
     pub alt: Rc<str>,
-    /// Marked decorative: screen readers skip it.
     pub decorative: bool,
-    /// A float's `wp:wrap*` (`square`, `tight`, `through`, `topAndBottom`, `none`) and whether it is behind the text.
     pub wrap: Option<(String, bool)>,
     pub locked: Option<bool>,
 }
 
-/// The state the toolbars, menus and dialogs read.
 #[derive(Clone, Debug)]
 pub struct FormatState {
-    /// The caret's run (what typing takes), or the selection's first.
     pub run: Run,
-    /// The selection's character formatting: uniform or mixed.
     pub character: CharacterFormatting,
-    /// The selected paragraphs' formatting: uniform or mixed.
     pub paragraph: ParagraphFormatting,
-    /// The focus paragraph's properties.
     pub para: Rc<ParaStyle>,
-    /// The focus paragraph's list: `Some(true)` bullets, `Some(false)` numbering.
     pub list: Option<bool>,
     pub has_selection: bool,
     pub can_undo: bool,
     pub can_redo: bool,
-    /// The innermost table holding the focus, or the table of a cell block.
     pub table: Option<TableId>,
     pub object: Option<ObjectKind>,
-    /// The selected object's width and height, points, and its alternative text.
     pub object_size: Option<(f64, f64)>,
     pub object_alt: Option<Rc<str>>,
-    /// The focus's row and cell in [`FormatState::table`].
     pub cell: Option<(usize, usize)>,
     pub story: StoryId,
-    /// The focus's section (body: its own; other stories: the first).
     pub section: usize,
 }
 
-/// `Uniform` when every value is the same, `Mixed` when two differ, `Unavailable` with none.
 fn fold<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Tri<T> {
     let mut out = Tri::Unavailable;
     for v in values {
@@ -201,14 +185,12 @@ fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormatting {
     }
 }
 
-/// What a state build knows besides the editor: the session's settings.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StateFlags {
     pub read_only: bool,
 }
 
 impl Editor {
-    /// `None` when nothing holds a paragraph (no document content).
     pub fn format_state(&mut self) -> Option<FormatState> {
         let focus = self.selection.focus();
         let para_id = focus.and_then(|p| p.para_offset()).map(|(p, _)| p).or_else(|| match self.selection {
@@ -220,7 +202,6 @@ impl Editor {
         let (mark, style) = (para.mark.clone(), para.style.clone());
         let list = self.para_list(para_id?);
         let caret_run = focus.and_then(|c| self.run_at(&c));
-        // shortcut: values look at the first 2000 selected paragraphs; a bigger selection shows theirs.
         let ranges: Vec<(ParaId, crate::layout::Unit, crate::layout::Unit)> =
             if self.selection.is_collapsed() { Vec::new() } else { self.selected_ranges().into_iter().take(2000).collect() };
         let runs: Vec<Run> = ranges.iter().filter(|r| r.1 < r.2).flat_map(|&r| self.runs_in(r)).collect();
@@ -263,7 +244,6 @@ impl Editor {
         })
     }
 
-    /// The selected picture or text box.
     pub fn selected_object(&self) -> Option<SelectedObject> {
         match self.selection {
             Selection::Object(ObjectRef::Inline { para, offset }) => {
@@ -299,8 +279,6 @@ impl Editor {
         }
     }
 
-    /// The command a key press runs now (the keymap in the caret's context, a setter's value from the selection), if
-    /// any: what the host claims the key for.
     pub fn key_command(&mut self, code: &str, mods: Mods) -> Option<Command> {
         let cx = KeyContext {
             in_table: self.focus_chain_depth() > 0 || matches!(self.selection, Selection::Cells { .. }),
@@ -314,7 +292,6 @@ impl Editor {
         }
     }
 
-    /// A toggle key's setter, with the value it sets now: on unless the whole selection has it.
     fn toggled(&mut self, t: Toggle) -> Option<Command> {
         if let Toggle::TrackChanges = t {
             return Some(Command::SetTrackChanges(!self.tracking()));
@@ -345,7 +322,6 @@ impl Editor {
         })
     }
 
-    /// Each command's availability, toggle state and value, from one format state.
     pub fn command_states(&mut self, f: Option<&FormatState>, flags: StateFlags) -> BTreeMap<CommandId, CommandState> {
         use CommandId as C;
         let editable = !flags.read_only;
@@ -376,7 +352,6 @@ impl Editor {
                 (C::InsertPageBreak | C::InsertColumnBreak | C::InsertSectionBreak, _) => (body_text, (None, None)),
                 (C::Cut, _) => (editable && selected, (None, None)),
                 (C::Copy, _) => (selected, (None, None)),
-                // The system clipboard is the host's to read: a paste can go wherever text can.
                 (C::Paste, _) => (editable, (None, None)),
                 (C::Undo, _) => {
                     (editable && undo_label.is_some(), (None, Some(CommandValue::Text(undo_label.clone().map_or(Tri::Unavailable, Tri::Uniform)))))
@@ -432,7 +407,6 @@ impl Editor {
                     (formatted && in_list, (None, Some(CommandValue::Number(level))))
                 }
                 (C::EditHeader | C::EditFooter, _) => (editable && story == StoryId::Body, (None, None)),
-                // A building block has no section: page setup, headers and footers and line numbering are the template's.
                 (
                     C::SetMargins
                     | C::SetOrientation
@@ -508,7 +482,6 @@ impl Editor {
         out
     }
 
-    /// The selection's table: its shape, the current cell and the values the table commands set.
     pub fn table_selection(&self) -> Option<TableSelection> {
         let tg = self.table_target()?;
         let t = self.index.table(&self.doc, tg.table)?;
@@ -578,7 +551,6 @@ impl Editor {
         })
     }
 
-    /// The selected picture or text box, as the state reports it.
     pub fn object_selection(&self) -> Option<ObjectSelection> {
         let o = self.selected_object()?;
         let wrap = match o.wrap.as_ref().map(|(w, behind)| (w.as_str(), *behind)) {
@@ -613,7 +585,6 @@ impl Editor {
         })
     }
 
-    /// The elements the selection is in or covers, innermost first.
     pub fn element_context(&self) -> Vec<ElementContext> {
         let para = self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p));
         super::elements::context(&self.doc, &self.index, &self.selection)
@@ -652,12 +623,10 @@ impl Editor {
             .collect()
     }
 
-    /// The link at the selection.
     pub fn link_info(&self) -> Option<LinkInfo> {
         self.link_here().map(|l| LinkInfo { address: l.address, text: l.text })
     }
 
-    /// The header or footer being edited: which, for which pages, its section, the caret's page and its label.
     pub fn header_footer_info(&mut self, page: u32) -> Option<HeaderFooterInfo> {
         let StoryId::HeaderFooter(k) = self.selection.focus()?.story else { return None };
         let name = self.index.part_name(k)?.to_string();
@@ -677,7 +646,6 @@ impl Editor {
         Some(HeaderFooterInfo { kind, pages, section: section as u32 + 1, page, label })
     }
 
-    /// A section's page setup.
     pub fn page_formatting(&self, section: usize) -> PageFormatting {
         let Some(s) = self.doc.sections.get(section) else { return PageFormatting::default() };
         let landscape = s.page_w > s.page_h;

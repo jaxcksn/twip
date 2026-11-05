@@ -178,7 +178,6 @@ fn a_pdf_export_keeps_modified_and_warns_of_fallbacks() {
 
 #[test]
 fn dark_mode_changes_neither_the_pdf_nor_the_layout() {
-    // DRAW-27: the dark page is drawn on screen only.
     let mut engine = Engine::new(FontLibrary::system());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
@@ -647,7 +646,6 @@ fn formatting_marks_and_text_boundaries_draw_when_shown() {
 
 #[test]
 fn dark_frames_from_retained_pages_equal_frames_drawn_from_scratch_and_switching_records_again() {
-    // DRAW-27: the appearance is a recording input, so a switch redraws each page once and never replays a stale one.
     use crate::api::command::ViewOptions;
     use crate::api::services::{ChromeTheme, DocumentAppearance};
     let mut engine = Engine::new(FontLibrary::system());

@@ -1,4 +1,4 @@
-//! Caret movement: logical units from the model, lines and pages from the geometry of the snapshot shown. Movement between cells and tables follows the containment structure and the table grid, never drawing order.
+//! Caret movement
 
 use std::rc::Rc;
 
@@ -12,7 +12,6 @@ use super::step::para_len;
 use super::table::Grid;
 use super::text::UnitText;
 
-/// What navigation reads: the document, its index and page geometry, and the page the caret was last on.
 pub struct Nav<'a> {
     pub doc: &'a Document,
     pub idx: &'a DocIndex,
@@ -20,7 +19,6 @@ pub struct Nav<'a> {
     pub near: usize,
 }
 
-/// A caret's line: page, line index on it, and the page's geometry.
 pub struct LineAt {
     pub page: usize,
     pub line: usize,
@@ -36,9 +34,8 @@ impl Nav<'_> {
         self.idx.story(c)
     }
 
-    // ---------------- structure: first and last places ----------------
+    // First and last places
 
-    /// The first caret place of a block: a paragraph's start, a table's first cell's first place.
     fn block_start(&self, story: StoryId, b: &Block) -> Option<Position> {
         match b {
             Block::Para(p) => Some(Position::text(story, ParaId(p.id), Unit(0))),
@@ -46,7 +43,6 @@ impl Nav<'_> {
         }
     }
 
-    /// The last caret place of a block: a paragraph's end, a table's last row's end-of-row mark.
     fn block_end(&self, story: StoryId, b: &Block) -> Option<Position> {
         match b {
             Block::Para(p) => Some(Position::text(story, ParaId(p.id), para_len(p))),
@@ -67,8 +63,6 @@ impl Nav<'_> {
         t.rows.get(row)?.cells.get(cell)?.blocks.last().and_then(|b| self.block_end(story, b))
     }
 
-    /// The nearest section after (`forward`) or before section container `c` with any blocks: where reading order
-    /// goes past a section's edge. `None` outside the body's sections.
     fn section_beside(&self, c: Container, forward: bool) -> Option<Container> {
         let Container::Section(i) = c else { return None };
         let has_blocks = |&j: &usize| !self.doc.sections[j].blocks.is_empty();
@@ -76,8 +70,6 @@ impl Nav<'_> {
         j.map(Container::Section)
     }
 
-    /// The first place after block `block` of `container` in reading order: the next block, the next
-    /// cell (merge continuations skipped), the row's end mark after its last cell.
     fn after(&self, container: Container, block: usize) -> Option<Position> {
         let story = self.story_of_container(container);
         let blocks = self.idx.blocks(self.doc, container)?;
@@ -96,7 +88,6 @@ impl Nav<'_> {
         }
     }
 
-    /// The place after a row's end mark: the next row's first cell, or after the table.
     fn after_row(&self, story: StoryId, table: TableId, row: usize) -> Option<Position> {
         let t = self.idx.table(self.doc, table)?;
         if row + 1 < t.rows.len() {
@@ -109,7 +100,6 @@ impl Nav<'_> {
         self.after(s.container, s.block)
     }
 
-    /// The last place before block `block` of `container` (the mirror of [`Nav::after`]).
     fn before(&self, container: Container, block: usize) -> Option<Position> {
         let story = self.story_of_container(container);
         let blocks = self.idx.blocks(self.doc, container)?;
@@ -132,7 +122,6 @@ impl Nav<'_> {
         }
     }
 
-    /// The place before a row's end mark: its last cell's last place.
     fn before_row_end(&self, story: StoryId, table: TableId, row: usize) -> Option<Position> {
         let t = self.idx.table(self.doc, table)?;
         let g = Grid::of(t);
@@ -140,10 +129,8 @@ impl Nav<'_> {
         self.cell_last(story, t, row, c)
     }
 
-    // ---------------- logical movement ----------------
+    // Logical movement
 
-    /// Right: one grapheme, or with `word` to the next word start; at a paragraph's end, the next
-    /// place in reading order.
     pub fn right(&self, pos: Position, word: bool) -> Position {
         match pos.place {
             Place::Text { para, offset, .. } => {
@@ -159,7 +146,6 @@ impl Nav<'_> {
         }
     }
 
-    /// Left: the mirror of [`Nav::right`].
     pub fn left(&self, pos: Position, word: bool) -> Position {
         match pos.place {
             Place::Text { para, offset, .. } => {
@@ -175,13 +161,10 @@ impl Nav<'_> {
         }
     }
 
-    /// Ctrl+Down: the start of the next paragraph in document order; a cell's end and a row's end
-    /// mark count as paragraphs, so from a row's last cell it stops at the mark.
     pub fn next_para(&self, pos: Position) -> Position {
         self.right(self.para_end(pos), false)
     }
 
-    /// Ctrl+Up: the start of this paragraph, or else the previous paragraph's start (or a row end mark before it).
     pub fn prev_para(&self, pos: Position) -> Position {
         match pos.place {
             Place::Text { para, offset, .. } if offset > Unit(0) => Position::text(pos.story, para, Unit(0)),
@@ -205,7 +188,6 @@ impl Nav<'_> {
         }
     }
 
-    /// Ctrl+Home / Ctrl+End: the start or end of the story.
     pub fn story_edge(&self, story: StoryId, end: bool) -> Option<Position> {
         let roots: Vec<Container> = match story {
             StoryId::Body => (0..self.doc.sections.len()).map(Container::Section).collect(),
@@ -218,8 +200,6 @@ impl Nav<'_> {
         if end { roots.iter().rev().find_map(pick) } else { roots.iter().find_map(pick) }
     }
 
-    /// Alt+Home/End (`row`) and Alt+Page Up/Down: the start of the first or last cell of the caret's
-    /// row, or of its column, in its innermost table.
     pub fn table_edge(&self, pos: Position, row_wise: bool, end: bool) -> Option<Position> {
         let level = *self.idx.chain_of(&pos).last()?;
         let t = self.idx.table(self.doc, level.table)?;
@@ -236,9 +216,8 @@ impl Nav<'_> {
         self.cell_first(pos.story, t, r, c)
     }
 
-    // ---------------- geometry ----------------
+    // Geometry
 
-    /// The line showing a position: on the page nearest the caret's last page.
     pub fn line_of(&mut self, pos: Position) -> Option<LineAt> {
         let (para, unit, affinity) = match pos.place {
             Place::Text { para, offset, affinity } => (para, offset, affinity),
@@ -248,7 +227,6 @@ impl Nav<'_> {
         Some(LineAt { page, line, geo })
     }
 
-    /// Home / End: the start or end of the caret's line; End shows at the line's end (upstream).
     pub fn line_edge(&mut self, pos: Position, end: bool) -> Option<Position> {
         let at = self.line_of(pos)?;
         let l = &at.geo.lines[at.line];
@@ -260,21 +238,18 @@ impl Nav<'_> {
         })
     }
 
-    /// The caret's x on its line.
     pub fn caret_x(&mut self, pos: Position) -> Option<f64> {
         let at = self.line_of(pos)?;
         let (para, unit) = pos.para_offset()?;
         at.geo.lines[at.line].x_of(para, unit)
     }
 
-    /// The position on paragraph `para`'s first (or last) line nearest `x`.
     fn on_line(&mut self, story: StoryId, para: ParaId, x: f64, last: bool) -> Option<Position> {
         let pages = self.pages.pages_of(para, self.near, self.idx);
         let page = if last { *pages.last()? } else { *pages.first()? };
         let geo = self.pages.page(page, self.idx)?;
         let line = if last { geo.lines_of(para).last() } else { geo.lines_of(para).next() };
         let Some((_, line)) = line else {
-            // A cell's closing paragraph after a nested table is drawn without lines; the caret still stops there.
             return geo.cells.iter().any(|c| c.closing.is_some_and(|(p, _)| p == para)).then(|| Position::text(story, para, Unit(0)));
         };
         let stop = line.nearest(x)?;
@@ -285,17 +260,12 @@ impl Nav<'_> {
         })
     }
 
-    /// Up / Down with goal x: the next line of the paragraph, else the
-    /// first (last) line of the next (previous) content in the containment structure, entering tables at the cell
-    /// under the goal x and leaving them to the cell below (above) by grid column.
     pub fn vertical(&mut self, pos: Position, x: f64, down: bool) -> Option<Position> {
         let mut from = pos.para_offset().map(|(p, _)| p);
         if let Some(at) = self.line_of(pos) {
             let l = &at.geo.lines[at.line];
-            // A line showing several paragraphs (REV-6) moves on from its last one going down, its first going up.
             let para = if down { l.paras.last() } else { l.paras.first() }.copied().or(from)?;
             from = Some(para);
-            // Another line of the same paragraph, on this page or the next.
             let same: Vec<usize> = at.geo.lines_of(para).map(|(i, _)| i).collect();
             let k = same.iter().position(|&i| i == at.line)?;
             let next = if down { same.get(k + 1) } else { k.checked_sub(1).and_then(|j| same.get(j)) };
@@ -312,7 +282,6 @@ impl Nav<'_> {
                 }
             }
         }
-        // Past the paragraph (or a row end mark): the structural neighbour.
         let target = match pos.place {
             Place::Text { .. } => {
                 let para = from?;
@@ -334,7 +303,6 @@ impl Nav<'_> {
         Some(target)
     }
 
-    /// The first line below block `block` of `container` at x.
     fn below(&mut self, container: Container, block: usize, x: f64) -> Option<Position> {
         let story = self.story_of_container(container);
         let blocks = self.idx.blocks(self.doc, container)?;
@@ -358,7 +326,6 @@ impl Nav<'_> {
         }
     }
 
-    /// The last line above block `block` of `container` at x.
     fn above(&mut self, container: Container, block: usize, x: f64) -> Option<Position> {
         let story = self.story_of_container(container);
         let blocks = self.idx.blocks(self.doc, container)?;
@@ -382,14 +349,12 @@ impl Nav<'_> {
         }
     }
 
-    /// The grid column under x in a row (the cell's own column when x is outside the row's drawn cells).
     fn column_at(&mut self, t: &Table, row: usize, cell: usize, x: f64, g: &Grid) -> usize {
         let own = g.col_of(row, cell).unwrap_or(0);
         let Some(c) = self.cell_rect_cell(TableId(t.id), row, x) else { return own };
         g.col_of(row, c).unwrap_or(own)
     }
 
-    /// The cell of a row whose drawn box spans x (on any page the row is drawn on).
     fn cell_rect_cell(&mut self, table: TableId, row: usize, x: f64) -> Option<usize> {
         for i in 0..self.pages.len() {
             let page = (self.near + i) % self.pages.len().max(1);
@@ -417,7 +382,6 @@ impl Nav<'_> {
         None
     }
 
-    /// Into a block from above (`down`) or below: a paragraph's first (last) line, a table's first (last) row.
     fn enter(&mut self, story: StoryId, b: &Block, x: f64, down: bool) -> Option<Position> {
         match b {
             Block::Para(p) => self.on_line(story, ParaId(p.id), x, !down),
@@ -428,8 +392,6 @@ impl Nav<'_> {
         }
     }
 
-    /// Into the cell of `row` under x, at its first (last) content; a merge continuation means its region's first
-    /// cell.
     fn enter_row(&mut self, story: StoryId, t: &Table, row: usize, x: f64, down: bool) -> Option<Position> {
         let g = Grid::of(t);
         let cell = self.cell_rect_cell(TableId(t.id), row, x).or_else(|| self.first_cell(t, row))?;

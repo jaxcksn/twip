@@ -1,6 +1,4 @@
-//! Merge-designer operations: fields and content controls the application inserts, changes and removes, data parts,
-//! element marks and looks, the external drop caret, and the `hit` query. Arguments arrive typed; a refusal is an
-//! error naming why, and changes nothing.
+//! Merge designer operations
 
 use crate::api::command::{
     CommandResult, DataPartRef, ElementClass, ElementField, FieldLabels, FieldResults, FillControl, InsertControl, InsertField, MarkElements,
@@ -22,24 +20,20 @@ use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::Step;
 
-/// A refusal: what the document doesn't allow here, or an argument naming nothing that exists.
 type Refused = Error;
 
-/// How the host has a control drawn: a box with a fill (ARGB), label and icon, or an image.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Look {
     Box(super::view::PlaceholderLook),
     Image(std::rc::Rc<Vec<u8>>),
 }
 
-/// Which controls a look is for.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum TagMatch {
     Exact(String),
     Prefix(String),
 }
 
-/// The host's looks: by element, then exact tag, then the longest prefix, then the default.
 #[derive(Clone, Debug, Default)]
 pub(super) struct Looks {
     by_element: std::collections::HashMap<ElementId, Look>,
@@ -71,7 +65,6 @@ impl Looks {
     }
 }
 
-/// A host's mark on an element.
 #[derive(Clone, Debug)]
 pub(super) struct Mark {
     pub id: ElementId,
@@ -79,23 +72,16 @@ pub(super) struct Mark {
     pub message: String,
 }
 
-/// The 1×1 light grey PNG a new picture control shows until it is filled (hosts may draw it as a labeled box).
 const PICTURE_PLACEHOLDER: &[u8] = &[
     137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 12, 73, 68, 65,
     84, 120, 156, 99, 120, 241, 226, 5, 0, 5, 214, 2, 233, 151, 52, 29, 132, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
 ];
 
-/// Where an element is in the document.
 #[derive(Clone, Debug)]
 pub(super) enum Where {
-    /// A field (its begin to its end marker), or an inline control (its start to its end marker): the inline indexes
-    /// and the units at them (`end` is after a field's end marker, at a control's end marker).
     Inline { story: StoryId, para: ParaId, first: usize, last: usize, start: Unit, end: Unit },
-    /// A checkbox: its face's unit.
     Sym { story: StoryId, para: ParaId, at: Unit },
-    /// A block-level control: its blocks, one run of a container's.
     Blocks { container: Container, range: std::ops::Range<usize> },
-    /// A row-level control (a repeating section or item over rows): its rows of the table.
     Rows { table: crate::layout::TableId, range: std::ops::Range<usize> },
 }
 
@@ -103,32 +89,26 @@ fn units_before(inlines: &[Inline], k: usize) -> u32 {
     inlines[..k].iter().map(|i| i.units() as u32).sum()
 }
 
-/// An argument naming nothing usable.
 fn bad(name: &str) -> Refused {
     Error::invalid(format!("bad {name}"))
 }
 
-/// An element id that names no element.
 fn no_element() -> Refused {
     Error::invalid("no such element")
 }
 
-/// What a lock, or the place, doesn't allow.
 fn locked() -> Refused {
     Error::unavailable("locked")
 }
 
-/// What the selection's shape doesn't allow (part of a paragraph, two tables, a region's edge).
 fn shape(why: &str) -> Refused {
     Error::unavailable(why)
 }
 
-/// The result of a refusable operation, as the command's outcome.
 pub(super) fn outcome(r: Result<Outcome, Refused>) -> Outcome {
     r.unwrap_or_else(Outcome::Refused)
 }
 
-/// A field code as Word stores it: one space on each side.
 fn padded(code: &str) -> String {
     format!(" {} ", code.trim())
 }
@@ -142,7 +122,6 @@ fn lock_of(l: ControlLock) -> Lock {
     }
 }
 
-/// The plain text of a body (formatted results come with the keep-source fragment paste).
 fn plain(b: &Body) -> String {
     match b {
         Body::Text(t) => t.clone(),
@@ -150,7 +129,6 @@ fn plain(b: &Body) -> String {
     }
 }
 
-/// `w:dataBinding` for a binding, in the document's `w` prefix.
 fn binding_xml(b: &DataBinding, w: &str) -> String {
     let esc = crate::docx::write::props::esc;
     let mut x = format!("<{w}dataBinding");
@@ -164,25 +142,22 @@ fn binding_xml(b: &DataBinding, w: &str) -> String {
     x + "/>"
 }
 
-/// The element an id names, as the document knows it.
 fn element_id(id: &crate::api::value::ElementId) -> Result<ElementId, Refused> {
     elements::parse_id(&id.0).ok_or_else(no_element)
 }
 
-/// The API's id of an element.
 pub(crate) fn api_id(e: ElementId) -> crate::api::value::ElementId {
     crate::api::value::ElementId(elements::id_str(e))
 }
 
 impl Editor {
-    /// The element `id` names, and where it is.
+    // Elements
     pub(super) fn element(&self, id: &crate::api::value::ElementId) -> Result<(ElementId, Where), Refused> {
         let e = element_id(id)?;
         let w = self.locate(e).ok_or_else(no_element)?;
         Ok((e, w))
     }
 
-    /// Where an element is now.
     pub(super) fn locate(&self, e: ElementId) -> Option<Where> {
         let locs = self.index.element(e)?;
         let story_of = |para: ParaId| self.index.para_slot(para).map(|s| self.index.story(s.container));
@@ -208,7 +183,7 @@ impl Editor {
                         return Some(Where::Sym { story: story_of(*para)?, para: *para, at: Unit(units_before(&p.inlines, k)) });
                     }
                 }
-                // A row-level control: its rows of one table.
+                // Row-level control
                 let rows: Vec<(crate::layout::TableId, usize)> =
                     locs.iter().filter_map(|l| if let Loc::Row(t, r) = l { Some((*t, *r)) } else { None }).collect();
                 if let Some(&(table, _)) = rows.first() {
@@ -216,7 +191,7 @@ impl Editor {
                     let (lo, hi) = (*at.iter().min()?, *at.iter().max()?);
                     return Some(Where::Rows { table, range: lo..hi + 1 });
                 }
-                // A block-level control: its paragraphs and tables, which sit together in one container.
+                // Block-level control
                 let slots: Vec<super::index::Slot> = locs
                     .iter()
                     .filter_map(|l| match l {
@@ -226,7 +201,6 @@ impl Editor {
                     })
                     .collect();
                 let container = slots.first()?.container;
-                // Only the blocks directly in that container (a member table's paragraphs are inside it).
                 let at: Vec<usize> = slots.iter().filter(|s| s.container == container).map(|s| s.block).collect();
                 let (lo, hi) = (*at.iter().min()?, *at.iter().max()?);
                 Some(Where::Blocks { container, range: lo..hi + 1 })
@@ -234,31 +208,25 @@ impl Editor {
         }
     }
 
-    /// Refuses a selection whose content can't be edited (inside a control whose content is locked).
     fn editable_target(&self) -> Result<(), Refused> {
         match self.selection.focus() {
             Some(p) if !self.editable(&p) => Err(locked()),
             Some(_) => Ok(()),
-            // A cell block (rows for a region): no text place to check.
             None if matches!(self.selection, Selection::Cells { .. }) => Ok(()),
             None => Err(Error::unavailable("no place to insert")),
         }
     }
 
-    /// The text position at a document point, the innermost element there, and whether it can be edited (not a
-    /// repeated header row's copy, nor in a locked control). Lays out the page; the selection doesn't move.
     pub fn hit_test(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(Position, Option<ElementId>, bool)> {
         let (p, repeat) = self.hit_full(x, y, fonts)?;
         let element = elements::context(&self.doc, &self.index, &Selection::Caret(p)).first().map(|(e, _)| *e);
         Some((p, element, !repeat && self.editable(&p)))
     }
 
-    /// The external drop caret at a document point, where text can go in; none away from one. View only.
     pub fn set_drop(&mut self, at: Option<(f64, f64)>, fonts: &Fonts) {
         self.drop = at.and_then(|(x, y)| self.hit_test(x, y, fonts)).filter(|h| h.2).map(|h| h.0);
     }
 
-    /// Whether text can go in at `p`: not inside a control whose content is locked (at its end marker is outside it).
     pub(super) fn editable(&self, p: &Position) -> bool {
         elements::context(&self.doc, &self.index, &Selection::Caret(*p)).iter().all(|(e, _)| {
             let ElementId::Control(c) = e else { return true };
@@ -269,8 +237,6 @@ impl Editor {
         })
     }
 
-    /// Where an element's content runs, as a text range: a field begin to end, an inline control between its
-    /// markers, a checkbox's face, a block control's paragraphs.
     pub(super) fn element_range(&self, w: &Where) -> Option<(Position, Position)> {
         match w {
             Where::Inline { story, para, start, end, .. } => Some((Position::text(*story, *para, *start), Position::text(*story, *para, *end))),
@@ -292,7 +258,7 @@ impl Editor {
         }
     }
 
-    /// Marks on elements, drawn with their severity and message; `clear` takes the others away first. View only.
+    // Element marks
     pub(super) fn mark_elements(&mut self, m: MarkElements) -> Outcome {
         let mut new = Vec::new();
         for mark in m.marks {
@@ -315,7 +281,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// The marks on `pages`, and the tooltip of the one under the pointer. Marks whose element is gone are dropped.
     pub(super) fn mark_views(&mut self, pages: std::ops::Range<usize>) -> (Vec<super::view::MarkView>, Option<super::view::Tooltip>) {
         let marks = std::mem::take(&mut self.marks);
         let mut kept = Vec::with_capacity(marks.len());
@@ -344,7 +309,6 @@ impl Editor {
         (out, tip)
     }
 
-    /// The tooltip under the pointer, on its page only: a mark's message, else a link's address.
     pub fn hover_tooltip(&mut self) -> Option<(crate::api::services::TooltipKind, super::view::Tooltip)> {
         use crate::api::services::TooltipKind;
         let (x, y) = self.hover?;
@@ -359,7 +323,6 @@ impl Editor {
         Some((TooltipKind::Link, super::view::Tooltip { text: link.address, page, rect }))
     }
 
-    /// Element `id` selected (a header's or footer's entered for it), and shown unless `reveal` is false.
     pub fn select_element(&mut self, id: &crate::api::value::ElementId, reveal: bool, fonts: &Fonts) -> Outcome {
         let Ok((_, w)) = self.element(id) else { return Outcome::Refused(no_element()) };
         let Some((a, b)) = self.element_range(&w) else { return Outcome::Refused(no_element()) };
@@ -382,9 +345,7 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// `element.replace`: every occurrence of plain text `find` (case-sensitive) in the codes, tags or
-    /// aliases of the elements (`kind`, `ids` narrow them) becomes `replace`, the text around it kept; one step, and
-    /// none when nothing matched. Answer: `{ changed }`, the elements changed.
+    // Find and replace
     pub(super) fn replace_in_elements(&mut self, r: ReplaceInElements, fonts: &Fonts) -> Outcome {
         let (find, replace) = (r.find, r.replace);
         let ids: Option<Vec<ElementId>> = match r.ids {
@@ -429,14 +390,10 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Replaces `find` in field `f`'s own code text (the fields nested in it untouched), text inline by text inline;
-    /// whether it changed.
-    // shortcut: a match spanning two of the code's text inlines (a formatting change inside it) isn't found.
     pub(super) fn replace_in_code(&mut self, tx: &mut super::Tx, f: FieldId, find: &str, replace: &str) -> bool {
         let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Field(f)) else { return false };
         let Some(p) = self.index.para(&self.doc, para).cloned() else { return false };
         let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { return false };
-        // The code's own text inlines: those not inside a nested field.
         let mut own = Vec::new();
         let mut depth = 0;
         for k in first + 1..s.code_end() {
@@ -448,7 +405,6 @@ impl Editor {
             }
         }
         let mut any = false;
-        // Last first, so the earlier inlines' units stay where they are.
         for (k, t, run) in own.into_iter().rev() {
             let at = units_before(&p.inlines, k);
             let range = Unit(at)..Unit(at + p.inlines[k].units() as u32);
@@ -461,8 +417,6 @@ impl Editor {
         any
     }
 
-    /// Control `c` with, for a repeating section, the items inside it in `lists` (its members' membership lists):
-    /// an item is only ever in a section (C3), so unwrapping one unwraps them too.
     fn with_items<'l>(&self, c: ControlId, lists: impl Iterator<Item = &'l Vec<ControlId>>) -> Vec<ControlId> {
         let mut gone = vec![c];
         if self.doc.controls.get(&c).is_some_and(|k| k.props.kind == ControlKind::RepeatingSection) {
@@ -478,9 +432,7 @@ impl Editor {
         gone
     }
 
-    /// `region.wrap`: whole rows of one table, or whole paragraphs (with the tables between them), in a
-    /// new repeating section with one item per row, or one item over the paragraphs. A selection with part of a
-    /// paragraph, rows of two tables, or one side of another control's edge is refused with its reason.
+    // Repeating sections
     pub(super) fn wrap_in_repeating_section(&mut self, r: RepeatingSection, fonts: &Fonts) -> Outcome {
         outcome(self.region_wrap(r, fonts))
     }
@@ -491,12 +443,9 @@ impl Editor {
         let item = || Control::new(ControlProps { kind: ControlKind::RepeatingItem, ..Default::default() });
         let s = ControlId::next();
         let made = CommandResult::Element { id: api_id(ElementId::Control(s)) };
-        // Where the new controls go in a member's list: after those around the whole selection, before the rest. A
-        // control holding part of the selection and more besides crosses its edge.
         fn place(lists: &[&Vec<ControlId>], outside: &[&Vec<ControlId>]) -> Result<Vec<usize>, Refused> {
             let mut out = Vec::with_capacity(lists.len());
             let all = |x: &ControlId| lists.iter().all(|l| l.contains(x));
-            // A control part of the selection holds, with members outside it too, crosses its edge.
             if lists.iter().flat_map(|l| l.iter()).any(|x| !all(x) && outside.iter().any(|l| l.contains(x))) {
                 return Err(shape("region boundary"));
             }
@@ -527,7 +476,6 @@ impl Editor {
                 (Some(x), Some(y)) if x.table == y.table => Ok(Some((x.table, x.row.min(y.row), x.row.max(y.row)))),
                 (Some(_), Some(_)) => Err(shape("two tables")),
                 (None, None) => Ok(None),
-                // One end in a table the other isn't in: whole blocks, if the ends are paragraph edges.
                 _ => Ok(None),
             }
         };
@@ -553,7 +501,6 @@ impl Editor {
             self.made = Some(made);
             return Ok(self.commit(tx, None, fonts));
         }
-        // Whole paragraphs (and the tables between them) of one container.
         let (a, b) = self.selection.ordered(&self.index).ok_or_else(|| bad("target"))?;
         let top = |e: &Editor, p: &Position| -> Option<super::index::Slot> {
             let chain = e.index.chain_of(p);
@@ -583,7 +530,6 @@ impl Editor {
             self.abort(tx);
             return Err(shape("partial paragraph"));
         }
-        // A range ending at the start of a later paragraph leaves that paragraph out.
         let last = match b.para_offset() {
             Some((pb, u)) if u == Unit(0) && sb.block > sa.block && self.index.para_slot(pb).is_some_and(|s| s.container == sa.container) => {
                 sb.block - 1
@@ -624,8 +570,6 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
-    /// The repeating regions design mode shows on `pages`: those around the selection and the one under the
-    /// pointer, each with its box per page and a title tab above its top left.
     pub(super) fn region_views(&mut self, pages: std::ops::Range<usize>) -> Vec<super::view::RegionView> {
         if self.mode != super::Mode::Design {
             return Vec::new();
@@ -637,7 +581,6 @@ impl Editor {
         ids.into_iter().filter_map(|c| self.region_view(c, pages.clone())).collect()
     }
 
-    /// The repeating sections the selection `sel` is in, innermost first.
     fn sections_at(&self, sel: &Selection) -> Vec<ControlId> {
         elements::context(&self.doc, &self.index, sel)
             .into_iter()
@@ -646,9 +589,6 @@ impl Editor {
             .collect()
     }
 
-    /// The pointer hovered at `x`, `y` (document points): in design mode, the region under it, else the one it was
-    /// over while it is just above that region, where its title tab is. Decided here, at the input,
-    /// so what the editor does never depends on which frames were drawn.
     pub(super) fn set_hover(&mut self, x: f64, y: f64) {
         self.hover = Some((x, y));
         if self.mode != super::Mode::Design {
@@ -658,8 +598,6 @@ impl Editor {
         let under = self.hit_laid_out(x, y).and_then(|p| self.sections_at(&Selection::Caret(p)).first().copied());
         let on_tab = |e: &mut Editor, c: ControlId| {
             let Some((page, px, py)) = e.stack().page_at(x, y) else { return false };
-            // The strip the tab is in, as wide as the region: leaving the region through its top edge beside the tab
-            // and going to it keeps the region.
             e.region_view(c, page..page + 1).is_some_and(|g| {
                 let (p, t) = g.title_rect;
                 let Some(&(_, first)) = g.rects.first() else { return false };
@@ -672,7 +610,6 @@ impl Editor {
         };
     }
 
-    /// Region `c`'s boxes on `pages` and its title tab above the first.
     fn region_view(&mut self, c: ControlId, pages: std::ops::Range<usize>) -> Option<super::view::RegionView> {
         let w = self.locate(ElementId::Control(c))?;
         let mut rects: Vec<(usize, [f64; 4])> = Vec::new();
@@ -713,7 +650,6 @@ impl Editor {
         })
     }
 
-    /// A press on a region's title tab in design mode: the region is selected.
     pub(super) fn region_title_click(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
         let Some((page, px, py)) = self.stack().page_at(x, y) else { return false };
         self.ensure_page(page, fonts);
@@ -725,8 +661,7 @@ impl Editor {
         self.select_element(&crate::api::value::ElementId(g.id), false, fonts) == Outcome::Moved
     }
 
-    /// How unfilled placeholders look: content controls by element, tag, tag prefix or default, and unfilled
-    /// picture placeholders by key (their tag) or default. `merge` adds to those set. View only.
+    // Placeholder looks
     pub(super) fn set_placeholder_looks(&mut self, l: PlaceholderLooks) -> Outcome {
         let mut new = Looks::default();
         let mut pictures = std::collections::HashMap::new();
@@ -781,7 +716,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// The looks drawn on `pages` (design mode): picture controls' boxes, rich-text controls' lines.
     pub(super) fn look_views(&mut self, pages: std::ops::Range<usize>) -> Vec<super::view::LookView> {
         if self.mode != super::Mode::Design || self.looks.is_empty() {
             return Vec::new();
@@ -794,13 +728,11 @@ impl Editor {
             .filter(|(_, c)| matches!(c.props.kind, ControlKind::Picture | ControlKind::RichText))
             .map(|(id, c)| (*id, c.props.clone()))
             .collect();
-        // Ids in reading (and making) order: the view lists them the same way every time.
         controls.sort_by_key(|(id, _)| *id);
         for (c, props) in controls {
             let Some(look) = self.looks.find(ElementId::Control(c), props.tag.as_deref()).cloned() else { continue };
             let Some(w) = self.locate(ElementId::Control(c)) else { continue };
             if props.kind == ControlKind::Picture {
-                // The picture's box on each page it is drawn on.
                 let Where::Inline { para, first, last, .. } = w else { continue };
                 let Some(p) = self.index.para(&self.doc, para) else { continue };
                 let Some(k) = (first..last).find(|&k| matches!(p.inlines[k], Inline::Picture(..))) else { continue };
@@ -816,7 +748,6 @@ impl Editor {
                     });
                 }
             } else {
-                // Rich text: a fill behind its lines, and its label while it is empty (an image look doesn't apply).
                 let Look::Box(l) = look else { continue };
                 let Some((a, b)) = self.element_range(&w) else { continue };
                 let empty = a.same_place(&b) || props.showing_placeholder;
@@ -841,8 +772,6 @@ impl Editor {
         out
     }
 
-    /// The element a design-mode activation is for: the one the selection exactly covers, or with `inside`
-    /// the innermost one around it (a double-click's word); reported to the host. Whether there was one.
     pub(super) fn activate(&mut self, inside: bool) -> bool {
         let sel = match self.selection {
             Selection::Object(super::selection::ObjectRef::Inline { para, offset }) => {
@@ -855,7 +784,6 @@ impl Editor {
         let ctx = elements::context(&self.doc, &self.index, &sel);
         let id = match ctx.iter().find(|(_, exact)| *exact || inside || object) {
             Some((id, _)) => *id,
-            // A field showing its result is one unit: the caret is beside it, not in it.
             None if inside => match self.fields_here(None, false).first() {
                 Some((f, _)) => ElementId::Field(*f),
                 None => return false,
@@ -866,11 +794,8 @@ impl Editor {
         true
     }
 
-    /// `control.fill`: a picture control's image, or a text or rich-text control's content as text or a
-    /// DOCX fragment (a single paragraph inline; blocks only into a block-level rich-text control). One step; the
-    /// control stops showing its placeholder and keeps its properties.
+    // Control fill
     pub(super) fn fill_control(&mut self, f: FillControl, fonts: &Fonts) -> Outcome {
-        // The content and the control no longer showing its placeholder are one transaction.
         self.begin_batch(None);
         let r = self.control_fill(f, fonts);
         let out = self.end_batch(r.is_ok(), fonts);
@@ -922,7 +847,6 @@ impl Editor {
                     self.paste_fragment(&f, fonts)
                 }
                 (Where::Inline { para, start, end, first, .. }, f) => {
-                    // Text (a fragment's text for a plain-text control) in the content's formatting.
                     let text = match f {
                         Some(f) => f.text(),
                         None => given.clone(),
@@ -942,7 +866,6 @@ impl Editor {
                     self.commit(tx, None, fonts)
                 }
                 (Where::Blocks { container, range }, f) if !plain => {
-                    // Blocks into a block-level rich-text control: they take its place, members of it.
                     let blocks = self.index.blocks(&self.doc, *container).ok_or_else(no_element)?;
                     let lead = match &blocks[range.start] {
                         Block::Para(p) => p.controls.clone(),
@@ -959,7 +882,6 @@ impl Editor {
                         None => {
                             let first = blocks[range.clone()].iter().find_map(super::first_para_of).ok_or_else(no_element)?;
                             let mut p = self.split_template(first).ok_or_else(no_element)?;
-                            // Its membership is the control's own, put on below.
                             p.controls.clear();
                             let run = p.mark.clone();
                             p.inlines = vec![Inline::Text(given.clone(), run)];
@@ -986,7 +908,6 @@ impl Editor {
         if !matches!(out, Outcome::Changed(_)) {
             return Err(locked());
         }
-        // No longer showing its placeholder: part of the same step.
         if let Some(mut k) = self.doc.controls.get(&c).cloned().filter(|k| k.props.showing_placeholder) {
             k.props.showing_placeholder = false;
             let mut tx = self.begin(label);
@@ -996,12 +917,9 @@ impl Editor {
         Ok(out)
     }
 
-    /// A DOCX fragment: its body as a clipboard fragment, its runs resolved by its
-    /// own styles (a paste keeps their look).
     fn fragment_of(&self, bytes: &[u8]) -> Result<super::clipboard::Fragment, Refused> {
         let doc = crate::docx::read_editable(bytes).map_err(|_| bad("docx"))?;
         let mut blocks: Vec<Block> = doc.sections.iter().flat_map(|s| s.blocks.iter().cloned()).collect();
-        // A package's body ends with a paragraph mark; an empty last paragraph after content isn't content.
         if blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
             blocks.pop();
         }
@@ -1009,9 +927,7 @@ impl Editor {
         Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, cells: None, controls })
     }
 
-    /// Locks on an edit of `a..b` (a caret: what typing there does): an edit inside a
-    /// control whose content is locked, or one taking a whole control that can't be deleted, is refused. Typing at a
-    /// control's start goes into it; at its end, after it.
+    // Locks
     pub(super) fn locked_edit(&self, a: &Position, b: &Position) -> bool {
         let check = |para: ParaId, x: u32, y: u32| -> bool {
             let Some(p) = self.index.para(&self.doc, para) else { return false };
@@ -1055,7 +971,6 @@ impl Editor {
         check(pa, ua.0, len(pa).max(ua.0 + 1)) || check(pb, 0, ub.0)
     }
 
-    /// A text edit at the selection refused by a lock: refused `locked`.
     pub(super) fn refuse_locked(&mut self) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         if self.locked_edit(&a, &b) {
@@ -1066,7 +981,7 @@ impl Editor {
         false
     }
 
-    /// The data parts a namespace and item id address. Several for a namespace alone is `"ambiguous namespace"`.
+    // Data parts
     fn data_parts_at(&self, ns: &str, item: Option<&str>) -> Result<(String, Option<String>, Vec<usize>), Refused> {
         let (ns, item) = (ns.to_string(), item.map(str::to_string));
         let at: Vec<usize> = self
@@ -1087,8 +1002,6 @@ impl Editor {
         outcome(self.data_write(w, fonts))
     }
 
-    /// A part's XML (well-formed, its root in `namespace`), replacing the part it addresses or added as a new one.
-    /// One step, which can join a batch. Makes `{ itemId }`.
     fn data_write(&mut self, w: WriteDataPart, fonts: &Fonts) -> Result<Outcome, Refused> {
         let xml = w.xml;
         let root_ns = {
@@ -1129,7 +1042,6 @@ impl Editor {
         outcome(self.data_remove(r, fonts))
     }
 
-    /// The part a reference addresses goes. One step.
     fn data_remove(&mut self, r: DataPartRef, fonts: &Fonts) -> Result<Outcome, Refused> {
         let (_, _, at) = self.data_parts_at(&r.namespace, r.item_id.as_deref())?;
         let &k = at.first().ok_or_else(no_element)?;
@@ -1142,7 +1054,7 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
-    /// Every field with where it is (story, paragraph, begin index, start and end units), in document order.
+    // Fields
     fn all_fields(&self) -> Vec<(FieldId, StoryId, ParaId, usize, Unit, Unit)> {
         elements::enumerate(&self.doc, &self.index, &elements::Filter { kind: Some("field".into()), ..Default::default() })
             .iter()
@@ -1154,8 +1066,6 @@ impl Editor {
             .collect()
     }
 
-    /// The fields an F-key acts on: with a selection, every field it touches; with a caret, the
-    /// innermost field around it (or right before or after it). `nested` adds the fields inside those.
     pub(super) fn fields_here(&self, ids: Option<&[crate::api::value::ElementId]>, nested: bool) -> Vec<(FieldId, ParaId)> {
         let all = self.all_fields();
         if let Some(ids) = ids {
@@ -1192,8 +1102,6 @@ impl Editor {
         picked.into_iter().map(|f| (f.0, f.2)).collect()
     }
 
-    /// Sets fields' views as a view setting, not an edit (`view.field-codes`): their paragraphs laid out again, with
-    /// no step and no revision.
     fn set_views(&mut self, fields: &[(FieldId, ParaId)], view: FieldView) {
         let mut hints = Vec::new();
         for (f, para) in fields {
@@ -1213,7 +1121,6 @@ impl Editor {
         }
     }
 
-    /// Fields showing their code show their result again, as an edit (a field update): a step per paragraph.
     fn show_results(&mut self, fields: &[(FieldId, ParaId)], fonts: &Fonts) -> Outcome {
         let mut paras: Vec<ParaId> = fields.iter().map(|f| f.1).collect();
         paras.sort_unstable_by_key(|p| p.0);
@@ -1232,8 +1139,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Fields `ids` (all of them without ids) in code (`show`) or result view. The caret in a field goes to its code's
-    /// end when it shows its code, to its start when it shows its result. View only.
     pub(super) fn show_field_codes(&mut self, show: bool, ids: Option<&[crate::api::value::ElementId]>) -> Outcome {
         let targets: Vec<(FieldId, ParaId)> = match ids {
             Some(_) => self.fields_here(ids, false),
@@ -1242,7 +1147,6 @@ impl Editor {
         self.field_views(targets, if show { FieldView::Code } else { FieldView::Result })
     }
 
-    /// Alt+F9 (`all`) and Shift+F9 as a command: every field, or the fields here, in the other view than they show now.
     pub(super) fn field_codes_toggle(&self, all: bool) -> Option<crate::api::command::ShowFieldCodes> {
         let targets: Vec<(FieldId, ParaId)> =
             if all { self.all_fields().iter().map(|f| (f.0, f.2)).collect() } else { self.fields_here(None, false) };
@@ -1256,7 +1160,6 @@ impl Editor {
         Some(crate::api::command::ShowFieldCodes { show: !codes, ids })
     }
 
-    /// The fields' views set, and the caret in one of them moved to its code's end or its start.
     fn field_views(&mut self, targets: Vec<(FieldId, ParaId)>, view: FieldView) -> Outcome {
         let here = self.fields_here(None, false);
         self.set_views(&targets, view);
@@ -1280,8 +1183,6 @@ impl Editor {
         })
     }
 
-    /// Ctrl+F9: a new field showing its code, two spaces with the caret between them; over a
-    /// selection, the selected text is the code and the caret stays before the field; inside a code it nests.
     fn field_new(&mut self, fonts: &Fonts) -> Result<Outcome, Refused> {
         let selected = match self.selection.ordered(&self.index) {
             Some((a, b)) if !a.same_place(&b) => {
@@ -1319,8 +1220,6 @@ impl Editor {
         Ok(out)
     }
 
-    /// F9: the fields `ids` (default: those here, every field with Ctrl+A), innermost first, locked ones left, go to
-    /// the application in one field update notice; those showing their code show their result again, as an edit.
     pub(super) fn update_fields(&mut self, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
         let mut fields = self.fields_here(ids, true);
         let all = self.all_fields();
@@ -1328,7 +1227,6 @@ impl Editor {
             let me = all.iter().find(|g| g.0 == *f);
             me.map_or(0, |m| all.iter().filter(|g| g.2 == m.2 && g.4 < m.4 && m.5 < g.5).count())
         };
-        // Innermost first, then in document order.
         let order: Vec<FieldId> = all.iter().map(|g| g.0).collect();
         fields.sort_by_key(|(f, _)| (std::cmp::Reverse(depth(f)), order.iter().position(|g| g == f)));
         let unlocked: Vec<(FieldId, ParaId)> = fields
@@ -1360,8 +1258,6 @@ impl Editor {
         out
     }
 
-    /// The application's results for an update, as one step; fields gone since are left out.
-    // shortcut: a token doesn't join the results to an earlier step, and a formatted result is set as its text.
     pub(super) fn set_field_results(&mut self, r: FieldResults, fonts: &Fonts) -> Outcome {
         let mut tx = self.begin("Update Fields");
         for result in &r.results {
@@ -1379,7 +1275,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Field `f`'s result becomes `display` (in its result's first run, else its code's); whether the field is there.
     fn set_result(&mut self, tx: &mut super::Tx, f: FieldId, display: &str) -> bool {
         let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Field(f)) else { return false };
         let Some(p) = self.index.para(&self.doc, para).cloned() else { return false };
@@ -1405,8 +1300,6 @@ impl Editor {
         self.step(tx, step).is_ok()
     }
 
-    /// Ctrl+F11 / Ctrl+Shift+F11 and `field.lock` / `field.unlock`: the fields here and those inside
-    /// them, locked or unlocked, one step.
     pub(super) fn lock_fields(&mut self, lock: bool, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
         let fields = self.fields_here(ids, true);
         let mut paras: Vec<ParaId> = fields.iter().map(|(_, p)| *p).collect();
@@ -1436,10 +1329,8 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Ctrl+Shift+F9 and `field.unlink`: each field here replaced by its result's text, one step.
     pub(super) fn unlink_fields(&mut self, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
         let mut fields = self.fields_here(ids, false);
-        // Outermost only: an outer field's result replaces those inside it too.
         let all = self.all_fields();
         let span = |f: &FieldId| all.iter().find(|g| g.0 == *f).map(|g| (g.2, g.4, g.5));
         let keep: Vec<(FieldId, ParaId)> = fields
@@ -1451,7 +1342,6 @@ impl Editor {
             .cloned()
             .collect();
         fields = keep;
-        // Last first, so the earlier ones' units stay where they are.
         fields.sort_by_key(|(f, _)| std::cmp::Reverse(all.iter().position(|g| g.0 == *f)));
         let mut tx = self.begin("Unlink Fields");
         for (f, para) in fields {
@@ -1475,8 +1365,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// A text selection with one end inside a field showing its code and the other outside covers the whole field;
-    /// the end inside moves past the field on its side.
     pub(super) fn widen_over_codes(&self, a: Position, b: Position) -> (Position, Position) {
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return (a, b) };
         let codes = |para: ParaId| -> Vec<(u32, u32)> {
@@ -1487,7 +1375,6 @@ impl Editor {
                 .map(|s| (units_before(&p.inlines, s.begin), units_before(&p.inlines, s.end)))
                 .collect()
         };
-        // A position inside a code: after its opening brace, up to before its closing one.
         let inside = |u: u32, (s, e): (u32, u32)| s < u && u <= e;
         let (mut ua2, mut ub2) = (ua, ub);
         for f in codes(pa) {
@@ -1502,13 +1389,11 @@ impl Editor {
                 ub2 = Unit(f.1 + 1);
             }
         }
-        // Positions that didn't move keep their affinity.
         let a = if ua2 == ua { a } else { Position::text(a.story, pa, ua2) };
         let b = if ub2 == ub { b } else { Position::text(b.story, pb, ub2) };
         (a, b)
     }
 
-    /// The application's labels for empty fields, by code; `merge` adds to those it has. View only.
     pub(super) fn set_field_labels(&mut self, l: FieldLabels) -> Outcome {
         if !l.merge.unwrap_or(false) {
             self.field_labels.clear();
@@ -1520,9 +1405,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Design mode's labels: every empty field of the paragraphs `steps` touched (all
-    /// fields with none) shows the host's label for its code, or its first argument in «»; outside design mode none
-    /// does. A view setting, not an edit: no step, never saved.
     pub(super) fn refresh_labels(&mut self, steps: Option<&[Step]>) {
         let design = self.mode == super::Mode::Design;
         let paras: Vec<ParaId> = match steps {
@@ -1535,7 +1417,6 @@ impl Editor {
                         _ => None,
                     })
                     .collect();
-                // Blocks put back or added (undoing a deletion, a paste): their fields' paragraphs.
                 if steps.iter().any(|s| matches!(s, Step::Blocks { .. } | Step::Rows { .. } | Step::Note { .. } | Step::HeaderPart { .. })) {
                     v.extend(self.elems.values().filter(|e| e.props.is_none()).filter_map(|e| e.at));
                 }
@@ -1581,8 +1462,6 @@ impl Editor {
         }
     }
 
-    /// A field from its code and display text at the selection; the caret after it, or at the start of its code when
-    /// it shows its code. An empty code makes a new field the way Ctrl+F9 does. Makes `{ id }`.
     pub(super) fn insert_field(&mut self, f: InsertField, fonts: &Fonts) -> Outcome {
         if f.code.trim().is_empty() {
             return outcome(self.editable_target().and_then(|_| self.field_new(fonts)));
@@ -1614,12 +1493,10 @@ impl Editor {
     }
 
     pub(super) fn set_field(&mut self, f: SetField, fonts: &Fonts) -> Outcome {
-        // shortcut: a formatted result is set as its text, until the keep-source fragment paste.
         let display = f.display.as_ref().map(plain);
         outcome(self.field_set(&f.id, f.code.as_deref(), display.as_deref(), fonts))
     }
 
-    /// A field's code and/or display text, as one step; what isn't given is kept.
     pub(super) fn field_set(
         &mut self,
         id: &crate::api::value::ElementId,
@@ -1639,7 +1516,6 @@ impl Editor {
             |from: usize, to: usize| p.inlines[from..to].iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.clone()) } else { None });
         let at = |k: usize| Unit(units_before(&p.inlines, k));
         let mut tx = self.begin("Change Field");
-        // The result first: it comes after the code, so the code's units stay where they are.
         if let Some(d) = display {
             let run = s.sep.and_then(|sep| run_in(sep + 1, s.end)).unwrap_or_else(|| begin_run.clone());
             let text: Vec<Inline> = if d.is_empty() { Vec::new() } else { vec![Inline::Text(d.into(), run)] };
@@ -1669,9 +1545,6 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
-    /// The selection carried through the transaction's steps, for commands that don't place it themselves (an
-    /// element removed under it, a result made shorter). Anything but text and a caret becomes a caret at where its
-    /// focus went.
     fn follow(&mut self, tx: &super::Tx) {
         let map = |p: Position| tx.maps.iter().fold(p, |p, m| m.apply(p));
         self.selection = match self.selection {
@@ -1685,7 +1558,6 @@ impl Editor {
         let valid =
             |p: &Position| p.para_offset().is_none_or(|(para, u)| self.index.para(&self.doc, para).is_some_and(|q| u <= super::step::para_len(q)));
         if !self.selection.focus().is_some_and(|p| valid(&p)) || !self.selection.anchor().is_none_or(|p| valid(&p)) {
-            // A position the steps couldn't follow: the start of the element's paragraph, else the story's start.
             self.selection = Selection::Caret(tx.before.selection.focus().map(map).filter(|p| valid(p)).unwrap_or_else(|| {
                 let story = self.selection.focus().map_or(StoryId::Body, |p| p.story);
                 self.nav().story_edge(story, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)))
@@ -1693,7 +1565,6 @@ impl Editor {
         }
     }
 
-    /// Gives every field of `para` the kind its code says, after a code changed.
     pub(super) fn refresh_field_kinds(&mut self, tx: &mut super::Tx, para: ParaId) {
         let Some(p) = self.index.para(&self.doc, para) else { return };
         let mut inlines = p.inlines.clone();
@@ -1712,8 +1583,7 @@ impl Editor {
         }
     }
 
-    /// A field with what it holds, or a control with its content; with
-    /// `keep`, a control's markup only (its content stays where it is).
+    // Element removal
     pub(super) fn remove_element(&mut self, id: &crate::api::value::ElementId, keep: bool, fonts: &Fonts) -> Outcome {
         outcome(self.element_remove(id, keep, fonts))
     }
@@ -1731,7 +1601,6 @@ impl Editor {
                 self.step(&mut tx, Step::Text { para, range: start..end, with: Vec::new(), edges: Default::default() }).is_ok()
             }
             (ElementId::Control(c), Where::Inline { para, start, end, .. }) => {
-                // The markers first (they take no units), then the content unless it is kept.
                 let p = self.index.para(&self.doc, para).ok_or_else(no_element)?;
                 let inlines: Vec<Inline> =
                     p.inlines.iter().filter(|i| !matches!(i, Inline::ControlStart(x) | Inline::ControlEnd(x) if *x == c)).cloned().collect();
@@ -1743,7 +1612,6 @@ impl Editor {
             (ElementId::Control(c), Where::Sym { para, at, .. }) => {
                 let p = self.index.para(&self.doc, para).ok_or_else(no_element)?;
                 if keep {
-                    // The face stays as a symbol of its own.
                     let inlines: Vec<Inline> = p
                         .inlines
                         .iter()
@@ -1773,7 +1641,6 @@ impl Editor {
                         .collect();
                     self.step(&mut tx, Step::Rows { table, range, with, grid: None }).is_ok()
                 } else if range.len() == t.rows.len() {
-                    // Every row: the table goes.
                     let slot = self.index.table_slot(table).ok_or_else(no_element)?;
                     self.step(&mut tx, Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: Vec::new() }).is_ok()
                 } else {
@@ -1792,8 +1659,6 @@ impl Editor {
                 let with: Vec<Block> = if keep {
                     blocks[range.clone()].iter().map(|b| gone.iter().fold(b.clone(), |b, x| without_control(&b, *x))).collect()
                 } else if range.len() == blocks.len() || (range.end == blocks.len() && matches!(blocks[range.start - 1], Block::Table(_))) {
-                    // A container keeps one paragraph, and ends with one: an empty one like the last, outside the
-                    // control.
                     let last =
                         blocks.iter().rev().find_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None }).ok_or_else(no_element)?;
                     let mut p = self.split_template(last).ok_or_else(no_element)?;
@@ -1818,8 +1683,7 @@ impl Editor {
         outcome(self.control_insert(c, fonts))
     }
 
-    /// A control of `kind` at the selection, its content its placeholder text (the text with `showing_placeholder`, no
-    /// docPart); with `wrapSelection` (rich text, group), around the selection instead. Makes `{ id }`.
+    // Content controls
     fn control_insert(&mut self, c: InsertControl, fonts: &Fonts) -> Result<Outcome, Refused> {
         let w = self.cx().w;
         let esc = crate::docx::write::props::esc;
@@ -1938,8 +1802,6 @@ impl Editor {
         }
     }
 
-    /// A new control around the selection: inline markers around a range in one paragraph, or membership of whole
-    /// paragraphs (and the tables between them) of one container.
     fn control_wrap(&mut self, id: ControlId, props: ControlProps, fonts: &Fonts) -> Result<Outcome, Refused> {
         let (a, b) = self.selection.ordered(&self.index).ok_or_else(|| bad("target"))?;
         if a.same_place(&b) {
@@ -1950,7 +1812,6 @@ impl Editor {
         if pa == pb {
             let p = self.index.para(&self.doc, pa).ok_or_else(no_element)?;
             let mut inlines = split_at(&p.inlines, &[oa.0, ob.0]);
-            // After the markers at the range's start and before those at its end, as text typed there would go.
             let index_at = |inlines: &[Inline], u: u32, after: bool| {
                 let mut n = 0u32;
                 for (k, x) in inlines.iter().enumerate() {
@@ -1963,8 +1824,6 @@ impl Editor {
                 inlines.len()
             };
             let (i, j) = (index_at(&inlines, oa.0, true), index_at(&inlines, ob.0, false));
-            // The new control nests with the others and with fields: none of them has one end inside it and the other
-            // outside.
             let mut open: Vec<String> = Vec::new();
             for x in &inlines[i..j.max(i)] {
                 match x {
@@ -1993,7 +1852,6 @@ impl Editor {
             }
             return Ok(self.commit(tx, None, fonts));
         }
-        // Whole paragraphs: from a paragraph's start to the start of a later one, or to the end of the last.
         let (sa, sb) = (self.index.para_slot(pa).ok_or_else(no_element)?, self.index.para_slot(pb).ok_or_else(no_element)?);
         let end_len = self.index.para(&self.doc, pb).map_or(Unit(0), super::step::para_len);
         if oa != Unit(0) || sa.container != sb.container || (ob != Unit(0) && ob != end_len) {
@@ -2025,8 +1883,6 @@ impl Editor {
         outcome(self.control_set(c, fonts))
     }
 
-    /// A control's tag, title, lock, binding, kind settings and placeholder text, as one step. A control showing its
-    /// placeholder shows the new one.
     fn control_set(&mut self, set: SetControl, fonts: &Fonts) -> Result<Outcome, Refused> {
         let (e, w) = self.element(&set.id)?;
         let ElementId::Control(c) = e else { return Err(Error::invalid("not a content control")) };
@@ -2063,7 +1919,6 @@ impl Editor {
                 (ControlKind::Checkbox { .. }, ControlOptions::Checkbox(_)) => {}
                 _ => return Err(Error::invalid("options for another kind of control")),
             }
-            // The kind element as read no longer says what it is.
             if !matches!(p.kind, ControlKind::DropDown | ControlKind::Checkbox { .. }) {
                 p.kind_xml = None;
             }
@@ -2086,7 +1941,6 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
-    /// Checks or clears a checkbox control.
     pub(super) fn set_checkbox(&mut self, c: SetCheckbox, fonts: &Fonts) -> Outcome {
         let Ok((ElementId::Control(id), Where::Sym { story, para, at })) = self.element(&c.id) else {
             return Outcome::Refused(Error::invalid("not a checkbox"));
@@ -2105,7 +1959,6 @@ impl Editor {
     }
 }
 
-/// A block without control `c` in its membership lists (unwrapping keeps the block).
 fn without_control(b: &Block, c: ControlId) -> Block {
     let mut b = b.clone();
     match &mut b {
@@ -2115,7 +1968,6 @@ fn without_control(b: &Block, c: ControlId) -> Block {
     b
 }
 
-/// `inlines` with their texts split at units `cuts`, so a marker can go between any two characters.
 fn split_at(inlines: &[Inline], cuts: &[u32]) -> Vec<Inline> {
     let mut out = Vec::with_capacity(inlines.len() + 2);
     let mut n = 0u32;
@@ -2140,8 +1992,6 @@ fn split_at(inlines: &[Inline], cuts: &[u32]) -> Vec<Inline> {
     out
 }
 
-/// A new part's `ds:itemID`: Word's braced GUID form, from the XML and the parts there are (unique enough in one
-/// package; the writer checks for clashes).
 fn new_item_id(xml: &str, n: usize) -> String {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();

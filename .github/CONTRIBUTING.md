@@ -66,7 +66,6 @@ Check it with `emcc --version`.
 | `tests/contract` | The contract scripts every SDK runs (see its README). |
 | `packages/*` | Framework integrations (Angular, React). These version separately from the engine. |
 | `docs` | The docs site: the guides, their examples (`docs/examples`) and the API references. |
-| `docs/docs/rulebook` | The layout rules. Code cites them by id. |
 
 ## The API and the SDKs
 
@@ -111,18 +110,18 @@ change touches (`cargo check`, `cargo test -p twip <filter>`). Run `moon ci` onc
 benchmarks last, after everything else passes: `cargo bench -p twip [-- <filter>]` (Divan, `crates/twip/benches`;
 not in CI). Compare their numbers with `main`'s on the same machine.
 
-The tasks: `root:hygiene` (planning ids, rulebook wording), `root:format`, `root:lint` (clippy), `root:contract-scripts`;
+The tasks: `root:hygiene` (planning ids, the CI plan), `root:format`, `root:lint` (clippy), `root:contract-scripts`;
 `twip:test` (the unit tests, including the wire fixture check, and the rust contract runner), `twip:example` (the
 Rust API end to end), `twip-capi:test`; `web:test` (builds the wasm module with emsdk, then the unit, wire, contract and API report checks),
 `web:browser-test`, `web:latency` (the latency budgets, on a quiet machine with a GPU; not in CI); `dotnet:build`, `dotnet:test` (builds twip-capi, then the wire, contract and Native AOT smoke
 tests); `docs:build` and `docs:examples` (the guides' TypeScript and C# examples). `cargo fmt --all` fixes what
 `root:format` reports.
 
-## Layout rules and comments
+## Comments
 
-Layout behaviour is specified in the rulebook (`docs/docs/rulebook`). Each rule has an id (for example `TABLE-9`).
-Code that implements a rule cites it in a short comment (`// TABLE-9`) and doesn't explain the rule again. If you
-change or add a behaviour, update the rule in the same pull request.
+The code is the documentation. A comment in the engine names a part of the code (`//! Table autofit`,
+`// Row heights`) and doesn't explain it: say what the code does through its names and types instead. Public API docs
+(`twip::api`, the SDKs) and `// SAFETY:` comments are the exceptions.
 
 ## Commits and pull requests
 

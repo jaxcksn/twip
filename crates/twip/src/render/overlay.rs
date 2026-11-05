@@ -44,7 +44,6 @@ impl Renderer {
         // Misspellings: a wavy red line along each word's bottom, 1 device pixel wide.
         let px = (k * f.dpr).max(0.01);
         let mut wave = Paint::default();
-        // DRAW-27: marks on the page take the page's colours.
         wave.set_color(self.ink(0xE6_0000));
         wave.set_style(skia_safe::paint::Style::Stroke);
         wave.set_anti_alias(true);

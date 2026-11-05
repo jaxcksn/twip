@@ -1,6 +1,4 @@
-//! A warm cache gives the same layout as a fresh one, also after an edit inside a table, where cells,
-//! tables and their ancestors are cached by their children's identity. Verify mode (on in tests) also recomputes
-//! every hit.
+//! Warm cache
 
 use std::path::Path;
 
@@ -14,7 +12,6 @@ const DOCS: [&str; 2] = [
     concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/table-style-normal.docx"),
 ];
 
-/// Appends `s` to the first text run of the first table cell found (nested tables included), depth first.
 fn edit_first_cell(blocks: &mut [Block], s: &str) -> bool {
     for b in blocks {
         if let Block::Table(t) = b {
@@ -54,8 +51,6 @@ fn warm_cache_equals_fresh_layout_after_a_cell_edit() {
     }
 }
 
-/// With a small budget, least recently used entries are evicted: results stay equal to a fresh layout,
-/// and once enforced the cache's bytes are within the budget.
 #[test]
 fn eviction_keeps_results_and_budget() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tables.docx"))) else { return };

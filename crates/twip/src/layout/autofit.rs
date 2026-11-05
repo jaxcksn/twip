@@ -1,13 +1,8 @@
-//! Table autofit column widths, in integer twips (TABLE-6, TABLE-13 to TABLE-21). Cell minimums and maximums
-//! (TABLE-7) come from the table code.
+//! Table autofit
 
-/// Widths and edges are capped at 22 inches (TABLE-6).
 pub const MAXW: i64 = 31680;
-/// TABLE-16: a spanning cell this close above its columns' maximum takes the maximum; TABLE-15: the minimum of a
-/// skipped region.
 const KLUGE: i64 = 5;
 
-/// a·b/c rounded half away from zero; 0 when c = 0.
 pub fn rdiv(a: i64, b: i64, c: i64) -> i64 {
     if c == 0 {
         return 0;
@@ -19,12 +14,10 @@ pub fn rdiv(a: i64, b: i64, c: i64) -> i64 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Auto,
-    /// Fiftieths of a percent (5000 = 100%).
     Pct,
     Dxa,
 }
 
-/// A grid column's accumulated widths (TABLE-13).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Col {
     pub kind: Option<Kind>,
@@ -41,7 +34,6 @@ impl Col {
     }
 }
 
-/// One cell's inputs: its grid columns, TABLE-7's min/max/hardMin, and its preferred width (nil already made dxa).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cell {
     pub first: usize,
@@ -51,24 +43,18 @@ pub struct Cell {
     pub hard: i64,
     pub kind: Kind,
     pub pref: i64,
-    /// The cell's row.
     pub row: usize,
-    /// A vertical-merge continuation (skipped, except as a single-span cell in the table's first row).
     pub cont: bool,
 }
 
-/// A region a row skips (gridBefore / gridAfter) as a dxa segment: the grid column it ends in, its span and width.
 pub type Gap = (usize, usize, i64);
 
-/// TABLE-13 to TABLE-16: the grid columns from the cells (rows in order, cells left to right) and each row's skipped
-/// regions (TABLE-15). `sp` = 2 × cell spacing.
 pub fn columns(n: usize, cells: &[Cell], sp: i64, gaps: &[Vec<Gap>], fixed: bool) -> Vec<Col> {
     let mut cols = vec![Col::default(); n];
     for c in cells.iter().filter(|c| c.span == 1 && !(c.cont && c.row > 0) && c.first < n) {
         add_single(&mut cols[c.first], c.kind, c.pref, c.min, c.max, c.hard, fixed);
     }
-    // TABLE-15: the helper row. Per grid column, the widest dxa segment ending there (a cell's or a skipped region's);
-    // a spanning one counts what the columns before it (of the same type) leave.
+    // Helper row
     let mut seg: Vec<((usize, usize), i64)> = Vec::new();
     let mut put = |end: usize, span: usize, w: i64| match seg.iter_mut().find(|s| s.0 == (end, span)) {
         Some(s) => s.1 = s.1.max(w),
@@ -125,7 +111,6 @@ pub fn columns(n: usize, cells: &[Cell], sp: i64, gaps: &[Vec<Gap>], fixed: bool
             add_single(&mut cols[g], Kind::Dxa, helper[g], KLUGE, helper[g], 0, fixed);
         }
     }
-    // The last one-column region before the first column, and after the last, count whatever the helper row gave.
     let mut before = None;
     let mut after = None;
     for &(end, _, w) in gaps.iter().flatten().filter(|g| g.1 == 1 && g.2 > 0) {
@@ -141,7 +126,7 @@ pub fn columns(n: usize, cells: &[Cell], sp: i64, gaps: &[Vec<Gap>], fixed: bool
     if let Some(w) = after {
         add_single(&mut cols[n - 1], Kind::Dxa, w, KLUGE, w, 0, fixed);
     }
-    // TABLE-14: every spanning cell, in row order and left to right, by TABLE-16's proportional spread.
+    // Spanning cells
     let mut spans: Vec<&Cell> = cells.iter().filter(|c| c.span >= 2 && !c.cont && c.first < n).collect();
     spans.sort_by_key(|c| (c.row, c.first));
     for c in spans {
@@ -159,7 +144,6 @@ pub fn columns(n: usize, cells: &[Cell], sp: i64, gaps: &[Vec<Gap>], fixed: bool
     cols
 }
 
-/// TABLE-13: one single-span cell into its column.
 fn add_single(col: &mut Col, kind: Kind, pref: i64, min: i64, max: i64, hard: i64, fixed: bool) {
     let cell_max = if kind == Kind::Dxa { if fixed { pref } else { min.max(pref) } } else { max };
     match kind {
@@ -173,13 +157,11 @@ fn add_single(col: &mut Col, kind: Kind, pref: i64, min: i64, max: i64, hard: i6
         }
         _ => {}
     }
-    // Fixed layout: a cell's minimum doesn't raise its column's max until after the spanning cells (TABLE-13).
     col.max = if fixed { col.max.max(cell_max) } else { col.max.max(min).max(cell_max) };
     col.min = col.min.max(min);
     col.hard = col.hard.max(hard);
 }
 
-/// TABLE-16: one spanning cell over its columns.
 fn spread(cols: &mut [Col], c: &Cell, sp: i64) {
     let span = c.span.min(cols.len() - c.first);
     if span < 2 {
@@ -221,7 +203,6 @@ fn spread(cols: &mut [Col], c: &Cell, sp: i64) {
     if cmin > sum_min {
         let mut left = cmin;
         let mut rest: Vec<usize> = rng.clone().collect();
-        // pct columns first, by their share.
         if rest.iter().any(|&i| cols[i].kind() == Kind::Pct) {
             let pct_tot =
                 if rest.iter().any(|&i| cols[i].kind() != Kind::Pct) { 5000 } else { rest.iter().map(|&i| cols[i].pct).sum::<i64>().min(5000) };
@@ -317,7 +298,6 @@ fn spread(cols: &mut [Col], c: &Cell, sp: i64) {
     }
 }
 
-/// TABLE-20: spreads `target − Σout` over the columns, leftovers to the first ones, never below `floor`.
 pub fn distribute(out: &mut [i64], floor: &[i64], target: i64) {
     let n = out.len();
     let mut s: i64 = out.iter().sum();
@@ -364,8 +344,6 @@ pub fn distribute(out: &mut [i64], floor: &[i64], target: i64) {
     }
 }
 
-/// TABLE-19's result: the table width, the column widths (before TABLE-21's spacing), and the minimum and hard
-/// minimum table widths.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Resolved {
     pub width: i64,
@@ -374,7 +352,6 @@ pub struct Resolved {
     pub hard_t: i64,
 }
 
-/// TABLE-19. `tbl_w` <= 0: no preferred table width. `fixed`: w:tblLayout fixed. `no_grow`: not w:growAutofit.
 pub fn resolve(cols: &[Col], pad_total: i64, tbl_w: i64, avail: i64, fixed: bool, no_grow: bool) -> Resolved {
     let n = cols.len();
     let mn: Vec<i64> = cols.iter().map(|c| c.min).collect();
@@ -501,7 +478,6 @@ pub fn resolve(cols: &[Col], pad_total: i64, tbl_w: i64, avail: i64, fixed: bool
     Resolved { width: ww + pad_total, widths: out, min_t, hard_t }
 }
 
-/// TABLE-21: the cell spacing added back (`s2` = 2 × spacing per column, half more at the outer columns).
 pub fn with_spacing(widths: &mut [i64], s2: i64) {
     if s2 <= 0 || widths.is_empty() {
         return;
@@ -534,14 +510,12 @@ mod tests {
 
     #[test]
     fn three_preferred_columns_in_9350() {
-        // TABLE-20's example: 3 × 3120 in 9350 → 3116 + 3117 + 3117.
         let cols = [dxa(3120, 300), dxa(3120, 300), dxa(3120, 300)];
         assert_eq!(resolve(&cols, 0, 0, 9350, false, true).widths, vec![3116, 3117, 3117]);
     }
 
     #[test]
     fn reference_example() {
-        // Two auto columns, one long, one short, in 9350.
         let cols = [Col { min: 500, max: 9000, ..Default::default() }, Col { min: 312, max: 312, ..Default::default() }];
         let r = resolve(&cols, 0, 0, 9350, false, true);
         assert_eq!((r.width, r.widths.iter().sum::<i64>()), (9312, 9312));

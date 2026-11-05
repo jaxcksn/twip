@@ -1,5 +1,4 @@
-//! A dependency left out of a cache key is caught by verify mode: with the fault flag on, the lines key omits
-//! `ParaSpace.width`, so the second width hits the first width's lines and the recomputation differs.
+//! Cache keys
 
 use crate::docx::Block;
 use crate::layout::cache::LayoutCache;
@@ -11,7 +10,6 @@ use crate::layout::text::shape;
 
 use super::{fonts, plain_doc, words};
 
-/// `catch_unwind` rather than `#[should_panic]`: the test skips itself without fixture fonts, as the others do.
 #[test]
 fn omitted_key_is_caught() {
     let Some(doc) = plain_doc(&[words(300)]) else { return };
@@ -35,8 +33,6 @@ fn omitted_key_is_caught() {
     assert!(message.contains("boundary `lines`"), "{message}");
 }
 
-/// Shaping depends on the markup view (deleted text shapes in one view and not in another), so the view is in
-/// the shaping key, and in every key that holds the text settings.
 #[test]
 fn markup_view_is_in_the_keys() {
     use crate::docx::review::MarkupView;
@@ -52,9 +48,6 @@ fn markup_view_is_in_the_keys() {
     assert_ne!(shape_space(&p, &FieldValues::default(), &notes, &all, None), shape_space(&p, &FieldValues::default(), &notes, &none, None));
 }
 
-/// Live layout's preview is in the shape keys of the paragraphs it concerns only: the one anchoring it in the preview
-/// (the float in place of its own, or added) and its anchor in the document (left out there), so every other
-/// paragraph keeps its caches.
 #[test]
 fn a_preview_is_in_the_keys_of_its_paragraphs_only() {
     use crate::docx::{Inline, Paragraph};
@@ -71,11 +64,9 @@ fn a_preview_is_in_the_keys_of_its_paragraphs_only() {
     let space = |p: &Paragraph, v: Option<&Preview>| shape_space(p, &fields, &notes, &env.text, v);
     let mut moved = f.clone();
     moved.v_offset += 36.0;
-    // In place: its paragraph's key changes, no other's.
     let here = Preview { float: moved.clone(), anchor: ParaId(home.id) };
     assert_ne!(space(home, Some(&here)), space(home, None));
     assert_eq!(space(other, Some(&here)), space(other, None));
-    // Re-anchored: the new anchor adds it, the old one leaves it out.
     let there = Preview { float: moved, anchor: ParaId(other.id) };
     assert_eq!(space(other, Some(&there)).float.map(|g| g.id), Some(f.id));
     assert_eq!(space(home, Some(&there)).hide, Some(f.id));

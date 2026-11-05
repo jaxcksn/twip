@@ -1,4 +1,4 @@
-//! Layout depends on no renderer, editor or adapter code.
+//! Layout imports
 
 use super::layout_sources;
 
@@ -9,7 +9,6 @@ fn layout_has_no_forbidden_imports() {
     assert!(!sources.is_empty(), "layout sources not found");
     let mut found = Vec::new();
     for (path, text) in &sources {
-        // This file names the forbidden paths itself.
         if path.ends_with("imports.rs") {
             continue;
         }

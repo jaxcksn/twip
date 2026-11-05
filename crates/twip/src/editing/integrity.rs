@@ -1,4 +1,4 @@
-//! Structural and state invariants checked after every transaction in tests and debug builds. A violation names the invariant and the element; it fails the test that produced it.
+//! Integrity checks
 
 use crate::docx::{Block, Document, VMerge};
 use crate::layout::{ParaId, TableId};
@@ -15,7 +15,6 @@ pub struct Violation {
     pub detail: String,
 }
 
-/// Every invariant that applies to `doc` and the selection.
 pub fn check(doc: &Document, idx: &DocIndex, selection: &Selection) -> Vec<Violation> {
     let mut out = Vec::new();
     for s in &doc.sections {
@@ -24,15 +23,12 @@ pub fn check(doc: &Document, idx: &DocIndex, selection: &Selection) -> Vec<Viola
     for b in doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()).chain(doc.glossary_bodies()) {
         blocks(b, &mut out, false);
     }
-    // 8: a body ending with a table has a final paragraph after it.
     if let Some(Block::Table(t)) = doc.sections.last().and_then(|s| s.blocks.last()) {
         out.push(Violation { invariant: "8 final paragraph", detail: format!("the body ends with table {}", t.id) });
     }
-    // 4 and 5: paragraph, table and float ids are unique.
     for id in duplicate_ids(doc) {
         out.push(Violation { invariant: "4 unique ids", detail: format!("id {id} appears twice") });
     }
-    // 5: every float's anchor is the paragraph holding it (text boxes' own floats too).
     fn anchors(blocks: &[Block], idx: &DocIndex, out: &mut Vec<Violation>) {
         for b in blocks {
             match b {
@@ -67,8 +63,6 @@ pub fn check(doc: &Document, idx: &DocIndex, selection: &Selection) -> Vec<Viola
     {
         anchors(b, idx, &mut out);
     }
-    // 7: the selection's positions are valid. (Undo and redo records are checked when restored: they are valid in the
-    // document they return to, not in this one.)
     let mut position = |p: Option<Position>, what: &str| {
         let Some(p) = p else { return };
         if let Some(e) = invalid(doc, idx, &p) {
@@ -82,8 +76,6 @@ pub fn check(doc: &Document, idx: &DocIndex, selection: &Selection) -> Vec<Viola
     out
 }
 
-/// The invariants of revisions and comments: revision ids name one change each, revision slots hold their kinds,
-/// comment ranges are paired and anchored to comments that exist, moves have both ends, and threads have no cycles.
 fn review(doc: &Document, out: &mut Vec<Violation>) {
     use crate::docx::review::{CommentId, MarkKind, RangeKind, RevisionId, RevisionMark};
     use crate::docx::{Inline, RunStyle};
@@ -98,7 +90,6 @@ fn review(doc: &Document, out: &mut Vec<Violation>) {
         refs: HashSet<CommentId>,
         ranged: HashSet<CommentId>,
     }
-    /// The insertion slot holds insertions and moves to, the deletion slot deletions and moves from.
     #[derive(Clone, Copy)]
     enum Slot {
         Ins,
@@ -229,7 +220,6 @@ fn review(doc: &Document, out: &mut Vec<Violation>) {
             mark(&c.mark, Slot::Any, &mut seen, out);
         }
     }
-    // Ranges pair within a story: the body (its sections in order), then each other story on its own.
     let mut open = Vec::new();
     for s in &doc.sections {
         blocks(&s.blocks, &mut open, &mut seen, doc, out);
@@ -263,13 +253,11 @@ fn review(doc: &Document, out: &mut Vec<Violation>) {
     }
 }
 
-/// The invariants of fields, content controls and data parts.
 fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
     use crate::docx::{ControlId, ControlKind, ElementId, Inline};
     use std::collections::{HashMap, HashSet};
     let mut seen_fields: HashSet<crate::docx::FieldId> = HashSet::new();
     let mut used: HashSet<ControlId> = HashSet::new();
-    // Each block-level control's container and block indexes (C2 contiguity, C4 one container).
     let mut members: HashMap<ControlId, (String, Vec<usize>)> = HashMap::new();
     fn walk(
         blocks: &[Block],
@@ -281,7 +269,6 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
         out: &mut Vec<Violation>,
     ) {
         let lists = |list: &[ControlId], what: String, out: &mut Vec<Violation>| {
-            // C3: an item sits directly in a section, and a section's members are items.
             for (k, c) in list.iter().enumerate() {
                 let kind = doc.controls.get(c).map(|c| &c.props.kind);
                 let next = list.get(k + 1).and_then(|n| doc.controls.get(n)).map(|c| &c.props.kind);
@@ -310,7 +297,6 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
             }
             match b {
                 Block::Para(p) => {
-                    // F1, F2, C2: markers pair up and nest, fields and inline controls alike.
                     let mut stack: Vec<ElementId> = Vec::new();
                     let mut sep: HashSet<crate::docx::FieldId> = HashSet::new();
                     for i in &p.inlines {
@@ -366,7 +352,6 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                     if !stack.is_empty() {
                         out.push(Violation { invariant: "F1 one field", detail: format!("{stack:?} not closed in paragraph {}", p.id) });
                     }
-                    // F3: an evaluated kind is its code's (or the application declared it a sub-template reference).
                     for s in crate::docx::fields::spans(&p.inlines) {
                         if let Inline::FieldBegin { kind, .. } = &p.inlines[s.begin]
                             && *kind != Some(crate::docx::FieldKind::SubTemplate)
@@ -390,7 +375,6 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                             walk(&c.blocks, &format!("table {} row {ri} cell {ci}", t.id), doc, seen, used, members, out);
                         }
                     }
-                    // C2: a row-level control's rows are consecutive.
                     for (c, v) in rows {
                         if v.windows(2).any(|w| w[1] != w[0] + 1) {
                             out.push(Violation { invariant: "C2 contiguous", detail: format!("control {c:?} wraps rows {v:?} of table {}", t.id) });
@@ -416,13 +400,11 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
     for (k, b) in doc.glossary_bodies().enumerate() {
         walk(b, &format!("building block {k}"), doc, &mut seen_fields, &mut used, &mut members, out);
     }
-    // C2: a block-level control's blocks are consecutive.
     for (c, (container, v)) in &members {
         if v.windows(2).any(|w| w[1] != w[0] + 1) {
             out.push(Violation { invariant: "C2 contiguous", detail: format!("control {c:?} wraps blocks {v:?} of {container}") });
         }
     }
-    // C1: every control used is known, every known control is used (and indexed so).
     for c in &used {
         if !doc.controls.contains_key(c) {
             out.push(Violation { invariant: "C1 controls resolve", detail: format!("control {c:?} is used but not in the document's controls") });
@@ -439,7 +421,6 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
             });
         }
     }
-    // D1, D2: data parts have unique item ids and well-formed XML.
     let mut items = HashSet::new();
     for p in &doc.data_parts {
         if !items.insert(&p.item_id) {
@@ -456,7 +437,6 @@ fn blocks(blocks: &[Block], out: &mut Vec<Violation>, _body: bool) {
         let Block::Table(t) = b else { continue };
         let grid = Grid::of(t);
         for (r, row) in t.rows.iter().enumerate() {
-            // 2: a row's grid spans fit the table's grid.
             let width = row.grid_before + row.cells.iter().map(|c| c.span.max(1)).sum::<usize>() + row.grid_after;
             if !t.grid.is_empty() && width > t.grid.len() {
                 out.push(Violation {
@@ -465,11 +445,9 @@ fn blocks(blocks: &[Block], out: &mut Vec<Violation>, _body: bool) {
                 });
             }
             for (c, cell) in row.cells.iter().enumerate() {
-                // 1: every cell has a block, and its last block is a paragraph.
                 if !matches!(cell.blocks.last(), Some(Block::Para(_))) {
                     out.push(Violation { invariant: "1 cell ends with a paragraph", detail: format!("table {} row {r} cell {c}", t.id) });
                 }
-                // 3: a vertical merge continuation has a start above it in its grid column.
                 if cell.v_merge == VMerge::Continue {
                     let (sr, _) = grid.merge_start(r, c);
                     if sr == r {
@@ -482,7 +460,6 @@ fn blocks(blocks: &[Block], out: &mut Vec<Violation>, _body: bool) {
     }
 }
 
-/// Why a position isn't valid, if it isn't.
 pub fn invalid(doc: &Document, idx: &DocIndex, p: &Position) -> Option<String> {
     match p.place {
         Place::Text { para, offset, .. } => {
@@ -506,7 +483,6 @@ pub fn invalid(doc: &Document, idx: &DocIndex, p: &Position) -> Option<String> {
     }
 }
 
-/// Paragraph, table and float ids that appear more than once (invariants 4 and 5), on a fresh walk of every story.
 pub fn duplicate_ids(doc: &Document) -> Vec<u64> {
     let mut seen = std::collections::HashSet::new();
     let mut dup = Vec::new();

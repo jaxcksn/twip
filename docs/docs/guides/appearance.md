@@ -56,7 +56,7 @@ To follow the theme again, `setBackground(null)` and `setOverlayColors(null)` pu
 | Value | The page |
 |---|---|
 | `light` | in the document's colours (the default) |
-| `dark` | dark, with the document's colours adjusted to it: white becomes near black and black near white, and the other text, highlight, shading and border colours move with them. Shapes and pictures keep their colours ([DRAW-27](../rulebook/draw.md#draw-27)) |
+| `dark` | dark, with the document's colours adjusted to it: white becomes near black and black near white, and the other text, highlight, shading and border colours move with them. Shapes and pictures keep their colours |
 | `darkWithLightPage` | the chrome stays dark and the page shows in its own colours, as Word's *Switch Modes* does |
 
 `setAppearance(appearance)` on the web view and `SetAppearanceAsync` in .NET wrap the same command. Dark mode moves

@@ -1,6 +1,4 @@
-//! Deep nesting: a 100-level nested table, built in the test, survives opening, a click and
-//! typing in the innermost cell, Tab there, undo of everything, and save and reopen, with integrity and dump checks
-//! after each.
+//! Deep nesting
 
 use serde_json::Value;
 
@@ -14,7 +12,6 @@ use crate::docx::{Block, Document, Table};
 
 const DEPTH: usize = 100;
 
-/// FX-NEST-2's outer table reduced to one cell, nested `DEPTH` levels deep, the innermost cell holding "deep".
 fn deep_document() -> Document {
     let base = open("FX-NEST-2.docx");
     let mut doc = base.document().clone();
@@ -56,7 +53,6 @@ fn state(e: &mut Editor) -> Value {
 
 #[test]
 fn a_hundred_levels_of_nesting_edit_undo_save_and_reopen() {
-    // The wasm build's stack (crates/twip-wasm/build.rs: STACK_SIZE=8MB); depth 100 needs under 1 MB natively.
     std::thread::Builder::new().stack_size(8 << 20).spawn(run).expect("thread").join().expect("no panic");
 }
 
@@ -67,7 +63,6 @@ fn run() {
     let deep = original["paragraphs"].as_array().expect("paragraphs").iter().position(|p| p["text"] == "deep").expect("the innermost paragraph");
     assert_eq!(original["paragraphs"][deep]["depth"], DEPTH as u64);
 
-    // Click on the innermost line when it is drawn wide enough to hold one; else place the caret there.
     let target = e
         .page_geometries()
         .into_iter()
@@ -93,7 +88,6 @@ fn run() {
     let typed = state(&mut e)["dump"].clone();
     assert!(typed["paragraphs"][deep]["text"].as_str().is_some_and(|t| t.contains("xyz")));
 
-    // Tab in the innermost (only) cell adds a row to the innermost table only.
     e.execute(Command::MoveToCell(crate::api::value::Order::Next), fonts());
     let tabbed = state(&mut e)["dump"].clone();
     let rows = |d: &Value| d["tables"].as_array().map(|t| t.iter().map(|t| t["rows"].as_u64().unwrap_or(0)).collect::<Vec<_>>()).unwrap_or_default();

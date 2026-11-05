@@ -1,9 +1,4 @@
-//! The document pass: the only layout code that reads the whole document. It builds the nodes, numbers notes
-//! (NOTE-4), appends the endnotes (NOTE-10), pages the sections in order and composes headers and footers with final
-//! values (HDR-10). Passes repeat until the layout converges, with a stabilizing pass after 4 (FIELD-6).
-//!
-//! A pass is a state machine ([`Cursor`]) advanced one committed body or one composed page at a time, so a
-//! [`LayoutJob`] can stop between any two steps and resume. A full layout is a job run without a budget.
+//! Document layout passes
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -30,25 +25,19 @@ use super::story::{StoryEnv, hf_limit, stack_limited};
 use super::text::FieldValues;
 use super::token::{FlowToken, PageToken};
 
-/// Lays out a document with the given fonts: a full layout without a cache, the reference every other layout is
-/// compared with.
 pub fn layout(doc: &Document, fonts: &Fonts) -> Snapshot {
     let mut cache = LayoutCache::new();
     layout_with(doc, fonts, &mut cache)
 }
 
-/// [`layout`] reusing (and filling) `cache`.
 pub fn layout_with(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> Snapshot {
     layout_records(doc, fonts, cache).0
 }
 
-/// [`layout_with`], and the records of the committed pages (tests read them).
 pub(crate) fn layout_records(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> (Snapshot, Vec<PageRecord>) {
     layout_showing(doc, fonts, cache, None)
 }
 
-/// [`layout`] showing `expansions` (the editor's sub-template bodies in place of their references): what an
-/// incremental layout with them equals.
 pub fn layout_expanded(doc: &Document, fonts: &Fonts, expansions: &super::expansion::Expansions) -> Snapshot {
     layout_showing(doc, fonts, &mut LayoutCache::new(), Some(expansions)).0
 }
@@ -62,22 +51,18 @@ fn layout_showing(
     let env = LayoutEnv::new(doc);
     let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions };
     let mut job = LayoutJob::new(doc, Revision(0));
-    // Full layouts never yield (no budget).
     job.run(doc, &ctx, cache, None, Budget::Unlimited);
     let done = job.finished().expect("an unlimited run completes the job");
     (done.snapshot(Revision(0), LayoutRevision(0)), done.records.clone())
 }
 
+// Test hooks
 #[cfg(test)]
 thread_local! {
-    /// Test hooks for the convergence tests. Thread-local so tests running in parallel don't interfere. A height
-    /// added to every composed header on passes 1 and 3, so the layout never converges.
     pub(crate) static HF_ALTERNATE: Cell<f64> = const { Cell::new(0.0) };
-    /// Makes the stabilizing pass's verification fail on every page with a header.
     pub(crate) static FAIL_VERIFY: Cell<bool> = const { Cell::new(false) };
 }
 
-/// The height the alternating test hook adds to a header composed in pass `k`.
 fn hook_height(k: usize) -> f64 {
     #[cfg(test)]
     if matches!(k, 1 | 3) {
@@ -97,13 +82,10 @@ pub(crate) fn same_heights(a: &HfHeights, b: &HfHeights) -> bool {
     })
 }
 
-/// The header and footer heights page `pg`'s first body was laid out with.
 pub(crate) fn used(pg: &PageRecord) -> HfHeights {
     pg.bodies.first().map_or([None, None], |b| b.space.hf)
 }
 
-/// What a job derives from the document once: note numbers in reference order (NOTE-4), and the endnotes appended to
-/// the last section with their separator, which gains keepNext (NOTE-10).
 #[derive(Clone)]
 pub struct JobNotes {
     pub numbers: HashMap<(NoteKind, i64), String>,
@@ -149,7 +131,6 @@ impl JobNotes {
     }
 }
 
-/// Whether a block holds a note reference (what [`JobNotes`] is derived from).
 pub fn has_note_refs(b: &Block) -> bool {
     match b {
         Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { .. })),
@@ -157,7 +138,6 @@ pub fn has_note_refs(b: &Block) -> bool {
     }
 }
 
-/// Note references in document order (body, then tables).
 fn collect_refs(blocks: &[Block], out: &mut Vec<(NoteKind, i64)>, seen: &mut HashSet<(NoteKind, i64)>) {
     for b in blocks {
         match b {
@@ -182,13 +162,11 @@ fn collect_refs(blocks: &[Block], out: &mut Vec<(NoteKind, i64)>, seen: &mut Has
     }
 }
 
-/// What a pass step reads besides its state, rebuilt for each `run` call (the document may only change between jobs).
 pub struct PassCx<'d> {
     pub doc: &'d Document,
     pub ctx: LayoutCtx<'d>,
     pub nodes: Vec<SectionNode<'d>>,
     pub notes: &'d JobNotes,
-    /// The STYLEREF keys the headers and footers show (usually none), and the paragraphs they look up.
     wanted: Vec<String>,
     paras: HashMap<ParaId, &'d Paragraph>,
 }
@@ -252,17 +230,12 @@ impl<'d> PassCx<'d> {
     }
 }
 
-/// NOTE-10 with columns: in a last section of several columns with endnotes, the body
-/// balances as before a continuous section break, and the endnotes start below its tallest column, in its first
-/// column. The block the endnotes start at, when that applies.
 pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
     let doc = cx.doc;
     (si + 1 == doc.sections.len() && doc.sections[si].section_in(doc.review.view).columns.num > 1 && !cx.notes.endnotes.is_empty())
         .then(|| doc.sections[si].blocks.len())
 }
 
-/// Whether section `si`'s body from `token` balances its last page (COL-5): before a continuous section, and the last
-/// section's body before its endnotes ([`endnote_split`]). Compat ≤ 14 `w:noColumnBalance` turns the first off.
 pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
     let doc = cx.doc;
     let nsec = doc.sections.len();
@@ -274,9 +247,6 @@ pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
         || endnote_split(cx, si).is_some_and(|e| token.flow.block < e)
 }
 
-/// Advances `run` by one step: a section start, one committed body (or one page reused from the baseline), or one
-/// composed page. A `Yield` leaves the cursor where it was: the step runs again on resume, its completed units
-/// cached.
 pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &mut Memos) -> Result<(), Yield> {
     let doc = cx.doc;
     let nsec = doc.sections.len();
@@ -292,7 +262,6 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             let mut top = y;
             if !continuous || p.run.pages.is_empty() {
                 if si > 0 {
-                    // Odd/even page breaks insert a blank page when needed (HDR-12); it counts in the numbering.
                     let next = p.run.page_number + 1;
                     let want_odd = match sec.break_kind {
                         SectionBreak::OddPage => Some(true),
@@ -310,11 +279,9 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
                     p.run.page_number = n - 1;
                 }
                 p.new_page(si, false);
-                // PARA-2, PAGE-7: a next-page section keeps its first space-before, less the previous paragraph's
-                // space-after (`prev_after`, kept for it).
                 carry.keep_top = true;
                 if sec.line_numbers.as_ref().is_some_and(|l| l.restart != "continuous") {
-                    carry.line_no = 0; // LNUM-2: newPage / newSection restart
+                    carry.line_no = 0;
                 }
                 carry.prev = None;
                 top = None;
@@ -333,7 +300,6 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
                 return memos.meter.page_done();
             }
             let balance = balances(cx, si, &token);
-            // Before the endnotes of a section in columns: the body alone, ending as a section does.
             let split = endnote_split(cx, si).filter(|&e| token.flow.block < e);
             let body_only;
             let node = match split {
@@ -354,14 +320,12 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             crate::prof::count(crate::prof::Piece::Page, crate::prof::Outcome::Laid);
             run.cursor = match next {
                 Next::Page(token) => Cursor::Body { si, token, top: None },
-                // The endnotes continue on the page, below the balanced body (as a continuous section starts).
                 Next::SectionEnd(carry, y) if let Some(e) = split => {
                     let flow = FlowToken { block: e, ..FlowToken::default() };
                     Cursor::Body { si, token: PageToken { section: si, flow, state: carry }, top: Some(y) }
                 }
                 Next::SectionEnd(carry, y) => Cursor::Section { si: si + 1, carry, y: Some(y) },
             };
-            // A page boundary: the body is committed, so a used-up budget can stop here.
             memos.meter.page_done()?;
         }
         Cursor::Compose(i) => {
@@ -380,7 +344,6 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
                 super::job::unit("composition", || compose_page(run, cx, i, memos))?;
             }
             run.cursor = Cursor::Compose(i + 1);
-            // Composed: a deadline can stop here (composition completes no layout unit of its own).
             if let Budget::Until(_) = memos.meter.budget() {
                 memos.meter.page_done()?;
             }
@@ -390,8 +353,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
     Ok(())
 }
 
-/// The header and footer values page `i` shows (HDR-10): page numbers, the page count, STYLEREF from the pass's pages
-/// and PAGEREF from its bookmarks. Set once composition starts.
+// Header and footer composition
 pub(crate) fn hf_fields(run: &PassRun, cx: &PassCx, i: usize) -> FieldValues {
     let pg = &run.pages[i];
     let si = pg.section;
@@ -407,7 +369,6 @@ pub(crate) fn hf_fields(run: &PassRun, cx: &PassCx, i: usize) -> FieldValues {
     }
 }
 
-/// The story parts page `i` shows (HDR-7, HDR-12): (header, footer).
 pub(crate) fn hf_parts<'d>(run: &PassRun, cx: &PassCx<'d>, i: usize) -> [Option<&'d String>; 2] {
     let pg = &run.pages[i];
     if pg.blank {
@@ -422,8 +383,6 @@ pub(crate) fn hf_parts<'d>(run: &PassRun, cx: &PassCx<'d>, i: usize) -> [Option<
     [part(false), part(true)]
 }
 
-/// Composes page `i`'s header and footer with final values. In the stabilizing pass each is cut to whole lines within
-/// the height its page's body was laid out with (FIELD-6).
 fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> Result<(), Yield> {
     let pg = &run.pages[i];
     if pg.blank {
@@ -473,7 +432,6 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
         } else {
             full[0] = Some(stack_limited(&l, left, s.header, limit).1 + hook_height(k));
             let (mut children, height) = if limit.is_infinite() && !clip && s.header + l.height > 0.85 * s.page_h {
-                // HDR-8: a very tall compat-15 header is drawn only down to 0.435 × page height.
                 let cut = 0.435 * s.page_h;
                 let mut c = Vec::new();
                 for u in l.units.iter().take_while(|u| s.header + u.top < cut) {
@@ -501,15 +459,11 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
     Ok(())
 }
 
-/// A finished job: the committed pages, their fragments and the layout status.
 pub struct Finished {
     pub records: Vec<PageRecord>,
     pub pages: Vec<(Rc<PageFragment>, PageMeta)>,
     pub status: LayoutStatus,
-    /// The number of passes that ran.
     pub passes: usize,
-    /// The field values the last pass started from: the previous pass's, or a seed's ([`LayoutJob::seed`]); empty for
-    /// a layout done in one pass from nothing.
     pub known: Rc<PassInfo>,
 }
 
@@ -519,16 +473,11 @@ impl Finished {
     }
 }
 
-/// A layout of one document revision, run in steps under a budget: passes until convergence, then the
-/// stabilizing pass if needed. Owns its state, so it survives between `run` calls; the document must not change
-/// while it runs.
 pub struct LayoutJob {
     pub revision: Revision,
     notes: JobNotes,
-    /// The document has page-dependent body fields (FIELD-1), which take the previous pass's values.
     body_fields: bool,
     pub(crate) run: PassRun,
-    /// Composed heights of every finished pass.
     history: Vec<Vec<HfHeights>>,
     finished: Option<Finished>,
 }
@@ -538,8 +487,6 @@ impl LayoutJob {
         LayoutJob::with_notes(revision, JobNotes::new(doc), crate::docx::fields::page_dependent(doc))
     }
 
-    /// A job with what [`LayoutJob::new`] derives from the whole document already known (an incremental job whose
-    /// edit changed neither: the scans grow with the document).
     pub fn with_notes(revision: Revision, notes: JobNotes, body_fields: bool) -> LayoutJob {
         LayoutJob {
             revision,
@@ -555,8 +502,6 @@ impl LayoutJob {
         self.finished.as_ref()
     }
 
-    /// Starts the first pass from a converged layout's values (`known`: its fields; `hf_in`: its composed header and
-    /// footer heights) instead of none: when the edit changes neither, that pass agrees with them and is the last.
     pub fn seed(&mut self, known: PassInfo, hf_in: Vec<HfHeights>) {
         self.run = PassRun::new(1, Rc::new(known), Rc::new(hf_in), false);
     }
@@ -565,22 +510,18 @@ impl LayoutJob {
         self.finished
     }
 
-    /// What the job derived from the document's note references.
     pub fn job_notes(&self) -> &JobNotes {
         &self.notes
     }
 
-    /// Note numbers of the job's document.
     pub fn note_numbers(&self) -> &HashMap<(NoteKind, i64), String> {
         &self.notes.numbers
     }
 
-    /// The endnotes in reference order (NOTE-10), as appended to the last section.
     pub fn endnotes(&self) -> &[i64] {
         &self.notes.endnotes
     }
 
-    /// The pages committed so far in the current pass.
     pub fn committed(&self) -> &[PageRecord] {
         match &self.finished {
             Some(f) => &f.records,
@@ -588,8 +529,6 @@ impl LayoutJob {
         }
     }
 
-    /// Runs until the job finishes or `budget` is used up (at least one atomic unit completes). `reuse` offers baseline
-    /// pages to the first pass.
     pub fn run(&mut self, doc: &Document, ctx: &LayoutCtx, cache: &mut LayoutCache, mut reuse: Option<&mut Reuse>, budget: Budget) -> Step {
         if self.finished.is_some() {
             return Step::Done;
@@ -617,9 +556,6 @@ impl LayoutJob {
         step_result
     }
 
-    /// Composes the headers and footers of committed pages that have none yet, with provisional values (the page count
-    /// is at least `pages`): what a pending snapshot shows. The pass's own composition recomposes every page with final
-    /// values.
     pub fn compose_committed(&mut self, doc: &Document, ctx: &LayoutCtx, cache: &mut LayoutCache, pages: usize) {
         if self.finished.is_some() || self.run.info.is_some() {
             return;
@@ -642,7 +578,6 @@ impl LayoutJob {
                 if (pg.bodies.is_empty() && !pg.blank) || pg.hf_boxes.iter().any(Option::is_some) {
                     continue;
                 }
-                // Without a budget a composition can't yield.
                 let _ = compose_page(run, &cx, i, &mut memos);
             }
             run.info = None;
@@ -650,8 +585,6 @@ impl LayoutJob {
         self.notes = notes;
     }
 
-    /// Ends the current pass: finishes the job when the layout converged (or the stabilizing pass ran), else starts the
-    /// next pass. Returns whether the job finished.
     fn end_pass(&mut self, doc: &Document) -> bool {
         let run = &self.run;
         let info = run.info.clone().unwrap_or_default();
@@ -668,8 +601,6 @@ impl LayoutJob {
                 self.run = PassRun::new(run.k + 1, Rc::new(info), Rc::new(composed), false);
                 return false;
             }
-            // The stabilizing pass (FIELD-6). Pages no earlier pass reached measure their stories with this pass's
-            // values.
             let n = self.history.iter().map(Vec::len).max().unwrap_or(0);
             let reserve: Vec<HfHeights> = (0..n)
                 .map(|i| {
@@ -717,14 +648,11 @@ impl LayoutJob {
     }
 }
 
-/// Whether a page shows a body field that takes the previous pass's value (NUMPAGES, SECTIONPAGES, PAGEREF).
 fn shows_pass_fields(doc: &Document, pg: &PageRecord) -> bool {
     let _ = doc;
     pg.bodies.iter().any(|b| b.fields.num_pages.is_some() || b.fields.section_pages.is_some() || b.fields.page_refs.is_some())
 }
 
-/// The pages whose composed header or footer overlaps the body where the rules make the body depend on them (HDR-4 to
-/// HDR-6; HDR-5's negative margins are exempt by rule).
 fn verify(doc: &Document, records: &[PageRecord]) -> Vec<usize> {
     let mut bad = Vec::new();
     for (i, pg) in records.iter().enumerate() {
@@ -740,8 +668,6 @@ fn verify(doc: &Document, records: &[PageRecord]) -> Vec<usize> {
     bad
 }
 
-/// Text pushed entirely below its page (HDR-9), by page: what the traversals leave out. Each body's list is computed
-/// once and moves with the body.
 pub(crate) fn excluded(records: &[PageRecord]) -> Vec<(usize, ParaId, std::ops::Range<Unit>)> {
     let mut out = Vec::new();
     for (i, pg) in records.iter().enumerate() {
@@ -752,9 +678,6 @@ pub(crate) fn excluded(records: &[PageRecord]) -> Vec<(usize, ParaId, std::ops::
     out
 }
 
-/// PAGEREF: each bookmark's page number, from the page where its paragraph starts (the last one placed wins).
-/// What a pass's pages give its page-dependent fields: the page count, each section's page count and the pages
-/// bookmarks are on.
 fn pass_info(pages: &[PageRecord], nsec: usize) -> PassInfo {
     PassInfo {
         num_pages: Some(pages.len().to_string()),
@@ -773,7 +696,6 @@ fn bookmark_pages(pages: &[PageRecord]) -> HashMap<String, String> {
     out
 }
 
-/// A page's fragment from its record: the bodies, then the header and footer.
 pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragment>, PageMeta) {
     let mut children: Vec<PageChild> = pg.bodies.iter().map(|b| PageChild::Body(b.body.clone())).collect();
     if let Some(h) = &pg.hf_boxes[0] {
@@ -786,7 +708,6 @@ pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragm
     (Rc::new(page), PageMeta { section: pg.section, number: pg.number, section_page, blank: pg.blank })
 }
 
-/// STYLEREF in a header or footer on page `i` (FIELD-2), for every key in `wanted`.
 fn style_refs(wanted: &[String], pages: &[PageRecord], paras: &HashMap<ParaId, &Paragraph>, i: usize) -> Vec<(String, String)> {
     if wanted.is_empty() {
         return Vec::new();

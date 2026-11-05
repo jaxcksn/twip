@@ -1,7 +1,4 @@
-//! Table structure commands: rows and columns inserted
-//! and deleted, cells merged and split, tables inserted and deleted. Each command edits the targeted table only, the
-//! innermost one at the caret, through one `Rows` step for the whole table (or `Blocks` for a table inserted or
-//! removed), so undo restores it exactly and kept paragraphs keep their positions.
+//! Table structure commands
 
 use crate::api::command::TablePosition;
 use crate::docx::props::{Jc, TableAnchor, TablePos};
@@ -17,7 +14,6 @@ use super::selection::{CellRef, Selection};
 use super::step::{Step, para_len};
 use super::table::Grid;
 
-/// Where a structure command applies: a table and a rectangle of grid rows and columns.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Target {
     pub table: TableId,
@@ -25,13 +21,10 @@ pub(super) struct Target {
     pub cols: (usize, usize),
 }
 
-/// An empty cell like `like`: its properties, one empty paragraph in its first paragraph's formatting.
 pub(super) fn empty_cell(like: &Cell) -> Cell {
     let mut c = like.clone();
     c.v_merge = VMerge::None;
-    // A new cell is in no cell-level control: a control wraps one place.
     c.controls = Vec::new();
-    // Every cell ends with a paragraph (invariant 1): its formatting is the new cell's.
     let Some(p) = like.blocks.iter().rev().find_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) else { return c };
     c.blocks = vec![Block::Para(Paragraph {
         style: p.style.clone(),
@@ -53,7 +46,6 @@ fn first_para(blocks: &[Block]) -> Option<ParaId> {
 }
 
 impl Editor {
-    /// The innermost table at the selection, and the grid rectangle it covers (a caret: its cell).
     pub(super) fn table_target(&self) -> Option<Target> {
         if let Selection::Cells { table, anchor, focus, .. } = self.selection {
             let t = self.index.table(&self.doc, table)?;
@@ -74,7 +66,6 @@ impl Editor {
             Some((c, c + s - 1))
         };
         let (fc0, fc1) = span(level.row, level.cell)?;
-        // A text selection whose other end is in another cell of the same table covers both.
         let other = self.index.chain_of(&anchor).into_iter().find(|l| l.table == level.table);
         let (ar, (ac0, ac1)) = match other {
             Some(l) => (l.row, span(l.row, l.cell).unwrap_or((fc0, fc1))),
@@ -83,7 +74,6 @@ impl Editor {
         Some(Target { table: level.table, rows: (ar.min(level.row), ar.max(level.row)), cols: (ac0.min(fc0), ac1.max(fc1)) })
     }
 
-    /// Replaces a table's rows and grid in one step, then puts the caret at the start of cell (`row`, grid `col`).
     pub(super) fn rebuild(
         &mut self,
         label: &'static str,
@@ -114,8 +104,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Alt+Shift+Up / Alt+Shift+Down: the target rows change places with the row above or below them,
-    /// in one step; the selection moves with them. Rows with vertically merged cells don't move (the merge would split).
     pub(super) fn move_rows(&mut self, up: bool, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
@@ -125,7 +113,6 @@ impl Editor {
             return Outcome::Unchanged("at the table's edge");
         }
         let (a, b) = if up { (r0 - 1, r1) } else { (r0, r1 + 1) };
-        // shortcut: rows in a vertical merge stay, rather than splitting or carrying the merge.
         if t.rows[a..=b].iter().any(|r| r.cells.iter().any(|c| c.v_merge != VMerge::None)) {
             return Outcome::Unchanged("vertically merged cells");
         }
@@ -142,7 +129,6 @@ impl Editor {
             return Outcome::Unchanged("table edit failed");
         }
         tx.stale_tables.push(table);
-        // The moved rows are selected.
         let (n0, n1) = if up { (r0 - 1, r1 - 1) } else { (r0 + 1, r1 + 1) };
         let last = self.index.table(&self.doc, table).map_or(0, |t| Grid::of(t).cols.saturating_sub(1));
         self.selection = Selection::Cells {
@@ -154,13 +140,9 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// A double-click on a column border: the column to its left fits its content (the widest line of
-    /// its cells unwrapped, plus the cell margins); the other columns keep their widths, so the table's width changes.
-    /// It grows at most until the table reaches the text width plus the outer cell padding.
     pub(super) fn auto_fit_column(&mut self, table: TableId, col: usize, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let g = Grid::of(t);
-        // The column's single-span cells: their paragraphs and margins.
         let mut paras: Vec<(crate::layout::ParaId, f64)> = Vec::new();
         for (r, row) in t.rows.iter().enumerate() {
             for (k, cell) in row.cells.iter().enumerate() {
@@ -179,7 +161,6 @@ impl Editor {
             return Outcome::Unchanged("no cell of its own in the column");
         }
         let (old_w, total, nrows) = (t.grid.get(col).copied(), t.grid.iter().sum::<f64>(), t.rows.len());
-        // Each paragraph unwrapped: the sum of its laid-out lines' widths.
         let mut lines: std::collections::HashMap<crate::layout::ParaId, f64> = std::collections::HashMap::new();
         for (_, geo) in self.page_geometries() {
             for l in geo.lines.iter().filter(|l| !l.repeat) {
@@ -191,11 +172,9 @@ impl Editor {
         }
         let margins = paras.iter().map(|(_, m)| *m).fold(0.0, f64::max);
         let content = paras.iter().map(|(p, m)| lines.get(p).copied().unwrap_or(0.0) + m).fold(0.0, f64::max);
-        // At least the margins plus 4.5 pt.
         let mut w = content.max(margins + 4.5);
         let old = old_w.unwrap_or(w);
         let avail = self.index.table_slot(table).map_or(468.0, |s| self.text_width(s.container)) + margins + 1.0;
-        // shortcut: the cap is one measured case (text width + padding); the exact limit may differ.
         if w > old {
             w = w.min(old + (avail - total).max(0.0));
         }
@@ -207,11 +186,7 @@ impl Editor {
         self.table_format_on(target, &super::table_format::TableFormat::ColumnWidth(w), fonts)
     }
 
-    /// New rows copied from a row in a repeating section are items of their own: each repeating-item control
-    /// they carry becomes a copy with a new id (its `w:id` too); the section itself is shared. An item in `inside`
-    /// (the new rows went in between two of its rows) is kept: the rows join it, which stays one run of rows (C2).
     pub(super) fn fresh_items(&mut self, rows: &mut [Row], inside: &[crate::docx::ControlId]) {
-        // New `w:id`s (signed 32-bit numbers) past the document's largest: unique, and the same on every run.
         let given = |c: &crate::docx::Control| sdt_id_at(&c.open).and_then(|r| c.open[r].parse::<i64>().ok());
         let mut next = self.doc.controls.values().chain(self.pending_controls.iter().map(|(_, c)| c)).filter_map(given).max().unwrap_or(0);
         for row in rows {
@@ -224,9 +199,7 @@ impl Editor {
                 };
                 let n = crate::docx::ControlId::next();
                 let mut c = c;
-                // The control's own `w:id`: unique again.
                 if let Some(r) = sdt_id_at(&c.open) {
-                    // shortcut: past i32::MAX the ids wrap to 1 and may repeat one in the document.
                     next = if next >= 0x7fff_ffff { 1 } else { next + 1 };
                     c.open.replace_range(r, &next.to_string());
                 }
@@ -236,8 +209,6 @@ impl Editor {
         }
     }
 
-    /// Insert Rows Above / Below (n rows like the target's first or last row, empty). A vertical merge the new rows
-    /// fall inside extends over them.
     pub(super) fn insert_rows(&mut self, below: bool, n: usize, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
@@ -260,7 +231,6 @@ impl Editor {
         }
         let mut rows = t.rows.clone();
         let pos = if below { at + 1 } else { at };
-        // With several rows selected, as many rows go in.
         let n = n.max(tg.rows.1 - tg.rows.0 + 1);
         for _ in 0..n {
             let mut r = row.clone();
@@ -268,7 +238,6 @@ impl Editor {
             rows.insert(pos, r);
         }
         let grid = t.grid.clone();
-        // Controls the rows on both sides share: the new rows are inside them.
         let inside: Vec<crate::docx::ControlId> = match (pos.checked_sub(1).and_then(|k| rows.get(k)), rows.get(pos + n)) {
             (Some(a), Some(b)) => a.controls.iter().copied().filter(|c| b.controls.contains(c)).collect(),
             _ => Vec::new(),
@@ -277,14 +246,10 @@ impl Editor {
         self.rebuild("Insert Rows", tg.table, rows, grid, (pos, tg.cols.0), fonts)
     }
 
-    /// Insert Columns Left / Right of the target: one empty grid column per column it covers, as wide as the column
-    /// beside it, in every row (a cell spanning across the insertion point widens).
     pub(super) fn insert_columns(&mut self, right: bool, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
         let g = Grid::of(t);
-        // One new column per selected cell of the target's first row, as wide as that cell (from a cell
-        // spanning two columns, one column as wide as both).
         let widths: Vec<f64> = g.rows[tg.rows.0]
             .iter()
             .filter(|&&(c, s, _)| c + s > tg.cols.0 && c <= tg.cols.1)
@@ -304,8 +269,6 @@ impl Editor {
                 row.grid_before += count;
                 continue;
             }
-            // The new cells go where the insertion point is; inside a spanning cell, before it: it keeps its span and
-            // moves right.
             let cells = &g.rows[r];
             {
                 {
@@ -326,8 +289,6 @@ impl Editor {
         self.rebuild("Insert Columns", tg.table, rows, grid, (tg.rows.0, at), fonts)
     }
 
-    /// Delete Rows: the target's rows go; a vertical merge starting in a deleted row starts, empty, in the next kept
-    /// row: the merged content goes with the row. All rows: the table goes.
     pub(super) fn delete_rows(&mut self, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
@@ -354,13 +315,11 @@ impl Editor {
         rows.drain(tg.rows.0..=tg.rows.1);
         rows.iter_mut().for_each(|r| r.src = None);
         let grid = t.grid.clone();
-        // The caret goes to the first cell of the row that took the deleted rows' place.
         let at = tg.rows.0.min(rows.len().saturating_sub(1));
         let first = rows.get(at).map_or(0, |r| r.grid_before);
         self.rebuild("Delete Rows", tg.table, rows, grid, (at, first), fonts)
     }
 
-    /// Delete Columns: the grid columns the target covers go; a cell spanning more narrows. All columns: the table.
     pub(super) fn delete_columns(&mut self, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
@@ -375,7 +334,6 @@ impl Editor {
             row.src = None;
             let cut = |a: usize, b: usize| b.min(c1 + 1).saturating_sub(a.max(c0));
             row.grid_before -= cut(0, row.grid_before);
-            // The trailing gap loses the deleted columns it covers too.
             row.grid_after -= cut(g.cols.saturating_sub(row.grid_after), g.cols);
             let mut cells = Vec::new();
             for (k, cell) in row.cells.iter().enumerate() {
@@ -402,7 +360,6 @@ impl Editor {
         self.rebuild("Delete Columns", tg.table, rows, grid, (tg.rows.0, c0.saturating_sub(1)), fonts)
     }
 
-    /// Delete Table: the innermost table at the selection goes; the caret goes to what followed it.
     pub(super) fn delete_table(&mut self, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(slot) = self.index.table_slot(tg.table) else { return Outcome::Unchanged("no table") };
@@ -412,7 +369,6 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("delete failed");
         }
-        // The block that took the table's place (a container always ends with a paragraph).
         let next = self
             .index
             .blocks(&self.doc, slot.container)
@@ -424,7 +380,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Merge Cells: the target rectangle becomes one cell, its content every merged cell's in reading order.
     pub(super) fn merge_cells(&mut self, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         if tg.rows.0 == tg.rows.1 && tg.cols.0 == tg.cols.1 {
@@ -436,7 +391,6 @@ impl Editor {
         }
         let g = Grid::of(t);
         let (c0, c1) = tg.cols;
-        // The rectangle must not cut a cell: each row's cells in it start and end on its edges.
         for r in tg.rows.0..=tg.rows.1 {
             for &(c, s, _) in &g.rows[r] {
                 let inside = c >= c0 && c + s - 1 <= c1;
@@ -462,7 +416,6 @@ impl Editor {
             }
             let width: f64 = (c0..=c1).filter_map(|c| t.grid.get(c)).sum();
             let mut merged = row.cells[first].clone();
-            // The merged cell keeps the first cell-level controls among those merged.
             merged.controls = ks.iter().map(|&k| &t.rows[r].cells[k].controls).find(|c| !c.is_empty()).cloned().unwrap_or_default();
             merged.span = c1 - c0 + 1;
             merged.width = Some(crate::docx::props::Width::Dxa(width));
@@ -479,7 +432,6 @@ impl Editor {
         if content.is_empty() {
             content = empty_cell(&t.rows[tg.rows.0].cells[0]).blocks;
         }
-        // A merged cell's content ends with a paragraph (invariant 1).
         if matches!(content.last(), Some(Block::Table(_))) {
             content.extend(empty_cell(&t.rows[tg.rows.0].cells[0]).blocks);
         }
@@ -490,8 +442,6 @@ impl Editor {
         self.rebuild("Merge Cells", tg.table, rows, grid, (tg.rows.0, c0), fonts)
     }
 
-    /// Split Cells into `cols` columns (one row): the cell's span is divided, or grid columns are added inside it
-    /// (other rows' cells over them widen to keep their shape). The content stays in the first new cell.
     pub(super) fn split_cell(&mut self, cols: usize, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         if cols < 2 {
@@ -506,7 +456,6 @@ impl Editor {
         let mut rows = t.rows.clone();
         let added = cols.saturating_sub(s);
         if added > 0 {
-            // New grid columns share the cell's last column's width.
             let last = c + s - 1;
             let w = grid.get(last).copied().unwrap_or(72.0) / (added + 1) as f64;
             grid[last] = w;
@@ -542,8 +491,6 @@ impl Editor {
         self.rebuild("Split Cells", tg.table, rows, grid, (r, c), fonts)
     }
 
-    /// Insert Table (rows × cols) at the caret: before the caret's paragraph when the caret is at its start, else after
-    /// splitting it there; in the "Table Grid" style when the document has it, columns sharing the text width.
     pub(super) fn insert_table(&mut self, nrows: usize, ncols: usize, fonts: &Fonts) -> Outcome {
         let Some(caret) = self.caret() else { return Outcome::Unchanged("no caret") };
         let Some((para, at)) = caret.para_offset() else { return Outcome::Unchanged("caret at a row end") };
@@ -581,7 +528,6 @@ impl Editor {
             controls: Vec::new(),
             rev: Default::default(),
         };
-        // Whole twips, the file's precision.
         let w = (width / ncols as f64 * 20.0).floor() / 20.0;
         let table = Table {
             style_id: grid_style.then(|| "TableGrid".to_string()),
@@ -621,7 +567,6 @@ impl Editor {
             src: None,
             id: crate::docx::next_para_id(),
             direct: Default::default(),
-            // A table put inside a block-level control is in it too.
             controls: p.controls.clone(),
             change: None,
             grid_change: None,
@@ -634,10 +579,8 @@ impl Editor {
         let place = if at == Unit(0) {
             slot.block
         } else if at == len && followed {
-            // At a paragraph's end with something after it: the table goes right after the paragraph.
             slot.block + 1
         } else {
-            // Split the paragraph at the caret; the table goes between the halves.
             let Some(second) = self.split_template(para) else { return Outcome::Unchanged("no paragraph") };
             if self.step(&mut tx, Step::Split { para, at, second }).is_err() {
                 self.abort(tx);
@@ -656,7 +599,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// The width text has in a container: the section's text column, or a cell's content width.
     pub(super) fn text_width(&self, container: Container) -> f64 {
         match container {
             Container::Cell { table, row, cell } => self
@@ -673,7 +615,6 @@ impl Editor {
         }
     }
 
-    /// Select Cell, Row, Column: a cell block over the target's cells, its rows' whole width, or its columns' height.
     pub(super) fn select_cells(&mut self, shape: super::selection::CellShape) -> Outcome {
         use super::selection::CellShape;
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
@@ -689,13 +630,10 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Ctrl+Shift+Enter in a table: the table splits above the caret's row, an empty paragraph between the
-    /// two holding the caret; in the first row, an empty paragraph goes above the table instead.
     pub(super) fn split_table(&mut self, fonts: &Fonts) -> Outcome {
         let Some(focus) = self.caret() else { return Outcome::Unchanged("no caret") };
         let Some(level) = self.index.chain_of(&focus).last().copied() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, level.table).cloned() else { return Outcome::Unchanged("no table") };
-        // A region with rows on both sides of the split would be cut in two.
         if level.row > 0 && t.rows[level.row].controls.iter().any(|c| t.rows[level.row - 1].controls.contains(c)) {
             return self.region_boundary();
         }
@@ -721,7 +659,6 @@ impl Editor {
         lower.rows = t.rows[level.row..].to_vec();
         lower.src = None;
         lower.id = crate::docx::next_para_id();
-        // A merge continuing across the split starts again in the lower table.
         let g = Grid::of(&t);
         for (k, c) in lower.rows[0].cells.iter_mut().enumerate() {
             if g.continues(level.row, k) {
@@ -751,8 +688,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Delete (`clear`) and Backspace on a cell block: Delete empties the cells; Backspace deletes the whole
-    /// table, whole rows or whole columns, and on any other block would open the Delete Cells dialog.
     pub(super) fn delete_cells(&mut self, clear: bool, fonts: &Fonts) -> Option<Outcome> {
         let Selection::Cells { table, anchor, focus, .. } = self.selection else { return None };
         let t = self.index.table(&self.doc, table)?;
@@ -785,8 +720,6 @@ impl Editor {
         Some(self.rebuild("Clear", table, rows, grid, (r, c), fonts))
     }
 
-    /// Shift+Alt+Home/End (`row`) and Shift+Alt+Page Up/Down: a cell block from the current cell (or the
-    /// block's anchor) to the row's first or last cell, or the column's top or bottom cell.
     pub(super) fn select_to_edge(&mut self, row_wise: bool, end: bool) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
@@ -805,7 +738,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// A cell block over the whole innermost table at the selection (Select Table).
     pub(super) fn select_table(&mut self) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
@@ -820,9 +752,6 @@ impl Editor {
     }
 }
 
-/// Whether rows `r0..=r1` of `t` cut across a row-level control (a repeating section or item): one holds rows
-/// both in the range and outside it, without the range taking all of it. With `within`, any control the range takes
-/// rows of and that doesn't hold the whole range counts (a vertical merge stays inside one item).
 pub(super) fn cuts_region(t: &Table, r0: usize, r1: usize, within: bool) -> bool {
     let mut ids: Vec<crate::docx::ControlId> = t.rows.iter().flat_map(|r| r.controls.iter().copied()).collect();
     ids.sort_unstable();
@@ -836,8 +765,6 @@ pub(super) fn cuts_region(t: &Table, r0: usize, r1: usize, within: bool) -> bool
     })
 }
 
-/// A table's first position: across from the margin and down from the text where it stood, 9 pt from the text on its
-/// left and right.
 pub(super) const NEW_POSITION: TablePos = TablePos {
     v_anchor: TableAnchor::Text,
     y: 0.0,
@@ -850,14 +777,12 @@ pub(super) const NEW_POSITION: TablePos = TablePos {
     never_overlap: false,
 };
 
-/// Points in whole twips, as the file keeps them.
 fn twips(v: f64) -> f64 {
     (v * 20.0).round() / 20.0
 }
 
 impl Editor {
-    /// A "+" above grid boundary `k`: column `k` − 1 selected (column 0 at the left edge), a column inserted right of
-    /// it (left of column 0), then the new column selected. One step.
+    // Insert buttons
     pub(super) fn insert_column_at(&mut self, table: TableId, k: usize, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let (cols, rows) = (Grid::of(t).cols, t.rows.len());
@@ -879,8 +804,6 @@ impl Editor {
         out
     }
 
-    /// A "+" left of the bottom border of row `k` − 1: that row selected, a row inserted below it, then the new row
-    /// selected. One step.
     pub(super) fn insert_row_at(&mut self, table: TableId, k: usize, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let (cols, rows) = (Grid::of(t).cols, t.rows.len());
@@ -901,7 +824,7 @@ impl Editor {
         out
     }
 
-    /// The position of the innermost table at the selection, when it has one.
+    // Table position
     pub(super) fn table_position(&self) -> Option<TablePosition> {
         use crate::api::value::{
             HorizontalPosition, HorizontalReference as H, ObjectHorizontalAlignment as HA, ObjectVerticalAlignment as VA, Points, VerticalPosition,
@@ -921,7 +844,6 @@ impl Editor {
             }),
             offset: p.x_spec.is_none().then_some(Points(p.x)),
         };
-        // Against the text an alignment is the offset it is read as.
         let y_spec = p.y_spec.filter(|_| p.v_anchor != TableAnchor::Text);
         let vertical = VerticalPosition {
             relative_to: match p.v_anchor {
@@ -944,9 +866,6 @@ impl Editor {
         })
     }
 
-    /// Table Position: the innermost table at the selection positioned (a table without a position gets one across
-    /// from the margin and down from the text), or put back in the text (`None`). An axis given with neither an
-    /// alignment nor an offset keeps the table where it is drawn, measured from its new reference. One step.
     pub(super) fn set_table_position(&mut self, p: Option<TablePosition>, fonts: &Fonts) -> Outcome {
         use crate::api::value::{HorizontalReference as H, ObjectHorizontalAlignment as HA, ObjectVerticalAlignment as VA, VerticalReference as V};
         let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
@@ -986,7 +905,6 @@ impl Editor {
             };
             match (v.align, v.offset) {
                 (Some(a), _) => {
-                    // TABLE-49: against the text an alignment is its stored code taken as a twip offset.
                     let (jc, code) = match a {
                         VA::Top => (Jc::Left, -4.0),
                         VA::Center => (Jc::Center, -8.0),
@@ -1016,8 +934,6 @@ impl Editor {
         }
     }
 
-    /// Positions `table` as `pos`; on each axis with a place in `keep` (page `page`'s coordinates), by the offset that
-    /// draws its top left there. One step.
     pub(super) fn position_table(
         &mut self,
         table: TableId,
@@ -1035,7 +951,6 @@ impl Editor {
         }
         self.begin_batch(Some(label.into()));
         self.set_floating(table, Some(pos), fonts);
-        // Where the new position draws it, moved by the difference.
         self.ensure_page(page, fonts);
         if let Some(now) = self.pages.page(page, &self.index).and_then(|g| table_on(&g, table)) {
             if let Some(x) = keep[0] {
@@ -1049,7 +964,6 @@ impl Editor {
         self.end_batch(true, fonts)
     }
 
-    /// A table's position replaced, in one step of its own.
     fn set_floating(&mut self, table: TableId, floating: Option<TablePos>, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let mut props = super::step::TableProps::of(t);
@@ -1065,7 +979,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Where a table is drawn: the nearest page drawing its first row, and its box there.
     pub(super) fn table_box(&mut self, table: TableId, fonts: &Fonts) -> Option<(usize, [f64; 4])> {
         let n = self.pages.len();
         let near = self.near;
@@ -1076,14 +989,12 @@ impl Editor {
         })
     }
 
-    /// A table edit refused because it cuts a region: refused `region boundary`.
     pub(super) fn region_boundary(&mut self) -> Outcome {
         self.refused = Some("region boundary");
         Outcome::Unchanged("region boundary")
     }
 }
 
-/// A table's box on a page: around its rows drawn there (repeated header rows aside).
 pub(super) fn table_on(geo: &super::geometry::PageGeometry, table: TableId) -> Option<[f64; 4]> {
     geo.rows
         .iter()
@@ -1092,7 +1003,6 @@ pub(super) fn table_on(geo: &super::geometry::PageGeometry, table: TableId) -> O
         .reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])])
 }
 
-/// Where a control's start markup gives its `w:id` value.
 fn sdt_id_at(open: &str) -> Option<std::ops::Range<usize>> {
     let k = open.find(":id ").or_else(|| open.find("<w:id "))?;
     let v = k + open[k..].find("val=\"")? + 5;

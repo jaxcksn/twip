@@ -1,16 +1,11 @@
-// Repository hygiene: planning ids (tasks, requirements, observations) mean nothing outside the prototype's specs, the
-// rulebook states behaviour (no word processor names, evidence or confidence wording, or fixtures), and CI's job plan
-// (.moon/ci-plan.json) lists exactly the tasks moon runs in CI. Exits 1, with what it found, otherwise.
+// Repository hygiene: planning ids (tasks, requirements, observations) mean nothing outside the prototype's specs, and
+// CI's job plan (.moon/ci-plan.json) lists exactly the tasks moon runs in CI. Exits 1, with what it found, otherwise.
 // Run: node tests/hygiene.mjs
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const checks = [
   ['Planning ids', ['-nIE', String.raw`\bT[0-9]{3}\b|\b(FR|SC|OBS|WB)-[0-9]+\b|\(R[0-9]+\)|[;,] R[0-9]+\)`, '--', ':!tests/hygiene.mjs']],
-  [
-    'Rulebook wording',
-    ['-nIiP', String.raw`\bword\b(?! ?(break|boundar|wrap))|microsoft|\boffice\b|measur|observ|inferr|confirm|evidence|research|experiment|harness|fixture|\[[MCI]\]`, '--', 'docs/docs/rulebook/*.md'],
-  ],
 ];
 let failed = false;
 for (const [name, args] of checks) {

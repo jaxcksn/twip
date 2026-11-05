@@ -1,4 +1,4 @@
-//! DrawingML colours (DRAW-6, DRAW-7): a base colour in one of six models and the transforms applied to it in order.
+//! DrawingML colours
 
 use roxmltree::Node;
 
@@ -6,7 +6,6 @@ use super::theme::{ColourMap, Theme};
 use super::units::{Angle, Pct};
 use crate::docx::xml::A;
 
-/// A resolved colour: sRGB with alpha, 0–255 each.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Rgba {
     pub r: u8,
@@ -19,23 +18,19 @@ impl Rgba {
     pub const BLACK: Rgba = Rgba { r: 0, g: 0, b: 0, a: 255 };
     pub const WHITE: Rgba = Rgba { r: 255, g: 255, b: 255, a: 255 };
 
-    /// `0xRRGGBB`, opaque.
     pub fn rgb(v: u32) -> Rgba {
         Rgba { r: (v >> 16) as u8, g: (v >> 8) as u8, b: v as u8, a: 255 }
     }
 
-    /// `0xRRGGBB` (alpha dropped).
     pub fn to_rgb(self) -> u32 {
         (u32::from(self.r) << 16) | (u32::from(self.g) << 8) | u32::from(self.b)
     }
 
-    /// The same colour at `alpha` (0–1) of its own alpha.
     pub fn faded(self, alpha: f64) -> Rgba {
         Rgba { a: (f64::from(self.a) * alpha.clamp(0.0, 1.0)).round() as u8, ..self }
     }
 }
 
-/// A theme colour slot, as `a:schemeClr/@val` names it. `Bg1`–`Tx2` go through the colour map to `Dk1`–`Lt2`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SchemeSlot {
     Bg1,
@@ -49,7 +44,6 @@ pub enum SchemeSlot {
     Accent(u8),
     Hlink,
     FolHlink,
-    /// `phClr`: the colour of the style reference that uses the theme entry (DRAW-8).
     Placeholder,
 }
 
@@ -90,7 +84,6 @@ impl SchemeSlot {
         }
     }
 
-    /// The index of a concrete slot in [`Theme::colours`] (dk1, lt1, dk2, lt2, accent1–6, hlink, folHlink).
     pub fn theme_index(self) -> Option<usize> {
         use SchemeSlot::*;
         Some(match self {
@@ -106,33 +99,16 @@ impl SchemeSlot {
     }
 }
 
-/// The base of a colour.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ColourBase {
-    /// `a:srgbClr` (and `a:sysClr`'s `lastClr`, `a:prstClr` resolved to its value).
     Srgb(u32),
-    /// `a:scrgbClr`: linear RGB, 100000ths.
     ScRgb([Pct; 3]),
-    /// `a:hslClr`: hue (60000ths of a degree), saturation and luminance (100000ths).
-    Hsl {
-        hue: Angle,
-        sat: Pct,
-        lum: Pct,
-    },
-    /// `a:sysClr`: a system colour name and the value last seen for it.
-    Sys {
-        name: String,
-        last: u32,
-    },
-    /// `a:prstClr`: a preset colour name and its value.
-    Preset {
-        name: String,
-        value: u32,
-    },
+    Hsl { hue: Angle, sat: Pct, lum: Pct },
+    Sys { name: String, last: u32 },
+    Preset { name: String, value: u32 },
     Scheme(SchemeSlot),
 }
 
-/// A colour transform (ECMA-376 § 20.1.2.3), applied in document order.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ColourMod {
     Tint(Pct),
@@ -204,7 +180,6 @@ impl ColourMod {
     }
 }
 
-/// A DrawingML colour: a base and its transforms.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Colour {
     pub base: ColourBase,
@@ -225,7 +200,6 @@ impl Colour {
         self
     }
 
-    /// A colour element (`a:srgbClr`, `a:scrgbClr`, `a:hslClr`, `a:sysClr`, `a:prstClr`, `a:schemeClr`).
     pub fn parse(n: Node) -> Option<Colour> {
         if n.tag_name().namespace() != Some(A) {
             return None;
@@ -253,13 +227,10 @@ impl Colour {
         Some(Colour { base, mods })
     }
 
-    /// The first colour element among `n`'s children (a fill's or a stop's colour).
     pub fn child_of(n: Node) -> Option<Colour> {
         n.children().filter(|c| c.is_element()).find_map(Colour::parse)
     }
 
-    /// DRAW-6: the colour in sRGB with alpha. Theme slots go through `map` to `theme`; `phClr` is `placeholder`
-    /// (black without one).
     pub fn resolve(&self, theme: &Theme, map: &ColourMap, placeholder: Option<Rgba>) -> Rgba {
         let base = match &self.base {
             ColourBase::Srgb(v) | ColourBase::Sys { last: v, .. } | ColourBase::Preset { value: v, .. } => Rgba::rgb(*v),
@@ -282,7 +253,6 @@ fn unit(v: f64) -> u8 {
     (v.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
-/// sRGB transfer function, 0–1.
 pub fn srgb_to_linear(c: f64) -> f64 {
     if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
 }
@@ -332,9 +302,6 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
     (f(h + 1.0 / 3.0), f(h), f(h - 1.0 / 3.0))
 }
 
-/// The colour as it moves through the transforms: sRGB 0–1 and alpha 0–1. Hue, saturation and luminance transforms
-/// work in HSL (saturation and luminance unclamped until the colour is RGB again); tint, shade, `inv`, the channel
-/// transforms and gamma in linear RGB; `gray` in sRGB with the Rec. 709 weights (DRAW-6).
 fn apply(base: Rgba, mods: &[ColourMod]) -> Rgba {
     use ColourMod::*;
     let mut c = [f64::from(base.r) / 255.0, f64::from(base.g) / 255.0, f64::from(base.b) / 255.0];
@@ -402,7 +369,6 @@ fn apply(base: Rgba, mods: &[ColourMod]) -> Rgba {
     Rgba { r: unit(c[0]), g: unit(c[1]), b: unit(c[2]), a: unit(a) }
 }
 
-/// A system colour's usual value, for a `sysClr` without `lastClr`.
 fn system_colour(name: &str) -> u32 {
     match name {
         "window" | "highlightText" | "btnHighlight" | "3dLight" | "menu" | "infoBk" => 0xFFFFFF,
@@ -415,7 +381,6 @@ fn system_colour(name: &str) -> u32 {
     }
 }
 
-/// `ST_PresetColorVal`: the CSS colour names in DrawingML spelling, with the `dk`, `lt` and `med` abbreviations.
 pub fn preset_colour(name: &str) -> Option<u32> {
     let full = match name {
         n if n.starts_with("dk") => format!("dark{}", &n[2..]),
@@ -427,7 +392,6 @@ pub fn preset_colour(name: &str) -> Option<u32> {
     CSS.binary_search_by(|(n, _)| n.cmp(&key.as_str())).ok().map(|i| CSS[i].1)
 }
 
-/// The CSS colour names, lower case, sorted.
 const CSS: &[(&str, u32)] = &[
     ("aliceblue", 0xF0F8FF),
     ("antiquewhite", 0xFAEBD7),
@@ -613,12 +577,9 @@ mod tests {
 
     #[test]
     fn hsl_transforms_change_luminance_and_hue() {
-        // lumMod 50 % of pure red (l = 0.5) is l = 0.25: 0x800000.
         assert_eq!(rgb(r#"<a:srgbClr val="FF0000"><a:lumMod val="50000"/></a:srgbClr>"#), 0x800000);
-        // lumMod 60 % + lumOff 40 % ("lighter 40 %") of red: l = 0.7.
         assert_eq!(rgb(r#"<a:srgbClr val="FF0000"><a:lumMod val="60000"/><a:lumOff val="40000"/></a:srgbClr>"#), 0xFF6666);
         assert_eq!(rgb(r#"<a:srgbClr val="FF0000"><a:comp/></a:srgbClr>"#), 0x00FFFF);
-        // inv in linear RGB; gray with the Rec. 709 weights; saturation over 100 % is not clamped before RGB.
         assert_eq!(rgb(r#"<a:srgbClr val="156082"><a:inv/></a:srgbClr>"#), 0xFEF1E4);
         assert_eq!(rgb(r#"<a:srgbClr val="156082"><a:gray/></a:srgbClr>"#), 0x535353);
         assert_eq!(rgb(r#"<a:srgbClr val="C04020"><a:satMod val="150000"/></a:srgbClr>"#) >> 16, 232);
@@ -626,9 +587,7 @@ mod tests {
 
     #[test]
     fn tint_and_shade_work_in_linear_rgb() {
-        // shade 50 % of white: linear 0.5 -> sRGB 0.7354 -> 188.
         assert_eq!(rgb(r#"<a:srgbClr val="FFFFFF"><a:shade val="50000"/></a:srgbClr>"#), 0xBCBCBC);
-        // tint 50 % of black: linear 0.5 as well.
         assert_eq!(rgb(r#"<a:srgbClr val="000000"><a:tint val="50000"/></a:srgbClr>"#), 0xBCBCBC);
     }
 

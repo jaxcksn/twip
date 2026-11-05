@@ -1,7 +1,4 @@
-//! VML shapes (`w:pict` content without a DrawingML branch) read into the same [`Shape`] model (DRAW-25, DRAW-26):
-//! the primitive elements, `v:shape` paths with their `v:shapetype` formulas, groups and images, their CSS
-//! placement, fill, stroke, shadow and text box. A VML path and its formulas are translated into DrawingML custom
-//! geometry, which the geometry evaluator runs as any other.
+//! VML shapes
 
 use std::fmt::Write;
 
@@ -20,40 +17,31 @@ const O: &str = "urn:schemas-microsoft-com:office:office";
 const W10: &str = "urn:schemas-microsoft-com:office:word";
 const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
-/// A VML object: its shape tree, its top element's CSS placement, its text box and wrapping.
 pub struct VmlObject<'a, 'i> {
     pub shape: Shape,
     pub style: Style,
-    /// The `v:textbox`'s `w:txbxContent`, insets (points; left, top, right, bottom) and anchor (0 top, 1 middle, 2 bottom).
     pub textbox: Option<(Node<'a, 'i>, [f64; 4], u8)>,
-    /// `w10:wrap/@type` and `@side`.
     pub wrap: Option<(String, String)>,
-    /// The top element's `alt`.
     pub alt: String,
 }
 
-/// The CSS `style` of a VML element, as far as placement goes.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Style {
     pub absolute: bool,
-    /// Points: `margin-left` / `margin-top` (or `left` / `top`), `width`, `height`.
     pub x: f64,
     pub y: f64,
     pub w: f64,
     pub h: f64,
-    /// Group-child coordinates (unitless `left`, `top`, `width`, `height`).
     pub coords: [f64; 4],
     pub rotation: f64,
     pub flip_h: bool,
     pub flip_v: bool,
     pub z: i64,
     pub hidden: bool,
-    /// `mso-position-horizontal(-relative)`, `mso-position-vertical(-relative)`.
     pub h_align: Option<String>,
     pub h_relative: Option<String>,
     pub v_align: Option<String>,
     pub v_relative: Option<String>,
-    /// `v-text-anchor`.
     pub text_anchor: Option<String>,
 }
 
@@ -65,7 +53,6 @@ fn child<'a, 'i>(n: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
     n.children().find(|c| is(*c, V, name))
 }
 
-/// A CSS or VML length in points: `pt`, `in`, `cm`, `mm`, `pc`, `px`, `emu`; a bare number is pixels.
 pub fn length(v: &str) -> Option<f64> {
     let v = v.trim();
     let (num, unit) = match v.find(|c: char| c.is_ascii_alphabetic() || c == '%') {
@@ -85,7 +72,6 @@ pub fn length(v: &str) -> Option<f64> {
     })
 }
 
-/// A VML fraction: `50%`, `32768f` (16.16 fixed point) or a plain number.
 pub fn fraction(v: &str) -> Option<f64> {
     let v = v.trim();
     if let Some(p) = v.strip_suffix('%') {
@@ -97,7 +83,6 @@ pub fn fraction(v: &str) -> Option<f64> {
     }
 }
 
-/// An angle in degrees: `30`, `30fd` (65536ths of a degree).
 fn degrees(v: &str) -> Option<f64> {
     let v = v.trim();
     match v.strip_suffix("fd") {
@@ -106,7 +91,6 @@ fn degrees(v: &str) -> Option<f64> {
     }
 }
 
-/// The CSS style of `n`.
 pub fn style(n: Node) -> Style {
     let mut s = Style::default();
     let Some(css) = n.attribute("style") else { return s };
@@ -152,8 +136,6 @@ pub fn style(n: Node) -> Style {
     s
 }
 
-/// DRAW-26: a VML colour: `#rrggbb`, `#rgb`, one of the 16 HTML names, or a preset colour name; what follows it
-/// (`[67]`, `fill darken(118)`) is left out.
 pub fn colour(v: &str) -> Option<Colour> {
     let v = v.trim();
     let token = v.split([' ', '[']).next().unwrap_or("");
@@ -197,8 +179,6 @@ fn on(v: Option<&str>, dflt: bool) -> bool {
     }
 }
 
-/// DRAW-26: the fill: none with `filled="f"`, else `fillcolor` (white by default) and `v:fill`'s type: solid,
-/// gradient (`angle`, `focus`, `colors`), gradientRadial, a picture (`tile`, `frame`) or a pattern, with `opacity`.
 fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
     let f = child(el, "fill");
     if !on(f.and_then(|f| f.attribute("on")).or(el.attribute("filled")), true) {
@@ -214,7 +194,6 @@ fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
     match f.attribute("type").unwrap_or("solid") {
         t @ ("gradient" | "gradientRadial") => {
             let (c1, c2) = (with_alpha(base, opacity), with_alpha(color2, opacity2));
-            // `colors`: "pos color;pos color" stops; else `focus` places color2: 0 the end, 100% the start, ±50% the middle.
             let mut stops: Vec<(Pct, Colour)> = f
                 .attribute("colors")
                 .map(|cs| {
@@ -239,12 +218,9 @@ fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
                 };
             }
             let kind = if t == "gradientRadial" {
-                // A radial gradient runs from its edge (position 0) in to its focus: the reverse of a path gradient's.
                 stops = stops.into_iter().rev().map(|(p, c)| (Pct(100000 - p.0), c)).collect();
                 paint::GradientKind::Path { path: paint::GradientPath::Rect, focus: [Pct(50000); 4] }
             } else {
-                // `color` goes to `color2` along `angle` (screen degrees, clockwise), with `focus` 100%: the stops run
-                // the other way (`exp/s66` fill_gradient, w_grad).
                 let a = f.attribute("angle").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
                 paint::GradientKind::Linear { angle: Angle(((a + 180.0).rem_euclid(360.0) * 60000.0).round() as i32), scaled: false }
             };
@@ -253,11 +229,9 @@ fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
         t @ ("tile" | "frame" | "pattern") => {
             let img = f.attribute((R, "id")).or(f.attribute((O, "relid"))).and_then(&mut *image);
             let mut adjust = Vec::new();
-            // A pattern's picture is a black and white bitmap, tiled in `fillcolor` (black) and `color2` (white).
             if t == "pattern" {
                 adjust.push(paint::BlipAdjust::Duotone([base.clone(), color2.clone()]));
             }
-            // A pattern's pixels are a point each (Word: `exp/s66` w_patt), a tile's 0.75 pt (96 dpi).
             let scale = if t == "pattern" { Pct(133333) } else { Pct(100000) };
             let mode = if t != "frame" {
                 paint::BlipMode::Tile { tx: Emu(0), ty: Emu(0), sx: scale, sy: scale, flip: paint::TileFlip::None, align: paint::RectAlign::Tl }
@@ -273,8 +247,6 @@ fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
     }
 }
 
-/// DRAW-26: the stroke: none with `stroked="f"`, else `strokecolor` (black), `strokeweight` (0.75 pt) and `v:stroke`'s
-/// dash, line style, arrows, join and cap.
 fn stroke(el: Node) -> Line {
     let s = child(el, "stroke");
     if !on(s.and_then(|s| s.attribute("on")).or(el.attribute("stroked")), true) {
@@ -286,7 +258,6 @@ fn stroke(el: Node) -> Line {
     let attr = |k: &str| s.and_then(|s| s.attribute(k));
     let dash = attr("dashstyle").map(|d| {
         use paint::PresetDash as P;
-        // Numbers: dash and space lengths in line widths.
         let nums: Vec<f64> = d.split_whitespace().filter_map(|v| v.parse().ok()).collect();
         if nums.len() >= 2 {
             let pct = |v: f64| Pct((v * 100000.0).round() as i32);
@@ -350,7 +321,6 @@ fn stroke(el: Node) -> Line {
     }
 }
 
-/// DRAW-26: `v:shadow` (on) as an outer shadow: its `offset` (2 pt, 2 pt by default), colour (grey) and opacity.
 fn shadow(el: Node) -> Option<paint::EffectList> {
     let s = child(el, "shadow").filter(|s| on(s.attribute("on"), false))?;
     let off: Vec<f64> = s.attribute("offset").unwrap_or("2pt,2pt").split(',').map(|v| length(v).unwrap_or(2.0)).collect();
@@ -374,7 +344,6 @@ fn shadow(el: Node) -> Option<paint::EffectList> {
     })
 }
 
-/// A path's coordinate space: `coordorigin` and `coordsize` (21600 by 21600 by default).
 fn coords(n: Node, fallback: Option<Node>) -> ([f64; 2], [f64; 2]) {
     let pair = |k: &str, d: [f64; 2]| {
         n.attribute(k)
@@ -388,15 +357,11 @@ fn coords(n: Node, fallback: Option<Node>) -> ([f64; 2], [f64; 2]) {
     (pair("coordorigin", [0.0, 0.0]), pair("coordsize", [21600.0, 21600.0]))
 }
 
-/// The `v:shapetype` a `v:shape`'s `type` (`#_x0000_t13`) names, anywhere in its document.
 fn shapetype<'a, 'i>(n: Node<'a, 'i>) -> Option<Node<'a, 'i>> {
     let id = n.attribute("type")?.strip_prefix('#')?;
     n.document().descendants().find(|t| is(*t, V, "shapetype") && t.attribute("id") == Some(id))
 }
 
-/// DRAW-25: a VML path with its formulas and adjust values as DrawingML custom geometry (`a:custGeom` XML), for the
-/// geometry evaluator: `#n` is `adjn`, `@n` the guide `fn`, angles in 65536ths of a degree become 60000ths, and the
-/// path's coordinates are in its `coordsize` space, from its `coordorigin`.
 pub fn path_geometry(path: &str, formulas: &[String], adj: &[i64], origin: [f64; 2], size: [f64; 2], textbox: Option<&str>) -> String {
     let mut g = Guides { out: String::new(), n: 0, size, origin };
     let av: String = adj.iter().enumerate().map(|(i, v)| format!(r#"<a:gd name="adj{i}" fmla="val {v}"/>"#)).collect();
@@ -418,7 +383,6 @@ pub fn path_geometry(path: &str, formulas: &[String], adj: &[i64], origin: [f64;
     )
 }
 
-/// The guides a translation adds (`gN`), after the formulas'.
 struct Guides {
     out: String,
     n: usize,
@@ -427,7 +391,6 @@ struct Guides {
 }
 
 impl Guides {
-    /// A new guide computing `fmla`; its name.
     fn guide(&mut self, fmla: String) -> String {
         let name = format!("g{}", self.n);
         self.n += 1;
@@ -435,7 +398,6 @@ impl Guides {
         name
     }
 
-    /// A formula argument: `#n`, `@n`, a number or a named value.
     fn arg(&self, a: &str) -> String {
         let a = a.trim();
         if let Some(n) = a.strip_prefix('#') {
@@ -463,7 +425,6 @@ impl Guides {
         format!("{}", v.round() as i64)
     }
 
-    /// A `v:f` equation as a DrawingML guide formula (extra guides added for angle units).
     fn formula(&mut self, eqn: &str) -> String {
         let p: Vec<&str> = eqn.split_whitespace().collect();
         let a = |i: usize| p.get(i).map_or("0".to_string(), |s| self.arg(s));
@@ -501,7 +462,6 @@ impl Guides {
                 format!("+- {x} {b} {c}")
             }
             "ellipse" => {
-                // c * sqrt(1 - (a / b)^2)
                 let t1 = self.guide(format!("*/ {x} {z} {y}"));
                 let t2 = self.guide(format!("*/ {z} {z} 1"));
                 let t3 = self.guide(format!("*/ {t1} {t1} 1"));
@@ -514,7 +474,6 @@ impl Guides {
         }
     }
 
-    /// A path coordinate (axis 0: x, 1: y) from the path space's origin.
     fn coord(&mut self, a: &str, axis: usize) -> String {
         let v = self.arg(a);
         let o = self.origin[axis];
@@ -527,7 +486,6 @@ impl Guides {
         }
     }
 
-    /// `a + b` as an argument.
     fn plus(&mut self, a: &str, b: &str) -> String {
         match (a.parse::<i64>(), b.parse::<i64>()) {
             (Ok(x), Ok(y)) => format!("{}", x + y),
@@ -542,7 +500,6 @@ impl Guides {
         }
     }
 
-    /// The path's subpaths as `a:path` elements.
     fn paths(&mut self, path: &str) -> String {
         let [w, h] = self.size.map(|v| v.round() as i64);
         let tokens = tokens(path);
@@ -614,7 +571,6 @@ impl Guides {
                     }
                 }
                 "qb" => {
-                    // One control point and the end (a TrueType spline of more is taken pairwise).
                     for p in args.chunks(4).filter(|p| p.len() == 4) {
                         let (cx, cy, x, y) = (self.coord(&p[0], 0), self.coord(&p[1], 1), self.coord(&p[2], 0), self.coord(&p[3], 1));
                         let _ = write!(cmds, "<a:quadBezTo>{}{}</a:quadBezTo>", pt(&cx, &cy), pt(&x, &y));
@@ -630,7 +586,6 @@ impl Guides {
                 "ns" => nostroke = true,
                 "ae" | "al" => {
                     for p in args.chunks(6).filter(|p| p.len() == 6) {
-                        // Centre, radii, start and sweep (65536ths of a degree, counterclockwise).
                         let (cx, cy) = (self.coord(&p[0], 0), self.coord(&p[1], 1));
                         let (rx, ry) = (self.arg(&p[2]), self.arg(&p[3]));
                         let (st, sw) = (self.arg(&p[4]), self.arg(&p[5]));
@@ -642,7 +597,6 @@ impl Guides {
                         let tag = if c == "ae" && !cmds.is_empty() { "lnTo" } else { "moveTo" };
                         let _ = write!(cmds, "<a:{tag}>{}</a:{tag}>", pt(&x, &y));
                         let _ = write!(cmds, r#"<a:arcTo wR="{rx}" hR="{ry}" stAng="{st}" swAng="{sw}"/>"#);
-                        // Where the arc ends.
                         let en = self.guide(format!("+- {st} {sw} 0"));
                         let ex = self.guide(format!("cos {rx} {en}"));
                         let ey = self.guide(format!("sin {ry} {en}"));
@@ -666,7 +620,6 @@ impl Guides {
                         };
                         let (sa, ea) = (angle(self, &v[4], &v[5]), angle(self, &v[6], &v[7]));
                         let d = self.guide(format!("+- {ea} 0 {sa}"));
-                        // Clockwise (wa, wr) sweeps 0 to 360°, counterclockwise (at, ar) 0 to −360°.
                         let sw = if c.starts_with('w') {
                             let up = self.guide(format!("+- {d} 21600000 0"));
                             self.guide(format!("?: {d} {d} {up}"))
@@ -698,8 +651,6 @@ impl Guides {
                         let sx = self.guide(format!("?: {dx} 1 -1"));
                         let sy = self.guide(format!("?: {dy} 1 -1"));
                         let s = self.guide(format!("*/ {sx} {sy} 1"));
-                        // Starting horizontally: from the ellipse's top (going down) or bottom; vertically: from
-                        // its left (going right) or right.
                         let (st, sw) = if horizontal {
                             (self.guide(format!("?: {dy} 16200000 5400000")), self.guide(format!("*/ {s} 5400000 1")))
                         } else {
@@ -724,7 +675,6 @@ enum Tok {
     Arg(String),
 }
 
-/// A VML path's commands and arguments; an empty argument between commas is 0.
 fn tokens(path: &str) -> Vec<Tok> {
     const CMDS: [&str; 20] = ["nf", "ns", "ae", "al", "at", "ar", "wa", "wr", "qx", "qy", "qb", "m", "l", "c", "x", "e", "t", "r", "v", "h"];
     let s: Vec<char> = path.chars().collect();
@@ -734,14 +684,12 @@ fn tokens(path: &str) -> Vec<Tok> {
     while i < s.len() {
         let c = s[i];
         if c.is_ascii_alphabetic() {
-            // A comma before a command ends an empty argument.
             if last_comma {
                 out.push(Tok::Arg("0".into()));
             }
             let two: String = s[i..(i + 2).min(s.len())].iter().collect();
             let cmd = CMDS.iter().find(|k| k.len() == 2 && **k == two).map_or_else(|| c.to_string(), |k| k.to_string());
             i += cmd.len();
-            // `h` commands (`ha`…`hi`) take two letters.
             let cmd = if cmd == "h" && i < s.len() {
                 i += 1;
                 "h".to_string()
@@ -771,7 +719,6 @@ fn tokens(path: &str) -> Vec<Tok> {
     out
 }
 
-/// A custom geometry from `a:custGeom` XML.
 fn custom(xml: &str) -> Geometry {
     match roxmltree::Document::parse(xml) {
         Ok(d) => Geometry::Custom(std::rc::Rc::new(CustomGeom::parse(d.root_element()))),
@@ -779,7 +726,6 @@ fn custom(xml: &str) -> Geometry {
     }
 }
 
-/// Points as a closed or open polyline geometry in its bounding box (path units: hundredths of a point).
 fn polyline(points: &[(f64, f64)], closed: bool) -> (Geometry, [f64; 4]) {
     let b = points.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| [b[0].min(p.0), b[1].min(p.1), b[2].max(p.0), b[3].max(p.1)]);
     let (w, h) = (((b[2] - b[0]) * 100.0).round().max(1.0) as i64, ((b[3] - b[1]) * 100.0).round().max(1.0) as i64);
@@ -801,13 +747,11 @@ fn polyline(points: &[(f64, f64)], closed: bool) -> (Geometry, [f64; 4]) {
     )
 }
 
-/// A point list `x,y,x,y…` (lengths).
 fn points(v: &str) -> Vec<(f64, f64)> {
     let n: Vec<f64> = v.split([',', ' ']).filter(|s| !s.trim().is_empty()).filter_map(length).collect();
     n.chunks(2).filter(|c| c.len() == 2).map(|c| (c[0], c[1])).collect()
 }
 
-/// The text box of `el` (its `v:textbox`): `w:txbxContent`, insets and anchor.
 fn textbox<'a, 'i>(el: Node<'a, 'i>, st: &Style) -> Option<(Node<'a, 'i>, [f64; 4], u8)> {
     let tb = child(el, "textbox")?;
     let content = tb.descendants().find(|n| n.tag_name().name() == "txbxContent")?;
@@ -821,8 +765,6 @@ fn textbox<'a, 'i>(el: Node<'a, 'i>, st: &Style) -> Option<(Node<'a, 'i>, [f64; 
     Some((content, [i(0, 7.2), i(1, 3.6), i(2, 7.2), i(3, 3.6)], anchor))
 }
 
-/// DRAW-25: one VML element as a shape (its own `xfrm` off and ext in its parent's coordinates, EMU-like units
-/// for groups); `None` for elements that aren't shapes.
 fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
     let st = style(el);
     let name = el.tag_name().name();
@@ -830,8 +772,6 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
     let (geom, rect): (Geometry, Option<[f64; 4]>) = match name {
         "rect" => (Geometry::Preset { preset: Preset::Rect, adj: Vec::new() }, None),
         "roundrect" => {
-            // The corner radius is `arcsize` of the shorter side (20% by default): Word writes a default roundRect
-            // (radius a sixth of it) as 10923f.
             let a = el.attribute("arcsize").and_then(fraction).unwrap_or(0.2);
             (Geometry::Preset { preset: Preset::RoundRect, adj: vec![("adj".into(), (a * 100000.0).round() as i64)] }, None)
         }
@@ -867,7 +807,6 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
             (custom(&xml), Some(b))
         }
         "arc" => {
-            // Angles clockwise from 12 o'clock; the arc of the ellipse in the box.
             let a0 = el.attribute("startangle").and_then(|v| v.parse::<f64>().ok()).unwrap_or(-90.0);
             let a1 = el.attribute("endangle").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
             let (st, sw) = ((a0 - 90.0) * 60000.0, (a1 - a0) * 60000.0);
@@ -917,8 +856,6 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                 });
             }
             let spt = el.attribute((O, "spt")).or_else(|| t.and_then(|t| t.attribute((O, "spt"))));
-            // DRAW-25: Word draws these shape types as its presets (a cube's depth from the shorter side, its faces
-            // shaded), their one adjust value scaled from 21600ths to 100000ths (`exp/s66` w_cube).
             let builtin = match spt.and_then(|v| v.parse::<f64>().ok()).map(|v| v as u32) {
                 Some(16) => Some(Preset::Cube),
                 Some(84) => Some(Preset::Bevel),
@@ -938,7 +875,6 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                         .or_else(|| t.and_then(|t| child(t, "formulas")))
                         .map(|f| f.children().filter(|c| is(*c, V, "f")).filter_map(|c| c.attribute("eqn").map(str::to_string)).collect())
                         .unwrap_or_default();
-                    // Adjust values: the shape's, each falling back to its type's.
                     let parse =
                         |v: Option<&str>| v.map(|a| a.split(',').map(|x| x.trim().parse::<i64>().ok()).collect::<Vec<_>>()).unwrap_or_default();
                     let (mine, theirs) = (parse(el.attribute("adj")), parse(t.and_then(|t| t.attribute("adj"))));
@@ -951,7 +887,6 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                         .or_else(|| t.and_then(|t| child(t, "path")).and_then(|p| p.attribute("textboxrect")));
                     (custom(&path_geometry(path, &formulas, &adj, origin, size, tbr)), None)
                 }
-                // A shape type without a path: its MSO number's preset, as far as the engine knows it.
                 None => {
                     let preset = match spt.and_then(|v| v.parse::<f64>().ok()).map(|v| v as u32) {
                         Some(2) => Preset::RoundRect,
@@ -968,7 +903,6 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
             let mut children = Vec::new();
             for c in el.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(V)) {
                 if let Some(mut s) = element(c, ctx) {
-                    // A child's box is in the group's coordinates (unitless left, top, width, height).
                     let cs = style(c);
                     if !matches!(c.tag_name().name(), "line" | "polyline" | "curve") {
                         s.xfrm.off = [Emu(cs.coords[0].round() as i64), Emu(cs.coords[1].round() as i64)];
@@ -995,7 +929,6 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
     finish(el, &st, geom, rect, &mut image)
 }
 
-/// A primitive or path shape `el` with its geometry: its fill, stroke, shadow and text box.
 fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &mut dyn FnMut(&str) -> Option<usize>) -> Option<Shape> {
     let name = el.tag_name().name();
     let emu = |v: f64| Emu((v * 12700.0).round() as i64);
@@ -1037,7 +970,6 @@ fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &
     })
 }
 
-/// A shape's transform from its style (points as EMU); `rect` (points) for lines placed by their own coordinates.
 fn xfrm(st: &Style, rect: Option<[f64; 4]>) -> Xfrm {
     let emu = |v: f64| Emu((v * 12700.0).round() as i64);
     let (x, y, w, h) = match rect {
@@ -1053,13 +985,10 @@ fn xfrm(st: &Style, rect: Option<[f64; 4]>) -> Xfrm {
     }
 }
 
-/// DRAW-25: the VML object in `pict` (a `w:pict` or `w:object`): its first shape element (`v:shapetype`s define
-/// types, not shapes). `None` when it holds none.
 pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, 'i>> {
     let el = pict.children().find(|c| c.is_element() && c.tag_name().namespace() == Some(V) && c.tag_name().name() != "shapetype")?;
     let shape = element(el, ctx)?;
     let mut st = style(el);
-    // Lines take their box from their points.
     if matches!(el.tag_name().name(), "line" | "polyline" | "curve") {
         st.x = shape.xfrm.off[0].0 as f64 / 12700.0;
         st.y = shape.xfrm.off[1].0 as f64 / 12700.0;
@@ -1105,12 +1034,10 @@ mod tests {
 
     #[test]
     fn a_vml_path_with_formulas_evaluates() {
-        // A right triangle whose top-right corner moves with adj 0 (val #0 as the x of the second point).
         let xml = path_geometry("m0,0l@0,0,21600,21600xe", &["val #0".into()], &[10800], [0.0, 0.0], [21600.0, 21600.0], None);
         let g = custom(&xml).evaluate(Emu(1270000), Emu(1270000));
         let crate::drawing::geom::Seg::Line(p) = g.paths[0].segs[1] else { panic!("{:?}", g.paths[0].segs) };
         assert!((p[0] - 50.0).abs() < 0.01 && p[1].abs() < 0.01, "{p:?}");
-        // Quadrants: qx from (0, 10800) to (10800, 0) is a quarter ellipse.
         let xml = path_geometry("m0,10800qx10800,0e", &[], &[], [0.0, 0.0], [21600.0, 21600.0], None);
         let g = custom(&xml).evaluate(Emu(1270000), Emu(1270000));
         assert!(g.paths[0].segs.len() >= 2, "{:?}", g.paths[0].segs);

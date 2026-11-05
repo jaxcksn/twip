@@ -1,6 +1,4 @@
-//! Markup views (REV-1 to REV-5): No markup lays out as every revision accepted and Original as every one rejected;
-//! each view's pages and lines per paragraph match the expected layouts; All markup draws the revision marks, author
-//! colours, change bars and row tints, and Simple markup the change bars alone.
+//! Markup views
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -80,7 +78,6 @@ fn original_tables() {
     assert_same_lines("FX-REVIEW-TABLES", MarkupView::Original, "FX-REVIEW-TABLES-REJECTED", &Fonts::system());
 }
 
-/// A deleted paragraph mark joins its paragraph with the next in No markup, and an inserted one in Original (REV-6).
 #[test]
 fn paragraph_marks_by_view() {
     let fonts = Fonts::system();
@@ -88,9 +85,6 @@ fn paragraph_marks_by_view() {
     assert_same_lines("FX-REVIEW-MARKS", MarkupView::Original, "FX-REVIEW-MARKS-REJECTED", &fonts);
 }
 
-/// Paragraphs the view joins (REV-6) share their line for editing: each keeps its own stops, the end of the first and
-/// the start of the next show the caret at one x, a point just past the join is in the next paragraph and one just
-/// before it in the first, and a selection across the join is one band, with no mark drawn where the hidden one is.
 #[test]
 fn joined_paragraphs_share_their_line_for_editing() {
     use crate::editing::Editor;
@@ -180,7 +174,6 @@ fn views_match_expected_layouts() {
                 let Some(k) = (at..ours.len()).find(|&k| shown_text(&ours[k], view).starts_with(prefix)) else {
                     panic!("{name} in {view:?}: no paragraph starting {prefix:?}");
                 };
-                // A paragraph whose mark the view hides lays out with the next one (REV-6): their lines count once.
                 let mut end = k;
                 while end + 1 < ours.len() && view.hides(&ours[end].mark.rev) {
                     end += 1;

@@ -1,9 +1,4 @@
-//! The editor subsystem: the single owner of editing state and behaviour.
-//! It reads geometry only from layout snapshots and exposes rendering-independent state through [`view`].
-//!
-//! Every input arrives as a typed call (the `api` session's); every change is a transaction of [`step::Step`]s, recorded for undo
-//! and given to layout as edit hints. One commit path records them all, undo and redo included: it alone raises the
-//! revision. Geometry-dependent input first lays out through the page it concerns.
+//! Editor
 
 pub mod autocorrect;
 mod cell_clipboard;
@@ -79,29 +74,22 @@ use step::{Map, Step, StepError, para_len, run_of};
 use text::UnitText;
 use view::{CaretView, PageStack, SelectionView, View};
 
-/// The layout budget of one idle call.
 pub const IDLE_BUDGET: Duration = Duration::from_millis(4);
 
-/// A selection drag in progress: where it started and what it extends by.
 #[derive(Clone, Copy, Debug)]
 struct Drag {
     anchor: Position,
-    /// For word and paragraph drags: the start and end of what the press selected.
     span: Option<(Position, Position)>,
     unit: Granularity,
-    /// The last pointer position, for auto-scroll.
     at: (f64, f64),
-    /// The drag became a cell block (it entered another cell); coming back keeps the start cell selected.
     block: bool,
 }
 
-/// A correction just made: its text in `para` and what was typed (Revert puts it back).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Correction {
     pub para: ParaId,
     pub range: std::ops::Range<Unit>,
     pub from: String,
-    /// Characters typed after it since.
     pub typed: usize,
 }
 
@@ -111,154 +99,81 @@ pub struct Editor {
     index: DocIndex,
     history: History,
     selection: Selection,
-    /// Up/Down keep the x they started from.
     goal_x: Option<f64>,
-    /// Formatting for what is typed next at a collapsed caret; any caret move drops it.
     pending: Option<Run>,
-    /// The text the last AutoCorrect step produced, until the caret leaves it or typing moves past it.
     correction: Option<Correction>,
     drag: Option<Drag>,
     pages: Pages,
-    /// The page the caret was last shown on.
     near: usize,
-    /// Counts committed transactions: the document's revision.
     revision: u64,
-    /// Counts every change to the document or to how it shows: what layout and the caches built from the document
-    /// key on.
     generation: u64,
     seq: u64,
     viewport: Viewport,
-    /// Where Esc leaves a header or footer for: the body selection the entering double-click set.
     body_return: Option<Selection>,
-    /// A float being moved or resized by the pointer.
     object_drag: Option<objects::ObjectDrag>,
-    /// The selected float's group child (a second press into a selected group): kept only while that float is the
-    /// selection.
     object_child: Option<(crate::layout::FloatId, crate::drawing::ChildPath)>,
-    /// The floats Shift or Ctrl and a press added to the selected float (one story's): kept only while it is the
-    /// selection.
     object_also: Option<(crate::layout::FloatId, Vec<crate::layout::FloatId>)>,
-    /// A shape's rotate or adjust handle being dragged.
     shape_drag: Option<shapes::ShapeDrag>,
-    /// The snap lines of the page an object or group child is moved on, built at the press.
     snaps: snap::SnapLines,
-    /// Shape insert mode: the next press inserts a shape.
     shape_insert: Option<shapes::ShapeInsert>,
-    /// The checkbox a click or Space last toggled, while the caret stays after it.
     toggled_checkbox: Option<objects::ToggledCheckbox>,
-    /// A header or footer made by entering it, removed if left unchanged.
     provisional: Option<stories::Provisional>,
-    /// The host's placeholder looks by key (`""`: every placeholder without its own).
     placeholder_looks: std::collections::HashMap<String, view::PlaceholderLook>,
-    /// A table border being dragged.
     border_drag: Option<resize::BorderDrag>,
-    /// A table being moved by its handle.
     table_drag: Option<table_handles::TableDrag>,
-    /// The table under the pointer, and what of it the pointer is over.
     table_hover: Option<view::TableHover>,
-    /// A cell block being dragged from a cell, row or column zone: its table, start cell and shape.
     zone_drag: Option<(TableId, selection::CellRef, selection::CellShape)>,
-    /// The pointer's shape where it last moved without a drag.
     cursor: input::Cursor,
-    /// The history's position and the tracking setting when the document was last saved: away from them, the
-    /// document is modified.
     saved: (u64, bool),
-    /// Who the input being run comes from: what its transactions record.
     origin: Origin,
-    /// A batch being run: what its commands commit folds into one transaction.
     batch: Option<Batch>,
-    /// The transactions committed since the session last took them, in order.
     commits: Vec<Committed>,
     requests: Vec<Request>,
-    /// What F4 repeats: the last insertion or break; consecutive typing accumulates.
     repeat: Option<Command>,
-    /// Extend mode and block mode (F8, Ctrl+Shift+F8).
     modes: extend::Modes,
-    /// The macOS keymap layer (the host's platform).
     mac: bool,
-    /// The last edit locations, newest last (Shift+F5), and how far back Shift+F5 has gone.
     edit_marks: Vec<Position>,
     back_step: Option<usize>,
-    /// Where the caret was when the current round of Go Back started.
     back_from: Option<Position>,
-    /// How positions moved through the last committed transaction.
     last_maps: Vec<step::Map>,
-    /// A press inside the selection: a drag-and-drop or a click.
     text_drag: Option<interaction::TextDrag>,
-    /// The last fragment copied or cut here (pasted with its formatting when the clipboard still carries its id).
     clipboard: Option<clipboard::Fragment>,
-    /// The cell Tab last selected, when the selection alone doesn't say (a merged cell's continuation row).
     tab_stop: Option<(Selection, TableId, (usize, usize))>,
-    /// Editing, template design or read-only.
     mode: Mode,
-    /// Object drags lay the text out again as they move (Word's live layout); otherwise a ghost shows where the object
-    /// goes until the release.
     pub live_layout: bool,
-    /// How drags are measured, when the object grid shows, and the unit readouts are in.
     pub view_settings: view::ViewSettings,
-    /// Every field and content control as the host last saw it: what change lists compare.
     elems: std::collections::HashMap<crate::docx::ElementId, elements::Element>,
-    /// The elements added, removed and changed since the last reply.
     changes: elements::Changes,
-    /// Why a building block refused the running command (`locked`, `read-only`): the command is refused with it.
     refused: Option<&'static str>,
-    /// Notices for the host since the last reply (activation, field updates, links).
     events: Vec<input::Notice>,
-    /// What the last command made (a field's id, a comment's).
     made: Option<crate::api::command::CommandResult>,
-    /// Controls a command made for content it is about to put in (new repeating items): added by the commit, in
-    /// the same transaction.
     pending_controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
-    /// Images a command added for pictures it is about to put in: added by the commit, in the same transaction.
     pending_images: Vec<Vec<u8>>,
-    /// The host's external drop caret (`view.drop`).
     drop: Option<Position>,
-    /// The host's labels for empty fields in design mode, by trimmed code (`field.labels`).
     field_labels: HashMap<String, String>,
-    /// Which fields are sub-template references, the references they make, and those shown collapsed.
     sub_template_rules: Vec<sub_templates::Rule>,
     references: sub_templates::References,
     collapsed: std::collections::HashSet<crate::docx::FieldId>,
-    /// The sub-template warnings already given since the rules last changed.
     warned: std::collections::HashSet<(crate::docx::diagnostics::WarningCode, String)>,
-    /// The sub-template bodies the template's layout was last given, and whether they need laying out again.
     expansions: Option<Rc<crate::layout::expansion::Expansions>>,
     expansions_stale: bool,
-    /// While a sub-template is edited: it, and the template's layout kept until it shows again.
     surface: Option<sub_templates::Surface>,
-    /// The host's element marks (`element.mark`): view only.
     marks: Vec<merge::Mark>,
-    /// The host's looks for controls in design mode (`view.looks`): view only.
     looks: merge::Looks,
-    /// The last F9's token: `field.results` answers it.
     update_token: u64,
-    /// Where the pointer last hovered, document points (a mark's tooltip).
     hover: Option<(f64, f64)>,
-    /// The region the pointer was last over in design mode: kept while the pointer is on its title tab, which is
-    /// above the region.
     hover_region: Option<crate::docx::ControlId>,
-    /// The active comment thread the host chose, and the threads' ranges.
     comments: comments::State,
-    /// The document's revisions in order, built when navigation asks and kept until the document changes.
     review_list: revisions::index::List,
-    /// The session's author (the name and identity revisions are recorded under), and who that is in the document's
-    /// people once a revision needs them.
     author: (Rc<str>, Option<crate::docx::review::Identity>),
     author_id: Option<crate::docx::review::AuthorId>,
-    /// A move being made: its transactions record it under this name.
     move_name: Option<Rc<str>>,
-    /// The insertion and deletion the last transaction recorded (what a move is made of).
     recorded: (Option<Rc<crate::docx::review::RevisionMark>>, Option<Rc<crate::docx::review::RevisionMark>>),
-    /// What was cut as a move with tracking on: the fragment and its deletion, a move once pasted.
     cut_move: Option<(u64, Rc<crate::docx::review::RevisionMark>)>,
-    /// Tests: how many elements change tracking looked at (a keystroke's cost doesn't grow with the
-    /// document).
     #[cfg(test)]
     pub(crate) track_work: usize,
 }
 
-/// What the host lets the user do: editing, template design (activations go to the host), or nothing
-/// that changes the document.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mode {
     #[default]
@@ -286,48 +201,33 @@ impl Mode {
     }
 }
 
-/// A transaction under construction: the inverses of the steps applied so far, and their layout hints.
 struct Tx {
     undo: Vec<Step>,
     hints: Vec<Option<Change>>,
     before: SelectionRecord,
     label: &'static str,
-    /// Paragraphs whose context changed (a join, a move into another cell) and tables whose rows came or went (their
-    /// cells' table-style regions move): resolved again before the transaction commits, so the model shows what
-    /// saving and reading back gives.
     stale_paras: Vec<ParaId>,
     stale_tables: Vec<TableId>,
-    /// Undeletable pictures put in less those taken out ([`crate::docx::Document::undeletable`]).
     kept: i64,
-    /// How positions moved through each step (the edit locations follow them).
     maps: Vec<step::Map>,
-    /// Tracking was on when it began: its steps are recorded as revisions, by `rec` once the first one is.
     tracked: bool,
     rec: Option<revisions::Recording>,
     origin: Origin,
-    /// Undo and redo: the transaction replayed. It goes back in the history with the steps that reverse this one.
     replayed: Option<Transaction>,
-    /// What the steps touched, for the record.
     targets: step::Targets,
-    /// A step changed a control or moved pictures: the picture controls' image sets are derived again.
     pictures: bool,
 }
 
-/// A batch being run: the transaction its commands' commits fold into, its label (else its first commit's), and
-/// where each nested batch began in it, with the selection then.
 struct Batch {
     tx: Tx,
     label: Option<Cow<'static, str>>,
     marks: Vec<(usize, Selection)>,
 }
 
-/// A committed transaction, as the session records it.
 #[derive(Clone, Debug)]
 pub struct Committed {
-    /// The revision it made.
     pub revision: u64,
     pub origin: Origin,
-    /// Its undo label.
     pub label: Cow<'static, str>,
     pub targets: step::Targets,
 }
@@ -449,14 +349,10 @@ impl Editor {
         self.seq
     }
 
-    /// Whether the document differs from its last save: the history is away from the saved position, or tracking
-    /// was turned on or off since. Undoing back to it clears this.
     pub fn is_dirty(&self) -> bool {
         (self.history.position(), self.doc.settings.track_revisions) != self.saved
     }
 
-    /// A save wrote the document as it is now: its revision, at this history position. Typing after it starts a new
-    /// undo step, so undo comes back to what was saved.
     pub fn mark_saved(&mut self) {
         self.history.break_typing();
         self.saved = (self.history.position(), self.doc.settings.track_revisions);
@@ -466,7 +362,6 @@ impl Editor {
         &self.history
     }
 
-    /// Shows revisions in `view` (REV-1): a full relayout, not an edit (no undo step, the document stays as it is).
     pub fn set_markup_view(&mut self, view: crate::docx::review::MarkupView) -> Outcome {
         if self.doc.review.view == view {
             return Outcome::Unchanged("already in that view");
@@ -476,7 +371,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Draws `author`'s revisions in `color` (0xRRGGBB, REV-3): a full relayout, not an edit.
     pub fn set_author_color(&mut self, author: crate::docx::review::AuthorId, color: u32) -> Outcome {
         if self.doc.review.palette.color(author) == color {
             return Outcome::Unchanged("already that colour");
@@ -490,11 +384,7 @@ impl Editor {
         self.relayout([None]);
     }
 
-    /// Live layout: float `f` laid out as `preview` has it instead of as the document does (`None`: as the document
-    /// does), as a new generation when that changes what is laid out; `before`: the anchor the last preview gave it.
-    /// Not an edit: nothing is recorded.
     fn preview_layout(&mut self, f: crate::layout::FloatId, preview: Option<crate::layout::Preview>, before: Option<ParaId>) {
-        // The paragraphs it concerns: its anchor in the document, and in the previews before and now.
         let mut paras: Vec<ParaId> = [self.index.float_anchor(f), before, preview.as_ref().map(|p| p.anchor)].into_iter().flatten().collect();
         paras.dedup();
         let hints: Vec<Option<Change>> = paras.into_iter().map(|p| step::para_hint(&self.index, p, 0)).collect();
@@ -503,8 +393,6 @@ impl Editor {
         }
     }
 
-    /// Lays out again what `hints` say changed (`None`: layout compares), as a new generation: a view change, or a
-    /// transaction's steps.
     fn relayout(&mut self, hints: impl IntoIterator<Item = Option<Change>>) {
         self.generation += 1;
         for h in hints {
@@ -512,8 +400,6 @@ impl Editor {
         }
     }
 
-    /// Runs `f` as input from `origin`: what the transactions it commits record (the editor's own input is the
-    /// user's).
     pub fn with_origin<T>(&mut self, origin: Origin, f: impl FnOnce(&mut Editor) -> T) -> T {
         let was = std::mem::replace(&mut self.origin, origin);
         let out = f(self);
@@ -521,24 +407,19 @@ impl Editor {
         out
     }
 
-    /// The transactions committed since the last call, in order: one record each.
     pub fn take_commits(&mut self) -> Vec<Committed> {
         std::mem::take(&mut self.commits)
     }
 
-    /// The fonts changed: the whole document lays out again. Not an edit: the revision stays.
     pub fn fonts_changed(&mut self) {
         self.relayout([None]);
     }
 
-    /// The index a picture the command is about to put in takes for `data`: the image is added by the commit, in the
-    /// same transaction.
     fn pending_image(&mut self, data: Vec<u8>) -> usize {
         self.pending_images.push(data);
         self.doc.images.len() + self.pending_images.len() - 1
     }
 
-    /// Refuses an edit a read-only document asked for, before it runs.
     fn refuse_read_only(&mut self) -> Outcome {
         self.refused = Some("read-only");
         Outcome::Refused(crate::api::error::Error::new(crate::api::error::ErrorCode::ReadOnly, "the document is read only"))
@@ -552,7 +433,6 @@ impl Editor {
         PageStack::of(&self.layout.snapshot())
     }
 
-    /// Places the selection directly, ending any typing run (benchmarks and tests choose places without input).
     pub fn set_caret_for_benchmark(&mut self, s: Selection) {
         self.history.break_typing();
         self.goal_x = None;
@@ -569,9 +449,8 @@ impl Editor {
         Nav { doc: &self.doc, idx: &self.index, pages: &mut self.pages, near: self.near }
     }
 
-    // ---------------- layout coordination ----------------
+    // Layout coordination
 
-    /// Lays out through the page showing `pos` (it may be provisional), then syncs geometry.
     fn ensure(&mut self, pos: &Position, fonts: &Fonts) {
         self.sync_expansions(fonts);
         if let Some((para, unit)) = pos.para_offset() {
@@ -581,11 +460,9 @@ impl Editor {
         self.pages.sync(&snapshot);
     }
 
-    /// Lays out through page `page` (the host calls it for the visible pages before painting).
     pub fn ensure_page(&mut self, page: usize, fonts: &Fonts) {
         self.sync_expansions(fonts);
         let snapshot = self.layout.snapshot();
-        // A layout from before the last change is provisional throughout.
         let stale = snapshot.revision() != self.layout.revision();
         let pending = if stale { Some(0) } else { snapshot.info().iter().position(|i| i.provisional) };
         if pending.is_some_and(|p| page >= p) {
@@ -595,7 +472,6 @@ impl Editor {
         self.pages.sync(&snapshot);
     }
 
-    /// Background layout for one idle slice; true while more is pending.
     pub fn idle(&mut self, fonts: &Fonts) -> bool {
         self.sync_expansions(fonts);
         let t = Instant::now();
@@ -605,9 +481,6 @@ impl Editor {
         step == LayoutStep::Yielded || snapshot.info().iter().any(|i| i.provisional)
     }
 
-    /// Lays out through the selection's focus when the published layout predates the document's last change: a
-    /// relayout no edit laid out (fonts arriving, the markup view), whose old layout would otherwise answer the
-    /// caret, hit tests and frames.
     pub fn ensure_current(&mut self, fonts: &Fonts) {
         if self.layout.snapshot().revision() == self.layout.revision() {
             return;
@@ -618,13 +491,11 @@ impl Editor {
         }
     }
 
-    /// Whether the published layout is the document's as it is now, to its end.
     pub fn layout_complete(&self) -> bool {
         let snapshot = self.layout.snapshot();
         snapshot.revision() == self.layout.revision() && !matches!(snapshot.status(), crate::layout::LayoutStatus::Pending { .. })
     }
 
-    /// Lays out the whole document (tests, PDF export).
     pub fn complete(&mut self, fonts: &Fonts) {
         self.sync_expansions(fonts);
         self.with_flow(|l, d| l.complete(d, fonts));
@@ -632,9 +503,8 @@ impl Editor {
         self.pages.sync(&snapshot);
     }
 
-    // ---------------- inputs ----------------
+    // Inputs
 
-    /// From `anchor` to `focus` (paragraphs of one story) selected and revealed: a screen reader moved the caret.
     pub fn select_between(&mut self, anchor: (ParaId, Unit), focus: (ParaId, Unit), fonts: &Fonts) -> Outcome {
         let place = |(para, u): (ParaId, Unit)| {
             let slot = self.index.para_slot(para)?;
@@ -654,7 +524,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Units `a..b` of a paragraph selected and revealed (find, spelling).
     pub fn select_range(&mut self, para: ParaId, a: Unit, b: Unit, fonts: &Fonts) -> Outcome {
         let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
         let story = self.index.story(slot.container);
@@ -669,7 +538,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Editing, template design or read-only: design mode shows field labels.
     pub fn set_mode(&mut self, m: Mode) -> Outcome {
         let design = (self.mode == Mode::Design) != (m == Mode::Design);
         self.mode = m;
@@ -679,18 +547,14 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// The notices since they were last taken.
     pub fn take_notices(&mut self) -> Vec<input::Notice> {
         std::mem::take(&mut self.events)
     }
 
-    /// The editing mode.
     pub fn mode(&self) -> Mode {
         self.mode
     }
 
-    /// Whether edits are recorded as revisions (Track Changes): the document's setting, and always under
-    /// tracked-changes protection.
     pub fn tracking(&self) -> bool {
         self.doc.settings.track_revisions || self.tracking_locked()
     }
@@ -699,8 +563,6 @@ impl Editor {
         self.doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking())
     }
 
-    /// Turns tracking on or off: the document's setting (saved with it), outside the history as in Word, so undo and
-    /// redo stay exact whatever tracking is set to. Refused, `false`, while protection keeps it on.
     pub fn set_tracking(&mut self, on: bool) -> bool {
         if !on && self.tracking_locked() {
             return false;
@@ -709,13 +571,11 @@ impl Editor {
         true
     }
 
-    /// The session's author: who revisions recorded from now on are by ("Author" until set).
     pub fn set_author(&mut self, name: &str, identity: Option<crate::docx::review::Identity>) {
         self.author = (name.into(), identity);
         self.author_id = None;
     }
 
-    /// The session's author among the document's people, added on first use.
     fn session_author(&mut self) -> crate::docx::review::AuthorId {
         if let Some(a) = self.author_id {
             return a;
@@ -725,8 +585,6 @@ impl Editor {
         a
     }
 
-    /// Updates the elements the host knows after a transaction or its undo (`inverses`: the steps that undo it), and
-    /// what the next reply lists as changed.
     fn track_elements(&mut self, inverses: &[Step]) {
         use std::collections::HashSet;
         let mut now: Vec<elements::Element> = Vec::new();
@@ -743,7 +601,6 @@ impl Editor {
                 gone.extend(removed.into_iter().filter(|id| !here.contains(id) && self.index.element(*id).is_none()));
             }
             elements::Touched::All => {
-                // In document order, so change lists come in that order.
                 let all = elements::enumerate(&self.doc, &self.index, &elements::Filter::default());
                 let here: HashSet<crate::docx::ElementId> = all.iter().map(|e| e.id).collect();
                 gone.extend(self.elems.keys().filter(|k| !here.contains(k)).copied());
@@ -775,8 +632,6 @@ impl Editor {
         self.selection.focus().map_or(0, |p| self.index.chain_of(&p).len())
     }
 
-    /// The normalizer: both ends of a selection on grapheme boundaries. Geometry has a stop per
-    /// character, so a click or a vertical move can land inside a cluster.
     fn normalize(&self, s: Selection) -> Selection {
         let snap = |p: Position, end: bool| match p.place {
             Place::Text { para, offset, affinity } => match self.index.para(&self.doc, para).map(UnitText::of) {
@@ -799,8 +654,6 @@ impl Editor {
         }
     }
 
-    /// A cell block in the table's grid, widened to whole merged cells: clamped to the grid, then
-    /// grown until no horizontal or vertical merge crosses its edge. `usize::MAX` stands for the last row or column.
     #[allow(clippy::mut_range_bound, reason = "widening the bounds inside the loop is deliberate: the outer loop repeats until they stop changing")]
     fn whole_merges(&self, table: TableId, anchor: selection::CellRef, focus: selection::CellRef, shape: selection::CellShape) -> Selection {
         let Some(t) = self.index.table(&self.doc, table) else { return Selection::Cells { table, anchor, focus, shape } };
@@ -817,13 +670,10 @@ impl Editor {
                     if e < c0 || c > c1 {
                         continue;
                     }
-                    // A column selection is the cells its columns cross (a spanning cell among them whole); it
-                    // doesn't widen to the spanning cells' other columns, which would take in the next merges' too.
                     if shape != selection::CellShape::Columns {
                         c0 = c0.min(c);
                         c1 = c1.max(e);
                     }
-                    // The vertical merge region holding this cell: from its start down while the next row continues.
                     let (sr, _) = g.merge_start(r, k);
                     r0 = r0.min(sr);
                     let mut end = r;
@@ -837,14 +687,12 @@ impl Editor {
                 break;
             }
         }
-        // The anchor keeps its corner.
         let pick = |lo: usize, hi: usize, anchor_low: bool| if anchor_low { (lo, hi) } else { (hi, lo) };
         let (ar, fr) = pick(r0, r1, a.row <= f.row);
         let (ac, fc) = pick(c0, c1, a.col <= f.col);
         Selection::Cells { table, anchor: selection::CellRef { row: ar, col: ac }, focus: selection::CellRef { row: fr, col: fc }, shape }
     }
 
-    /// The grid cell (row, grid column) of `table` nearest a document point, on the page under it.
     fn grid_cell_at(&mut self, table: TableId, x: f64, y: f64, fonts: &Fonts) -> Option<(usize, usize)> {
         let stack = self.stack();
         let (page, px, py) = stack.page_at(x, y)?;
@@ -869,12 +717,11 @@ impl Editor {
         self.selection = s;
     }
 
-    /// Where typing goes: the caret, or the start of a text selection (after deleting it).
     fn caret(&self) -> Option<Position> {
         self.selection.focus()
     }
 
-    // ---------------- transactions ----------------
+    // Transactions
 
     fn record(&self) -> SelectionRecord {
         SelectionRecord { selection: self.selection, chain: self.selection.focus().map(|p| self.index.chain_of(&p)).unwrap_or_default() }
@@ -900,12 +747,9 @@ impl Editor {
     }
 
     fn step(&mut self, tx: &mut Tx, s: Step) -> Result<Map, StepError> {
-        // Read only refuses edits before they run: no step reaches a read-only document.
         if self.mode == Mode::ReadOnly {
             return Err(StepError::ReadOnly);
         }
-        // An inline content control stays in one paragraph: a split inside one is refused, so Enter and
-        // pastes of several paragraphs do nothing there.
         if let Step::Split { para, at, .. } = &s
             && let Some(p) = self.index.para(&self.doc, *para)
             && splits_a_control(p, *at)
@@ -915,7 +759,6 @@ impl Editor {
         if !tx.tracked {
             return self.apply_step(tx, s);
         }
-        // Tracking: the steps recording the edit apply in its place, by the session's author at the transaction's time.
         if tx.rec.is_none() {
             let author = self.session_author();
             let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()) as i64;
@@ -932,7 +775,6 @@ impl Editor {
         Ok(map)
     }
 
-    /// Applies one step to the document as it is, recording its inverse in the transaction.
     fn apply_step(&mut self, tx: &mut Tx, s: Step) -> Result<Map, StepError> {
         if self.mode == Mode::ReadOnly {
             return Err(StepError::ReadOnly);
@@ -952,7 +794,6 @@ impl Editor {
         Ok(a.map)
     }
 
-    /// Undoes a transaction's steps (a command that failed half way).
     fn abort(&mut self, tx: Tx) {
         self.pending_controls.clear();
         self.pending_images.clear();
@@ -961,9 +802,6 @@ impl Editor {
         }
     }
 
-    /// The one commit path, for every edit, undo and redo: records the transaction as one undo step (undo and redo
-    /// put theirs back in the history), raises the revision, lays out and keeps the record. Nothing changed records
-    /// nothing. In a batch, an edit joins the batch's transaction instead, committed when the batch ends.
     fn commit(&mut self, mut tx: Tx, typing: Option<TypingRun>, fonts: &Fonts) -> Outcome {
         if tx.replayed.is_none()
             && let Err(why) = crate::prof::time("edit:settle", || self.settle(&mut tx))
@@ -989,11 +827,7 @@ impl Editor {
         crate::prof::time("edit:finish", || self.finish(tx, label, typing, fonts))
     }
 
-    /// What a forward edit leaves to do, as steps of its transaction: the controls and images it made, field kinds,
-    /// orphans, stale paragraphs and list labels. Refused when it would delete a picture control that can't be.
     fn settle(&mut self, tx: &mut Tx) -> Result<(), &'static str> {
-        // Field kinds and orphans follow what the edit did: never recorded as revisions. Resolving paragraphs again
-        // and numbering are, so a recorded property change keeps what it had.
         let tracked = std::mem::replace(&mut tx.tracked, false);
         self.recorded = tx.rec.as_ref().map(revisions::Recording::marks).unwrap_or_default();
         for (id, c) in std::mem::take(&mut self.pending_controls) {
@@ -1003,7 +837,6 @@ impl Editor {
             let index = self.doc.images.len();
             let _ = self.apply_step(tx, Step::AddImage { index, data: Some(data) });
         }
-        // A field code edited in place: its kind is its code's again.
         let edited: Vec<ParaId> = tx.undo.iter().filter_map(|s| if let Step::Text { para, .. } = s { Some(*para) } else { None }).collect();
         for para in edited {
             if self.index.para(&self.doc, para).is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { .. }))) {
@@ -1015,26 +848,20 @@ impl Editor {
         self.drop_orphan_comments(tx);
         tx.tracked = tracked;
         crate::prof::time("edit:reresolve", || self.reresolve_stale(tx));
-        // An edit that would delete an undeletable picture control ("Content control cannot be deleted") does
-        // nothing.
         if tx.kept < 0 {
             return Err("a content control that can't be deleted");
         }
-        // Paragraphs came, went or changed their properties: list labels follow (invariant 9).
         if tx.undo.iter().any(|s| !matches!(s, Step::Text { .. } | Step::Restyle { .. } | Step::AddImage { .. })) {
             crate::prof::time("edit:renumber", || self.renumber(tx));
         }
         Ok(())
     }
 
-    /// What follows a transaction's steps: layout, the edit locations, the elements the host knows, the design labels
-    /// and the picture controls' image sets.
     fn effects(&mut self, tx: &mut Tx) {
         let hints: Vec<Option<Change>> = tx.hints.iter().zip(&tx.undo).filter(|(_, s)| s.lays_out()).map(|(h, _)| *h).collect();
         crate::prof::time("edit:relayout", || self.relayout(hints));
         let maps = std::mem::take(&mut tx.maps);
         self.map_marks(&maps);
-        // Undo and redo go back to edits already marked.
         if !matches!(tx.origin, Origin::Undo | Origin::Redo) {
             self.mark_edit();
             self.last_maps = maps;
@@ -1048,15 +875,11 @@ impl Editor {
         }
     }
 
-    /// Records a transaction whose steps applied and laid out: the next revision, its place in the history, and its
-    /// record for the session.
     fn finish(&mut self, mut tx: Tx, label: Cow<'static, str>, typing: Option<TypingRun>, fonts: &Fonts) -> Outcome {
         self.revision += 1;
         let undo = std::mem::take(&mut tx.undo);
         let bytes = undo.iter().map(history::step_bytes).sum();
         match tx.replayed.take() {
-            // The steps that reverse this one take the replayed transaction's place: undone, it can be redone; redone,
-            // undone again.
             Some(done) if tx.origin == Origin::Undo => self.history.push_redo(Transaction { undo, bytes, ..done }),
             Some(done) => self.history.push_undo_keep_redo(Transaction { undo, bytes, ..done }),
             None => {
@@ -1070,12 +893,9 @@ impl Editor {
     }
 
     fn after_edit(&mut self, fonts: &Fonts) {
-        // Tests check every transaction: the incremental index equals a fresh build, and the integrity
-        // invariants hold.
         #[cfg(test)]
         {
             let mut fresh = DocIndex::build_with_parts(&self.doc, self.index.parts());
-            // Which building block is the main flow is the editor's, not the document's.
             fresh.flow = self.index.flow;
             assert_eq!(self.index, fresh, "the incremental index differs from a fresh build");
             let v = integrity::check(&self.doc, &self.index, &self.selection);
@@ -1091,10 +911,7 @@ impl Editor {
         }
     }
 
-    /// Undo (or redo): the last transaction's steps reversed, committed as a transaction of their own from
-    /// [`Origin::Undo`] (or [`Origin::Redo`]).
     fn undo(&mut self, undo: bool, fonts: &Fonts) -> Outcome {
-        // A batch is one transaction: undo can't take a part of it.
         if self.batch.is_some() {
             return Outcome::Unchanged("in a batch");
         }
@@ -1107,26 +924,21 @@ impl Editor {
         self.pending = None;
         tx.replayed = Some(done);
         let out = self.commit(tx, None, fonts);
-        // Undo and redo go where their edit was: into a sub-template, or out of one.
         self.follow_selection();
         out
     }
 
-    /// Applies recorded steps last to first (undoing what they record) into `tx`, which then holds their inverses.
     fn replay(&mut self, tx: &mut Tx, steps: Vec<Step>) {
         for s in steps.into_iter().rev() {
             if self.apply_step(tx, s).is_err() {
-                // A history that doesn't fit the document is a bug; lay out fully so the screen stays right.
                 self.relayout([None]);
                 break;
             }
         }
     }
 
-    // ---------------- batches ----------------
+    // Batches
 
-    /// Starts a batch: until it ends, what commands commit folds into one transaction, labelled `label` (else its
-    /// first commit's label). A batch begun inside another joins it.
     pub fn begin_batch(&mut self, label: Option<Cow<'static, str>>) {
         let selection = self.selection;
         if let Some(b) = &mut self.batch {
@@ -1138,8 +950,6 @@ impl Editor {
         self.batch = Some(Batch { tx, label, marks: vec![(0, selection)] });
     }
 
-    /// Ends the batch begun last. With `keep`, the outermost commits as one transaction (when it changed anything);
-    /// without, what the batch did is undone and the selection is as it was.
     pub fn end_batch(&mut self, keep: bool, fonts: &Fonts) -> Outcome {
         let Some((mark, selection)) = self.batch.as_mut().and_then(|b| b.marks.pop()) else { return Outcome::Unchanged("no batch") };
         if !keep {
@@ -1156,7 +966,6 @@ impl Editor {
         }
     }
 
-    /// Undoes what the batch's commits since `mark` did (they leave its transaction), back to `selection`.
     fn revert_batch(&mut self, mark: usize, selection: Selection, fonts: &Fonts) {
         let steps = self.batch.as_mut().map(|b| b.tx.undo.split_off(mark)).unwrap_or_default();
         let mut tx = self.begin("");
@@ -1170,10 +979,8 @@ impl Editor {
         self.after_edit(fonts);
     }
 
-    // ---------------- typing ----------------
+    // Typing
 
-    /// The run typed text takes at `pos`: the pending format, the text before the caret, a neighbour's,
-    /// or the paragraph mark's.
     fn run_at(&self, pos: &Position) -> Option<Run> {
         if let Some(r) = &self.pending {
             return Some(r.clone());
@@ -1195,14 +1002,10 @@ impl Editor {
         Some(before.unwrap_or(&p.mark).clone())
     }
 
-    /// Deletes a text selection and returns where the caret goes: its start.
     fn delete_range(&mut self, tx: &mut Tx) -> Result<Option<Position>, StepError> {
         self.delete_range_joining(tx, true)
     }
 
-    /// [`Editor::delete_range`]; `join`: the two ends of a range across a table become one paragraph (typing over it
-    /// joins them; Delete and Backspace keep them apart). With tracking the deleted text stays, and the caret goes to
-    /// the range's end, after it.
     fn delete_range_joining(&mut self, tx: &mut Tx, join: bool) -> Result<Option<Position>, StepError> {
         let end = self.selection.ordered(&self.index).map(|(_, b)| b).filter(|_| tx.tracked && matches!(self.selection, Selection::Text { .. }));
         let from = tx.maps.len();
@@ -1213,9 +1016,7 @@ impl Editor {
         })
     }
 
-    /// [`Editor::delete_range_joining`] with the caret at the range's start.
     fn delete_range_untracked(&mut self, tx: &mut Tx, join: bool) -> Result<Option<Position>, StepError> {
-        // Over a cell block, typing replaces the first cell's text only.
         if let Selection::Cells { table, anchor, .. } = self.selection
             && let Some(t) = self.index.table(&self.doc, table)
             && let Some(cell) = table::Grid::of(t).cell_at(anchor.row, anchor.col)
@@ -1237,10 +1038,6 @@ impl Editor {
         if a.same_place(&b) {
             return Ok(Some(a));
         }
-        // Across sections: the breaks between go, and the range is then in one section. With tracking each section's
-        // part goes as a range of its own, the last first.
-        // shortcut: tracked, the section breaks stay (a deleted break isn't recorded as a revision), so each section
-        // keeps an empty paragraph.
         let section_of = |e: &Editor, p: &Position| {
             let s = match p.place {
                 Place::Text { para, .. } => e.index.para_slot(para)?,
@@ -1268,12 +1065,10 @@ impl Editor {
             }
             return Ok(caret);
         }
-        // Across a table's rows (also from a drag into or out of a table, which ends at a row's end mark).
         if let Some(p) = self.delete_across_tables(tx, a, b)? {
             return Ok(Some(p));
         }
         let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset()) else {
-            // A row end mark at either end: delete the text of the paragraphs between.
             return self.delete_paragraph_texts(tx, a, b).map(|()| Some(a));
         };
         if pa == pb {
@@ -1282,13 +1077,10 @@ impl Editor {
         }
         let (sa, sb) = (self.index.para_slot(pa).ok_or(StepError::Missing)?, self.index.para_slot(pb).ok_or(StepError::Missing)?);
         if sa.container == sb.container && oa == Unit(0) && ob == Unit(0) {
-            // Whole paragraphs with their marks: they go, and the paragraph after keeps its own properties.
             self.step(tx, Step::Blocks { container: sa.container, range: sa.block..sb.block, with: Vec::new() })?;
             return Ok(Some(Position::text(a.story, pb, Unit(0))));
         }
         if sa.container == sb.container {
-            // Siblings: drop what lies between (tables too), then join the two ends; with a table between, Delete keeps
-            // them apart.
             let table_between =
                 self.index.blocks(&self.doc, sa.container).is_some_and(|bl| bl[sa.block + 1..sb.block].iter().any(|b| matches!(b, Block::Table(_))));
             let len_a = para_len(self.index.para(&self.doc, pa).ok_or(StepError::Missing)?);
@@ -1298,14 +1090,12 @@ impl Editor {
                 self.step(tx, Step::Blocks { container: sa.container, range: sa.block + 1..sb.block, with: Vec::new() })?;
             }
             if table_between && !join {
-                // From the first paragraph's start its mark goes too: no empty paragraph is left before the second.
                 if oa == Unit(0) {
                     self.step(tx, Step::Blocks { container: sa.container, range: sa.block..sa.block + 1, with: Vec::new() })?;
                     return Ok(Some(Position::text(a.story, pb, Unit(0))));
                 }
                 return Ok(Some(Position::text(a.story, pa, oa)));
             }
-            // A block-level control's edge: the text goes, the paragraphs stay apart.
             let controls = |e: &Editor, p: ParaId| e.index.para(&e.doc, p).map(|x| x.controls.clone());
             if controls(self, pa) != controls(self, pb) {
                 return Ok(Some(Position::text(a.story, pa, oa)));
@@ -1314,18 +1104,13 @@ impl Editor {
             tx.stale_paras.push(pa);
             return Ok(Some(Position::text(a.story, pa, oa)));
         }
-        // Across cells of one table: only the text goes; cells never merge.
         self.delete_paragraph_texts(tx, a, b)?;
         Ok(Some(a.with_affinity(Affinity::Downstream)))
     }
 
-    /// A range from outside a table into it, out of it, or from one table to another at the same level: the
-    /// rows it touches go whole; text left before a table whose rows remain moves into its first cell. `None` when
-    /// both ends are in the same table at their shared level (cells of one table: only text goes).
     fn delete_across_tables(&mut self, tx: &mut Tx, a: Position, b: Position) -> Result<Option<Position>, StepError> {
         let (ca, cb) = (self.index.chain_of(&a), self.index.chain_of(&b));
         let k = ca.iter().zip(&cb).take_while(|(x, y)| x.table == y.table && x.row == y.row && x.cell == y.cell).count();
-        // The ends' blocks in the container both are in: a paragraph, or a table at that level (with the row).
         let top = |e: &Editor, p: &Position, chain: &[index::Level]| -> Option<(index::Slot, Option<(TableId, usize)>)> {
             match chain.get(k) {
                 Some(l) => Some((e.index.table_slot(l.table)?, Some((l.table, l.row)))),
@@ -1337,7 +1122,6 @@ impl Editor {
             return Ok(None);
         }
         let story = a.story;
-        // The b side first (later in the container), so the a side's indices hold.
         let mut moved_into: Option<ParaId> = None;
         match tb {
             Some((table, rb)) => {
@@ -1345,7 +1129,6 @@ impl Editor {
                 if rb + 1 >= n {
                     self.step(tx, Step::Blocks { container: sb.container, range: sb.block..sb.block + 1, with: Vec::new() })?;
                 } else {
-                    // A vertical merge that started in a row going on restarts in the first row kept.
                     let kept = self.index.table(&self.doc, table).and_then(|t| {
                         let g = table::Grid::of(t);
                         let mut r = t.rows.get(rb + 1)?.clone();
@@ -1384,7 +1167,6 @@ impl Editor {
                     self.step(tx, Step::Rows { table, range: ra..n, with: Vec::new(), grid: None })?;
                     tx.stale_tables.push(table);
                 }
-                // The caret: what followed, the b side's paragraph or table.
                 let next = self
                     .index
                     .blocks(&self.doc, sa.container)
@@ -1396,7 +1178,6 @@ impl Editor {
                 let (pa, oa) = a.para_offset().ok_or(StepError::Missing)?;
                 let len = para_len(self.index.para(&self.doc, pa).ok_or(StepError::Missing)?);
                 self.delete_text(tx, pa, oa..len)?;
-                // The rest of the paragraph before joins the remaining table's first cell ("Bef" + "c31").
                 if let Some(target) = moved_into {
                     let inlines: Vec<Inline> =
                         self.index.para(&self.doc, pa).map(|p| p.inlines.iter().filter(|i| i.units() > 0).cloned().collect()).unwrap_or_default();
@@ -1414,10 +1195,6 @@ impl Editor {
         }
     }
 
-    /// Deletes units `range` of `para`, keeping content controls' edges: the range is
-    /// cut at each control marker whose partner it leaves out, so that marker stays (and the control with what is
-    /// left of it); a range touching a drop-down list's content without covering the whole control is refused.
-    /// Comment markers stay the same way, except those of a comment whose text the range takes whole: it goes too.
     fn delete_text(&mut self, tx: &mut Tx, para: ParaId, range: std::ops::Range<Unit>) -> Result<(), StepError> {
         let p = self.index.para(&self.doc, para).ok_or(StepError::Missing)?;
         let mut at = 0u32;
@@ -1441,7 +1218,6 @@ impl Editor {
             if drop_down && !whole && a < ce && b > cs {
                 return Err(StepError::OutOfRange);
             }
-            // Strictly inside the range, its partner outside: the range is cut there.
             if a < u && u < b && !(a <= cs && ce <= b) {
                 cuts.push(u);
             }
@@ -1453,9 +1229,6 @@ impl Editor {
         if !emptied.is_empty() {
             self.remove_comments(tx, &emptied)?;
         }
-        // A control the range takes whole whose marker sits on the range's edge (the other inside it): that marker
-        // leaves first, so the control goes whole. Removed before the deletion, it comes back with the paragraph's
-        // other inlines, in place, on undo (a restyle keeps every inline).
         let mut lone: Vec<(crate::docx::ControlId, bool)> = Vec::new();
         for &(u, c, start) in &marks {
             let Some(o) = marks.iter().find(|(_, d, s)| *d == c && *s != start).map(|m| m.0) else { continue };
@@ -1489,7 +1262,6 @@ impl Editor {
         Ok(())
     }
 
-    /// Deletes the selected text of every paragraph from `a` to `b` without joining any.
     fn delete_paragraph_texts(&mut self, tx: &mut Tx, a: Position, b: Position) -> Result<(), StepError> {
         let mut p = a;
         let mut guard = 0;
@@ -1505,7 +1277,6 @@ impl Editor {
                     self.delete_text(tx, para, off..end)?;
                 }
                 p = Position::text(p.story, para, off.max(Unit(0)));
-                // On to the next paragraph's start.
                 let at_end = Position::text(p.story, para, para_len(self.index.para(&self.doc, para).ok_or(StepError::Missing)?));
                 let next = self.nav().right(at_end, false);
                 if next == at_end {
@@ -1527,18 +1298,14 @@ impl Editor {
         if text.is_empty() {
             return Outcome::Unchanged("empty text");
         }
-        // Space with an unfilled placeholder selected activates it.
         if text == " " && self.activate_placeholder() {
             return Outcome::Unchanged("placeholder activated");
         }
-        // Space with a checkbox selected toggles it; in design mode it changes nothing (the checkbox
-        // doesn't toggle, and the space doesn't type over it).
         if text == " "
             && let Some(p) = self.selected_checkbox()
         {
             return if self.mode == Mode::Design { Outcome::Unchanged("design mode") } else { self.toggle_checkbox(p, fonts) };
         }
-        // Typing into a selected shape without text gives it its story first.
         self.shape_story_for_typing(fonts);
         self.object_to_caret();
         if self.refuse_expanded() || self.refuse_locked() {
@@ -1553,7 +1320,6 @@ impl Editor {
                 return Outcome::Unchanged("stale selection");
             }
         };
-        // At a row's end mark, text goes to the start of what follows.
         let caret = self.past_row_end(caret);
         let Place::Text { para, offset, .. } = caret.place else {
             self.abort(tx);
@@ -1592,16 +1358,13 @@ impl Editor {
             }
             at = Unit(at.0 + n);
         }
-        // Text typed before a combining mark joins its cluster: the caret goes after the cluster.
         let at = self.index.para(&self.doc, para).map(UnitText::of).map_or(at, |t| if t.is_boundary(at) { at } else { t.next_grapheme(at) });
         self.selection = Selection::Caret(Position::text(caret.story, para, at));
-        // Typing over a selection starts a typing run; what follows joins it.
         let single = lines.len() == 1;
         let typing = single.then_some(TypingRun { para, at, kind: Typing::Insert });
         self.commit(tx, typing, fonts)
     }
 
-    /// From a row's end mark, the first text place after it; other places are themselves.
     fn past_row_end(&mut self, mut p: Position) -> Position {
         for _ in 0..64 {
             if p.para_offset().is_some() {
@@ -1616,8 +1379,6 @@ impl Editor {
         p
     }
 
-    /// Ctrl+Shift+Enter in text: a column break that starts a new paragraph (the text before the caret keeps
-    /// its paragraph); right after a break or at a paragraph's start, only the break.
     fn column_break(&mut self, fonts: &Fonts) -> Outcome {
         let at_start = self.selection.is_collapsed()
             && self.caret().and_then(|c| c.para_offset()).is_some_and(|(p, off)| {
@@ -1658,9 +1419,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Ctrl+Enter: a page break that ends its paragraph, the caret in a new paragraph after it (on the next page).
-    /// With splitPgBreakAndParaMark in compat 14 or below (COMPAT-3) the mark after a break already goes to the next
-    /// page, so only the break.
     fn page_break(&mut self, fonts: &Fonts) -> Outcome {
         let s = &self.doc.settings;
         if s.compat() == crate::docx::Compat::Legacy && s.has("splitPgBreakAndParaMark") {
@@ -1695,7 +1453,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// A new paragraph after `para` with its properties (Enter).
     fn split_template(&self, para: ParaId) -> Option<Paragraph> {
         let p = self.index.para(&self.doc, para)?;
         Some(Paragraph {
@@ -1705,17 +1462,14 @@ impl Editor {
             inlines: Vec::new(),
             src: None,
             id: crate::docx::next_para_id(),
-            // The new paragraph is in the same block-level controls.
             controls: p.controls.clone(),
         })
     }
 
     fn enter(&mut self, fonts: &Fonts) -> Outcome {
-        // Design mode: Enter with a field or control selected reports it to the host and does nothing else.
         if self.mode == Mode::Design && self.activate(false) {
             return Outcome::Unchanged("activated");
         }
-        // Enter with an unfilled placeholder selected activates it.
         if self.activate_placeholder() {
             return Outcome::Unchanged("placeholder activated");
         }
@@ -1731,7 +1485,6 @@ impl Editor {
                 return Outcome::Unchanged("no caret");
             }
         };
-        // Enter at a row's end mark adds an empty row below.
         if let Place::RowEnd { table, row } = caret.place {
             self.abort(tx);
             return self.add_row(table, row, caret.story, fonts);
@@ -1740,8 +1493,6 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("caret at a row end");
         };
-        // At the start of a table's first cell with nothing before the table in its container, a paragraph
-        // goes before the table.
         if at == Unit(0)
             && let Some(slot) = self.index.para_slot(para)
             && slot.block == 0
@@ -1768,8 +1519,6 @@ impl Editor {
                 return Outcome::Unchanged("insert failed");
             }
             tx.stale_paras.push(new_id);
-            // From a caret, the caret goes into the new paragraph; over a selection it stays at the cell's
-            // start (E2E-EDIT-11).
             self.selection = Selection::Caret(if collapsed { Position::text(caret.story, new_id, Unit(0)) } else { caret });
             return self.commit(tx, None, fonts);
         }
@@ -1777,7 +1526,6 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("no paragraph");
         };
-        // At a paragraph's end, the new one is in the style's next style (a heading's: Normal), resolved again there.
         let at_end = self.index.para(&self.doc, para).is_some_and(|p| para_len(p) == at);
         if at_end && let Some(s) = self.next_style_paragraph(para, second.clone()) {
             second = s;
@@ -1792,8 +1540,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// When `container` is the first cell of a table that is the first block of its own container, that
-    /// table's slot.
     fn table_needing_paragraph_before(&self, container: Container) -> Option<index::Slot> {
         let Container::Cell { table, row: 0, cell: 0 } = container else { return None };
         let s = self.index.table_slot(table)?;
@@ -1804,7 +1550,6 @@ impl Editor {
         self.insert_inlines(|run| vec![make(run)], label, fonts)
     }
 
-    /// Inlines at the caret (replacing the selection) as one step; the caret after them.
     fn insert_inlines(&mut self, make: impl Fn(Run) -> Vec<Inline>, label: &'static str, fonts: &Fonts) -> Outcome {
         if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
@@ -1832,7 +1577,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Backspace and Delete.
     fn delete(&mut self, dir: Dir, word: bool, fonts: &Fonts) -> Outcome {
         if let Some(o) = self.delete_object(fonts) {
             return o;
@@ -1845,7 +1589,6 @@ impl Editor {
         {
             return o;
         }
-        // A field's brace or edge: the first press selects the whole field, the next deletes it.
         if self.selection.is_collapsed()
             && let Some(p) = self.caret()
             && let Some((para, u)) = p.para_offset()
@@ -1863,7 +1606,6 @@ impl Editor {
                 return Outcome::Moved;
             }
         }
-        // Locks: the selection, or the unit Backspace or Delete would take.
         if self.selection.is_collapsed() {
             if let Some(p) = self.caret()
                 && let Some((para, u)) = p.para_offset()
@@ -1891,7 +1633,6 @@ impl Editor {
         }
         let Some(caret) = self.caret() else { return Outcome::Unchanged("no caret") };
         let Some((para, off)) = caret.para_offset() else {
-            // At a row end mark, Backspace moves into the row's last cell; Delete does nothing.
             if dir == Dir::Back {
                 let p = self.nav().left(caret, false);
                 self.set_selection(Selection::Caret(p));
@@ -1903,7 +1644,6 @@ impl Editor {
         let typing = |at| TypingRun { para, at, kind: if dir == Dir::Back { Typing::Backspace } else { Typing::Delete } };
         if dir == Dir::Back && off > Unit(0) {
             let from = if word { t.prev_word(off) } else { t.prev_grapheme(off) };
-            // With tracking, Backspace over deleted text moves the caret into it and changes nothing.
             if tx.tracked && !word && self.index.para(&self.doc, para).is_some_and(|p| revisions::record::all_deleted(p, from, off)) {
                 self.set_selection(Selection::Caret(Position::text(caret.story, para, from)));
                 return Outcome::Moved;
@@ -1922,15 +1662,11 @@ impl Editor {
                 self.abort(tx);
                 return Outcome::Unchanged("delete failed");
             }
-            // With tracking the deleted text stays: the caret goes past it.
             let end = if tx.tracked { tx.maps[from..].iter().fold(Position::text(caret.story, para, to), |p, m| m.apply(p)) } else { caret };
             let at = end.para_offset().map_or(off, |(_, u)| u);
             self.selection = Selection::Caret(end);
             return self.commit(tx, Some(typing(at)), fonts);
         }
-        // At a section's start (Backspace) or end (Delete): the section break, on the paragraph mark between, goes with
-        // it: the sections merge, and the paragraphs join below.
-        // shortcut: tracked, the break stays (a deleted break isn't recorded as a revision).
         if !tx.tracked
             && let Some(slot) = self.index.para_slot(para)
             && let Container::Section(k) = slot.container
@@ -1949,7 +1685,6 @@ impl Editor {
                 return Outcome::Unchanged("section break");
             }
         }
-        // At a paragraph boundary: join with the sibling paragraph; cells and tables never merge.
         let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
         let blocks = self.index.blocks(&self.doc, slot.container).map(|b| b.len()).unwrap_or(0);
         let sibling = |k: usize| match self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(k)) {
@@ -1957,7 +1692,6 @@ impl Editor {
             Some(Block::Table(t)) => Some(Err(TableId(t.id))),
             None => None,
         };
-        // Paragraphs in different block-level controls stay apart.
         let controls = |p: ParaId| self.index.para(&self.doc, p).map(|x| x.controls.clone());
         match dir {
             Dir::Back => match slot.block.checked_sub(1).and_then(sibling) {
@@ -1971,7 +1705,6 @@ impl Editor {
                     self.selection = Selection::Caret(Position::text(caret.story, prev, len));
                     self.commit(tx, None, fonts)
                 }
-                // After a table: nothing, even in an empty paragraph.
                 Some(Err(_)) => Outcome::Unchanged("after a table"),
                 None => Outcome::Unchanged("start of a cell or story"),
             },
@@ -1984,7 +1717,6 @@ impl Editor {
                         return Outcome::Unchanged("join failed");
                     }
                     tx.stale_paras.push(para);
-                    // With tracking the deleted mark stays: the caret goes past it, to the next paragraph's start.
                     let end = match tx.tracked {
                         true => tx.maps[from..].iter().fold(Position::text(caret.story, next, Unit(0)), |p, m| m.apply(p)),
                         false => Position::text(caret.story, para, off),
@@ -1992,7 +1724,6 @@ impl Editor {
                     self.selection = Selection::Caret(end);
                     self.commit(tx, None, fonts)
                 }
-                // Before a table: the paragraph's text moves into the start of the first cell.
                 Some(Err(table)) => {
                     let Some(target) = self
                         .index
@@ -2029,11 +1760,7 @@ impl Editor {
         }
     }
 
-    /// Tab / Shift+Tab in a table: the next (previous) cell's content is selected, in
-    /// row order, a vertically merged cell once per row it spans; a cell starting with a nested table selects that
-    /// table's cells. Tab in the last cell of the caret's innermost table adds a row to that table only.
     fn next_cell(&mut self, back: bool, fonts: &Fonts) -> Outcome {
-        // From a nested table's cell block: Tab goes into its first cell, Shift+Tab before its container cell.
         let (table, here, story) = match self.selection {
             Selection::Cells { table, .. } => {
                 if !back {
@@ -2047,7 +1774,6 @@ impl Editor {
                 let Some(focus) = self.selection.focus().or_else(|| self.selection.anchor()) else { return Outcome::Unchanged("no caret") };
                 let Some(level) = self.index.chain_of(&focus).last().copied() else { return Outcome::Unchanged("not in a table") };
                 let here = match self.tab_stop {
-                    // A continuation row's stop: the selection Tab made there.
                     Some((sel, t, rc)) if sel == self.selection && t == level.table => rc,
                     _ => (level.row, level.cell),
                 };
@@ -2069,8 +1795,6 @@ impl Editor {
         }
     }
 
-    /// Tab's selection of cell (`row`, `cell`): its content (a merge continuation's is its region's first cell's),
-    /// or the cells of the nested table it starts with.
     fn select_cell(&mut self, table: TableId, row: usize, cell: usize) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let g = table::Grid::of(t);
@@ -2094,7 +1818,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// The text range of a cell's whole content.
     fn cell_content(&self, table: TableId, row: usize, cell: usize) -> Option<Selection> {
         let t = self.index.table(&self.doc, table)?;
         let story = self.index.table_slot(table).map_or(self.editing(), |s| self.index.story(s.container));
@@ -2104,7 +1827,6 @@ impl Editor {
         Some(Selection::range(Position::text(story, a, Unit(0)), Position::text(story, lp, len), Granularity::Char))
     }
 
-    /// Adds an empty row like row `after` below it, in this table only, with the caret in its first cell.
     fn add_row(&mut self, table: TableId, after: usize, story: StoryId, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let Some(mut row) = t.rows.get(after).cloned() else { return Outcome::Unchanged("no row") };
@@ -2141,11 +1863,10 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    // ---------------- movement ----------------
+    // Movement
 
     fn move_caret(&mut self, by: MoveBy, dir: Dir, extend: bool, fonts: &Fonts) -> Outcome {
         let forward = dir == Dir::Forward;
-        // Shift+arrows on a cell block: its focus cell moves a row or a column.
         if extend
             && let Selection::Cells { table, anchor, focus, shape: selection::CellShape::Rect } = self.selection
             && matches!(by, MoveBy::Line | MoveBy::Char)
@@ -2162,7 +1883,6 @@ impl Editor {
             self.set_selection(Selection::Cells { table, anchor, focus: f, shape: selection::CellShape::Rect });
             return Outcome::Moved;
         }
-        // Left/Right without Shift collapse a selection to its start or end.
         if !extend
             && matches!(by, MoveBy::Char)
             && !self.selection.is_collapsed()
@@ -2179,11 +1899,9 @@ impl Editor {
             MoveBy::Char | MoveBy::Word => {
                 let word = by == MoveBy::Word;
                 let t = if forward { self.nav().right(focus, word) } else { self.nav().left(focus, word) };
-                // All notes of a kind are one story: past a note's edge, the next or previous note.
                 if t.same_place(&focus) { self.next_note_edge(focus.story, forward).or(Some(t)) } else { Some(t) }
             }
             MoveBy::Para => Some(if forward { self.nav().next_para(focus) } else { self.nav().prev_para(focus) }),
-            // From notes and text boxes, Ctrl+Home/End go to the main document's start or end.
             MoveBy::Story => match focus.story {
                 StoryId::Footnote(_) | StoryId::Endnote(_) | StoryId::TextBox(_) => self.nav().story_edge(StoryId::Body, forward),
                 s => self.nav().story_edge(s, forward),
@@ -2203,13 +1921,10 @@ impl Editor {
                         x
                     }
                 };
-                // Clipped text has no lines: moves into, through and out of it first.
                 match self.clipped_vertical(focus, x, forward) {
                     Some(t) => Some(t),
                     None => {
                         let t = self.nav().vertical(focus, x, forward);
-                        // Past the story's first or last line: the next header, footer, note or body line where moves
-                        // cross stories, else the story's start or end.
                         t.or_else(|| self.cross_vertical(focus, x, forward, fonts)).or_else(|| self.nav().story_edge(focus.story, forward))
                     }
                 }
@@ -2221,7 +1936,6 @@ impl Editor {
         let goal = self.goal_x;
         let s = if extend {
             let anchor = self.selection.anchor().unwrap_or(focus);
-            // Across cells, the shapes a drag gives (Shift+Down into the next cell is a cell block).
             match self.drag_across_cells(anchor, target, false) {
                 Some((s, _)) => s,
                 None => Selection::range(anchor, target, Granularity::Char),
@@ -2238,8 +1952,6 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Page Up/Down keep the caret's place on screen; Ctrl+Page Up/Down go to a page's top; Ctrl+Alt to the screen's
-    /// top or bottom.
     fn page_move(&mut self, by: MoveBy, forward: bool, focus: Position, fonts: &Fonts) -> Option<Position> {
         let stack = self.stack();
         let caret = self.caret_view()?;
@@ -2270,14 +1982,13 @@ impl Editor {
         Some(Position { story: hit.story, place: Place::Text { para: hit.para, offset: hit.unit, affinity: hit.affinity } })
     }
 
-    // ---------------- pointer ----------------
+    // Pointer
 
     fn hit(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<Position> {
         let (p, _) = self.hit_full(x, y, fonts)?;
         Some(p)
     }
 
-    /// [`Editor::hit`] on pages already laid out (nothing is laid out for it): for the view, which has no fonts.
     fn hit_laid_out(&mut self, x: f64, y: f64) -> Option<Position> {
         let (page, px, py) = self.stack().page_at(x, y)?;
         let geo = self.pages.page(page, &self.index)?;
@@ -2286,7 +1997,6 @@ impl Editor {
         Some(Position { story: hit.story, place: Place::Text { para: hit.para, offset: hit.unit, affinity: hit.affinity } })
     }
 
-    /// [`Editor::hit`], and whether the point is in a repeated header row's copy.
     fn hit_full(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(Position, bool)> {
         let stack = self.stack();
         let (page, px, py) = stack.page_at(x, y)?;
@@ -2298,7 +2008,6 @@ impl Editor {
         Some((Position { story: hit.story, place: Place::Text { para: hit.para, offset: hit.unit, affinity: hit.affinity } }, hit.repeat))
     }
 
-    /// The selection bar under a point: the page and line beside it.
     fn bar_hit(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(Position, Position)> {
         if self.editing() != StoryId::Body {
             return None;
@@ -2307,7 +2016,6 @@ impl Editor {
         let (page, px, py) = stack.page_at(x, y)?;
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
-        // To 2 px left of the text column.
         let section = self.snapshot().info().get(page).map_or(0, |i| i.section);
         let left = self.doc.sections.get(section).map_or(72.0, |s| s.left) - 1.5 / self.viewport.zoom.max(0.1);
         let i = geo.selection_bar(px, py, left)?;
@@ -2315,11 +2023,9 @@ impl Editor {
         self.line_span_of(&geo, i)
     }
 
-    /// A line's start and end; a paragraph's last line ends after its mark.
     fn line_span_of(&mut self, geo: &geometry::PageGeometry, i: usize) -> Option<(Position, Position)> {
         let l = &geo.lines[i];
         let story = geo.stories[l.story].story;
-        // From its first stop to its last, which belong to different paragraphs where the view joins them (REV-6).
         let (first, last) = (l.stops.first()?, l.stops.last()?);
         let a = Position::text(story, first.para, first.unit);
         let len = self.index.para(&self.doc, last.para).map_or(Unit(0), para_len);
@@ -2331,7 +2037,6 @@ impl Editor {
         Some((a, b))
     }
 
-    /// The line showing `p`.
     fn line_span(&mut self, p: Position) -> (Position, Position) {
         match self.nav().line_of(p) {
             Some(at) => self.line_span_of(&at.geo, at.line).unwrap_or((p, p)),
@@ -2339,8 +2044,6 @@ impl Editor {
         }
     }
 
-    /// The place after a paragraph's mark: the next paragraph's start when it is a sibling paragraph, else the end
-    /// (the last paragraph of a story or cell, or one before a table).
     fn after_mark(&mut self, end: Position) -> Position {
         let Some((para, _)) = end.para_offset() else { return end };
         let next = self.nav().right(end, false);
@@ -2350,7 +2053,6 @@ impl Editor {
         }
     }
 
-    /// What a gesture of `unit` selects at `p`.
     fn span(&mut self, p: Position, unit: Granularity) -> (Position, Position) {
         match unit {
             Granularity::Word => self.word_span(p),
@@ -2364,14 +2066,11 @@ impl Editor {
         }
     }
 
-    /// The table zone under a point, on the editing story.
     fn zone_hit(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<geometry::Zone> {
         let stack = self.stack();
         let (page, px, py) = stack.page_at(x, y)?;
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
-        // The "+" zones are live around the table the pointer came from: a click on the text above or beside a table
-        // that only holds the caret reaches the text.
         let hovered = self.table_hover.map(|h| h.table);
         let z = geo.zone(px, py, 0.75 / self.viewport.zoom.max(0.1), hovered)?;
         let table = match z {
@@ -2392,16 +2091,12 @@ impl Editor {
         }
         match kind {
             PointerKind::Down => {
-                // In extend mode a click extends the selection.
                 let mods = if self.modes.extend > 0 && clicks == 1 { keymap::Mods { shift: true, ..mods } } else { mods };
                 self.goal_x = None;
                 self.history.break_typing();
-                // Design mode: a region's title tab selects the region.
                 if self.mode == Mode::Design && self.region_title_click(x, y, fonts) {
                     return;
                 }
-                // A click on a sub-template's body shown in place of its reference selects the reference; a
-                // double-click edits the sub-template.
                 if !mods.shift && self.expansion_click(x, y, clicks, fonts) {
                     return;
                 }
@@ -2420,8 +2115,6 @@ impl Editor {
                 if !mods.shift && self.checkbox_press(x, y, fonts) {
                     return;
                 }
-                // A link: Ctrl+click (a click when read only) activates it: a bookmark's goes there, others are for the
-                // application to open.
                 if clicks == 1
                     && !mods.shift
                     && (mods.ctrl || mods.meta || self.mode == Mode::ReadOnly)
@@ -2433,7 +2126,6 @@ impl Editor {
                     }
                     return;
                 }
-                // A double-click on a column border auto-fits the column to its left.
                 if clicks == 2
                     && let Some((_, table, resize::Border::Column(k), ..)) = self.border_at(x, y, fonts)
                     && k > 0
@@ -2447,8 +2139,6 @@ impl Editor {
                     return;
                 }
                 if let Some(z) = self.zone_hit(x, y, fonts) {
-                    // A cell, row or column zone: a click selects it; a double-click in a cell or row zone,
-                    // the row.
                     let (table, row, cell, shape) = match z {
                         geometry::Zone::Cell(t, r, c) if clicks < 2 => (t, r, c, selection::CellShape::Rect),
                         geometry::Zone::Cell(t, r, c) => (t, r, c, selection::CellShape::Rows),
@@ -2462,13 +2152,11 @@ impl Editor {
                                 shape: selection::CellShape::Table,
                             });
                             self.drag = None;
-                            // A drag from the handle moves the table.
                             if self.mode != Mode::ReadOnly {
                                 self.table_press(t, x, y);
                             }
                             return;
                         }
-                        // A "+": a column or row goes in there, selected.
                         geometry::Zone::InsertColumn(t, k) => {
                             if self.mode != Mode::ReadOnly {
                                 self.insert_column_at(t, k, fonts);
@@ -2498,14 +2186,12 @@ impl Editor {
                             shape,
                         });
                         self.drag = None;
-                        // A drag from the zone extends the block cell by cell, keeping its shape.
                         self.zone_drag = Some((table, selection::CellRef { row: a.0, col: a.1 }, shape));
                         self.requests.push(Request::CapturePointer);
                         return;
                     }
                 }
                 if let Some((a, b)) = self.bar_hit(x, y, fonts) {
-                    // The selection bar: a line, a paragraph, the document.
                     let (unit, (a, b)) = match clicks {
                         _ if mods.ctrl || clicks >= 3 => {
                             self.select_all();
@@ -2523,7 +2209,6 @@ impl Editor {
                 if clicks == 2 && self.note_jump(p) {
                     return;
                 }
-                // A press inside the selection: drag-and-drop, or a click if it doesn't move.
                 if clicks == 1 && !mods.shift && self.modes == extend::Modes::default() && self.mode != Mode::ReadOnly && self.inside_selection(&p) {
                     self.text_drag = Some(interaction::TextDrag { start: (x, y), press: p, moved: false, copy: mods.ctrl, drop: None });
                     self.requests.push(Request::CapturePointer);
@@ -2539,8 +2224,6 @@ impl Editor {
                     && mods.shift
                     && let Some((sa, sb)) = self.selection.ordered(&self.index)
                 {
-                    // Shift+click: after a double-click, by whole words; otherwise from the anchor, which snaps
-                    // to its word's edge once the click is outside that word (automatic word selection).
                     let before = self.index.cmp(&p, &sa) == std::cmp::Ordering::Less;
                     let (s, unit) = match self.selection {
                         Selection::Text { unit: Granularity::Word, .. } => {
@@ -2643,7 +2326,6 @@ impl Editor {
                 }
                 let s = match (d.unit, d.span) {
                     (Granularity::Char, _) | (_, None) => {
-                        // Beyond the start word, a drag extends by whole words (automatic word selection).
                         let (wa, wb) = self.word_span(d.anchor);
                         let beyond = !(self.index.cmp(&p, &wa) != std::cmp::Ordering::Less && self.index.cmp(&p, &wb) != std::cmp::Ordering::Greater);
                         if beyond {
@@ -2651,7 +2333,6 @@ impl Editor {
                             if self.index.cmp(&p, &d.anchor) == std::cmp::Ordering::Less {
                                 Selection::range(wb, pa, Granularity::Char)
                             } else {
-                                // Reaching a paragraph's end takes its mark (smart paragraph selection).
                                 let pb = if pb.para_offset() == p.para_offset() && self.at_para_end(p) { self.after_mark(p) } else { pb };
                                 Selection::range(wa, pb, Granularity::Char)
                             }
@@ -2697,10 +2378,6 @@ impl Editor {
         }
     }
 
-    /// A character drag's selection when it crosses table structure, and whether it is a cell block: into
-    /// another cell of the start cell's table a block of cells; back in the start cell after that, the start cell;
-    /// out of the table, whole rows from the start row to the edge crossed, plus the text; into a table from outside,
-    /// whole rows of it. `None`: an ordinary text drag.
     fn drag_across_cells(&mut self, anchor: Position, p: Position, was_block: bool) -> Option<(Selection, bool)> {
         let a_chain = self.index.chain_of(&anchor);
         let p_chain = self.index.chain_of(&p);
@@ -2709,8 +2386,6 @@ impl Editor {
             let t = e.index.table(&e.doc, table)?;
             Some(selection::CellRef { row, col: table::Grid::of(t).col_of(row, cell.min(t.rows.get(row)?.cells.len().checked_sub(1)?))? })
         };
-        // A table of the anchor's, further out than its innermost, that the pointer is in too, in another cell: a cell
-        // block of that table (from an inner cell into another outer cell).
         if let Some(k) = (0..a_chain.len().saturating_sub(1)).rev().find(|&k| p_chain.get(k).is_some_and(|l| l.table == a_chain[k].table))
             && a_chain.len() > 1
             && p_chain.iter().all(|l| l.table != a_chain[a_chain.len() - 1].table)
@@ -2723,7 +2398,6 @@ impl Editor {
                 return Some((Selection::Cells { table: al.table, anchor: ac, focus: pc, shape: selection::CellShape::Rect }, true));
             }
         }
-        // From a cell's text into a table inside that cell: whole rows of the inner table, as into a table from outside.
         let shared = a_chain.iter().zip(&p_chain).take_while(|(a, b)| a.table == b.table && (a.row, a.cell) == (b.row, b.cell)).count();
         if shared == a_chain.len() && p_chain.len() > shared && !a_chain.is_empty() {
             let pl = p_chain[shared];
@@ -2740,7 +2414,6 @@ impl Editor {
             };
             return Some((Selection::range(anchor, to, Granularity::Char), false));
         }
-        // The start cell's table, at the deepest level both ends share or the anchor's innermost.
         if let Some(al) = a_chain.last().copied() {
             if let Some(pl) = p_chain.iter().find(|l| l.table == al.table).copied() {
                 let cell = |r: usize, c: usize| (r, c);
@@ -2756,7 +2429,6 @@ impl Editor {
                 };
                 return Some((Selection::Cells { table: al.table, anchor: ac, focus: pc, shape: selection::CellShape::Rect }, true));
             }
-            // Out of the table: whole rows from the start row, plus the text up to the pointer.
             let t = self.index.table(&self.doc, al.table)?;
             let story = anchor.story;
             let from = if forward {
@@ -2769,11 +2441,8 @@ impl Editor {
             } else {
                 Position::row_end(story, al.table, al.row)
             };
-            // Leaving a nested table to its containing cell keeps the inner rows; leaving an outer table the
-            // same rule applies at its level.
             return Some((Selection::range(from, p, Granularity::Char), false));
         }
-        // Into a table from outside: whole rows of it (the table at the anchor's level).
         let pl = p_chain.first().copied()?;
         let t = self.index.table(&self.doc, pl.table)?;
         let to = if forward {
@@ -2788,12 +2457,9 @@ impl Editor {
         p.para_offset().is_some_and(|(para, u)| self.index.para(&self.doc, para).is_some_and(|q| para_len(q) == u))
     }
 
-    /// Auto-scroll while dragging outside the viewport: `min(40 + 12·d, 2400)` px/s per axis, where d is the
-    /// distance outside in px.
     fn autoscroll(&mut self, x: f64, y: f64) {
         let v = self.viewport;
         let speed = |outside: f64| {
-            // Points to px: 96/72 at 100%, times the zoom.
             let d = outside * v.zoom * 96.0 / 72.0;
             if d <= 4.0 { 0.0 } else { (40.0 + 12.0 * d).min(2400.0) }
         };
@@ -2834,15 +2500,13 @@ impl Editor {
         (Position::text(p.story, para, Unit(0)), Position::text(p.story, para, len))
     }
 
-    // ---------------- geometry for the view ----------------
+    // Geometry for the view
 
-    /// The caret's page and rectangle, from the current snapshot.
     pub fn caret_view(&mut self) -> Option<CaretView> {
         let focus = self.selection.focus()?;
         self.caret_at(focus)
     }
 
-    /// Where a caret at `focus` shows.
     fn caret_at(&mut self, focus: Position) -> Option<CaretView> {
         let (para, unit) = focus.para_offset()?;
         let affinity = focus.affinity();
@@ -2855,7 +2519,6 @@ impl Editor {
             self.near = page;
             return Some(CaretView { page, x, top: l.top, bottom: l.bottom });
         }
-        // A closing paragraph after a nested table has a caret place but no line.
         for page in self.pages.pages_of(para, near, &self.index) {
             let geo = self.pages.page(page, &self.index)?;
             if let Some(c) = geo.caret(para, unit, affinity) {
@@ -2872,22 +2535,17 @@ impl Editor {
         }
     }
 
-    /// Selection rectangles per page and line.
-    /// The selection's highlight on `pages`.
     fn selection_view(&mut self, pages: std::ops::Range<usize>) -> SelectionView {
         if let Selection::Object(o) = self.selection {
             let mut out = Vec::new();
             for page in pages {
                 let Some(geo) = self.pages.page(page, &self.index) else { continue };
                 match o {
-                    // While dragged with its ghost, where the drag puts it; with live layout, where it is laid out (layout may
-                    // keep it from where the pointer is, as above the top margin).
                     _ if let Some(d) = self.object_drag.filter(|d| d.obj == o && !d.live) => {
                         if page == d.page {
                             out.push((page, d.rect(self.object_locked(o))));
                         }
                     }
-                    // A multi-selection outlines every object.
                     selection::ObjectRef::Floating(_) => {
                         for f in self.selected_floats() {
                             out.extend(geo.stories.iter().filter(|s| s.float == Some(f)).map(|s| (page, s.rect)));
@@ -2896,7 +2554,6 @@ impl Editor {
                     selection::ObjectRef::Inline { para, offset } => out.extend(self.inline_box(&geo, para, offset).map(|r| (page, r))),
                 }
             }
-            // No handles while dragged, moved, resized or turned: the outline goes with the ghost.
             let dragged = self.object_drag.is_some_and(|d| d.now != d.start) || self.shape_drag.is_some();
             return SelectionView::Object(out, !self.object_fixed(o) && !dragged);
         }
@@ -2927,12 +2584,10 @@ impl Editor {
         SelectionView::Text(self.range_rects(a, b, pages))
     }
 
-    /// Each drawn line's box of the text from `a` to `b` (in one story) on `pages`: page coordinates.
     pub(super) fn range_rects(&mut self, a: Position, b: Position, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
         let mut out = Vec::new();
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
-            // Each paragraph's part of each line (a line shows several where the view joins them, REV-6).
             for (l, para) in geo.lines.iter().flat_map(|l| l.paras.iter().map(move |&p| (l, p))) {
                 if geo.stories[l.story].story != a.story {
                     continue;
@@ -2947,8 +2602,6 @@ impl Editor {
                 let hi = if self.index.cmp(&last, &b) == std::cmp::Ordering::Greater { b.para_offset().map(|(_, u)| u) } else { Some(ll) };
                 let (Some(lo), Some(hi)) = (lo, hi) else { continue };
                 let (Some(x0), Some(x1)) = (l.x_of(para, lo), l.x_of(para, hi)) else { continue };
-                // A selection running past the paragraph's end shows its mark as a space's width (a mark the view hides
-                // between joined paragraphs isn't on the line's end, and shows none).
                 let shown_end = l.stops.last().is_some_and(|s| s.end && s.para == para);
                 let mark = if hi == ll && self.index.cmp(&last, &b) == std::cmp::Ordering::Less && shown_end { 4.0 } else { 0.0 };
                 if x1 + mark > x0 + 0.01 {
@@ -2959,7 +2612,6 @@ impl Editor {
         out
     }
 
-    /// The rendering-facing state of a frame for the visible pages.
     pub fn view(&mut self, visible: std::ops::Range<usize>) -> View {
         let caret = self.caret_view();
         let caret_hidden = if caret.is_none() { self.caret_hidden() } else { None };
@@ -2967,14 +2619,12 @@ impl Editor {
         let story = self.editing();
         let anchor = match self.selection {
             Selection::Object(selection::ObjectRef::Floating(f)) => {
-                // While moved (its anchor not locked): the paragraph the release anchors it to.
                 let locked = self.selected_object().and_then(|o| o.locked) == Some(true);
                 let moving = self.object_drag.filter(|d| d.handle.is_none() && d.now != d.start && !locked);
                 let to = moving.and_then(|d| {
                     let (para, _) = self.anchor_at(d.page, self.index.float_anchor(f)?, d.rect(false)[1])?;
                     Some((d.page, para))
                 });
-                // Its first line's top, at the paragraph's leftmost line (a line wrapped around a float starts further in).
                 let at = |e: &mut Self, page: usize, para: ParaId| {
                     let geo = e.pages.page(page, &e.index)?;
                     let top = geo.lines.iter().find(|l| l.span_of(para).is_some())?.top;
@@ -2988,7 +2638,6 @@ impl Editor {
             }
             _ => None,
         };
-        // Live layout moves the object itself: no ghost.
         let ghost = self.object_drag.filter(|d| d.now != d.start && !d.live).map(|d| view::Ghost {
             page: d.page,
             float: match d.obj {
@@ -3048,7 +2697,6 @@ impl Editor {
         }
     }
 
-    /// Whether a document point is on the selection's highlight (a right-click there keeps the selection).
     pub fn selection_contains(&mut self, x: f64, y: f64) -> bool {
         let Some((page, px, py)) = self.stack().page_at(x, y) else { return false };
         match self.selection_view(page..page + 1) {
@@ -3059,8 +2707,6 @@ impl Editor {
         }
     }
 
-    /// The formatting marks on `pages`: each paragraph end, space, tab, break and hidden run there, from the lines'
-    /// caret stops and the paragraphs' units.
     pub fn formatting_marks(&mut self, pages: std::ops::Range<usize>) -> Vec<view::FormattingMark> {
         use view::{FormattingMark, MarkKind};
         let mut out = Vec::new();
@@ -3104,7 +2750,6 @@ impl Editor {
         out
     }
 
-    /// The text areas' and table cells' boundaries on `pages`: (page, box), page coordinates.
     pub fn text_boundaries(&mut self, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
         let snapshot = self.layout.snapshot();
         let mut out = Vec::new();
@@ -3126,7 +2771,6 @@ impl Editor {
         out
     }
 
-    /// Every table cell's box on `pages` (gridlines): (page, rect), page coordinates.
     pub fn cell_rects(&mut self, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
         let mut out = Vec::new();
         for page in pages {
@@ -3137,7 +2781,6 @@ impl Editor {
         out
     }
 
-    /// The paragraphs with lines on `pages`, in order, each once (spelling marks the host draws).
     pub fn paras_on(&mut self, pages: std::ops::Range<usize>) -> Vec<ParaId> {
         let mut out: Vec<ParaId> = Vec::new();
         for page in pages {
@@ -3151,7 +2794,6 @@ impl Editor {
         out
     }
 
-    /// The rectangles units `a..b` of `para` cover on `pages`, one per line: (page, [x0, top, x1, bottom]).
     pub fn unit_rects(&mut self, para: ParaId, a: Unit, b: Unit, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
         let mut out = Vec::new();
         for page in pages {
@@ -3170,9 +2812,6 @@ impl Editor {
         out
     }
 
-    /// Every laid-out (non-provisional) page's geometry, in page order.
-    /// Where each of `para`'s laid-out lines starts, in order; one line from its start while it isn't laid out. The
-    /// pages near the caret's are looked at first.
     pub fn line_starts(&mut self, para: ParaId) -> Vec<Unit> {
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
@@ -3189,7 +2828,6 @@ impl Editor {
         out
     }
 
-    /// Whether the selection is all of its story (select all).
     pub fn selects_story(&mut self) -> bool {
         let Some(story) = self.selection.focus().map(|p| p.story) else { return false };
         let nav = self.nav();
@@ -3197,7 +2835,6 @@ impl Editor {
         a != b && self.selection.ordered(&self.index) == Some((a, b))
     }
 
-    /// Whether text can go in at the caret: not inside a control whose content is locked.
     pub fn caret_editable(&self) -> bool {
         self.selection.focus().is_none_or(|p| self.editable(&p))
     }
@@ -3208,13 +2845,10 @@ impl Editor {
         (0..self.pages.len()).filter_map(|i| self.pages.page(i, &self.index).map(|g| (i, g))).collect()
     }
 
-    /// The fragment last copied or cut here.
     pub fn clipboard(&self) -> Option<&clipboard::Fragment> {
         self.clipboard.as_ref()
     }
 
-    /// Takes another editor's fragment as this one's last copy (a paste between instances); its id
-    /// here, counted on from this editor's own.
     pub fn adopt_clipboard(&mut self, mut f: clipboard::Fragment) -> u64 {
         f.id = self.clipboard.as_ref().map_or(1, |c| c.id + 1);
         let id = f.id;
@@ -3222,16 +2856,12 @@ impl Editor {
         id
     }
 
-    /// The id of the fragment last copied here (what a host's clipboard token names).
     pub fn clipboard_id(&self) -> Option<u64> {
         self.clipboard.as_ref().map(|f| f.id)
     }
 
-    /// Copies the selection, its revisions accepted in every markup view: kept as the internal fragment, and asked of
-    /// the host as text and HTML with its id.
     pub fn copy(&mut self) -> Option<clipboard::Fragment> {
         let mut f = self.copy_fragment()?.accepted();
-        // The copy's controls travel with it; markers its range cut off don't.
         clipboard::drop_unpaired(&mut f.blocks);
         clipboard::drop_partial(&mut f.blocks, &self.index);
         f.controls = clipboard::controls_of(&f.blocks, &self.doc);
@@ -3240,20 +2870,16 @@ impl Editor {
         Some(f)
     }
 
-    /// The selected text, paragraphs separated by newlines (plain-text copy).
     pub fn selected_text(&mut self) -> String {
         self.selected_text_within(usize::MAX).unwrap_or_default()
     }
 
-    /// The selected text, as [`Editor::selected_text`], or `None` once it is longer than `limit` characters: the
-    /// walk stops there.
     pub fn selected_text_within(&mut self, limit: usize) -> Option<String> {
         if let Selection::Block { .. } = self.selection {
             return Some(self.block_text()).filter(|t| t.chars().count() <= limit);
         }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(String::new()) };
         let mut out = String::new();
-        // Characters so far, each paragraph's newline counted.
         let mut chars = 0usize;
         let mut p = a;
         let mut guard = 0;
@@ -3313,8 +2939,6 @@ fn last_para_of(b: &Block) -> Option<(ParaId, Unit)> {
     }
 }
 
-/// Whether a split of `p` at `at` would leave an inline control's start in one paragraph and its end in the other:
-/// `at` from the control's start up to (not including) its end.
 fn splits_a_control(p: &crate::docx::Paragraph, at: Unit) -> bool {
     let mut u = 0u32;
     let mut open: Vec<(crate::docx::ControlId, u32)> = Vec::new();
@@ -3336,8 +2960,6 @@ fn splits_a_control(p: &crate::docx::Paragraph, at: Unit) -> bool {
     false
 }
 
-/// Whether a step can change which pictures picture controls hold: it changes a control, or puts
-/// pictures in (its inverse, pictures taken out).
 fn moves_picture_controls(s: &Step) -> bool {
     matches!(s, Step::Control { .. }) || s.pictures_where(&|_| true) > 0
 }

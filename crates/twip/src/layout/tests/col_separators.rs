@@ -1,12 +1,10 @@
-//! Column separator lines (COL-1): a continuous two-column section's line ends at its own text, not at a footnote at
-//! the page bottom whose reference is in the section above.
+//! Column separators
 
 use super::{package, page_chars};
 use crate::layout::fragment::Item;
 
 const W: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
 
-/// A paragraph with a footnote, then two columns with a separator, then one column again.
 fn columns_under_a_note() -> Option<crate::docx::Document> {
     let page = r#"<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>"#;
     let body = format!(

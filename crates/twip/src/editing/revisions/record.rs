@@ -1,8 +1,4 @@
-//! Recording an edit as revisions: each step is turned into the steps that mark it, before it applies.
-//!
-//! Inserted content is marked inserted by the session's author. Deleted content stays, marked deleted, except the
-//! author's own insertions, which go. Property changes keep the oldest properties they replace, so rejecting one
-//! restores what was there before any tracked change.
+//! Revision recording
 
 use std::collections::{HashMap, HashSet};
 use std::mem::Discriminant;
@@ -19,25 +15,18 @@ use crate::layout::{ParaId, TableId, Unit};
 use super::super::index::DocIndex;
 use super::super::step::{Edges, Step, para_len};
 
-/// Table edits that are applied as they are with tracking on: merging and splitting cells.
 const UNTRACKED_TABLE_EDITS: [&str; 2] = ["Merge Cells", "Split Cells"];
 
-/// The edits whose new floats are tracked insertions.
 const FLOAT_INSERTS: [&str; 2] = ["Insert Shape", "Insert Text Box"];
 
-/// One transaction's recording: who and when, and the marks its insertions, deletions and property changes share.
 pub struct Recording {
     pub author: AuthorId,
     pub time: Timestamp,
-    /// A move's name: what the transaction inserts is the move's destination, what it deletes its source.
     pub move_name: Option<Rc<str>>,
-    /// The transaction's label: which table edits go untracked.
     label: &'static str,
     ins: Option<Rc<RevisionMark>>,
     del: Option<Rc<RevisionMark>>,
     fmt: Option<Rc<RevisionMark>>,
-    /// Runs already marked in this transaction, by the run they replace (kept alive here, so the address stays
-    /// theirs): equal runs stay one run.
     inserted: HashMap<*const RunStyle, (Run, Run)>,
     deleted: HashMap<*const RunStyle, (Run, Run)>,
     formatted: HashMap<(*const RunStyle, *const RunStyle, bool), (Run, Run, Run)>,
@@ -59,12 +48,10 @@ impl Recording {
         }
     }
 
-    /// The insertion and the deletion recorded so far.
     pub fn marks(&self) -> (Option<Rc<RevisionMark>>, Option<Rc<RevisionMark>>) {
         (self.ins.clone(), self.del.clone())
     }
 
-    /// The steps that record `step`, to apply in its place.
     pub fn record(&mut self, step: Step, doc: &Document, idx: &DocIndex, ids: &mut IdCounter) -> Vec<Step> {
         match step {
             Step::Text { para, range, with, edges } => self.text(para, range, with, edges, doc, idx, ids),
@@ -73,7 +60,6 @@ impl Recording {
             Step::Join { first, second } => self.join(first, second, doc, idx, ids),
             Step::Para { para, style, mark, list } => match idx.para(doc, para) {
                 Some(p) => {
-                    // A paragraph this transaction inserted takes its properties as they come.
                     let style = if self.new_here(&p.mark) { style } else { self.para_change(&p.style, style, ids) };
                     let mark = self.formatted_run(&p.mark, &mark, true, ids);
                     vec![Step::Para { para, style, mark, list }]
@@ -92,7 +78,6 @@ impl Recording {
                 out.push(Step::TableWidth { table, width });
                 out
             }
-            // A new note's text is inserted with its reference.
             Step::Note { kind, id, blocks: Some(b) } if note(doc, kind, id).is_none() => {
                 vec![Step::Note { kind, id, blocks: Some(self.ins_blocks(b, ids)) }]
             }
@@ -103,14 +88,11 @@ impl Recording {
                 }
                 None => vec![Step::SectionPage { section, page, change }],
             },
-            // Every other kind is untracked and passes through as it is: comments, controls, data parts, image data,
-            // header and footer parts, notes taken out. (Comment markers inserted by `Text` steps carry no revision
-            // either: see `run`.)
             other => vec![other],
         }
     }
 
-    // ---------------- marks and runs ----------------
+    // Marks and runs
 
     fn mark(&self, ids: &mut IdCounter, kind: MarkKind) -> Rc<RevisionMark> {
         let moving = matches!(kind, MarkKind::MoveFrom | MarkKind::MoveTo);
@@ -150,17 +132,14 @@ impl Recording {
         m
     }
 
-    /// Text the author inserted (in any session) and nobody deleted: deleting it removes it.
     fn own_insertion(&self, r: &RunStyle) -> bool {
         r.rev.del.is_none() && r.rev.ins.as_ref().is_some_and(|m| m.author == self.author && m.kind == MarkKind::Insert)
     }
 
-    /// Inserted by this transaction.
     fn new_here(&self, r: &RunStyle) -> bool {
         matches!((&r.rev.ins, &self.ins), (Some(a), Some(b)) if Rc::ptr_eq(a, b))
     }
 
-    /// The run inserted text takes. Beside the author's own insertion it is that insertion's run, so the texts join.
     fn inserted(&mut self, r: &Run, ids: &mut IdCounter) -> Run {
         if self.new_here(r) || (self.move_name.is_none() && self.own_insertion(r)) {
             return r.clone();
@@ -173,7 +152,6 @@ impl Recording {
         n
     }
 
-    /// The run marked deleted by the author, or `None` when the author already deleted it.
     fn deleted(&mut self, r: &Run, ids: &mut IdCounter) -> Option<Run> {
         let kind = if self.move_name.is_some() { MarkKind::MoveFrom } else { MarkKind::Delete };
         if r.rev.del.as_ref().is_some_and(|m| m.author == self.author && m.kind == kind && m.move_name == self.move_name) {
@@ -187,8 +165,6 @@ impl Recording {
         Some(n)
     }
 
-    /// `new`, the formatting `old` got, with `old`'s insertion and deletion, and (`record`) the change recorded:
-    /// against the oldest formatting `old` had, none when it is that again.
     fn formatted_run(&mut self, old: &Run, new: &Run, record: bool, ids: &mut IdCounter) -> Run {
         if Rc::ptr_eq(old, new) {
             return new.clone();
@@ -214,7 +190,6 @@ impl Recording {
         n
     }
 
-    /// `new` with the change from `old` recorded against the oldest properties, none when it has those again.
     fn para_change(&mut self, old: &Rc<ParaStyle>, new: Rc<ParaStyle>, ids: &mut IdCounter) -> Rc<ParaStyle> {
         if Rc::ptr_eq(old, &new) {
             return new;
@@ -232,12 +207,10 @@ impl Recording {
         if new.change == change { new } else { Rc::new(ParaStyle { change, ..(*new).clone() }) }
     }
 
-    /// The change `s` has once its page is `page`: recorded against the oldest page it had, none when it has that again.
     fn section_change(&mut self, s: &Section, page: &SectionPage, ids: &mut IdCounter) -> Option<Rc<SectionChange>> {
         if *page == s.page() {
             return s.change.clone();
         }
-        // The earlier `w:sectPr` of a new change is written from the section as read, with the earlier page.
         let (previous, previous_raw) = match &s.change {
             Some(c) => (c.previous.clone(), c.previous_raw.clone()),
             None => (s.page(), Raw::default()),
@@ -245,7 +218,7 @@ impl Recording {
         (previous != *page).then(|| Rc::new(SectionChange { mark: self.fmt_mark(ids), previous, previous_raw }))
     }
 
-    // ---------------- inlines and blocks ----------------
+    // Inlines and blocks
 
     fn ins_inline(&mut self, i: Inline, ids: &mut IdCounter) -> Inline {
         let Some(r) = run(&i).cloned() else { return i };
@@ -272,7 +245,6 @@ impl Recording {
             }
             Block::Table(mut t) => {
                 t.rows = std::mem::take(&mut t.rows).into_iter().map(|r| self.ins_row(r, ids)).collect();
-                // A new table also has its properties recorded as changed.
                 if t.change.is_none() {
                     t.change = Some(Rc::new(TableChange {
                         mark: self.fmt_mark(ids),
@@ -294,8 +266,6 @@ impl Recording {
         r
     }
 
-    /// The inline marked deleted, or `None` when it goes (`remove`: the author's own insertions do). Note references
-    /// it deletes are added to `notes`.
     fn del_inline(&mut self, i: &Inline, remove: bool, ids: &mut IdCounter, notes: &mut Vec<(NoteKind, i64)>) -> Option<Inline> {
         let Some(r) = run(i) else { return Some(i.clone()) };
         if remove && self.own_insertion(r) {
@@ -312,8 +282,6 @@ impl Recording {
         })
     }
 
-    /// The block kept and marked deleted, or `None` when it goes: `remove` lets the author's own insertions go (a
-    /// paragraph when its text and mark are all theirs).
     fn del_block(&mut self, b: &Block, remove: bool, ids: &mut IdCounter, notes: &mut Vec<(NoteKind, i64)>) -> Option<Block> {
         match b {
             Block::Para(p) => {
@@ -348,7 +316,6 @@ impl Recording {
         }
     }
 
-    /// The row kept and marked deleted (its cells' content too), or `None` for a row the author inserted (`remove`).
     fn del_row(&mut self, r: &Row, remove: bool, ids: &mut IdCounter, notes: &mut Vec<(NoteKind, i64)>) -> Option<Row> {
         let own = r.rev.del.is_none() && r.rev.ins.as_ref().is_some_and(|m| m.author == self.author && m.kind == MarkKind::Insert);
         if remove && own {
@@ -359,13 +326,11 @@ impl Recording {
             n.rev.del = Some(self.del_mark(ids));
         }
         for c in &mut n.cells {
-            // A cell keeps its paragraphs.
             c.blocks = c.blocks.iter().filter_map(|b| self.del_block(b, false, ids, notes)).collect();
         }
         Some(n)
     }
 
-    /// The deleted notes' text, marked deleted with their references.
     fn note_steps(&mut self, notes: Vec<(NoteKind, i64)>, doc: &Document, ids: &mut IdCounter) -> Vec<Step> {
         let mut out = Vec::new();
         for (kind, id) in notes {
@@ -378,7 +343,7 @@ impl Recording {
         out
     }
 
-    // ---------------- steps ----------------
+    // Steps
 
     #[allow(clippy::too_many_arguments, reason = "the step's fields, then the document")]
     fn text(
@@ -392,12 +357,10 @@ impl Recording {
         ids: &mut IdCounter,
     ) -> Vec<Step> {
         let Some(p) = idx.para(doc, para).filter(|p| range.start < range.end && range.end <= para_len(p)) else {
-            // An insertion (or a step the document refuses).
             let with = with.into_iter().map(|i| self.ins_inline(i, ids)).collect();
             return vec![Step::Text { para, range, with, edges }];
         };
         let (a, b) = (range.start.0, range.end.0);
-        // The same content in other runs: a formatting change.
         if !with.is_empty() && content(&slice(&p.inlines, a, b)) == content(&with) {
             let with = self.formatted(&slice(&p.inlines, a, b), with, true, ids);
             return vec![Step::Text { para, range, with, edges }];
@@ -416,7 +379,6 @@ impl Recording {
                 push(&mut inlines, i.clone());
                 continue;
             };
-            // A text straddling the range's edges: its part inside is marked.
             let (before, mid, after) = match i {
                 Inline::Text(t, r) if s < a || e > b => {
                     let cut = |u: u32| t.char_indices().nth((u - s) as usize).map_or(t.len(), |(k, _)| k);
@@ -458,11 +420,9 @@ impl Recording {
             }
             out.push(Step::Restyle { para, inlines });
         }
-        // The author's own insertions go, last first so the earlier ones keep their place.
         for g in gone.iter().rev() {
             out.push(Step::Text { para, range: Unit(g.start)..Unit(g.end), with: Vec::new(), edges: Edges::default() });
         }
-        // A replacement: the new content follows the deleted.
         if !with.is_empty() {
             let end = Unit(b - gone.iter().map(|g| g.end - g.start).sum::<u32>());
             let with = with.into_iter().map(|i| self.ins_inline(i, ids)).collect();
@@ -472,8 +432,6 @@ impl Recording {
         out
     }
 
-    /// `new`'s inlines with the revisions of `old`'s runs at the same units, and (`record`) their formatting changes
-    /// recorded.
     fn formatted(&mut self, old: &[Inline], new: Vec<Inline>, record: bool, ids: &mut IdCounter) -> Vec<Inline> {
         let mut spans: Vec<(u32, u32, Run)> = Vec::new();
         let mut at = 0u32;
@@ -497,7 +455,6 @@ impl Recording {
             };
             match &i {
                 Inline::Text(t, _) => {
-                    // Cut where the old runs change, so each piece records its own previous formatting.
                     let mut piece = String::new();
                     let mut from = at;
                     for (k, ch) in t.chars().enumerate() {
@@ -525,8 +482,6 @@ impl Recording {
 
     fn restyle(&mut self, para: ParaId, inlines: Vec<Inline>, doc: &Document, idx: &DocIndex, ids: &mut IdCounter) -> Vec<Step> {
         let Some(p) = idx.para(doc, para) else { return vec![Step::Restyle { para, inlines }] };
-        // A float inserted is marked inserted; one deleted stays, marked deleted (the author's own insertion goes).
-        // Other edits that take a float out or put one in (moving it to another anchor, grouping) aren't tracked.
         let float_id = |i: &Inline| if let Inline::Float(f, _) = i { Some(f.id) } else { None };
         let had: HashSet<u64> = p.inlines.iter().filter_map(float_id).collect();
         let has: HashSet<u64> = inlines.iter().filter_map(float_id).collect();
@@ -548,14 +503,10 @@ impl Recording {
             }
             return vec![Step::Restyle { para, inlines: out }];
         }
-        // Runs resolved again (a paragraph's style or place changed) keep their revisions; that isn't a formatting
-        // change of its own.
         if content(&p.inlines) == content(&inlines) {
             let inlines = self.formatted(&p.inlines, inlines, false, ids);
             return vec![Step::Restyle { para, inlines }];
         }
-        // A control's markers taken out before its content is deleted: with tracking the control stays around its
-        // deleted content.
         let control = |i: &Inline| matches!(i, Inline::ControlStart(_) | Inline::ControlEnd(_));
         let kept: Vec<&Inline> = p.inlines.iter().filter(|i| !control(i) || inlines.contains(i)).collect();
         if kept.len() < p.inlines.len() && kept.len() == inlines.len() && kept.iter().zip(&inlines).all(|(a, b)| *a == b) {
@@ -566,7 +517,6 @@ impl Recording {
 
     fn split(&mut self, para: ParaId, at: Unit, mut second: Paragraph, doc: &Document, idx: &DocIndex, ids: &mut IdCounter) -> Vec<Step> {
         let Some(p) = idx.para(doc, para).filter(|_| second.inlines.is_empty()) else { return vec![Step::Split { para, at, second }] };
-        // The paragraph's own mark ends the second part; the first part's mark is the inserted one.
         if second.mark.rev != p.mark.rev {
             second.mark = with_rev(&second.mark, p.mark.rev.clone());
         }
@@ -578,7 +528,6 @@ impl Recording {
         let (Some(a), Some(b)) = (idx.para(doc, first), idx.para(doc, second)) else { return vec![Step::Join { first, second }] };
         let adjacent =
             matches!((idx.para_slot(first), idx.para_slot(second)), (Some(x), Some(y)) if x.container == y.container && y.block == x.block + 1);
-        // A mark the author inserted goes: the paragraphs join, ending with the second's mark.
         if adjacent && self.own_insertion(&a.mark) {
             return vec![
                 Step::Join { first, second },
@@ -589,7 +538,6 @@ impl Recording {
         if let Some(mark) = self.deleted(&a.mark, ids) {
             out.push(Step::Para { para: first, style: a.style.clone(), mark, list: a.list.clone() });
         }
-        // The paragraph after the deleted mark takes the first's properties, recorded as its change.
         if !same_para(&a.style, &b.style) {
             let style = self.para_change(&b.style, Rc::new(ParaStyle { change: None, ..(*a.style).clone() }), ids);
             out.push(Step::Para { para: second, style, mark: b.mark.clone(), list: b.list.clone() });
@@ -611,7 +559,6 @@ impl Recording {
             let with = self.ins_blocks(with, ids);
             return vec![Step::Blocks { container, range, with }];
         };
-        // Blocks replaced by themselves (the same ids): a change of what they hold, applied as it is.
         let kept: HashSet<u64> = with.iter().map(block_id).collect();
         if old.iter().any(|b| kept.contains(&block_id(b))) {
             return vec![Step::Blocks { container, range, with }];
@@ -639,7 +586,6 @@ impl Recording {
         let Some((t, old)) = t.and_then(|t| Some((t, t.rows.get(range.clone())?))).filter(|_| !UNTRACKED_TABLE_EDITS.contains(&self.label)) else {
             return vec![Step::Rows { table, range, with, grid }];
         };
-        // Rows are told apart by the paragraphs they hold. Rows that change places aren't recorded.
         let keys: Vec<HashSet<u64>> = old.iter().map(row_paras).collect();
         let matched: Vec<Option<usize>> = with
             .iter()
@@ -687,14 +633,11 @@ impl Recording {
         out
     }
 
-    /// A row that stays, as `n` has it. Content that came into a cell from another is inserted there, and what the
-    /// cell had stays, deleted. Also whether its properties or cells changed.
     fn kept_row(&mut self, o: &Row, n: &Row, ids: &mut IdCounter, notes: &mut Vec<(NoteKind, i64)>) -> (Row, bool) {
         let mut r = n.clone();
         let props = (o.height.clone(), o.cant_split, o.header, o.grid_before, o.grid_after, o.w_before, o.w_after)
             != (n.height.clone(), n.cant_split, n.header, n.grid_before, n.grid_after, n.w_before, n.w_after);
         if o.cells.len() != n.cells.len() {
-            // Cells came or went: applied, as a change of the table's properties.
             return (r, true);
         }
         let mut changed = props;
@@ -711,8 +654,6 @@ impl Recording {
         (r, changed)
     }
 
-    /// A cell's content when `new` took the place of `old`: `old`'s text kept and deleted (its paragraphs stay),
-    /// with `new` inserted before it.
     fn moved_in(&mut self, old: &[Block], new: &[Block], ids: &mut IdCounter, notes: &mut Vec<(NoteKind, i64)>) -> Vec<Block> {
         let mut kept: Vec<Block> = old.iter().filter_map(|b| self.del_block(b, false, ids, notes)).collect();
         for (k, o) in kept.iter_mut().zip(old) {
@@ -721,7 +662,6 @@ impl Recording {
             }
         }
         match (new, kept.first_mut()) {
-            // One paragraph in: its text goes at the start of the cell's first paragraph.
             ([Block::Para(p)], Some(Block::Para(first))) => {
                 let inlines: Vec<Inline> = p.inlines.iter().filter(|i| !matches!(i, Inline::Text(t, _) if t.is_empty())).cloned().collect();
                 let inlines: Vec<Inline> = inlines.into_iter().map(|i| self.ins_inline(i, ids)).collect();
@@ -741,7 +681,6 @@ impl Recording {
         }
     }
 
-    /// A step recording a change of `table`'s properties (and of its grid), unless it has one: the oldest stays.
     fn table_change(&mut self, table: TableId, grid: bool, doc: &Document, idx: &DocIndex, ids: &mut IdCounter) -> Option<Step> {
         let slot = idx.table_slot(table)?;
         let Block::Table(t) = idx.blocks(doc, slot.container)?.get(slot.block)? else { return None };
@@ -761,7 +700,6 @@ impl Recording {
     }
 }
 
-/// Whether units `a..b` of `p` are all deleted text.
 pub fn all_deleted(p: &Paragraph, a: Unit, b: Unit) -> bool {
     let mut at = 0u32;
     let mut any = false;
@@ -778,7 +716,6 @@ pub fn all_deleted(p: &Paragraph, a: Unit, b: Unit) -> bool {
     any
 }
 
-/// The run a revision marks on an inline: comment references and note separators carry none.
 fn run(i: &Inline) -> Option<&Run> {
     match i {
         Inline::CommentRef { .. } | Inline::Separator { .. } => None,
@@ -797,17 +734,14 @@ fn with_rev(r: &Run, rev: RunRevisions) -> Run {
     Rc::new(RunStyle { rev, ..(**r).clone() })
 }
 
-/// The same formatting, revisions aside.
 fn same_look(a: &RunStyle, b: &RunStyle) -> bool {
     RunStyle { rev: RunRevisions::default(), ..a.clone() } == RunStyle { rev: RunRevisions::default(), ..b.clone() }
 }
 
-/// The same paragraph properties, a recorded change aside.
 fn same_para(a: &ParaStyle, b: &ParaStyle) -> bool {
     ParaStyle { change: None, ..a.clone() } == ParaStyle { change: None, ..b.clone() }
 }
 
-/// Appends `i`, joining a text in the same run before it.
 fn push(out: &mut Vec<Inline>, i: Inline) {
     if let Inline::Text(t, r) = &i {
         if t.is_empty() {
@@ -823,7 +757,6 @@ fn push(out: &mut Vec<Inline>, i: Inline) {
     out.push(i);
 }
 
-/// Units `a..b` of a paragraph's inlines, with the zero-unit inlines strictly inside.
 fn slice(inlines: &[Inline], a: u32, b: u32) -> Vec<Inline> {
     let mut out = Vec::new();
     let mut at = 0u32;
@@ -851,7 +784,6 @@ fn slice(inlines: &[Inline], a: u32, b: u32) -> Vec<Inline> {
     out
 }
 
-/// What inlines hold, formatting aside: their kinds in order, texts joined.
 fn content(v: &[Inline]) -> Vec<(Discriminant<Inline>, String)> {
     let mut out: Vec<(Discriminant<Inline>, String)> = Vec::new();
     for i in v {
@@ -873,7 +805,6 @@ fn block_id(b: &Block) -> u64 {
     }
 }
 
-/// The paragraphs a row holds, nested ones too.
 fn row_paras(r: &Row) -> HashSet<u64> {
     fn walk(blocks: &[Block], out: &mut HashSet<u64>) {
         for b in blocks {
@@ -924,7 +855,6 @@ mod tests {
         e.document().sections.iter().flat_map(|s| s.blocks.iter().cloned()).collect()
     }
 
-    /// How many inlines carry a revision.
     fn revised(e: &Editor) -> usize {
         let paras = body(e).into_iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None });
         paras.flat_map(|p| p.inlines).filter(|i| i.run().is_some_and(|r| !r.rev.is_empty())).count()
@@ -973,7 +903,6 @@ mod tests {
         assert_eq!((&c.previous, read.sections[0].page_w > read.sections[0].page_h), (&before, true));
         let earlier = c.previous_raw.0.as_deref().expect("the earlier section");
         assert!(earlier.contains("cols") && !earlier.contains("headerReference"), "the section as read, its page earlier: {earlier}");
-        // Rejected after reopening: the page before it, and no change saved.
         let mut e = tracked(&saved);
         e.execute(Command::RejectAllRevisions(Default::default()), fonts());
         assert!(e.document().sections[0].change.is_none() && e.document().sections[0].page() == before);

@@ -1,5 +1,4 @@
-//! Fields whose value doesn't depend on pagination (FIELD-1), computed once after reading: `SEQ`, `REF`, `IF`, `DATE`,
-//! `TIME` and body `STYLEREF`. The result replaces the cached text; page-dependent fields are evaluated at layout.
+//! Pagination-independent fields
 
 use std::collections::HashMap;
 
@@ -178,7 +177,6 @@ pub struct Switch {
     pub arg: Option<String>,
 }
 
-/// Word's field names: a one-word code naming none of them is a bookmark reference (FIELD-2).
 const FIELD_NAMES: &str = "ADDRESSBLOCK ADVANCE ASK AUTHOR AUTONUM AUTONUMLGL AUTONUMOUT AUTOTEXT AUTOTEXTLIST BARCODE BIBLIOGRAPHY \
     BIDIOUTLINE CITATION COMMENTS COMPARE CONTROL CREATEDATE DATA DATABASE DATE DISPLAYBARCODE DOCPROPERTY DOCVARIABLE \
     EDITTIME EMBED EQ FILENAME FILESIZE FILLIN FORMCHECKBOX FORMDROPDOWN FORMTEXT GLOSSARY GOTOBUTTON GREETINGLINE \
@@ -245,7 +243,6 @@ pub fn parse(code: &str) -> FieldCode {
 }
 
 impl FieldCode {
-    /// The kind layout evaluates (FIELD-1), if it is one.
     pub fn kind(&self) -> Option<FieldKind> {
         let arg = || self.args.first().cloned().unwrap_or_default();
         Some(match self.name.as_str() {
@@ -265,8 +262,6 @@ impl FieldCode {
             {
                 FieldKind::Invalid
             }
-            // FIELD-2: an unknown word shaped like a bookmark name (a letter or `_`, then letters, digits, `_`) is a
-            // reference to that bookmark, whatever follows it.
             n if !n.is_empty()
                 && !FIELD_NAMES.split_whitespace().any(|f| f == n)
                 && n.starts_with(|c: char| c.is_alphabetic() || c == '_')
@@ -349,7 +344,6 @@ pub fn words(code: &str) -> Vec<String> {
     out
 }
 
-/// FIELD-2: computes the fields that don't depend on pagination; `DATE`/`TIME` show `now` (seconds since 1970, UTC).
 pub fn evaluate(doc: &mut Document, now: i64) {
     // Bookmark texts (to the end of the bookmark's paragraph) and every paragraph's style and text, in order.
     let mut marks: HashMap<String, String> = HashMap::new();
@@ -371,8 +365,6 @@ pub fn evaluate(doc: &mut Document, now: i64) {
         paras(&mut s.blocks, &mut |p| {
             for sp in spans(&p.inlines) {
                 let code = code_text(&p.inlines, sp).trim().to_string();
-                // FIELD-4: an error text takes the separator run's formatting (no separator: the end run's), bold
-                // toggled.
                 let error_run = sp
                     .sep
                     .and_then(|k| if let Inline::FieldSep { run, .. } = &p.inlines[k] { Some(run.clone()) } else { None })
@@ -394,8 +386,6 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     }
                     // Word's result for a bookmark the document doesn't have.
                     FieldKind::Ref(name) => Some(marks.get(name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into())),
-                    // A bookmark named by the code's first word (any case): its text, or the error; a cached result
-                    // that isn't empty stays (FIELD-2).
                     FieldKind::Bookmark(_) if !cached_empty => None,
                     FieldKind::Bookmark(name) => Some(
                         marks
@@ -441,10 +431,6 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     }
 }
 
-/// Re-kinds the fields of the body, headers, footers, notes and building blocks: an unlocked field whose code
-/// `reference` matches is a sub-template reference, which shows its cached result (FIELD-2); one that stopped matching
-/// takes its kind from its code again. Returns whether any field's kind changed, and whether any stopped being a
-/// reference (values to evaluate again).
 pub fn rekind(doc: &mut Document, reference: &dyn Fn(&FieldCode) -> bool) -> (bool, bool) {
     let (mut changed, mut back) = (false, false);
     let mut visit = |p: &mut Paragraph| {
@@ -581,8 +567,6 @@ fn date(code: &str, secs: i64) -> String {
     out
 }
 
-/// A number field's result with its switches (FIELD-3). `value` is the plain number; `default` is the format without a
-/// number switch (a section's `pgNumType/@w:fmt` for PAGE). Case switches apply only after the number format switch.
 pub(crate) fn format_field(value: &str, code: &str, default: Option<&str>) -> String {
     let Ok(n) = value.parse::<i64>() else { return value.to_string() };
     let mut fmt: Option<&str> = None;

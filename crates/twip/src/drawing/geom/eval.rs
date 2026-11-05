@@ -1,4 +1,4 @@
-//! Compiling a geometry definition (`a:custGeom`, or a preset's definition) and evaluating it (DRAW-1, DRAW-2).
+//! Geometry compiling and evaluation
 
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -7,9 +7,8 @@ use roxmltree::Node;
 use super::{Arg, Cmd, CustomGeom, CxnDef, Formula, Geom, GeomDef, GeomPath, HandleDef, HandlePos, Op, PathDef, PathFill, Pt, Seg, Var};
 use crate::drawing::units::{EMU_PER_PT, Emu};
 
-// ---- compiling -----------------------------------------------------------------------------------------------------
+// Compiling
 
-/// Names visible to a formula: adjust values, then guides, then the built-ins, then integer literals.
 struct Scope {
     av: Vec<String>,
     gd: Vec<String>,
@@ -54,8 +53,6 @@ fn pt(scope: &Scope, n: Option<Node>) -> Pt {
 }
 
 impl CustomGeom {
-    /// Compiles a geometry element: `a:custGeom`, or a preset's element from the standard's definitions (the same
-    /// children: `avLst`, `gdLst`, `ahLst`, `cxnLst`, `rect`, `pathLst`).
     pub fn parse(n: Node) -> CustomGeom {
         let mut scope = Scope { av: Vec::new(), gd: Vec::new() };
         let mut av = Vec::new();
@@ -141,7 +138,6 @@ impl CustomGeom {
         CustomGeom { av_names: scope.av, av, gd: ops, ah, cxn, rect, paths }
     }
 
-    /// The definition packed for the preset table (`twip-tools presets`).
     #[cfg(not(target_os = "emscripten"))]
     pub fn to_bytes(&self) -> Vec<u8> {
         let names: Vec<(&str, i64)> = self.av_names.iter().zip(&self.av).map(|(n, v)| (n.as_str(), *v)).collect();
@@ -154,14 +150,12 @@ impl CustomGeom {
     }
 }
 
-// ---- evaluating ----------------------------------------------------------------------------------------------------
+// Evaluating
 
-/// 60000ths of a degree to radians.
 fn rad(a: f64) -> f64 {
     a / 60000.0 * PI / 180.0
 }
 
-/// DRAW-1: one formula. Division by zero gives 0; every result is finite.
 fn apply(f: Formula, x: f64, y: f64, z: f64) -> f64 {
     let div = |a: f64, b: f64| if b == 0.0 { 0.0 } else { a / b };
     let at2 = |x: f64, y: f64| y.atan2(x) * 180.0 / PI * 60000.0;
@@ -233,7 +227,6 @@ impl Env<'_> {
     }
 }
 
-/// Points of a path under construction: path coordinates scaled to the shape, EMU to points.
 struct Pen {
     sx: f64,
     sy: f64,
@@ -250,10 +243,6 @@ impl Pen {
 
 const PT: f64 = EMU_PER_PT as f64;
 
-/// DRAW-2: `arcTo` from the current point on an ellipse of radii `wr`, `hr` (the path's own units, `ratio` = wR / hR
-/// there). `st` and `sw` (60000ths of a degree) are the start angle and the sweep as seen from the ellipse's centre in
-/// the path's units; each is turned into the ellipse's own parameter, `t = atan2(wR × sin θ, hR × cos θ)`, the sweep
-/// keeping its sign and whole turns.
 fn arc(pen: &mut Pen, wr: f64, hr: f64, ratio: f64, st: f64, sw: f64) {
     let param = |a: f64| (ratio * a.sin()).atan2(a.cos());
     let (sa, swa) = (rad(st), rad(sw));
@@ -273,7 +262,6 @@ fn arc(pen: &mut Pen, wr: f64, hr: f64, ratio: f64, st: f64, sw: f64) {
     let c = [pen.cur[0] - wr * t0.cos(), pen.cur[1] - hr * t0.sin()];
     let n = (sweep.abs() / FRAC_PI_2).ceil().max(1.0) as usize;
     let step = sweep / n as f64;
-    // A cubic per step: control points at k = 4/3 tan(step/4) along the tangents.
     let k = 4.0 / 3.0 * (step / 4.0).tan();
     let mut a = t0;
     let p = |t: f64| [c[0] + wr * t.cos(), c[1] + hr * t.sin()];
@@ -289,8 +277,6 @@ fn arc(pen: &mut Pen, wr: f64, hr: f64, ratio: f64, st: f64, sw: f64) {
     pen.cur = p(t0 + sweep);
 }
 
-/// DRAW-1: evaluates `def` with adjust values `adj` on a `w` × `h` EMU shape.
-/// `args` evaluated with the definition's guides on a `w` x `h` shape (EMU values; a handle's limits).
 pub fn eval_args(def: &GeomDef, adj: &[i64], w: Emu, h: Emu, args: &[Arg]) -> Vec<f64> {
     let mut e = Env { w: w.0 as f64, h: h.0 as f64, adj, gd: Vec::with_capacity(def.gd.len()) };
     for op in def.gd {

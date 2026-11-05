@@ -1,6 +1,4 @@
-//! Positions without geometry: text an exact row height clips. The keyboard reaches it (Up and Down
-//! go into and through it, Left and Right step through it as anywhere), the caret isn't drawn there and the view
-//! doesn't scroll to it, and clicks never resolve into it (it has no lines).
+//! Clipped cell text
 
 use crate::layout::Unit;
 
@@ -8,14 +6,11 @@ use super::Editor;
 use super::geometry::GCell;
 use super::position::Position;
 
-/// The clipped units of a cell: (paragraph, first unit, end unit) in document order.
 type Hidden = Vec<(crate::layout::ParaId, Unit, Unit)>;
 
 impl Editor {
-    /// Why the caret isn't drawn, when it isn't: `"clipped"` inside text an exact row height hides.
     pub fn caret_hidden(&mut self) -> Option<&'static str> {
         let f = self.selection.focus()?;
-        // Inside the clipped part (its start is also the drawn line's end when a paragraph is clipped part-way).
         let inside = self.clipped_at(f).is_some_and(|(h, k, ..)| f.para_offset().is_some_and(|(_, u)| u > h[k].1 || h[k].1 == Unit(0)));
         if !inside && self.caret_view().is_some() {
             return None;
@@ -23,21 +18,18 @@ impl Editor {
         self.clipped_at(f).map(|_| "clipped")
     }
 
-    /// Home / End in clipped text (no lines to take the edges from): the clipped part's start or end in its paragraph.
     pub(super) fn clipped_line_edge(&mut self, p: Position, end: bool) -> Option<Position> {
         let (hidden, k, ..) = self.clipped_at(p)?;
         let (para, a, b) = hidden[k];
         Some(Position::text(p.story, para, if end { b } else { a }))
     }
 
-    /// A clipped position's x for vertical moves: its cell's left edge (it has no line to measure on).
     pub(super) fn clipped_x(&mut self, p: Position) -> Option<f64> {
         let (_, _, page, chain) = self.clipped_at(p)?;
         let geo = self.pages.page(page, &self.index)?;
         geo.cells.iter().find(|c| c.chain == chain).map(|c| c.rect[0] + 1.0)
     }
 
-    /// The clipped units of the cell whose hidden text holds `p`, with `p`'s range among them.
     fn clipped_at(&mut self, p: Position) -> Option<(Hidden, usize, usize, std::rc::Rc<[super::geometry::CellKey]>)> {
         let (para, unit) = p.para_offset()?;
         let n = self.pages.len();
@@ -54,21 +46,14 @@ impl Editor {
         None
     }
 
-    /// Up or Down where clipped text is involved: from a cell's last drawn line down into its clipped text;
-    /// within it, to the next or previous clipped paragraph; out of it, on to what is below the cell or up to its
-    /// last drawn line. `None`: ordinary vertical movement.
-    // shortcut: clipped text has no lines here, so these moves go to a clipped paragraph's start, not to the goal x.
     pub(super) fn clipped_vertical(&mut self, focus: Position, x: f64, down: bool) -> Option<Position> {
         let at = |para, unit| Position::text(focus.story, para, unit);
         if let Some((hidden, k, page, chain)) = self.clipped_at(focus) {
             let geo = self.pages.page(page, &self.index)?;
-            // The start of the next or previous clipped paragraph.
             let next = if down { hidden[k + 1..].iter().find(|h| h.0 != hidden[k].0) } else { hidden[..k].iter().rev().find(|h| h.0 != hidden[k].0) };
             if let Some(&(para, a, _)) = next {
                 return Some(at(para, a));
             }
-            // Out of the clipped text: up to the cell's last drawn line, or down to the nearest drawn line below the
-            // cell, at the goal x.
             let last = geo.lines.iter().filter(|l| l.chain == chain && !l.repeat).max_by(|a, b| a.top.total_cmp(&b.top))?;
             let s = last.nearest(x)?;
             let from = at(s.para, s.unit);
@@ -90,8 +75,6 @@ impl Editor {
         let line = self.nav().line_of(focus)?;
         let l = &line.geo.lines[line.line];
         if !down {
-            // Up from the line just below a cell with clipped text (no drawn line between): into its last clipped
-            // paragraph.
             let story = line.geo.stories[l.story].story;
             let cell = line
                 .geo
@@ -113,7 +96,6 @@ impl Editor {
             let &(para, a, _) = cell.hidden.iter().find(|h| h.0 == last_para)?;
             return Some(at(para, a));
         }
-        // Down from a cell's last drawn line: into its clipped text.
         let cell: &GCell = line.geo.cells.iter().find(|c| c.chain == l.chain && !c.hidden.is_empty())?;
         let below = line.geo.lines.iter().any(|m| m.chain == l.chain && m.top > l.top + 0.01);
         if below {

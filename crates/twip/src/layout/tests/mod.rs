@@ -1,5 +1,4 @@
-//! Layout tests: invariants, equivalence, boundary checks. Each test file adds its `mod` line here. Tests
-//! that need fixtures or system fonts skip themselves when those are missing.
+//! Layout tests
 
 mod attempts;
 mod auto_colour;
@@ -20,7 +19,6 @@ mod rebreak;
 mod reuse;
 mod robustness;
 mod rows;
-mod rule_ids;
 pub(crate) mod shapes;
 mod showcase;
 mod signatures;
@@ -37,23 +35,18 @@ use std::path::{Path, PathBuf};
 use crate::docx::Document;
 use crate::font::Fonts;
 
-/// Reference fixtures with golden renderings, from `TWIP_REFERENCE_FIXTURES` (tests that need them skip without it).
 pub fn fixtures() -> PathBuf {
     std::env::var_os("TWIP_REFERENCE_FIXTURES").map(std::path::PathBuf::from).unwrap_or_default()
 }
 
-/// The reference dump directory: its `index.txt` lists the documents dump comparisons run over (tests that need it
-/// skip without it).
 pub fn baseline_dump() -> PathBuf {
     Path::new(&std::env::var("LOCALAPPDATA").unwrap_or_default()).join(r"twip\ng-baseline\run\dump")
 }
 
-/// A fixture by path relative to [`fixtures`], read for layout; `None` if it isn't there.
 pub fn fixture(rel: &str) -> Option<Document> {
     doc(&fixtures().join(rel))
 }
 
-/// A document read for layout; `None` if it can't be read.
 pub fn doc(path: &Path) -> Option<Document> {
     crate::docx::read(&std::fs::read(path).ok()?).ok()
 }
@@ -62,7 +55,6 @@ pub fn fonts() -> Fonts {
     Fonts::system()
 }
 
-/// The reference dump's documents whose features are all within `features`.
 pub fn gate_set(features: &[&str]) -> Vec<(PathBuf, Document)> {
     let Ok(index) = std::fs::read_to_string(baseline_dump().join("index.txt")) else { return Vec::new() };
     let allowed: std::collections::BTreeSet<&str> = features.iter().copied().collect();
@@ -74,7 +66,6 @@ pub fn gate_set(features: &[&str]) -> Vec<(PathBuf, Document)> {
         .collect()
 }
 
-/// The source files of the layout module, for checks over the code itself.
 pub fn layout_sources() -> Vec<(PathBuf, String)> {
     fn walk(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
         let Ok(rd) = std::fs::read_dir(dir) else { return };
@@ -95,8 +86,6 @@ pub fn layout_sources() -> Vec<(PathBuf, String)> {
     out
 }
 
-/// A one-section document of plain paragraphs with the given texts, in the first text paragraph's style of
-/// `tests/fixtures/text-basics.docx`; `None` if that fixture is missing.
 pub fn plain_doc(texts: &[String]) -> Option<Document> {
     use crate::docx::{Block, Inline};
     let mut d = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/text-basics.docx")))?;
@@ -119,7 +108,6 @@ pub fn plain_doc(texts: &[String]) -> Option<Document> {
     Some(d)
 }
 
-/// Each page's drawn characters: (character, x, baseline).
 pub fn page_chars(doc: &Document) -> Vec<Vec<(char, f64, f64)>> {
     let snap = crate::layout::layout(doc, &fonts());
     snap.pages()
@@ -136,12 +124,10 @@ pub fn page_chars(doc: &Document) -> Vec<Vec<(char, f64, f64)>> {
         .collect()
 }
 
-/// A document read from a package of the given parts (name, XML); `None` if it doesn't read.
 pub fn package(parts: &[(&str, &str)]) -> Option<Document> {
     crate::docx::read(&package_bytes(parts)?).ok()
 }
 
-/// The package of `parts`, as bytes.
 pub fn package_bytes(parts: &[(&str, &str)]) -> Option<Vec<u8>> {
     use std::io::Write;
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -152,7 +138,6 @@ pub fn package_bytes(parts: &[(&str, &str)]) -> Option<Vec<u8>> {
     Some(z.finish().ok()?.into_inner())
 }
 
-/// `n` words of filler text.
 pub fn words(n: usize) -> String {
     (0..n).map(|i| ["layout", "fragment", "token", "column", "page"][i % 5]).collect::<Vec<_>>().join(" ")
 }

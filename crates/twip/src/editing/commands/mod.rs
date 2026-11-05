@@ -1,9 +1,4 @@
-//! The command layer: one handler per [`Command`], one file per group of the command set. A handler applies its
-//! command at the selection through the editor's transactions and steps, using the document operations (text,
-//! formatting, tables, objects, fields, controls, review) as building blocks. The merge designer's fields, content
-//! controls and data parts are handled by their operations in `editing/merge.rs`, and the view commands by the session.
-//! Keys, menus, dialogs, sessions and tests all reach behaviour through [`Editor::execute`], so a command does the
-//! same whichever surface runs it.
+//! Command layer
 
 mod character;
 mod history;
@@ -21,9 +16,6 @@ pub(crate) use character::highlight_value;
 
 use crate::api::command::CommandId;
 
-/// The commands the engine doesn't do yet: never available, and refused as unsupported.
-// shortcut: section breaks (saving can't add sections), the format painter, odd and even pages, and boundary moves by
-// command are refused until they're built.
 pub(crate) const UNSUPPORTED: &[CommandId] = &[
     CommandId::InsertSectionBreak,
     CommandId::CopyFormatting,
@@ -43,26 +35,18 @@ use super::history::Typing;
 use super::selection::Selection;
 use super::{Editor, extend};
 
-/// What a movement steps by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveBy {
     Char,
     Word,
     Line,
     Para,
-    /// Home / End.
     LineEdge,
-    /// Ctrl+Home / Ctrl+End.
     Story,
-    /// Page Up / Page Down.
     Screen,
-    /// Ctrl+Page Up / Ctrl+Page Down.
     Page,
-    /// Ctrl+Alt+Page Up / Down.
     ScreenEdge,
-    /// Alt+Home / Alt+End in a table: the row's first or last cell.
     RowEdge,
-    /// Alt+Page Up / Alt+Page Down in a table: the column's first or last cell.
     ColumnEdge,
 }
 
@@ -72,7 +56,6 @@ pub enum Dir {
     Forward,
 }
 
-/// The command that moves the caret (or with `extend`, extends the selection) by `by`, in the editor's units.
 pub fn moving(by: MoveBy, dir: Dir, extend: bool) -> Command {
     use crate::api::command::{MoveSelection, MoveUnit as U};
     let by = match by {
@@ -90,7 +73,6 @@ pub fn moving(by: MoveBy, dir: Dir, extend: bool) -> Command {
     Command::MoveSelection(MoveSelection { by, direction: direction(dir), extend: extend.then_some(true) })
 }
 
-/// Backspace (`Dir::Back`) or Delete, by a character or a word.
 pub fn deleting(dir: Dir, word: bool) -> Command {
     use crate::api::command::{DeleteOptions, DeleteUnit};
     Command::Delete(DeleteOptions { direction: direction(dir), unit: word.then_some(DeleteUnit::Word) })
@@ -100,21 +82,15 @@ fn direction(dir: Dir) -> crate::api::value::Direction {
     if dir == Dir::Forward { crate::api::value::Direction::Forward } else { crate::api::value::Direction::Backward }
 }
 
-/// What executing a command did.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Outcome {
-    /// The document changed to this revision.
     Changed(u64),
-    /// The selection or view changed, the document didn't.
     Moved,
-    /// Nothing happened, and why.
     Unchanged(&'static str),
-    /// The command can't run here: the error says why, and nothing changed.
     Refused(Error),
 }
 
 impl Outcome {
-    /// A command the engine doesn't do yet.
     pub(crate) fn unsupported(what: &str) -> Outcome {
         Outcome::Refused(Error::unsupported(what))
     }
@@ -129,23 +105,19 @@ impl Outcome {
 }
 
 impl Editor {
-    /// Runs `cmd` at the selection. What it made (a field's id, a comment's) is [`Editor::take_made`]'s.
     pub fn execute(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
         self.made = None;
         self.refused = None;
-        // Read only refuses an edit before it runs, by the catalog's `mutates`.
         if self.mode == super::Mode::ReadOnly && cmd.mutates() {
             return self.refuse_read_only();
         }
         let out = self.execute_editable(cmd, fonts);
-        // Images for pictures that never went in.
         self.pending_images.clear();
         self.settle_provisional(fonts);
         out
     }
 
     fn execute_editable(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
-        // Typing that continues a run extends what F4 repeats.
         let continues = matches!(cmd, Command::InsertText(_))
             && self.selection.is_collapsed()
             && self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, u)| self.history.continues(p, u, Typing::Insert));
@@ -159,14 +131,12 @@ impl Editor {
             }
             _ => None,
         };
-        // In extend mode a typed character extends the selection to its next occurrence.
         if self.modes.extend > 0
             && let Command::InsertText(t) = &cmd
             && t.chars().count() == 1
         {
             return self.extend_to_char(t.chars().next().unwrap_or(' '));
         }
-        // In extend or block mode movement extends the selection.
         let cmd = match cmd {
             Command::MoveSelection(mut m)
                 if m.extend != Some(true)
@@ -183,7 +153,6 @@ impl Editor {
             self.back_step = None;
         }
         let out = self.run(cmd, fonts);
-        // A building block that refuses answers why: the command is refused.
         let out = match (out, self.refused) {
             (Outcome::Unchanged(_), Some("read-only")) => {
                 Outcome::Refused(Error::new(crate::api::error::ErrorCode::ReadOnly, "the document is read only"))
@@ -197,19 +166,16 @@ impl Editor {
         if moving && self.modes.block {
             self.selection = self.as_block(self.selection);
         }
-        // An edit that leaves a caret (typing over, deleting) ends the modes; formatting keeps them.
         if matches!(out, Outcome::Changed(_)) && self.selection.is_collapsed() {
             self.modes = extend::Modes::default();
         }
         out
     }
 
-    /// What the last command made, for the commands that create something.
     pub fn take_made(&mut self) -> Option<CommandResult> {
         self.made.take()
     }
 
-    /// One command's handler, without the repeat and mode bookkeeping of [`Editor::execute`].
     pub(in crate::editing) fn run(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
         use crate::api::command::{DeleteUnit, MoveUnit};
         let vertical = matches!(&cmd, Command::MoveSelection(m) if matches!(m.by, MoveUnit::Line | MoveUnit::Screen));
@@ -436,9 +402,7 @@ impl Editor {
             | Command::SetAutoCorrect(_)
             | Command::ShowAutoCorrectOptions
             | Command::ClosePopover => Outcome::Moved,
-            // The session adds Never correct's word to its settings; the editor reverts.
             Command::RevertAutoCorrect | Command::NeverAutoCorrect => self.revert_correction(fonts),
-            // The session says the formatting; the editor has nothing to do.
             Command::DescribeFormatting => Outcome::Unchanged("described"),
             Command::SetMode(m) => self.set_mode(match m {
                 crate::api::state::Mode::Editing => super::Mode::Editing,
@@ -447,7 +411,6 @@ impl Editor {
         }
     }
 
-    /// Runs `f`, several building blocks, as one transaction labelled `label`: undone when `f` refuses.
     pub fn joined(&mut self, label: &'static str, fonts: &Fonts, f: impl FnOnce(&mut Editor) -> Outcome) -> Outcome {
         self.begin_batch(Some(label.into()));
         let out = f(self);

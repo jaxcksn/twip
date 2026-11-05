@@ -1,5 +1,4 @@
-# Colours on a dark page (DRAW-27): for each sRGB point with channel levels
-# round(i * 255 / 16), i = 0..16, the colour drawn on a dark page. Line 17 * r + g holds b = 0..16.
+# Dark page colours
 f6f6f6 f0f0ff ececff e8e8ff e3e3ff dfdfff dadaff d5d5ff d0d0ff 48d1ff 37cbff 1ac6ff 00c0ff 00baff 00b4ff 00adff 00a7ff
 e3ede3 e3ecec e1eaf8 dfe7ff dce3ff d8dfff d4daff d0d5ff cbd0ff c6cbff 27ccff 00c6ff 00c0ff 00baff 00b4ff 00aeff 00a7ff
 d7e7d7 d6e7dc d5e5e5 d4e3f2 d2e0ff cfddff ccd9ff c8d4ff c4cfff c0caff bbc5ff 00c6ff 00c0ff 00bbff 00b4ff 00aeff 00a8ff

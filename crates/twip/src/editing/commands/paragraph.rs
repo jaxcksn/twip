@@ -1,4 +1,4 @@
-//! Paragraph formatting: setters over the selected paragraphs.
+//! Paragraph formatting
 
 use crate::api::command::{BorderPreset, Indents, ListKind, ParagraphFlow, ParagraphSpacing};
 use crate::api::value::{Alignment, AutoOr, LineSpacing, StyleId};
@@ -69,7 +69,6 @@ impl Editor {
         self.format(&Format::ParaStyle(id.0), fonts)
     }
 
-    /// The list `para` is in: bullets (`true`) or numbering.
     pub(crate) fn para_list(&self, para: ParaId) -> Option<bool> {
         let p = self.index.para(&self.doc, para)?;
         let (id, ilvl) = p.style.num.filter(|(id, _)| *id != 0)?;
@@ -88,7 +87,6 @@ impl Editor {
                 self.toggle_list(bullet, fonts)
             }
             None if now.iter().all(Option::is_none) => Outcome::Unchanged("not in a list"),
-            // All of one kind come off at once; a mix first joins one kind, then comes off.
             None => match now.iter().flatten().next() {
                 Some(&b) if now.iter().all(|l| *l == Some(b)) => self.toggle_list(b, fonts),
                 _ => self.joined("Numbering", fonts, |e| {

@@ -1,4 +1,4 @@
-//! Only the document pass reads the whole document: no algorithm below it takes a `Document`.
+//! Algorithm signatures
 
 use super::layout_sources;
 

@@ -1,4 +1,4 @@
-//! Shapes in the editor: what a press selects (their ink, not their box).
+//! Shape editing tests
 
 use super::super::Editor;
 use super::super::input::PointerKind;
@@ -14,7 +14,6 @@ fn editor(body: &str) -> Editor {
     e
 }
 
-/// A click at page 0's point; what it selected.
 fn click(e: &mut Editor, x: f64, y: f64) -> Selection {
     let (dx, dy) = e.stack().to_doc(0, x, y).expect("on the stack");
     e.pointer_input(PointerKind::Down, dx, dy, 1, Mods::default(), fonts());
@@ -22,7 +21,6 @@ fn click(e: &mut Editor, x: f64, y: f64) -> Selection {
     e.selection()
 }
 
-/// The body's float ids in document order.
 fn floats(e: &Editor) -> Vec<u64> {
     let mut v = Vec::new();
     for s in &e.document().sections {
@@ -44,7 +42,6 @@ fn picked(s: Selection) -> Option<u64> {
 
 #[test]
 fn a_press_selects_a_shape_on_its_ink_only() {
-    // A filled ellipse 144 pt across at (72, 300); a star without fill at (300, 300); a line at y 500; all on page.
     let ellipse = sp(0, 0, 144, 144, "ellipse", "", "FF0000");
     let star = sp(0, 0, 144, 144, "star5", "", "FF0000").replace(r#"<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:ln"#, "<a:noFill/><a:ln");
     let line = sp(0, 0, 200, 0, "line", "", "FF0000");
@@ -57,20 +54,16 @@ fn a_press_selects_a_shape_on_its_ink_only() {
     let mut e = editor(&body);
     let id = |e: &Editor, n: usize| floats(e)[n];
     let (el, st, ln) = (id(&e, 0), id(&e, 1), id(&e, 2));
-    // The ellipse: its middle selects it, its box's corner doesn't.
     assert_eq!(picked(click(&mut e, 144.0, 372.0)), Some(el));
     assert_eq!(picked(click(&mut e, 76.0, 304.0)), None, "outside the ellipse, inside its box");
-    // The star without fill: its outline (the top point at (372, 300)) selects it, its middle doesn't.
     assert_eq!(picked(click(&mut e, 372.0, 301.0)), Some(st));
     assert_eq!(picked(click(&mut e, 372.0, 380.0)), None, "inside a shape without fill");
-    // The line, along its stroke (within 3 px), not 10 pt off it.
     assert_eq!(picked(click(&mut e, 150.0, 501.5)), Some(ln));
     assert_eq!(picked(click(&mut e, 150.0, 510.0)), None);
 }
 
 #[test]
 fn a_rotated_shape_is_hit_where_it_is_drawn() {
-    // A 200 x 20 pt bar turned 90 degrees about its centre (172, 410): it covers x 162..182, y 310..510.
     let bar = sp(0, 0, 200, 20, "rect", r#" rot="5400000""#, "00FF00");
     let body = format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(72, 400, 200, 20, 1, false, 1, &bar));
     let mut e = editor(&body);
@@ -79,7 +72,6 @@ fn a_rotated_shape_is_hit_where_it_is_drawn() {
     assert_eq!(picked(click(&mut e, 90.0, 410.0)), None, "where the bar was before turning");
 }
 
-/// A 200 x 100 pt group at (72, 300) of two 80 x 80 rectangles (at its left and right), and a lone ellipse.
 fn group_and_ellipse() -> Editor {
     use crate::layout::tests::shapes::PT;
     let group = format!(
@@ -129,13 +121,11 @@ fn shift_or_ctrl_and_a_press_add_and_remove_floats() {
     assert_eq!(e.selected_floats(), ids);
     with(&mut e, 370.0, 350.0, Mods { ctrl: true, ..Mods::default() });
     assert_eq!(e.selected_floats(), ids[..1], "a second Ctrl+press takes it out");
-    // A plain press selects one object again.
     with(&mut e, 370.0, 350.0, Mods { shift: true, ..Mods::default() });
     click(&mut e, 370.0, 350.0);
     assert_eq!(e.selected_floats(), ids[1..]);
 }
 
-/// A drag on page 0 from one point to another, in 8 moves.
 fn drag(e: &mut Editor, from: [f64; 2], to: [f64; 2], mods: Mods) {
     let doc = |e: &Editor, p: [f64; 2]| e.stack().to_doc(0, p[0], p[1]).expect("on the stack");
     let (a, b) = (doc(e, from), doc(e, to));
@@ -147,7 +137,6 @@ fn drag(e: &mut Editor, from: [f64; 2], to: [f64; 2], mods: Mods) {
     e.pointer_input(PointerKind::Up, b.0, b.1, 0, mods, fonts());
 }
 
-/// Incremental layout equals a full one.
 fn same_as_full(e: &mut Editor) {
     e.complete(fonts());
     let ours = crate::layout::dump::page_text(&e.snapshot(), e.document());
@@ -173,13 +162,11 @@ fn shape_of(e: &Editor) -> crate::drawing::Shape {
 #[test]
 fn the_rotate_handle_turns_a_shape_and_shift_snaps_it() {
     use super::super::commands::Command;
-    // A 100 x 100 pt square at (200, 300): centre (250, 350), the rotate knob's centre 24 px (18 pt) above the top.
     let square = sp(0, 0, 100, 100, "rect", "", "0000FF");
     let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(200, 300, 100, 100, 1, false, 1, &square)));
     click(&mut e, 250.0, 350.0);
     let frame = e.view(0..1).shapes.first().cloned().expect("a shape frame");
     assert!((frame.rotate[0] - 250.0).abs() < 1e-6 && (frame.rotate[1] - (300.0 - 18.0)).abs() < 1e-6, "{frame:?}");
-    // From the handle to the right of the centre: a quarter turn clockwise (a little short; Shift snaps it to 90).
     drag(&mut e, frame.rotate, [350.0, 345.0], Mods { shift: true, ..Mods::default() });
     assert_eq!(shape_of(&e).xfrm.rot.0, 90 * 60000);
     same_as_full(&mut e);
@@ -190,19 +177,15 @@ fn the_rotate_handle_turns_a_shape_and_shift_snaps_it() {
 #[test]
 fn an_adjust_handle_drags_within_its_limits() {
     use super::super::commands::Command;
-    // A 200 x 100 pt rounded rectangle at (100, 300): its handle (adj, 0..50000 of the short side) at its top, from
-    // the left corner.
     let rr = sp(0, 0, 200, 100, "roundRect", "", "00FF00");
     let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(100, 300, 200, 100, 1, false, 1, &rr)));
     click(&mut e, 200.0, 350.0);
     let frame = e.view(0..1).shapes.first().cloned().expect("a shape frame");
     let h = frame.adjust[0];
-    // 30 pt in from the left: adj 30 / 100 = 30000.
     drag(&mut e, h, [130.0, h[1]], Mods::default());
     let adj = |e: &Editor| shape_of(e).geometry().expect("a geometry").adjust_values()[0];
     assert!((adj(&e) - 30000).abs() <= 100, "{}", adj(&e));
     same_as_full(&mut e);
-    // Far past the middle: held at the limit (50000, a half of the short side).
     let h = e.view(0..1).shapes.first().cloned().expect("a shape frame").adjust[0];
     drag(&mut e, h, [290.0, h[1]], Mods::default());
     assert_eq!(adj(&e), 50000);
@@ -210,7 +193,6 @@ fn an_adjust_handle_drags_within_its_limits() {
     assert!((adj(&e) - 30000).abs() <= 100, "one undo step");
 }
 
-/// The text of the first float's story, by paragraph.
 fn box_text(e: &Editor) -> Option<String> {
     let f = floats(e)[0];
     e.document().sections[0].blocks.iter().find_map(|b| match b {
@@ -240,11 +222,9 @@ fn typing_into_a_shape_gives_it_a_story_and_a_line_takes_none() {
     assert!(matches!(e.selection().focus().map(|p| p.story), Some(super::super::position::StoryId::TextBox(_))), "the caret is in the shape");
     assert!(matches!(shape_of(&e).sp().map(|s| &s.text), Some(crate::drawing::ShapeText::Story)));
     same_as_full(&mut e);
-    // Saved with its story, and read back.
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(box_text(&again).as_deref(), Some("Hi"));
-    // A line has no room for text: typing goes to the anchor paragraph.
     let line = sp(0, 0, 200, 0, "line", "", "FF0000");
     let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(72, 500, 200, 0, 1, false, 1, &line)));
     click(&mut e, 150.0, 500.5);
@@ -253,7 +233,6 @@ fn typing_into_a_shape_gives_it_a_story_and_a_line_takes_none() {
     assert_eq!(box_text(&e), None);
 }
 
-/// The selected float's box on page 0, as laid out.
 fn selected_box(e: &mut Editor) -> [f64; 4] {
     e.complete(fonts());
     let Selection::Object(ObjectRef::Floating(f)) = e.selection() else { panic!("no float selected: {:?}", e.selection()) };
@@ -270,25 +249,21 @@ fn a_click_or_a_drag_inserts_a_shape_there() {
     let text = crate::layout::tests::words(120);
     let mut e = editor(&format!("<w:p><w:r><w:t>{text}</w:t></w:r></w:p><w:p><w:r><w:t>{text}</w:t></w:r></w:p>"));
     let near = |a: [f64; 4], b: [f64; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.1);
-    // A drag from (100, 200) to (220, 260).
     e.begin_shape_insert(NewShape::Shape(Preset::Star5));
     drag(&mut e, [100.0, 200.0], [220.0, 260.0], Mods::default());
     let r = selected_box(&mut e);
     assert!(near(r, [100.0, 200.0, 220.0, 260.0]), "{r:?}");
     assert_eq!(shape_of(&e).sp().and_then(|s| s.geom.preset()), Some(Preset::Star5));
     same_as_full(&mut e);
-    // Shift: a square, as wide as the drag's longer side.
     e.begin_shape_insert(NewShape::Shape(Preset::Ellipse));
     drag(&mut e, [300.0, 400.0], [360.0, 420.0], Mods { shift: true, ..Mods::default() });
     assert!(near(selected_box(&mut e), [300.0, 400.0, 360.0, 460.0]), "{:?}", selected_box(&mut e));
-    // A click: 72 x 72 there.
     e.begin_shape_insert(NewShape::Shape(Preset::Rect));
     click(&mut e, 150.0, 500.0);
     assert!(near(selected_box(&mut e), [150.0, 500.0, 222.0, 572.0]), "{:?}", selected_box(&mut e));
     assert_eq!(floats(&e).len(), 3);
     e.execute(Command::Undo, fonts());
     assert_eq!(floats(&e).len(), 2, "one undo step");
-    // Saved as Word's template and read back.
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(floats(&again).len(), 2);
@@ -296,7 +271,6 @@ fn a_click_or_a_drag_inserts_a_shape_there() {
     assert_eq!(style.fill.map(|f| f.0), Some(1));
 }
 
-/// The body's floats' shapes by id.
 fn shape_by_id(e: &Editor, f: u64) -> crate::docx::Float {
     e.document().sections[0]
         .blocks
@@ -327,14 +301,14 @@ fn format_operations_change_the_selected_shapes_in_one_step_each() {
     );
     let mut e = editor(&body);
     let [a, b] = floats(&e)[..] else { panic!() };
-    // Change Shape keeps the fill and resets the adjust values.
+    // Change shape
     click(&mut e, 140.0, 350.0);
     assert_eq!(picked(e.selection()), Some(a));
     assert!(matches!(e.set_shape_preset(Preset::Hexagon, fonts()), super::super::Outcome::Changed(_)));
     let s = shape_by_id(&e, a).shape.expect("a shape");
     assert_eq!(s.sp().and_then(|s| s.geom.preset()), Some(Preset::Hexagon));
     assert!(matches!(&s.sp().unwrap().fill, Some(Fill::Solid(c)) if *c == Colour::srgb(0xFF0000)));
-    // Both selected: one fill, one undo step.
+    // Fill both
     let (dx, dy) = e.stack().to_doc(0, 220.0, 380.0).expect("on the stack");
     e.pointer_input(PointerKind::Down, dx, dy, 1, Mods { shift: true, ..Mods::default() }, fonts());
     e.pointer_input(PointerKind::Up, dx, dy, 0, Mods::default(), fonts());
@@ -346,7 +320,7 @@ fn format_operations_change_the_selected_shapes_in_one_step_each() {
     e.execute(Command::Undo, fonts());
     assert!(!blue(&e, a) && !blue(&e, b), "one undo step");
     same_as_full(&mut e);
-    // Flip and rotate the star.
+    // Flip and rotate
     click(&mut e, 140.0, 350.0);
     click(&mut e, 400.0, 600.0);
     click(&mut e, 140.0, 350.0);
@@ -355,7 +329,7 @@ fn format_operations_change_the_selected_shapes_in_one_step_each() {
     e.set_object_rotation(30.0, fonts());
     let x = shape_by_id(&e, a).shape.unwrap().xfrm;
     assert_eq!((x.flip_h, x.rot.0), (true, 30 * 60000));
-    // Arrange: the star (z 5) to the front goes past the ellipse (z 6); back again goes under it.
+    // Arrange
     e.arrange_object(Arrange::ToFront, fonts());
     assert!(shape_by_id(&e, a).z > shape_by_id(&e, b).z);
     e.arrange_object(Arrange::Backward, fonts());
@@ -363,7 +337,6 @@ fn format_operations_change_the_selected_shapes_in_one_step_each() {
     e.arrange_object(Arrange::BehindText, fonts());
     assert!(shape_by_id(&e, a).behind);
     same_as_full(&mut e);
-    // Saved: the anchor's relativeHeight and behindDoc, the shape's xfrm; read back the same.
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     let (s, t) = (shape_by_id(&again, floats(&again)[0]), shape_by_id(&e, a));
@@ -395,14 +368,12 @@ fn a_shape_goes_in_line_with_text_and_floats_again() {
     let back = inline_shapes(&again);
     assert_eq!(back.len(), 1);
     assert_eq!(back[0].sp().and_then(|s| s.geom.preset()), Some(crate::drawing::geom::Preset::Star5));
-    // And floating again, its shape kept.
     let out = e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     assert_eq!(shape_of(&e).sp().and_then(|s| s.geom.preset()), Some(crate::drawing::geom::Preset::Star5));
     again.complete(fonts());
 }
 
-/// Every drawn shape's box on page 0, sorted.
 fn drawn_boxes(e: &mut Editor) -> Vec<[i64; 4]> {
     e.complete(fonts());
     let snap = e.snapshot();
@@ -437,16 +408,14 @@ fn group_and_ungroup_keep_every_shape_where_it_is() {
     assert_eq!(shape_of(&e).group().map(|g| g.children.len()), Some(2));
     assert_eq!(drawn_boxes(&mut e), was, "grouped, every shape where it was");
     same_as_full(&mut e);
-    // Saved and read back as a group.
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(floats(&again).len(), 1);
     assert_eq!(drawn_boxes(&mut again), was);
-    // Undo: the two shapes again, in one step.
     e.execute(Command::Undo, fonts());
     assert_eq!(floats(&e).len(), 2, "one undo step");
     e.execute(Command::Redo, fonts());
-    // Ungroup: two floats where the children were, both selected.
+    // Ungroup
     click(&mut e, 150.0, 350.0);
     let out = e.ungroup_objects(fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
@@ -484,7 +453,6 @@ fn dragging_a_group_child_moves_it_alone_and_grows_the_group() {
     click(&mut e, 100.0, 330.0);
     assert_eq!(e.selected_child(), Some(&[0u16][..]));
     let other = [1920, 3000, 2720, 3800];
-    // Inside the group: only the child moves, and the group keeps its box (Alt: where the pointer puts it).
     let free = Mods { alt: true, ..Mods::default() };
     drag(&mut e, [100.0, 330.0], [120.0, 340.0], free);
     assert_eq!(e.selected_child(), Some(&[0u16][..]), "the child stays selected");
@@ -493,18 +461,15 @@ fn dragging_a_group_child_moves_it_alone_and_grows_the_group() {
     let frame = e.view(0..1).shapes.first().cloned().expect("the child's frame");
     assert_eq!(frame.rect.map(|v| (v * 10.0).round() as i64), [920, 3100, 1720, 3900]);
     same_as_full(&mut e);
-    // Past the group's bottom: the group grows to hold it, the other child stays put.
     drag(&mut e, [130.0, 350.0], [130.0, 380.0], free);
     let boxes = drawn_boxes(&mut e);
     assert!(boxes.contains(&[920, 3400, 1720, 4200]) && boxes.contains(&other), "{boxes:?}");
     let g = shape_of(&e);
     assert_eq!(g.xfrm.ext[1].0, 120 * crate::layout::tests::shapes::PT);
     same_as_full(&mut e);
-    // Saved and read back where it is.
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(drawn_boxes(&mut again), drawn_boxes(&mut e));
-    // One undo step per drag.
     e.execute(Command::Undo, fonts());
     let boxes = drawn_boxes(&mut e);
     assert!(boxes.contains(&[920, 3100, 1720, 3900]), "{boxes:?}");
@@ -533,14 +498,11 @@ fn with_tracking_a_shape_inserted_or_deleted_is_a_revision() {
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     let runs = float_runs(&e);
     assert!(matches!(runs[..], [(_, true, false)]), "an insertion: {runs:?}");
-    // Saved as an insertion and read back as one.
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert!(matches!(float_runs(&again)[..], [(_, true, false)]), "{:?}", float_runs(&again));
-    // Rejected: gone.
     e.execute(Command::RejectAllRevisions(Default::default()), fonts());
     assert!(float_runs(&e).is_empty());
-    // A shape from before tracking, deleted: it stays, marked deleted, until accepted.
     let mut e = editor(&format!(
         "<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>",
         anchor(100, 300, 100, 100, 1, false, 1, &sp(0, 0, 100, 100, "rect", "", "0000FF"))
@@ -554,13 +516,11 @@ fn with_tracking_a_shape_inserted_or_deleted_is_a_revision() {
     assert!(matches!(float_runs(&again)[..], [(_, false, true)]), "saved as a deletion: {:?}", float_runs(&again));
     e.execute(Command::AcceptAllRevisions(Default::default()), fonts());
     assert!(float_runs(&e).is_empty());
-    // The author's own inserted shape, deleted: it goes.
     e.insert_shape_sized(NewShape::Shape(Preset::Rect), [72.0, 72.0], fonts());
     e.execute(Command::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None }), fonts());
     assert!(float_runs(&e).is_empty(), "{:?}", float_runs(&e));
 }
 
-/// An inline 144 x 72 pt rectangle with the text "Inside", after "Before " on the first line.
 fn inline_text_shape() -> Editor {
     use crate::layout::tests::shapes::PT;
     let shape = r#"<wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="W" cy="H"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="DDEEFF"/></a:solidFill></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>Inside</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr lIns="91440" tIns="45720" rIns="91440" bIns="45720"/></wps:wsp>"#
@@ -574,7 +534,6 @@ fn inline_text_shape() -> Editor {
     editor(&body)
 }
 
-/// The text of the story of the first inline shape with text, by paragraph.
 fn inline_text(e: &Editor) -> Option<String> {
     e.document().sections[0].blocks.iter().find_map(|b| match b {
         crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
@@ -598,7 +557,6 @@ fn an_inline_shape_lays_out_its_text_and_takes_typing() {
     use super::super::commands::Command;
     let mut e = inline_text_shape();
     assert_eq!(inline_text(&e).as_deref(), Some("Inside"));
-    // Drawn inside the shape's box, on the first line, after "Before ".
     let snap = e.snapshot();
     let runs: Vec<(String, f64, f64)> = crate::layout::traverse::paint_items(&snap.pages()[0])
         .iter()
@@ -610,7 +568,6 @@ fn an_inline_shape_lays_out_its_text_and_takes_typing() {
     let inside = runs.iter().find(|r| r.0.contains("Inside")).cloned().expect("the shape's text is drawn");
     let before = runs.iter().find(|r| r.0.contains("Before")).cloned().expect("the line's text");
     assert!(inside.1 > before.1 + 20.0 && inside.2 < before.2, "inside the shape, which sits on the line: {runs:?}");
-    // A click on its text puts the caret there; typing goes into the shape's story.
     let (x, y) = (inside.1 + 2.0, inside.2 - 4.0);
     click(&mut e, x, y);
     click(&mut e, x, y);
@@ -618,7 +575,6 @@ fn an_inline_shape_lays_out_its_text_and_takes_typing() {
     let text = inline_text(&e).expect("the story");
     assert!(text.contains('X') && text.len() == 7, "{text}");
     same_as_full(&mut e);
-    // Saved and read back with it.
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(inline_text(&again), Some(text));
@@ -629,7 +585,6 @@ fn an_inline_shape_with_text_floats_and_goes_in_line_again_with_its_text() {
     use super::super::commands::Command;
     use crate::api::value::ObjectWrap;
     let mut e = inline_text_shape();
-    // Select the shape on its edge (its text takes a press inside).
     let snap = e.snapshot();
     let shape = crate::layout::traverse::paint_items(&snap.pages()[0])
         .iter()
@@ -650,8 +605,6 @@ fn an_inline_shape_with_text_floats_and_goes_in_line_again_with_its_text() {
     assert_eq!(inline_text(&again).as_deref(), Some("Inside"));
 }
 
-/// Three linked 150 x 60 pt boxes at (72, 300), (250, 300) and (72, 400): the first holds the story, eight short
-/// paragraphs "P1" to "P8" of three lines' worth each.
 fn linked_boxes() -> Editor {
     let story: String =
         (1..=8).map(|i| format!("<w:p><w:r><w:t>P{i} words to fill the boxes in turn, one after another.</w:t></w:r></w:p>")).collect();
@@ -666,7 +619,6 @@ fn linked_boxes() -> Editor {
     ))
 }
 
-/// The page's text by line, with each line's left and baseline.
 fn page_lines(e: &Editor) -> Vec<(String, f64, f64)> {
     let snap = e.snapshot();
     let mut v: Vec<(String, f64, f64)> = crate::layout::traverse::paint_items(&snap.pages()[0])
@@ -686,13 +638,11 @@ fn linked_boxes_show_their_story_in_turn_and_take_typing_in_any_box() {
     let mut e = linked_boxes();
     let lines = page_lines(&e);
     let at = |s: &str| lines.iter().find(|l| l.0.starts_with(s)).cloned().unwrap_or_else(|| panic!("{s} not drawn: {lines:?}"));
-    // P1 in the first box, P2 in the second, P3 in the third; each box's first line at its top.
     let (p1, p2, p3) = (at("P1"), at("P2"), at("P3"));
     assert!(p1.1 < 100.0 && p1.2 < 330.0, "{p1:?}");
     assert!(p2.1 > 250.0 && p2.1 < 270.0 && p2.2 < 360.0, "{p2:?}");
     assert!(p3.1 < 100.0 && p3.2 > 400.0 && p3.2 < 430.0, "{p3:?}");
     assert_eq!(lines.iter().filter(|l| l.0.starts_with("P2")).count(), 1, "drawn once: {lines:?}");
-    // Typing at the second box's first line goes into the chain's story.
     click(&mut e, p2.1 + 1.0, p2.2 - 3.0);
     click(&mut e, p2.1 + 1.0, p2.2 - 3.0);
     assert!(matches!(e.selection(), Selection::Caret(_)), "{:?}", e.selection());
@@ -700,7 +650,6 @@ fn linked_boxes_show_their_story_in_turn_and_take_typing_in_any_box() {
     let text = box_text(&e).expect("the story");
     assert!(text.contains("XP2") || text.contains("PX2"), "{text}");
     same_as_full(&mut e);
-    // Saved with the story in the first box and the others still linked.
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(box_text(&again), Some(text));

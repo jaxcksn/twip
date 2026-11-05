@@ -2386,7 +2386,6 @@ struct Emit<'s, 'a, 'i> {
     heads: Vec<(String, String)>,
     next: usize,
     in_para: bool,
-    /// The head and end tag of a hidden-mark paragraph being walked (STYLE-7), which opens instead of the next head.
     hidden: Option<(String, String)>,
     /// The formatting the last kept unit was given when it changed (runs without text inside it follow, see
     /// `span_run`).
@@ -2736,8 +2735,6 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             if mapped {
                 for (k, r) in src.ranges.iter().enumerate() {
                     let node = s.paras[&r.start];
-                    // STYLE-7: a paragraph joined to the next by its hidden mark stays a paragraph of its own (unless
-                    // something before it is still open).
                     if stable && k + 1 < src.ranges.len() && !e.in_para {
                         let (open, close) = s.tags(node);
                         e.hidden = Some((open + child(node, "pPr").map_or("", |p| &s.xml[p.range()]), close));
@@ -3706,7 +3703,6 @@ struct Placement {
     /// Wrapping (`wrap`, `wrap_text`, behind the text) and the anchor lock, when changed.
     wrap: Option<(String, String, bool)>,
     locked: Option<bool>,
-    /// `relativeHeight` (FLOAT-16: the paint order), when arranged.
     z: Option<u32>,
     /// The alternative text (`wp:docPr/@descr`).
     alt: Option<String>,
@@ -3728,7 +3724,6 @@ struct Placement {
 impl Placement {
     fn changed(a: &Float, b: &Float) -> Option<Placement> {
         let ne = |x: f64, y: f64| (x - y).abs() > 1e-6;
-        // FLOAT-17: a quarter-turned float holds its turned box: the document gets its own extent and offsets back.
         let unswap = |f: &Float| {
             let mut f = f.clone();
             if f.rot_swap {

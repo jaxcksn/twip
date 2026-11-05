@@ -1,8 +1,4 @@
-//! The clipboard: copy keeps an internal fragment of the model (formatting, lists, tables) and writes
-//! plain text and HTML; paste of a fragment from this editor keeps its formatting, re-resolving each run in its new
-//! place and writing the properties that would otherwise change; anything else pastes as plain text in the
-//! insertion point's formatting. Clipboard data → [`Fragment`] → insertion, so rich external paste can be added later
-//! by converting other data to a fragment.
+//! Clipboard
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -19,20 +15,15 @@ use super::position::Position;
 use super::selection::Selection;
 use super::step::{Step, para_len};
 
-/// A copied piece of a document: blocks, the first and last possibly partial paragraphs (`open_end`: the last one's
-/// mark wasn't copied, so it merges into the paragraph it is pasted into).
 #[derive(Clone, Debug)]
 pub struct Fragment {
     pub id: u64,
     pub blocks: Vec<Block>,
     pub open_end: bool,
-    /// A copied cell block (its blocks are one table of its cells): pasted over the cells at the target.
     pub cells: Option<super::cell_clipboard::CellCopy>,
-    /// The content controls its blocks hold, as they were when copied: a paste adds copies of them.
     pub controls: std::collections::HashMap<crate::docx::ControlId, crate::docx::Control>,
 }
 
-/// The inlines of `p` in units `a..b` (texts cut, other inlines whole).
 fn slice(p: &Paragraph, a: Unit, b: Unit) -> Vec<Inline> {
     let mut out = Vec::new();
     let mut at = 0u32;
@@ -41,8 +32,6 @@ fn slice(p: &Paragraph, a: Unit, b: Unit) -> Vec<Inline> {
         let (s, e) = (at, at + n);
         at = e;
         if n == 0 {
-            // A control's markers on the range's edges come too (one whose partner the range leaves out is dropped
-            // by `drop_unpaired`).
             let control = matches!(i, Inline::ControlStart(_) | Inline::ControlEnd(_));
             if (s > a.0 && s < b.0) || (control && s >= a.0 && s <= b.0) {
                 out.push(i.clone());
@@ -63,7 +52,6 @@ fn slice(p: &Paragraph, a: Unit, b: Unit) -> Vec<Inline> {
     out
 }
 
-/// A deep copy with fresh identities (paragraphs, tables, floats) and no sources: content to insert.
 pub(super) fn fresh(b: &Block) -> Block {
     match b {
         Block::Para(p) => {
@@ -103,7 +91,6 @@ pub(super) fn fresh(b: &Block) -> Block {
     }
 }
 
-/// Plain text of blocks: paragraphs on lines, cells separated by tabs.
 fn plain(blocks: &[Block], out: &mut String) {
     for b in blocks {
         match b {
@@ -170,7 +157,6 @@ fn css_run(r: &RunStyle) -> String {
     s
 }
 
-/// HTML for other applications: paragraphs with run styles, lists as their labels, tables with spans.
 fn html(blocks: &[Block], out: &mut String) {
     for b in blocks {
         match b {
@@ -185,7 +171,6 @@ fn html(blocks: &[Block], out: &mut String) {
                 if let Some(l) = &p.list {
                     out.push_str(&format!("<span style=\"{}\">{}&#9;</span>", css_run(&l.run), esc(&l.text)));
                 }
-                // Fields as their results show: codes and markers left out.
                 for (i, shown) in p.inlines.iter().zip(crate::docx::fields::shown(&p.inlines)) {
                     let text = match (shown, i) {
                         (crate::docx::fields::Shown::Value(v), _) => esc(&v),
@@ -236,15 +221,12 @@ fn html(blocks: &[Block], out: &mut String) {
     }
 }
 
-/// `r` without its revisions.
 fn without_revisions(r: &Run) -> Run {
     let mut s = RunStyle::clone(r);
     s.rev = Default::default();
     Rc::new(s)
 }
 
-/// `blocks` with their revisions accepted: deleted content and rows gone, insertion and formatting marks cleared.
-// shortcut: a deleted paragraph mark stays a paragraph break; join its paragraphs when copies across one need it.
 fn accept(blocks: &mut Vec<Block>) {
     for b in blocks.iter_mut() {
         match b {
@@ -279,7 +261,6 @@ fn accept(blocks: &mut Vec<Block>) {
 }
 
 impl Fragment {
-    /// The fragment with its revisions accepted: what a copy takes in every markup view.
     pub fn accepted(mut self) -> Fragment {
         accept(&mut self.blocks);
         self
@@ -302,24 +283,19 @@ impl Fragment {
 }
 
 impl Editor {
-    /// Takes back the clipboard requests a copy made, the copy being answered rather than asked of the host: whether
-    /// there was one.
     pub fn take_clipboard_request(&mut self) -> bool {
         let n = self.requests.len();
         self.requests.retain(|r| !matches!(r, super::input::Request::Clipboard { .. }));
         self.requests.len() < n
     }
 
-    /// The selection as a fragment: within one container, its blocks (the ends cut, tables whole); across cells,
-    /// each touched paragraph's selected part.
     pub fn copy_fragment(&mut self) -> Option<Fragment> {
         if matches!(self.selection, Selection::Cells { .. }) {
             let id = self.clipboard.as_ref().map_or(1, |f| f.id + 1);
             return self.copy_cells(id);
         }
-        // Counted per editor, so a replay of the same input log names the same fragments.
         let id = self.clipboard.as_ref().map_or(1, |f| f.id + 1);
-        // A block: each line's piece as a paragraph of its own.
+        // Block selection
         if let Selection::Block { .. } = self.selection {
             let mut out = Vec::new();
             for (_, _, para, a, b) in self.block_pieces() {
@@ -338,7 +314,6 @@ impl Editor {
         let (pb, ob) = match b.para_offset() {
             Some(x) => x,
             None => {
-                // A row end mark at the end: up to the paragraph before it.
                 let p = self.nav().left(b, false);
                 p.para_offset()?
             }
@@ -362,7 +337,7 @@ impl Editor {
             let open_end = self.index.para(&self.doc, pb).is_some_and(|p| ob < para_len(p) || sa.block == sb.block) || b.para_offset().is_none();
             return Some(Fragment { id, blocks: out, open_end, cells: None, controls: Default::default() });
         }
-        // Across cells or levels: the selected part of each paragraph, in reading order.
+        // Across cells or levels
         let mut out = Vec::new();
         for (para, s, e) in self.selected_ranges() {
             if let Some(p) = self.index.para(&self.doc, para) {
@@ -374,8 +349,6 @@ impl Editor {
         Some(Fragment { id, blocks: out, open_end: true, cells: None, controls: Default::default() })
     }
 
-    /// A run that looks as `src` does wherever it goes: its direct formatting, plus explicit properties for what
-    /// resolving it over `base` would change (keep source formatting).
     fn keep_look(&self, src: &Run, base: &crate::docx::props::RunProps, cache: &mut HashMap<*const RunStyle, Run>) -> Run {
         if let Some(r) = cache.get(&Rc::as_ptr(src)) {
             return r.clone();
@@ -444,7 +417,6 @@ impl Editor {
         out
     }
 
-    /// Inlines with their runs fixed to keep their look in paragraph `para`'s context.
     fn fit_inlines(&self, para: ParaId, inlines: &[Inline]) -> Vec<Inline> {
         let Some(res) = self.doc.resolver.clone() else { return inlines.to_vec() };
         let cx = self.cx();
@@ -461,14 +433,10 @@ impl Editor {
             .collect()
     }
 
-    /// Pastes a fragment at the caret, replacing the selection: the first paragraph's content joins the
-    /// paragraph at the caret, whole blocks go between, and an open last paragraph joins the rest after the caret.
     pub fn paste_fragment(&mut self, f: &Fragment, fonts: &Fonts) -> Outcome {
         if let Some(o) = self.paste_cells(f, fonts) {
             return o;
         }
-        // Smart paste for one open paragraph: the spaces it needs beside its neighbours, decided before the
-        // selection goes.
         let spaces = match f.blocks.as_slice() {
             [Block::Para(p)] if f.open_end => self.smart_spaces(&super::text::UnitText::of(p).text),
             _ => (false, false),
@@ -492,7 +460,6 @@ impl Editor {
         for (id, c) in adopt(&mut blocks, &f.controls) {
             let _ = self.step(&mut tx, Step::Control { id, control: Some(c) });
         }
-        // Whole pasted blocks are in the block-level controls the caret's paragraph is in.
         let dest: Vec<crate::docx::ControlId> = self.index.para(&self.doc, para).map(|p| p.controls.clone()).unwrap_or_default();
         if !dest.is_empty() {
             for b in &mut blocks {
@@ -508,7 +475,7 @@ impl Editor {
             _ => None,
         };
         let units = |v: &[Inline]| v.iter().map(|i| i.units() as u32).sum::<u32>();
-        // One open paragraph: its content goes in at the caret.
+        // One open paragraph
         if n == 1
             && f.open_end
             && let Some(inl) = &first_inlines
@@ -533,9 +500,7 @@ impl Editor {
             self.selection = Selection::Caret(Position::text(caret.story, para, Unit(at.0 + k)));
             return self.commit(tx, None, fonts);
         }
-        // Whole paragraphs at a paragraph's start, the first in a block control of its own: they go in before it as
-        // they are, so the control keeps all its paragraphs; an open last paragraph's content joins the one at the
-        // caret.
+        // Paragraphs before a block control
         if at == Unit(0) && n > 1 && matches!(blocks.first(), Some(Block::Para(p)) if p.controls.iter().any(|c| !dest.contains(c))) {
             let mut middle = blocks;
             let last = match middle.last() {
@@ -572,7 +537,7 @@ impl Editor {
             self.selection = Selection::Caret(Position::text(caret.story, para, Unit(k)));
             return self.commit(tx, None, fonts);
         }
-        // Split at the caret; the first paragraph's content ends the first half.
+        // Split at the caret
         let Some(second) = self.split_template(para) else {
             self.abort(tx);
             return Outcome::Unchanged("no paragraph");
@@ -610,7 +575,6 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("paste failed");
         }
-        // Whole pasted paragraphs keep their look in their new place.
         for p in ids {
             if let Some(q) = self.index.para(&self.doc, p).cloned() {
                 let with = self.fit_inlines(p, &q.inlines);
@@ -634,8 +598,6 @@ impl Editor {
     }
 }
 
-/// Markers whose partner a copy's range left out (an inline control's start without its end, a field cut in half)
-/// leave the copied paragraphs: their content stays as text.
 pub(super) fn drop_unpaired(blocks: &mut [Block]) {
     use crate::docx::{ControlId, FieldId};
     for b in blocks {
@@ -660,8 +622,6 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
     }
 }
 
-/// Fresh ids for every field and content control in `blocks`, and
-/// the definitions of the controls (from `defs`) under their new ids.
 pub(super) fn adopt(
     blocks: &mut [Block],
     defs: &std::collections::HashMap<crate::docx::ControlId, crate::docx::Control>,
@@ -718,7 +678,6 @@ pub(super) fn adopt(
         .iter()
         .filter_map(|(old, new)| {
             let mut c = defs.get(old)?.clone();
-            // A copy is a new control: its `w:id` is written anew (the props otherwise stay).
             c.props.rest.retain(|(n, _)| n != "id");
             Some((*new, crate::docx::Control::new(c.props)))
         })
@@ -727,7 +686,6 @@ pub(super) fn adopt(
     out
 }
 
-/// Every content control `blocks` hold, as the document defines them (what a copy carries).
 pub(super) fn controls_of(blocks: &[Block], doc: &crate::docx::Document) -> std::collections::HashMap<crate::docx::ControlId, crate::docx::Control> {
     fn ids(blocks: &[Block], out: &mut Vec<crate::docx::ControlId>) {
         for b in blocks {
@@ -764,7 +722,6 @@ pub(super) fn controls_of(blocks: &[Block], doc: &crate::docx::Document) -> std:
     v.into_iter().filter_map(|c| Some((c, doc.controls.get(&c)?.clone()))).collect()
 }
 
-/// Takes every content control out of `blocks`: memberships and inline markers (their content stays).
 pub(super) fn strip_controls(blocks: &mut [Block]) {
     for b in blocks {
         match b {
@@ -791,8 +748,6 @@ pub(super) fn strip_controls(blocks: &mut [Block]) {
     }
 }
 
-/// Block-level controls only part of which a copy holds (one paragraph of a two-paragraph repeating item) leave its
-/// blocks: a control is copied only with all its content.
 pub(super) fn drop_partial(blocks: &mut [Block], index: &super::index::DocIndex) {
     use super::index::Loc;
     use crate::docx::ElementId;

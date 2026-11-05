@@ -447,7 +447,6 @@ pub enum MarkupView {
 }
 
 impl MarkupView {
-    /// Whether the view hides content inserted (`ins`) or deleted (`del`), moves included (REV-1).
     fn hides_change(self, ins: bool, del: bool) -> bool {
         match self {
             MarkupView::All => false,
@@ -456,17 +455,14 @@ impl MarkupView {
         }
     }
 
-    /// Whether the view hides a run with these revisions (REV-1). Hidden text keeps its units.
     pub fn hides(self, rev: &RunRevisions) -> bool {
         self.hides_change(rev.ins.is_some(), rev.del.is_some())
     }
 
-    /// Whether the view hides an inserted or deleted table row (REV-1).
     pub fn hides_row(self, rev: &RowRevisions) -> bool {
         self.hides_change(rev.ins.is_some(), rev.del.is_some())
     }
 
-    /// Whether the view hides an inserted or deleted table cell (REV-1).
     pub fn hides_cell(self, rev: &CellRevisions) -> bool {
         match &rev.structural {
             Some((_, CellMarkKind::Insert)) => self.hides_change(true, false),
@@ -475,13 +471,11 @@ impl MarkupView {
         }
     }
 
-    /// Whether lines with revisions get change bars (REV-4).
     pub fn change_bars(self) -> bool {
         matches!(self, MarkupView::All | MarkupView::Simple)
     }
 }
 
-/// A run's formatting in `view`: the formatting before its tracked change in Original (REV-2).
 pub fn run_in(run: &Run, view: MarkupView) -> &Run {
     match (&run.rev.fmt, view) {
         (Some(f), MarkupView::Original) => &f.previous,
@@ -490,7 +484,6 @@ pub fn run_in(run: &Run, view: MarkupView) -> &Run {
 }
 
 impl Paragraph {
-    /// The paragraph's properties in `view`: those before their tracked change in Original (REV-2).
     pub fn para_style_in(&self, view: MarkupView) -> &Rc<ParaStyle> {
         match (&self.style.change, view) {
             (Some(c), MarkupView::Original) => &c.previous,
@@ -498,14 +491,12 @@ impl Paragraph {
         }
     }
 
-    /// The paragraph mark's formatting in `view` (REV-2).
     pub fn mark_in(&self, view: MarkupView) -> &Run {
         run_in(&self.mark, view)
     }
 }
 
 impl Section {
-    /// The section's page in `view`: the page before its tracked change in Original (REV-2).
     pub fn section_in(&self, view: MarkupView) -> SectionPage {
         match (&self.change, view) {
             (Some(c), MarkupView::Original) => c.previous.clone(),
@@ -515,7 +506,6 @@ impl Section {
 }
 
 impl Cell {
-    /// The cell's vertical merge in `view`: the merge before its tracked change in Original (REV-2).
     pub fn v_merge_in(&self, view: MarkupView) -> VMerge {
         match (&self.rev.structural, view) {
             (Some((_, CellMarkKind::Merge { v_merge_orig, .. })), MarkupView::Original) => v_merge_orig.unwrap_or(VMerge::None),
@@ -525,7 +515,6 @@ impl Cell {
 }
 
 impl Table {
-    /// The column grid in `view`: the grid before its tracked change in Original (REV-2).
     pub fn table_grid_in(&self, view: MarkupView) -> &[f64] {
         match (&self.grid_change, view) {
             (Some(c), MarkupView::Original) => &c.previous,

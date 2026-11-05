@@ -1,4 +1,4 @@
-//! Text: typing, breaks, tabs, symbols and deleting.
+//! Text commands
 
 use crate::api::command::{DeleteOptions, DeleteUnit, InsertSymbol, SectionBreakKind};
 use crate::api::value::Direction;
@@ -13,7 +13,6 @@ impl Editor {
         self.insert_inline(|run| Inline::Break(BreakKind::Line, run), "Line Break", fonts)
     }
 
-    // shortcut: saving can't add sections yet, so a section break is refused.
     pub(in crate::editing) fn section_break(&mut self, _kind: SectionBreakKind) -> Outcome {
         Outcome::unsupported("section breaks")
     }
@@ -22,7 +21,6 @@ impl Editor {
         self.insert_inline(Inline::Tab, "Typing", fonts)
     }
 
-    /// One character, in `font` when one is given.
     pub(in crate::editing) fn symbol(&mut self, s: InsertSymbol, fonts: &Fonts) -> Outcome {
         if let Some(font) = s.font.as_deref().filter(|f| !f.is_empty()) {
             self.pending_font(font);

@@ -1,5 +1,4 @@
-//! Placeholders: picture content controls still showing their placeholder, filled by the application
-//! after merge (signatures). Activating one reports it to the host; filling puts an image in it.
+//! Picture placeholders
 
 use crate::docx::Inline;
 use crate::font::Fonts;
@@ -11,8 +10,6 @@ use super::input::Request;
 use super::selection::{ObjectRef, Selection};
 use super::step::Step;
 
-/// What the host learns about a placeholder: its key (`Placeholder:<key>` or `MergeImage:<key>`), its label (the
-/// control's alias, else the key), its box in points, and whether it is a merge image.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlaceholderInfo {
     pub key: String,
@@ -23,7 +20,6 @@ pub struct PlaceholderInfo {
 }
 
 impl Editor {
-    /// The unfilled placeholder an inline picture shows, if it shows one.
     pub fn placeholder_of(&self, image: Option<usize>, w: f64, h: f64) -> Option<PlaceholderInfo> {
         let i = image?;
         if self.doc.filled.contains(&i) {
@@ -34,7 +30,6 @@ impl Editor {
         Some(PlaceholderInfo { key, label: label.clone(), width: w, height: h, merge: *merge })
     }
 
-    /// The selected unfilled placeholder.
     pub fn selected_placeholder(&self) -> Option<PlaceholderInfo> {
         let Selection::Object(ObjectRef::Inline { para, offset }) = self.selection else { return None };
         match self.index.para(&self.doc, para).and_then(|p| super::stories::inline_at(p, offset))? {
@@ -43,7 +38,6 @@ impl Editor {
         }
     }
 
-    /// The unfilled placeholders drawn on `pages` with a look the host set: theirs, else the default.
     pub(super) fn placeholder_views(&mut self, pages: &std::ops::Range<usize>) -> Vec<super::view::PlaceholderView> {
         if self.placeholder_looks.is_empty() || self.doc.placeholders.is_empty() {
             return Vec::new();
@@ -71,9 +65,7 @@ impl Editor {
         out
     }
 
-    /// Activation of the selected placeholder: reported to the host. True when there was one.
     pub(super) fn activate_placeholder(&mut self) -> bool {
-        // Design mode: placeholders don't ask to be filled; activation goes to the host instead.
         if self.mode == super::Mode::Design {
             return false;
         }
@@ -87,9 +79,6 @@ impl Editor {
         }
     }
 
-    /// Fill Placeholder: the selected placeholder (`key` None) or every unfilled one with `key` takes the
-    /// image, fitted into its box keeping the image's aspect ratio. One step; `Unchanged` when nothing matches or the
-    /// data isn't an image.
     pub(super) fn fill_placeholders(&mut self, key: Option<&str>, data: Vec<u8>, fonts: &Fonts) -> Outcome {
         let Some((pw, ph, dx, dy)) = crate::docx::image::image_info(&data).filter(|_| crate::docx::image::image_type(&data).is_some()) else {
             return Outcome::Unchanged("not a picture");
@@ -118,11 +107,8 @@ impl Editor {
         self.fill_images(&images, data, (iw, ih), "Fill Placeholder", fonts)
     }
 
-    /// Pictures with image indexes `images` take `data` (its size in points `size`), fitted into their boxes keeping
-    /// the image's aspect ratio. One step.
     pub(super) fn fill_images(&mut self, images: &[usize], data: Vec<u8>, size: (f64, f64), label: &'static str, fonts: &Fonts) -> Outcome {
         let (iw, ih) = size;
-        // Every paragraph showing one of them, with its pictures resized to fit their boxes.
         let mut restyles: Vec<(ParaId, Vec<Inline>)> = Vec::new();
         for para in self.index.para_ids().collect::<Vec<_>>() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };

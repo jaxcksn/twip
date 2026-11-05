@@ -1,6 +1,4 @@
-//! The transaction pipeline: every change to the document is one committed transaction with its record (undo and redo
-//! too), batches commit once or not at all, the saved position follows undo, and with tracking on every edit path
-//! records revisions.
+//! Transaction pipeline
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -14,13 +12,10 @@ use super::scenarios::{Run, scenario_files};
 use super::{fonts, open, texts};
 use crate::api::record::Origin;
 
-/// The document as saving writes it: what a change to the document is (view settings aren't saved).
 fn saved(e: &Editor) -> Vec<u8> {
     crate::docx::write::save(e.document()).unwrap_or_default()
 }
 
-/// Runs a scenario's steps, checking after every message that the document changed only with a transaction record,
-/// and that the revision rose by the number of records.
 fn check(path: &Path) {
     let s: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("readable scenario")).expect("a scenario");
     let id = s["id"].as_str().unwrap_or("?").to_string();
@@ -33,7 +28,6 @@ fn check(path: &Path) {
         let (revision, before, tracking, n) = &mut *seen.borrow_mut();
         *n += 1;
         assert_eq!(e.revision() - *revision, commits.len() as u64, "message {n}: the revision rose by the number of records");
-        // Track Changes is a setting outside the history, as in Word: undo and redo stay exact whatever it is.
         let toggled = std::mem::replace(tracking, e.document().settings.track_revisions) != *tracking;
         assert!(now == *before || !commits.is_empty() || toggled, "message {n}: the document changed with no transaction");
         for (k, c) in commits.iter().enumerate() {
@@ -90,7 +84,6 @@ fn a_batch_commits_once_or_not_at_all() {
     assert_eq!((e.history().undo_depth(), e.history().next_undo()), (1, Some("Block")));
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e), [""], "one undo takes the whole batch");
-    // A refused batch is undone: no revision, no record, and redo is still there.
     e.take_commits();
     e.begin_batch(None);
     e.execute(Command::InsertText("Gone".into()), fonts());
@@ -115,7 +108,6 @@ fn the_saved_position_follows_undo_and_redo() {
     assert!(e.is_dirty());
     e.execute(Command::Redo, fonts());
     assert!(!e.is_dirty(), "back at the saved position");
-    // Typing after a save starts a new step: undoing it comes back to what was saved.
     e.execute(Command::InsertText("b".into()), fonts());
     e.mark_saved();
     e.execute(Command::InsertText("c".into()), fonts());
@@ -147,7 +139,6 @@ fn view_settings_move_no_revision() {
     assert!(e.history().undo_depth() == 0 && !e.is_dirty());
 }
 
-/// How many revision marks the document's paragraphs and runs carry.
 fn tracked(e: &Editor) -> usize {
     let (doc, index) = (e.document(), e.index());
     let marks = |r: &crate::docx::Run| r.rev.ins.is_some() as usize + r.rev.del.is_some() as usize + r.rev.fmt.is_some() as usize;
@@ -158,7 +149,6 @@ fn tracked(e: &Editor) -> usize {
         .sum()
 }
 
-/// An editor with text and tracking on.
 fn tracking() -> Editor {
     let mut e = open("FX-EMPTY.docx");
     e.execute(Command::InsertText("an apple a day".into()), fonts());
@@ -188,7 +178,6 @@ fn find_and_replace_records_revisions() {
 
 #[test]
 fn a_dialog_apply_records_revisions() {
-    // What the Hyperlink dialog's apply runs.
     let mut e = tracking();
     let link = crate::api::command::Hyperlink { address: "https://example.com".into(), text: Some("site".into()) };
     e.execute(Command::InsertHyperlink(link), fonts());
@@ -197,7 +186,6 @@ fn a_dialog_apply_records_revisions() {
 
 #[test]
 fn a_context_menu_action_records_revisions() {
-    // What the table menu's Insert Tab runs.
     let mut e = tracking();
     e.execute(Command::InsertTab, fonts());
     assert!(tracked(&e) > 0);

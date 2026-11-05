@@ -1,5 +1,4 @@
-//! The runner of tests/scenarios/**/*.json. Steps go through `Editor::apply` as host messages; pointer targets
-//! are resolved from the inspection geometry, and expectations are checked against the inspection JSON.
+//! Scenario runner
 
 use std::path::{Path, PathBuf};
 
@@ -9,7 +8,6 @@ use super::super::Editor;
 use super::super::inspect::inspect;
 use super::fonts;
 
-/// Paragraph `n` of a dump: the body's, then the other stories' (their numbering continues the body's).
 pub(crate) fn paragraph(dump: &Value, n: usize) -> Value {
     let body = dump["paragraphs"].as_array().cloned().unwrap_or_default();
     if let Some(p) = body.get(n) {
@@ -30,7 +28,6 @@ pub(crate) fn scenario_files() -> Vec<PathBuf> {
         let mut v: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
         v.sort();
         for p in v {
-            // `expected/` folders hold recorded results that scenarios compare against, not scenarios.
             if p.is_dir() && !p.ends_with("expected") {
                 walk(&p, out);
             } else if p.extension().is_some_and(|x| x == "json") {
@@ -47,29 +44,21 @@ pub(crate) struct Run {
     pub e: Editor,
     seq: u64,
     pub id: String,
-    /// What the last copy put on the clipboard: its text and the fragment's token.
     clip: Option<(String, String)>,
-    /// Called after every message (a renderer or the recorder consuming frames).
     pub frame: Option<Box<dyn FnMut(&mut Editor)>>,
-    /// Where a drag in parts (`press`, `move_to`) has the pointer.
     last: Option<(f64, f64)>,
-    /// The viewport's zoom (`zooms`): what `dx_px`/`dy_px` scale by.
     zoom: f64,
-    /// The replies to the current step's messages (`context`, `elements`, `events`).
     replies: Vec<Value>,
-    /// The id the last answer gave (`"$last"` in arguments).
     last_id: Option<Value>,
 }
 
 impl Run {
-    /// Opens a fixture of tests/fixtures/editor with the scenarios' viewport.
     pub fn open(fixture: &str, id: &str) -> Run {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(fixture);
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{id}: missing fixture {}: {e}", path.display()));
         Run::from_bytes(&bytes, id)
     }
 
-    /// Opens a document with the scenarios' viewport.
     pub fn from_bytes(bytes: &[u8], id: &str) -> Run {
         let e = Editor::open(bytes, fonts()).unwrap_or_else(|err| panic!("{id}: {err}"));
         let mut r = Run { e, seq: 0, id: id.to_string(), frame: None, clip: None, last: None, zoom: 1.0, replies: Vec::new(), last_id: None };
@@ -81,23 +70,19 @@ impl Run {
         self.seq += 1;
         msg["seq"] = self.seq.into();
         let r = self.e.apply_json(&msg.to_string(), fonts());
-        // A refused command answers `{"error": …}` inside `answer`; only a reply-level error is the runner's failure.
         let v: Value = serde_json::from_str(&r).unwrap_or(Value::Null);
         assert!(v.get("error").is_none(), "{}: {msg} → {r}", self.id);
         if let Some(id) = v["answer"].get("id") {
             self.last_id = Some(id.clone());
         }
         self.replies.push(v);
-        // As the host does: background layout until done, so geometry for any page is there.
         while self.e.idle(fonts()) {}
         if let Some(f) = &mut self.frame {
             f(&mut self.e);
         }
     }
 
-    /// The document point of a target (see tests/scenarios/README.md).
     fn point(&mut self, t: &Value, dx: f64, dy: f64) -> (f64, f64) {
-        // A target's own `dx`/`dy` (points) move it from where it names; `dx_px`/`dy_px` by pixels (0.75 pt at 100%) at the zoom.
         let k = 0.75 / self.zoom;
         let (dx, dy) = (
             dx + t["dx"].as_f64().unwrap_or(0.0) + t["dx_px"].as_f64().unwrap_or(0.0) * k,
@@ -105,9 +90,6 @@ impl Run {
         );
         let st = inspect(&mut self.e, "geometry,dump", true);
         if let Some(tb) = t.get("table") {
-            // A table border: `{"table": t, "row": r, "border": k}` is grid boundary k at row r's middle;
-            // `"border": "bottom"` the row's bottom border at its middle.
-            // `page`: the row's part on that page (a row split across pages).
             let row = st["geometry"]["rows"]
                 .as_array()
                 .into_iter()
@@ -115,7 +97,6 @@ impl Run {
                 .find(|r| &r["table"] == tb && r["row"] == t["row"] && (t["page"].is_null() || r["page"] == t["page"]));
             let row = row.unwrap_or_else(|| panic!("{}: no drawn row {t}", self.id));
             let r: Vec<f64> = row["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap_or(0.0)).collect();
-            // `"border": "top"` with `col`: just inside the row's top at that grid column's middle (the column zone).
             if t["border"] == "top" {
                 let e = row["edges"].as_array().cloned().unwrap_or_default();
                 let k = t["col"].as_u64().unwrap_or(0);
@@ -127,10 +108,8 @@ impl Run {
                 return (x + dx, r[1] + 0.6 + dy);
             }
             if t["border"] == "bottom" {
-                // 1 px (at 100%) below the line: inside its zone (the line to 3 px below) however the pixel rounds.
                 return ((r[0] + r[2]) / 2.0 + dx, r[3] + 0.75 + dy);
             }
-            // The table resize handle, 3 pt past the row's lower right corner (the table's last row).
             if t["border"] == "handle" {
                 return (r[2] + 3.0 + dx, r[3] + 3.0 + dy);
             }
@@ -139,8 +118,6 @@ impl Run {
             return (x + dx, (r[1] + r[3]) / 2.0 + dy);
         }
         if t.get("float").is_some() || t.get("picture").is_some() {
-            // A float's box (`float`: its index) or an inline picture's (`picture`: its index among those drawn): its
-            // centre, or `at` ("top-left", "top", "left" …): that edge's middle or corner, inside.
             let f = match t.get("float") {
                 Some(n) => st["geometry"]["floats"].as_array().into_iter().flatten().find(|f| &f["float"] == n),
                 None => st["geometry"]["pictures"].as_array().and_then(|a| a.get(t["picture"].as_u64().unwrap_or(0) as usize)),
@@ -189,8 +166,6 @@ impl Run {
             stops.iter().filter(|s| s[1].as_u64() <= Some(u)).max_by_key(|s| s[1].as_u64()).or(stops.first()).cloned().unwrap_or(json!([0.0, 0]));
         let r = &line["rect"];
         let y = (r[1].as_f64().unwrap_or(0.0) + r[3].as_f64().unwrap_or(0.0)) / 2.0;
-        // A line's first stop is aimed 40% into its first character: at a cell's left edge it is in the cell-selection
-        // zone (up to 8 px), which a click on the text means to miss.
         let inside = match stops.get(1) {
             Some(s1) if stops.first() == Some(&stop) => 0.4 * (s1[0].as_f64().unwrap_or(0.0) - stop[0].as_f64().unwrap_or(0.0)),
             _ => 0.0,
@@ -198,9 +173,6 @@ impl Run {
         (stop[0].as_f64().unwrap_or(0.0) + inside + dx, y + dy)
     }
 
-    /// A command's or query's argument with its references resolved (README.md): `"$last"` is the last answer's id,
-    /// `"$code:<code>"` and `"$tag:<tag>"` the first element with that code (trimmed) or tag, and a pointer target
-    /// (`{"para", "offset", ...}`) the document point it names.
     fn resolve(&mut self, v: &Value) -> Value {
         match v {
             Value::String(s) if s == "$last" => self.last_id.clone().unwrap_or(Value::Null),
@@ -223,25 +195,21 @@ impl Run {
         }
     }
 
-    /// The last reply's answer (debugging).
     #[allow(dead_code)]
     pub fn last_answer(&self) -> Option<Value> {
         self.replies.last().and_then(|r| r.get("answer").cloned())
     }
 
-    /// Runs one step's input (README.md); its `expect` is checked by the caller.
     pub fn step(&mut self, step: &Value) {
         let step = &self.resolve_step(step);
         let r = self;
         r.replies.clear();
         let mods = step.get("mods").cloned().unwrap_or(json!({}));
         if let Some(q) = step.get("query") {
-            // `{"query": {"q": name, ...args}}`.
             let mut m = q.clone();
             m["type"] = json!("query");
             r.send(m);
         } else if let Some(b) = step.get("batch") {
-            // `{"batch": {"label", "commands": [{"type": "setBold", "value": true}, …]}}`: one input holding the commands.
             r.send(json!({ "type": "batch", "label": b["label"], "commands": b["commands"] }));
         } else if let Some(name) = step.get("author") {
             r.send(json!({ "type": "author", "name": name }));
@@ -258,7 +226,6 @@ impl Run {
         } else if let Some(code) = step.get("key").and_then(Value::as_str) {
             r.send(json!({ "type": "key", "code": code, "mods": mods }));
         } else if let Some(t) = step.get("ime").and_then(Value::as_str) {
-            // `ime`: what the host sends for a committed composition.
             r.send(json!({ "type": "text", "text": t }));
         } else if let Some(t) = step.get("type").and_then(Value::as_str) {
             for c in t.chars() {
@@ -271,7 +238,6 @@ impl Run {
             if let Some(s) = step["shift"].as_bool() {
                 m["shift"] = json!(s);
             }
-            // A double or triple click arrives as presses with growing click counts, as from a host.
             for c in 1..=clicks {
                 r.send(json!({ "type": "pointer", "kind": "down", "x": x, "y": y, "clicks": c, "mods": m }));
                 r.send(json!({ "type": "pointer", "kind": "up", "x": x, "y": y, "clicks": c }));
@@ -297,26 +263,22 @@ impl Run {
             let (dx, dy) = (step["dx"].as_f64().unwrap_or(0.0), step["dy"].as_f64().unwrap_or(0.0));
             let b = r.point(t, dx, dy);
             let a = r.last.unwrap_or(b);
-            // Its `mods` are held as it moves (Alt: no snapping).
             for k in 1..=12 {
                 let f = k as f64 / 12.0;
                 r.send(json!({ "type": "pointer", "kind": "move", "x": a.0 + (b.0 - a.0) * f, "y": a.1 + (b.1 - a.1) * f, "mods": mods }));
             }
             r.last = Some(b);
         } else if let Some(t) = step.get("release") {
-            // `outside`: far up and left of the pages, as a release over the host's command bar is.
             let b =
                 if t == "outside" { (-1000.0, -1000.0) } else { r.point(t, step["dx"].as_f64().unwrap_or(0.0), step["dy"].as_f64().unwrap_or(0.0)) };
             r.send(json!({ "type": "pointer", "kind": "move", "x": b.0, "y": b.1, "mods": mods }));
             r.send(json!({ "type": "pointer", "kind": "up", "x": b.0, "y": b.1 }));
             r.last = None;
         } else if let Some(c) = step.get("clipboard").and_then(Value::as_str) {
-            // As the host does: copy and cut take the text and the fragment's token; paste gives them back.
             if c == "paste" {
                 let (text, token) = r.clip.clone().unwrap_or_default();
                 r.send(json!({ "type": "paste", "text": text, "token": token }));
             } else if c == "paste-text" {
-                // Paste as text only (Ctrl+Shift+V): the copy's text without its fragment.
                 let (text, _) = r.clip.clone().unwrap_or_default();
                 r.send(json!({ "type": "paste", "text": text }));
             } else {
@@ -330,7 +292,6 @@ impl Run {
         }
     }
 
-    /// The step with references in its command, query and batch arguments resolved ([`Run::resolve`]).
     fn resolve_step(&mut self, step: &Value) -> Value {
         let mut s = step.clone();
         for k in ["command", "drop", "select_element"] {
@@ -348,7 +309,6 @@ impl Run {
         s
     }
 
-    /// The expectations on the step's replies and on the view (tests/scenarios/README.md).
     fn check_replies(&mut self, want: &Value, where_: &str) {
         let last = self.replies.last().cloned().unwrap_or(Value::Null);
         for key in ["answer", "mode"] {
@@ -361,7 +321,6 @@ impl Run {
             assert!(got.len() == w.len() && got.iter().zip(w).all(|(g, x)| partial(g, x)), "{where_}: context: {got:?} for {w:?}");
         }
         if let Some(w) = want.get("elements") {
-            // The step's change lists, merged over its replies.
             let mut all = json!({ "added": [], "removed": [], "changed": [] });
             for r in &self.replies {
                 for k in ["added", "removed", "changed"] {
@@ -381,7 +340,6 @@ impl Run {
             }
         }
         if let Some(w) = want.get("events").and_then(Value::as_array) {
-            // Each expected event, in order, among the step's events.
             let got: Vec<Value> = self.replies.iter().flat_map(|r| r["events"].as_array().cloned().unwrap_or_default()).collect();
             let mut it = got.iter();
             for x in w {
@@ -420,7 +378,6 @@ impl Run {
                 assert_eq!(&st["selection"]["table"], t, "{where_}: selection table ({})", st["selection"]);
             }
             for end in ["anchor", "focus"] {
-                // A cell block's ends are [row, column].
                 if let Some(a) = s.get(end).filter(|v| v.is_array()) {
                     assert_eq!(&st["selection"][end], a, "{where_}: selection.{end} ({})", st["selection"]);
                 }
@@ -451,7 +408,6 @@ impl Run {
                 }
             }
         }
-        // `para`: the paragraph metrics given (ind_left, ind_first, before, after, line, keep_next).
         if let Some(m) = want.get("para").and_then(Value::as_object) {
             for (i, v) in m {
                 let got = &paragraph(&st["dump"], i.parse::<usize>().unwrap_or(0))["para"];
@@ -467,7 +423,6 @@ impl Run {
         if let Some(n) = want.get("paragraphs") {
             assert_eq!(&json!(st["dump"]["paragraphs"].as_array().map_or(0, Vec::len)), n, "{where_}: paragraph count");
         }
-        // `revisions`: the document's revisions in order, every story, as "<kind> <author>".
         if let Some(w) = want.get("revisions") {
             let doc = self.e.document();
             let name = |a| doc.people.get(a).map_or("", |p| &*p.name);
@@ -491,7 +446,6 @@ impl Run {
                 if let Some(cells) = t.get("cells") {
                     assert_eq!(&st["dump"]["tables"][i]["cells"], cells, "{where_}: cells per row of table {i}");
                 }
-                // Column widths and row heights within half a point (a pointer drag lands on whole pixels).
                 for key in ["grid", "heights", "header_rows", "cell_fmt"] {
                     if let Some(w) = t.get(key) {
                         let got = &st["dump"]["tables"][i][key];
@@ -505,7 +459,6 @@ impl Run {
             assert_eq!(got.len(), fs.len(), "{where_}: floats ({got:?})");
             for (i, f) in fs.iter().enumerate() {
                 for (k, v) in f.as_object().into_iter().flatten() {
-                    // Points within half a point: a pointer drag lands on whole pixels.
                     match (got[i][k].as_f64(), v.as_f64()) {
                         (Some(a), Some(b)) => assert!((a - b).abs() <= 0.5, "{where_}: float {i} {k}: {a} for {b}"),
                         _ => assert_eq!(&got[i][k], v, "{where_}: float {i} {k}"),
@@ -516,9 +469,6 @@ impl Run {
     }
 }
 
-/// The comments in the order of their threads' ranges, each thread's first comment then its replies: `author`,
-/// `initials`, `text`, `scope` (the range's text), `parent` (the 1-based position of the comment replied to), `done`
-/// and `active` (a thread's first comment, while the thread is active).
 fn comment_list(e: &mut Editor) -> Value {
     let mut out = Vec::new();
     for t in e.comment_threads() {
@@ -540,10 +490,6 @@ fn comment_list(e: &mut Editor) -> Value {
     Value::Array(out)
 }
 
-/// The document's revisions in the form of the recorded results (tests/scenarios/review/expected/README.md): per
-/// story its paragraphs and tables, each run's text with the authors of its insertion, deletion and formatting change
-/// and its move end, adjacent runs alike merged; and each section's change, page size and margins (top, bottom, left,
-/// right).
 pub(crate) fn review_state(doc: &crate::docx::Document) -> Value {
     use crate::docx::review::{MarkKind, RevisionMark, RunRevisions};
     use crate::docx::{Block, BreakKind, Inline};
@@ -567,7 +513,6 @@ pub(crate) fn review_state(doc: &crate::docx::Document) -> Value {
             match b {
                 Block::Para(p) => {
                     let mut runs: Vec<(Value, String)> = Vec::new();
-                    // Inside a field's code: not shown.
                     let mut code = 0usize;
                     for i in &p.inlines {
                         let text = match i {
@@ -671,8 +616,6 @@ pub(crate) fn review_state(doc: &crate::docx::Document) -> Value {
     json!({ "stories": stories, "sections": sections })
 }
 
-/// `got` has everything `want` gives: objects by the keys given, arrays element by element (same length), numbers
-/// within half a point.
 fn partial(got: &Value, want: &Value) -> bool {
     match (got, want) {
         (Value::Object(g), Value::Object(w)) => w.iter().all(|(k, x)| partial(g.get(k).unwrap_or(&Value::Null), x)),
@@ -681,7 +624,6 @@ fn partial(got: &Value, want: &Value) -> bool {
     }
 }
 
-/// Equal, numbers within half a point.
 fn near(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Number(x), Value::Number(y)) => (x.as_f64().unwrap_or(0.0) - y.as_f64().unwrap_or(0.0)).abs() <= 0.5,
@@ -694,7 +636,6 @@ fn run(path: &Path) {
     let s: Value =
         serde_json::from_str(&std::fs::read_to_string(path).expect("readable scenario")).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let id = s["id"].as_str().unwrap_or("?").to_string();
-    // `zooms`: the whole scenario once per zoom; targets are document points, so only the pixel-sized zones change.
     let zooms: Vec<f64> = s["zooms"].as_array().map_or(vec![1.0], |z| z.iter().filter_map(Value::as_f64).collect());
     for zoom in zooms {
         let mut r = Run::open(s["fixture"].as_str().unwrap_or(""), &id);

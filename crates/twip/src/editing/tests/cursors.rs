@@ -1,4 +1,4 @@
-//! The pointer's shape over each target, and during each drag: what a press there would act on.
+//! Pointer shapes
 
 use std::rc::Rc;
 
@@ -21,19 +21,16 @@ fn page(e: &mut Editor, i: usize) -> Rc<PageGeometry> {
     e.page_geometries().into_iter().find(|(p, _)| *p == i).map(|(_, g)| g).expect("the page")
 }
 
-/// A pointer event at page `pg`'s point.
 fn at(e: &mut Editor, kind: PointerKind, pg: usize, x: f64, y: f64, mods: Mods) {
     let (dx, dy) = e.stack().to_doc(pg, x, y).expect("on the stack");
     e.pointer_input(kind, dx, dy, if kind == PointerKind::Down { 1 } else { 0 }, mods, fonts());
 }
 
-/// The shape after moving (with no button) to page `pg`'s point.
 fn hover(e: &mut Editor, pg: usize, x: f64, y: f64, mods: Mods) -> Cursor {
     at(e, PointerKind::Move, pg, x, y, mods);
     e.view(0..0).cursor
 }
 
-/// The shape while dragging from one point to another, then releases.
 fn drag(e: &mut Editor, pg: usize, from: (f64, f64), to: (f64, f64), mods: Mods) -> Cursor {
     at(e, PointerKind::Down, pg, from.0, from.1, mods);
     at(e, PointerKind::Move, pg, to.0, to.1, mods);
@@ -42,7 +39,6 @@ fn drag(e: &mut Editor, pg: usize, from: (f64, f64), to: (f64, f64), mods: Mods)
     c
 }
 
-/// One pixel at the default zoom, in points.
 const PX: f64 = 0.75;
 
 #[test]
@@ -84,7 +80,6 @@ fn cursor_over_a_link_is_the_hand_with_ctrl_or_read_only() {
     assert_eq!(hover(&mut e, pg, x, y, Mods::default()), Cursor::Pointer, "read only");
 }
 
-/// FX-OBJ's first floating picture (not a text box): its page and box.
 fn float_picture(e: &mut Editor) -> (usize, [f64; 4]) {
     let pages = e.page_geometries();
     pages
@@ -101,7 +96,6 @@ fn cursor_over_a_float_moves_and_its_handles_resize_by_direction() {
     assert_eq!(hover(&mut e, pg, xm, ym, Mods::default()), Cursor::Move, "the body");
     assert_eq!(drag(&mut e, pg, (xm, ym), (xm + 2.0, ym), Mods::default()), Cursor::Move, "moving it");
     e.execute(super::super::commands::Command::Undo, fonts());
-    // Selected (the press above selected it): its handles, clockwise from the top-left corner.
     let (pg, [x0, y0, x1, y1]) = float_picture(&mut e);
     let (xm, ym) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
     let handles = [

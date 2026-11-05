@@ -1,7 +1,4 @@
-//! Word-fidelity layout. Rule ids in comments refer to the rulebook. Points, f64 throughout (UNIT-4).
-//!
-//! The boundary consumers use: [`Snapshot`] and its fragments and traversals, and [`layout`] for a full,
-//! uncached layout. Everything else is the engine's.
+//! Layout
 
 pub mod autofit;
 pub mod cache;
@@ -43,21 +40,14 @@ use crate::font::Fonts;
 
 use env::LayoutEnv;
 
-/// What every algorithm may read besides its node, space and token: the fonts (a versioned resource), the
-/// document-wide layout settings, and the float an object drag previews.
 #[derive(Clone, Copy)]
 pub struct LayoutCtx<'a> {
     pub fonts: &'a Fonts,
     pub env: &'a LayoutEnv,
-    /// Live layout's preview of a dragged float ([`Preview`]).
     pub preview: Option<&'a Preview>,
-    /// The editor's sub-template bodies shown in place of their references ([`expansion::Expansions`]).
     pub expansions: Option<&'a expansion::Expansions>,
 }
 
-/// Live layout: a dragged float as the drag would leave it, laid out in place of the document's float with its id
-/// and anchored in `anchor` (where the release re-anchors it). Not part of the document: the paragraphs it concerns
-/// shape with it ([`space::ShapeSpace::float`], [`space::ShapeSpace::hide`]), which keys every cache built from them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Preview {
     pub float: crate::docx::Float,
@@ -65,8 +55,6 @@ pub struct Preview {
 }
 
 impl<'a> LayoutCtx<'a> {
-    /// The floats paragraph `p` anchors as layout places them: its own, the previewed one in place of its document
-    /// self or left out when anchored elsewhere, and the previewed one added when `p` is its new anchor.
     pub fn floats_of<'b>(&self, p: &'b crate::docx::Paragraph) -> Vec<&'b crate::docx::Float>
     where
         'a: 'b,

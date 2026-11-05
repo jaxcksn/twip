@@ -1,5 +1,4 @@
-//! Test inspection (feature `inspect`): the editor's semantic state as JSON. Paragraphs and
-//! tables are numbered by their place in document order (ids aren't stable across opens).
+//! Test inspection
 
 use std::collections::HashMap;
 
@@ -14,18 +13,13 @@ use super::position::{Affinity, Place, Position, StoryId};
 use super::selection::Selection;
 use super::text::UnitText;
 
-/// Document-order numbering of paragraphs and tables: the body's first, then the other stories' (headers and footers
-/// in part-name order, footnotes and endnotes by id, text boxes in document order), continuing the count.
 struct Order {
     paras: HashMap<ParaId, usize>,
     tables: HashMap<TableId, usize>,
-    /// Text boxes by document order (float ids aren't stable across opens).
     boxes: HashMap<crate::layout::FloatId, usize>,
-    /// Every float (pictures and text boxes) in document order, with its anchor paragraph.
     floats: Vec<(crate::layout::FloatId, ParaId)>,
 }
 
-/// The stories besides the body, in numbering order, with their blocks.
 fn stories(e: &Editor) -> Vec<(StoryId, &[Block])> {
     let d = e.document();
     let mut out: Vec<(StoryId, &[Block])> = d.stories.values().enumerate().map(|(k, b)| (StoryId::HeaderFooter(k as u32), b.as_slice())).collect();
@@ -89,7 +83,6 @@ fn order(e: &Editor) -> Order {
     o
 }
 
-/// Points to 0.01.
 fn r2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
@@ -126,8 +119,6 @@ fn position(p: &Position, o: &Order) -> Value {
     }
 }
 
-/// A paragraph's run formatting summary: (units, flags) with adjacent equal flags merged. Flags: b bold, i italic,
-/// u underline, s strike, h hidden, ^ superscript, _ subscript.
 fn runs(p: &crate::docx::Paragraph) -> Value {
     let mut out: Vec<(usize, String)> = Vec::new();
     for i in &p.inlines {
@@ -152,7 +143,6 @@ fn runs(p: &crate::docx::Paragraph) -> Value {
     json!(out.into_iter().map(|(n, f)| json!([n, f])).collect::<Vec<_>>())
 }
 
-/// A run property per unit stretch: (units, value) with adjacent equal values merged.
 fn per_run(p: &crate::docx::Paragraph, f: impl Fn(&crate::docx::RunStyle) -> Value) -> Value {
     let mut out: Vec<(usize, Value)> = Vec::new();
     for i in &p.inlines {
@@ -167,7 +157,6 @@ fn per_run(p: &crate::docx::Paragraph, f: impl Fn(&crate::docx::RunStyle) -> Val
     json!(out.into_iter().map(|(n, v)| json!([n, v])).collect::<Vec<_>>())
 }
 
-/// Paragraph metrics paragraph commands change (points).
 fn metrics(p: &crate::docx::Paragraph) -> Value {
     let s = &p.style;
     json!({ "ind_left": r2(s.ind_left), "ind_first": r2(s.ind_first), "before": r2(s.space_before), "after": r2(s.space_after), "line": r2(s.line), "keep_next": s.keep_next })
@@ -183,7 +172,6 @@ fn jc(p: &crate::docx::Paragraph) -> &'static str {
     }
 }
 
-/// The sections `what` names (comma-separated; empty: all but geometry and dump).
 pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
     let o = order(e);
     let want = |k: &str| if what.is_empty() { !matches!(k, "geometry" | "dump" | "view") } else { what.split(',').any(|w| w.trim() == k) };
@@ -253,7 +241,6 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
         };
         out.insert("selection".into(), v);
     }
-    // The view of every page as canonical JSON (regions, tooltip, drop).
     #[cfg(any(test, feature = "inspect"))]
     if want("view") {
         let pages = e.snapshot().pages().len();
@@ -290,7 +277,6 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                             "grid": t.grid.iter().map(|w| r2(*w)).collect::<Vec<_>>(),
                             "heights": t.rows.iter().map(|r| r.height.as_ref().map(|(h, rule)| json!([r2(*h), rule]))).collect::<Vec<_>>(),
                             "header_rows": t.rows.iter().take_while(|r| r.header).count(),
-                            // Per cell: vertical alignment and fill ("-" for none).
                             "cell_fmt": t.rows.iter().map(|r| r.cells.iter().map(|c| format!("{}:{}", c.v_align, c.shading.map_or("-".to_string(), |f| format!("{f:06X}")))).collect::<Vec<_>>()).collect::<Vec<_>>(),
                         }));
                         t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(_e, &c.blocks, depth + 1, paras, tables));
@@ -301,7 +287,6 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
         for s in &e.document().sections {
             walk(e, &s.blocks, 0, &mut paras, &mut tables);
         }
-        // The other stories: their paragraphs continue the body's numbering (`index`), their tables too.
         let mut others = Vec::new();
         for (sid, blocks) in stories(e) {
             let first = paras.len() + others.iter().map(|o: &Value| o["paragraphs"].as_array().map_or(0, Vec::len)).sum::<usize>();
@@ -313,7 +298,6 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
             tables.extend(ts);
             others.push(json!({ "story": story(sid, &o), "paragraphs": ps }));
         }
-        // Floats in document order: anchor paragraph, wrap and placement as the model holds them.
         let floats: Vec<Value> = o
             .floats
             .iter()
@@ -354,7 +338,6 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                 floats.push(json!({ "page": page, "float": o.floats.iter().position(|(g, _)| *g == f), "rect": [x0, y0, x1, y1] }));
             }
             for l in &g.lines {
-                // Inline pictures on the line, in order: their boxes (what handles and selection outline).
                 for w in l.stops.windows(2).filter(|w| w[1].para == w[0].para && w[1].unit.0 == w[0].unit.0 + 1) {
                     let para = w[0].para;
                     let is_pic = e
@@ -368,7 +351,6 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                         pictures.push(json!({ "page": page, "para": o.paras.get(&para), "offset": w[0].unit.0, "rect": [x0, y0, x1, y1] }));
                     }
                 }
-                // One entry per paragraph the line shows (several where the view joins paragraphs, REV-6).
                 for &para in &l.paras {
                     let stops: Vec<_> = l.stops.iter().filter(|s| s.para == para).collect();
                     let (Some(first), Some(last)) = (stops.first(), stops.last()) else { continue };

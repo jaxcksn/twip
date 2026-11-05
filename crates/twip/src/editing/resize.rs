@@ -1,6 +1,4 @@
-//! Table border drags: column borders (plain: the two adjacent columns; Shift: the table's
-//! width; Ctrl: the columns to the right in proportion), row borders ("at least", an exact height
-//! stays exact). A guide shows while dragging; release commits one step, Esc cancels.
+//! Table border drags
 
 use crate::docx::props::Width;
 use crate::font::Fonts;
@@ -16,11 +14,8 @@ use super::table::Grid;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Border {
-    /// Grid boundary `k`: the left edge of column `k` (the table's right edge when `k` is the column count).
     Column(usize),
-    /// A row's bottom border.
     Row(usize),
-    /// The table resize handle at its lower right corner: scales the table.
     Handle,
 }
 
@@ -28,26 +23,19 @@ pub(super) enum Border {
 pub(super) struct BorderDrag {
     pub table: TableId,
     pub border: Border,
-    /// Where the press was and where the pointer is, in document points.
     pub start: (f64, f64),
     pub now: (f64, f64),
     pub page: usize,
     pub shift: bool,
     pub ctrl: bool,
-    /// The border's place at the press (page coordinates): a column border's x, a row's bottom y.
     pub at: f64,
-    /// A row's top on the page (for its height).
     pub row_top: f64,
-    /// The row the press was on.
     pub row: usize,
-    /// The guide's extent across the border: the table's top and bottom on the page, or the row's left and right.
     pub span: [f64; 2],
-    /// Alt held: the readouts show the change.
     pub snapping: super::snap::Snapping,
 }
 
 impl BorderDrag {
-    /// The guide line (page coordinates) where the border would go.
     pub fn guide(&self) -> [f64; 4] {
         match self.border {
             Border::Column(_) => {
@@ -58,7 +46,6 @@ impl BorderDrag {
                 let y = (self.at + self.now.1 - self.start.1).max(self.row_top + 1.0);
                 [self.span[0], y, self.span[1], y]
             }
-            // The table's new right edge, down to its new bottom.
             Border::Handle => {
                 let x = (self.at + self.now.0 - self.start.0).max(self.span[0] + 1.0);
                 let y = (self.span[1] + self.now.1 - self.start.1).max(self.row_top + 1.0);
@@ -69,8 +56,6 @@ impl BorderDrag {
 }
 
 impl Editor {
-    /// A press within 2 px of a column border, or of a row's bottom border, of the innermost table there; true
-    /// when a border drag starts.
     pub(super) fn border_press(&mut self, x: f64, y: f64, shift: bool, ctrl: bool, fonts: &Fonts) -> bool {
         let Some((page, table, border, at, row_top, span, row)) = self.border_at(x, y, fonts) else { return false };
         self.drag = None;
@@ -80,7 +65,6 @@ impl Editor {
         true
     }
 
-    /// The border under a point, with its page, place, row top and guide extent.
     #[allow(clippy::type_complexity)]
     pub(super) fn border_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(usize, TableId, Border, f64, f64, [f64; 2], usize)> {
         let stack = self.stack();
@@ -106,9 +90,7 @@ impl Editor {
             let &(ex, k) = r.edges.iter().filter(|(_, k)| *k > 0).find(|(ex, _)| (px - ex).abs() <= tol)?;
             Some((r.table, Border::Column(k), ex, r.rect[1], table_span(r.table), r.row))
         });
-        // Row borders: a border is grabbed from its line to 3 px below; a nested table's last row border
-        // also from inside that row, up to 3 px above. At or below a border another table's row shares, the outer
-        // row wins, so each stays reachable.
+        // Row borders
         let px1 = tol / 2.0;
         let last_row = |r: &super::geometry::GRow| !geo.rows.iter().any(|o| o.table == r.table && o.row > r.row);
         let row_hit = |r: &super::geometry::GRow| {
@@ -124,8 +106,7 @@ impl Editor {
                 .or_else(|| rows.iter().rev().find(|r| row_hit(r)))
                 .map(|r| (r.table, Border::Row(r.row), r.rect[3], r.rect[1], [r.rect[0], r.rect[2]], r.row))
         });
-        // The resize handle: 8 px square just outside the lower right corner of a table's last row on the page,
-        // live only where it is shown: an outermost table's, or the table holding the selection's.
+        // Resize handle
         let held = self.held_tables();
         let found = found.or_else(|| {
             geo.rows
@@ -143,7 +124,6 @@ impl Editor {
         found.map(|(table, border, at, row_top, span, row)| (page, table, border, at, row_top, span, row))
     }
 
-    /// The tables holding the selection: a cell block's, or every table around its focus.
     pub(super) fn held_tables(&self) -> Vec<TableId> {
         match self.selection {
             Selection::Cells { table, .. } => vec![table],
@@ -151,21 +131,17 @@ impl Editor {
         }
     }
 
-    /// The release of a border drag: the resize as one step (none when the pointer didn't move).
     pub(super) fn border_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.border_drag.take()?;
         self.requests.push(Request::ReleasePointer);
         if d.now == d.start {
             return Some(Outcome::Unchanged("no drag"));
         }
-        // Borrowed: only its rows are copied, as the step's new rows.
         let t = self.index.table(&self.doc, d.table)?;
         let old_sum: f64 = t.grid.iter().sum();
         let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
         let mut rows = t.rows.clone();
-        // The columns as drawn on the dragged page (autofit can make them differ from the file's gridCols): what the
-        // drag moves, so the cells it doesn't touch keep the widths they show. Boundaries no drawn row has keep the
-        // file's widths.
+        // Drawn column widths
         let mut grid = t.grid.clone();
         if let Some(geo) = self.pages.page(d.page, &self.index) {
             let mut xs: Vec<Option<f64>> = vec![None; grid.len() + 1];
@@ -191,14 +167,12 @@ impl Editor {
             _ => None,
         };
         match d.border {
-            // With a cell block selected, a drag starting on one of its rows moves the border in those rows only.
             Border::Column(k) if k < grid.len() && selected.as_ref().is_some_and(|s| s.contains(&d.row)) => {
                 let sel = selected.unwrap_or(0..=0);
                 let g = Grid::of(t);
                 let x: f64 = grid[..k].iter().sum();
                 let total: f64 = grid.iter().sum();
                 let dx = d.now.0 - d.start.0;
-                // Each row's cell boundaries in points, the selected rows' boundary at x moved (within the columns' minimum).
                 let mut bounds: Vec<Vec<f64>> = Vec::new();
                 for (r, row) in t.rows.iter().enumerate() {
                     let mut b = vec![grid[..row.grid_before.min(grid.len())].iter().sum::<f64>()];
@@ -210,7 +184,6 @@ impl Editor {
                         && let Some(j) = (1..b.len().saturating_sub(1)).find(|&j| (b[j] - x).abs() < 0.01)
                     {
                         let m = |i: usize| row.cells.get(i).map_or(4.5, |c| c.margins[1] + c.margins[3] + 4.5);
-                        // Cells already narrower than their margins on both sides: the boundary can't move.
                         let (lo, hi) = (b[j - 1] + m(j - 1), b[j + 1] - m(j));
                         if lo <= hi {
                             b[j] = (b[j] + dx).clamp(lo, hi);
@@ -218,7 +191,6 @@ impl Editor {
                     }
                     bounds.push(b);
                 }
-                // The grid: every boundary any row has.
                 let mut all: Vec<f64> = bounds.iter().flatten().copied().chain([0.0, total]).collect();
                 all.sort_by(f64::total_cmp);
                 all.dedup_by(|a, b| (*a - *b).abs() < 0.05);
@@ -240,7 +212,6 @@ impl Editor {
                 }
                 let grid_of = Grid::of(t);
                 let g = &grid_of;
-                // A column is at least its cells' left and right margins plus 4.5 pt.
                 let min = |c: usize| {
                     t.rows
                         .iter()
@@ -259,10 +230,8 @@ impl Editor {
                 let dx = d.now.0 - d.start.0;
                 let left = k - 1;
                 if d.shift && !d.ctrl || k == n {
-                    // Shift (or the table's right edge): the column left of the border; the table's width changes.
                     grid[left] += dx.max(min(left) - grid[left]);
                 } else if d.ctrl {
-                    // Ctrl, Ctrl+Shift: the columns to the right share the change in proportion; the width stays.
                     let right: f64 = grid[k..].iter().sum();
                     let floor: f64 = (k..n).map(min).sum();
                     let dx = within(dx, min(left) - grid[left], right - floor);
@@ -283,8 +252,6 @@ impl Editor {
                 }
             }
             Border::Handle => {
-                // Columns scale with the width (each still at least its margins plus 4.5 pt); the rows on the
-                // dragged page scale with the height, as "at least" heights (exact ones stay exact).
                 let total: f64 = grid.iter().sum();
                 let grid_of = Grid::of(t);
                 let g = &grid_of;
@@ -334,8 +301,6 @@ impl Editor {
                 }
             }
             Border::Row(r) => {
-                // An auto row becomes "at least" the dragged height; exact stays exact. A row split across
-                // pages is measured from its first page's top: its parts on the pages before count too.
                 let mut before = 0.0;
                 for p in 0..d.page {
                     self.ensure_page(p, fonts);
@@ -368,10 +333,6 @@ impl Editor {
         if (new_sum - old_sum).abs() > 1e-9 && sized {
             let _ = self.step(&mut tx, Step::TableWidth { table: d.table, width: Width::Dxa(new_sum) });
         }
-        // Widths and heights only: every cell keeps its row and column, so its style region (banding, first and
-        // last rows and columns) and its resolved properties stay; the table isn't resolved again.
-        // A nested table grown past its containing cell widens that column in an auto-fit outer table, the
-        // next column giving up the same (the outer width stays); a fixed-width outer table keeps its columns.
         if new_sum > old_sum + 1e-9
             && let Some(slot) = self.index.table_slot(d.table)
             && let super::index::Container::Cell { table: outer, row, cell } = slot.container
@@ -383,7 +344,6 @@ impl Editor {
                 let c = &o.rows[row].cells[cell];
                 let last = (col + span.max(1) - 1).min(o.grid.len().saturating_sub(1));
                 let have: f64 = o.grid[col..=last].iter().sum();
-                // The cell's content width plus its margins and a border's half point.
                 let need = new_sum + c.margins[1] + c.margins[3] + 0.5;
                 if need > have + 1e-9 {
                     let mut og = o.grid.clone();
@@ -409,7 +369,6 @@ impl Editor {
     }
 }
 
-/// `dx` limited to `lo..=hi`; none at all when the columns are already below their minimums (`lo > hi`).
 fn within(dx: f64, lo: f64, hi: f64) -> f64 {
     if lo <= hi { dx.clamp(lo, hi) } else { 0.0 }
 }

@@ -1,8 +1,4 @@
-//! Results reused across layouts. Every boundary is keyed by the inputs that determine its result: hashes choose a
-//! bucket; hits require equality. Verify mode recomputes every hit and compares.
-//!
-//! Lookups probe with borrowed inputs ([`CacheKey::Probe`]) and build an owned key only on insertion: looking up an
-//! unchanged paragraph on every layout mustn't copy it.
+//! Layout cache
 
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -12,8 +8,6 @@ use std::sync::OnceLock;
 
 use super::job::{Memos, Yield};
 
-/// The hasher bucket functions use: FxHash's multiply-rotate, much cheaper than SipHash on paragraph text. Buckets
-/// only spread entries (hits require equality), so collision resistance doesn't matter.
 #[derive(Default)]
 pub struct KeyHasher(u64);
 
@@ -37,10 +31,8 @@ impl Hasher for KeyHasher {
     }
 }
 
-/// Bucket maps are keyed by bucket hashes already: they hash them once more, cheaply.
 type Buckets<K, V> = HashMap<u64, Slot<K, V>, BuildHasherDefault<KeyHasher>>;
 
-/// A bucket: almost always one entry, held inline; a collision spills it into a vector.
 enum Slot<K, V> {
     One(Entry<K, V>),
     Many(Vec<Entry<K, V>>),
@@ -72,36 +64,27 @@ impl<K, V> Slot<K, V> {
     }
 }
 
-/// A cache key and the borrowed probe that finds it. One implementation per boundary.
 pub trait CacheKey: Debug + Sized {
     type Probe<'a>;
-    /// Where to look; equal probes and keys must land in the same bucket.
     fn bucket(probe: &Self::Probe<'_>) -> u64;
-    /// Whether this key is the probe's: every input compared.
     fn matches(&self, probe: &Self::Probe<'_>) -> bool;
-    /// The owned key for a probe (on insertion).
     fn from_probe(probe: &Self::Probe<'_>) -> Self;
-    /// The piece the reuse report counts a lookup as (a hit moved, a miss laid out), if any.
     const PIECE: Option<crate::prof::Piece> = None;
 }
 
 struct Entry<K, V> {
     key: K,
     value: Rc<V>,
-    /// The layout generation that last used the entry (least recently used eviction).
     used: u64,
-    /// The entry's estimated size, fixed at insertion.
     bytes: usize,
 }
 
-/// One cache boundary: entries of one kind of result.
 pub struct Boundary<K, V> {
     name: &'static str,
     buckets: Buckets<K, V>,
     generation: u64,
     hits: u64,
     misses: u64,
-    /// Bytes inserted since the last eviction check.
     added: usize,
 }
 
@@ -110,7 +93,6 @@ impl<K: CacheKey, V> Boundary<K, V> {
         Boundary { name, buckets: Buckets::default(), generation: 0, hits: 0, misses: 0, added: 0 }
     }
 
-    /// Adds the evictable bytes of the entries to `by_generation`, by the generation that last used them.
     fn evictable_by_generation(&self, by_generation: &mut std::collections::BTreeMap<u64, usize>) {
         for e in self.buckets.values().flat_map(Slot::entries) {
             if Rc::strong_count(&e.value) == 1 {
@@ -119,8 +101,6 @@ impl<K: CacheKey, V> Boundary<K, V> {
         }
     }
 
-    /// Drops the entries only the cache holds that were last used before generation `cutoff`, and at `cutoff` until
-    /// `more` bytes are gone.
     fn evict(&mut self, cutoff: u64, more: &mut usize) {
         let mut gone = |e: &Entry<K, V>| {
             if Rc::strong_count(&e.value) != 1 || e.used > cutoff {
@@ -182,7 +162,6 @@ impl<K: CacheKey, V> Boundary<K, V> {
         }
     }
 
-    /// Starts a layout: entries used from now on count as used by this generation.
     pub fn begin(&mut self, generation: u64) {
         self.generation = generation;
     }
@@ -199,12 +178,10 @@ impl<K: CacheKey, V> Boundary<K, V> {
         self.name
     }
 
-    /// (hits, misses) since the boundary was made.
     pub fn counts(&self) -> (u64, u64) {
         (self.hits, self.misses)
     }
 
-    /// Estimated bytes of entries the cache alone holds (evictable) and of entries something else also holds (live).
     pub fn bytes(&self) -> (usize, usize) {
         let (mut evictable, mut live) = (0, 0);
         for e in self.buckets.values().flat_map(Slot::entries) {
@@ -219,16 +196,13 @@ impl<K: CacheKey, V> Boundary<K, V> {
 }
 
 thread_local! {
-    /// A verify-mode recomputation is running on this thread.
     static VERIFYING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Whether a verify-mode recomputation is running (its units aren't new work).
 pub fn verifying() -> bool {
     VERIFYING.get()
 }
 
-/// Whether verify mode is on: `LAYOUT_VERIFY_CACHE=1`, read once; always on in tests.
 pub fn verify_on() -> bool {
     if cfg!(test) {
         return true;
@@ -237,9 +211,6 @@ pub fn verify_on() -> bool {
     *ON.get_or_init(|| std::env::var("LAYOUT_VERIFY_CACHE").is_ok_and(|v| v == "1"))
 }
 
-/// The cached result for `probe` in the boundary `select` picks, computing (and storing) it on a miss. With verify
-/// mode on, a hit is computed again and must be equal. The cache borrow is never held across `compute`, which itself
-/// takes `&mut Memos`.
 pub fn cached<K: CacheKey, V: PartialEq + Debug>(
     memos: &mut Memos,
     select: fn(&mut LayoutCache) -> &mut Boundary<K, V>,
@@ -248,8 +219,6 @@ pub fn cached<K: CacheKey, V: PartialEq + Debug>(
     compute: impl FnOnce(&mut Memos) -> Result<V, Yield>,
 ) -> Result<Rc<V>, Yield> {
     if let Some(found) = select(memos.cache).lookup(&probe) {
-        // Hits met while recomputing another hit aren't verified again: nested results (cells in nested tables)
-        // would otherwise be recomputed once per ancestor, exponentially in the nesting depth.
         if verify_on() && !VERIFYING.get() {
             struct Reset;
             impl Drop for Reset {
@@ -286,48 +255,31 @@ pub fn cached<K: CacheKey, V: PartialEq + Debug>(
     let size = bytes(&value);
     let value = Rc::new(value);
     select(memos.cache).insert(&probe, value.clone(), size);
-    // The unit is stored: a used-up budget can unwind now without losing it.
     memos.meter.check()?;
     Ok(value)
 }
 
-/// The evictable bytes a cache keeps by default (32 MB), and the least a document's budget is.
 pub const DEFAULT_BUDGET: usize = 32 << 20;
 
-/// The budget per laid-out page: about what a dense page's lines, shaped paragraphs and tables take, with room for
-/// the versions an edit or an undo reuses.
 const PAGE_BUDGET: usize = 512 << 10;
 
-/// The most any document's budget is (128 MB), however many pages it has.
 const MAX_BUDGET: usize = 128 << 20;
 
-/// The budget for a document of `pages` laid-out pages.
 fn page_budget(pages: usize) -> usize {
     pages.saturating_mul(PAGE_BUDGET).clamp(DEFAULT_BUDGET, MAX_BUDGET)
 }
 
-/// Bytes inserted between eviction checks.
 const EVICT_CHECK: usize = 1 << 20;
 
-/// Every cache boundary of a document's layouts.
 pub struct LayoutCache {
     generation: u64,
-    /// Bytes the cache's entries may take.
     budget: usize,
-    /// Table layouts made now are kept in the cache: false during incremental jobs (versions made during incremental
-    /// passes aren't stored: each edit in a table makes a new version, and a pass memoizes its own).
     pub(crate) store_tables: bool,
-    /// Shaped paragraphs: width-free.
     pub(crate) shaped: Boundary<super::text::ShapeKey, super::text::ShapedPara>,
-    /// Broken lines: a shaped paragraph at a width.
     pub(crate) lines: Boundary<super::line::LinesKey, super::line::ParaLines>,
-    /// Cell content widths (TABLE-7 min/max): width-free.
     pub(crate) cell_widths: Boundary<super::story::StoryKey, (i64, i64, i64)>,
-    /// Stories at a width: cells, headers and footers, notes, separators, text boxes.
     pub(crate) stories: Boundary<super::story::StoryKey, super::story::StoryLayout>,
-    /// Tables at a width.
     pub(crate) tables: Boundary<super::table::TableKey, super::table::TableLayout>,
-    /// Whole table rows drawn at a place (a page step draws its rows again, mostly where they were).
     pub(crate) rows: Boundary<super::table::RowKey, super::table::DrawnRow>,
 }
 
@@ -352,19 +304,14 @@ impl LayoutCache {
         }
     }
 
-    /// A cache with another evictable-bytes budget.
     pub fn with_budget(budget: usize) -> LayoutCache {
         LayoutCache { budget, ..LayoutCache::new() }
     }
 
-    /// Sizes the budget for a document of `pages` laid-out pages: a large document keeps its pages' entries instead
-    /// of evicting what the next edit reuses, and no document takes more than `MAX_BUDGET`.
     pub fn fit(&mut self, pages: usize) {
         self.budget = page_budget(pages);
     }
 
-    /// Starts a layout (a new generation for least recently used eviction), first evicting least recently used
-    /// entries when the evictable bytes may be over the budget (checked after each further megabyte inserted).
     pub fn begin(&mut self) {
         let added = self.shaped.added + self.lines.added + self.cell_widths.added + self.stories.added + self.tables.added + self.rows.added;
         if added >= EVICT_CHECK {
@@ -390,10 +337,7 @@ impl LayoutCache {
         self.generation
     }
 
-    /// Evicts least recently used entries only the cache holds until the cache's bytes are within the budget (or
-    /// nothing more can go); called between layouts. Entries of the same generation go in no particular order.
     pub fn enforce_budget(&mut self) {
-        // Evicting entries frees what only they held (a line entry's shaped paragraph): repeat while that helps.
         for _ in 0..6 {
             let before = self.len();
             if self.evict_once() || self.len() == before {
@@ -402,7 +346,6 @@ impl LayoutCache {
         }
     }
 
-    /// One eviction pass; returns whether the evictable bytes were already within the budget.
     fn evict_once(&mut self) -> bool {
         let mut by_generation = std::collections::BTreeMap::new();
         self.shaped.evictable_by_generation(&mut by_generation);
@@ -411,9 +354,6 @@ impl LayoutCache {
         self.stories.evictable_by_generation(&mut by_generation);
         self.tables.evictable_by_generation(&mut by_generation);
         self.rows.evictable_by_generation(&mut by_generation);
-        // The budget covers every entry's bytes: entries also hold each other (a line entry its shaped paragraph, a
-        // story's key its children), so "held elsewhere" isn't "held outside the cache". Only entries nothing else
-        // holds can go; evicting them frees their children for the next pass.
         let total: usize = self.report().iter().map(|r| r.2 + r.3).sum();
         if total <= self.budget || by_generation.is_empty() {
             return true;
@@ -436,7 +376,6 @@ impl LayoutCache {
         false
     }
 
-    /// Entries over all boundaries.
     pub fn len(&self) -> usize {
         self.shaped.len() + self.lines.len() + self.cell_widths.len() + self.stories.len() + self.tables.len() + self.rows.len()
     }
@@ -445,7 +384,6 @@ impl LayoutCache {
         self.len() == 0
     }
 
-    /// Per boundary: name, entries, and estimated (evictable, live) bytes.
     pub fn report(&self) -> Vec<(&'static str, usize, usize, usize)> {
         let row = |name, len, (e, l)| (name, len, e, l);
         vec![
@@ -458,7 +396,6 @@ impl LayoutCache {
         ]
     }
 
-    /// (hits, misses) over all boundaries.
     pub fn counts(&self) -> (u64, u64) {
         [self.shaped.counts(), self.lines.counts(), self.cell_widths.counts(), self.stories.counts(), self.tables.counts(), self.rows.counts()]
             .into_iter()

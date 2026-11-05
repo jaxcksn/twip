@@ -1,5 +1,4 @@
-//! Formatting properties as written at one level (docDefaults, a style, direct formatting). Every attribute is optional so
-//! levels merge per attribute (STYLE-2). Lengths are points.
+//! Formatting properties
 
 use roxmltree::Node;
 
@@ -12,7 +11,6 @@ pub enum FontRef {
     Theme(String),
 }
 
-/// Toggle properties (STYLE-3), as bits.
 pub mod toggle {
     pub const B: u16 = 1;
     pub const I: u16 = 2;
@@ -57,8 +55,6 @@ pub struct RunProps {
     /// The named East Asian font a theme reference above replaced: Word uses it when that theme slot is empty
     /// (BF: docDefaults eastAsia="Times New Roman" under Normal's eastAsiaTheme, the slot empty).
     pub east_asia_below: Option<FontRef>,
-    /// The theme slot a named East Asian font above overrode: Word still treats the run's East Asian slot as that
-    /// theme slot when it is empty (STYLE-8).
     pub east_asia_theme: Option<FontRef>,
     pub cs: Option<FontRef>,
     pub hint: Option<String>,
@@ -80,7 +76,6 @@ pub struct RunProps {
     pub kern: Option<f64>,
     /// `w14:ligatures` bits: 1 standard, 2 contextual, 4 historical, 8 discretionary.
     pub ligatures: Option<u8>,
-    /// `w14:cntxtAlts`: contextual alternates (FONT-4).
     pub cntxt_alts: Option<bool>,
     /// `w:em`: the emphasis mark ("dot", "comma", "circle", "underDot"; "none").
     pub em: Option<String>,
@@ -182,8 +177,6 @@ impl RunProps {
 
     /// Overrides every attribute `o` sets; toggles are absolute (direct formatting, or within one style chain).
     pub fn merge(&mut self, o: &RunProps) {
-        // STYLE-8: a theme slot with no named font under it, overridden by a name, is remembered; one `o` remembers
-        // counts only when nothing here names a font under it.
         let named = matches!(self.east_asia, Some(FontRef::Name(_))) || self.east_asia_below.is_some();
         match (&self.east_asia, &o.east_asia) {
             (Some(FontRef::Theme(_)), Some(FontRef::Name(_))) if self.east_asia_below.is_none() => self.east_asia_theme = self.east_asia.clone(),
@@ -212,7 +205,6 @@ impl RunProps {
         self.toggles_set |= o.toggles_set;
     }
 
-    /// Merges a style level (STYLE-3): toggles turned on at this level XOR with the levels below; `w:val="0"` does nothing.
     pub fn merge_level(&mut self, level: &RunProps) {
         let on = level.toggles & level.toggles_set;
         let mut rest = level.clone();
@@ -222,8 +214,6 @@ impl RunProps {
         self.toggles_set |= on;
     }
 
-    /// One style chain (base first) folded into a level: ordinary inheritance, toggles too: the nearest style that
-    /// sets one decides, `w:val="0"` included (STYLE-3). The level then turns on the toggles it resolves on.
     pub fn fold_chain<'a>(chain: impl Iterator<Item = &'a RunProps>) -> RunProps {
         let mut acc = RunProps::default();
         for s in chain {
@@ -245,9 +235,6 @@ fn val_any<'a>(n: Node<'a, '_>) -> Option<&'a str> {
     n.attribute((W14, "val")).or_else(|| val(n))
 }
 
-/// The colours `w:themeColor` and `w:themeFill` name, resolved through the document's theme and colour mapping
-/// (DRAW-7): `dark1`, `light1`, `dark2`, `light2`, `accent1`-`accent6`, `hyperlink`, `followedHyperlink`,
-/// `background1`, `text1`, `background2`, `text2` (STYLE-11).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ThemeColours([u32; 16]);
 
@@ -286,8 +273,6 @@ impl ThemeColours {
         }))
     }
 
-    /// The colour of `e`: its theme colour (`theme`, with `tint` and `shade`) when it names one, else its RGB `hex`
-    /// attribute (`None`: automatic) (STYLE-11).
     pub fn colour(&self, e: Node, hex: &str, theme: &str, tint: &str, shade: &str) -> Option<u32> {
         let Some(c) = attr(e, theme).and_then(|t| THEME_COLOUR_NAMES.iter().position(|n| *n == t)).map(|i| self.0[i]) else {
             return color(attr(e, hex));
@@ -333,7 +318,6 @@ fn with_luminance(c: u32, f: impl Fn(f64) -> f64) -> u32 {
     (to(r1) << 16) | (to(g1) << 8) | to(b1)
 }
 
-/// A `w:highlight` name's colour as it is drawn (FONT-15).
 pub fn highlight(v: &str) -> Option<u32> {
     Some(match v {
         "yellow" => 0xFFFF00,
@@ -400,7 +384,6 @@ pub struct Border {
     /// Line width in points (`w:sz` eighths).
     pub width: f64,
     pub space: f64,
-    /// `w:shadow`: in layout the line counts twice (TABLE-37).
     pub shadow: bool,
     pub color: Option<u32>,
 }
@@ -465,7 +448,6 @@ pub struct FramePr {
     pub v_space: f64,
     pub drop_cap: Option<String>,
     pub lines: Option<i64>,
-    /// The raw attributes, to tell frames apart (FRAME-1: any difference = separate frames).
     pub key: String,
 }
 
@@ -506,7 +488,6 @@ pub struct ParaProps {
     pub frame: Option<FramePr>,
     pub text_alignment: Option<String>,
     pub outline_lvl: Option<i64>,
-    /// The paragraph mark's direct size (`w:pPr/w:rPr/w:sz`, STYLE-4); not merged.
     pub mark_size: Option<f64>,
 }
 
@@ -819,7 +800,6 @@ pub enum TableAnchor {
     Page,
 }
 
-/// `w:tblpPr`: a floating table's position (TABLE-49).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TablePos {
     pub v_anchor: TableAnchor,
@@ -864,13 +844,11 @@ impl TblProps {
                 "tblStyleColBandSize" => p.col_band = int(val(c)),
                 "tblpPr" => {
                     p.floating = Some(TablePos {
-                        // TABLE-49: an absent vertAnchor is the margin (the stored anchor's zero value).
                         v_anchor: match attr(c, "vertAnchor") {
                             Some("page") => TableAnchor::Page,
                             Some("text") => TableAnchor::Text,
                             _ => TableAnchor::Margin,
                         },
-                        // TABLE-49: against the text, a tblpYSpec is its stored code taken as a twip offset.
                         y: match (attr(c, "vertAnchor"), attr(c, "tblpYSpec")) {
                             (Some("text"), Some(s)) => {
                                 (match s {
@@ -1044,7 +1022,6 @@ mod tests {
 
     #[test]
     fn theme_colours_win_over_rgb_with_their_tint_or_shade() {
-        // STYLE-11: the default theme's accent1 is 156082; a shade of 80 halves its luminance.
         let rpr = |x: &str| {
             let xml = format!(r#"<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{x}</w:rPr>"#);
             RunProps::parse(Some(roxmltree::Document::parse(&xml).unwrap().root_element()), &super::ThemeColours::default())
@@ -1061,7 +1038,6 @@ mod tests {
 
     #[test]
     fn the_nearest_style_in_a_chain_decides_a_toggle() {
-        // STYLE-3: b=0 based on bold isn't bold, bold again above it is; levels then XOR the toggles they turn on.
         let rpr = |x: &str| {
             let xml = format!(r#"<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{x}</w:rPr>"#);
             RunProps::parse(Some(roxmltree::Document::parse(&xml).unwrap().root_element()), &super::ThemeColours::default())

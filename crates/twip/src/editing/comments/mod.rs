@@ -1,9 +1,4 @@
-//! Comments in the editor: adding, replying, editing, resolving and deleting them, and their ranges.
-//!
-//! A comment's range is two zero-unit markers (`Inline::Range` start and end) and a reference mark
-//! (`Inline::CommentRef`) after the end; replies have their own markers beside their thread's. The markers move with
-//! the text around them through `Text` steps; the comment itself (author, date, body, thread, done flag) changes
-//! through [`Step::Comment`]. Every command here is one transaction, and none is recorded as a revision.
+//! Comments
 
 pub mod rich;
 
@@ -28,40 +23,22 @@ use super::text::UnitText;
 use super::view::CommentView;
 use super::{Editor, Tx};
 
-/// A comment command (`review.comment.*`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum CommentCmd {
-    /// A new thread on the selection, or on the word at the caret.
     Add(RichText),
-    /// A reply at the end of the thread holding `to`.
-    Reply {
-        to: CommentId,
-        body: RichText,
-    },
-    Edit {
-        id: CommentId,
-        body: RichText,
-    },
-    /// A reply, or a whole thread with its range when `id` is its first comment.
+    Reply { to: CommentId, body: RichText },
+    Edit { id: CommentId, body: RichText },
     Delete(CommentId),
-    /// The thread holding `id` resolved (`done`) or reopened.
-    Resolve {
-        id: CommentId,
-        done: bool,
-    },
-    /// The host's choice of active thread; `None` gives it back to the selection.
+    Resolve { id: CommentId, done: bool },
     Activate(Option<CommentId>),
 }
 
-/// The editor's comment state: the host's choice of active thread, and the threads' ranges as found at a revision.
 #[derive(Clone, Debug, Default)]
 pub(super) struct State {
-    /// The thread the host made active, and the selection then: moving the selection gives the choice up.
     chosen: Option<(CommentId, Selection)>,
     ranges: Option<(u64, Rc<Vec<ThreadRange>>)>,
 }
 
-/// A thread's range: its first comment's start and end.
 #[derive(Clone, Copy, Debug)]
 struct ThreadRange {
     root: CommentId,
@@ -69,18 +46,14 @@ struct ThreadRange {
     end: Position,
 }
 
-/// A thread as the host lists it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ThreadInfo {
     pub root: CommentId,
-    /// The replies, in order.
     pub replies: Vec<CommentId>,
-    /// The text of the thread's range (paragraphs separated by newlines); `None` when it has no range.
     pub scope: Option<String>,
     pub active: bool,
 }
 
-/// One marker of a comment: its paragraph, index among the paragraph's inlines, and unit offset.
 #[derive(Clone, Copy, Debug)]
 struct Mark {
     para: ParaId,
@@ -88,7 +61,6 @@ struct Mark {
     unit: Unit,
 }
 
-/// Where a comment's range start, range end and reference mark are.
 #[derive(Clone, Copy, Debug, Default)]
 struct Marks {
     start: Option<Mark>,
@@ -96,7 +68,6 @@ struct Marks {
     reference: Option<Mark>,
 }
 
-/// Which of a comment's markers an inline is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Which {
     Start,
@@ -104,7 +75,6 @@ enum Which {
     Reference,
 }
 
-/// The comment a marker belongs to, and which marker it is.
 fn marker(i: &Inline) -> Option<(CommentId, Which)> {
     match i {
         Inline::Range(m) if m.kind == RangeKind::CommentStart => Some((CommentId(m.id), Which::Start)),
@@ -118,7 +88,6 @@ fn range_mark(kind: RangeKind, id: CommentId) -> Inline {
     Inline::Range(RangeMark { kind, id: id.0, name: None })
 }
 
-/// How many markers (zero-unit inlines other than text) sit at unit `u` of `p`.
 fn markers_at(p: &Paragraph, u: Unit) -> u32 {
     let mut at = 0u32;
     let mut n = 0;
@@ -134,8 +103,6 @@ fn markers_at(p: &Paragraph, u: Unit) -> u32 {
     n
 }
 
-/// The formatting of the text ending at `u` (the first text's at the start), without its revisions, else the
-/// paragraph mark's.
 fn run_before(p: &Paragraph, u: Unit) -> Run {
     let mut at = 0u32;
     let mut found = None;
@@ -159,7 +126,6 @@ fn run_before(p: &Paragraph, u: Unit) -> Run {
     Rc::new(s)
 }
 
-/// `p`'s inlines without the markers of `gone`, texts the removal brings together in one run joined.
 fn without_markers(p: &Paragraph, gone: &[CommentId]) -> Vec<Inline> {
     let mut out: Vec<Inline> = Vec::with_capacity(p.inlines.len());
     for i in &p.inlines {
@@ -180,14 +146,10 @@ fn without_markers(p: &Paragraph, gone: &[CommentId]) -> Vec<Inline> {
     out
 }
 
-/// "Author A" → "AA".
 fn initials(name: &str) -> String {
     name.split_whitespace().filter_map(|w| w.chars().next()).flat_map(char::to_uppercase).collect()
 }
 
-/// How deleting units `a..b` of `p` treats the comments there: a range whose text it takes whole goes with it
-/// (returned second), and the markers of the others stay, the deletion cut at each one strictly inside it (returned
-/// first).
 pub(super) fn deletion_cuts(p: &Paragraph, a: u32, b: u32) -> (Vec<u32>, Vec<CommentId>) {
     let mut at = 0u32;
     let mut marks: Vec<(u32, CommentId, Which)> = Vec::new();
@@ -213,7 +175,6 @@ pub(super) fn deletion_cuts(p: &Paragraph, a: u32, b: u32) -> (Vec<u32>, Vec<Com
     (cuts, emptied)
 }
 
-/// The comments whose markers `inlines` holds (text boxes' content included).
 fn ids_in(inlines: &[Inline], out: &mut Vec<CommentId>) {
     for i in inlines {
         match i {
@@ -265,8 +226,6 @@ impl Editor {
         Outcome::Unchanged(why)
     }
 
-    /// Whether new comments can go in a story: the body and text boxes there, not headers, footers, notes or
-    /// building blocks.
     fn takes_comments(&self, story: StoryId) -> bool {
         match story {
             StoryId::Body => true,
@@ -277,8 +236,6 @@ impl Editor {
         }
     }
 
-    /// The word at a caret, without the spaces after it: the word the caret is in or starts, else the one it ends.
-    /// A caret between spaces stays a point.
     fn word_around(&self, para: ParaId, u: Unit) -> (Unit, Unit) {
         let Some(p) = self.index.para(&self.doc, para) else { return (u, u) };
         let t = UnitText::of(p);
@@ -303,7 +260,6 @@ impl Editor {
         (u, u)
     }
 
-    /// Every comment's markers, found in every story.
     fn comment_marks(&self) -> HashMap<CommentId, Marks> {
         let mut out: HashMap<CommentId, Marks> = HashMap::new();
         if self.doc.comments.by_id.is_empty() {
@@ -333,7 +289,6 @@ impl Editor {
         Some(Position::text(self.index.story(slot.container), m.para, m.unit))
     }
 
-    /// Document order across stories: the body, headers and footers, notes, text boxes, then building blocks.
     fn story_order(&self, a: &Position, b: &Position) -> Ordering {
         let rank = |s: StoryId| match s {
             StoryId::Body => (0, 0),
@@ -346,7 +301,6 @@ impl Editor {
         if a.story == b.story { self.index.cmp(a, b) } else { rank(a.story).cmp(&rank(b.story)) }
     }
 
-    /// Each thread with a range, by its first comment's markers, in document order (found again after each change).
     fn thread_ranges(&mut self) -> Rc<Vec<ThreadRange>> {
         if let Some((rev, r)) = &self.comments.ranges
             && *rev == self.generation
@@ -370,14 +324,11 @@ impl Editor {
         v
     }
 
-    /// The range of the thread holding comment `id`.
     pub(in crate::editing) fn comment_range(&mut self, id: CommentId) -> Option<(Position, Position)> {
         let root = self.doc.comments.root(id);
         self.thread_ranges().iter().find(|r| r.root == root).map(|r| (r.start, r.end))
     }
 
-    /// The active thread: the one the host chose while the selection stays where it was then, else the innermost
-    /// thread whose range holds the selection's focus.
     pub fn active_comment(&mut self) -> Option<CommentId> {
         if let Some((id, at)) = self.comments.chosen
             && at == self.selection
@@ -398,7 +349,6 @@ impl Editor {
             .map(|r| r.root)
     }
 
-    /// The threads in the order of their ranges (those without one last), with their range's text.
     pub fn comment_threads(&mut self) -> Vec<ThreadInfo> {
         let active = self.active_comment();
         let ranges = self.thread_ranges();
@@ -419,7 +369,6 @@ impl Editor {
             .collect()
     }
 
-    /// Each thread's range on the visible pages, and where each visible range starts (page coordinates).
     pub(super) fn comment_views(&mut self, visible: std::ops::Range<usize>) -> (Vec<CommentView>, Vec<(CommentId, usize, [f64; 2])>) {
         if self.doc.comments.by_id.is_empty() {
             return (Vec::new(), Vec::new());
@@ -427,7 +376,6 @@ impl Editor {
         let active = self.active_comment();
         let ranges = self.thread_ranges();
         let (mut views, mut anchors) = (Vec::new(), Vec::new());
-        // Finding a range's start moves the page the caret was last shown on; it stays the caret's.
         let near = self.near;
         for r in ranges.iter() {
             if let Some(c) = self.caret_at(r.start).filter(|c| visible.contains(&c.page)) {
@@ -442,16 +390,13 @@ impl Editor {
         (views, anchors)
     }
 
-    /// The `Text` step that puts markers right before inline `k` of `para`.
     fn insert_before(&self, para: ParaId, k: usize, with: Vec<Inline>) -> Option<Step> {
         let p = self.index.para(&self.doc, para)?;
         let at: u32 = p.inlines.get(..k)?.iter().map(|i| i.units() as u32).sum();
-        // The insertion goes before the markers from `k` to the next unit.
         let under = p.inlines[k..].iter().take_while(|i| i.units() == 0).filter(|i| !matches!(i, Inline::Text(..))).count() as u32;
         Some(Step::Text { para, range: Unit(at)..Unit(at), with, edges: Edges { under, ..Edges::default() } })
     }
 
-    /// A new comment by `author`, now, with a body in the comment styles.
     fn new_comment(&mut self, id: CommentId, parent: Option<CommentId>, body: &RichText, author: &str, res: &Resolver, cx: &Cx) -> Comment {
         let who = self.doc.people.author(author, None);
         let initials = self.doc.people.get(who).and_then(|p| p.initials.clone()).unwrap_or_else(|| initials(author).into());
@@ -472,8 +417,6 @@ impl Editor {
         }
     }
 
-    /// The reference mark's formatting at the end of a new range: the CommentReference style when the document has
-    /// it, else the text's before it.
     fn reference_run(&self, para: ParaId, at: Unit, res: &Resolver, cx: &Cx) -> Option<Run> {
         if res.styles.by_id.contains_key("CommentReference") {
             let base = self.run_base(para, res, cx)?;
@@ -485,8 +428,6 @@ impl Editor {
         Some(run_before(self.index.para(&self.doc, para)?, at))
     }
 
-    /// Adds a thread by `author` on the selection, or on the word at the caret. Headers, footers and notes take no
-    /// new comments (`unavailable`).
     pub fn add_comment(&mut self, body: &RichText, author: &str, fonts: &Fonts) -> Outcome {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
         if !self.takes_comments(a.story) {
@@ -503,7 +444,6 @@ impl Editor {
         let steps = if pa == pb && oa == ob {
             vec![Step::Text { para: pa, range: oa..oa, with: vec![start, end, reference], edges: Edges::default() }]
         } else {
-            // The end first: right after the range's text, before markers there; then the start, right before its text.
             let Some(under) = self.index.para(&self.doc, pb).map(|p| markers_at(p, ob)) else { return Outcome::Unchanged("no paragraph") };
             vec![
                 Step::Text { para: pb, range: ob..ob, with: vec![end, reference], edges: Edges { under, ..Edges::default() } },
@@ -530,7 +470,6 @@ impl Editor {
         out
     }
 
-    /// Adds a reply by `author` at the end of the thread holding `to`, its markers beside the thread's.
     pub fn reply_comment(&mut self, to: CommentId, body: &RichText, author: &str, fonts: &Fonts) -> Outcome {
         if !self.doc.comments.by_id.contains_key(&to) {
             return self.comment_refused("no such comment");
@@ -557,8 +496,6 @@ impl Editor {
         out
     }
 
-    /// A reply's markers beside its thread's: its end and reference after the thread's reference mark (else after
-    /// its range's end), and its start after the thread's start.
     fn reply_markers(&mut self, tx: &mut Tx, root: CommentId, id: CommentId, res: &Resolver, cx: &Cx) -> Result<(), StepError> {
         let m = self.comment_marks().get(&root).copied().unwrap_or_default();
         let ranged = m.start.is_some() && m.end.is_some();
@@ -576,7 +513,6 @@ impl Editor {
             let s = self.insert_before(after.para, after.inline + 1, with).ok_or(StepError::Missing)?;
             self.step(tx, s)?;
         }
-        // Found again: the end may have gone into the start's paragraph.
         if ranged && let Some(start) = self.comment_marks().get(&root).and_then(|m| m.start) {
             let s = self.insert_before(start.para, start.inline + 1, vec![range_mark(RangeKind::CommentStart, id)]).ok_or(StepError::Missing)?;
             self.step(tx, s)?;
@@ -584,11 +520,9 @@ impl Editor {
         Ok(())
     }
 
-    /// Replaces a comment's body.
     pub fn edit_comment(&mut self, id: CommentId, body: &RichText, fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
-        // The comment as it is, with a new body: an independent copy for the step.
         let Some(mut c) = self.doc.comments.by_id.get(&id).cloned() else { return self.comment_refused("no such comment") };
         c.body = body.to_blocks(&res, &cx);
         let mut tx = self.begin("Edit Comment");
@@ -599,7 +533,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Deletes a reply, or a thread's first comment with its replies and range.
     pub fn delete_comment(&mut self, id: CommentId, fonts: &Fonts) -> Outcome {
         if !self.doc.comments.by_id.contains_key(&id) {
             return self.comment_refused("no such comment");
@@ -612,7 +545,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Resolves (`done`) or reopens the thread holding `id`: every comment in it.
     pub fn resolve_comment(&mut self, id: CommentId, done: bool, fonts: &Fonts) -> Outcome {
         if !self.doc.comments.by_id.contains_key(&id) {
             return self.comment_refused("no such comment");
@@ -636,7 +568,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Removes comments with the replies to them, their markers first.
     pub(super) fn remove_comments(&mut self, tx: &mut Tx, ids: &[CommentId]) -> Result<(), StepError> {
         let mut gone: Vec<CommentId> = ids.iter().copied().filter(|id| self.doc.comments.by_id.contains_key(id)).collect();
         loop {
@@ -672,11 +603,6 @@ impl Editor {
         Ok(())
     }
 
-    /// Comments whose markers the transaction took out with their content (whole paragraphs, rows, tables or notes):
-    /// one left with none goes too, with its replies, in the same transaction; one left with some gets the others back
-    /// beside them.
-    // shortcut: a range that lost one end collapses to the end it kept; finding where the deletion was would keep
-    // the rest of its text in it.
     pub(super) fn drop_orphan_comments(&mut self, tx: &mut Tx) {
         if self.doc.comments.by_id.is_empty() {
             return;
@@ -699,7 +625,6 @@ impl Editor {
         }
         let mut gone = Vec::new();
         for id in hit {
-            // One repair at a time, the markers found again after each: a repair moves the indices in its paragraph.
             for _ in 0..3 {
                 let m = self.comment_marks().get(&id).copied().unwrap_or_default();
                 let run = |e: &Editor, m: Mark| e.index.para(&e.doc, m.para).map(|p| run_before(p, m.unit));

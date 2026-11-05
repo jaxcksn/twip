@@ -1,10 +1,4 @@
-//! Seeded fuzzing: mixed typing, keys and clicks at geometry targets on FX-TEXT and
-//! FX-NEST-MIXED. After every step: integrity, a caret at the nesting level of its paragraph, and (every 20 steps and
-//! at the end) incremental layout equal to a full one. At the end undo-all restores the original document and redo-all
-//! the final one. A failing run is minimised and written as a scenario to tests/scenarios/fuzz-regressions/, where
-//! both scenario runners pick it up.
-//!
-//! `cargo test --release fuzz -- --ignored` (FUZZ_SEEDS, FUZZ_STEPS and FUZZ_SEED override the defaults).
+//! Seeded fuzzing
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
@@ -65,7 +59,6 @@ const KEYS: &[(&str, bool, bool)] = &[
 const WORDS: &[&str] = &["a", "x", "hello ", " ", "é", "👍🏽", "e\u{301}", "word.", "Ünï"];
 
 fn dump(r: &mut Run) -> Value {
-    // With where each paragraph's zero-unit markers sit, which the text dump doesn't show: undo puts them back too.
     let marks: Vec<String> = super::texts_ids(&r.e)
         .iter()
         .filter_map(|p| r.e.index().para(r.e.document(), *p))
@@ -88,7 +81,6 @@ fn dump(r: &mut Run) -> Value {
     json!({ "dump": inspect(&mut r.e, "dump", true)["dump"].clone(), "markers": marks })
 }
 
-/// The checks after each step.
 fn check(r: &mut Run, n: usize, full: bool) {
     let st = inspect(&mut r.e, "caret,integrity,dump", true);
     assert_eq!(st["integrity"], json!([]), "step {n}: integrity");
@@ -105,7 +97,6 @@ fn check(r: &mut Run, n: usize, full: bool) {
     }
 }
 
-/// The table commands a random step runs.
 fn table_command(k: usize) -> Value {
     [
         json!({ "type": "insertRows", "where": "below" }),
@@ -122,7 +113,6 @@ fn table_command(k: usize) -> Value {
         .clone()
 }
 
-/// A random step, its pointer target taken from the current geometry.
 fn generate(r: &mut Run, rng: &mut Rng) -> Value {
     if rng.below(25) == 0 {
         return json!({ "command": table_command(rng.below(10)) });
@@ -135,7 +125,6 @@ fn generate(r: &mut Run, rng: &mut Rng) -> Value {
         return merge_step(r, rng);
     }
     if rng.below(15) == 0 {
-        // A table border drag (column or row) or a float drag (move, or a corner when it is selected), any modifiers.
         let g = inspect(&mut r.e, "geometry", true);
         let d = |rng: &mut Rng| rng.below(81) as f64 - 40.0;
         let mods = json!({ "shift": rng.below(3) == 0, "ctrl": rng.below(3) == 0 });
@@ -178,8 +167,6 @@ fn generate(r: &mut Run, rng: &mut Rng) -> Value {
     }
 }
 
-/// The end-of-run checks: redo-all reaches the history's top; then undo-all gives the original document, and redo-all
-/// the top again.
 fn unwind(r: &mut Run, original: &Value) {
     let depth = |r: &mut Run, k: &str| inspect(&mut r.e, "undo", true)["undo"][k].as_u64().unwrap_or(0);
     let redo_all = |r: &mut Run| {
@@ -204,7 +191,6 @@ fn unwind(r: &mut Run, original: &Value) {
     check(r, usize::MAX, true);
 }
 
-/// Generates and runs `n` steps; the steps run so far, and the failure if one happened.
 fn fuzz(fixture: &str, seed: u64, n: usize) -> (Vec<Value>, Result<(), String>) {
     let mut steps = Vec::new();
     let res = catch_unwind(AssertUnwindSafe(|| {
@@ -222,7 +208,6 @@ fn fuzz(fixture: &str, seed: u64, n: usize) -> (Vec<Value>, Result<(), String>) 
     (steps, res.map_err(panic_text))
 }
 
-/// Replays fixed steps with the same checks.
 fn replay(fixture: &str, steps: &[Value]) -> Result<(), String> {
     catch_unwind(AssertUnwindSafe(|| {
         let mut r = Run::open(fixture, "fuzz replay");
@@ -240,12 +225,10 @@ fn panic_text(e: Box<dyn std::any::Any + Send>) -> String {
     e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
 }
 
-/// The kind of a failure: its message up to the first detail (so a smaller run must fail the same way).
 fn kind(why: &str) -> String {
     why.split(['(', '[', ':']).take(2).collect::<Vec<_>>().join(":").chars().take(60).collect()
 }
 
-/// Drops steps one at a time (last first) while the run still fails the same way.
 fn minimise(fixture: &str, mut steps: Vec<Value>, why: &str) -> Vec<Value> {
     let want = kind(why);
     let hook = std::panic::take_hook();
@@ -309,11 +292,9 @@ fn fuzz_editing() {
     assert!(failures.is_empty(), "fuzz failures:\n{}", failures.join("\n"));
 }
 
-/// Every saved regression, replayed with the fuzz checks (the scenario runners check only their expectations).
 #[test]
 fn fuzz_regressions() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios/fuzz-regressions");
-    // `SCENARIO`: only the regressions whose file name holds it (as the scenario runner filters).
     let only = std::env::var("SCENARIO").ok();
     let files: Vec<_> = std::fs::read_dir(&dir)
         .into_iter()
@@ -335,8 +316,6 @@ fn fuzz_regressions() {
     assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
 
-/// A command: an insert at the caret (or around the selection), or a change to an element named by its code
-/// or tag (so a saved regression names the same element when replayed), or a mode switch.
 fn merge_step(r: &mut Run, rng: &mut Rng) -> Value {
     let all = crate::editing::elements::enumerate(r.e.document(), r.e.index(), &Default::default());
     let pick = |rng: &mut Rng, field: bool| -> Option<String> {
@@ -413,10 +392,6 @@ fn merge_step(r: &mut Run, rng: &mut Rng) -> Value {
     }
 }
 
-/// Incremental layout while typing in long tables (an edit inside a table's rows lays out only those rows, the
-/// others taken from the baseline's layout of the table): after every input, the same pages as a full layout. The
-/// inputs are the typing benchmark's (`editing::input`); FX-TBL-LARGE-NESTED caught a row's text taken from a page
-/// record older than the baseline. Release build: `cargo test --release --lib fuzz_editing -- --ignored`.
 #[test]
 #[ignore = "slow: run in a release build with the fuzz"]
 fn fuzz_editing_long_tables() {

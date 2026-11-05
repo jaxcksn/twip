@@ -1,4 +1,4 @@
-//! Native editing tests. Fixtures that are missing fail.
+//! Native editing tests
 
 mod backgrounds;
 mod basics;
@@ -30,9 +30,6 @@ use super::text::UnitText;
 
 pub(crate) use super::commands::{deleting as del, moving as mv};
 
-/// `f` over every item on every core, results in item order. The corpus tests' scenarios are independent, and
-/// one thread through all of them made the slowest test the whole suite's time. A worker that panics fails the test
-/// (its message printed above).
 pub(crate) fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     let next = AtomicUsize::new(0);
@@ -56,7 +53,6 @@ pub(crate) fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync)
     done.into_iter().map(|d| d.1).collect()
 }
 
-/// The system fonts, loaded once per test thread (loading them takes most of a test's time; `Fonts` isn't `Sync`).
 pub fn fonts() -> &'static Fonts {
     thread_local! {
         static FONTS: &'static Fonts = Box::leak(Box::new(Fonts::system()));
@@ -64,14 +60,12 @@ pub fn fonts() -> &'static Fonts {
     FONTS.with(|f| *f)
 }
 
-/// Opens an editor fixture (`tests/fixtures/editor/<name>`).
 pub fn open(name: &str) -> Editor {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(name);
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("fixture {}: {e}", path.display()));
     Editor::open(&bytes, fonts()).unwrap_or_else(|e| panic!("fixture {}: {e}", path.display()))
 }
 
-/// Every body paragraph's id in document order (cells included).
 pub fn texts_ids(e: &Editor) -> Vec<crate::layout::ParaId> {
     fn walk(blocks: &[Block], out: &mut Vec<crate::layout::ParaId>) {
         for b in blocks {
@@ -86,7 +80,6 @@ pub fn texts_ids(e: &Editor) -> Vec<crate::layout::ParaId> {
     out
 }
 
-/// The text of every body paragraph in document order (cells included), one string each.
 pub fn texts(e: &Editor) -> Vec<String> {
     fn walk(blocks: &[Block], out: &mut Vec<String>) {
         for b in blocks {
@@ -103,7 +96,6 @@ pub fn texts(e: &Editor) -> Vec<String> {
     out
 }
 
-/// The id of body paragraph `n` in document order (cells included).
 pub fn para_id(e: &Editor, n: usize) -> crate::layout::ParaId {
     fn walk(blocks: &[Block], out: &mut Vec<u64>) {
         for b in blocks {
@@ -118,12 +110,10 @@ pub fn para_id(e: &Editor, n: usize) -> crate::layout::ParaId {
     crate::layout::ParaId(out[n])
 }
 
-/// A blank document whose body is `text`, one paragraph per line (Calibri 11 pt, US Letter).
 pub fn blank_with(text: &str) -> Vec<u8> {
     blank_in(text, "")
 }
 
-/// [`blank_with`], every run in `font` (empty: the default).
 pub fn blank_in(text: &str, font: &str) -> Vec<u8> {
     use std::io::{Read, Write};
     let rpr = if font.is_empty() { String::new() } else { format!("<w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\"/></w:rPr>") };

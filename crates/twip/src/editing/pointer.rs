@@ -1,5 +1,4 @@
-//! The pointer state machine: click counts, hit zones, drags, capture and auto-scroll requests. Here: the pointer's
-//! shape over each target and during each drag.
+//! Pointer shape
 
 use crate::font::Fonts;
 
@@ -11,8 +10,6 @@ use super::selection::{CellShape, ObjectRef, Selection};
 use super::{Editor, Mode};
 
 impl Editor {
-    /// The pointer's shape over a point with no drag: what a press there would act on, asked in the order a press
-    /// asks (`pointer`), changing nothing (the hit tests note the page they hit; hovering keeps the caret's).
     pub(super) fn hover(&mut self, x: f64, y: f64, mods: Mods, fonts: &Fonts) -> Cursor {
         let near = self.near;
         let shape = self.shape_at(x, y, mods, fonts);
@@ -28,7 +25,6 @@ impl Editor {
             match self.object_hit(x, y, fonts) {
                 Some(Selection::Object(o @ ObjectRef::Floating(_))) => return if self.object_fixed(o) { Cursor::Default } else { Cursor::Move },
                 Some(Selection::Object(ObjectRef::Inline { .. })) => return Cursor::Default,
-                // A text box's left band selects its line.
                 Some(_) => return Cursor::RowSelect,
                 None => {}
             }
@@ -59,7 +55,6 @@ impl Editor {
         Cursor::Text
     }
 
-    /// The pointer's shape during a drag: the border, handle, zone or text drag's; `None` with no drag.
     pub(super) fn drag_cursor(&self) -> Option<Cursor> {
         if self.shape_insert.is_some() {
             return Some(Cursor::Crosshair);
@@ -89,7 +84,6 @@ impl Editor {
     }
 }
 
-/// An object resize handle's shape, handles clockwise from the top-left corner (0 top-left ... 7 left).
 fn handle_cursor(k: usize) -> Cursor {
     match k % 4 {
         0 => Cursor::ResizeNorthWestSouthEast,

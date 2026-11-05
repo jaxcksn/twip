@@ -186,8 +186,6 @@ pub fn export(doc: &Document, snapshot: &Snapshot, title: &str) -> Vec<u8> {
         let mut pdoc = pdf::new_document(&mut out, Some(&metadata));
         let mut renderer = Renderer::default();
         renderer.with_text = true;
-        // Fonts are embedded as subsets of the glyphs drawn. A variable font's instance is Skia's to embed: the subset
-        // keeps only the default outlines (FONT-17).
         let mut used: HashMap<(usize, u32, u32), (&crate::font::Face, BTreeSet<u16>)> = HashMap::new();
         for item in pages.iter().flatten() {
             if let Item::Glyphs(r) = item

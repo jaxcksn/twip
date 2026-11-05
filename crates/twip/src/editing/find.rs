@@ -1,5 +1,4 @@
-//! Find and Replace: matches in the body's paragraphs (tables included) in document order, as unit ranges;
-//! Replace All as one undo step.
+//! Find and replace
 
 use crate::docx::{Block, Inline};
 use crate::font::Fonts;
@@ -10,7 +9,6 @@ use super::commands::Outcome;
 use super::step::Step;
 use super::text::UnitText;
 
-/// Where `needle` occurs in `hay` (chars); `case`: exact, else ignoring case.
 fn matches(hay: &[char], needle: &[char], case: bool) -> Vec<usize> {
     if needle.is_empty() || hay.len() < needle.len() {
         return Vec::new();
@@ -30,8 +28,6 @@ fn matches(hay: &[char], needle: &[char], case: bool) -> Vec<usize> {
 }
 
 impl Editor {
-    /// The body's paragraphs in document order: the template's, or the sub-template's while one is edited (find never
-    /// reaches a sub-template's body from the template, where it shows only in place of its references).
     fn body_paras(&self) -> Vec<ParaId> {
         fn walk(blocks: &[Block], out: &mut Vec<ParaId>) {
             for b in blocks {
@@ -52,13 +48,10 @@ impl Editor {
         out
     }
 
-    /// The paragraph's units as the markup view shows them: text it hides matches nothing.
     fn chars_of(&self, para: ParaId) -> Vec<char> {
         self.index.para(&self.doc, para).map_or_else(Vec::new, |p| UnitText::of_view(p, self.doc.review.view).text.chars().collect())
     }
 
-    /// The next match of `needle` after the selection (before it, `back`), wrapping round the document: its
-    /// paragraph and units.
     pub fn find(&self, needle: &str, case: bool, back: bool) -> Option<(ParaId, Unit, Unit)> {
         let needle: Vec<char> = needle.chars().collect();
         let order = self.body_paras();
@@ -89,13 +82,11 @@ impl Editor {
         None
     }
 
-    /// How many matches the body has.
     pub fn count_matches(&self, needle: &str, case: bool) -> usize {
         let needle: Vec<char> = needle.chars().collect();
         self.body_paras().into_iter().map(|p| matches(&self.chars_of(p), &needle, case).len()).sum()
     }
 
-    /// Whether the selection is exactly a match of `needle` (what Replace replaces).
     pub fn selection_matches(&self, needle: &str, case: bool) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return false };
@@ -103,17 +94,14 @@ impl Editor {
         pa == pb && (ub.0 - ua.0) as usize == needle.len() && matches(&self.chars_of(pa)[ua.0 as usize..ub.0 as usize], &needle, case) == [0]
     }
 
-    /// Replace All: every match in the body replaced by `with` in the matched text's first run, one undo step.
     pub(crate) fn replace_all(&mut self, find: &str, with: &str, case: bool, fonts: &Fonts) -> (usize, Outcome) {
         let needle: Vec<char> = find.chars().collect();
         let mut tx = self.begin("Replace All");
         let mut count = 0;
         for para in self.body_paras() {
             let hits = matches(&self.chars_of(para), &needle, case);
-            // Last to first: each replacement keeps the earlier ones' offsets.
             for &h in hits.iter().rev() {
                 let Some(p) = self.index.para(&self.doc, para) else { continue };
-                // The run of the match's first character.
                 let mut at = 0usize;
                 let run = p.inlines.iter().find_map(|i| {
                     let n = i.units();
@@ -135,7 +123,6 @@ impl Editor {
             self.abort(tx);
             return (0, Outcome::Unchanged("no matches"));
         }
-        // The caret goes to where the selection started, on what is there now.
         if let Some((a, _)) = self.selection.ordered(&self.index)
             && let Some((p, u)) = a.para_offset()
         {

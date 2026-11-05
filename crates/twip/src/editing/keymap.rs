@@ -1,6 +1,4 @@
-//! Key bindings: a key press in its context to a command of the command set, for the Windows reference keymap and
-//! its macOS layer. The catalog's shortcuts name these keys. A shortcut that sets a value takes it from the
-//! selection's state: Ctrl+B on mixed or plain text sets bold on, on bold text off.
+//! Key bindings
 
 use crate::api::command::{
     Command, DeleteOptions, DeleteUnit, ElementIds, FieldsLocked, InsertField, LevelChange, MoveSelection, MoveUnit, SelectionMode, VerticalDirection,
@@ -15,19 +13,14 @@ pub struct Mods {
     pub meta: bool,
 }
 
-/// Where the caret is, for bindings that depend on it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct KeyContext {
     pub in_table: bool,
-    /// A collapsed caret at a list item's start, or a selection of list items: Tab changes the level.
     pub list_start: bool,
-    /// A floating object selected (Tab and Shift+Tab go through the floats).
     pub float: bool,
-    /// The macOS layer: Cmd for Ctrl, and the platform's text navigation keys.
     pub mac: bool,
 }
 
-/// A setter whose value a key takes from the selection's state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Toggle {
     Bold,
@@ -38,18 +31,12 @@ pub enum Toggle {
     SmallCaps,
     AllCaps,
     Hidden,
-    /// Ctrl+E, Ctrl+R and Ctrl+J: left again when the paragraphs already have it.
     Align(crate::api::value::Alignment),
-    /// Ctrl+0: 12 pt before, or none when the first paragraph has some.
     SpaceBefore,
     TrackChanges,
-    /// Alt+F9 (every field) and Shift+F9 (the fields here): codes, or results when they show their codes.
-    FieldCodes {
-        all: bool,
-    },
+    FieldCodes { all: bool },
 }
 
-/// What a key is bound to.
 #[allow(clippy::large_enum_variant, reason = "made once per key press and consumed at once")]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Bound {
@@ -71,9 +58,6 @@ fn run(c: Command) -> Option<Bound> {
     Some(Bound::Run(c))
 }
 
-/// macOS text navigation: Cmd+Left/Right to the line's ends, Cmd+Up/Down to the document's,
-/// Option+Left/Right by words, Option+Up/Down by paragraphs, Option+Backspace/Delete a word. Cmd stands for Ctrl in
-/// every other shortcut (the Windows table treats Meta as Ctrl).
 fn mac(code: &str, m: Mods) -> Option<Bound> {
     let cmd = m.meta && !m.alt && !m.ctrl;
     let opt = m.alt && !m.meta && !m.ctrl;
@@ -88,8 +72,6 @@ fn mac(code: &str, m: Mods) -> Option<Bound> {
     }
 }
 
-/// The command a key press runs, if any (DOM `KeyboardEvent.code`).
-// shortcut: Ctrl+Alt+Page Up / Down (the screen's top or bottom) has no command in the command set, so it's unbound.
 pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
     if cx.mac
         && let Some(c) = mac(code, m)
@@ -126,11 +108,9 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "ArrowUp" | "ArrowDown" if alt && shift && !ctrl && cx.in_table => {
             run(Command::MoveRows(if code == "ArrowUp" { VerticalDirection::Up } else { VerticalDirection::Down }))
         }
-        // A list item in a cell takes Tab for its level, as in Word; elsewhere in a cell Tab goes to the next cell.
         "Tab" if cx.list_start && !ctrl && !alt => run(Command::SetListLevel(if shift { LevelChange::Decrease } else { LevelChange::Increase })),
         "Tab" if cx.in_table && ctrl && !alt && !shift => run(Command::InsertTab),
         "Tab" if cx.in_table && !ctrl && !alt => run(Command::MoveToCell(if shift { Order::Previous } else { Order::Next })),
-        // Shift+Tab in text inserts a tab too.
         "Tab" if !alt && !ctrl => run(Command::InsertTab),
         "Escape" if plain => run(Command::Escape),
         "F1" if shift && !ctrl && !alt => run(Command::DescribeFormatting),
@@ -169,21 +149,18 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "F8" if plain => run(Command::SetSelectionMode(SelectionMode::Extend)),
         "F8" if ctrl && shift && !alt => run(Command::SetSelectionMode(SelectionMode::Block)),
         "F5" if shift && !ctrl && !alt => run(Command::GoBack),
-        // Field keys: Alt+F9 all codes, Shift+F9 the field here, Ctrl+F9 a new field, F9 update, Ctrl+Shift+F9 unlink,
-        // Ctrl+F11 lock, Ctrl+Shift+F11 unlock.
+        // Field keys
         "F9" if alt && !ctrl && !shift => toggle(Toggle::FieldCodes { all: true }),
         "F9" if shift && !ctrl && !alt => toggle(Toggle::FieldCodes { all: false }),
         "F9" if ctrl && shift && !alt => run(Command::UnlinkFields(ElementIds::default())),
         "F9" if ctrl && !shift && !alt => run(Command::InsertField(InsertField { code: String::new(), display: None, show_code: None })),
         "F9" if plain => run(Command::UpdateFields(ElementIds::default())),
-        // The options of the correction just made.
         "F10" if alt && shift && !ctrl => run(Command::ShowAutoCorrectOptions),
         "F11" if ctrl && !alt => run(Command::SetFieldsLocked(FieldsLocked { locked: !shift, ids: None })),
         _ => None,
     }
 }
 
-/// A key's code and modifiers from a catalog shortcut (`Ctrl+Shift+B`, `⌘B`), when it is one chord.
 pub fn chord(s: &str) -> Option<(String, Mods)> {
     let mut m = Mods::default();
     let mut rest = s;
@@ -232,9 +209,7 @@ fn mac_layer() {
     assert_eq!(command("ArrowRight", opt, mac), moving(MoveUnit::Word, true, false));
     assert_eq!(command("ArrowUp", opt, mac), moving(MoveUnit::Paragraph, false, false));
     assert_eq!(command("Backspace", opt, mac), deleting(false, true));
-    // Cmd for Ctrl in the shortcuts.
     assert_eq!(command("KeyB", cmd, mac), Some(Bound::Toggle(Toggle::Bold)));
-    // Windows: Alt+arrows are unbound (left to the host), Ctrl+arrows by words.
     assert_eq!(command("ArrowLeft", opt, KeyContext::default()), None);
     assert_eq!(command("ArrowLeft", Mods { ctrl: true, ..Mods::default() }, KeyContext::default()), moving(MoveUnit::Word, false, false));
 }
@@ -242,8 +217,6 @@ fn mac_layer() {
 #[test]
 fn catalog_shortcuts_are_the_keymap() {
     use crate::api::catalog::catalog;
-    // The clipboard keys are the host's (its copy, cut and paste events), and a command's other platform's keys are
-    // checked with that platform's layer.
     let host = ["Ctrl+X", "Ctrl+C", "Ctrl+V", "Ctrl+Shift+V", "⌘X", "⌘C", "⌘V", "⇧⌘V"];
     for info in catalog() {
         for (keys, cx) in [(&info.shortcuts.windows, KeyContext::default()), (&info.shortcuts.mac, KeyContext { mac: true, ..KeyContext::default() })]
@@ -264,7 +237,6 @@ fn catalog_shortcuts_are_the_keymap() {
     }
 }
 
-/// The command a toggle key runs.
 pub fn toggle_id(t: Toggle) -> crate::api::command::CommandId {
     use crate::api::command::CommandId as C;
     match t {

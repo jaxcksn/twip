@@ -1,4 +1,4 @@
-//! Pictures and text boxes: commands on the selected object.
+//! Object commands
 
 use crate::api::command::{AltText, ObjectSize};
 use crate::api::value::ObjectWrap;
@@ -10,7 +10,6 @@ use crate::editing::objects::ObjectCmd;
 use crate::editing::selection::Selection;
 
 impl Editor {
-    /// The selected object's size; a dimension not given keeps its own, or follows the other with `lockAspect`.
     pub(in crate::editing) fn set_object_size(&mut self, s: ObjectSize, fonts: &Fonts) -> Outcome {
         let Some(o) = self.selected_object() else { return Outcome::unavailable("no object selected") };
         let (w0, h0) = (o.width, o.height);
@@ -24,7 +23,6 @@ impl Editor {
         self.object_cmd(ObjectCmd::Size(w, h), fonts)
     }
 
-    /// Wrap Text: an inline picture floats, a floating picture goes in line, a float's wrapping changes.
     pub(in crate::editing) fn set_object_wrap(&mut self, w: ObjectWrap, fonts: &Fonts) -> Outcome {
         if !matches!(self.selection, Selection::Object(_)) {
             return Outcome::unavailable("no object selected");

@@ -1,5 +1,4 @@
-//! `twip pdf <docx> <out.pdf>`: a document's PDF export, as the engine's export writes it (the No-markup view, REV-1),
-//! to compare its drawing with another renderer's PDF.
+//! PDF export command
 
 use std::path::Path;
 

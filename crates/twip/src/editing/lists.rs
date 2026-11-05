@@ -1,5 +1,4 @@
-//! Lists: the keys at a list item's start, and list labels numbered again after edits so
-//! they equal a fresh numbering of the document.
+//! Lists
 
 use std::rc::Rc;
 
@@ -16,7 +15,6 @@ use super::step::{Step, para_len};
 use super::{Editor, Tx};
 
 impl Editor {
-    /// The caret's paragraph when the caret is collapsed at the start of a list item: its id and (numId, ilvl).
     pub(super) fn list_item_start(&self) -> Option<(ParaId, (i64, i64))> {
         let Selection::Caret(c) = self.selection else { return None };
         let (para, off) = c.para_offset()?;
@@ -25,7 +23,6 @@ impl Editor {
         p.style.num.filter(|(id, _)| *id != 0).map(|n| (para, n))
     }
 
-    /// A paragraph's direct `w:pPr` with `edit` applied, resolved again: the steps of a list or indent change.
     fn repara(&mut self, tx: &mut Tx, para: ParaId, edit: &dyn Fn(&mut Props, &str)) -> bool {
         let Some(res) = self.doc.resolver.clone() else { return false };
         let cx = self.cx();
@@ -39,8 +36,6 @@ impl Editor {
         self.step(tx, Step::Para { para, style: Rc::new(r.style), mark, list }).is_ok()
     }
 
-    /// Enter in an empty list item ends the list there: the item loses its numbering and indent, and no paragraph is
-    /// added. `None` when the caret isn't in an empty item.
     pub(super) fn list_enter(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let (para, _) = self.list_item_start()?;
         if self.index.para(&self.doc, para).map(para_len) != Some(Unit(0)) {
@@ -58,9 +53,6 @@ impl Editor {
         Some(self.commit(tx, None, fonts))
     }
 
-    /// Backspace at a paragraph's start: in a list item, the number goes and the text keeps its indent without the
-    /// hanging part; in a paragraph with a direct left indent and no first-line indent, the indent steps back 18 pt
-    /// (36, 18, 0). `None` when neither applies (Backspace joins as usual).
     pub(super) fn list_backspace(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let Selection::Caret(c) = self.selection else { return None };
         let (para, off) = c.para_offset()?;
@@ -78,9 +70,6 @@ impl Editor {
                 p.set("ind", format!("<{w}ind {w}left=\"{l}\" {w}firstLine=\"0\"/>"));
             })
         } else {
-            // shortcut: only indents set directly step back (a list's remnant, an indent the user set); a style's
-            // indent joins as Backspace does elsewhere. The AutoFormat option "Set left- and first-indent with tabs and
-            // backspaces" isn't modelled beyond that.
             let direct_ind = p.style.direct.0.as_deref().is_some_and(|x| x.contains("ind "));
             if !(left > 0.0 && p.style.ind_first == 0.0 && direct_ind) {
                 self.abort(tx);
@@ -96,14 +85,11 @@ impl Editor {
         Some(self.commit(tx, None, fonts))
     }
 
-    /// The list items among `paras`, with their (numId, ilvl).
     fn list_items(&self, paras: &[ParaId]) -> Vec<(ParaId, (i64, i64))> {
         let num = |&para: &ParaId| Some((para, self.index.para(&self.doc, para)?.style.num.filter(|(id, _)| *id != 0)?));
         paras.iter().filter_map(num).collect()
     }
 
-    /// Whether Tab changes the list level: a caret at a list item's start, or a selection over more than one
-    /// paragraph, all list items.
     pub(super) fn tab_changes_level(&mut self) -> bool {
         if self.list_item_start().is_some() {
             return true;
@@ -115,10 +101,6 @@ impl Editor {
         paras.len() > 1 && self.list_items(&paras).len() == paras.len()
     }
 
-    /// List Level (Tab, Shift+Tab at a list item's start): the selected list items one level down (`back`: up), each
-    /// within 1…9. The list's first item goes down a level too.
-    // ponytail: Word indents the whole list on Tab at its first item (a numbering-part edit); nesting it is the
-    // simpler behaviour, change when that difference matters.
     pub(super) fn list_level(&mut self, back: bool, fonts: &Fonts) -> Outcome {
         let paras = self.selected_paras();
         let items = self.list_items(&paras);
@@ -147,10 +129,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// Numbering and Bullets. On paragraphs all already in a list of that kind the list comes off (the
-    /// text kept where the number was). Otherwise they go into the list of the paragraph right before them when that one
-    /// is in a list of the same kind, else into a new list; they take the List Paragraph style when the document has it.
-    /// One step.
     pub(super) fn toggle_list(&mut self, bullet: bool, fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let paras = self.selected_paras();
@@ -167,7 +145,6 @@ impl Editor {
             let mut tx = self.begin(label);
             for &para in &paras {
                 let Some((_, (id, ilvl))) = kind(self, para) else { continue };
-                // The text stays where it was, at the level's left less its hanging indent.
                 let lvl = res.numbering.level(id, ilvl, &res.styles);
                 let left = lvl.and_then(|l| l.ppr.ind_left).unwrap_or(36.0) + lvl.and_then(|l| l.ppr.ind_first).unwrap_or(-18.0).min(0.0);
                 let direct = self.index.para(&self.doc, para).and_then(|p| p.style.direct.0.clone());
@@ -190,7 +167,6 @@ impl Editor {
             }
             return self.commit(tx, None, fonts);
         }
-        // The list: the one right before, when it is of this kind; else a new one.
         let before = self.index.para_slot(first).and_then(|s| {
             let blocks = self.index.blocks(&self.doc, s.container)?;
             match blocks.get(s.block.checked_sub(1)?)? {
@@ -207,7 +183,6 @@ impl Editor {
         for &para in &paras {
             let ok = self.repara(&mut tx, para, &|p, w| {
                 p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
-                // A paragraph in the default style takes List Paragraph; another style stays.
                 if list_style && p.get("pStyle").is_none() {
                     p.set("pStyle", format!("<{w}pStyle {w}val=\"ListParagraph\"/>"));
                 }
@@ -220,8 +195,6 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    /// A new list of Word's default numbered (1., a., i.) or bulleted kind, nine levels: its `numId`. The
-    /// definition joins the resolver now, as a step of `tx`, and is written into the numbering part when saving.
     fn new_list(&mut self, tx: &mut Tx, bullet: bool) -> i64 {
         let Some(res) = self.doc.resolver.clone() else { return 0 };
         let abstract_id = res.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
@@ -265,8 +238,6 @@ impl Editor {
         num_id
     }
 
-    /// Numbers the body's list items again in document order, as reading does, and changes the labels that differ
-    /// (as steps of the transaction): invariant 9.
     pub(super) fn renumber(&mut self, tx: &mut Tx) {
         for (para, list) in self.label_changes() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
@@ -275,7 +246,6 @@ impl Editor {
         }
     }
 
-    /// The labels a fresh numbering of the body gives that differ from the paragraphs' (empty: invariant 9 holds).
     pub(super) fn label_changes(&self) -> Vec<(ParaId, Option<ListLabel>)> {
         let Some(res) = self.doc.resolver.clone() else { return Vec::new() };
         if res.numbering.nums.is_empty() {
@@ -312,7 +282,6 @@ impl Editor {
                 (Some((_, _, text)), Some(have)) if *text == have.text => continue,
                 (None, Some(_)) => None,
                 (Some((id, ilvl, text)), _) => {
-                    // The label's formatting: the mark's, then the level's run properties (LIST-6).
                     let Some(level) = res.numbering.level(*id, *ilvl, &res.styles).cloned() else { continue };
                     let region = self.region_of_para(para, &res);
                     let base = res.para_from_xml(p.style.direct.0.as_deref(), region.as_ref(), &cx).base;
