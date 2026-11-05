@@ -58,8 +58,6 @@ pub struct Renderer {
     pub retained: retained::Retained,
     /// Draw everything from scratch, past any retained page content: what a verified frame is compared with.
     pub direct: bool,
-    /// The overlay colours: the theme's, or the host's ([`Renderer::overlay_colours`]).
-    pub palette: Palette,
     /// The chrome's colours.
     pub theme: theme::Theme,
     /// Overlay colours the host set; they win over the theme's.
@@ -123,7 +121,11 @@ impl Renderer {
     /// Sets the chrome's theme; the overlay colours follow it unless the host set its own.
     pub fn set_theme(&mut self, theme: theme::Theme) {
         self.theme = theme;
-        self.palette = self.overlay_colours.unwrap_or_else(|| theme.palette());
+    }
+
+    /// The overlay colours: the host's ([`Renderer::overlay_colours`]), or the page theme's.
+    pub fn palette(&self) -> Palette {
+        self.overlay_colours.unwrap_or_else(|| self.page_theme().palette())
     }
 
     /// The caret's colour: black or white, whichever stands out more on the page as drawn. Neither the theme's
@@ -138,14 +140,15 @@ impl Renderer {
         rgb(self.appearance.map(self.page_colour.unwrap_or(0xFF_FFFF)))
     }
 
-    /// The colours of what's drawn over the page (measurements, the object grid): the chrome's when its scheme
-    /// matches the page, else the matching scheme's, so a light page under dark chrome gets light readouts.
-    pub fn page_tokens(&self) -> theme::Tokens {
+    /// The theme of what's drawn over the page (the selection, handles, guides, measurements): the chrome's when its
+    /// scheme matches the page, else the matching scheme's with the same accent, so a light page under dark chrome
+    /// gets the light scheme's accent and readouts.
+    pub fn page_theme(&self) -> theme::Theme {
         let dark = theme::luminance(self.page()) < 0.2;
         match self.theme.scheme {
-            theme::Scheme::HighContrast(_) => self.theme.tokens,
-            _ if dark == self.theme.is_dark() => self.theme.tokens,
-            _ => theme::Tokens::of(if dark { theme::Scheme::Dark } else { theme::Scheme::Light }),
+            theme::Scheme::HighContrast(_) => self.theme,
+            _ if dark == self.theme.is_dark() => self.theme,
+            _ => theme::Theme::new(if dark { theme::Scheme::Dark } else { theme::Scheme::Light }, self.theme.accent.base),
         }
     }
 
@@ -493,9 +496,10 @@ mod tests {
         let mut r = Renderer::default();
         r.set_theme(theme::Theme::new(theme::Scheme::Dark, theme::AZURE));
         let light = theme::Tokens::of(theme::Scheme::Light);
-        assert_eq!((r.page_tokens(), r.page()), (light, Color::WHITE), "a light page under dark chrome");
+        assert_eq!((r.page_theme().tokens, r.page()), (light, Color::WHITE), "a light page under dark chrome");
+        assert_eq!(r.palette().object, theme::AZURE, "and the light scheme's accent");
         r.appearance = appearance::Appearance::Dark { page: appearance::PageMode::Dark };
-        assert_eq!(r.page_tokens(), r.theme.tokens, "the dark page: the chrome's own");
+        assert_eq!(r.page_theme(), r.theme, "the dark page: the chrome's own");
     }
 
     #[test]
@@ -504,11 +508,12 @@ mod tests {
         let mine = Palette { marks: Color::RED, ..Palette::default() };
         r.overlay_colours = Some(mine);
         r.set_theme(theme::Theme::new(theme::Scheme::Dark, theme::AZURE));
-        assert_eq!(r.palette, mine, "the host's colours stay");
+        assert_eq!(r.palette(), mine, "the host's colours stay");
         assert_eq!(r.theme.tokens.desk, theme::Tokens::of(theme::Scheme::Dark).desk, "the rest follows the theme");
         r.overlay_colours = None;
         r.set_theme(theme::Theme::new(theme::Scheme::Dark, theme::AZURE));
-        assert_eq!(r.palette, r.theme.palette());
+        r.appearance = appearance::Appearance::Dark { page: appearance::PageMode::Dark };
+        assert_eq!(r.palette(), r.theme.palette());
     }
 
     #[test]

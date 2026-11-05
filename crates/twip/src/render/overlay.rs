@@ -14,12 +14,12 @@ impl Renderer {
         let k = f.px_per_pt;
         let mut white = Paint::default();
         white.set_color(Color::WHITE);
-        let palette = self.palette;
+        let (page, palette) = (self.page_theme(), self.palette());
         let mut highlight = Paint::default();
         highlight.set_color(palette.selection);
         // A light page: the tint multiplied under the text, which keeps its colour; a dark one darkens under multiply,
         // so the accent is laid over it.
-        if !self.theme.is_dark() {
+        if !page.is_dark() {
             highlight.set_blend_mode(skia_safe::BlendMode::Multiply);
         }
         let mut fade = Paint::default();
@@ -119,7 +119,7 @@ impl Renderer {
             let mut dash = Paint::default();
             dash.set_anti_alias(true);
             dash.set_style(skia_safe::paint::Style::Stroke);
-            dash.set_color(self.theme.accent.solid);
+            dash.set_color(page.accent.solid);
             dash.set_stroke_width(0.75);
             dash.set_path_effect(skia_safe::PathEffect::dash(&[2.25, 1.5], 0.0));
             for (_, [x0, _, x1, y1]) in c.rects.iter().filter(|(pg, _)| *pg == i) {
@@ -133,14 +133,14 @@ impl Renderer {
                 let mut edge = Paint::default();
                 edge.set_anti_alias(true);
                 edge.set_style(skia_safe::paint::Style::Stroke);
-                edge.set_color(self.theme.accent.solid);
+                edge.set_color(page.accent.solid);
                 edge.set_stroke_width(0.75);
                 canvas.draw_rect(r, &edge);
                 if let Some(tf) = super::chrome_typeface(super::ChromeFace::Mono500) {
                     let font = Font::from_typeface(tf, 6.0);
                     let mut ink = Paint::default();
                     ink.set_anti_alias(true);
-                    ink.set_color(self.theme.accent.solid);
+                    ink.set_color(page.accent.solid);
                     let (w, _) = font.measure_str("\u{25BE}", None);
                     canvas.draw_str("\u{25BE}", (((x0 + x1) as f32 - w) / 2.0, (y1 - 2.25) as f32), &font, &ink);
                 }
@@ -304,7 +304,7 @@ impl Renderer {
     fn object_feedback(&mut self, canvas: &Canvas, view: &View, i: usize, f: &Frame) {
         use crate::editing::view::{Axis, Measure, Tone};
         let u = 1.0 / f.px_per_pt.max(0.01);
-        let (t, accent) = (self.page_tokens(), self.palette.object);
+        let (t, accent) = (self.page_theme().tokens, self.palette().object);
         let line = |c: Color, dash: Option<[f64; 2]>| {
             let mut p = Paint::default();
             p.set_anti_alias(true);
@@ -404,7 +404,7 @@ impl Renderer {
     fn table_affordances(&mut self, canvas: &Canvas, view: &View, i: usize, f: &Frame) {
         use crate::editing::view::TableMark;
         let u = 1.0 / f.px_per_pt.max(0.01);
-        let (accent, solid) = (self.theme.accent, self.palette.object);
+        let (accent, solid) = (self.page_theme().accent, self.palette().object);
         let paint = |c: Color, stroke: bool| {
             let mut p = Paint::default();
             p.set_anti_alias(true);
@@ -494,7 +494,7 @@ impl Renderer {
         let px = (f.px_per_pt * f.dpr).max(0.01);
         let mut ink = Paint::default();
         ink.set_anti_alias(true);
-        ink.set_color(self.palette.marks);
+        ink.set_color(self.palette().marks);
         let mut line = ink.clone();
         line.set_style(skia_safe::paint::Style::Stroke);
         line.set_stroke_width((1.0 / px) as f32);

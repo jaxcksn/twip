@@ -1035,7 +1035,7 @@ impl HostSurface<'_> {
             let mut line = skia_safe::Paint::default();
             line.set_anti_alias(true);
             line.set_style(skia_safe::paint::Style::Stroke);
-            line.set_color(p.renderer.palette.leaders);
+            line.set_color(p.renderer.palette().leaders);
             line.set_stroke_width(f.dpr.round().max(1.0) as f32);
             for polyline in &p.leaders {
                 let points: Vec<skia_safe::Point> = polyline
@@ -1065,7 +1065,7 @@ impl HostSurface<'_> {
                 hover: s.ruler_hovered(&ruler),
                 popover: p.popover.as_ref(),
                 measures: &measures,
-                page: p.renderer.page_tokens(),
+                page: p.renderer.page_theme(),
             };
             crate::render::ruler::paint(&ruler, &p.renderer.theme, canvas, &frame);
         }
@@ -1179,7 +1179,6 @@ impl HostSurface<'_> {
             marks: c(palette.marks),
             leaders: c(palette.leaders),
         });
-        r.palette = r.overlay_colours.unwrap_or_default();
         self.session.presentation.frame_wanted = true;
     }
 
@@ -1187,7 +1186,6 @@ impl HostSurface<'_> {
     pub fn reset_overlay_palette(&mut self) {
         let r = &mut self.session.presentation.renderer;
         r.overlay_colours = None;
-        r.palette = r.theme.palette();
         self.session.presentation.frame_wanted = true;
     }
 
@@ -1609,19 +1607,19 @@ mod tests {
             let (mut engine, id, _) = ruled();
             let s = engine.session(id).expect("a session");
             let desk = s.state().view.background;
-            let theme = s.presentation.renderer.palette;
+            let theme = s.presentation.renderer.palette();
             s.host().set_background(Color(0x1E1E1E));
             assert_eq!(s.state().view.background, Color(0x1E1E1E));
             assert_eq!(s.state().view.theme, ChromeTheme::Dark, "a dark background darkens the chrome");
             s.host().reset_background();
             assert_eq!((s.state().view.background, s.state().view.theme), (desk, ChromeTheme::Light));
             s.host().set_overlay_palette(OverlayPalette { marks: Color(0xFF0000), ..OverlayPalette::default() });
-            assert_ne!(s.presentation.renderer.palette, theme);
+            assert_ne!(s.presentation.renderer.palette(), theme);
             s.host().reset_overlay_palette();
-            assert_eq!(s.presentation.renderer.palette, theme);
+            assert_eq!(s.presentation.renderer.palette(), theme);
             // Reset, they follow the theme again.
             s.run(Command::SetViewOptions(ViewOptions { theme: Some(ChromeTheme::Dark), ..ViewOptions::default() })).expect("sets");
-            assert_eq!(s.presentation.renderer.palette, s.presentation.renderer.theme.palette());
+            assert_eq!(s.presentation.renderer.palette(), s.presentation.renderer.page_theme().palette());
             assert_ne!(s.state().view.background, desk);
         }
 
