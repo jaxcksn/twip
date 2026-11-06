@@ -2041,8 +2041,7 @@ fn drag_and_drop_moves_and_copies_text() {
 #[test]
 fn dragging_a_whole_control_keeps_its_properties() {
     use serde_json::json;
-    let mut r = super::scenarios::Run::from_bytes(&blank_with("The quick brown fox.
-Jumps over."), "dnd-control");
+    let mut r = super::scenarios::Run::from_bytes(&blank_with("The quick brown fox.\nJumps over."), "dnd-control");
     r.step(&json!({ "click": { "para": 0, "offset": 4 } }));
     for _ in 0..5 {
         r.step(&json!({ "key": "ArrowRight", "mods": { "shift": true } }));
