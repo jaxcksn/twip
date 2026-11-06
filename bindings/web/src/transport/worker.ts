@@ -7,6 +7,7 @@ import { EditorError, unsupported } from '../errors.js';
 import type { FaceInfo } from '../fonts/library.js';
 import { live } from '../host/dom.js';
 import type { Warning } from '../types.js';
+import { useAssets } from './module.js';
 import { type Backend, type FrameInfo, type Input, type Message, Method, type Transport, toError, type WireExportOptions } from './protocol.js';
 
 /** A call to the worker: a {@link Transport} method and its arguments (without the signal), or an abort. */
@@ -53,6 +54,25 @@ export function chooseExecution(execution: 'auto' | 'main' | 'worker' = 'auto'):
   if (workerSupported()) return 'worker';
   if (execution === 'worker') throw unsupported("execution: 'worker' on this browser");
   return 'main';
+}
+
+/**
+ * Starts the engine worker. With no `assets`, it's beside this file's directory, in dist/: written out in one
+ * expression, as bundlers recognise it and build the worker and its imports into the application. With `assets`, it's
+ * there, told the folder in its URL's query (worker.ts); on another origin, through a same-origin module that imports
+ * it, as a worker's script must come from the page's origin.
+ */
+function startWorker(assets: URL | undefined): Worker {
+  if (!assets) return new Worker(new URL('../worker.js', import.meta.url), { type: 'module', name: 'twip-engine' });
+  const url = new URL(`worker.js?assets=${encodeURIComponent(assets.href)}`, assets);
+  if (url.origin === location.origin) return new Worker(url, { type: 'module', name: 'twip-engine' });
+  const bootstrap = URL.createObjectURL(new Blob([`import ${JSON.stringify(url.href)};`], { type: 'text/javascript' }));
+  const worker = new Worker(bootstrap, { type: 'module', name: 'twip-engine' });
+  // Fetched by the time the worker answers, or fails.
+  const revoke = () => URL.revokeObjectURL(bootstrap);
+  worker.addEventListener('message', revoke, { once: true });
+  worker.addEventListener('error', revoke, { once: true });
+  return worker;
 }
 
 let shared: WorkerTransport | undefined;
@@ -162,9 +182,7 @@ export class WorkerTransport implements Transport {
 
   #start(): Worker {
     if (this.#worker) return this.#worker;
-    // The worker is beside this file's directory, in dist/. Written out in one expression, as bundlers recognise
-    // it: they build the worker and its imports into the application.
-    const worker = new Worker(new URL('../worker.js', import.meta.url), { type: 'module', name: 'twip-engine' });
+    const worker = startWorker(useAssets());
     live.workers++;
     worker.onmessage = ({ data }: MessageEvent<Message | Reply>) => this.#receive(data);
     worker.onerror = (e) => {

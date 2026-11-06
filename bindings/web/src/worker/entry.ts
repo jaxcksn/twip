@@ -8,7 +8,6 @@ import { directTransport, type DirectTransport } from '../transport/direct.js';
 import { fromError, type Message } from '../transport/protocol.js';
 import type { Reply, Request } from '../transport/worker.js';
 
-const engine = directTransport();
 const signals = new Map<number, AbortController>();
 
 /** Posts to the page, moving the buffer of exported bytes instead of copying it. */
@@ -40,8 +39,17 @@ function run(t: DirectTransport, { id, op, args }: Request): Promise<unknown> {
   }
 }
 
-// Session 0 is the engine's own: font requests.
-engine.then((t) => t.listen(0, post), () => {});
+let started: Promise<DirectTransport> | undefined;
+
+/** The engine, loaded on the first request: by then worker.ts has applied the page's `assets`. */
+function engine(): Promise<DirectTransport> {
+  if (!started) {
+    started = directTransport();
+    // Session 0 is the engine's own: font requests.
+    started.then((t) => t.listen(0, post), () => {});
+  }
+  return started;
+}
 
 onmessage = ({ data }: MessageEvent<Request>) => {
   if (data.op === 'abort') {
@@ -50,7 +58,7 @@ onmessage = ({ data }: MessageEvent<Request>) => {
   }
   // Every request waits on the same promise, so they reach the engine's queue in arrival order. Id 0 is a replayed
   // library change: nothing waits for its reply.
-  engine.then((t) => run(t, data)).then(
+  engine().then((t) => run(t, data)).then(
     (ok) => data.id && post({ id: data.id, ok }),
     (e: unknown) => {
       if (!data.id) return console.error(e);

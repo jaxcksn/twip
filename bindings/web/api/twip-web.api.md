@@ -792,6 +792,11 @@ export interface CommentThread {
 export type Compound = 'single' | 'double' | 'thickThin' | 'thinThick' | 'triple';
 
 // @public
+export function configure(options: {
+    assets: string | URL;
+}): void;
+
+// @public
 export interface ContentPoint {
     x: number;
     y: number;
