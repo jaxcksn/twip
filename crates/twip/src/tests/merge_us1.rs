@@ -99,8 +99,8 @@ fn picture_control_size() {
         let d = serde_json::to_value(e.element(serde_json::from_value(c.clone()).expect("an id")).expect("the control")).expect("json");
         (d["options"]["width"].as_f64(), d["options"]["height"].as_f64())
     };
-    let c = command(e, json!({ "type": "insertControl", "kind": "picture", "tag": "Barcode", "options": { "width": 216, "height": 54 } }))["id"]
-        .clone();
+    let c =
+        command(e, json!({ "type": "insertControl", "kind": "picture", "tag": "Barcode", "options": { "width": 216, "height": 54 } }))["id"].clone();
     assert_eq!(size(e, &c), (Some(216.0), Some(54.0)));
     command(e, json!({ "type": "setControl", "id": c, "options": { "width": 288 } }));
     assert_eq!(size(e, &c), (Some(288.0), Some(54.0)), "height kept");
