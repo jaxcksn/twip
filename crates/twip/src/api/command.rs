@@ -411,8 +411,6 @@ commands! {
     ReplaceInElements(ReplaceInElements),
     /// Wavy marks with a tooltip on elements. Undo: view.
     MarkElements(MarkElements),
-    /// How unfilled picture placeholders look. Undo: view.
-    SetPlaceholderLooks(PlaceholderLooks),
     /// Fills the selected placeholder, or every unfilled one with `key`: each becomes a plain picture, its content
     /// control removed. Undo: one step.
     FillPlaceholder(FillPlaceholder),
@@ -1547,85 +1545,6 @@ pub struct MarkElements {
     /// Removes the earlier marks first. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clear: Option<bool>,
-}
-
-/// The `'default'` keyword of [`PlaceholderMatch`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DefaultKeyword {
-    /// `'default'`.
-    Default,
-}
-
-/// Which placeholders a look applies to.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PlaceholderMatch {
-    /// Every placeholder no other rule matches.
-    Default(DefaultKeyword),
-    /// One placeholder.
-    Id {
-        /// The placeholder's element id.
-        id: ElementId,
-    },
-    /// Placeholders with this tag.
-    Tag {
-        /// The tag.
-        tag: String,
-    },
-    /// Placeholders whose key starts with this prefix.
-    Prefix {
-        /// The key prefix.
-        prefix: String,
-    },
-}
-
-/// How a placeholder looks: drawn by the engine, or an image.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PlaceholderLook {
-    /// An image drawn in the placeholder's box.
-    Image {
-        /// The image's bytes.
-        image: Bytes,
-        /// The image's MIME type (`image/png`).
-        mime: String,
-    },
-    /// A box the engine draws.
-    #[serde(rename_all = "camelCase")]
-    Drawn {
-        /// The fill color; `None` keeps the default.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        fill: Option<Color>,
-        /// The label; `None` keeps the default.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        label: Option<String>,
-        /// An SVG icon drawn with the label.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        icon_svg: Option<String>,
-    },
-}
-
-/// One look rule.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PlaceholderLookRule {
-    /// Which placeholders the rule applies to.
-    #[serde(rename = "match")]
-    pub matches: PlaceholderMatch,
-    /// How they look.
-    pub look: PlaceholderLook,
-}
-
-/// `setPlaceholderLooks`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PlaceholderLooks {
-    /// The look rules.
-    pub looks: Vec<PlaceholderLookRule>,
-    /// Keeps rules for matches not listed. Default: false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub merge: Option<bool>,
 }
 
 /// `fillPlaceholder`'s options.

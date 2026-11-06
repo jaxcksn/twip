@@ -278,7 +278,6 @@ const ENTRIES: &[Entry] = {
         (C::RemoveElement, "Remove", G::Control, &[], &[], true, true, U::Step),
         (C::ReplaceInElements, "Replace in Fields and Controls", G::Control, &[], &[], true, true, U::Step),
         (C::MarkElements, "Mark", G::Control, &[], &[], true, false, U::View),
-        (C::SetPlaceholderLooks, "Placeholder Looks", G::Control, &[], &[], true, false, U::View),
         (C::FillPlaceholder, "Fill Placeholder", G::Control, &[], &[], true, true, U::Step),
         (C::WriteDataPart, "Write Data", G::Data, &[], &[], true, true, U::Step),
         (C::RemoveDataPart, "Remove Data", G::Data, &[], &[], true, true, U::Step),

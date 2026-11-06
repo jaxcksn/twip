@@ -17,7 +17,6 @@ export type {
   NoArgumentCommandId,
   Op,
   OpArgs,
-  PlaceholderLook,
 } from './commands.js';
 export type {
   AutoCorrectChange,

@@ -1020,13 +1020,6 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task MarkElementsAsync(IReadOnlyList<ElementMark> marks, bool? clear = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.MarkElements(marks, clear), ct);
 
-    /// <summary>Sets how placeholders look in design mode. A view setting.</summary>
-    /// <param name="looks">The looks.</param>
-    /// <param name="merge">Merge with the current looks.</param>
-    /// <param name="ct">Cancels the command before it runs.</param>
-    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetPlaceholderLooksAsync(IReadOnlyList<PlaceholderLook> looks, bool? merge = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetPlaceholderLooks(looks, merge), ct);
-
     /// <summary>Fills the selected picture placeholder, or every unfilled one with a key: each becomes a plain picture, its content control removed.</summary>
     /// <param name="image">The picture.</param>
     /// <param name="key">The placeholder key.</param>

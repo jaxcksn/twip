@@ -814,21 +814,6 @@
     "type": "markElements"
   },
   {
-    "looks": [
-      {
-        "look": {
-          "fill": "#EEEEEE",
-          "label": "Logo"
-        },
-        "match": {
-          "tag": "logo"
-        }
-      }
-    ],
-    "merge": false,
-    "type": "setPlaceholderLooks"
-  },
-  {
     "image": "iVBORw==",
     "key": "logo",
     "type": "fillPlaceholder"

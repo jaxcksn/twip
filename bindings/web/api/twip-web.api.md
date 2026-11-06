@@ -602,10 +602,6 @@ export interface Commands {
     }): Promise<void>;
     setParagraphStyle(styleId: StyleId): Promise<void>;
     setPictureAdjust(change: PictureAdjustChange): Promise<void>;
-    setPlaceholderLooks(options: {
-        looks: PlaceholderLook[];
-        merge?: boolean;
-    }): Promise<void>;
     setRowCanBreak(on: boolean): Promise<void>;
     setRowHeight(height: RowHeight): Promise<void>;
     setRulerTabType(type: TabSelector): Promise<void>;
@@ -1751,25 +1747,6 @@ export interface PictureAdjustChange {
 export interface PlaceholderInfo {
     element: ElementId | null;
     key: string;
-}
-
-// @public
-export interface PlaceholderLook {
-    look: {
-        fill?: Color;
-        label?: string;
-        iconSvg?: string;
-    } | {
-        image: Uint8Array;
-        mime: string;
-    };
-    match: {
-        id: ElementId;
-    } | {
-        tag: string;
-    } | {
-        prefix: string;
-    } | 'default';
 }
 
 // @public

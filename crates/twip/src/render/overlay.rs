@@ -2,7 +2,7 @@
 //! regions, comment tints, the drop caret, the guide line, the selection, the caret). Drawn every frame, never
 //! recorded with the page.
 
-use skia_safe::{Canvas, Color, Data, Font, Image, Paint, Point, Rect};
+use skia_safe::{Canvas, Color, Font, Paint, Point, Rect};
 
 use super::{Frame, Renderer};
 use crate::editing::view::{MarkKind, SelectionView, View};
@@ -38,9 +38,6 @@ impl Renderer {
         for (_, [x0, y0, x1, y1]) in view.fade.iter().filter(|(pg, _)| *pg == i) {
             canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &fade);
         }
-        for ph in view.placeholders.iter().filter(|p| p.page == i) {
-            self.placeholder(canvas, ph);
-        }
         // Misspellings: a wavy red line along each word's bottom, 1 device pixel wide.
         let px = (k * f.dpr).max(0.01);
         let mut wave = Paint::default();
@@ -58,31 +55,6 @@ impl Renderer {
                 x += step;
             }
             canvas.draw_points(skia_safe::canvas::PointMode::Polygon, &pts, &wave);
-        }
-        // Design-mode looks: the host's image scaled into a picture control's box keeping its
-        // aspect ratio, or a fill, label and icon drawn as a placeholder's are.
-        for l in view.looks.iter().filter(|l| l.page == i) {
-            let [x0, y0, x1, y1] = l.rect;
-            if let Some(bytes) = &l.image {
-                let key = std::rc::Rc::as_ptr(bytes) as usize;
-                let img = self.look_images.entry(key).or_insert_with(|| Image::from_encoded(Data::new_copy(bytes))).clone();
-                if let Some(img) = img {
-                    let (iw, ih) = (img.width() as f64, img.height() as f64);
-                    let s = ((x1 - x0) / iw).min((y1 - y0) / ih);
-                    let (w, h) = (iw * s, ih * s);
-                    let (cx, cy) = (x0 + (x1 - x0 - w) / 2.0, y0 + (y1 - y0 - h) / 2.0);
-                    canvas.draw_image_rect(&img, None, Rect::new(cx as f32, cy as f32, (cx + w) as f32, (cy + h) as f32), &Paint::default());
-                }
-            } else {
-                let ph = crate::editing::view::PlaceholderView {
-                    page: i,
-                    rect: l.rect,
-                    color: l.fill.unwrap_or(0),
-                    label: l.label.clone().unwrap_or_default(),
-                    icon: l.icon.clone(),
-                };
-                self.placeholder(canvas, &ph);
-            }
         }
         // Design-mode regions: a dashed boundary and a title tab above its top left.
         for g in &view.regions {

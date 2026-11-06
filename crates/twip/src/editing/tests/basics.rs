@@ -1539,38 +1539,6 @@ fn a_placeholder_activates_and_fills() {
     assert!(r.e.document().filled.is_empty());
 }
 
-#[test]
-fn the_host_sets_how_placeholders_look() {
-    use serde_json::json;
-    let mut r = super::scenarios::Run::open("FX-PLACEHOLDER.docx", "placeholder-look");
-    let views = |r: &mut super::scenarios::Run| {
-        let n = r.e.stack().pages.len();
-        r.e.view(0..n).placeholders
-    };
-    assert!(views(&mut r).is_empty(), "no look set: drawn as stored");
-    let icon = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75z"/><circle cx="20" cy="4" r="2" fill="#333333"/><rect x="0" y="0" width="24" height="24" fill="none"/></svg>"##;
-    let look = json!({ "fill": "#C00000", "label": "Sign here", "iconSvg": icon });
-    r.step(&json!({ "command": { "type": "setPlaceholderLooks", "looks": [{ "match": { "tag": "Signature.Recipient Sig" }, "look": look }] } }));
-    let v = views(&mut r);
-    assert_eq!(v.len(), 1, "{v:?}");
-    assert_eq!((v[0].label.as_str(), v[0].color), ("Sign here", 0x40_C0_00_00));
-    let shapes = v[0].icon.as_ref().expect("an icon");
-    assert_eq!((shapes.view_box, shapes.paths.len(), shapes.paths[1].1), ([0.0, 0.0, 24.0, 24.0], 2, Some(0xFF33_3333)));
-    assert!(v[0].rect[2] - v[0].rect[0] > 200.0, "the placeholder's box: {:?}", v[0].rect);
-    r.step(&json!({ "command": { "type": "setPlaceholderLooks", "looks": [{ "match": "default", "look": { "fill": "#00AA00" } }] } }));
-    let v = views(&mut r);
-    assert_eq!((v.len(), v[0].label.as_str(), v[0].color), (1, "Recipient Sig", 0x40_00_AA_00));
-    let data = open("FX-OBJ.docx").document().images.last().cloned().unwrap();
-    r.e.execute(
-        Command::FillPlaceholder(crate::api::command::FillPlaceholder {
-            key: Some("Signature.Recipient Sig".into()),
-            image: crate::api::value::Bytes(data),
-        }),
-        fonts(),
-    );
-    assert!(views(&mut r).is_empty());
-}
-
 fn controls_by_tag(bytes: &[u8]) -> Vec<(String, String)> {
     use std::io::Read;
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();

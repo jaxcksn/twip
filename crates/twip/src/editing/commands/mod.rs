@@ -372,7 +372,6 @@ impl Editor {
             Command::RemoveElement(id) => self.remove_element(&id, false, fonts),
             Command::ReplaceInElements(r) => self.replace_in_elements(r, fonts),
             Command::MarkElements(m) => self.mark_elements(m),
-            Command::SetPlaceholderLooks(l) => self.set_placeholder_looks(l),
             Command::FillPlaceholder(f) => self.fill_placeholders(f.key.as_deref(), f.image.0, fonts),
             // Data parts
             Command::WriteDataPart(w) => self.write_data_part(w, fonts),

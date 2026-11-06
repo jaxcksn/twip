@@ -926,7 +926,7 @@ pub struct Document {
     /// The item parts of data parts removed since reading (taken out of the package on save).
     pub removed_data: Vec<String>,
     /// Pictures of merge images and placeholders still showing their box (`w:showingPlcHdr`): image index →
-    /// (merge image, label). The editor draws them as labeled boxes.
+    /// (merge image, label). They draw as their picture.
     pub placeholders: HashMap<usize, (bool, String)>,
     /// The placeholders' keys (their tag after `Placeholder:` or `MergeImage:`), by image index.
     pub placeholder_keys: HashMap<usize, String>,

@@ -42,14 +42,6 @@ export interface FieldTargets {
   ids?: ElementId[];
 }
 
-/** How a picture placeholder looks before it is filled. */
-export interface PlaceholderLook {
-  /** Which placeholders: one, those with a tag or a key prefix, or the default for the rest. */
-  match: { id: ElementId } | { tag: string } | { prefix: string } | 'default';
-  /** A fill, label and icon, or an image. */
-  look: { fill?: Color; label?: string; iconSvg?: string } | { image: Uint8Array; mime: string };
-}
-
 /**
  * Every edit, one method per command. Each resolves after its change commits, with `getState()` already at that
  * revision, and rejects with `EditorError`. Commands act on the selection at the time they run. Each is one undo
@@ -481,8 +473,6 @@ export interface Commands {
     marks: { id: ElementId; severity: 'error' | 'warning' | 'info'; message: string }[];
     clear?: boolean;
   }): Promise<void>;
-  /** Sets how picture placeholders look. View. */
-  setPlaceholderLooks(options: { looks: PlaceholderLook[]; merge?: boolean }): Promise<void>;
   /** Fills the selected placeholder, or every unfilled one with `key`: each becomes a plain picture, its content control removed. */
   fillPlaceholder(options: { key?: string; image: Uint8Array }): Promise<void>;
 
@@ -797,7 +787,6 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   removeElement: 'value',
   replaceInElements: 'spread',
   markElements: 'spread',
-  setPlaceholderLooks: 'spread',
   fillPlaceholder: 'spread',
   writeDataPart: 'spread',
   removeDataPart: 'spread',

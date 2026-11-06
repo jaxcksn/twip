@@ -338,30 +338,6 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
     }
 }
 
-/// <summary><c>{ id } | { tag } | { prefix } | 'default'</c>.</summary>
-internal sealed class PlaceholderMatchConverter : JsonConverter<PlaceholderMatch>
-{
-    public override PlaceholderMatch Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        if (reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("default")) return PlaceholderMatch.Default;
-        var o = JsonElement.ParseValue(ref reader);
-        if (o.TryGetProperty("id", out var id)) return PlaceholderMatch.ById(new ElementId(id.GetString()!));
-        if (o.TryGetProperty("tag", out var tag)) return PlaceholderMatch.ByTag(tag.GetString()!);
-        if (o.TryGetProperty("prefix", out var prefix)) return PlaceholderMatch.ByPrefix(prefix.GetString()!);
-        throw new JsonException("not a placeholder match");
-    }
-
-    public override void Write(Utf8JsonWriter writer, PlaceholderMatch value, JsonSerializerOptions options)
-    {
-        if (value.IsDefault) { writer.WriteStringValue("default"); return; }
-        writer.WriteStartObject();
-        if (value.Id is { } id) writer.WriteString("id", id.Value);
-        else if (value.Tag is not null) writer.WriteString("tag", value.Tag);
-        else writer.WriteString("prefix", value.Prefix);
-        writer.WriteEndObject();
-    }
-}
-
 internal sealed class MenuActionConverter : JsonConverter<MenuAction>
 {
     public override MenuAction Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => new(JsonNode.Parse(ref reader));

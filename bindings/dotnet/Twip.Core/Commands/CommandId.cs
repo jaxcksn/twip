@@ -305,8 +305,6 @@ public enum CommandId
     ReplaceInElements,
     /// <summary>Marks elements with wavy lines and a tooltip. A view setting.</summary>
     MarkElements,
-    /// <summary>Sets how placeholders look in design mode. A view setting.</summary>
-    SetPlaceholderLooks,
     /// <summary>Fills the selected picture placeholder, or every unfilled one with a key.</summary>
     FillPlaceholder,
     /// <summary>Writes a custom XML data part.</summary>

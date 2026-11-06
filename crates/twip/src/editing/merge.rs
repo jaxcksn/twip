@@ -2,8 +2,7 @@
 
 use crate::api::command::{
     CommandResult, DataPartRef, ElementClass, ElementField, FieldLabels, FieldResults, FillControl, InsertControl, InsertField, MarkElements,
-    PlaceholderLook as LookArg, PlaceholderLooks, PlaceholderMatch, RepeatingSection, ReplaceInElements, SetCheckbox, SetControl, SetField,
-    Severity as SeverityArg, WriteDataPart,
+    RepeatingSection, ReplaceInElements, SetCheckbox, SetControl, SetField, Severity as SeverityArg, WriteDataPart,
 };
 use crate::api::error::Error;
 use crate::api::review::Body;
@@ -21,65 +20,6 @@ use super::selection::Selection;
 use super::step::Step;
 
 type Refused = Error;
-
-#[derive(Clone, Debug, PartialEq)]
-pub(super) enum Look {
-    Box(super::view::PlaceholderLook),
-    Image(std::rc::Rc<Vec<u8>>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(super) enum TagMatch {
-    Exact(String),
-    Prefix(String),
-}
-
-#[derive(Clone, Debug, Default)]
-pub(super) struct Looks {
-    by_element: std::collections::HashMap<ElementId, Look>,
-    by_tag: Vec<(TagMatch, Look)>,
-    default: Option<Look>,
-}
-impl Looks {
-    fn find(&self, id: ElementId, tag: Option<&str>) -> Option<&Look> {
-        if let Some(l) = self.by_element.get(&id) {
-            return Some(l);
-        }
-        if let Some(t) = tag {
-            if let Some((_, l)) = self.by_tag.iter().find(|(m, _)| matches!(m, TagMatch::Exact(x) if x == t)) {
-                return Some(l);
-            }
-            // A picture placeholder's key: its tag after `Placeholder:` or `MergeImage:`.
-            let key = t
-                .split_once(':')
-                .filter(|(k, _)| k.trim().eq_ignore_ascii_case("Placeholder") || k.trim().eq_ignore_ascii_case("MergeImage"))
-                .map(|(_, rest)| rest.split(';').next().unwrap_or("").trim());
-            let prefix = self.by_tag.iter().filter_map(|(m, l)| match m {
-                TagMatch::Prefix(p) if t.starts_with(p.as_str()) || key.is_some_and(|k| k.starts_with(p.as_str())) => Some((p.len(), l)),
-                _ => None,
-            });
-            if let Some((_, l)) = prefix.max_by_key(|(n, _)| *n) {
-                return Some(l);
-            }
-        }
-        self.default.as_ref()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.by_element.is_empty() && self.by_tag.is_empty() && self.default.is_none()
-    }
-}
-
-#[test]
-fn a_prefix_matches_a_picture_placeholders_key() {
-    let look = Look::Image(std::rc::Rc::new(Vec::new()));
-    let looks = Looks { by_tag: vec![(TagMatch::Prefix("Signature".into()), look)], ..Looks::default() };
-    let id = ElementId::Control(ControlId(1));
-    assert!(looks.find(id, Some("Placeholder:Signature.Applicant")).is_some());
-    assert!(looks.find(id, Some("MergeImage: Signature.Applicant;x")).is_some());
-    assert!(looks.find(id, Some("Signature.Applicant")).is_some(), "the tag itself");
-    assert!(looks.find(id, Some("Other:Signature.Applicant")).is_none(), "not a placeholder tag");
-}
 
 #[derive(Clone, Debug)]
 pub(super) struct Mark {
@@ -675,117 +615,6 @@ impl Editor {
         });
         let Some(g) = hit else { return false };
         self.select_element(&crate::api::value::ElementId(g.id), false, fonts) == Outcome::Moved
-    }
-
-    // Placeholder looks
-    pub(super) fn set_placeholder_looks(&mut self, l: PlaceholderLooks) -> Outcome {
-        let mut new = Looks::default();
-        let mut pictures = std::collections::HashMap::new();
-        for rule in l.looks {
-            let look = match rule.look {
-                LookArg::Image { image, .. } => {
-                    if crate::docx::image::image_type(&image.0).is_none() {
-                        return Outcome::invalid("bad image");
-                    }
-                    Look::Image(std::rc::Rc::new(image.0))
-                }
-                LookArg::Drawn { fill, label, icon_svg } => {
-                    let icon = icon_svg.as_deref().and_then(super::view::SvgIcon::parse).map(std::rc::Rc::new);
-                    let look = super::view::PlaceholderLook { color: fill.map(|c| 0x40_00_00_00 | c.0), label, icon };
-                    Look::Box(look)
-                }
-            };
-            let key = match &rule.matches {
-                PlaceholderMatch::Default(_) => Some(String::new()),
-                PlaceholderMatch::Tag { tag } => Some(tag.clone()),
-                _ => None,
-            };
-            if let (Some(k), Look::Box(b)) = (key, &look) {
-                pictures.insert(k, b.clone());
-            }
-            match rule.matches {
-                PlaceholderMatch::Default(_) => new.default = Some(look),
-                PlaceholderMatch::Id { id } => match element_id(&id) {
-                    Ok(id) => {
-                        new.by_element.insert(id, look);
-                    }
-                    Err(e) => return Outcome::Refused(e),
-                },
-                PlaceholderMatch::Tag { tag } => new.by_tag.push((TagMatch::Exact(tag), look)),
-                PlaceholderMatch::Prefix { prefix } => new.by_tag.push((TagMatch::Prefix(prefix), look)),
-            }
-        }
-        if l.merge.unwrap_or(false) {
-            self.looks.by_element.extend(new.by_element);
-            for (m, l) in new.by_tag {
-                self.looks.by_tag.retain(|(x, _)| *x != m);
-                self.looks.by_tag.push((m, l));
-            }
-            if new.default.is_some() {
-                self.looks.default = new.default;
-            }
-            self.placeholder_looks.extend(pictures);
-        } else {
-            self.looks = new;
-            self.placeholder_looks = pictures;
-        }
-        Outcome::Moved
-    }
-
-    pub(super) fn look_views(&mut self, pages: std::ops::Range<usize>) -> Vec<super::view::LookView> {
-        if self.mode != super::Mode::Design || self.looks.is_empty() {
-            return Vec::new();
-        }
-        let mut out = Vec::new();
-        let mut controls: Vec<(ControlId, ControlProps)> = self
-            .doc
-            .controls
-            .iter()
-            .filter(|(_, c)| matches!(c.props.kind, ControlKind::Picture | ControlKind::RichText))
-            .map(|(id, c)| (*id, c.props.clone()))
-            .collect();
-        controls.sort_by_key(|(id, _)| *id);
-        for (c, props) in controls {
-            let Some(look) = self.looks.find(ElementId::Control(c), props.tag.as_deref()).cloned() else { continue };
-            let Some(w) = self.locate(ElementId::Control(c)) else { continue };
-            if props.kind == ControlKind::Picture {
-                let Where::Inline { para, first, last, .. } = w else { continue };
-                let Some(p) = self.index.para(&self.doc, para) else { continue };
-                let Some(k) = (first..last).find(|&k| matches!(p.inlines[k], Inline::Picture(..))) else { continue };
-                let unit = Unit(units_before(&p.inlines, k));
-                for page in pages.clone() {
-                    let Some(geo) = self.pages.page(page, &self.index) else { continue };
-                    let Some(rect) = self.inline_box(&geo, para, unit) else { continue };
-                    out.push(match &look {
-                        Look::Image(b) => super::view::LookView { page, rect, fill: None, label: None, icon: None, image: Some(b.clone()) },
-                        Look::Box(l) => {
-                            super::view::LookView { page, rect, fill: l.color, label: l.label.clone(), icon: l.icon.clone(), image: None }
-                        }
-                    });
-                }
-            } else {
-                let Look::Box(l) = look else { continue };
-                let Some((a, b)) = self.element_range(&w) else { continue };
-                let empty = a.same_place(&b) || props.showing_placeholder;
-                let mut rects = self.range_rects(a, b, pages.clone());
-                if rects.is_empty()
-                    && let Some(cv) = self.caret_at(a)
-                {
-                    rects.push((cv.page, [cv.x, cv.top, cv.x + 60.0, cv.bottom]));
-                }
-                for (k, (page, rect)) in rects.into_iter().enumerate() {
-                    out.push(super::view::LookView {
-                        page,
-                        rect,
-                        fill: l.color,
-                        label: if k == 0 && empty { l.label.clone() } else { None },
-                        icon: None,
-                        image: None,
-                    });
-                }
-            }
-        }
-        out
     }
 
     pub(super) fn activate(&mut self, inside: bool) -> bool {
