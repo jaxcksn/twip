@@ -1706,11 +1706,17 @@ impl Editor {
         let esc = crate::docx::write::props::esc;
         let mut checked_now = false;
         let mut kind_xml = None;
+        let mut size = (144.0, 108.0);
         let kind = match (c.kind, &c.options) {
             (KindArg::PlainText, Some(ControlOptions::PlainText(o))) => ControlKind::PlainText { multi_line: o.multiline.unwrap_or(false) },
             (KindArg::PlainText, _) => ControlKind::PlainText { multi_line: false },
             (KindArg::RichText, _) => ControlKind::RichText,
-            (KindArg::Picture, _) => ControlKind::Picture,
+            (KindArg::Picture, o) => {
+                if let Some(ControlOptions::Picture(o)) = o {
+                    size = picture_size(o, size)?;
+                }
+                ControlKind::Picture
+            }
             (KindArg::Checkbox, o) => {
                 checked_now = matches!(o, Some(ControlOptions::Checkbox(o)) if o.checked == Some(true));
                 ControlKind::Checkbox { checked: '\u{2612}', unchecked: '\u{2610}' }
@@ -1785,8 +1791,16 @@ impl Editor {
                 props.showing_placeholder = true;
                 self.pending_controls.push((id, Control::new(props)));
                 let image = Some(self.pending_image(PICTURE_PLACEHOLDER.to_vec()));
-                let picture =
-                    crate::docx::Picture { w: 144.0, h: 108.0, image, alt: "".into(), lock_aspect: true, effect: [0.0; 4], shape: None, text: None };
+                let picture = crate::docx::Picture {
+                    w: size.0,
+                    h: size.1,
+                    image,
+                    alt: "".into(),
+                    lock_aspect: true,
+                    effect: [0.0; 4],
+                    shape: None,
+                    text: None,
+                };
                 self.insert_inlines(
                     |run| vec![Inline::ControlStart(id), Inline::Picture(picture.clone(), run), Inline::ControlEnd(id)],
                     "Insert Content Control",
@@ -1906,6 +1920,7 @@ impl Editor {
         let mut control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
         let prefix = self.cx().w;
         let p = &mut control.props;
+        let mut resize = None;
         if set.tag.is_some() {
             p.tag = set.tag;
         }
@@ -1934,16 +1949,34 @@ impl Editor {
                     }
                 }
                 (ControlKind::Checkbox { .. }, ControlOptions::Checkbox(_)) => {}
+                (ControlKind::Picture, ControlOptions::Picture(o)) => resize = Some(o.clone()),
                 _ => return Err(Error::invalid("options for another kind of control")),
             }
-            if !matches!(p.kind, ControlKind::DropDown | ControlKind::Checkbox { .. }) {
+            if !matches!(p.kind, ControlKind::DropDown | ControlKind::Checkbox { .. } | ControlKind::Picture) {
                 p.kind_xml = None;
             }
         }
         let placeholder = set.placeholder;
         let showing = p.showing_placeholder;
+        let resized = match (&resize, &w) {
+            (Some(o), Where::Inline { para, first, last, .. }) => {
+                let mut inlines = self.index.para(&self.doc, *para).ok_or_else(no_element)?.inlines.clone();
+                let pic = inlines[*first..*last].iter_mut().find_map(|i| if let Inline::Picture(pic, _) = i { Some(pic) } else { None });
+                let pic = pic.ok_or_else(|| Error::invalid("no picture in the control"))?;
+                (pic.w, pic.h) = picture_size(o, (pic.w, pic.h))?;
+                Some((*para, inlines))
+            }
+            (Some(_), _) => return Err(Error::invalid("no picture in the control")),
+            _ => None,
+        };
         let mut tx = self.begin("Change Content Control");
         if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
+            self.abort(tx);
+            return Err(no_element());
+        }
+        if let Some((para, inlines)) = resized
+            && self.step(&mut tx, Step::Restyle { para, inlines }).is_err()
+        {
             self.abort(tx);
             return Err(no_element());
         }
@@ -1974,6 +2007,16 @@ impl Editor {
         }
         self.toggle_checkbox(Position::text(story, para, at), fonts)
     }
+}
+
+/// A picture control's size from its options, each side within 1…1584 pt; a side not given keeps `was`'s.
+fn picture_size(o: &crate::api::value::PictureOptions, was: (f64, f64)) -> Result<(f64, f64), Refused> {
+    let side = |v: Option<crate::api::value::Points>, was: f64| match v.map(|v| v.0) {
+        Some(v) if (1.0..=1584.0).contains(&v) => Ok((v * 20.0).round() / 20.0),
+        Some(_) => Err(Error::invalid("picture size out of range (1…1584 pt)")),
+        None => Ok(was),
+    };
+    Ok((side(o.width, was.0)?, side(o.height, was.1)?))
 }
 
 fn without_control(b: &Block, c: ControlId) -> Block {

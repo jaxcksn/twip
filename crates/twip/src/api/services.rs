@@ -943,7 +943,7 @@ pub enum ReferenceResolution {
 }
 
 /// An element with its settings and children.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementDetail {
     /// The element.

@@ -2,7 +2,7 @@ import type { Op } from '../commands.js';
 import type { Session } from '../editor.js';
 import type { SelectionSummary } from '../state.js';
 import { Method } from '../transport/protocol.js';
-import type { ClientPoint, ElementId } from '../types.js';
+import type { ClientPoint, ElementId, Points } from '../types.js';
 
 /** A content control's kind. */
 export type ControlKind =
@@ -136,12 +136,16 @@ export interface DataBinding {
   prefixMappings?: string;
 }
 
-/** A content control's options, by kind: checkbox, date, list, or plain text. */
+/**
+ * A content control's options, by kind: checkbox, date, list, plain text, or picture. A picture's size (1…1584 pt) is
+ * its placeholder's, and the picture's once filled (fitted to it); `setControl` keeps a side not given.
+ */
 export type ControlOptions =
   | { checked?: boolean }
   | { format?: string; locale?: string }
   | { items: { text: string; value: string }[] }
-  | { multiline?: boolean };
+  | { multiline?: boolean }
+  | { width?: Points; height?: Points };
 
 /** A block of the document structure. */
 export type Block =
@@ -186,8 +190,16 @@ export interface SubTemplates {
   edit(name: string, category?: string): Promise<void>;
   /** Back to the template, at its selection from before. */
   close(): Promise<void>;
-  /** A new sub-template, empty or with the body of the DOCX `from`. One undo step. */
-  create(name: string, options?: { category?: string; from?: Uint8Array }): Promise<void>;
+  /**
+   * A new sub-template: empty, with the body of the DOCX `from`, or a copy of the sub-template `copyOf` in the same
+   * category (its formatting, fields, controls, pictures and references). One undo step.
+   */
+  create(name: string, options?: { category?: string; from?: Uint8Array; copyOf?: string }): Promise<void>;
+  /**
+   * A standalone DOCX of a sub-template's body, with the document's styles, numbering, theme and fonts and without
+   * its headers, footers or other sub-templates; `create(name, { from })` reads it back unchanged.
+   */
+  export(name: string, options?: { category?: string }): Promise<Uint8Array>;
   /** Renames a sub-template; `updateReferences` renames every reference to it too. One undo step. */
   rename(name: string, to: string, options?: { category?: string; updateReferences?: boolean }): Promise<void>;
   /** Removes a sub-template; its references no longer resolve. One undo step. */
@@ -212,6 +224,10 @@ export function createSubTemplates(s: Session): SubTemplates {
     },
     remove: async (name, options) => {
       await s.run({ type: 'removeSubTemplate', name, ...options } as Op);
+    },
+    export: async (name, options) => {
+      const docx = await s.call<string>(Method.SubTemplateExport, { name, ...options });
+      return Uint8Array.from(atob(docx), (c) => c.charCodeAt(0));
     },
   };
 }

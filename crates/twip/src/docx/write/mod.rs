@@ -74,7 +74,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
             continue;
         }
         // Both kinds new: the second builds on the first's relationships and content types.
-        let made = new_notes_part(&src.package, &src.main, foot, notes, &parts, &doc.people)?;
+        let made = new_notes_part(&src.package, &src.main, foot, notes, &parts, &doc.controls, &doc.people)?;
         for (n, b) in made {
             match parts.iter_mut().find(|(m, _)| *m == n) {
                 Some(p) => p.1 = b,
@@ -740,7 +740,7 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:{tag} {NS}></w:{tag}>"#
         );
-        let body = new_blocks_xml(&shell, &doc.stories[*name], &doc.people)?;
+        let body = new_blocks_xml(&shell, &doc.stories[*name], &doc.controls, &doc.people)?;
         let end = shell.rfind("</").ok_or("story shell")?;
         parts.retain(|(n, _)| n != *name);
         parts.push(((*name).clone(), format!("{}{body}{}", &shell[..end], &shell[end..]).into_bytes()));
@@ -827,6 +827,7 @@ fn new_notes_part(
     foot: bool,
     notes: &HashMap<i64, Vec<Block>>,
     made: &[(String, Vec<u8>)],
+    controls: &HashMap<ControlId, Control>,
     people: &People,
 ) -> Result<Vec<(String, Vec<u8>)>, String> {
     use std::io::Read;
@@ -847,7 +848,7 @@ fn new_notes_part(
     ids.sort();
     let mut body = String::new();
     for id in ids {
-        body.push_str(&format!(r#"<w:{tag} w:id="{id}">{}</w:{tag}>"#, new_blocks_xml(&shell, &notes[id], people)?));
+        body.push_str(&format!(r#"<w:{tag} w:id="{id}">{}</w:{tag}>"#, new_blocks_xml(&shell, &notes[id], controls, people)?));
     }
     let end = shell.rfind("</").ok_or("notes shell")?;
     let xml = format!("{}{body}{}", &shell[..end], &shell[end..]);
@@ -915,7 +916,7 @@ fn notes_xml(
     }
     let mut text = String::new();
     for (id, blocks) in added {
-        let body = new_blocks_xml(xml, blocks, people)?;
+        let body = new_blocks_xml(xml, blocks, controls, people)?;
         text.push_str(&format!("<{w}{tag} {w}id=\"{id}\">{body}</{w}{tag}>"));
     }
     if !text.is_empty() {
@@ -940,7 +941,7 @@ fn gone_controls(doc: &Document) -> Vec<Control> {
 }
 
 /// Blocks with no source written from the model, for a part (new notes).
-fn new_blocks_xml(xml: &str, blocks: &[Block], people: &People) -> Result<String, String> {
+fn new_blocks_xml(xml: &str, blocks: &[Block], controls: &HashMap<ControlId, Control>, people: &People) -> Result<String, String> {
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let w = match dom.root_element().lookup_prefix(W) {
         Some(p) if !p.is_empty() => format!("{p}:"),
@@ -956,7 +957,7 @@ fn new_blocks_xml(xml: &str, blocks: &[Block], people: &People) -> Result<String
         splices: Vec::new(),
         nested: Vec::new(),
         float_src: HashMap::new(),
-        controls: HashMap::new(),
+        controls: controls.clone(),
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
         dropped: &[],
@@ -2640,7 +2641,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 let mut shape = drawing::changed(a, b, &text);
                 // A story added by typing into the shape: its `wps:txbx`, written from the model.
                 if let (Some(at), Some(tb)) = (drawing::story_added(a, b), b.text_box.as_ref())
-                    && let Ok(blocks) = new_blocks_xml(s.xml, &tb.blocks, s.people)
+                    && let Ok(blocks) = new_blocks_xml(s.xml, &tb.blocks, &s.controls, s.people)
                 {
                     let txbx = format!("<wps:txbx><{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx>", w = s.w);
                     shape.get_or_insert_with(Vec::new).push((at..at, txbx));
@@ -3410,7 +3411,7 @@ impl Saver<'_, '_> {
                 let txbx = |path: &[u16]| {
                     let tb =
                         if path.is_empty() { f.text_box.as_ref() } else { f.parts.iter().find(|p| p.path == path).and_then(|p| p.text_box.as_ref()) };
-                    new_blocks_xml(self.xml, &tb?.blocks, self.people).ok()
+                    new_blocks_xml(self.xml, &tb?.blocks, &self.controls, self.people).ok()
                 };
                 Some(drawing::graphic_data(&shape, &txbx, &self.w))
             }
@@ -3419,7 +3420,7 @@ impl Saver<'_, '_> {
         let graphic = match (&f.text_box, f.image) {
             _ if made.is_some() => made.clone().unwrap_or_default(),
             (Some(tb), _) => {
-                let blocks = new_blocks_xml(self.xml, &tb.blocks, self.people).ok()?;
+                let blocks = new_blocks_xml(self.xml, &tb.blocks, &self.controls, self.people).ok()?;
                 let [l, t, r, b] = tb.insets.map(emu);
                 let line = if tb.outline > 0.0 {
                     format!(r#"<a:ln w="{}"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>"#, emu(tb.outline))
@@ -3554,7 +3555,13 @@ impl Saver<'_, '_> {
                 name = name,
                 graphic = drawing::graphic_data(
                     &shape,
-                    &|path: &[u16]| new_blocks_xml(self.xml, &p.text.as_ref().filter(|_| path.is_empty())?.text_box.blocks, self.people).ok(),
+                    &|path: &[u16]| new_blocks_xml(
+                        self.xml,
+                        &p.text.as_ref().filter(|_| path.is_empty())?.text_box.blocks,
+                        &self.controls,
+                        self.people
+                    )
+                    .ok(),
                     &self.w
                 ),
             ));

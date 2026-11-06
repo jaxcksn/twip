@@ -525,6 +525,7 @@ fn control_options() -> Vec<ControlOptions> {
         ControlOptions::Date(DateOptions { format: Some("yyyy-MM-dd".into()), locale: Some("en-GB".into()) }),
         ControlOptions::List(ListOptions { items: vec![ListItem { text: "Yes".into(), value: "y".into() }] }),
         ControlOptions::PlainText(PlainTextOptions { multiline: Some(true) }),
+        ControlOptions::Picture(PictureOptions { width: Some(Points(216.0)), height: Some(Points(54.0)) }),
     ]
 }
 
@@ -749,7 +750,12 @@ fn commands() -> Vec<Command> {
         Command::SetSubTemplateView(SubTemplateView { ids: Some(vec![id("field-7")]), expanded: false }),
         Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: Some("Sub-templates".into()) }),
         Command::CloseSubTemplate,
-        Command::CreateSubTemplate(CreateSubTemplate { name: "Payment".into(), category: Some("Sub-templates".into()), from: None }),
+        Command::CreateSubTemplate(CreateSubTemplate {
+            name: "Payment".into(),
+            category: Some("Sub-templates".into()),
+            from: None,
+            copy_of: Some("Fees".into()),
+        }),
         Command::RenameSubTemplate(RenameSubTemplate {
             name: "Violation".into(),
             to: "Citation".into(),
@@ -757,6 +763,7 @@ fn commands() -> Vec<Command> {
             update_references: Some(true),
         }),
         Command::RemoveSubTemplate(SubTemplateName { name: "Cycle-B".into(), category: None }),
+        Command::ReplaceBody(ReplaceBody { from: Bytes(b"PK".to_vec()) }),
         Command::InsertControl(InsertControl {
             kind: ControlKind::DropDown,
             tag: Some("status".into()),

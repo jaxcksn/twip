@@ -120,6 +120,7 @@ internal enum Method : uint
     AccessibleGo = 78,
     HostCaretWindowSelect = 79,
     AnnouncementsSet = 80,
+    SubTemplateExport = 81,
 }
 
 /// <summary>Status codes the C functions return.</summary>

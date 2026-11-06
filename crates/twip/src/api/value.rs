@@ -667,7 +667,7 @@ pub struct ListItem {
 }
 
 /// The settings of one control kind. On the wire the object's fields say which kind it is.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ControlOptions {
     /// A checkbox's state.
@@ -678,6 +678,8 @@ pub enum ControlOptions {
     List(ListOptions),
     /// A plain text control's settings.
     PlainText(PlainTextOptions),
+    /// A picture control's picture size.
+    Picture(PictureOptions),
 }
 
 /// A checkbox's state.
@@ -716,6 +718,18 @@ pub struct PlainTextOptions {
     /// Whether it takes line breaks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multiline: Option<bool>,
+}
+
+/// A picture control's picture size (1…1584 pt): its placeholder's, and the picture's once filled (fitted to it).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PictureOptions {
+    /// The width; default 144 pt when inserted, else kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<Points>,
+    /// The height; default 108 pt when inserted, else kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<Points>,
 }
 
 #[cfg(test)]

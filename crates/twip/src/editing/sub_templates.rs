@@ -80,6 +80,27 @@ pub struct Surface {
     template_touched: bool,
 }
 
+/// Blocks from another part or package, written afresh: their source XML dropped, their pictures' image indices
+/// moved up by `base`.
+fn detach(blocks: &mut [Block], base: usize) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                p.src = None;
+                for i in &mut p.inlines {
+                    if let Inline::Picture(pic, _) = i {
+                        pic.image = pic.image.map(|k| k + base);
+                    }
+                }
+            }
+            Block::Table(t) => {
+                t.src = None;
+                t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| detach(&mut c.blocks, base));
+            }
+        }
+    }
+}
+
 fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Paragraph> {
     let res = doc.resolver.as_ref()?;
     let r = res.para_from_xml(None, None, cx);
@@ -493,9 +514,17 @@ impl Editor {
         if self.doc.glossary.as_ref().is_some_and(|g| g.find(&c.name, &category, None).is_some()) {
             return invalid("a sub-template has that name");
         }
-        let (body, controls) = match &c.from {
+        let copied = match (&c.from, &c.copy_of) {
+            (Some(_), Some(_)) => return invalid("from or copyOf, not both"),
+            (None, Some(n)) => match self.export_sub_template(n, Some(&category)) {
+                Ok(b) => Some(b),
+                Err(e) => return Outcome::Refused(e),
+            },
+            _ => None,
+        };
+        let (body, controls) = match copied.as_deref().or(c.from.as_ref().map(|b| b.0.as_slice())) {
             None => (empty_para(&self.doc, &self.cx()).map(Block::Para).into_iter().collect(), Vec::new()),
-            Some(bytes) => match self.imported_body(&bytes.0) {
+            Some(bytes) => match self.imported_body(bytes) {
                 Some(b) => b,
                 None => return invalid("not a DOCX"),
             },
@@ -514,29 +543,79 @@ impl Editor {
         let mut blocks: Vec<Block> = read.sections.into_iter().flat_map(|s| s.blocks).collect();
         let base = self.doc.images.len() + self.pending_images.len();
         self.pending_images.extend(read.images);
-        fn rebase(blocks: &mut [Block], base: usize) {
-            for b in blocks {
-                match b {
-                    Block::Para(p) => {
-                        p.src = None;
-                        for i in &mut p.inlines {
-                            if let Inline::Picture(pic, _) = i {
-                                pic.image = pic.image.map(|k| k + base);
-                            }
-                        }
-                    }
-                    Block::Table(t) => {
-                        t.src = None;
-                        t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| rebase(&mut c.blocks, base));
-                    }
-                }
-            }
-        }
-        rebase(&mut blocks, base);
+        detach(&mut blocks, base);
         if !matches!(blocks.last(), Some(Block::Para(_))) {
             blocks.extend(empty_para(&self.doc, &self.cx()).map(Block::Para));
         }
         Some((blocks, read.controls.into_iter().collect()))
+    }
+
+    /// The template's body becomes `bytes`' body: its sections merge into the last (whose page, headers and footers
+    /// stay) and its blocks are the DOCX's. The glossary, data parts, settings and styles stay. One undo step.
+    pub(super) fn replace_body(&mut self, bytes: &[u8], fonts: &Fonts) -> Outcome {
+        if crate::docx::read_editable(bytes).is_err() {
+            return Outcome::Refused(crate::api::error::Error::invalid("not a DOCX"));
+        }
+        if self.surface.is_some() {
+            self.close_sub_template_to(None);
+        }
+        let Some((body, controls)) = self.imported_body(bytes) else { return Outcome::Refused(crate::api::error::Error::invalid("not a DOCX")) };
+        let mut steps: Vec<Step> = controls.into_iter().map(|(id, c)| Step::Control { id, control: Some(c) }).collect();
+        steps.extend((1..self.doc.sections.len()).map(|_| Step::SectionBreak { section: 0, back: None }));
+        let mut tx = self.begin("Replace Body");
+        for s in steps {
+            if self.step(&mut tx, s).is_err() {
+                self.abort(tx);
+                return Outcome::Refused(crate::api::error::Error::invalid("the body changed meanwhile"));
+            }
+        }
+        let range = 0..self.doc.sections[0].blocks.len();
+        if self.step(&mut tx, Step::Blocks { container: Container::Section(0), range, with: body }).is_err() {
+            self.abort(tx);
+            return Outcome::Refused(crate::api::error::Error::invalid("the body changed meanwhile"));
+        }
+        if let Some(p) = self.nav().story_edge(StoryId::Body, false) {
+            self.selection = Selection::Caret(p);
+        }
+        self.commit(tx, None, fonts)
+    }
+
+    /// A standalone DOCX of a sub-template's body: the document with that body as its only one (on the last
+    /// section's page) and an empty glossary, keeping its styles, numbering, theme, fonts and data parts.
+    pub fn export_sub_template(&self, name: &str, category: Option<&str>) -> Result<Vec<u8>, crate::api::error::Error> {
+        use crate::api::error::{Error, ErrorCode};
+        let failed = |e: String| Error::new(ErrorCode::ExportFailed, e);
+        let k = self.named_part(name, category).ok_or_else(|| Error::invalid(format!("no sub-template {name}")))? as usize;
+        let mut doc = self.doc.clone();
+        let read = doc.source.as_ref().map_or(1, |s| s.blocks.len());
+        let g = doc.glossary.as_mut().ok_or_else(|| Error::invalid("no glossary"))?;
+        let mut body = g.parts[k].body.clone();
+        g.parts.iter_mut().for_each(|b| b.state = crate::docx::PartState::Removed);
+        detach(&mut body, 0);
+        let last = doc.sections.len().checked_sub(1).ok_or_else(|| failed("no section".into()))?;
+        let mut sec = doc.sections.swap_remove(last);
+        sec.blocks = body;
+        doc.sections = vec![sec];
+        doc.section_sources = vec![read];
+        doc.edited_sections = doc.edited_sections.contains(&last).then_some(0).into_iter().collect();
+        let bytes = crate::docx::write::save(&doc).map_err(failed)?;
+        // The template's headers and footers aren't the body's: their references go (their parts stay, unused).
+        let main = doc.source.as_ref().map(|s| s.main.clone()).ok_or_else(|| failed("not read for editing".into()))?;
+        let mut xml = String::new();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).map_err(|e| failed(e.to_string()))?;
+        std::io::Read::read_to_string(&mut zip.by_name(&main).map_err(|e| failed(e.to_string()))?, &mut xml).map_err(|e| failed(e.to_string()))?;
+        let dom = roxmltree::Document::parse(&xml).map_err(|e| failed(e.to_string()))?;
+        let mut out = String::with_capacity(xml.len());
+        let mut at = 0;
+        for n in dom
+            .descendants()
+            .filter(|n| n.tag_name().namespace() == Some(crate::docx::xml::W) && matches!(n.tag_name().name(), "headerReference" | "footerReference"))
+        {
+            out.push_str(&xml[at..n.range().start]);
+            at = n.range().end;
+        }
+        out.push_str(&xml[at..]);
+        crate::docx::write::repackage_without(&bytes, &[(main, out.into_bytes())], &[], zip::CompressionMethod::Deflated).map_err(failed)
     }
 
     pub(super) fn rename_sub_template(&mut self, r: crate::api::command::RenameSubTemplate, fonts: &Fonts) -> Outcome {

@@ -421,12 +421,20 @@ export interface Commands {
   editSubTemplate(options: { name: string; category?: string }): Promise<void>;
   /** Back to the template from a sub-template, at the template's selection from before. View. */
   closeSubTemplate(): Promise<void>;
-  /** A new sub-template, empty or with a DOCX's body (`category`: default the first rule's). */
-  createSubTemplate(options: { name: string; category?: string; from?: Uint8Array }): Promise<void>;
+  /**
+   * A new sub-template, empty, with a DOCX's body, or a copy of the sub-template `copyOf` in the same category
+   * (`category`: default the first rule's).
+   */
+  createSubTemplate(options: { name: string; category?: string; from?: Uint8Array; copyOf?: string }): Promise<void>;
   /** Renames a sub-template, and with `updateReferences` every reference to it. */
   renameSubTemplate(options: { name: string; to: string; category?: string; updateReferences?: boolean }): Promise<void>;
   /** Removes a sub-template; its references no longer resolve. */
   removeSubTemplate(options: { name: string; category?: string }): Promise<void>;
+  /**
+   * The template's body becomes the DOCX `from`'s body, on its last section's page; its sub-templates, custom XML
+   * data parts, settings, styles, headers and footers stay. Closes a sub-template being edited first.
+   */
+  replaceBody(options: { from: Uint8Array }): Promise<void>;
 
   // Content controls and regions
   /** Inserts a content control, optionally around the selection. */
@@ -779,6 +787,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   createSubTemplate: 'spread',
   renameSubTemplate: 'spread',
   removeSubTemplate: 'spread',
+  replaceBody: 'spread',
   insertControl: 'spread',
   setControl: 'spread',
   removeControl: 'spread',

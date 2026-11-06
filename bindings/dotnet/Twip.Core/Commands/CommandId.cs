@@ -389,4 +389,6 @@ public enum CommandId
     DescribeFormatting,
     /// <summary>The application's own field types, never read as bookmark references.</summary>
     SetApplicationFieldTypes,
+    /// <summary>The template's body from a DOCX's body; its sub-templates, data parts and settings stay.</summary>
+    ReplaceBody,
 }

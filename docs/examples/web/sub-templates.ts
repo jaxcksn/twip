@@ -25,10 +25,14 @@ export async function subTemplatePanel(
   });
 }
 
-/** Authoring: a new sub-template from a DOCX the application converted, a rename that follows the references, and
- * a removal. Each is one undo step. */
+/** Authoring: a new sub-template from a DOCX the application converted, a copy, an export, a rename that follows the
+ * references, and a removal. Each change is one undo step. */
 export async function manageSubTemplates(editor: Editor, docx: Uint8Array) {
   await editor.subTemplates.create('Payment instructions', { from: docx });
+  await editor.subTemplates.create('Payment instructions (copy)', { copyOf: 'Payment instructions' });
+  const body = await editor.subTemplates.export('Payment instructions');
+  // The template's own body from a DOCX: its sub-templates, data parts and settings stay.
+  await editor.commands.replaceBody({ from: body });
   await editor.subTemplates.rename('Violation', 'Citation', { updateReferences: true });
   await editor.subTemplates.remove('Old notice');
 }

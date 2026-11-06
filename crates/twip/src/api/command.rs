@@ -388,6 +388,9 @@ commands! {
     RenameSubTemplate(RenameSubTemplate),
     /// Removes a sub-template; its references no longer resolve. Undo: one step.
     RemoveSubTemplate(SubTemplateName),
+    /// The template's body becomes a DOCX's body, on its last section's page; its sub-templates, data parts,
+    /// settings, styles, headers and footers stay. Closes a sub-template being edited first. Undo: one step.
+    ReplaceBody(ReplaceBody),
 
     // Content controls and regions
     /// A content control at the selection; result `{ id }`. Undo: one step.
@@ -1297,6 +1300,18 @@ pub struct CreateSubTemplate {
     /// A DOCX whose body becomes its body; default: one empty paragraph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<Bytes>,
+    /// A sub-template in the same category whose body (formatting, fields, controls, pictures, references) is
+    /// copied; not with `from`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_of: Option<String>,
+}
+
+/// `replaceBody`'s options.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceBody {
+    /// The DOCX whose body becomes the template's.
+    pub from: Bytes,
 }
 
 /// `renameSubTemplate`'s options.

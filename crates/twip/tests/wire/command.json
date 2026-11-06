@@ -717,6 +717,7 @@
   },
   {
     "category": "Sub-templates",
+    "copyOf": "Fees",
     "name": "Payment",
     "type": "createSubTemplate"
   },
@@ -729,6 +730,10 @@
   {
     "name": "Cycle-B",
     "type": "removeSubTemplate"
+  },
+  {
+    "from": "UEs=",
+    "type": "replaceBody"
   },
   {
     "binding": {
