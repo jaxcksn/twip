@@ -72,7 +72,7 @@ public sealed class PlaceholderActivatedEventArgs : EditorEventArgs
     /// <summary>The placeholder's element, when it is one.</summary>
     public ElementId? Element { get; }
 
-    /// <summary>The input block's button pressed (its <see cref="PlaceholderAction.Id"/>), or <c>replace</c> from a filled block's tab; null for the block itself.</summary>
+    /// <summary>The input block's button pressed (its <see cref="PlaceholderAction.Id"/>); null for the block itself.</summary>
     public string? Action { get; }
 }
 

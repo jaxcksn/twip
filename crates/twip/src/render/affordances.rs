@@ -1,16 +1,15 @@
-//! The placeholder affordances: field marks and their captions, drawn over the page in its scheme's colours. Sizes
+//! The placeholder affordances: field marks, sections, cards and input blocks, drawn over the page in its scheme's colours. Sizes
 //! are CSS px (`u` points each); nothing here is printed.
 
 use skia_safe::{Canvas, Color, Font, Paint, Point, RRect, Rect, Typeface};
 
 use super::theme::{Scheme, Theme};
 use super::{ChromeFace, Renderer, chrome_typeface};
-use crate::editing::view::{AffordanceView, Block, BlockState, Caption, CardState, FieldState, Icon, Segment, Tab};
+use crate::editing::view::{AffordanceView, Block, BlockState, CardState, FieldState, Icon, Segment, Tab};
 
-/// A chip: text on a rounded fill, with an optional prefix drawn fainter. Sizes are CSS px.
+/// A chip: text on a rounded fill. Sizes are CSS px.
 pub(super) struct Chip<'a> {
     pub text: &'a str,
-    pub prefix: Option<&'a str>,
     pub size: f64,
     pub pad: (f64, f64),
     pub radius: f64,
@@ -44,20 +43,11 @@ impl Renderer {
         }
     }
 
-    /// How wide a chip is, CSS px.
-    pub(super) fn chip_width(&self, c: &Chip, u: f64) -> f64 {
-        let whole = format!("{}{}", c.prefix.unwrap_or(""), c.text);
-        let Some(tf) = self.face_for(&whole, c.face) else { return 0.0 };
-        let font = Font::from_typeface(tf, (c.size * u) as f32);
-        f64::from(font.measure_str(&whole, None).0) / u + 2.0 * c.pad.0
-    }
-
     /// Draws a chip with its top left at `(x, y)` (page points) and returns its rect.
     pub(super) fn chip(&self, canvas: &Canvas, x: f64, y: f64, c: &Chip, u: f64) -> [f64; 4] {
-        let whole = format!("{}{}", c.prefix.unwrap_or(""), c.text);
-        let Some(tf) = self.face_for(&whole, c.face) else { return [x, y, x, y] };
+        let Some(tf) = self.face_for(c.text, c.face) else { return [x, y, x, y] };
         let font = Font::from_typeface(tf, (c.size * u) as f32);
-        let w = f64::from(font.measure_str(&whole, None).0) + 2.0 * c.pad.0 * u;
+        let w = f64::from(font.measure_str(c.text, None).0) + 2.0 * c.pad.0 * u;
         let h = (c.size + 2.0 * c.pad.1) * u;
         let r = Rect::from_xywh(x as f32, y as f32, w as f32, h as f32);
         let radius = (c.radius * u) as f32;
@@ -65,17 +55,13 @@ impl Renderer {
         if let Some(b) = c.border {
             canvas.draw_round_rect(r, radius, radius, &stroke(b, u));
         }
-        let (mut tx, baseline) = ((x + c.pad.0 * u) as f32, (y + (c.pad.1 + 0.85 * c.size) * u) as f32);
-        if let Some(p) = c.prefix {
-            canvas.draw_str(p, (tx, baseline), &font, &paint(c.ink.with_a((f32::from(c.ink.a()) * 0.7) as u8)));
-            tx += font.measure_str(p, None).0;
-        }
+        let (tx, baseline) = ((x + c.pad.0 * u) as f32, (y + (c.pad.1 + 0.85 * c.size) * u) as f32);
         canvas.draw_str(c.text, (tx, baseline), &font, &paint(c.ink));
         [x, y, x + w, y + h]
     }
 
     /// Page `i`'s affordances, over its content. The canvas is in page points.
-    pub(super) fn affordances(&mut self, canvas: &Canvas, views: &[AffordanceView], i: usize, page_size: (f64, f64), u: f64) {
+    pub(super) fn affordances(&mut self, canvas: &Canvas, views: &[AffordanceView], i: usize, u: f64) {
         let theme = self.page_theme();
         // Marks at rest are one fill: a page can hold hundreds.
         let mut rest = skia_safe::PathBuilder::new();
@@ -117,15 +103,14 @@ impl Renderer {
                         rest.add_rrect(segment_shape(s, u), None, None);
                     }
                 }
-                AffordanceView::Field { segments, state, caption, on_tint, .. } => {
+                AffordanceView::Field { segments, state, on_tint, .. } => {
                     for s in segments {
-                        if *on_tint {
-                            canvas.draw_rrect(segment_shape(s, u), &paint(theme.tokens.paper));
-                        }
                         field_segment(canvas, s, *state, &theme, u);
-                    }
-                    if let (Some(c), Some(last)) = (caption, segments.last()) {
-                        self.caption(canvas, c, last.rect, page_size, &theme, u);
+                        // On a tint the field's own tint stacks on it, outlined to read apart (never a fill
+                        // under it: marks are drawn over the text).
+                        if *on_tint && *state == FieldState::Rest && plain {
+                            canvas.draw_rrect(segment_shape(s, u), &stroke(theme.accent.mid, u));
+                        }
                     }
                 }
             }
@@ -239,13 +224,8 @@ impl Renderer {
         let t = &theme.tokens;
         let rr = RRect::new_rect_xy(rect(&b.rect), (8.0 * u) as f32, (8.0 * u) as f32);
         let (cx, cy) = ((b.rect[0] + b.rect[2]) / 2.0, (b.rect[1] + b.rect[3]) / 2.0);
-        if b.state == BlockState::Done {
-            if let Some(tab) = &b.done {
-                canvas.draw_rrect(rr, &stroke(a.mid, u));
-                self.tab(canvas, tab, FieldState::Rest, theme, u);
-            }
-            return;
-        }
+        // The block is the placeholder: the picture held for it never shows.
+        canvas.draw_rect(rect(&b.rect), &paint(t.paper));
         match &b.image {
             Some(bytes) => {
                 let key = std::rc::Rc::as_ptr(bytes) as usize;
@@ -259,12 +239,11 @@ impl Renderer {
                 }
             }
             None => {
-                canvas.draw_rrect(rr, &paint(t.paper));
                 canvas.draw_rrect(rr, &paint(a.soft));
             }
         }
         match b.state {
-            BlockState::Rest | BlockState::Done => {}
+            BlockState::Rest => {}
             BlockState::Hover => {
                 canvas.draw_rrect(rr, &stroke(a.solid, u));
             }
@@ -330,37 +309,6 @@ impl Renderer {
             canvas.draw_path(path, &paint(fill.map_or(colour, Color::new)));
         }
         canvas.restore();
-    }
-
-    /// The caption under a field's last segment (above it at the page's bottom), kept on the page and cut to fit it.
-    fn caption(&self, canvas: &Canvas, c: &Caption, under: [f64; 4], (pw, ph): (f64, f64), theme: &Theme, u: f64) {
-        let t = &theme.tokens;
-        let text = if c.type_text.is_empty() { c.key.clone() } else { format!("{} \u{b7} {}", c.key, c.type_text) };
-        fn chip<'a>(text: &'a str, t: &super::theme::Tokens) -> Chip<'a> {
-            Chip {
-                text,
-                prefix: Some("{ } "),
-                size: 11.0,
-                pad: (6.0, 3.0),
-                radius: 4.0,
-                fill: t.paper,
-                border: Some(t.line),
-                ink: t.ink2,
-                face: ChromeFace::Mono500,
-            }
-        }
-        let room = pw / u;
-        let mut shown = text.clone();
-        while self.chip_width(&chip(&shown, t), u) > room && shown.chars().count() > 1 {
-            let keep = shown.chars().count() - 2;
-            shown = shown.chars().take(keep).chain(std::iter::once('\u{2026}')).collect();
-        }
-        let c = chip(&shown, t);
-        let (w, h) = (self.chip_width(&c, u) * u, (c.size + 2.0 * c.pad.1) * u);
-        let x = under[0].min(pw - w).max(0.0);
-        let below = under[3] + 3.0 * u;
-        let y = if below + h > ph { under[1] - 3.0 * u - h } else { below };
-        self.chip(canvas, x, y, &c, u);
     }
 }
 

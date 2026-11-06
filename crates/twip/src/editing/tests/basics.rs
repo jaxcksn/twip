@@ -1529,7 +1529,7 @@ fn a_placeholder_activates_and_fills() {
         z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
         s
     };
-    assert!(xml.contains("Placeholder:Signature.Recipient Sig") && xml.contains("Recipient Sig"), "tag and alias kept");
+    assert!(!xml.contains("Placeholder:Signature.Recipient Sig") && !xml.contains("w:sdt"), "a plain picture: its control is gone");
     assert!(!xml.contains("showingPlcHdr"), "no longer showing its placeholder");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert!(again.document().images.contains(&data), "the filled image is saved");
@@ -1749,7 +1749,7 @@ fn placeholders_cant_be_resized_or_moved() {
     );
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
-    assert!(!again.document().fixed.is_empty(), "filled controls stay fixed");
+    assert!(again.document().fixed.is_empty(), "a filled placeholder is a plain picture");
     let mut o = super::scenarios::Run::open("FX-OBJ.docx", "not fixed");
     assert!(o.e.document().fixed.is_empty());
     let st = crate::editing::inspect::inspect(&mut o.e, "geometry", true);

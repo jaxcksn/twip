@@ -23,7 +23,8 @@ that wraps keeps wrapping where it prints. The field's text and its label (`setF
 lines break exactly as with the marks off. Page numbers, dates, references and other fields the engine evaluates get
 no mark.
 
-A hovered field adds a 1 px outline and a caption under its last line: `{ }`, its name and a type. The type defaults to
+A hovered field adds a 1 px outline, and the `tooltip` event (`kind: "placeholder"`) gives its name and a type for you
+to show, as for links and revisions. The type defaults to
 the field type (`MERGEFIELD`); `setFieldTypes` sets your own per field code, as `setFieldLabels` does for labels. A
 selected field (a click selects all of it) gets a stronger tint and a 1.5 px outline; typing replaces it and Backspace
 deletes it, each one undo step.
@@ -63,7 +64,9 @@ the notice raises `subTemplateUpdateRequested` with the sub-template's name and 
 ## Input blocks
 
 Picture placeholders (signatures, initials, fingerprints, photos) become input blocks in every mode: a tinted block
-with a label chip, its hint on hover, and buttons when selected. `setPlaceholderLooks` sets each block's look by
+with a label chip, its hint on hover, and buttons when selected. The block is the placeholder: the picture the content
+control holds is never drawn, and a selected block isn't a picture (`state.selection` has no `object`; its `kind` is
+`element`). In design mode a drag moves the block with its control. `setPlaceholderLooks` sets each block's look by
 element, tag, key prefix or default, as before, and each rule can now add:
 
 - `hint`: what the block says on hover (default: "Click to add");
@@ -72,8 +75,7 @@ element, tag, key prefix or default, as before, and each rule can now add:
 With the placeholder UI on, a drawn look's `fill` is the block's base colour: its tint, outlines and primary button
 are derived from it, and lightened on a dark page. A press on a button raises `placeholderActivated` with `action`
 set to the button's id; a block without buttons activates on a press, as before, and Enter presses the primary
-button. A filled block shows the picture; hovered, its tab shows the date it was filled this session and Replace
-(`action: "replace"`).
+button. `fillPlaceholder` replaces the block with the picture and removes its content control.
 
 ## Unmapped and conditional fields
 
@@ -84,4 +86,4 @@ and its else text in a tab while hovered or selected.
 ## Screen readers
 
 Selecting a placeholder says what it is ("Field: Email, merge field", "Sub-template: Appeals notice, collapsed").
-Captions, tabs and card text are never read: fields read as their text.
+Tabs and card text are never read: fields read as their text.

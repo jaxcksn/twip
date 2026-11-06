@@ -48,6 +48,13 @@ impl Editor {
     pub(super) fn text_drag_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.text_drag.take()?;
         self.requests.push(Request::ReleasePointer);
+        // An input block moves with its control.
+        if d.moved && self.movable_block().is_some() {
+            return Some(match d.drop {
+                Some(p) => self.move_block(p, fonts),
+                None => Outcome::Unchanged("no drop place"),
+            });
+        }
         let object = match self.selection {
             s @ Selection::Object(super::selection::ObjectRef::Inline { para, offset }) if d.moved => {
                 let at = |u: u32| Position::text(d.press.story, para, Unit(u));
@@ -87,7 +94,9 @@ impl Editor {
             restore(self);
             return Some(Outcome::Unchanged("dropped on the selection"));
         }
-        let frag = self.copy_fragment()?;
+        let mut frag = self.copy_fragment()?;
+        // Whole controls dragged go with their properties, as copied ones do.
+        frag.controls = super::clipboard::controls_of(&frag.blocks, &self.doc);
         let sel = self.selection;
         let moving = !d.copy && self.tracking() && self.moves_whole();
         let mut marks = (None, None);

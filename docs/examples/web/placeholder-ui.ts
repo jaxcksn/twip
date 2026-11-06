@@ -25,7 +25,7 @@ export async function placeholderUi(
     ],
   });
   editor.on('placeholderActivated', async ({ key, action }) => {
-    if (action !== 'sign' && action !== 'replace') return;
+    if (action !== 'sign') return;
     const image = await sign(key);
     if (image) await editor.commands.fillPlaceholder({ key, image });
   });

@@ -26,7 +26,7 @@ static class PlaceholderUiExample
         ]);
         session.PlaceholderActivated += async (_, e) =>
         {
-            if (e.Action is "sign" or "replace" && await sign(e.Key) is { } image) await session.Commands.FillPlaceholderAsync(image, key: e.Key);
+            if (e.Action is "sign" && await sign(e.Key) is { } image) await session.Commands.FillPlaceholderAsync(image, key: e.Key);
         };
 
         // Fields the data source lacks, and the sub-templates' versions.

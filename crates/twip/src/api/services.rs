@@ -1069,7 +1069,7 @@ pub struct PlaceholderInfo {
     pub key: String,
     /// The content control it is in.
     pub element: Option<ElementId>,
-    /// The input block's button pressed (its id), or `replace` from a filled block's tab; none: the block itself.
+    /// The input block's button pressed (its id); none: the block itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action: Option<String>,
 }
@@ -2046,6 +2046,8 @@ pub enum TooltipKind {
     Revision,
     /// A comment.
     Comment,
+    /// A placeholder's key and type, with the placeholder affordances on.
+    Placeholder,
 }
 
 /// A tooltip to show over the document.

@@ -324,6 +324,9 @@ impl Editor {
         use crate::api::services::TooltipKind;
         let (x, y) = self.hover?;
         let (page, hx, hy) = self.stack().page_at(x, y)?;
+        if let Some(t) = self.placeholder_tooltip() {
+            return Some((TooltipKind::Placeholder, t));
+        }
         if let (_, Some(t)) = self.mark_views(page..page + 1) {
             return Some((TooltipKind::Mark, t));
         }
@@ -844,7 +847,7 @@ impl Editor {
                 .iter()
                 .find_map(|i| if let Inline::Picture(pic, _) = i { pic.image } else { None })
                 .ok_or_else(|| bad("id"))?;
-            self.fill_images(&[image], data, size, label, fonts)
+            self.fill_images(&[image], data, size, label, false, fonts)
         } else {
             let given = f.text.clone().unwrap_or_default();
             let frag = match (&f.docx, &f.text) {

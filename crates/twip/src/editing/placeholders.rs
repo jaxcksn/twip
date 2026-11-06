@@ -116,15 +116,21 @@ impl Editor {
         if images.is_empty() {
             return Outcome::Unchanged("no such placeholder");
         }
-        let out = self.fill_images(&images, data, (iw, ih), "Fill Placeholder", fonts);
-        if let Outcome::Changed(_) = out {
-            let now = crate::docx::now_utc();
-            self.affordances.filled_at.extend(images.iter().map(|&i| (i, now)));
-        }
-        out
+        // A filled placeholder is a plain picture: its control goes.
+        self.fill_images(&images, data, (iw, ih), "Fill Placeholder", true, fonts)
     }
 
-    pub(super) fn fill_images(&mut self, images: &[usize], data: Vec<u8>, size: (f64, f64), label: &'static str, fonts: &Fonts) -> Outcome {
+    /// Fills pictures with `data`, fitted to their boxes; `unwrap` takes away the picture controls around them that
+    /// can be deleted, leaving plain pictures.
+    pub(super) fn fill_images(
+        &mut self,
+        images: &[usize],
+        data: Vec<u8>,
+        size: (f64, f64),
+        label: &'static str,
+        unwrap: bool,
+        fonts: &Fonts,
+    ) -> Outcome {
         let (iw, ih) = size;
         let mut restyles: Vec<(ParaId, Vec<Inline>)> = Vec::new();
         for para in self.index.para_ids().collect::<Vec<_>>() {
@@ -142,6 +148,21 @@ impl Editor {
                     let s = (pic.w / iw).min(pic.h / ih);
                     (pic.w, pic.h) = (((iw * s) * 20.0).round() / 20.0, ((ih * s) * 20.0).round() / 20.0);
                 }
+            }
+            if unwrap {
+                let mut open: Vec<crate::docx::ControlId> = Vec::new();
+                let mut gone: Vec<crate::docx::ControlId> = Vec::new();
+                for i in &inlines {
+                    match i {
+                        Inline::ControlStart(c) => open.push(*c),
+                        Inline::ControlEnd(c) => open.retain(|x| x != c),
+                        Inline::Picture(pic, _) if pic.image.is_some_and(|k| images.contains(&k)) => gone.extend(open.iter().filter(|c| {
+                            self.doc.controls.get(c).is_some_and(|k| k.props.kind == crate::docx::ControlKind::Picture && k.props.lock.deletable())
+                        })),
+                        _ => {}
+                    }
+                }
+                inlines.retain(|i| !matches!(i, Inline::ControlStart(c) | Inline::ControlEnd(c) if gone.contains(c)));
             }
             restyles.push((para, inlines));
         }

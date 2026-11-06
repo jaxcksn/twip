@@ -10,14 +10,12 @@ use super::commands::Outcome;
 use super::merge::Where;
 use super::selection::Selection;
 use super::sub_templates::Resolution;
-pub use super::view::{
-    AffordanceView, Block, BlockState, Button, Caption, CardState, FieldState, Icon, MONO_ADVANCE, Part, Segment, Tab, Target, mono_width,
-};
+pub use super::view::{AffordanceView, Block, BlockState, Button, CardState, FieldState, Icon, MONO_ADVANCE, Part, Segment, Tab, Target, mono_width};
 
 /// The affordances' state: view settings from the host and what the pointer is over. Never saved, never undone.
 #[derive(Clone, Debug, Default)]
 pub struct Affordances {
-    /// The caption's type text by field code.
+    /// The tooltip's type text by field code.
     pub field_types: BTreeMap<String, String>,
     /// Merge fields (by first argument) the data source lacks.
     pub unmapped: BTreeSet<String>,
@@ -29,18 +27,8 @@ pub struct Affordances {
     pub selected: Option<(Target, Selection)>,
     /// The version text and newer version's notice for each sub-template, by category and name.
     pub versions: HashMap<(String, String), crate::api::command::SubTemplateVersion>,
-    /// When each picture placeholder was filled this session (seconds since 1970, UTC), by image.
-    pub filled_at: HashMap<usize, i64>,
     /// The selected placeholder, found once while one frame's views are built.
     frame_selected: Option<Option<Target>>,
-}
-
-const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/// A day as a filled block's tab shows it: `Nov 5, 2026` (UTC).
-fn day(secs: i64) -> String {
-    let (y, m, d) = crate::docx::review::civil_from_days(secs.div_euclid(86_400));
-    format!("{} {d}, {y}", MONTHS[(m - 1).clamp(0, 11) as usize])
 }
 
 /// A placeholder described for the host.
@@ -240,12 +228,12 @@ impl Editor {
         self.is_target(t).then_some(t)
     }
 
-    /// A picture control's placeholder picture: its paragraph and unit, and its image.
+    /// A picture control's unfilled placeholder picture: its paragraph and unit, and its image.
     fn block_picture(&self, c: ControlId) -> Option<(ParaId, Unit, usize)> {
         let Where::Inline { para, first, last, .. } = self.locate(ElementId::Control(c))? else { return None };
         let p = self.index.para(&self.doc, para)?;
         let (k, image) = (first..last).find_map(|k| match &p.inlines[k] {
-            Inline::Picture(pic, _) => pic.image.filter(|i| self.doc.placeholders.contains_key(i)).map(|i| (k, i)),
+            Inline::Picture(pic, _) => pic.image.filter(|i| self.doc.placeholders.contains_key(i) && !self.doc.filled.contains(i)).map(|i| (k, i)),
             _ => None,
         })?;
         let unit = p.inlines[..k].iter().map(|i| i.units() as u32).sum();
@@ -258,6 +246,53 @@ impl Editor {
         let mut all: Vec<ControlId> = self.doc.controls.iter().filter(|(_, k)| k.props.kind == ControlKind::Picture).map(|(c, _)| *c).collect();
         all.sort_unstable();
         all.into_iter().find(|c| self.block_picture(*c).is_some_and(|(p, u, _)| p == para && u == offset))
+    }
+
+    /// Whether the selection is an input block: with the affordances on, the block is the placeholder, never its
+    /// picture, so nothing reports or edits a picture.
+    pub fn input_block_selected(&self) -> bool {
+        self.view_settings.placeholder_ui && self.selected_block().is_some()
+    }
+
+    /// The selected input block's control as units of its paragraph, in design mode, where a drag moves all of it.
+    pub(super) fn movable_block(&self) -> Option<(ControlId, ParaId, usize, usize, Unit, Unit)> {
+        if self.mode != super::Mode::Design || !self.view_settings.placeholder_ui {
+            return None;
+        }
+        let c = self.selected_block()?;
+        match self.locate(ElementId::Control(c))? {
+            Where::Inline { para, first, last, start, end, .. } => Some((c, para, first, last, start, end)),
+            _ => None,
+        }
+    }
+
+    /// Moves the selected input block's control, whole and keeping its id, to `to`: one undo step, the block still
+    /// selected.
+    pub(super) fn move_block(&mut self, to: super::position::Position, fonts: &crate::font::Fonts) -> Outcome {
+        use super::step::Step;
+        let Some((c, para, first, last, start, end)) = self.movable_block() else { return Outcome::Unchanged("no block") };
+        let Some((dst, at)) = to.para_offset() else { return Outcome::Unchanged("no drop place") };
+        if dst == para && start <= at && at <= end {
+            return Outcome::Unchanged("dropped on the block");
+        }
+        let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no block") };
+        let moved: Vec<Inline> = p.inlines[first..=last].to_vec();
+        let unmarked: Vec<Inline> =
+            p.inlines.iter().filter(|i| !matches!(i, Inline::ControlStart(x) | Inline::ControlEnd(x) if *x == c)).cloned().collect();
+        let at = if dst == para && at > end { Unit(at.0 - (end.0 - start.0)) } else { at };
+        let mut tx = self.begin("Move Object");
+        let ok = self.step(&mut tx, Step::Restyle { para, inlines: unmarked }).is_ok()
+            && (start == end || self.step(&mut tx, Step::Text { para, range: start..end, with: Vec::new(), edges: Default::default() }).is_ok())
+            && self.step(&mut tx, Step::Text { para: dst, range: at..at, with: moved, edges: Default::default() }).is_ok();
+        if !ok {
+            self.abort(tx);
+            return Outcome::Unchanged("move failed");
+        }
+        let out = self.commit(tx, None, fonts);
+        if let Some((para, offset, _)) = self.block_picture(c) {
+            self.selection = Selection::Object(super::selection::ObjectRef::Inline { para, offset });
+        }
+        out
     }
 
     /// The buttons of the selected input block, when the affordances are on.
@@ -518,11 +553,7 @@ impl Editor {
                     })
                     .collect();
                 let state = self.state_of(t);
-                let caption = (state == FieldState::Selected || self.hovered(t)).then(|| {
-                    let (_, key, _, type_text) = self.describe_text(t);
-                    Caption { key: key.unwrap_or_default(), type_text }
-                });
-                fields.push(AffordanceView::Field { page, target: t, segments, state, caption, on_tint: false });
+                fields.push(AffordanceView::Field { page, target: t, segments, state, on_tint: false });
             }
             separate(&mut fields);
             let regions = self.section_views(page);
@@ -658,10 +689,7 @@ impl Editor {
             let label = look_label.or(props.alias.clone()).unwrap_or_else(|| key.clone());
             let target = Target::InputBlock(c);
             let hovered = self.affordances.hovered == Some(target) || self.affordances.highlight == Some(target.element());
-            let filled = self.doc.filled.contains(&image);
-            let state = if filled {
-                BlockState::Done
-            } else if self.selected_block() == Some(c) {
+            let state = if self.selected_block() == Some(c) {
                 BlockState::Selected
             } else if hovered {
                 BlockState::Hover
@@ -670,15 +698,9 @@ impl Editor {
             };
             let actions = rule.as_ref().map(|r| r.actions.clone()).unwrap_or_default();
             let buttons = if state == BlockState::Selected { buttons(&actions, rect, u) } else { Vec::new() };
-            let done = (filled && hovered).then(|| {
-                let date = self.affordances.filled_at.get(&image).map(|t| format!(" \u{b7} {}", day(*t))).unwrap_or_default();
-                let text = format!("{label}{date} \u{b7} Replace");
-                let w = (mono_width(&text, 11.0) + 12.0) * u;
-                Tab { rect: [rect[0], rect[1], rect[0] + w, rect[1] + 16.0 * u], icon: None, text }
-            });
             let hint = rule.as_ref().and_then(|r| r.hint.clone()).unwrap_or_else(|| "Click to add".into());
             let base = rule.as_ref().and_then(|r| r.base);
-            out.push(AffordanceView::Block(Box::new(Block { page, target, rect, base, label, icon, image: picture, hint, buttons, state, done })));
+            out.push(AffordanceView::Block(Box::new(Block { page, target, rect, base, label, icon, image: picture, hint, buttons, state })));
         }
         out
     }
@@ -691,17 +713,12 @@ impl Editor {
         let Some((page, px, py)) = self.stack().page_at(x, y) else { return false };
         self.ensure_page(page, fonts);
         let inside = |r: &[f64; 4]| r[0] <= px && px <= r[2] && r[1] <= py && py <= r[3];
-        // An input block's button, or a filled block's Replace: an activation naming it (never in design mode).
+        // An input block's button: an activation naming it (never in design mode).
         if self.mode != super::Mode::Design {
             let pressed = self.block_views(page).into_iter().find_map(|v| {
                 let AffordanceView::Block(b) = v else { return None };
                 let Target::InputBlock(c) = b.target else { return None };
-                let replace = b
-                    .done
-                    .as_ref()
-                    .map(|t| [t.rect[2] - (mono_width("Replace", 11.0) + 6.0) * self.view_settings.u(), t.rect[1], t.rect[2], t.rect[3]]);
-                let action = b.buttons.iter().find(|x| inside(&x.rect)).map(|x| x.id.clone());
-                let action = action.or_else(|| replace.filter(|r| inside(r)).map(|_| "replace".to_string()))?;
+                let action = b.buttons.iter().find(|x| inside(&x.rect)).map(|x| x.id.clone())?;
                 let image = self.block_picture(c)?.2;
                 Some((self.doc.placeholder_keys.get(&image).cloned().unwrap_or_default(), action))
             });
@@ -732,7 +749,6 @@ impl Editor {
                     self.enter_sub_template(k, Some(f));
                 }
             }
-            Part::Replace => return false,
             Part::Update => {
                 let Some(r) = self.references.by_field.get(&f).cloned() else { return false };
                 let (category, _) = self.version_of(&r);
@@ -801,10 +817,13 @@ impl Editor {
             spans.push((rows, span));
         }
         let mut out = Vec::new();
+        let tables: HashSet<ControlId> = sections.iter().filter(|(_, w, _)| matches!(w, Where::Rows { .. })).map(|(c, ..)| *c).collect();
         for ((c, w, around), (rows, span)) in sections.iter().zip(spans) {
-            // Nested sections stack outward from the outermost one's edge.
+            // Nested sections stack outward from the outermost one's edge; beside a table, clear of its row
+            // handles (22 px).
             let left = around.iter().filter_map(|a| lefts.get(a)).fold(span[0], |m, x| m.min(*x));
-            let x = left - (12.0 + 8.0 * around.len() as f64) * u;
+            let gap = if tables.contains(c) || around.iter().any(|a| tables.contains(a)) { 28.0 } else { 12.0 };
+            let x = left - (gap + 8.0 * around.len() as f64) * u;
             let bar = [x, span[1], x + 2.0 * u, span[3]];
             let first_page = self.element_range(w).and_then(|(a, _)| self.caret_at(a)).map(|cv| cv.page);
             let tab = first_page.is_none_or(|p| p == page).then(|| {
@@ -889,6 +908,15 @@ impl Editor {
     }
 
     /// A target described for the host, anchored where it shows.
+    /// The hovered field mark's tooltip, for the host to show: its key and type text, over its last line.
+    pub(super) fn placeholder_tooltip(&mut self) -> Option<super::view::Tooltip> {
+        let t = self.affordances.hovered.filter(|t| self.view_settings.placeholder_ui && matches!(t, Target::Field(_) | Target::Control(_)))?;
+        let d = self.describe(t)?;
+        let key = d.key.unwrap_or(d.label);
+        let text = if d.type_text.is_empty() { key } else { format!("{key} \u{b7} {}", d.type_text) };
+        Some(super::view::Tooltip { text, page: d.anchor.0, rect: d.anchor.1 })
+    }
+
     pub(crate) fn describe(&mut self, t: Target) -> Option<Described> {
         if let Target::InputBlock(c) = t {
             let (para, unit, image) = self.block_picture(c)?;
@@ -1136,9 +1164,4 @@ fn buttons(actions: &[crate::api::command::PlaceholderAction], rect: [f64; 4], u
         x += w + 6.0 * u;
     }
     out
-}
-
-#[cfg(test)]
-pub(crate) fn day_for_test(secs: i64) -> String {
-    day(secs)
 }

@@ -254,7 +254,7 @@ public sealed class EditorElements
 /// <param name="Element">The control it is in.</param>
 public sealed record PlaceholderInfo(string Key, ElementId? Element)
 {
-    /// <summary>The input block's button pressed (its id), or <c>replace</c> from a filled block's tab; null for the block itself.</summary>
+    /// <summary>The input block's button pressed (its id); null for the block itself.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Action { get; init; }
 }

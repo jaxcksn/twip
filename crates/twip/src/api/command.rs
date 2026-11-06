@@ -407,7 +407,8 @@ commands! {
     MarkElements(MarkElements),
     /// How unfilled picture placeholders look. Undo: view.
     SetPlaceholderLooks(PlaceholderLooks),
-    /// Fills the selected placeholder, or every unfilled one with `key`. Undo: one step.
+    /// Fills the selected placeholder, or every unfilled one with `key`: each becomes a plain picture, its content
+    /// control removed. Undo: one step.
     FillPlaceholder(FillPlaceholder),
 
     // Data parts
