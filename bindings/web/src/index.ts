@@ -6,6 +6,7 @@
  */
 
 export { Editor, HeadlessEditor } from './editor.js';
+export { configure } from './transport/module.js';
 export type { ExportOptions, ExportResult, MountOptions, PdfOptions, SessionOptions } from './editor.js';
 export type {
   CommandEntry,

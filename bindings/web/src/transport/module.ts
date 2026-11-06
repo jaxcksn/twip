@@ -1,5 +1,6 @@
 // Loading the engine module: the one place that knows where the WebAssembly build is and what it exports.
 // The build copies the emscripten output (twip-wasm.js and twip_wasm.wasm) next to dist/index.js.
+import { EditorError } from '../errors.js';
 
 /** Pointers and sizes are 32-bit numbers in wasm32. */
 type Ptr = number;
@@ -53,18 +54,53 @@ export interface TwipModule {
 }
 
 /**
- * Where the engine module and its WebAssembly are, relative to this file in dist/transport/. Both are literal
- * `new URL(..., import.meta.url)`s, so a bundler copies both files into the application's build.
+ * Where the engine module and its WebAssembly are by default: relative to this file in dist/transport/. Both are
+ * literal `new URL(..., import.meta.url)`s, so a bundler that follows them copies both files into the application's
+ * build. {@link configure}'s `assets` replaces them.
  */
-const moduleUrl = new URL('../twip-wasm.js', import.meta.url);
-const wasmUrl = new URL('../twip_wasm.wasm', import.meta.url);
+const defaultModuleUrl = new URL('../twip-wasm.js', import.meta.url);
+const defaultWasmUrl = new URL('../twip_wasm.wasm', import.meta.url);
+
+/** The folder of the package's dist/ files, when the application set one. */
+let assets: URL | undefined;
+/** Whether this thread has read `assets` to start the engine: it can't change after. */
+let used = false;
+
+/**
+ * Sets where the package's runtime files (dist/: worker.js, twip-wasm.js, twip_wasm.wasm, transport/ and worker/) are
+ * served from, for an application whose bundler doesn't follow `new URL(..., import.meta.url)`. Call it once, before
+ * anything starts the engine: the first {@link FontLibrary} call, {@link Editor.mount} or
+ * {@link HeadlessEditor.create}. The engine is shared by every session, so it's not a per-session option.
+ *
+ * `assets` is the folder, resolved against the document's base URL. It may be on another origin (a CDN), which must
+ * then send CORS headers for every file; see the package README.
+ *
+ * @throws {@link EditorError} `not-allowed` when the engine has already loaded from another folder.
+ */
+export function configure(options: { assets: string | URL }): void {
+  const url = new URL(options.assets, globalThis.document?.baseURI ?? globalThis.location?.href);
+  if (!url.pathname.endsWith('/')) url.pathname += '/';
+  if (used && url.href !== assets?.href) {
+    throw new EditorError('not-allowed', 'configure() must be called before the first FontLibrary call or editor: the engine has already loaded');
+  }
+  assets = url;
+}
+
+/** The configured assets folder, if any, read to start the engine: it can't change after this. */
+export function useAssets(): URL | undefined {
+  used = true;
+  return assets;
+}
 
 /** Instantiates the engine module, with `dispatch` registered before any engine call can call back. */
 export async function loadModule(dispatch: NonNullable<TwipModule['twipDispatch']>): Promise<TwipModule> {
+  const assets = useAssets();
+  const moduleUrl = assets ? new URL('twip-wasm.js', assets) : defaultModuleUrl;
+  const wasmUrl = assets ? new URL('twip_wasm.wasm', assets) : defaultWasmUrl;
   const { default: create } = (await import(moduleUrl.href)) as {
     default: (overrides: object) => Promise<TwipModule>;
   };
-  // In Node the module finds its file itself; in a browser it's wherever the bundler put it.
+  // In Node the module finds its file itself; in a browser it's wherever the bundler, or `assets`, put it.
   const locateFile =
     moduleUrl.protocol === 'file:' ? undefined : (file: string) => (file.endsWith('.wasm') ? wasmUrl : new URL(file, moduleUrl)).href;
   const module = await create({ twipDispatch: dispatch, locateFile });

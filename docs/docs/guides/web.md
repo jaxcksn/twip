@@ -87,6 +87,10 @@ stays synchronous because the SDK keeps the latest snapshot on the page. `'main'
 
 The worker is `@twip/web/worker.js`, beside the package's other files. Bundlers that copy assets referenced with
 `new URL(..., import.meta.url)` (Vite, webpack 5, esbuild with the file loader) need no setup.
+Where the bundler leaves those URLs as they are (Angular's esbuild builder), copy the package's `dist/` unchanged to a
+folder you serve and call `configure({ assets: '<that folder>/' })` before the first `FontLibrary` call or editor. The folder may be on a
+CDN: it must then send CORS headers for every file, and serve `twip_wasm.wasm` as `application/wasm` (the package
+README has the details).
 
 ## Destroy
 

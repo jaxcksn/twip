@@ -11,9 +11,9 @@ export const hello = [...readFileSync(new URL('../../hello.docx', import.meta.ur
  * exists"), so editors there draw with WebGL 2, and the latency budgets aren't checked. */
 export const softwareGpu = process.env.TWIP_SOFTWARE_GPU === '1';
 
-/** An empty page on the test server's origin, with the SDK as `window.twip` and a font loaded. Register a route for
- * the engine worker's script after this, to take over the one here. */
-export async function open(page: Page, options: { gpu?: boolean } = {}): Promise<void> {
+/** An empty page on the test server's origin, with the SDK as `window.twip` (configured with `assets`, if given) and a
+ * font loaded. Register a route for the engine worker's script after this, to take over the one here. */
+export async function open(page: Page, options: { gpu?: boolean; assets?: string } = {}): Promise<void> {
   page.on('pageerror', (e) => console.log(`page error: ${e.message}`));
   await page.route('**/blank.html', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><body style="margin:0">' }),
@@ -27,7 +27,7 @@ ${await response.text()}` });
     });
   }
   await page.goto('/blank.html');
-  await page.evaluate(async ({ gpu, softwareGpu }) => {
+  await page.evaluate(async ({ gpu, softwareGpu, assets }) => {
     if (!gpu || softwareGpu) Object.defineProperty(navigator, 'gpu', { value: undefined });
     // The CPU path, which every machine has: no WebGPU adapter and no WebGL 2, and the engine on the main thread,
     // where these patches are.
@@ -39,9 +39,10 @@ ${await response.text()}` });
       Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', { value: undefined });
     }
     const twip = await import('/web/dist/index.js' as string);
+    if (assets) twip.configure({ assets });
     await twip.FontLibrary.default().add('/font.ttf');
     Object.assign(window, { twip });
-  }, { gpu, softwareGpu });
+  }, { gpu, softwareGpu, assets: options.assets });
 }
 
 /** Mounts an editor in a new `width` x `height` container, as `window[name]`. */
