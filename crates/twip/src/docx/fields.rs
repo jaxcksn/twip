@@ -431,25 +431,23 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     }
 }
 
-pub fn rekind(doc: &mut Document, reference: &dyn Fn(&FieldCode) -> bool) -> (bool, bool) {
+/// Gives every unlocked field the kind `want` names for its code: the editor's settings (a sub-template reference, an
+/// application type) over the code's own. Returns whether any changed, and whether any changed to a kind evaluate
+/// fills in (fields need evaluating again).
+pub fn rekind(doc: &mut Document, want: &dyn Fn(&FieldCode) -> Option<FieldKind>) -> (bool, bool) {
     let (mut changed, mut back) = (false, false);
     let mut visit = |p: &mut Paragraph| {
         for s in spans(&p.inlines) {
             let code = parse(&code_text(&p.inlines, s));
             let Inline::FieldBegin { kind, value, lock, .. } = &mut p.inlines[s.begin] else { continue };
-            if *lock {
+            let want = want(&code);
+            if *lock || *kind == want {
                 continue;
             }
-            if reference(&code) {
-                if *kind != Some(FieldKind::SubTemplate) {
-                    *kind = Some(FieldKind::SubTemplate);
-                    *value = None;
-                    changed = true;
-                }
-            } else if *kind == Some(FieldKind::SubTemplate) {
-                *kind = code.kind();
-                (changed, back) = (true, true);
-            }
+            back |= want.is_some() && want != Some(FieldKind::SubTemplate);
+            *kind = want;
+            *value = None;
+            changed = true;
         }
     };
     for s in &mut doc.sections {

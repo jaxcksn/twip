@@ -1253,4 +1253,10 @@ public sealed class EditorCommands
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetUnmappedFieldsAsync(IReadOnlyList<string> names, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetUnmappedFields(names), ct);
+
+    /// <summary>The application's own field types (a code's first word, compared without case), replacing those set before: their fields keep their results, show their labels in design mode, are listed by update requests and are never read as bookmark references; an empty list clears them. A view setting.</summary>
+    /// <param name="types">The field types.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetApplicationFieldTypesAsync(IReadOnlyList<string> types, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetApplicationFieldTypes(types), ct);
 }

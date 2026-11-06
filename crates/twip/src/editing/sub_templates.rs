@@ -3,9 +3,9 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::api::command::{ReferenceRule, SubTemplateRules, SubTemplateView};
+use crate::api::command::{ApplicationFieldTypes, ReferenceRule, SubTemplateRules, SubTemplateView};
 use crate::docx::fields::{self, FieldCode};
-use crate::docx::{Block, Document, ElementId, FieldId, Gallery, Inline, Paragraph, Section};
+use crate::docx::{Block, Document, ElementId, FieldId, FieldKind, Gallery, Inline, Paragraph, Section};
 use crate::font::Fonts;
 use crate::layout::expansion::{Expansion, Expansions};
 use crate::layout::{DocumentLayout, ParaId, Revision, TableId};
@@ -230,6 +230,24 @@ impl Editor {
         self.warned.clear();
         self.rebuild_references();
         Outcome::Moved
+    }
+
+    pub(super) fn set_application_field_types(&mut self, t: ApplicationFieldTypes) -> Outcome {
+        let mut types: Vec<String> = t.types.iter().map(|x| x.trim().to_uppercase()).filter(|x| !x.is_empty()).collect();
+        types.sort();
+        types.dedup();
+        if types == self.application_field_types {
+            return Outcome::Unchanged("same types");
+        }
+        self.application_field_types = types;
+        self.rebuild_references();
+        self.refresh_labels(None);
+        Outcome::Moved
+    }
+
+    /// Whether `code`'s type is one the application declared.
+    pub(super) fn application_field(&self, code: &FieldCode) -> bool {
+        self.application_field_types.contains(&code.name)
     }
 
     pub(super) fn set_sub_template_view(&mut self, v: SubTemplateView) -> Outcome {
@@ -714,8 +732,8 @@ impl Editor {
     }
 
     fn rebuild_references(&mut self) {
-        let rules = &self.sub_template_rules;
-        let (changed, back) = fields::rekind(&mut self.doc, &|code: &FieldCode| rule_for(rules, code).is_some());
+        let (rules, types) = (&self.sub_template_rules, &self.application_field_types);
+        let (changed, back) = fields::rekind(&mut self.doc, &|code: &FieldCode| field_kind(rules, types, code));
         if back {
             fields::evaluate(&mut self.doc, crate::docx::now_utc());
         }
@@ -773,6 +791,18 @@ impl Editor {
         if needed {
             self.rebuild_references();
         }
+    }
+}
+
+/// The kind a field with `code` has under the editor's settings: a sub-template reference; none, as a MERGEFIELD, for
+/// an application type (it keeps its result and shows its label); else its code's own.
+fn field_kind(rules: &[Rule], types: &[String], code: &FieldCode) -> Option<FieldKind> {
+    if rule_for(rules, code).is_some() {
+        Some(FieldKind::SubTemplate)
+    } else if types.contains(&code.name) {
+        None
+    } else {
+        code.kind()
     }
 }
 

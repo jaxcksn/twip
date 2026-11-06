@@ -432,6 +432,13 @@ export interface Commands {
   setUnmappedFields(options: { names: string[] }): Promise<void>;
   /** Which fields are sub-template references: replaces the rules; an empty list turns sub-templates off. View. */
   setSubTemplateRules(options: { rules: ReferenceRule[] }): Promise<void>;
+  /**
+   * The application's own field types (a code's first word, compared without case), replacing those set before:
+   * their fields keep their results, show their labels in design mode ({@link Commands.setFieldLabels}, else
+   * «first argument»), are listed by `fieldsUpdateRequested` and are never read as bookmark references
+   * ("Error! Bookmark not defined."). `[]` clears them. Set it after each `open`, as the rules. View.
+   */
+  setApplicationFieldTypes(options: { types: string[] }): Promise<void>;
   /** Shows references' sub-template bodies in their place, or their fields (default: every reference). View. */
   setSubTemplateView(options: { ids?: ElementId[]; expanded: boolean }): Promise<void>;
   /** Edits a sub-template's body in this editor, on its own pages. View. */
@@ -799,6 +806,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setFieldTypes: 'spread',
   setUnmappedFields: 'spread',
   setSubTemplateRules: 'spread',
+  setApplicationFieldTypes: 'spread',
   setSubTemplateView: 'spread',
   editSubTemplate: 'spread',
   closeSubTemplate: 'none',

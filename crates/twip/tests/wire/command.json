@@ -694,6 +694,13 @@
     "type": "setSubTemplateRules"
   },
   {
+    "type": "setApplicationFieldTypes",
+    "types": [
+      "CUSTOMVALUE",
+      "CustomText"
+    ]
+  },
+  {
     "expanded": false,
     "ids": [
       "field-7"

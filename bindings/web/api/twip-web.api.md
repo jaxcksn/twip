@@ -466,6 +466,9 @@ export interface Commands {
         decorative?: boolean;
     }): Promise<void>;
     setAnchorLocked(on: boolean): Promise<void>;
+    setApplicationFieldTypes(options: {
+        types: string[];
+    }): Promise<void>;
     setAuthorColor(options: {
         author: string;
         color: Color;

@@ -399,4 +399,6 @@ public enum CommandId
     SetSubTemplateVersions,
     /// <summary>The merge fields the data source lacks.</summary>
     SetUnmappedFields,
+    /// <summary>The application's own field types, never read as bookmark references.</summary>
+    SetApplicationFieldTypes,
 }

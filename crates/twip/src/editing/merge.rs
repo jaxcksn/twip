@@ -1595,7 +1595,8 @@ impl Editor {
         let mut inlines = p.inlines.clone();
         let mut changed = false;
         for s in crate::docx::fields::spans(&p.inlines) {
-            let want = crate::docx::fields::kind_at(&p.inlines, s);
+            let code = crate::docx::fields::parse(&crate::docx::fields::code_text(&p.inlines, s));
+            let want = if self.application_field(&code) { None } else { code.kind() };
             if let Inline::FieldBegin { kind, .. } = &mut inlines[s.begin]
                 && *kind != want
             {

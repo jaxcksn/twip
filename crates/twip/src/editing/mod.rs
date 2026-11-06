@@ -153,6 +153,8 @@ pub struct Editor {
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
     sub_template_rules: Vec<sub_templates::Rule>,
+    /// The application's field types, upper case.
+    application_field_types: Vec<String>,
     references: sub_templates::References,
     collapsed: std::collections::HashSet<crate::docx::FieldId>,
     warned: std::collections::HashSet<(crate::docx::diagnostics::WarningCode, String)>,
@@ -300,6 +302,7 @@ impl Editor {
             drop: None,
             field_labels: HashMap::new(),
             sub_template_rules: Vec::new(),
+            application_field_types: Vec::new(),
             references: sub_templates::References::default(),
             collapsed: std::collections::HashSet::new(),
             warned: std::collections::HashSet::new(),
