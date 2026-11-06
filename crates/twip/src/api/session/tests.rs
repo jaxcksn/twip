@@ -883,6 +883,75 @@ fn the_detail_and_object_grid_options_reach_the_editors_drag_feedback() {
 }
 
 #[test]
+fn application_field_types_keep_their_results_and_show_their_labels() {
+    use crate::api::command::{ApplicationFieldTypes, ElementIds, FieldLabels};
+    // Fields of the application's types: two with their results cleared, one with a result.
+    let field = |code: &str, result: &str| {
+        format!(
+            "<w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> {code} </w:instrText></w:r>\
+             <w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>{result}</w:t></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r>"
+        )
+    };
+    let body = format!(
+        "<w:p><w:r><w:t xml:space=\"preserve\">Invoice </w:t></w:r>{}</w:p><w:p>{}</w:p><w:p>{}</w:p>",
+        field("CUSTOMVALUE InvoiceNumber", ""),
+        field("CUSTOMTEXT Customer", ""),
+        field("CUSTOMCOUNT Lines", "3")
+    );
+    // System fonts, so design mode's labels draw.
+    let (mut engine, events) = (Engine::new(FontLibrary::system()), Rc::new(RefCell::new(Vec::new())));
+    let sink = events.clone();
+    engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&crate::editing::tests::blank_body(&body)).expect("opens");
+    // The paragraphs as they show, fields as their values.
+    let shown = |s: &crate::api::session::Session| -> Vec<String> {
+        let blocks = s.editor.document().sections.iter().flat_map(|sec| &sec.blocks);
+        blocks.filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(crate::docx::fields::text(p)) } else { None }).collect()
+    };
+    let errors = |s: &crate::api::session::Session| shown(s).iter().filter(|p| p.contains("Error! Bookmark not defined.")).count();
+    assert_eq!(errors(s), 2, "with no list, unknown types are bookmark references");
+    assert!(!s.state().modified);
+
+    let types = |t: &[&str]| Command::SetApplicationFieldTypes(ApplicationFieldTypes { types: t.iter().map(|x| x.to_string()).collect() });
+    s.run(types(&["customvalue", "CustomText", "CUSTOMCOUNT"])).expect("sets the types");
+    assert_eq!(errors(s), 0);
+    assert_eq!(shown(s), ["Invoice ", "", "3"], "results stay as they are");
+    assert!(!s.state().modified, "setting the list isn't an edit");
+
+    s.set_mode(crate::api::state::Mode::Design);
+    let labels = FieldLabels { labels: [("CUSTOMTEXT Customer".into(), "Customer name".into())].into(), merge: None };
+    s.run(Command::SetFieldLabels(labels)).expect("sets the labels");
+    s.editor.complete(&s.fonts.fonts());
+    let drawn = crate::layout::dump::page_text(&s.editor.snapshot(), s.editor.document());
+    assert!(drawn.contains("\u{ab}InvoiceNumber\u{bb}") && drawn.contains("Customer name") && !drawn.contains("Error!"), "{drawn}");
+    assert!(!s.state().modified);
+    // One inserted later is of the type too.
+    let owner = crate::api::command::InsertField { code: "CUSTOMVALUE Owner".into(), display: None, show_code: None };
+    s.run(Command::InsertField(owner)).expect("inserts");
+    s.editor.complete(&s.fonts.fonts());
+    assert!(crate::layout::dump::page_text(&s.editor.snapshot(), s.editor.document()).contains("\u{ab}Owner\u{bb}"));
+
+    s.run(Command::SelectAll).expect("selects all");
+    events.borrow_mut().clear();
+    s.run(Command::UpdateFields(ElementIds { ids: None })).expect("updates");
+    let requested: Vec<String> = events
+        .borrow()
+        .iter()
+        .filter_map(|e| if let Event::FieldsUpdateRequested { fields, .. } = e { Some(fields.clone()) } else { None })
+        .flatten()
+        .map(|f| f.code.trim().to_string())
+        .collect();
+    assert_eq!(requested, ["CUSTOMVALUE Owner", "CUSTOMVALUE InvoiceNumber", "CUSTOMTEXT Customer", "CUSTOMCOUNT Lines"]);
+    assert_eq!(errors(s), 0, "updating doesn't read them as bookmarks either");
+
+    s.set_mode(crate::api::state::Mode::Editing);
+    s.run(types(&[])).expect("clears the types");
+    assert_eq!(errors(s), 2, "an empty list puts the bookmark reading back");
+}
+
+#[test]
 fn sub_template_bodies_shown_inline_never_reach_the_output() {
     use crate::api::command::{ReferenceRule, SubTemplateRules, SubTemplateView};
     let mut engine = Engine::new(FontLibrary::system());

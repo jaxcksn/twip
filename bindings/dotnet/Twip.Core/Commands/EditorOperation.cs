@@ -1043,4 +1043,9 @@ public abstract partial record EditorOperation
     /// <param name="names">The field names.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetUnmappedFields(IReadOnlyList<string> names) => Op(CommandId.SetUnmappedFields, new Arg("names", Node(names)));
+
+    /// <summary>The application's own field types (a code's first word, compared without case), replacing those set before: their fields keep their results, show their labels in design mode, are listed by update requests and are never read as bookmark references; an empty list clears them. A view setting.</summary>
+    /// <param name="types">The field types.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetApplicationFieldTypes(IReadOnlyList<string> types) => Op(CommandId.SetApplicationFieldTypes, new Arg("types", Node(types)));
 }

@@ -32,6 +32,19 @@ await editor.destroy();
 
 In Node, workers and tests, `HeadlessEditor.create()` gives the same API with no DOM.
 
+## Your own field types
+
+A field whose type isn't one of Word's reads as a bookmark reference, and with no result it shows "Error! Bookmark
+not defined.", as in Word. Declare the types your application fills itself after each `open`:
+
+```ts
+await editor.commands.setApplicationFieldTypes({ types: ['CUSTOMVALUE', 'CUSTOMTEXT'] });
+```
+
+Their fields then keep their results, show nothing when empty (their `setFieldLabels` label, else «first argument»,
+in design mode) and are listed by `fieldsUpdateRequested` on `updateFields`, for `setFieldResults` to fill. Types
+compare without case; each call replaces the list, and `[]` clears it. Setting it doesn't mark the document modified.
+
 ## Serving the engine's files yourself
 
 The engine runs from files in the package's `dist/`: `worker.js`, `twip-wasm.js`, `twip_wasm.wasm`, and the

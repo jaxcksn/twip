@@ -143,6 +143,7 @@
   "showFieldCodes",
   "setFieldLabels",
   "setSubTemplateRules",
+  "setApplicationFieldTypes",
   "setSubTemplateView",
   "editSubTemplate",
   "closeSubTemplate",

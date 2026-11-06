@@ -355,6 +355,8 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                     for s in crate::docx::fields::spans(&p.inlines) {
                         if let Inline::FieldBegin { kind, .. } = &p.inlines[s.begin]
                             && *kind != Some(crate::docx::FieldKind::SubTemplate)
+                            // None: a locked field, or one of the application's types.
+                            && kind.is_some()
                             && *kind != crate::docx::fields::kind_at(&p.inlines, s)
                         {
                             out.push(Violation { invariant: "F3 kind from code", detail: format!("field in paragraph {} has {kind:?}", p.id) });

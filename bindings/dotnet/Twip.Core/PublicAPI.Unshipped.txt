@@ -5439,3 +5439,6 @@ static Twip.PdfFontSet.Create(Twip.PdfFontSetOptions! options) -> Twip.PdfFontSe
 static Twip.PdfFontSet.System.get -> Twip.PdfFontSet!
 static Twip.PdfFontSetOptions.operator !=(Twip.PdfFontSetOptions? left, Twip.PdfFontSetOptions? right) -> bool
 static Twip.PdfFontSetOptions.operator ==(Twip.PdfFontSetOptions? left, Twip.PdfFontSetOptions? right) -> bool
+Twip.CommandId.SetApplicationFieldTypes = 198 -> Twip.CommandId
+Twip.EditorCommands.SetApplicationFieldTypesAsync(System.Collections.Generic.IReadOnlyList<string!>! types, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Twip.EditorOperation.SetApplicationFieldTypes(System.Collections.Generic.IReadOnlyList<string!>! types) -> Twip.EditorOperation!

@@ -749,6 +749,7 @@ fn commands() -> Vec<Command> {
                 gallery: Some("custom1".into()),
             }],
         }),
+        Command::SetApplicationFieldTypes(ApplicationFieldTypes { types: vec!["CUSTOMVALUE".into(), "CustomText".into()] }),
         Command::SetSubTemplateView(SubTemplateView { ids: Some(vec![id("field-7")]), expanded: false }),
         Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: Some("Sub-templates".into()) }),
         Command::CloseSubTemplate,

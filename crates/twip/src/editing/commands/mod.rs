@@ -347,6 +347,7 @@ impl Editor {
             Command::ShowFieldCodes(s) => self.show_field_codes(s.show, s.ids.as_deref()),
             Command::SetFieldLabels(l) => self.set_field_labels(l),
             Command::SetSubTemplateRules(r) => self.set_sub_template_rules(r),
+            Command::SetApplicationFieldTypes(t) => self.set_application_field_types(t),
             Command::SetSubTemplateView(v) => self.set_sub_template_view(v),
             Command::EditSubTemplate(n) => self.edit_sub_template(&n, fonts),
             Command::CreateSubTemplate(c) => self.create_sub_template(c, fonts),

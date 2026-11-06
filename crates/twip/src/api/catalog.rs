@@ -261,6 +261,7 @@ const ENTRIES: &[Entry] = {
         (C::ShowFieldCodes, "Field Codes", G::Field, &["Alt+F9", "Shift+F9"], &["⌥F9", "⇧F9"], true, false, U::View),
         (C::SetFieldLabels, "Field Labels", G::Field, &[], &[], true, false, U::View),
         (C::SetSubTemplateRules, "Sub-template Rules", G::Field, &[], &[], true, false, U::View),
+        (C::SetApplicationFieldTypes, "Application Field Types", G::Field, &[], &[], true, false, U::View),
         (C::SetSubTemplateView, "Show Sub-templates", G::Field, &[], &[], true, false, U::View),
         (C::EditSubTemplate, "Edit Sub-template", G::Field, &[], &[], true, false, U::View),
         (C::CloseSubTemplate, "Close Sub-template", G::Field, &[], &[], false, false, U::View),

@@ -372,6 +372,9 @@ commands! {
     SetFieldLabels(FieldLabels),
     /// Which fields are sub-template references: replaces the rules; an empty list turns sub-templates off. Undo: view.
     SetSubTemplateRules(SubTemplateRules),
+    /// The application's own field types (compared without case), replacing those set before: their fields keep their
+    /// results, show their labels in design mode and are never read as bookmark references. Undo: view.
+    SetApplicationFieldTypes(ApplicationFieldTypes),
     /// Shows references' sub-template bodies in their place, or their fields (default: every reference). Undo: view.
     SetSubTemplateView(SubTemplateView),
     /// Edits a sub-template's body in this editor, on its own pages; the template shows again on Close Sub-template.
@@ -1342,6 +1345,14 @@ pub struct SubTemplateView {
 pub struct SubTemplateRules {
     /// The rules, replacing those set before.
     pub rules: Vec<ReferenceRule>,
+}
+
+/// `setApplicationFieldTypes`' options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApplicationFieldTypes {
+    /// The field types (a code's first word), replacing those set before; an empty list clears them.
+    pub types: Vec<String>,
 }
 
 /// `setFieldLabels`'s options: labels by field code.

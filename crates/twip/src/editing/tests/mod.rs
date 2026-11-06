@@ -116,20 +116,25 @@ pub fn blank_with(text: &str) -> Vec<u8> {
 }
 
 pub fn blank_in(text: &str, font: &str) -> Vec<u8> {
-    use std::io::{Read, Write};
     let rpr = if font.is_empty() { String::new() } else { format!("<w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\"/></w:rPr>") };
+    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;");
+    let paras: String = text.split('\n').map(|l| format!("<w:p><w:r>{rpr}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>", esc(l))).collect();
+    blank_body(&paras)
+}
+
+/// The blank document with `paras` (body XML) for its paragraph.
+pub fn blank_body(paras: &str) -> Vec<u8> {
+    use std::io::{Read, Write};
     let src = crate::docx::blank::blank_docx();
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).unwrap();
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;");
-    let paras: String = text.split('\n').map(|l| format!("<w:p><w:r>{rpr}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>", esc(l))).collect();
     for i in 0..z.len() {
         let mut f = z.by_index(i).unwrap();
         let name = f.name().unwrap().to_string();
         let mut data = Vec::new();
         f.read_to_end(&mut data).unwrap();
         if name == "word/document.xml" {
-            data = String::from_utf8(data).unwrap().replacen("<w:p/>", &paras, 1).into_bytes();
+            data = String::from_utf8(data).unwrap().replacen("<w:p/>", paras, 1).into_bytes();
         }
         out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
         out.write_all(&data).unwrap();
