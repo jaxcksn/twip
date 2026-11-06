@@ -450,19 +450,21 @@ impl Editor {
     pub(super) fn object_locked(&self, o: ObjectRef) -> bool {
         match o {
             ObjectRef::Floating(f) => self.float_locked(f),
-            ObjectRef::Inline { para, offset } => {
-                matches!(self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)), Some(Inline::Picture(p, _)) if p.lock_aspect)
-            }
+            ObjectRef::Inline { para, offset } => matches!(
+                self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)),
+                Some(Inline::Picture(p, _)) if p.lock_aspect || p.image.is_some_and(|i| self.doc.controlled.contains(&i))
+            ),
         }
     }
 
     pub(super) fn float_locked(&self, f: FloatId) -> bool {
         self.index.text_box(&self.doc, f).is_none()
-            && self
-                .index
-                .float_anchor(f)
-                .and_then(|a| self.index.para(&self.doc, a))
-                .is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f && fl.lock_aspect)))
+            && self.index.float_anchor(f).and_then(|a| self.index.para(&self.doc, a)).is_some_and(|p| {
+                p.inlines.iter().any(|i| {
+                    matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f
+                            && (fl.lock_aspect || fl.image.is_some_and(|k| self.doc.controlled.contains(&k))))
+                })
+            })
     }
 
     fn float_behind(&self, f: FloatId) -> bool {

@@ -9,6 +9,7 @@ mod overlay;
 pub mod retained;
 pub mod ruler;
 mod shape;
+pub mod svg;
 pub mod theme;
 #[cfg(target_os = "emscripten")]
 pub mod web;
@@ -303,6 +304,11 @@ impl Renderer {
             }
             Item::Image { rect: [x0, y0, x1, y1], key } => {
                 let dst = Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32);
+                if let Some(bytes) = key.index.and_then(|i| images.get(i)).filter(|b| crate::docx::image::is_svg(b))
+                    && svg::draw(canvas, bytes, dst)
+                {
+                    return;
+                }
                 let image = self
                     .images
                     .entry(*key)

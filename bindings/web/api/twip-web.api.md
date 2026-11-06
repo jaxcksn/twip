@@ -316,6 +316,7 @@ export interface Commands {
         placeholder?: string;
         binding?: DataBinding;
         options?: ControlOptions;
+        placeholderImage?: PlaceholderImage;
         wrapSelection?: boolean;
     }): Promise<{
         id: ElementId;
@@ -510,6 +511,7 @@ export interface Commands {
         placeholder?: string;
         binding?: DataBinding | null;
         options?: ControlOptions;
+        placeholderImage?: PlaceholderImage;
     }): Promise<void>;
     setDefaultTabStop(spacing: Points): Promise<void>;
     setDifferentFirstPage(on: boolean): Promise<void>;
@@ -1098,6 +1100,10 @@ export interface ElementContext {
     exact: boolean;
     id: ElementId;
     kind: 'field' | ControlKind | 'repeatingItem';
+    size?: {
+        width: Points;
+        height: Points;
+    };
     tag?: string;
     title?: string;
 }
@@ -1125,6 +1131,10 @@ export interface ElementInfo {
     locked: boolean;
     parent: ElementId | null;
     reference?: SubTemplateReference;
+    size?: {
+        width: Points;
+        height: Points;
+    };
     story: SelectionSummary['story'];
     subTemplate?: string;
     tag?: string;
@@ -1741,6 +1751,12 @@ export interface PictureAdjustChange {
     contrast?: number;
     grayscale?: boolean;
     transparency?: number;
+}
+
+// @public
+export interface PlaceholderImage {
+    data: Uint8Array;
+    mime: string;
 }
 
 // @public

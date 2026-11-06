@@ -199,6 +199,7 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(ControlListItem))]
 [JsonSerializable(typeof(ControlLock))]
 [JsonSerializable(typeof(ControlOptions))]
+[JsonSerializable(typeof(PlaceholderImage))]
 [JsonSerializable(typeof(DataBinding))]
 [JsonSerializable(typeof(DataPart))]
 [JsonSerializable(typeof(DataPartInfo))]

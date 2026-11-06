@@ -518,8 +518,6 @@ Twip.ControlChanges
 Twip.ControlChanges.<Clone>$() -> Twip.ControlChanges!
 Twip.ControlChanges.Binding.get -> Twip.DataBinding?
 Twip.ControlChanges.Binding.init -> void
-Twip.ControlChanges.ControlChanges(Twip.ElementId Id, string? Tag = null, string? Title = null, Twip.ControlLock? Lock = null, string? Placeholder = null, Twip.DataBinding? Binding = null, Twip.ControlOptions? Options = null, bool RemoveBinding = false) -> void
-Twip.ControlChanges.Deconstruct(out Twip.ElementId Id, out string? Tag, out string? Title, out Twip.ControlLock? Lock, out string? Placeholder, out Twip.DataBinding? Binding, out Twip.ControlOptions? Options, out bool RemoveBinding) -> void
 Twip.ControlChanges.Equals(Twip.ControlChanges? other) -> bool
 Twip.ControlChanges.Id.get -> Twip.ElementId
 Twip.ControlChanges.Id.init -> void
@@ -1757,9 +1755,7 @@ Twip.InsertControlOptions
 Twip.InsertControlOptions.<Clone>$() -> Twip.InsertControlOptions!
 Twip.InsertControlOptions.Binding.get -> Twip.DataBinding?
 Twip.InsertControlOptions.Binding.init -> void
-Twip.InsertControlOptions.Deconstruct(out Twip.ControlKind Kind, out string? Tag, out string? Title, out Twip.ControlLock? Lock, out string? Placeholder, out Twip.DataBinding? Binding, out Twip.ControlOptions? Options, out bool? WrapSelection) -> void
 Twip.InsertControlOptions.Equals(Twip.InsertControlOptions? other) -> bool
-Twip.InsertControlOptions.InsertControlOptions(Twip.ControlKind Kind, string? Tag = null, string? Title = null, Twip.ControlLock? Lock = null, string? Placeholder = null, Twip.DataBinding? Binding = null, Twip.ControlOptions? Options = null, bool? WrapSelection = null) -> void
 Twip.InsertControlOptions.Kind.get -> Twip.ControlKind
 Twip.InsertControlOptions.Kind.init -> void
 Twip.InsertControlOptions.Lock.get -> Twip.ControlLock?
@@ -5291,3 +5287,43 @@ Twip.CommandId.ReplaceBody = 192 -> Twip.CommandId
 Twip.EditorCommands.ReplaceBodyAsync(System.ReadOnlyMemory<byte> from, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Twip.EditorOperation.ReplaceBody(System.ReadOnlyMemory<byte> from) -> Twip.EditorOperation!
 Twip.EditorSubTemplates.ExportAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+Twip.ControlChanges.ControlChanges(Twip.ElementId Id, string? Tag = null, string? Title = null, Twip.ControlLock? Lock = null, string? Placeholder = null, Twip.DataBinding? Binding = null, Twip.ControlOptions? Options = null, bool RemoveBinding = false, Twip.PlaceholderImage? PlaceholderImage = null) -> void
+Twip.ControlChanges.Deconstruct(out Twip.ElementId Id, out string? Tag, out string? Title, out Twip.ControlLock? Lock, out string? Placeholder, out Twip.DataBinding? Binding, out Twip.ControlOptions? Options, out bool RemoveBinding, out Twip.PlaceholderImage? PlaceholderImage) -> void
+Twip.ControlChanges.PlaceholderImage.get -> Twip.PlaceholderImage?
+Twip.ControlChanges.PlaceholderImage.init -> void
+Twip.ElementContext.Size.get -> Twip.PictureSize?
+Twip.ElementContext.Size.init -> void
+Twip.ElementInfo.Size.get -> Twip.PictureSize?
+Twip.ElementInfo.Size.init -> void
+Twip.InsertControlOptions.Deconstruct(out Twip.ControlKind Kind, out string? Tag, out string? Title, out Twip.ControlLock? Lock, out string? Placeholder, out Twip.DataBinding? Binding, out Twip.ControlOptions? Options, out bool? WrapSelection, out Twip.PlaceholderImage? PlaceholderImage) -> void
+Twip.InsertControlOptions.InsertControlOptions(Twip.ControlKind Kind, string? Tag = null, string? Title = null, Twip.ControlLock? Lock = null, string? Placeholder = null, Twip.DataBinding? Binding = null, Twip.ControlOptions? Options = null, bool? WrapSelection = null, Twip.PlaceholderImage? PlaceholderImage = null) -> void
+Twip.InsertControlOptions.PlaceholderImage.get -> Twip.PlaceholderImage?
+Twip.InsertControlOptions.PlaceholderImage.init -> void
+Twip.PictureSize
+Twip.PictureSize.<Clone>$() -> Twip.PictureSize!
+Twip.PictureSize.Deconstruct(out Twip.Length Width, out Twip.Length Height) -> void
+Twip.PictureSize.Equals(Twip.PictureSize? other) -> bool
+Twip.PictureSize.Height.get -> Twip.Length
+Twip.PictureSize.Height.init -> void
+Twip.PictureSize.PictureSize(Twip.Length Width, Twip.Length Height) -> void
+Twip.PictureSize.Width.get -> Twip.Length
+Twip.PictureSize.Width.init -> void
+Twip.PlaceholderImage
+Twip.PlaceholderImage.<Clone>$() -> Twip.PlaceholderImage!
+Twip.PlaceholderImage.Data.get -> System.ReadOnlyMemory<byte>
+Twip.PlaceholderImage.Data.init -> void
+Twip.PlaceholderImage.Deconstruct(out System.ReadOnlyMemory<byte> Data, out string! Mime) -> void
+Twip.PlaceholderImage.Equals(Twip.PlaceholderImage? other) -> bool
+Twip.PlaceholderImage.Mime.get -> string!
+Twip.PlaceholderImage.Mime.init -> void
+Twip.PlaceholderImage.PlaceholderImage(System.ReadOnlyMemory<byte> Data, string! Mime) -> void
+override Twip.PictureSize.Equals(object? obj) -> bool
+override Twip.PictureSize.GetHashCode() -> int
+override Twip.PictureSize.ToString() -> string!
+override Twip.PlaceholderImage.Equals(object? obj) -> bool
+override Twip.PlaceholderImage.GetHashCode() -> int
+override Twip.PlaceholderImage.ToString() -> string!
+static Twip.PictureSize.operator !=(Twip.PictureSize? left, Twip.PictureSize? right) -> bool
+static Twip.PictureSize.operator ==(Twip.PictureSize? left, Twip.PictureSize? right) -> bool
+static Twip.PlaceholderImage.operator !=(Twip.PlaceholderImage? left, Twip.PlaceholderImage? right) -> bool
+static Twip.PlaceholderImage.operator ==(Twip.PlaceholderImage? left, Twip.PlaceholderImage? right) -> bool

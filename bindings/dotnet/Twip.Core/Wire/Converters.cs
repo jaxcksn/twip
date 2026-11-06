@@ -320,7 +320,8 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
             o.TryGetProperty("lock", out var l) ? l.Deserialize(TwipJsonContext.Default.ControlLock) : null, Str("placeholder"),
             !removed && o.TryGetProperty("binding", out var b) ? b.Deserialize(TwipJsonContext.Default.DataBinding) : null,
             o.TryGetProperty("options", out var opts) ? opts.Deserialize(TwipJsonContext.Default.ControlOptions) : null,
-            removed);
+            removed,
+            o.TryGetProperty("placeholderImage", out var pi) ? pi.Deserialize(TwipJsonContext.Default.PlaceholderImage) : null);
     }
 
     public override void Write(Utf8JsonWriter writer, ControlChanges value, JsonSerializerOptions options)
@@ -334,6 +335,7 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
         if (value.Binding is not null) { writer.WritePropertyName("binding"); JsonSerializer.Serialize(writer, value.Binding, TwipJsonContext.Default.DataBinding); }
         else if (value.RemoveBinding) writer.WriteNull("binding");
         if (value.Options is not null) { writer.WritePropertyName("options"); JsonSerializer.Serialize(writer, value.Options, TwipJsonContext.Default.ControlOptions); }
+        if (value.PlaceholderImage is not null) { writer.WritePropertyName("placeholderImage"); JsonSerializer.Serialize(writer, value.PlaceholderImage, TwipJsonContext.Default.PlaceholderImage); }
         writer.WriteEndObject();
     }
 }

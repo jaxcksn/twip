@@ -865,6 +865,7 @@ dependencies = [
  "aes",
  "cc",
  "divan",
+ "flate2",
  "getrandom",
  "harfrust",
  "roxmltree",

@@ -3634,27 +3634,39 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>"#.to_string()
         });
         let mut types = read(parts, "[Content_Types].xml")?.ok_or("no content types")?;
+        let mut xml = xml;
+        let mut media: Vec<(String, Vec<u8>)> = Vec::new();
         for k in used {
             let data = images.get(k).ok_or("a new picture without its image")?;
-            let (mime, ext) = super::image::image_type(data).ok_or("a new picture of an unknown image type")?;
-            if rels.contains(&format!("Id=\"{NEW_IMAGE}{k}\"")) {
+            media.push((format!("{k}"), data.clone()));
+            // An SVG is written as Word writes one: the blip shows a PNG of it, its `asvg:svgBlip` the SVG.
+            if super::image::is_svg(data)
+                && let Some((png, patched)) = svg_blips(&xml, k, data)
+            {
+                xml = patched;
+                media.push((format!("{k}f"), png));
+            }
+        }
+        for (id, data) in media {
+            let (mime, ext) = super::image::image_type(&data).ok_or("a new picture of an unknown image type")?;
+            if rels.contains(&format!("Id=\"{NEW_IMAGE}{id}\"")) {
                 continue;
             }
-            let media = format!("media/ceimage{k}.{ext}");
+            let media = format!("media/ceimage{id}.{ext}");
             let close = rels.rfind("</Relationships>").ok_or("relationships without their end tag")?;
             rels.insert_str(
                 close,
-                &format!(r#"<Relationship Id="{NEW_IMAGE}{k}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="{media}"/>"#),
+                &format!(r#"<Relationship Id="{NEW_IMAGE}{id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="{media}"/>"#),
             );
             let full = if dir.is_empty() { media } else { format!("{dir}/{media}") };
             parts.retain(|(n, _)| *n != full);
-            parts.push((full, data.clone()));
+            parts.push((full, data));
             if !types.to_ascii_lowercase().contains(&format!("extension=\"{ext}\"")) {
                 let close = types.rfind("</Types>").ok_or("content types without their end tag")?;
                 types.insert_str(close, &format!(r#"<Default Extension="{ext}" ContentType="{mime}"/>"#));
             }
         }
-        for (n, b) in [(rels_name, rels), ("[Content_Types].xml".to_string(), types)] {
+        for (n, b) in [(name, xml), (rels_name, rels), ("[Content_Types].xml".to_string(), types)] {
             match parts.iter_mut().find(|(m, _)| *m == n) {
                 Some(p) => p.1 = b.into_bytes(),
                 None => parts.push((n, b.into_bytes())),
@@ -3662,6 +3674,53 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
         }
     }
     Ok(())
+}
+
+/// A part's XML with each new blip of SVG image `k` (`a:blip r:embed="rIdCeImg{k}"`) showing its PNG fallback
+/// (`rIdCeImg{k}f`) and naming the SVG in an `asvg:svgBlip` extension, and that PNG: drawn at the first picture's
+/// size at 96 dpi. `None` when the SVG can't be drawn.
+fn svg_blips(xml: &str, k: usize, svg: &[u8]) -> Option<(Vec<u8>, String)> {
+    let attr = format!("r:embed=\"{NEW_IMAGE}{k}\"");
+    let first = xml.match_indices(&attr).map(|(at, _)| at).find(|&at| xml[..at].rfind('<').is_some_and(|t| xml[t..].starts_with("<a:blip")))?;
+    // The drawing's extent, the last before the blip.
+    let extent = xml[..first].rfind("<wp:extent ").map(|e| &xml[e..]).and_then(|t| {
+        let num = |name: &str| t.split(&format!("{name}=\"")).nth(1)?.split('"').next()?.parse::<f64>().ok();
+        Some((num("cx")?, num("cy")?))
+    });
+    let (w, h) = extent.map_or((256, 256), |(cx, cy)| (((cx / 9525.0).round() as i32).clamp(1, 2048), ((cy / 9525.0).round() as i32).clamp(1, 2048)));
+    let png = crate::render::svg::fallback_png(svg, w, h)?;
+    let ext = format!(
+        r#"<a:extLst><a:ext uri="{{96DAC541-7B7A-43D3-8B79-37D633B846F1}}"><asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" {attr}/></a:ext></a:extLst>"#
+    );
+    let mut out = String::with_capacity(xml.len() + 256);
+    let mut rest = xml;
+    while let Some(at) = rest.find(&attr) {
+        if !rest[..at].rfind('<').is_some_and(|t| rest[t..].starts_with("<a:blip")) {
+            out.push_str(&rest[..at + attr.len()]);
+            rest = &rest[at + attr.len()..];
+            continue;
+        }
+        out.push_str(&rest[..at]);
+        out.push_str(&format!("r:embed=\"{NEW_IMAGE}{k}f\""));
+        rest = &rest[at + attr.len()..];
+        let end = rest.find('>')?;
+        if rest[..end].ends_with('/') {
+            out.push_str(&rest[..end - 1]);
+            out.push('>');
+            out.push_str(&ext);
+            out.push_str("</a:blip>");
+        } else {
+            let close = rest.find("</a:blip>")?;
+            out.push_str(&rest[..close]);
+            out.push_str(&ext);
+            out.push_str("</a:blip>");
+            rest = &rest[close + "</a:blip>".len()..];
+            continue;
+        }
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    Some((png, out))
 }
 
 /// The run content a new object writes as, for those the model can write without a source.
@@ -3715,6 +3774,8 @@ struct Placement {
     alt: Option<String>,
     /// The decorative mark (`adec:decorative` in `wp:docPr`'s extension list).
     decorative: Option<bool>,
+    /// A new picture (an image of [`Document::images`]): the blip names it ([`NEW_IMAGE`]).
+    blip: Option<usize>,
     /// The distance from the text (`distT`, `distB`, `distL`, `distR`), `allowOverlap` and `layoutInCell`.
     dist: Option<[f64; 4]>,
     overlap: Option<bool>,
@@ -3759,6 +3820,7 @@ impl Placement {
             z: (a.z != b.z).then_some(b.z),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
             decorative: (decorative(&a.shape) != decorative(&b.shape)).then(|| decorative(&b.shape)),
+            blip: b.image.filter(|_| a.image != b.image),
             dist: a.dist.iter().zip(&b.dist).any(|(x, y)| ne(*x, *y)).then_some(b.dist),
             overlap: (a.allow_overlap != b.allow_overlap).then_some(b.allow_overlap),
             in_cell: (a.layout_in_cell != b.layout_in_cell).then_some(b.layout_in_cell),
@@ -3773,6 +3835,7 @@ impl Placement {
             || p.locked.is_some()
             || p.alt.is_some()
             || p.decorative.is_some()
+            || p.blip.is_some()
             || p.z.is_some();
         (any || p.dist.is_some() || p.overlap.is_some() || p.in_cell.is_some()).then_some(p)
     }
@@ -3851,6 +3914,17 @@ impl Placement {
         }
         if let Some(on) = self.decorative {
             s = set_decorative(&s, on);
+        }
+        // The first blip (the picture's) replaced by one naming the new image; its effects go with the old picture.
+        if let Some(k) = self.blip
+            && let Some((start, end)) = find_tag(&s, "blip", 0)
+        {
+            let prefix = s[start + 1..end].split("blip").next().unwrap_or("").to_string();
+            let close = format!("</{prefix}blip>");
+            let stop = if s[start..end].ends_with("/>") { Some(end) } else { s[end..].find(&close).map(|c| end + c + close.len()) };
+            if let Some(stop) = stop {
+                s.replace_range(start..stop, &format!(r#"<{prefix}blip r:embed="{NEW_IMAGE}{k}"/>"#));
+            }
         }
         if let Some((w, h)) = self.size {
             // The anchor's extent and the top shape's own size: the first `a:ext` with cx (extension lists' have none;

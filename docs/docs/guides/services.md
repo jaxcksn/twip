@@ -64,10 +64,9 @@ A custom .NET host supplies the system clipboard through `IEditorHostAdapter.Set
 
 ## Picture placeholders
 
-A picture content control with no picture shows a placeholder. `setPlaceholderLooks` decides how each looks (a fill,
-a label and an SVG icon, or an image), matched by element id, by tag, by tag prefix, or by default. Each call
-replaces the looks set before, unless `merge: true` adds to them. It is a view setting: no undo step, and nothing is
-written to the document.
+A picture content control with no picture shows its placeholder picture (`w:showingPlcHdr`), as Word does: the
+editor, the saved DOCX and the PDF all show that picture. `insertControl({ kind: 'picture', placeholderImage })` sets
+it (PNG, JPEG, GIF, BMP or SVG), and `setControl` replaces it while the control still shows it.
 
 A click on an unfilled placeholder selects it and emits `placeholderActivated` with its key (the control's tag) and
 element. `fillPlaceholder({ image })` fills the selected placeholder, and `fillPlaceholder({ key, image })` fills

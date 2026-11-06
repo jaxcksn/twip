@@ -4,16 +4,14 @@ namespace Examples;
 
 static class PlaceholdersExample
 {
-    static async Task Run(EditorSession session, byte[] logo, Func<Task<byte[]?>> pick)
+    static async Task Run(EditorSession session, byte[] logo, byte[] icon, Func<Task<byte[]?>> pick)
     {
         #region placeholders
-        // How unfilled picture placeholders look: by element, tag, tag prefix, or the default. A view setting.
-        await session.Commands.SetPlaceholderLooksAsync(
-        [
-            new PlaceholderLook(PlaceholderMatch.ByTag("logo"), new PlaceholderAppearance(Image: logo, Mime: "image/png")),
-            new PlaceholderLook(PlaceholderMatch.ByPrefix("photo."), new PlaceholderAppearance(Label: "Click to add a photo")),
-            new PlaceholderLook(PlaceholderMatch.Default, new PlaceholderAppearance(Label: "Picture")),
-        ]);
+        // A picture control showing the application's placeholder picture: an SVG with percentage geometry lays
+        // itself out at whatever size the control has.
+        await session.Commands.InsertControlAsync(new InsertControlOptions(ControlKind.Picture, Tag: "logo",
+            Options: new ControlOptions(Width: Length.FromPoints(144), Height: Length.FromPoints(72)),
+            PlaceholderImage: new PlaceholderImage(icon, "image/svg+xml")));
 
         // A click on an unfilled placeholder selects it and raises this: supply its picture.
         session.PlaceholderActivated += async (_, e) =>

@@ -1,13 +1,13 @@
 import type { Editor } from '@twip/web';
 
-export async function placeholders(editor: Editor, logo: Uint8Array, pick: () => Promise<Uint8Array | null>) {
-  // How unfilled picture placeholders look: by element, by tag, by tag prefix, or the default. A view setting.
-  await editor.commands.setPlaceholderLooks({
-    looks: [
-      { match: { tag: 'logo' }, look: { image: logo, mime: 'image/png' } },
-      { match: { prefix: 'photo.' }, look: { fill: '#EEF3FA', label: 'Click to add a photo' } },
-      { match: 'default', look: { label: 'Picture' } },
-    ],
+export async function placeholders(editor: Editor, icon: Uint8Array, pick: () => Promise<Uint8Array | null>) {
+  // A picture control showing the application's placeholder picture: an SVG with percentage geometry lays itself
+  // out at whatever size the control has.
+  await editor.commands.insertControl({
+    kind: 'picture',
+    tag: 'logo',
+    options: { width: 144, height: 72 },
+    placeholderImage: { data: icon, mime: 'image/svg+xml' },
   });
 
   // A click on an unfilled placeholder selects it and emits this: supply its picture.

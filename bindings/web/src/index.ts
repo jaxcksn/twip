@@ -89,6 +89,7 @@ export type {
   Block,
   ControlKind,
   ControlOptions,
+  PlaceholderImage,
   DataBinding,
   DataParts,
   ElementDetail,

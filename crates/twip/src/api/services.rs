@@ -858,7 +858,7 @@ pub struct ElementFilter {
 }
 
 /// A field or content control.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementInfo {
     /// The element.
@@ -888,10 +888,13 @@ pub struct ElementInfo {
     /// A sub-template reference field's sub-template.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference: Option<SubTemplateReference>,
+    /// A picture control's picture size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<crate::api::value::Size>,
 }
 
 /// A sub-template: a building block in a category the rules declare.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubTemplateInfo {
     /// Its name.

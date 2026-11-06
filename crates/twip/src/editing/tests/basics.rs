@@ -899,6 +899,104 @@ fn an_inline_picture_resizes_by_its_handle_and_saves() {
     assert_eq!(texts(&again), texts(&r.e));
 }
 
+/// A picture content control's handles resize it as a plain picture's do (the corner keeping its aspect, a side
+/// not), each one undo step, keeping the control, its tag and its placeholder picture.
+#[test]
+fn a_picture_controls_handles_resize_it() {
+    for mode in [crate::api::state::Mode::Editing, crate::api::state::Mode::Design] {
+        resize_picture_control(mode);
+    }
+}
+
+fn resize_picture_control(mode: crate::api::state::Mode) {
+    use serde_json::json;
+    let mut r = super::scenarios::Run::open("FX-TEXT.docx", "control-resize");
+    r.e.execute(Command::SetMode(mode), fonts());
+    let insert = json!({ "kind": "picture", "tag": "Barcode", "options": { "width": 200, "height": 50 } });
+    r.e.execute(Command::InsertControl(serde_json::from_value(insert).unwrap()), fonts());
+    let control = |e: &super::super::Editor| {
+        let all = crate::editing::elements::enumerate(e.document(), e.index(), &Default::default());
+        let c = all.into_iter().find(|x| x.props.as_ref().is_some_and(|p| p.tag.as_deref() == Some("Barcode"))).expect("the control");
+        (c.props.unwrap().showing_placeholder, body_pictures(e)[0])
+    };
+    let image = |e: &super::super::Editor| e.document().images.len();
+    let (images, depth) = (image(&r.e), r.e.history().undo_depth());
+    r.step(&json!({ "click": { "picture": 0 } }));
+    assert!(matches!(r.e.view(0..1).selection, crate::editing::view::SelectionView::Object(_, true)), "handles: {:?}", r.e.selection());
+    r.step(&json!({ "drag": { "from": { "picture": 0, "at": "bottom-right" }, "to": { "picture": 0, "at": "bottom-right", "dx": 40.0 } } }));
+    let (showing, (w, h)) = control(&r.e);
+    assert!(showing && w > 230.0 && (w / h - 4.0).abs() < 0.05, "the corner keeps the aspect: {w}×{h}");
+    assert_eq!((r.e.history().undo_depth(), image(&r.e)), (depth + 1, images), "one step, the same placeholder picture");
+    r.step(&json!({ "drag": { "from": { "picture": 0, "at": "right" }, "to": { "picture": 0, "at": "right", "dx": -60.0 } } }));
+    let (_, (w2, h2)) = control(&r.e);
+    assert!(w2 < w - 50.0 && (h2 - h).abs() < 0.01, "a side doesn't: {w2}×{h2}");
+    r.e.execute(Command::Undo, fonts());
+    assert_eq!(control(&r.e).1, (w, h));
+}
+
+/// A picture control around a floating picture: reported, sized and given a placeholder picture by `setControl`,
+/// resized and moved by the mouse, and saved with its control.
+#[test]
+fn a_floating_picture_control() {
+    use serde_json::json;
+    use std::io::{Read, Write};
+    let src = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-services.docx")).expect("fixture");
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).unwrap();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..z.len() {
+        let mut f = z.by_index(i).unwrap();
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).unwrap();
+        let name = f.name().unwrap().to_string();
+        if name == "word/document.xml" {
+            let x = String::from_utf8(data).unwrap();
+            let (a, b) = (x.find("<w:r><w:drawing><wp:anchor").unwrap(), x.find("</wp:anchor></w:drawing></w:r>").unwrap() + 30);
+            let sdt = r#"<w:sdt><w:sdtPr><w:tag w:val="Photo"/><w:id w:val="77"/><w:showingPlcHdr/><w:picture/></w:sdtPr><w:sdtContent>"#;
+            data = format!("{}{sdt}{}</w:sdtContent></w:sdt>{}", &x[..a], &x[a..b], &x[b..]).into_bytes();
+        }
+        out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        out.write_all(&data).unwrap();
+    }
+    let bytes = out.finish().unwrap().into_inner();
+    let control = |e: &super::super::Editor| {
+        let all = crate::editing::elements::enumerate(e.document(), e.index(), &Default::default());
+        let c = all.into_iter().find(|x| x.props.as_ref().is_some_and(|p| p.tag.as_deref() == Some("Photo"))).expect("the control");
+        let crate::docx::ElementId::Control(id) = c.id else { panic!("a control") };
+        (id, e.picture_control_size(id).map(|s| (s.width.0, s.height.0)))
+    };
+    let mut r = super::scenarios::Run::from_bytes(&bytes, "float-control");
+    let (c, size) = control(&r.e);
+    assert_eq!(size, Some((72.0, 54.0)), "the float's size");
+    let svg = crate::render::svg::tests::ADAPTIVE;
+    let set = json!({
+        "id": crate::editing::elements::id_str(crate::docx::ElementId::Control(c)), "options": { "width": 144, "height": 108 },
+        "placeholderImage": { "data": crate::api::value::base64(svg.as_bytes()), "mime": "image/svg+xml" },
+    });
+    let out = r.e.execute(Command::SetControl(serde_json::from_value(set).unwrap()), fonts());
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    let f = body_floats(&r.e).remove(0);
+    let image = |e: &super::super::Editor, f: &crate::docx::Float| e.document().images[f.image.unwrap()].clone();
+    assert_eq!(((f.w, f.h), image(&r.e, &f)), ((144.0, 108.0), svg.as_bytes().to_vec()));
+
+    r.step(&json!({ "click": { "float": 0 } }));
+    r.step(&json!({ "drag": { "from": { "float": 0, "at": "bottom-right" }, "to": { "float": 0, "at": "bottom-right", "dx": 36.0 } } }));
+    let g = body_floats(&r.e).remove(0);
+    assert!(g.w > 170.0 && (g.w / g.h - 4.0 / 3.0).abs() < 0.02, "resized by its corner: {}×{}", g.w, g.h);
+    r.step(&json!({ "drag": { "from": { "float": 0 }, "to": { "float": 0, "dx": -60.0 } } }));
+    let m = body_floats(&r.e).remove(0);
+    assert!((m.h_offset - g.h_offset).abs() > 30.0, "moved: {} -> {}", g.h_offset, m.h_offset);
+    assert_eq!((control(&r.e).0, image(&r.e, &m)), (c, svg.as_bytes().to_vec()), "the control and its picture stay");
+
+    let saved = crate::docx::write::save(r.e.document()).expect("saves");
+    let mut xml = String::new();
+    zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).unwrap().by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+    let anchor = &xml[xml.find("<wp:anchor").unwrap()..xml.find("</wp:anchor>").unwrap()];
+    assert!(anchor.contains("asvg:svgBlip"), "{anchor}");
+    let again = super::super::Editor::open(&saved, fonts()).expect("reopens");
+    let back = body_floats(&again).remove(0);
+    assert_eq!((control(&again).1, image(&again, &back)), (Some((m.w, m.h)), svg.as_bytes().to_vec()));
+}
+
 #[test]
 fn reset_size_gives_a_picture_its_own_size() {
     use crate::editing::selection::ObjectRef;
@@ -2022,6 +2120,7 @@ fn dragging_a_whole_control_keeps_its_properties() {
         placeholder: None,
         binding: None,
         options: None,
+        placeholder_image: None,
         wrap_selection: Some(true),
     };
     r.e.execute(Command::InsertControl(wrap), fonts());

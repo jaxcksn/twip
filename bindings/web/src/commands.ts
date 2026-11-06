@@ -1,5 +1,5 @@
 import type { RichText } from './review.js';
-import type { ControlKind, ControlOptions, DataBinding, ReferenceRule } from './services/elements.js';
+import type { ControlKind, ControlOptions, DataBinding, PlaceholderImage, ReferenceRule } from './services/elements.js';
 import type { TabAlignment, TabLeader, TabSelector } from './services/ruler.js';
 import type { ViewOptions } from './services/view.js';
 import type {
@@ -438,9 +438,18 @@ export interface Commands {
     placeholder?: string;
     binding?: DataBinding;
     options?: ControlOptions;
+    /**
+     * A picture control's placeholder picture (PNG, JPEG, GIF, BMP or SVG): what the editor, the saved DOCX and a
+     * PDF show until it is filled. An SVG is drawn with the picture's box as its viewport, so one with percentage
+     * geometry and no `viewBox` adapts to every size. Default: the engine's.
+     */
+    placeholderImage?: PlaceholderImage;
     wrapSelection?: boolean;
   }): Promise<{ id: ElementId }>;
-  /** Changes a content control; a `null` binding removes it. */
+  /**
+   * Changes a content control; a `null` binding removes it. `placeholderImage` replaces a picture control's
+   * placeholder picture while it shows it (else it rejects with `unavailable`).
+   */
   setControl(options: {
     id: ElementId;
     tag?: string;
@@ -449,6 +458,7 @@ export interface Commands {
     placeholder?: string;
     binding?: DataBinding | null;
     options?: ControlOptions;
+    placeholderImage?: PlaceholderImage;
   }): Promise<void>;
   /** Removes a content control, optionally keeping its content. */
   removeControl(options: { id: ElementId; keepContent?: boolean }): Promise<void>;

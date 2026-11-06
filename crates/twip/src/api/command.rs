@@ -16,8 +16,8 @@ use super::services::TabSelector;
 use super::state::{Mode, TextDistance};
 use super::value::{
     Alignment, AutoOr, Bytes, CellAlignment, Color, CommentId, ControlKind, ControlLock, ControlOptions, DataBinding, Direction, ElementId,
-    HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, ObjectWrap, Order, Orientation, Points, RevisionId, RowHeight, StyleId,
-    TabAlignment, TabLeader, TableWidth, UnderlineStyle, VerticalPosition, WrapSide,
+    HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, ObjectWrap, Order, Orientation, PlaceholderImage, Points, RevisionId,
+    RowHeight, StyleId, TabAlignment, TabLeader, TableWidth, UnderlineStyle, VerticalPosition, WrapSide,
 };
 use super::wire::value;
 
@@ -1390,6 +1390,9 @@ pub struct InsertControl {
     /// The kind's options (list items, date format, checkbox symbols).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<ControlOptions>,
+    /// A picture control's placeholder picture; default: the engine's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder_image: Option<PlaceholderImage>,
     /// Wraps the selection instead of inserting an empty control.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrap_selection: Option<bool>,
@@ -1419,6 +1422,9 @@ pub struct SetControl {
     /// The new options.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<ControlOptions>,
+    /// A picture control's new placeholder picture, while it shows its placeholder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder_image: Option<PlaceholderImage>,
 }
 
 /// `removeControl`'s options.

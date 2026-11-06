@@ -11,7 +11,6 @@ use crate::api::services::{
 use crate::api::state::ElementKind;
 use crate::api::value::{
     CheckboxOptions, ControlLock, ControlOptions, DataBinding, DateOptions, ElementId, ListItem, ListOptions, PictureOptions, PlainTextOptions,
-    Points,
 };
 use crate::docx::{ControlKind, Lock};
 use crate::editing::elements::{self, Element};
@@ -54,6 +53,10 @@ fn info(s: &Session, e: &Element) -> ElementInfo {
         reference: match e.id {
             crate::docx::ElementId::Field(f) => s.editor.references().by_field.get(&f).map(|r| reference(s, f, r)),
             crate::docx::ElementId::Control(_) => None,
+        },
+        size: match e.id {
+            crate::docx::ElementId::Control(c) => s.editor.picture_control_size(c),
+            crate::docx::ElementId::Field(_) => None,
         },
     }
 }
@@ -102,15 +105,9 @@ fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
         }
         ControlKind::PlainText { multi_line } => ControlOptions::PlainText(PlainTextOptions { multiline: Some(*multi_line) }),
         ControlKind::Picture => {
-            use crate::docx::Inline;
             let crate::docx::ElementId::Control(c) = e.id else { return None };
-            let para = s.editor.index().para(s.editor.document(), e.at?)?;
-            let start = para.inlines.iter().position(|i| matches!(i, Inline::ControlStart(x) if *x == c))?;
-            let pic = para.inlines[start..].iter().take_while(|i| !matches!(i, Inline::ControlEnd(x) if *x == c)).find_map(|i| match i {
-                Inline::Picture(pic, _) => Some(pic),
-                _ => None,
-            })?;
-            ControlOptions::Picture(PictureOptions { width: Some(Points(pic.w)), height: Some(Points(pic.h)) })
+            let size = s.editor.picture_control_size(c)?;
+            ControlOptions::Picture(PictureOptions { width: Some(size.width), height: Some(size.height) })
         }
         _ => return None,
     })

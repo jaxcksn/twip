@@ -5,6 +5,10 @@
     "kind": "plainText",
     "locked": false,
     "parent": "control-1",
+    "size": {
+      "height": 54.0,
+      "width": 216.0
+    },
     "story": "body",
     "tag": "name",
     "title": "Name"

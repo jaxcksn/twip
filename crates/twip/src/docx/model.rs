@@ -944,6 +944,8 @@ pub struct Document {
     /// Pictures that can't be deleted, by image index: those in picture controls that can't be deleted (`w:lock`
     /// `sdtLocked` or `sdtContentLocked`).
     pub undeletable: std::collections::HashSet<usize>,
+    /// Pictures in picture controls, by image index: their corner handles keep the aspect ratio.
+    pub controlled: std::collections::HashSet<usize>,
     pub settings: Settings,
     pub line_number_run: Option<Run>,
     /// What the document was read from, when read for editing.
@@ -976,6 +978,7 @@ impl Document {
     pub fn derive_image_sets(&mut self) {
         self.fixed.clear();
         self.undeletable.clear();
+        self.controlled.clear();
         self.placeholders.clear();
         self.placeholder_keys.clear();
         if !self.controls.values().any(|c| c.props.kind == ControlKind::Picture) {
@@ -1026,6 +1029,7 @@ impl Document {
             self.sections.iter().map(|s| &s.blocks).chain(self.stories.values()).chain(self.footnotes.values()).chain(self.endnotes.values());
         stories.for_each(|b| walk(b, &self.controls, &mut found));
         for (img, inline, c) in found {
+            self.controlled.insert(img);
             let props = &self.controls[&c].props;
             // `Placeholder:key` and `MergeImage:key` tags.
             let (kind, key) = props

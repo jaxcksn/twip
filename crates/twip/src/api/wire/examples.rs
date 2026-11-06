@@ -769,6 +769,7 @@ fn commands() -> Vec<Command> {
             placeholder: Some("Choose".into()),
             binding: Some(binding()),
             options: Some(ControlOptions::List(ListOptions { items: vec![ListItem { text: "Open".into(), value: "open".into() }] })),
+            placeholder_image: None,
             wrap_selection: Some(false),
         }),
         Command::SetControl(SetControl {
@@ -779,6 +780,7 @@ fn commands() -> Vec<Command> {
             placeholder: None,
             binding: Some(None),
             options: Some(ControlOptions::Checkbox(CheckboxOptions { checked: Some(false) })),
+            placeholder_image: Some(PlaceholderImage { data: picture_bytes(), mime: "image/png".into() }),
         }),
         Command::RemoveControl(RemoveControl { id: id("control-3"), keep_content: Some(true) }),
         Command::FillControl(FillControl { id: id("control-4"), text: None, image: Some(picture_bytes()), docx: None }),
@@ -973,6 +975,7 @@ fn selection() -> SelectionSummary {
             code: Some("MERGEFIELD Name".into()),
             tag: Some("name".into()),
             title: Some("Name".into()),
+            size: Some(Size { width: Points(216.0), height: Points(54.0) }),
         }],
         link: Some(LinkInfo { address: "https://example.com".into(), text: "Example".into() }),
         comment: Some(CommentId("c4".into())),
@@ -1360,6 +1363,7 @@ fn element_info() -> ElementInfo {
         parent: Some(id("control-1")),
         locked: false,
         reference: None,
+        size: Some(Size { width: Points(216.0), height: Points(54.0) }),
     }
 }
 

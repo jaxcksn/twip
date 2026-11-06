@@ -114,6 +114,21 @@ impl Editor {
         Ok((e, w))
     }
 
+    /// A picture control's picture size (inline or floating), in points.
+    pub fn picture_control_size(&self, c: ControlId) -> Option<crate::api::value::Size> {
+        use crate::api::value::{Points, Size};
+        if self.doc.controls.get(&c)?.props.kind != ControlKind::Picture {
+            return None;
+        }
+        let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Control(c)) else { return None };
+        let p = self.index.para(&self.doc, para)?;
+        p.inlines.get(first..last)?.iter().find_map(|i| match i {
+            Inline::Picture(pic, _) => Some(Size { width: Points(pic.w), height: Points(pic.h) }),
+            Inline::Float(f, _) if f.image.is_some() => Some(Size { width: Points(f.w), height: Points(f.h) }),
+            _ => None,
+        })
+    }
+
     pub(super) fn locate(&self, e: ElementId) -> Option<Where> {
         let locs = self.index.element(e)?;
         let story_of = |para: ParaId| self.index.para_slot(para).map(|s| self.index.story(s.container));
@@ -1536,6 +1551,11 @@ impl Editor {
         let mut checked_now = false;
         let mut kind_xml = None;
         let mut size = (144.0, 108.0);
+        let placeholder_image = match &c.placeholder_image {
+            Some(_) if c.kind != KindArg::Picture => return Err(Error::invalid("placeholderImage is for picture controls")),
+            Some(p) => Some(placeholder_data(p)?),
+            None => None,
+        };
         let kind = match (c.kind, &c.options) {
             (KindArg::PlainText, Some(ControlOptions::PlainText(o))) => ControlKind::PlainText { multi_line: o.multiline.unwrap_or(false) },
             (KindArg::PlainText, _) => ControlKind::PlainText { multi_line: false },
@@ -1619,7 +1639,7 @@ impl Editor {
             ControlKind::Picture => {
                 props.showing_placeholder = true;
                 self.pending_controls.push((id, Control::new(props)));
-                let image = Some(self.pending_image(PICTURE_PLACEHOLDER.to_vec()));
+                let image = Some(self.pending_image(placeholder_image.unwrap_or_else(|| PICTURE_PLACEHOLDER.to_vec())));
                 let picture = crate::docx::Picture {
                     w: size.0,
                     h: size.1,
@@ -1787,16 +1807,37 @@ impl Editor {
         }
         let placeholder = set.placeholder;
         let showing = p.showing_placeholder;
-        let resized = match (&resize, &w) {
-            (Some(o), Where::Inline { para, first, last, .. }) => {
+        let image = match &set.placeholder_image {
+            None => None,
+            Some(_) if p.kind != ControlKind::Picture => return Err(Error::invalid("placeholderImage is for picture controls")),
+            Some(_) if !showing => return Err(Error::unavailable("the control isn't showing its placeholder")),
+            Some(i) => Some(placeholder_data(i)?),
+        };
+        // The control's picture, inline or floating: its new size, and its new placeholder picture (a new image, so
+        // the picture is written afresh; its shape's fill draws it).
+        let resized = match &w {
+            _ if resize.is_none() && image.is_none() => None,
+            Where::Inline { para, first, last, .. } => {
                 let mut inlines = self.index.para(&self.doc, *para).ok_or_else(no_element)?.inlines.clone();
-                let pic = inlines[*first..*last].iter_mut().find_map(|i| if let Inline::Picture(pic, _) = i { Some(pic) } else { None });
-                let pic = pic.ok_or_else(|| Error::invalid("no picture in the control"))?;
-                (pic.w, pic.h) = picture_size(o, (pic.w, pic.h))?;
+                let picture = inlines[*first..*last].iter_mut().find_map(|i| match i {
+                    Inline::Picture(p, _) => Some((&mut p.w, &mut p.h, &mut p.image, &mut p.shape)),
+                    Inline::Float(f, _) if f.image.is_some() => Some((&mut f.w, &mut f.h, &mut f.image, &mut f.shape)),
+                    _ => None,
+                });
+                let (pw, ph, pi, shape) = picture.ok_or_else(|| Error::invalid("no picture in the control"))?;
+                if let Some(o) = &resize {
+                    (*pw, *ph) = picture_size(o, (*pw, *ph))?;
+                }
+                if let Some(data) = image {
+                    let k = self.pending_image(data);
+                    *pi = Some(k);
+                    if let Some(crate::drawing::ShapeKind::Pic(p)) = shape.as_deref_mut().map(|s| &mut s.kind) {
+                        p.blip.image = Some(k);
+                    }
+                }
                 Some((*para, inlines))
             }
-            (Some(_), _) => return Err(Error::invalid("no picture in the control")),
-            _ => None,
+            _ => return Err(Error::invalid("no picture in the control")),
         };
         let mut tx = self.begin("Change Content Control");
         if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
@@ -1835,6 +1876,22 @@ impl Editor {
             return Outcome::Unchanged("already so");
         }
         self.toggle_checkbox(Position::text(story, para, at), fonts)
+    }
+}
+
+/// A placeholder picture's bytes, when they are the PNG, JPEG, GIF, BMP or SVG its MIME type says.
+fn placeholder_data(p: &crate::api::value::PlaceholderImage) -> Result<Vec<u8>, Refused> {
+    let want = match p.mime.trim().to_ascii_lowercase().as_str() {
+        "image/png" => "image/png",
+        "image/jpeg" | "image/jpg" => "image/jpeg",
+        "image/gif" => "image/gif",
+        "image/bmp" | "image/x-ms-bmp" => "image/bmp",
+        "image/svg+xml" => "image/svg+xml",
+        m => return Err(Error::invalid(format!("placeholderImage: {m} isn't PNG, JPEG, GIF, BMP or SVG"))),
+    };
+    match crate::docx::image::image_type(&p.data.0) {
+        Some((m, _)) if m == want => Ok(p.data.0.clone()),
+        _ => Err(Error::invalid(format!("placeholderImage: the data isn't {want}"))),
     }
 }
 

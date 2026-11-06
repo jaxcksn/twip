@@ -764,6 +764,10 @@
     "options": {
       "checked": false
     },
+    "placeholderImage": {
+      "data": "iVBORw==",
+      "mime": "image/png"
+    },
     "tag": "status",
     "type": "setControl"
   },

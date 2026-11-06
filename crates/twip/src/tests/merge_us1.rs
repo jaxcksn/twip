@@ -102,6 +102,11 @@ fn picture_control_size() {
     let c =
         command(e, json!({ "type": "insertControl", "kind": "picture", "tag": "Barcode", "options": { "width": 216, "height": 54 } }))["id"].clone();
     assert_eq!(size(e, &c), (Some(216.0), Some(54.0)));
+    let listed = |e: &Session| e.elements(&ElementFilter::default())[0].size.map(|s| (s.width.0, s.height.0));
+    assert_eq!(listed(e), Some((216.0, 54.0)), "elements.list reports it");
+    e.select_element(serde_json::from_value(c.clone()).expect("an id"), false).expect("selects");
+    let context = e.state().selection.context.iter().find_map(|x| x.size).map(|s| (s.width.0, s.height.0));
+    assert_eq!(context, Some((216.0, 54.0)), "so does the selection's context");
     command(e, json!({ "type": "setControl", "id": c, "options": { "width": 288 } }));
     assert_eq!(size(e, &c), (Some(288.0), Some(54.0)), "height kept");
     command(e, json!({ "type": "undo" }));
