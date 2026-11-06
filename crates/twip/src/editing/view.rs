@@ -180,23 +180,11 @@ pub enum TableMark {
     Border { x: f64, top: f64, bottom: f64 },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ViewSettings {
     pub detail: crate::api::services::MeasureDetail,
     pub object_grid: crate::api::services::ObjectGrid,
     pub unit: crate::api::services::RulerUnit,
-    /// Placeholders are drawn as editor UI.
-    pub placeholder_ui: bool,
-    /// CSS px per point at the view's zoom (0: not yet known, taken as 100%): the affordances' tabs and bars are
-    /// sized in px.
-    pub px_per_pt: f64,
-}
-
-impl ViewSettings {
-    /// Points per CSS px.
-    pub fn u(&self) -> f64 {
-        if self.px_per_pt > 0.0 { 1.0 / self.px_per_pt } else { 0.75 }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -228,7 +216,6 @@ pub struct View {
     pub tooltip: Option<Tooltip>,
     pub regions: Vec<RegionView>,
     pub looks: Vec<LookView>,
-    pub affordances: Vec<super::affordances::AffordanceView>,
     pub comments: Vec<CommentView>,
     pub comment_anchors: Vec<(crate::docx::review::CommentId, usize, [f64; 2])>,
     pub formatting_marks: Vec<FormattingMark>,
@@ -479,175 +466,4 @@ pub fn canonical(v: &View) -> String {
         out["tooltip"] = serde_json::json!({ "text": t.text, "page": t.page, "rect": rects(&t.rect) });
     }
     out.to_string()
-}
-
-/// The UI face's advance, in ems: every character of the monospaced face is this wide.
-pub const MONO_ADVANCE: f64 = 0.6;
-
-/// How wide `text` is in the UI face at `size`.
-pub fn mono_width(text: &str, size: f64) -> f64 {
-    text.chars().count() as f64 * MONO_ADVANCE * size
-}
-
-/// A placeholder the affordances draw.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Target {
-    Field(crate::docx::FieldId),
-    Control(crate::docx::ControlId),
-    RepeatingSection(crate::docx::ControlId),
-    /// A sub-template reference shown as a card or as its body.
-    SubTemplate(crate::docx::FieldId),
-    /// A picture placeholder, by the content control it's in.
-    InputBlock(crate::docx::ControlId),
-    /// An IF field shown as its result.
-    IfField(crate::docx::FieldId),
-}
-
-impl Target {
-    pub fn element(self) -> crate::docx::ElementId {
-        match self {
-            Target::Field(f) => crate::docx::ElementId::Field(f),
-            Target::Control(c) | Target::RepeatingSection(c) => crate::docx::ElementId::Control(c),
-            Target::SubTemplate(f) => crate::docx::ElementId::Field(f),
-            Target::InputBlock(c) => crate::docx::ElementId::Control(c),
-            Target::IfField(f) => crate::docx::ElementId::Field(f),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FieldState {
-    Rest,
-    Hover,
-    Selected,
-    /// A merge field the data source lacks (`setUnmappedFields`), at rest or hovered.
-    Unmapped,
-}
-
-/// One line of a field mark, in page points. `round_*`: the field starts or ends here; `gap_*`: another field's mark
-/// touches this edge, so the two are drawn apart.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Segment {
-    pub rect: [f64; 4],
-    pub round_left: bool,
-    pub round_right: bool,
-    pub gap_left: bool,
-    pub gap_right: bool,
-}
-
-/// What render draws, per page.
-#[derive(Clone, Debug, PartialEq)]
-pub enum AffordanceView {
-    /// A field, or a control showing placeholder text: a tint behind its text, one segment per line. Its key and
-    /// type are the host's tooltip.
-    Field { page: usize, target: Target, segments: Vec<Segment>, state: FieldState, on_tint: bool },
-    /// A repeating section: its bar in the gutter (8 px further out per enclosing section), its tab on its first page,
-    /// and its rows' tint.
-    Region { page: usize, target: Target, bar: [f64; 4], tab: Option<Tab>, rows: Vec<[f64; 4]>, state: FieldState },
-    /// A collapsed sub-template reference, or one whose body can't show: a card in its place, with Expand when it
-    /// can show.
-    Card {
-        page: usize,
-        target: Target,
-        rect: [f64; 4],
-        name: String,
-        line: String,
-        resolution: CardState,
-        expand: Option<[f64; 4]>,
-        state: FieldState,
-    },
-    /// A sub-template's body shown in its reference's place: a dashed bar in the gutter and its tab, always.
-    BodyMark { page: usize, target: Target, bar: [f64; 4], tab: Tab, parts: Vec<(Part, [f64; 4])> },
-    /// An IF field's result: a tint over it, one rect per line, and its tab (condition and else) while hovered or
-    /// selected.
-    IfRegion { page: usize, target: Target, rects: Vec<[f64; 4]>, tab: Option<Tab>, state: FieldState },
-    /// A picture placeholder: a tinted block in its base colour with a label chip, the hint on hover, the buttons
-    /// when selected; filled, the picture, with a tab on hover.
-    Block(Box<Block>),
-}
-
-/// An input block, page points.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Block {
-    pub page: usize,
-    pub target: Target,
-    pub rect: [f64; 4],
-    /// The rule's fill as RGB (none: the accent).
-    pub base: Option<u32>,
-    pub label: String,
-    pub icon: Option<std::rc::Rc<SvgIcon>>,
-    /// The rule's image look, drawn instead of the tint and chip.
-    pub image: Option<std::rc::Rc<Vec<u8>>>,
-    pub hint: String,
-    pub buttons: Vec<Button>,
-    pub state: BlockState,
-}
-
-/// A button on a selected input block.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Button {
-    pub id: String,
-    pub label: String,
-    pub primary: bool,
-    pub rect: [f64; 4],
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BlockState {
-    Rest,
-    Hover,
-    Selected,
-}
-
-/// What a card's sub-template reference resolves to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CardState {
-    Resolved,
-    Missing,
-    NearMatch,
-    Cycle,
-    TooDeep,
-}
-
-/// What a press on part of an affordance does.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Part {
-    /// Show the card's body.
-    Expand,
-    /// Show the reference as a card again (the tab's name).
-    Collapse,
-    /// Edit the sub-template.
-    Open,
-    /// The newer version: the application updates it.
-    Update,
-}
-
-/// A tab's box (page points) and what it says.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Tab {
-    pub rect: [f64; 4],
-    pub icon: Option<Icon>,
-    pub text: String,
-}
-
-/// The glyphs tabs draw as paths: the UI face has neither.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Icon {
-    /// Repeats: an open circle with an arrowhead.
-    Repeat,
-    /// A copy: two overlapping squares.
-    Copy,
-}
-
-impl AffordanceView {
-    pub fn page(&self) -> usize {
-        match self {
-            AffordanceView::Field { page, .. }
-            | AffordanceView::Region { page, .. }
-            | AffordanceView::Card { page, .. }
-            | AffordanceView::BodyMark { page, .. }
-            | AffordanceView::IfRegion { page, .. } => *page,
-            AffordanceView::Block(b) => b.page,
-        }
-    }
 }

@@ -276,20 +276,8 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// Layout on screen differs from the output's: a sub-template body or a card shows, or a band is kept.
     pub fn shows_expansions(&self) -> bool {
         self.references.by_field.iter().any(|(f, r)| r.resolution == Resolution::Resolved && !self.collapsed.contains(f))
-            || self.expansions.as_ref().is_some_and(|e| e.paras.values().any(|x| x.content.is_empty()) || !e.bands.is_empty() || !e.tables.is_empty())
-    }
-
-    /// A reference drawn as a card: collapsed, or one whose body can't show, in design mode with the affordances on.
-    pub(super) fn carded(&self, f: FieldId, r: &Reference) -> bool {
-        self.affordances_on()
-            && match r.resolution {
-                Resolution::Resolved => self.collapsed.contains(&f),
-                Resolution::Missing | Resolution::NearMatch(_) | Resolution::Cycle | Resolution::TooDeep => true,
-                Resolution::NotAlone | Resolution::NotInBody => false,
-            }
     }
 
     pub fn sub_template_rules(&self) -> Vec<ReferenceRule> {
@@ -331,46 +319,21 @@ impl Editor {
         path.pop();
         let nested = (!nested.paras.is_empty()).then_some(&nested);
         let (height, content) = crate::layout::expansion::lay(&self.doc, body, width, fonts, nested);
-        // The tab's room over a shown body, in every mode, while the placeholder affordances are on.
-        let band = if self.view_settings.placeholder_ui { super::affordances::BAND } else { 0.0 };
-        Some(Rc::new(Expansion { field: f, part: Some(part), size: (width, height + band), band, content }))
+        Some(Rc::new(Expansion { field: f, part, size: (width, height), content }))
     }
 
     pub(super) fn sync_expansions(&mut self, fonts: &Fonts) {
-        let (bands, tables) = self.design_bands();
-        if self.expansions.as_ref().map_or(!bands.is_empty() || !tables.is_empty(), |e| e.bands != bands || e.tables != tables) {
-            self.expansions_stale = true;
-        }
-        // The cards, and the tab's room over shown bodies, follow the mode and the placeholder affordances.
-        let mut cards: Vec<FieldId> =
-            self.references.by_field.iter().filter(|(f, r)| r.row.is_none() && self.carded(**f, r)).map(|(f, _)| *f).collect();
-        cards.sort_unstable();
-        let mut had: Vec<FieldId> = self.expansions.iter().flat_map(|e| e.paras.values()).filter(|x| x.content.is_empty()).map(|x| x.field).collect();
-        had.sort_unstable();
-        let band = if self.view_settings.placeholder_ui { super::affordances::BAND } else { 0.0 };
-        let bands_differ = self.expansions.iter().flat_map(|e| e.paras.values()).any(|x| !x.content.is_empty() && x.band != band);
-        if cards != had || bands_differ {
-            self.expansions_stale = true;
-        }
         if !self.expansions_stale {
             return;
         }
         self.expansions_stale = false;
-        let band_paras: Vec<ParaId> = self.expansions.iter().flat_map(|e| e.bands.keys()).chain(bands.keys()).copied().collect();
-        let band_tables: Vec<crate::layout::TableId> = self.expansions.iter().flat_map(|e| e.tables.keys()).chain(tables.keys()).copied().collect();
-        let any = !self.references.by_field.is_empty() || !bands.is_empty() || !tables.is_empty();
-        let now = any.then(|| {
-            let mut out = Expansions { revision: self.expansions.as_ref().map_or(0, |e| e.revision) + 1, bands, tables, ..Expansions::default() };
+        let now = (!self.references.by_field.is_empty()).then(|| {
+            let mut out = Expansions { revision: self.expansions.as_ref().map_or(0, |e| e.revision) + 1, ..Expansions::default() };
             let flow = self.editing_sub_template().map_or(StoryId::Body, StoryId::BuildingBlock);
             let mut path: Vec<u32> = self.editing_sub_template().into_iter().collect();
             let outer = self.surface.as_ref().map_or(0.0, |s| column_width(&s.doc.sections[0]));
             for (f, r) in &self.references.by_field {
                 let top = self.index.para_slot(r.at).is_some_and(|s| self.index.story(s.container) == flow);
-                if top && r.row.is_none() && self.carded(*f, r) {
-                    let size = (self.reference_width(r.at, outer), super::affordances::CARD);
-                    out.paras.insert(r.at, Rc::new(Expansion { field: *f, part: r.part, size, band: 0.0, content: Rc::from(Vec::new()) }));
-                    continue;
-                }
                 if !top || r.resolution != Resolution::Resolved || self.collapsed.contains(f) {
                     continue;
                 }
@@ -390,14 +353,6 @@ impl Editor {
         });
         let mut paras: Vec<ParaId> = self.expansions.iter().chain(now.iter()).flat_map(|e| e.paras.keys().copied()).collect();
         paras.extend(self.references.by_field.values().filter(|r| r.row.is_some()).map(|r| r.at));
-        paras.extend(band_paras);
-        for t in band_tables {
-            let first = self
-                .index
-                .table(&self.doc, t)
-                .and_then(|t| t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).find_map(super::first_para_of));
-            paras.extend(first);
-        }
         paras.sort_unstable_by_key(|p| p.0);
         paras.dedup();
         let hints: Vec<_> = paras.into_iter().map(|p| super::step::para_hint(&self.index, p, 0)).collect();
@@ -676,7 +631,7 @@ impl Editor {
         }
     }
 
-    pub(super) fn expansion_at(&mut self, x: f64, y: f64) -> Option<(FieldId, Option<u32>)> {
+    pub(super) fn expansion_at(&mut self, x: f64, y: f64) -> Option<(FieldId, u32)> {
         let (page, px, py) = self.stack().page_at(x, y)?;
         let snapshot = self.layout.snapshot();
         let (frag, _) = snapshot.page(page)?;
@@ -698,9 +653,7 @@ impl Editor {
 
     pub(super) fn expansion_click(&mut self, x: f64, y: f64, clicks: u8, fonts: &Fonts) -> bool {
         let Some((f, part)) = self.expansion_at(x, y) else { return false };
-        if clicks >= 2
-            && let Some(part) = part
-        {
+        if clicks >= 2 {
             return matches!(self.enter_sub_template(part, Some(f)), Outcome::Moved);
         }
         let id = crate::api::value::ElementId(elements::id_str(ElementId::Field(f)));

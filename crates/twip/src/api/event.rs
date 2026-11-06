@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::error::{Error, ErrorCode};
 use super::record::TransactionRecord;
 use super::review::{BalloonPlacement, CommentAnchor};
-use super::services::{ContextMenuEvent, DialogKind, ElementInfo, GestureEvent, PlaceholderInfo, PlaceholderTarget, Popover, RulerView, Tooltip};
+use super::services::{ContextMenuEvent, DialogKind, ElementInfo, GestureEvent, PlaceholderInfo, Popover, RulerView, Tooltip};
 use super::state::{SelectionSummary, State};
 use super::value::ElementId;
 use super::warning::Warning;
@@ -104,13 +104,6 @@ pub enum Event {
     RulerChanged(RulerView),
     /// The editor switched between the template and a sub-template, or between sub-templates: where it is now.
     EditingTargetChanged(super::state::EditingTarget),
-    /// A shown sub-template's newer-version notice (`setSubTemplateVersions`) was pressed: the application updates it.
-    SubTemplateUpdateRequested {
-        /// The sub-template's name.
-        name: String,
-        /// Its category.
-        category: String,
-    },
     /// Typing, pasting or dropping was refused: why, and the element concerned.
     EditRefused {
         /// Why.
@@ -121,12 +114,6 @@ pub enum Event {
     },
     /// Hover over a link, element mark, revision or comment; `null` hides the tooltip.
     Tooltip(#[serde(with = "value")] Option<Tooltip>),
-    /// With the placeholder affordances on, the pointer starts or stops being over a placeholder, or the hovered
-    /// one's anchor moves; `null` when it leaves.
-    PlaceholderHovered(#[serde(with = "value")] Option<PlaceholderTarget>),
-    /// With the placeholder affordances on, the selection starts or stops covering exactly one placeholder, or the
-    /// selected one's anchor moves (scroll, zoom, layout); `null` when it's no longer selected.
-    PlaceholderSelected(#[serde(with = "value")] Option<PlaceholderTarget>),
     /// What the editor said to screen readers.
     Announcement {
         /// The announced text.

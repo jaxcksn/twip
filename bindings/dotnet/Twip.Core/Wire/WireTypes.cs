@@ -86,10 +86,6 @@ internal sealed record CaretBlinkWire(int? IntervalMs, int? StopAfterMs);
 /// <summary>The overlay colours on the wire, as <c>#RRGGBB</c> (<c>EditorHost.OverlayColors</c> sends them).</summary>
 internal sealed record OverlayPaletteWire(string Selection, string Object, string Drop, string Marks, string Leaders);
 
-internal sealed record PlaceholderTargetPayload([property: JsonPropertyName("value")] PlaceholderTarget? Target);
-
-internal sealed record SubTemplateUpdateRequestedPayload(string Name, string Category);
-
 internal sealed record TooltipPayload([property: JsonPropertyName("value")] TooltipWire? Tooltip);
 
 internal sealed record TooltipWire(

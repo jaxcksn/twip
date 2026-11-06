@@ -1069,57 +1069,6 @@ pub struct PlaceholderInfo {
     pub key: String,
     /// The content control it is in.
     pub element: Option<ElementId>,
-    /// The input block's button pressed (its id); none: the block itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub action: Option<String>,
-}
-
-/// What kind of placeholder a [`PlaceholderTarget`] is.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PlaceholderKind {
-    /// A merge field.
-    #[default]
-    Field,
-    /// A content control showing its placeholder text.
-    Control,
-    /// A repeating section.
-    RepeatingSection,
-    /// A sub-template reference, shown as a card or as its body.
-    SubTemplate,
-    /// A picture placeholder: a signature, initials, fingerprint, photo or any other picture the user adds.
-    InputBlock,
-    /// An IF field shown as its result.
-    IfField,
-}
-
-/// A placeholder the pointer is over or the selection covers, with the placeholder affordances on.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PlaceholderTarget {
-    /// The field or control.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub element: Option<ElementId>,
-    /// What it is.
-    pub kind: PlaceholderKind,
-    /// What it shows, in full: a field's label or result, a control's title.
-    pub label: String,
-    /// A field's name (its first argument), or a control's tag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key: Option<String>,
-    /// A field's code.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
-    /// The caption's type text: `setFieldTypes`' text for the code, else the field type (`MERGEFIELD`), or a
-    /// control's kind (`plain text`).
-    pub type_text: String,
-    /// The data source lacks the field (`setUnmappedFields`).
-    pub unmapped: bool,
-    /// For a sub-template reference: what it names and whether its body shows.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference: Option<SubTemplateReference>,
-    /// Where it is, in the same space as a popover's anchor: a field's last line, else its box.
-    pub anchor: ClientRect,
 }
 
 // ---------------- accessibility, shortcuts, gestures ----------------
@@ -2046,8 +1995,6 @@ pub enum TooltipKind {
     Revision,
     /// A comment.
     Comment,
-    /// A placeholder's key and type, with the placeholder affordances on.
-    Placeholder,
 }
 
 /// A tooltip to show over the document.

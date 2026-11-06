@@ -1321,69 +1321,6 @@ def fx_placeholder(d):
     )
 
 
-def fx_placeholder_ui(d):
-    """Every kind of placeholder the design-mode marks draw: merge fields (adjacent, wrapping, crossing a page, long,
-    in the header, a cell, a hyperlink and a tracked insertion, with a cached result), an IF holding a field, controls
-    showing placeholder text and a locked one, repeating sections (nested paragraphs, rows under a header row across a
-    page break, rows from a table's second row, a whole table) and picture placeholders for signatures and the like."""
-    s = Sdt(9700)
-    d.glossary = True
-    style = lambda v: f'<w:pStyle w:val="{v}"/>'  # noqa: E731
-    refs = d.story("header", "default", p(r("Case ") + mf("Case.Number"), style("Header")))
-    placeholder = f'<w:placeholder><w:docPart w:val="{PLACEHOLDER_PART}"/></w:placeholder><w:showingPlcHdr/>'
-    hint = lambda t: r(t, '<w:rStyle w:val="PlaceholderText"/>')  # noqa: E731
-    date = '<w:date><w:dateFormat w:val="M/d/yyyy"/><w:lid w:val="en-US"/><w:storeMappedDataAs w:val="dateTime"/><w:calendar w:val="gregorian"/></w:date>'
-    dropdown = '<w:dropDownList><w:listItem w:displayText="Granted" w:value="Granted"/><w:listItem w:displayText="Denied" w:value="Denied"/></w:dropDownList>'
-    inserted = f'<w:ins w:id="9701" w:author="Fixture" w:date="2026-01-01T00:00:00Z">{mf("Applicant.Email")}</w:ins>'
-    linked = d.link("", "https://example.com/").replace(r("", '<w:color w:val="0563C1"/>' + U), mf("Applicant.Website"))
-    fee_if = fld([' IF ', mf("Fee"), ' > 0 "A fee of ', mf("Fee"), ' is due." "" '], "A fee of «Fee» is due.")
-    widths = split(TEXT_WIDTH, 2)
-    cell_table = grid([[p(r("Cell: ") + mf("Parcel.Id")), "Parcel"]], widths)
-
-    def pic(tag, alias, w, h, colour):
-        return s.wrap(d.picture(w, h, colour), kind="<w:picture />", alias=alias, tag=f"Placeholder:{tag}", extra="<w:showingPlcHdr/>")
-
-    rows_w = [3120, 3120, 3120]
-    row = lambda n: tr([tc(p(mf("Line.Item")), rows_w[0]), tc(P(filler(40, n)), rows_w[1]), tc(p(mf("Line.Amount")), rows_w[2])])  # noqa: E731
-    head = tr([tc(P(t), w) for t, w in zip(("Item", "Notes", "Amount"), rows_w)], "<w:tblHeader/>")
-    across = table_xml(head + region(s, [row(n) for n in (1, 2, 3)], "Lines", "Permit.Lines"), rows_w)
-    later = table_xml(tr([tc(P(t), w) for t, w in zip(("Owner", "Share", "Since"), rows_w)])
-                      + region(s, [tr([tc(p(mf("Owner.Name")), rows_w[0]), tc(p(mf("Owner.Share")), rows_w[1]), tc(P("2026"), rows_w[2])])], "Owners", "Permit.Owners"), rows_w)
-    whole = region(s, [grid([[p(mf("Inspection.Date")), p(mf("Inspection.Result"))]], widths)], "Inspections", "Permit.Inspections")
-    inner = region(s, [p(r("Condition: ") + mf("Condition.Text"))], "Conditions", "Section.Conditions")
-    nested = region(s, [p(r("Section ") + mf("Section.Title")) + inner], "Sections", "Permit.Sections")
-    long_name = "Applicant.Mailing_Address_Line_For_Correspondence_And_Notices"
-    body = [
-        P("FX-PLACEHOLDER-UI", HEADING),
-        p(r("Adjacent: ") + mf("Applicant.First_Name") + mf("Applicant.Last_Name") + r(".")),
-        p(r(filler(20, 3) + " ") + mf("Applicant.Organisation_Name_As_Registered", result="Springfield County Regional Planning and Zoning Appeals Board") + r(" " + filler(10, 7))),
-        p(r("Long label: ") + mf(long_name) + r(".")),
-        p(r("Cached: ") + mf("Permit.Number", result="PRM-2026-0042") + r("; link: ") + linked + r("; inserted: ") + inserted + r(".")),
-        cell_table,
-        p(r("Fee: ") + fee_if),
-        p(r("Plain: ") + s.wrap(hint("Click or tap here to enter text."), kind="<w:text/>", alias="Applicant phone", tag="Applicant/Phone", extra=placeholder)),
-        s.wrap(p(hint("Click or tap here to enter text.")), kind="<w:richText/>", alias="Remarks", tag="Permit/Remarks", extra=placeholder),
-        p(r("Date: ") + s.wrap(hint("Click or tap to enter a date."), kind=date, alias="Decision date", tag="Permit/Date", extra=placeholder)),
-        p(r("Decision: ") + s.wrap(hint("Choose an item."), kind=dropdown, alias="Decision", tag="Permit/Decision", extra=placeholder)),
-        p(r("Locked: ") + s.wrap(hint("Click or tap here to enter text."), kind="<w:text/>", alias="Officer", tag="Permit/Officer", lock="sdtContentLocked", extra=placeholder)),
-        nested,
-        P("Lines repeat under a header row, across a page break:"),
-        across,
-        P("Owners repeat from the table's second row:"),
-        later,
-        P("The whole inspection table repeats:"),
-        whole,
-        p(r("Signature: ") + pic("Signature.Applicant", "Applicant signature", 2.5, 0.5, 3)),
-        p(r("Initials: ") + pic("Initials.Applicant", "Applicant initials", 0.8, 0.4, 0)),
-        p(r("Fingerprint: ") + pic("Fingerprint.Right index", "Right index", 0.8, 1.0, 1)),
-        p(r("Photo: ") + pic("Photo.Applicant", "Applicant photo", 1.2, 1.5, 2)),
-        P(filler(120, 9)),
-        p(r(filler(30, 11) + " ") + mf("Applicant.Closing_Statement_Signatory") + r(" " + filler(8, 13))),
-        P("After the placeholders."),
-    ]
-    return "".join(body), sect(refs)
-
-
 def fx_row_clip(d):
     """A line drawn just below an exact-height row whose paragraph it clips (hit testing must pick the drawn line),
     then a paragraph three tables deep."""
@@ -2151,7 +2088,6 @@ FIXTURES = {
     "FX-ROW-CLIP": fx_row_clip,
     "FX-GRID-WIDE": fx_grid_wide,
     "FX-PLACEHOLDER": fx_placeholder,
-    "FX-PLACEHOLDER-UI": fx_placeholder_ui,
     "FX-MERGE-FIELDS": fx_merge_fields,
     "FX-MERGE-CONTROLS": fx_merge_controls,
     "FX-MERGE-REGIONS": fx_merge_regions,

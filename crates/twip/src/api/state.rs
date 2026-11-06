@@ -761,9 +761,6 @@ pub struct ViewState {
     pub detail: super::services::MeasureDetail,
     /// When the objects' dot grid shows.
     pub object_grid: super::services::ObjectGrid,
-    /// Placeholders are drawn as editor UI.
-    #[serde(default)]
-    pub placeholder_ui: bool,
     /// Which fields are sub-template references.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sub_template_rules: Vec<super::command::ReferenceRule>,
@@ -790,7 +787,6 @@ impl Default for ViewState {
             appearance: super::services::DocumentAppearance::Light,
             detail: super::services::MeasureDetail::Standard,
             object_grid: super::services::ObjectGrid::WhileDragging,
-            placeholder_ui: false,
             sub_template_rules: Vec::new(),
         }
     }
@@ -878,7 +874,6 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
     let context = editor.element_context();
     let kind = match selection {
         Selection::Cells { .. } => SelectionKind::Cells,
-        Selection::Object(_) if editor.input_block_selected() => SelectionKind::Element,
         Selection::Object(_) => SelectionKind::Object,
         _ if context.first().is_some_and(|c| c.exact) => SelectionKind::Element,
         s if s.is_collapsed() => SelectionKind::Caret,

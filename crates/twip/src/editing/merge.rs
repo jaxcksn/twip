@@ -34,25 +34,14 @@ pub(super) enum TagMatch {
     Prefix(String),
 }
 
-/// A look rule as kept: the look, with what input blocks show besides (their base colour, hint and buttons).
-#[derive(Clone, Debug, PartialEq)]
-pub(super) struct Rule {
-    pub look: Look,
-    pub base: Option<u32>,
-    pub hint: Option<String>,
-    pub actions: Vec<crate::api::command::PlaceholderAction>,
-}
-
 #[derive(Clone, Debug, Default)]
 pub(super) struct Looks {
-    by_element: std::collections::HashMap<ElementId, Rule>,
-    by_tag: Vec<(TagMatch, Rule)>,
-    default: Option<Rule>,
+    by_element: std::collections::HashMap<ElementId, Look>,
+    by_tag: Vec<(TagMatch, Look)>,
+    default: Option<Look>,
 }
 impl Looks {
-    /// The rule for a control: by its id, its tag, the longest prefix of its tag (or of its picture placeholder's
-    /// key), else the default.
-    pub(super) fn find(&self, id: ElementId, tag: Option<&str>, key: Option<&str>) -> Option<&Rule> {
+    fn find(&self, id: ElementId, tag: Option<&str>) -> Option<&Look> {
         if let Some(l) = self.by_element.get(&id) {
             return Some(l);
         }
@@ -60,6 +49,11 @@ impl Looks {
             if let Some((_, l)) = self.by_tag.iter().find(|(m, _)| matches!(m, TagMatch::Exact(x) if x == t)) {
                 return Some(l);
             }
+            // A picture placeholder's key: its tag after `Placeholder:` or `MergeImage:`.
+            let key = t
+                .split_once(':')
+                .filter(|(k, _)| k.trim().eq_ignore_ascii_case("Placeholder") || k.trim().eq_ignore_ascii_case("MergeImage"))
+                .map(|(_, rest)| rest.split(';').next().unwrap_or("").trim());
             let prefix = self.by_tag.iter().filter_map(|(m, l)| match m {
                 TagMatch::Prefix(p) if t.starts_with(p.as_str()) || key.is_some_and(|k| k.starts_with(p.as_str())) => Some((p.len(), l)),
                 _ => None,
@@ -74,6 +68,17 @@ impl Looks {
     fn is_empty(&self) -> bool {
         self.by_element.is_empty() && self.by_tag.is_empty() && self.default.is_none()
     }
+}
+
+#[test]
+fn a_prefix_matches_a_picture_placeholders_key() {
+    let look = Look::Image(std::rc::Rc::new(Vec::new()));
+    let looks = Looks { by_tag: vec![(TagMatch::Prefix("Signature".into()), look)], ..Looks::default() };
+    let id = ElementId::Control(ControlId(1));
+    assert!(looks.find(id, Some("Placeholder:Signature.Applicant")).is_some());
+    assert!(looks.find(id, Some("MergeImage: Signature.Applicant;x")).is_some());
+    assert!(looks.find(id, Some("Signature.Applicant")).is_some(), "the tag itself");
+    assert!(looks.find(id, Some("Other:Signature.Applicant")).is_none(), "not a placeholder tag");
 }
 
 #[derive(Clone, Debug)]
@@ -324,9 +329,6 @@ impl Editor {
         use crate::api::services::TooltipKind;
         let (x, y) = self.hover?;
         let (page, hx, hy) = self.stack().page_at(x, y)?;
-        if let Some(t) = self.placeholder_tooltip() {
-            return Some((TooltipKind::Placeholder, t));
-        }
         if let (_, Some(t)) = self.mark_views(page..page + 1) {
             return Some((TooltipKind::Mark, t));
         }
@@ -585,7 +587,7 @@ impl Editor {
     }
 
     pub(super) fn region_views(&mut self, pages: std::ops::Range<usize>) -> Vec<super::view::RegionView> {
-        if self.mode != super::Mode::Design || self.affordances_on() {
+        if self.mode != super::Mode::Design {
             return Vec::new();
         }
         let mut ids = self.sections_at(&self.selection.clone());
@@ -605,7 +607,6 @@ impl Editor {
 
     pub(super) fn set_hover(&mut self, x: f64, y: f64) {
         self.hover = Some((x, y));
-        self.hover_target(x, y);
         if self.mode != super::Mode::Design {
             self.hover_region = None;
             return;
@@ -681,11 +682,6 @@ impl Editor {
         let mut new = Looks::default();
         let mut pictures = std::collections::HashMap::new();
         for rule in l.looks {
-            let base = match &rule.look {
-                LookArg::Drawn { fill, .. } => fill.map(|c| c.0),
-                LookArg::Image { .. } => None,
-            };
-            let (hint, actions) = (rule.hint.clone(), rule.actions.clone().unwrap_or_default());
             let look = match rule.look {
                 LookArg::Image { image, .. } => {
                     if crate::docx::image::image_type(&image.0).is_none() {
@@ -707,7 +703,6 @@ impl Editor {
             if let (Some(k), Look::Box(b)) = (key, &look) {
                 pictures.insert(k, b.clone());
             }
-            let look = Rule { look, base, hint, actions };
             match rule.matches {
                 PlaceholderMatch::Default(_) => new.default = Some(look),
                 PlaceholderMatch::Id { id } => match element_id(&id) {
@@ -751,11 +746,7 @@ impl Editor {
             .collect();
         controls.sort_by_key(|(id, _)| *id);
         for (c, props) in controls {
-            let Some(look) = self.looks.find(ElementId::Control(c), props.tag.as_deref(), None).map(|r| r.look.clone()) else { continue };
-            // With the placeholder affordances on, input blocks draw picture placeholders.
-            if props.kind == ControlKind::Picture && self.view_settings.placeholder_ui {
-                continue;
-            }
+            let Some(look) = self.looks.find(ElementId::Control(c), props.tag.as_deref()).cloned() else { continue };
             let Some(w) = self.locate(ElementId::Control(c)) else { continue };
             if props.kind == ControlKind::Picture {
                 let Where::Inline { para, first, last, .. } = w else { continue };

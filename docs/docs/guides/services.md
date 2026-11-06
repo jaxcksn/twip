@@ -71,7 +71,7 @@ written to the document.
 
 A click on an unfilled placeholder selects it and emits `placeholderActivated` with its key (the control's tag) and
 element. `fillPlaceholder({ image })` fills the selected placeholder, and `fillPlaceholder({ key, image })` fills
-every unfilled placeholder with that key. A filled placeholder is a plain picture: its content control is removed.
+every unfilled placeholder with that key.
 
 ```ts file=../../examples/web/placeholders.ts
 ```

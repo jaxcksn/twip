@@ -387,18 +387,6 @@ public enum CommandId
     RemoveSubTemplate,
     /// <summary>Says the formatting at the caret to screen readers, as an announcement. Changes nothing.</summary>
     DescribeFormatting,
-    /// <summary>The type text a field's caption shows, by field code.</summary>
-    SetFieldTypes,
-    /// <summary>Draws a placeholder hovered until cleared.</summary>
-    HighlightElement,
-    /// <summary>Selects the next placeholder in document order, wrapping.</summary>
-    SelectNextPlaceholder,
-    /// <summary>Selects the previous placeholder in document order, wrapping.</summary>
-    SelectPreviousPlaceholder,
-    /// <summary>The version text sub-templates' cards and tabs show, and their newer versions.</summary>
-    SetSubTemplateVersions,
-    /// <summary>The merge fields the data source lacks.</summary>
-    SetUnmappedFields,
     /// <summary>The application's own field types, never read as bookmark references.</summary>
     SetApplicationFieldTypes,
 }

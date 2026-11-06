@@ -42,8 +42,6 @@ export interface PlaceholderInfo {
   key: string;
   /** The control it is in. */
   element: ElementId | null;
-  /** The input block's button pressed (its id); absent: the block itself. */
-  action?: string;
 }
 
 /** {@link Elements} on a mounted editor: adds drop targets and hit testing. */
@@ -97,18 +95,6 @@ export interface ReferenceRule {
   category: string;
   /** The building block gallery (`custom1`), when it matters. */
   gallery?: string;
-}
-
-/** A sub-template's version, as its card and its shown body's tab show it (`setSubTemplateVersions`). */
-export interface SubTemplateVersion {
-  /** The sub-template's name. */
-  name: string;
-  /** Its category. Default: the first reference rule's. */
-  category?: string;
-  /** The version text (`v4`). */
-  version: string;
-  /** A newer version's notice (`v5 available`); a press on it raises `subTemplateUpdateRequested`. */
-  newer?: string;
 }
 
 /** Whether a reference's sub-template resolves, or why its body can't show. */

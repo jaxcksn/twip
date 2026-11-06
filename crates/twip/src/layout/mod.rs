@@ -55,20 +55,6 @@ pub struct Preview {
 }
 
 impl<'a> LayoutCtx<'a> {
-    /// A paragraph's space before, at least its band's height when it has one.
-    pub fn space_before(&self, p: &crate::docx::Paragraph, s: &crate::docx::ParaStyle) -> f64 {
-        let own = paragraph::space_before(&self.env.text, s);
-        match self.expansions.and_then(|e| e.bands.get(&ParaId(p.id))) {
-            Some(band) => own.max(*band),
-            None => own,
-        }
-    }
-
-    /// The room kept above a table.
-    pub fn table_band(&self, t: &crate::docx::Table) -> f64 {
-        self.expansions.and_then(|e| e.tables.get(&TableId(t.id))).copied().unwrap_or(0.0)
-    }
-
     pub fn floats_of<'b>(&self, p: &'b crate::docx::Paragraph) -> Vec<&'b crate::docx::Float>
     where
         'a: 'b,

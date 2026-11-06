@@ -344,9 +344,6 @@ pub(super) struct Presentation {
     pub(super) appearance: crate::api::services::DocumentAppearance,
     pub(super) detail: crate::api::services::MeasureDetail,
     pub(super) object_grid: crate::api::services::ObjectGrid,
-    pub(super) placeholder_ui: bool,
-    /// The hovered and selected placeholders the application was last told of.
-    placeholders_sent: (Option<crate::api::services::PlaceholderTarget>, Option<crate::api::services::PlaceholderTarget>),
 }
 
 impl Default for Presentation {
@@ -385,8 +382,6 @@ impl Default for Presentation {
             appearance: Default::default(),
             detail: Default::default(),
             object_grid: Default::default(),
-            placeholder_ui: false,
-            placeholders_sent: (None, None),
         }
     }
 }
@@ -566,7 +561,6 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
     state.view.appearance = p.appearance;
     state.view.detail = p.detail;
     state.view.object_grid = p.object_grid;
-    state.view.placeholder_ui = p.placeholder_ui;
     state.view.sub_template_rules = s.editor.sub_template_rules();
     state.editing = match s.editor.editing_sub_template().and_then(|k| s.editor.document().glossary.as_ref()?.parts.get(k as usize)) {
         Some(b) => crate::api::state::EditingTarget::SubTemplate { name: b.name.clone(), category: b.category.clone() },
@@ -578,13 +572,7 @@ impl Session {
     /// Hands the editor the view options its drag feedback follows: the detail level, the object grid and the unit.
     pub(super) fn sync_view_settings(&mut self) {
         let p = &self.presentation;
-        self.editor.view_settings = crate::editing::view::ViewSettings {
-            detail: p.detail,
-            object_grid: p.object_grid,
-            unit: p.unit(&self.language),
-            placeholder_ui: p.placeholder_ui,
-            px_per_pt: p.px_per_pt(),
-        };
+        self.editor.view_settings = crate::editing::view::ViewSettings { detail: p.detail, object_grid: p.object_grid, unit: p.unit(&self.language) };
     }
 
     /// Sets the zoom (a factor, 1 is 100%) about the caret's line, or the viewport's centre when the caret isn't in
@@ -777,7 +765,6 @@ impl Session {
     /// Hands the attached host what changed for it: the editor's requests, the cursor, caret, tooltip and
     /// accessibility tree. Without a host the editor's requests are dropped.
     pub(super) fn deliver_requests(&mut self) {
-        self.deliver_placeholders();
         let requests = self.editor.take_requests();
         if self.presentation.sink.deliver.is_none() {
             return;
@@ -860,56 +847,6 @@ impl Session {
         }
         if let Some(deliver) = self.presentation.sink.deliver.as_mut() {
             out.into_iter().for_each(deliver);
-        }
-    }
-}
-
-impl Session {
-    /// The hovered and selected placeholders, when they or their anchors changed: after every command, input and
-    /// frame, so an anchor moved by scroll, zoom or layout is sent again. Nothing while the affordances are off.
-    fn deliver_placeholders(&mut self) {
-        use crate::api::services::{PlaceholderKind, PlaceholderTarget};
-        use crate::editing::view::Target;
-        let (k, scroll, stack) = (self.presentation.px_per_pt(), self.presentation.scroll, self.editor.stack());
-        let (hovered, selected) = (self.editor.affordance_hover().0, self.editor.selected_target());
-        let mut target = |t: Option<Target>| {
-            let d = self.editor.describe(t?)?;
-            let (page, r) = d.anchor;
-            let (x, y) = stack.to_doc(page, r[0], r[1])?;
-            let anchor = ClientRect { left: x * k - scroll.0, top: y * k - scroll.1, width: (r[2] - r[0]) * k, height: (r[3] - r[1]) * k };
-            let kind = match d.target {
-                Target::Field(_) => PlaceholderKind::Field,
-                Target::Control(_) => PlaceholderKind::Control,
-                Target::RepeatingSection(_) => PlaceholderKind::RepeatingSection,
-                Target::SubTemplate(_) => PlaceholderKind::SubTemplate,
-                Target::InputBlock(_) => PlaceholderKind::InputBlock,
-                Target::IfField(_) => PlaceholderKind::IfField,
-            };
-            let reference = match d.target {
-                Target::SubTemplate(f) => self.reference_of(f),
-                Target::Field(_) | Target::Control(_) | Target::RepeatingSection(_) | Target::InputBlock(_) | Target::IfField(_) => None,
-            };
-            Some(PlaceholderTarget {
-                element: Some(crate::api::value::ElementId(crate::editing::elements::id_str(d.target.element()))),
-                kind,
-                label: d.label,
-                key: d.key,
-                code: d.code,
-                type_text: d.type_text,
-                unmapped: d.unmapped,
-                reference,
-                anchor,
-            })
-        };
-        let now = (target(hovered), target(selected));
-        let sent = &mut self.presentation.placeholders_sent;
-        let (hover_changed, select_changed) = (sent.0 != now.0, sent.1 != now.1);
-        *sent = now.clone();
-        if hover_changed {
-            self.emit(Event::PlaceholderHovered(now.0));
-        }
-        if select_changed {
-            self.emit(Event::PlaceholderSelected(now.1));
         }
     }
 }
@@ -1148,18 +1085,18 @@ impl HostSurface<'_> {
         // Lay out the visible pages first (they may be provisional), then build the frame's view from that snapshot.
         let visible = Renderer::visible(&s.editor.stack(), &f);
         if visible.end > 0 {
-            crate::prof::time("frame:ensure", || s.editor.ensure_page(visible.end - 1, &fonts));
+            s.editor.ensure_page(visible.end - 1, &fonts);
         }
         let marks = s.services.spelling.squiggles(&mut s.editor, visible.clone(), &s.language);
         let formatting_marks = if s.formatting_marks { s.editor.formatting_marks(visible.clone()) } else { Vec::new() };
         let boundaries = if s.text_boundaries { s.editor.text_boundaries(visible.clone()) } else { Vec::new() };
-        let mut view = crate::prof::time("frame:view", || s.editor.view(visible));
+        let mut view = s.editor.view(visible);
         view.spelling = marks;
         view.formatting_marks = formatting_marks;
         view.boundaries = boundaries;
         p.renderer.gridlines = s.gridlines;
         p.renderer.page_colour = s.editor.document().page_colour;
-        crate::prof::time("frame:draw", || p.renderer.draw(canvas, &view, &s.editor.document().images, &f));
+        p.renderer.draw(canvas, &view, &s.editor.document().images, &f);
         if p.markup_pane > 0.0 {
             let left = (view.stack.width * f.px_per_pt + f.origin_x) * f.dpr;
             let r = skia_safe::Rect::from_xywh(left as f32, 0.0, (p.markup_pane * f.dpr) as f32, height as f32);
@@ -1212,7 +1149,7 @@ impl HostSurface<'_> {
         let stack = s.editor.stack();
         s.set_comment_anchors(&view, &stack, f.px_per_pt);
         // The pages just laid out may have placed the caret.
-        crate::prof::time("frame:deliver", || s.deliver_requests());
+        s.deliver_requests();
     }
 
     /// The document's size and the caret after the last frame: `caret_visible` is whether the frame drew the caret

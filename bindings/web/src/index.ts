@@ -17,7 +17,6 @@ export type {
   NoArgumentCommandId,
   Op,
   OpArgs,
-  PlaceholderAction,
   PlaceholderLook,
 } from './commands.js';
 export type {
@@ -58,7 +57,7 @@ export type {
   ViewState,
   WrapSide,
 } from './state.js';
-export type { HostCommand, PlaceholderKind, PlaceholderTarget, Tooltip, TransactionRecord, TwipEvents } from './events.js';
+export type { HostCommand, Tooltip, TransactionRecord, TwipEvents } from './events.js';
 export { EditorError } from './errors.js';
 export type { ErrorCode } from './errors.js';
 export { FontLibrary } from './fonts/library.js';
@@ -103,7 +102,6 @@ export type {
   SubTemplateInfo,
   SubTemplateReference,
   SubTemplates,
-  SubTemplateVersion,
 } from './services/elements.js';
 export type { Accessibility, AccessibleId, AccessibleNode, AnnouncementKind, CellPlace, ListPosition, Shortcuts } from './services/accessibility.js';
 export type { Heading, Navigation, StyleInfo, Styles } from './services/navigation.js';

@@ -365,41 +365,6 @@ mod sub_templates {
     }
 }
 
-/// Typing beside merge fields in design mode, the placeholder affordances off and on.
-mod placeholders {
-    use divan::Bencher;
-    use twip::api::command::{Command as Api, InsertField};
-    use twip::internal::editing::commands::Command;
-    use twip::internal::editing::{Editor, Mode};
-    use twip::internal::font::Fonts;
-
-    /// A paragraph of 20 merge fields with text between, in design mode.
-    fn twenty(fonts: &Fonts, on: bool) -> Editor {
-        let mut e = Editor::open(&super::super::fixture("editor/FX-EMPTY.docx"), fonts).expect("the fixture opens");
-        for k in 0..20 {
-            e.execute(Command::InsertText(format!(" item {k} ")), fonts);
-            e.execute(Api::InsertField(InsertField { code: format!("MERGEFIELD Item.Field_{k}"), display: None, show_code: None }), fonts);
-        }
-        e.view_settings.placeholder_ui = on;
-        e.set_mode(Mode::Design);
-        e.complete(fonts);
-        e
-    }
-
-    /// A character typed among 20 fields, and the view the next frame draws. Budget: on within 5% of off.
-    #[divan::bench(args = [false, true])]
-    fn typing_near_fields(bencher: Bencher, on: bool) {
-        let fonts = Fonts::system();
-        let mut e = twenty(&fonts, on);
-        e.execute(Command::InsertText(" ".into()), &fonts);
-        bencher.bench_local(|| {
-            e.execute(Command::InsertText("x".into()), &fonts);
-            e.ensure_current(&fonts);
-            e.view(0..1)
-        });
-    }
-}
-
 /// What screen readers get after a keystroke, on `FX-A11Y-REVIEW.docx` (about 100 pages, review marks, misspellings).
 mod a11y {
     use std::cell::RefCell;

@@ -55,13 +55,6 @@ fn info(s: &Session, e: &Element) -> ElementInfo {
     }
 }
 
-impl Session {
-    /// A reference field's sub-template, when the field is one.
-    pub(super) fn reference_of(&self, f: crate::docx::FieldId) -> Option<SubTemplateReference> {
-        self.editor.references().by_field.get(&f).map(|r| reference(self, f, r))
-    }
-}
-
 /// A reference field's sub-template as the API reports it.
 fn reference(s: &Session, f: crate::docx::FieldId, r: &crate::editing::sub_templates::Reference) -> SubTemplateReference {
     use crate::editing::sub_templates::Resolution as R;
@@ -317,7 +310,6 @@ impl Session {
                                 Inline::Picture(pic, _) => out.extend(s.editor.placeholder_of(pic.image, pic.w, pic.h).map(|p| PlaceholderInfo {
                                     key: p.key,
                                     element: open.last().map(|c| ElementId(elements::id_str(crate::docx::ElementId::Control(*c)))),
-                                    action: None,
                                 })),
                                 _ => {}
                             }

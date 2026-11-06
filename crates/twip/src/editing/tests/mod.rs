@@ -1,6 +1,5 @@
 //! Native editing tests
 
-mod affordances;
 mod backgrounds;
 mod basics;
 mod checkboxes;

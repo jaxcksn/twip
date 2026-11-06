@@ -870,10 +870,6 @@ public sealed record ViewState
 
     /// <summary>When the objects' dot grid shows.</summary>
     public ObjectGrid ObjectGrid { get; init; } = ObjectGrid.WhileDragging;
-
-    /// <summary>Placeholders are drawn as editor UI (<see cref="EditorSession.SetPlaceholderUiAsync"/>).</summary>
-    public bool PlaceholderUi { get; init; }
-
     /// <summary>Which fields are sub-template references (<see cref="EditorCommands.SetSubTemplateRulesAsync"/>); none when null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<ReferenceRule>? SubTemplateRules { get; init; }

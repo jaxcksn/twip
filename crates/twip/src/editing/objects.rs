@@ -332,7 +332,7 @@ impl Editor {
             _ => None,
         };
         self.drag = None;
-        self.activate_placeholder_by(true);
+        self.activate_placeholder();
         if let Selection::Object(obj @ ObjectRef::Floating(f)) = s
             && self.selected_child().is_some()
             && !self.object_fixed(obj)
@@ -349,7 +349,7 @@ impl Editor {
             self.requests.push(Request::CapturePointer);
         }
         if let Selection::Object(obj @ ObjectRef::Inline { para, offset }) = s
-            && (!self.object_fixed(obj) || self.movable_block().is_some())
+            && !self.object_fixed(obj)
             && self.mode != super::Mode::ReadOnly
         {
             let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));

@@ -539,10 +539,7 @@ public sealed class ContractTests
             _session.RevisionsChanged += (_, _) => Record("revisionsChanged", null);
             _session.CommentsChanged += (_, _) => Record("commentsChanged", null);
             _session.AccessibilityAnnouncement += (_, e) => Record("announcement", new JsonObject { ["text"] = e.Text, ["kind"] = WireJson.ToNode(e.Kind) });
-            _session.PlaceholderActivated += (_, e) => Record("placeholderActivated", JsonSerializer.SerializeToNode(new PlaceholderInfo(e.Key, e.Element) { Action = e.Action }, Ctx.PlaceholderInfo));
-            _session.PlaceholderHovered += (_, e) => Record("placeholderHovered", JsonSerializer.SerializeToNode(new PlaceholderTargetPayload(e.Target), Ctx.PlaceholderTargetPayload));
-            _session.PlaceholderSelected += (_, e) => Record("placeholderSelected", JsonSerializer.SerializeToNode(new PlaceholderTargetPayload(e.Target), Ctx.PlaceholderTargetPayload));
-            _session.SubTemplateUpdateRequested += (_, e) => Record("subTemplateUpdateRequested", JsonSerializer.SerializeToNode(new SubTemplateUpdateRequestedPayload(e.Name, e.Category), Ctx.SubTemplateUpdateRequestedPayload));
+            _session.PlaceholderActivated += (_, e) => Record("placeholderActivated", JsonSerializer.SerializeToNode(new PlaceholderInfo(e.Key, e.Element), Ctx.PlaceholderInfo));
             _session.GestureRequested += (_, e) => Record("gesture", JsonSerializer.SerializeToNode(new GestureEvent(e.Gesture, e.Location, e.Page, e.Target), Ctx.GestureEvent));
             _session.ElementsChanged += (_, e) => Record("elementsChanged", JsonSerializer.SerializeToNode(new ElementsChangedPayload(e.Added, e.Removed, e.Changed), Ctx.ElementsChangedPayload));
             _session.FieldsUpdateRequested += (_, e) => Record("fieldsUpdateRequested", JsonSerializer.SerializeToNode(new FieldsUpdateRequestedPayload(e.Token, e.Fields), Ctx.FieldsUpdateRequestedPayload));

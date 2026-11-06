@@ -35,9 +35,7 @@ operations reject, new ones reject, and `destroy()` still works.
 | — | `StateChanged` | The state changed. Coalesced: the latest snapshot after one or more changes. (TypeScript: `subscribe`.) |
 | `selectionChanged` | `SelectionChanged` | The selection moved. Coalesced per frame. |
 | `linkActivated` | `LinkActivated` | Ctrl+click on a link, or a click when read only. Open the address yourself. |
-| `placeholderActivated` | `PlaceholderActivated` | A click on an unfilled picture placeholder, or on an input block's button (`action`). See [placeholders](services#picture-placeholders). |
-| `placeholderHovered` | `PlaceholderHovered` | With `placeholderUi` on: the pointer started or stopped being over a placeholder, or its anchor moved (`null` when it leaves). See [placeholders](placeholders#hover-and-selection). |
-| `placeholderSelected` | `PlaceholderSelected` | With `placeholderUi` on: the selection started or stopped covering exactly one placeholder, or its anchor moved. |
+| `placeholderActivated` | `PlaceholderActivated` | A click on an unfilled picture placeholder. See [placeholders](services#picture-placeholders). |
 | `contextMenu` | `ContextMenuRequested` | Right-click, the context-menu key or Shift+F10. Carries the menu model and where to show it. |
 | `dialogRequested` | `DialogRequested` | A key or gesture asked for a dialog (Ctrl+D asks for `font`). |
 | `hostCommand` | `HostCommandRequested` | A key the application owns: save, save as, print, open, new, find, replace, go to, insert hyperlink, next misspelling, focus the font or size box, help. The browser's default is suppressed. |
@@ -49,7 +47,6 @@ operations reject, new ones reject, and `destroy()` still works.
 | `elementsChanged` | `ElementsChanged` | Fields or content controls were added, removed or changed. |
 | `fieldsUpdateRequested` | `FieldsUpdateRequested` | The user asked to update fields. Compute their results and answer with `setFieldResults`, passing the token. |
 | `editingTargetChanged` | `EditingTargetChanged` | The editor switched between the template and a sub-template (a double-click, `subTemplates.edit`, undo or redo): show it in your own UI. |
-| `subTemplateUpdateRequested` | `SubTemplateUpdateRequested` | A shown sub-template's newer-version notice (`setSubTemplateVersions`) was pressed: update it. |
 | `editRefused` | `EditRefused` | Typing, pasting or dropping was refused: into a sub-template's body shown in place of its reference, or a locked control. |
 | `revisionsChanged` | `RevisionsChanged` | The tracked changes changed: refresh a revisions pane. |
 | `commentsChanged` | `CommentsChanged` | The comments changed: refresh a comments pane. |
