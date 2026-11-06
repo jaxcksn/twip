@@ -2835,6 +2835,7 @@ Twip.TooltipInfo.Text.init -> void
 Twip.TooltipInfo.TooltipInfo(Twip.TooltipKind Kind, string! Text, System.Drawing.PointF Location, System.Drawing.RectangleF Bounds) -> void
 Twip.TooltipKind
 Twip.TooltipKind.Comment = 3 -> Twip.TooltipKind
+Twip.TooltipKind.Placeholder = 4 -> Twip.TooltipKind
 Twip.TooltipKind.Link = 0 -> Twip.TooltipKind
 Twip.TooltipKind.Mark = 1 -> Twip.TooltipKind
 Twip.TooltipKind.Revision = 2 -> Twip.TooltipKind

@@ -42,7 +42,7 @@ export interface PlaceholderInfo {
   key: string;
   /** The control it is in. */
   element: ElementId | null;
-  /** The input block's button pressed (its id), or `replace` from a filled block's tab; absent: the block itself. */
+  /** The input block's button pressed (its id); absent: the block itself. */
   action?: string;
 }
 

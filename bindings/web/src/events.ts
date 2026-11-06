@@ -20,8 +20,7 @@ export interface TwipEvents {
   /** A link was activated: a click when read only, Ctrl+click otherwise. */
   linkActivated: { address: string; via: 'ctrlClick' | 'click' };
   /**
-   * An unfilled picture placeholder was clicked, or one of its buttons (`action`: the button's id, or `replace` from a
-   * filled block's tab).
+   * An unfilled picture placeholder was clicked, or one of its buttons (`action`: the button's id).
    */
   placeholderActivated: { key: string; element: ElementId | null; action?: string };
   /**
@@ -125,7 +124,7 @@ export type HostCommand =
 /** A hover tooltip to show. */
 export interface Tooltip {
   /** What is hovered. */
-  kind: 'link' | 'mark' | 'revision' | 'comment';
+  kind: 'link' | 'mark' | 'revision' | 'comment' | 'placeholder';
   /** The text to show. */
   text: string;
   /** The pointer. */

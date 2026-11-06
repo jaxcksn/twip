@@ -500,7 +500,7 @@ export interface Commands {
   selectNextPlaceholder(): Promise<void>;
   /** Selects the previous placeholder in document order, wrapping; Shift+Tab while one is selected. View. */
   selectPreviousPlaceholder(): Promise<void>;
-  /** Fills the selected placeholder, or every unfilled one with `key`. */
+  /** Fills the selected placeholder, or every unfilled one with `key`: each becomes a plain picture, its content control removed. */
   fillPlaceholder(options: { key?: string; image: Uint8Array }): Promise<void>;
 
   // Data parts

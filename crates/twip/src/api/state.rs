@@ -878,6 +878,7 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
     let context = editor.element_context();
     let kind = match selection {
         Selection::Cells { .. } => SelectionKind::Cells,
+        Selection::Object(_) if editor.input_block_selected() => SelectionKind::Element,
         Selection::Object(_) => SelectionKind::Object,
         _ if context.first().is_some_and(|c| c.exact) => SelectionKind::Element,
         s if s.is_collapsed() => SelectionKind::Caret,

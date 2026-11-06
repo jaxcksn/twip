@@ -113,9 +113,7 @@ impl Renderer {
                 }
             }
         }
-        if let Some(p) = view.snapshot.pages().get(i) {
-            crate::prof::time("draw:affordances", || self.affordances(canvas, &view.affordances, i, (p.w, p.h), 1.0 / k.max(0.01)));
-        }
+        crate::prof::time("draw:affordances", || self.affordances(canvas, &view.affordances, i, 1.0 / k.max(0.01)));
         // The correction just made: a dashed accent underline, and its options button (16 x 12 px) under it.
         if let Some(c) = &view.correction {
             let mut dash = Paint::default();
@@ -382,7 +380,6 @@ impl Renderer {
                 Measure::Chip { at, label } => {
                     let chip = super::affordances::Chip {
                         text: label,
-                        prefix: None,
                         size: 10.0,
                         pad: (7.0, 4.0),
                         radius: 2.0,

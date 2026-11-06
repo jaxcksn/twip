@@ -2281,7 +2281,7 @@ export type ThemeColour = 'text1' | 'background1' | 'text2' | 'background2' | 'a
 // @public
 export interface Tooltip {
     at: ClientPoint;
-    kind: 'link' | 'mark' | 'revision' | 'comment';
+    kind: 'link' | 'mark' | 'revision' | 'comment' | 'placeholder';
     rect: ClientRect_2;
     text: string;
 }

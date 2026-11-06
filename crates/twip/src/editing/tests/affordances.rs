@@ -554,9 +554,9 @@ fn a_block_without_buttons_activates_on_a_press_and_an_image_look_keeps_its_butt
 }
 
 #[test]
-fn a_filled_block_is_done_with_its_date_and_replace() {
-    use super::super::view::BlockState;
+fn filling_a_block_leaves_a_plain_picture_without_its_control() {
     let mut e = signing();
+    let Target::InputBlock(c) = block(&mut e, "Signature").target else { panic!("a block") };
     let picture = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let out = e.execute(
         Command::FillPlaceholder(crate::api::command::FillPlaceholder {
@@ -567,15 +567,42 @@ fn a_filled_block_is_done_with_its_date_and_replace() {
     );
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     e.complete(fonts());
-    let sig = block(&mut e, "Signature");
-    assert_eq!((sig.state, sig.done.is_none()), (BlockState::Done, true), "no tab at rest");
-    let (x, y) = e.stack().to_doc(sig.page, (sig.rect[0] + sig.rect[2]) / 2.0, (sig.rect[1] + sig.rect[3]) / 2.0).expect("on the page");
-    e.pointer_input(super::super::input::PointerKind::Move, x, y, 0, super::super::keymap::Mods::default(), fonts());
-    let tab = block(&mut e, "Signature").done.expect("the tab while hovered");
-    assert!(tab.text.contains(&super::super::affordances::day_for_test(crate::docx::now_utc())) && tab.text.ends_with("Replace"), "{}", tab.text);
-    e.take_notices();
-    press(&mut e, sig.page, [tab.rect[2] - 4.0, tab.rect[1], tab.rect[2] - 1.0, tab.rect[3]]);
-    assert_eq!(activations(&mut e), vec![("Signature.Applicant".to_string(), Some("replace".to_string()))]);
+    assert!(e.locate(crate::docx::ElementId::Control(c)).is_none(), "the control is gone");
+    assert!(blocks(&mut e).iter().all(|b| b.label != "Signature"), "a plain picture, not a block");
+    e.execute(Command::Undo, fonts());
+    e.complete(fonts());
+    assert_eq!(block(&mut e, "Signature").target, Target::InputBlock(c), "one undo step brings it back");
+}
+
+#[test]
+fn a_selected_block_is_no_picture_and_moves_with_its_control_in_design_mode() {
+    use super::super::input::PointerKind;
+    use super::super::keymap::Mods;
+    let mut e = design("FX-PLACEHOLDER.docx");
+    let b = blocks(&mut e).into_iter().next().expect("the block");
+    let Target::InputBlock(c) = b.target else { panic!("a block") };
+    let para = |e: &Editor| match e.locate(crate::docx::ElementId::Control(c)) {
+        Some(super::super::merge::Where::Inline { para, .. }) => para,
+        w => panic!("{w:?}"),
+    };
+    let (from, n) = (para(&e), pages(&mut e));
+    press(&mut e, b.page, b.rect);
+    assert!(e.selected_object().is_none() && e.input_block_selected(), "selected as a block");
+    assert_eq!(e.view(0..n).selection, super::super::view::SelectionView::None, "no picture outline or handles");
+    let doc = |e: &Editor, x: f64, y: f64| e.stack().to_doc(b.page, x, y).expect("on the page");
+    let (a, to) = (doc(&e, (b.rect[0] + b.rect[2]) / 2.0, (b.rect[1] + b.rect[3]) / 2.0), doc(&e, b.rect[0] + 20.0, b.rect[3] + 30.0));
+    e.pointer_input(PointerKind::Down, a.0, a.1, 1, Mods::default(), fonts());
+    for k in 1..=8 {
+        let t = f64::from(k) / 8.0;
+        e.pointer_input(PointerKind::Move, a.0 + (to.0 - a.0) * t, a.1 + (to.1 - a.1) * t, 0, Mods::default(), fonts());
+    }
+    e.pointer_input(PointerKind::Up, to.0, to.1, 0, Mods::default(), fonts());
+    e.complete(fonts());
+    assert_ne!(para(&e), from, "moved to the next paragraph");
+    assert_eq!(blocks(&mut e).len(), 1);
+    assert!(e.input_block_selected(), "still selected");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(para(&e), from);
 }
 
 #[test]
@@ -626,4 +653,36 @@ fn an_if_is_tinted_and_shows_its_condition_only_while_hovered() {
     let tab = ifs(&mut e).into_iter().find(|i| i.0 == target).and_then(|i| i.1).expect("its tab while hovered");
     assert_eq!(tab.text, "IF {Fee} > 0 \u{b7} else: nothing");
     assert!(tab.rect[3] <= rects[0][1] + 0.01, "above the region");
+}
+
+
+#[test]
+fn a_hovered_field_is_the_hosts_tooltip_not_a_drawn_caption() {
+    use crate::api::services::TooltipKind;
+    let mut e = design("FX-PLACEHOLDER-UI.docx");
+    let (_, page, segments, _) = marks(&mut e).into_iter().find(|m| m.0 == "Applicant.Email").expect("its mark");
+    let r = segments[0].rect;
+    let (x, y) = e.stack().to_doc(page, (r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0).expect("on the page");
+    e.pointer_input(super::super::input::PointerKind::Move, x, y, 0, super::super::keymap::Mods::default(), fonts());
+    let (kind, tip) = e.hover_tooltip().expect("a tooltip");
+    assert_eq!((kind, tip.text.as_str()), (TooltipKind::Placeholder, "Applicant.Email \u{b7} MERGEFIELD"));
+    assert_eq!(tip.rect, segments.last().expect("a segment").rect, "over its last line");
+    e.view_settings.placeholder_ui = false;
+    assert_ne!(e.hover_tooltip().map(|t| t.0), Some(TooltipKind::Placeholder), "only with the affordances on");
+}
+
+#[test]
+fn a_table_sections_bar_clears_the_tables_row_handles() {
+    let mut e = design("FX-MERGE-REGIONS.docx");
+    let u = e.view_settings.u();
+    let mut checked = 0;
+    for v in views(&mut e) {
+        if let AffordanceView::Region { bar, rows, .. } = v
+            && let Some(left) = rows.iter().map(|r| r[0]).reduce(f64::min)
+        {
+            assert!(bar[2] <= left - 22.0 * u, "bar {bar:?} over the handles left of {left}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "a section of rows");
 }

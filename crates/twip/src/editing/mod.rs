@@ -2543,6 +2543,10 @@ impl Editor {
 
     fn selection_view(&mut self, pages: std::ops::Range<usize>) -> SelectionView {
         if let Selection::Object(o) = self.selection {
+            // A selected input block draws its own state.
+            if self.input_block_selected() {
+                return SelectionView::None;
+            }
             let mut out = Vec::new();
             for page in pages {
                 let Some(geo) = self.pages.page(page, &self.index) else { continue };

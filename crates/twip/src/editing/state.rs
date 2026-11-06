@@ -245,6 +245,9 @@ impl Editor {
     }
 
     pub fn selected_object(&self) -> Option<SelectedObject> {
+        if self.input_block_selected() {
+            return None;
+        }
         match self.selection {
             Selection::Object(ObjectRef::Inline { para, offset }) => {
                 match self.index.para(&self.doc, para).and_then(|p| super::stories::inline_at(p, offset)) {

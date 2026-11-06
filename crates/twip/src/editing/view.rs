@@ -535,19 +535,12 @@ pub struct Segment {
     pub gap_right: bool,
 }
 
-/// A field mark's caption: `{ }`, the key and the type text.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Caption {
-    pub key: String,
-    pub type_text: String,
-}
-
 /// What render draws, per page.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AffordanceView {
-    /// A field, or a control showing placeholder text: a tint behind its text, one segment per line, and a caption
-    /// under its last segment while hovered or selected.
-    Field { page: usize, target: Target, segments: Vec<Segment>, state: FieldState, caption: Option<Caption>, on_tint: bool },
+    /// A field, or a control showing placeholder text: a tint behind its text, one segment per line. Its key and
+    /// type are the host's tooltip.
+    Field { page: usize, target: Target, segments: Vec<Segment>, state: FieldState, on_tint: bool },
     /// A repeating section: its bar in the gutter (8 px further out per enclosing section), its tab on its first page,
     /// and its rows' tint.
     Region { page: usize, target: Target, bar: [f64; 4], tab: Option<Tab>, rows: Vec<[f64; 4]>, state: FieldState },
@@ -588,8 +581,6 @@ pub struct Block {
     pub hint: String,
     pub buttons: Vec<Button>,
     pub state: BlockState,
-    /// Hovered when filled: its label, the date it was filled and Replace.
-    pub done: Option<Tab>,
 }
 
 /// A button on a selected input block.
@@ -606,8 +597,6 @@ pub enum BlockState {
     Rest,
     Hover,
     Selected,
-    /// Filled.
-    Done,
 }
 
 /// What a card's sub-template reference resolves to.
@@ -631,8 +620,6 @@ pub enum Part {
     Open,
     /// The newer version: the application updates it.
     Update,
-    /// A filled input block's Replace.
-    Replace,
 }
 
 /// A tab's box (page points) and what it says.
