@@ -15,7 +15,9 @@ Install them first (see [Installation](../installation)).
 ```
 
 `OpenAsync` and `SaveAsync` take a path or a `Stream`; saving to a path replaces the file safely. `SaveAsync` writes
-DOCX, and `ExportPdfAsync` writes PDF. Both return the revision they captured and any fidelity warnings.
+DOCX, and `ExportPdfAsync` writes PDF, with an optional open password and keywords (`PdfOptions`). Both return the
+revision they captured and any fidelity warnings. To convert documents without a session, on many threads at once, see
+[PDF conversion](pdf-conversion).
 
 Every command is one `...Async` method on `session.Commands`, named after the command (`setBold` is
 `SetBoldAsync`). They act on the selection and complete after the change commits. Setters take a value: there are

@@ -896,8 +896,15 @@ Twip.EditorSession.EditorSession(Twip.EditorSessionOptions? options = null) -> v
 Twip.EditorSession.ElementActivated -> System.EventHandler<Twip.ElementActivatedEventArgs!>?
 Twip.EditorSession.Elements.get -> Twip.EditorElements!
 Twip.EditorSession.ElementsChanged -> System.EventHandler<Twip.ElementsChangedEventArgs!>?
-Twip.EditorSession.ExportPdfAsync(System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.SaveResult!>!
-Twip.EditorSession.ExportPdfAsync(string! path, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.SaveResult!>!
+Twip.EditorSession.ExportPdfAsync(System.IO.Stream! stream, Twip.PdfOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.SaveResult!>!
+Twip.EditorSession.ExportPdfAsync(string! path, Twip.PdfOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.SaveResult!>!
+Twip.PdfOptions
+Twip.PdfOptions.PdfOptions() -> void
+Twip.PdfOptions.OpenPassword.get -> string?
+Twip.PdfOptions.OpenPassword.init -> void
+Twip.PdfOptions.Keywords.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Twip.PdfOptions.Keywords.init -> void
+override Twip.PdfOptions.ToString() -> string!
 Twip.EditorSession.Faulted -> System.EventHandler<Twip.FaultedEventArgs!>?
 Twip.EditorSession.FieldsUpdateRequested -> System.EventHandler<Twip.FieldsUpdateRequestedEventArgs!>?
 Twip.EditorSession.Find.get -> Twip.EditorFind!
@@ -5273,6 +5280,7 @@ Twip.EditorSubTemplates.RenameAsync(string! name, string! to, bool updateReferen
 Twip.WarningCode.SubTemplateCycle = 14 -> Twip.WarningCode
 Twip.WarningCode.SubTemplateNearMatch = 16 -> Twip.WarningCode
 Twip.WarningCode.SubTemplateTooDeep = 15 -> Twip.WarningCode
+Twip.WarningCode.PdfArchivalClaimDropped = 17 -> Twip.WarningCode
 static Twip.EditorOperation.CreateSubTemplate(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.RemoveSubTemplate(string! name, string? category = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.RenameSubTemplate(string! name, string! to, bool? updateReferences = null, string? category = null) -> Twip.EditorOperation!
@@ -5386,3 +5394,47 @@ static Twip.EditorOperation.SelectPreviousPlaceholder() -> Twip.EditorOperation!
 static Twip.EditorOperation.SetUnmappedFields(System.Collections.Generic.IReadOnlyList<string!>! names) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetFieldTypes(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! types, bool? merge = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SelectNextPlaceholder() -> Twip.EditorOperation!
+Twip.PdfConversion
+Twip.PdfConversion.<Clone>$() -> Twip.PdfConversion!
+Twip.PdfConversion.Bytes.get -> byte[]!
+Twip.PdfConversion.Bytes.init -> void
+Twip.PdfConversion.Deconstruct(out byte[]! Bytes, out System.Collections.Generic.IReadOnlyList<Twip.Warning!>! Warnings) -> void
+Twip.PdfConversion.Equals(Twip.PdfConversion? other) -> bool
+Twip.PdfConversion.PdfConversion(byte[]! Bytes, System.Collections.Generic.IReadOnlyList<Twip.Warning!>! Warnings) -> void
+Twip.PdfConversion.Warnings.get -> System.Collections.Generic.IReadOnlyList<Twip.Warning!>!
+Twip.PdfConversion.Warnings.init -> void
+Twip.PdfConverter
+Twip.PdfFontSet
+Twip.PdfFontSet.Dispose() -> void
+Twip.PdfFontSet.Faces.get -> System.Collections.Generic.IReadOnlyList<Twip.FaceInfo!>!
+Twip.PdfFontSet.Families.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Twip.PdfFontSetOptions
+Twip.PdfFontSetOptions.<Clone>$() -> Twip.PdfFontSetOptions!
+Twip.PdfFontSetOptions.DefaultFamily.get -> string?
+Twip.PdfFontSetOptions.DefaultFamily.init -> void
+Twip.PdfFontSetOptions.Equals(Twip.PdfFontSetOptions? other) -> bool
+Twip.PdfFontSetOptions.FontFiles.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Twip.PdfFontSetOptions.FontFiles.init -> void
+Twip.PdfFontSetOptions.Fonts.get -> System.Collections.Generic.IReadOnlyList<System.ReadOnlyMemory<byte>>!
+Twip.PdfFontSetOptions.Fonts.init -> void
+Twip.PdfFontSetOptions.IncludeSystemFonts.get -> bool
+Twip.PdfFontSetOptions.IncludeSystemFonts.init -> void
+Twip.PdfFontSetOptions.PdfFontSetOptions() -> void
+Twip.PdfFontSetOptions.Substitutions.get -> System.Collections.Generic.IReadOnlyList<Twip.SubstitutionRule!>!
+Twip.PdfFontSetOptions.Substitutions.init -> void
+override Twip.PdfConversion.Equals(object? obj) -> bool
+override Twip.PdfConversion.GetHashCode() -> int
+override Twip.PdfConversion.ToString() -> string!
+override Twip.PdfFontSetOptions.Equals(object? obj) -> bool
+override Twip.PdfFontSetOptions.GetHashCode() -> int
+override Twip.PdfFontSetOptions.ToString() -> string!
+static Twip.PdfConversion.operator !=(Twip.PdfConversion? left, Twip.PdfConversion? right) -> bool
+static Twip.PdfConversion.operator ==(Twip.PdfConversion? left, Twip.PdfConversion? right) -> bool
+static Twip.PdfConverter.Convert(System.ReadOnlySpan<byte> docx, Twip.PdfFontSet? fonts = null, Twip.PdfOptions? options = null) -> Twip.PdfConversion!
+static Twip.PdfConverter.ConvertAsync(System.IO.Stream! docx, System.IO.Stream! pdf, Twip.PdfFontSet? fonts = null, Twip.PdfOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.Warning!>!>!
+static Twip.PdfConverter.ConvertAsync(System.ReadOnlyMemory<byte> docx, Twip.PdfFontSet? fonts = null, Twip.PdfOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.PdfConversion!>!
+static Twip.PdfConverter.ConvertAsync(string! docxPath, string! pdfPath, Twip.PdfFontSet? fonts = null, Twip.PdfOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.Warning!>!>!
+static Twip.PdfFontSet.Create(Twip.PdfFontSetOptions! options) -> Twip.PdfFontSet!
+static Twip.PdfFontSet.System.get -> Twip.PdfFontSet!
+static Twip.PdfFontSetOptions.operator !=(Twip.PdfFontSetOptions? left, Twip.PdfFontSetOptions? right) -> bool
+static Twip.PdfFontSetOptions.operator ==(Twip.PdfFontSetOptions? left, Twip.PdfFontSetOptions? right) -> bool

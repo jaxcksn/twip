@@ -248,12 +248,17 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
         if (!exported) fail(at, 'reopen before any docx export');
         return signalFor((signal) => editor.open(exported!, { signal }));
       case 'export':
-        return signalFor((signal) => editor.export({ format: step.format, signal })).then((result: { bytes: Uint8Array; revision: number; warnings: unknown }) => {
+        return signalFor((signal) => editor.export({ format: step.format, ...(step.pdf ?? {}), signal })).then((result: { bytes: Uint8Array; revision: number; warnings: unknown }) => {
           const now = editor.getState().revision;
           if (result.revision !== now) fail(at, `the export reports revision ${result.revision}, the state is at ${now}`);
           const head = String.fromCharCode(...result.bytes.subarray(0, 4));
           const m = step.match === undefined ? null : mismatch({ revision: result.revision, warnings: result.warnings, head }, step.match, 'export');
           if (m) fail(at, m);
+          for (const want of (step.contains as string[] | undefined) ?? []) {
+            const needle = [...want].map((c) => c.charCodeAt(0));
+            const found = result.bytes.some((_, i) => needle.every((b, k) => result.bytes[i + k] === b));
+            if (!found) fail(at, `the export has no ${JSON.stringify(want)}`);
+          }
           if (step.format === 'docx') exported = result.bytes;
         });
       case 'command':

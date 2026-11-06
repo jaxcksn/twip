@@ -133,6 +133,31 @@ internal static unsafe partial class TwipNative
 {
     public const string Library = "twip";
 
+#if !NETFRAMEWORK
+    // Runs before the first call into the library, so a failed load explains itself.
+    static TwipNative() => NativeLibrary.SetDllImportResolver(typeof(TwipNative).Assembly, Resolve);
+
+    /// <summary>
+    /// Loads the library as the runtime would, and on Linux turns a failure into one that names the packages the
+    /// library needs: the loader's message names the missing file, not where it comes from.
+    /// </summary>
+    private static nint Resolve(string name, System.Reflection.Assembly assembly, DllImportSearchPath? path)
+    {
+        if (name != Library || !OperatingSystem.IsLinux()) return 0;
+        try
+        {
+            return NativeLibrary.Load(name, assembly, path);
+        }
+        catch (DllNotFoundException e)
+        {
+            throw new DllNotFoundException(
+                $"{e.Message} Twip needs FreeType, Fontconfig and libstdc++, and fonts to draw with: on Alpine, " +
+                "`apk add fontconfig freetype libstdc++` and a font package such as `font-liberation`; on Debian " +
+                "and Ubuntu, `apt-get install libfreetype6 libfontconfig1`.", e);
+        }
+    }
+#endif
+
     [DllImport(Library, EntryPoint = "twip_engine_new")]
     public static extern nint EngineNew(byte* optionsJson, nuint len, nint callback, nint ctx);
 
@@ -207,6 +232,29 @@ internal static unsafe partial class TwipNative
 
     [DllImport(Library, EntryPoint = "twip_timer_fired")]
     public static extern void TimerFired(nint engine, uint session, uint timer);
+
+    // Headless conversion: no engine, so these are called on any thread.
+
+    [DllImport(Library, EntryPoint = "twip_pdf_fonts_new")]
+    public static extern int PdfFontsNew(byte* opts, nuint olen, byte** fonts, nuint* lens, nuint count, nint* output, TwipBuf* faces);
+
+    [DllImport(Library, EntryPoint = "twip_pdf_fonts_free")]
+    public static extern void PdfFontsFree(nint fonts);
+
+    [DllImport(Library, EntryPoint = "twip_pdf_fonts_families")]
+    public static extern int PdfFontsFamilies(nint fonts, TwipBuf* output);
+
+    [DllImport(Library, EntryPoint = "twip_pdf_cancel_new")]
+    public static extern nint PdfCancelNew();
+
+    [DllImport(Library, EntryPoint = "twip_pdf_cancel_set")]
+    public static extern void PdfCancelSet(nint cancel);
+
+    [DllImport(Library, EntryPoint = "twip_pdf_cancel_free")]
+    public static extern void PdfCancelFree(nint cancel);
+
+    [DllImport(Library, EntryPoint = "twip_pdf_convert")]
+    public static extern int PdfConvert(byte* docx, nuint len, nint fonts, byte* opts, nuint olen, nint cancel, TwipBuf* pdf, TwipBuf* meta);
 
     /// <summary>Whether the native library loads and has this C ABI.</summary>
     public static bool IsAvailable()

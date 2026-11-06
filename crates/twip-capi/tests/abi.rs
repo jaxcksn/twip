@@ -215,10 +215,77 @@ fn a_panic_faults_the_engine() {
     assert_eq!(unsafe { twip_session_new(f.engine, std::ptr::null(), 0) }, 0);
 }
 
+/// A font set built through the ABI from the system's fonts.
+fn system_fonts() -> *mut engine::pdf::FontSet {
+    let (opts, mut set, mut faces) = (br#"{"includeSystemFonts":true}"#, std::ptr::null_mut(), TwipBuf { ptr: std::ptr::null_mut(), len: 0 });
+    // SAFETY: options valid for their length, no font bytes, two outputs.
+    let status = unsafe { pdf::twip_pdf_fonts_new(opts.as_ptr(), opts.len(), std::ptr::null(), std::ptr::null(), 0, &mut set, &mut faces) };
+    assert_eq!(status, 0, "{}", take(&mut faces));
+    take(&mut faces);
+    set
+}
+
+#[test]
+fn conversions_run_on_many_threads_with_one_font_set() {
+    let docx = include_bytes!("../../twip/tests/fixtures/text-basics.docx");
+    let fonts = system_fonts() as usize;
+    let results: Vec<(i32, Vec<u8>, Value)> = std::thread::scope(|s| {
+        let jobs: Vec<_> = (0..4)
+            .map(|_| {
+                s.spawn(move || {
+                    let (mut out, mut meta) = (TwipBuf { ptr: std::ptr::null_mut(), len: 0 }, TwipBuf { ptr: std::ptr::null_mut(), len: 0 });
+                    // SAFETY: the document valid for its length, a live font set, no options or flag, two outputs.
+                    let status = unsafe {
+                        pdf::twip_pdf_convert(
+                            docx.as_ptr(),
+                            docx.len(),
+                            fonts as *const _,
+                            std::ptr::null(),
+                            0,
+                            std::ptr::null(),
+                            &mut out,
+                            &mut meta,
+                        )
+                    };
+                    // SAFETY: the engine wrote the buffer.
+                    let bytes = unsafe { bytes(out.ptr, out.len) }.to_vec();
+                    // SAFETY: the engine wrote the buffer, and it isn't read again.
+                    unsafe { twip_buf_free(&mut out) };
+                    (status, bytes, take(&mut meta))
+                })
+            })
+            .collect();
+        jobs.into_iter().map(|j| j.join().expect("no panic")).collect()
+    });
+    for (status, pdf, meta) in results {
+        assert_eq!(status, 0, "{meta}");
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(meta["ok"]["warnings"].is_array());
+    }
+    let bad = br#"{"openPassword":""}"#;
+    let (mut out, mut meta) = (TwipBuf { ptr: std::ptr::null_mut(), len: 0 }, TwipBuf { ptr: std::ptr::null_mut(), len: 0 });
+    // SAFETY: as above, with options valid for their length.
+    let status = unsafe {
+        pdf::twip_pdf_convert(docx.as_ptr(), docx.len(), fonts as *const _, bad.as_ptr(), bad.len(), std::ptr::null(), &mut out, &mut meta)
+    };
+    assert_eq!((status, take(&mut meta)["error"]["code"].clone()), (status_of(ErrorCode::InvalidArgument), json!("invalid-argument")));
+    let cancel = pdf::twip_pdf_cancel_new();
+    // SAFETY: a live flag.
+    unsafe { pdf::twip_pdf_cancel_set(cancel) };
+    // SAFETY: as above, with a live flag.
+    let status = unsafe { pdf::twip_pdf_convert(docx.as_ptr(), docx.len(), fonts as *const _, std::ptr::null(), 0, cancel, &mut out, &mut meta) };
+    assert_eq!((status, take(&mut meta)["error"]["code"].clone()), (status_of(ErrorCode::Aborted), json!("aborted")));
+    // SAFETY: each from its constructor, and not used again.
+    unsafe {
+        pdf::twip_pdf_cancel_free(cancel);
+        pdf::twip_pdf_fonts_free(fonts as *mut _);
+    }
+}
+
 #[test]
 fn the_header_declares_the_abi() {
     let header = include_str!("../include/twip.h");
-    let lib = include_str!("../src/lib.rs");
+    let lib = concat!(include_str!("../src/lib.rs"), include_str!("../src/pdf.rs"));
     let name = |line: &str| line.split("twip_").nth(1).and_then(|rest| rest.split('(').next()).map(|n| format!("twip_{n}"));
     let exported: BTreeSet<String> = lib.lines().filter(|l| l.starts_with("pub ") && l.contains("extern \"C\" fn twip_")).filter_map(name).collect();
     let declared: BTreeSet<String> = header.lines().filter(|l| !l.starts_with("typedef") && l.trim_end().ends_with(");")).filter_map(name).collect();

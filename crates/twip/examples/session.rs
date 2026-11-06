@@ -6,7 +6,7 @@ use twip::api::command::Command;
 use twip::api::engine::{Engine, SessionOptions};
 use twip::api::event::Event;
 use twip::api::fonts::FontLibrary;
-use twip::api::session::{ExportFormat, ExportOptions};
+use twip::api::session::ExportOptions;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut engine = Engine::new(FontLibrary::system());
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     println!("state: {summary}");
 
-    let export = session.export(&ExportOptions { format: ExportFormat::Docx })?;
+    let export = session.export(&ExportOptions::Docx)?;
     println!("exported {} bytes at revision {}", export.bytes.0.len(), export.revision);
     Ok(())
 }

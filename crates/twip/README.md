@@ -27,4 +27,15 @@ std::fs::write("report-edited.docx", engine.save()?)?;
 std::fs::write("report.pdf", engine.export_pdf("Report"))?;
 ```
 
+To convert without an editor, on as many threads as you like, use `twip::pdf`: build a `FontSet` once and share it.
+
+```rust
+use twip::pdf::{FontSet, PdfOptions, convert};
+
+let fonts = FontSet::system();
+let options = PdfOptions { open_password: Some("s3cret".into()), keywords: vec!["notice".into()] };
+let pdf = convert(&std::fs::read("report.docx")?, &fonts, &options)?;
+std::fs::write("report.pdf", pdf.bytes)?;
+```
+
 Guides: https://jaxcksn.github.io/twip/docs/guides/rust. Licensed under Apache-2.0.

@@ -35,7 +35,7 @@ public sealed class SessionTests : IDisposable
         await using var again = new EditorSession();
         await again.OpenAsync(path, Ct);
         var pdf = Path.Combine(_dir, "out.pdf");
-        await again.ExportPdfAsync(pdf, Ct);
+        await again.ExportPdfAsync(pdf, ct: Ct);
         Assert.StartsWith("%PDF", await File.ReadAllTextAsync(pdf, Ct), StringComparison.Ordinal);
     }
 

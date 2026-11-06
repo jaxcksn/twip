@@ -1161,6 +1161,15 @@ export interface Elements {
 export type ErrorCode = 'destroyed' | 'invalid-argument' | 'unavailable' | 'read-only' | 'import-failed' | 'export-failed' | 'aborted' | 'not-allowed' | 'unsupported' | 'internal';
 
 // @public
+export type ExportOptions = {
+    format: 'docx';
+    signal?: AbortSignal;
+} | ({
+    format: 'pdf';
+    signal?: AbortSignal;
+} & PdfOptions);
+
+// @public
 export interface ExportResult {
     bytes: Uint8Array;
     revision: number;
@@ -1365,10 +1374,7 @@ export class HeadlessEditor {
     destroy(): Promise<void>;
     readonly dialogs: Dialogs;
     readonly elements: Elements;
-    export(options: {
-        format: 'docx' | 'pdf';
-        signal?: AbortSignal;
-    }): Promise<ExportResult>;
+    export(options: ExportOptions): Promise<ExportResult>;
     readonly find: Find;
     getState(): EditorState;
     readonly menus: Menus;
@@ -1714,6 +1720,12 @@ export interface ParagraphFormatting {
     spaceAfter: Mixed<Points | 'auto'>;
     spaceBefore: Mixed<Points | 'auto'>;
     style: Mixed<StyleId>;
+}
+
+// @public
+export interface PdfOptions {
+    keywords?: readonly string[];
+    openPassword?: string;
 }
 
 // @public
@@ -2451,7 +2463,7 @@ export interface ViewState {
 
 // @public
 export interface Warning {
-    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'font-substituted' | 'rewritten-content' | 'pdf-font-fallback' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match';
+    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'font-substituted' | 'rewritten-content' | 'pdf-font-fallback' | 'pdf-archival-claim-dropped' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match';
     count: number;
     location?: {
         part: string;

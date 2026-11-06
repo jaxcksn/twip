@@ -18,6 +18,8 @@ Skia is never built from source. Native builds use skia-safe's prebuilts, except
 [twip-skia-dawn](https://github.com/jaxcksn/twip-skia-dawn) release), so the native library draws on the GPU
 (D3D12, D3D11 or Vulkan on Windows, Metal on macOS). It passes other cargo arguments through
 (`node crates/twip-capi/build-native.mjs test --workspace`); a plain cargo build there draws with the CPU only.
+On Linux musl (Alpine) the same script downloads the pinned musl Skia from twip-skia-dawn (built without Dawn, so it
+draws with the CPU), because skia-safe publishes no musl prebuilts.
 
 Then:
 
@@ -141,7 +143,7 @@ The code is the documentation. A comment in the engine names a part of the code 
   | `feat!` / `fix!` or a `BREAKING CHANGE:` footer | Breaking API or behaviour change | minor | major |
   | `refactor`, `docs`, `test`, `build`, `ci`, `chore`, `revert` | Everything else | none | none |
 
-  Scopes are optional: `layout`, `editing`, `drawing`, `render`, `ffi`, `dotnet`, `web`, `angular`, `react`, `harness`, `docs`,
+  Scopes are optional: `layout`, `editing`, `drawing`, `render`, `pdf`, `ffi`, `dotnet`, `web`, `angular`, `react`, `harness`, `docs`,
   `release`, `deps`. The list lives in the `commitlint` key of `package.json`.
   A change to layout output that alters where text lands on the page is a behaviour change. Mark it `fix(layout)` and
   say what moves.

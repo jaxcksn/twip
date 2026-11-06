@@ -38,7 +38,8 @@
     <None Include="README.md" Pack="true" PackagePath="" />
     <None Include="build/Twip.Core.targets" Pack="true" PackagePath="build/net48/" />
     <None Include="build/Twip.Core.targets" Pack="true" PackagePath="buildTransitive/net48/" />
-    <!-- Filled by the release workflow: runtimes/<rid>/native/<lib>. -->
+    <!-- Filled by the release workflow: runtimes/<rid>/native/<lib>, for win-x64, linux-x64, linux-arm64, linux-musl-x64
+         and linux-musl-arm64. -->
     <None Include="../runtimes/**/*" Pack="true" PackagePath="runtimes/" />
     <!-- A local build, when runtimes/ has no Windows library: the release cdylib twip-capi builds. -->
     <None Include="../../../target/release/twip.dll" Pack="true" PackagePath="runtimes/win-x64/native/"

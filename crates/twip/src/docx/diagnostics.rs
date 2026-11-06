@@ -19,6 +19,8 @@ pub enum WarningCode {
     RewrittenContent,
     /// Text a PDF export drew with a fallback font.
     PdfFontFallback,
+    /// A password-protected PDF, which can't claim PDF/A conformance: the claim was left out.
+    PdfArchivalClaimDropped,
     /// A revision without a `w:id`: it was given a new one.
     RevisionIdMissing,
     /// A comment or move range end with no start, or a start with no end.
@@ -53,6 +55,7 @@ impl WarningCode {
             WarningCode::FontSubstituted => "font-substituted",
             WarningCode::RewrittenContent => "rewritten-content",
             WarningCode::PdfFontFallback => "pdf-font-fallback",
+            WarningCode::PdfArchivalClaimDropped => "pdf-archival-claim-dropped",
             WarningCode::RevisionIdMissing => "revision-id-missing",
             WarningCode::RangeUnpaired => "range-unpaired",
             WarningCode::AuthorMissing => "author-missing",
@@ -133,7 +136,9 @@ mod tests {
 
     #[test]
     fn codes_serialize_as_their_names() {
-        for code in [WarningCode::UnsupportedElement, WarningCode::PdfFontFallback, WarningCode::CommentReferenceOrphan] {
+        for code in
+            [WarningCode::UnsupportedElement, WarningCode::PdfFontFallback, WarningCode::PdfArchivalClaimDropped, WarningCode::CommentReferenceOrphan]
+        {
             assert_eq!(serde_json::to_value(code).ok(), Some(serde_json::Value::from(code.name())));
         }
     }

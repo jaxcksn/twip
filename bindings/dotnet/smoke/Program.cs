@@ -47,5 +47,10 @@ try
 }
 catch (EditorException e) when (e.Code == EditorErrorCode.Unsupported) { }
 
+// Headless conversion, without a session: writes out.pdf beside the app.
+var pdf = PdfConverter.Convert(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "hello.docx")));
+if (pdf.Bytes.Length < 5 || pdf.Bytes[0] != '%' || pdf.Bytes[1] != 'P') throw new Exception("the converter's output isn't a PDF");
+File.WriteAllBytes(Path.Combine(AppContext.BaseDirectory, "out.pdf"), pdf.Bytes);
+
 Console.WriteLine($"revision {result.Revision}, saved {saved.Length} bytes, {changes} changes");
 Console.WriteLine("ok");

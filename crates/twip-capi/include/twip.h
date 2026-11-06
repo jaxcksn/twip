@@ -168,6 +168,21 @@ int32_t twip_open_prepare(TwipEngine* engine, uint32_t session, const uint8_t* b
 int32_t twip_export(TwipEngine* engine, uint32_t session, const uint8_t* opts, size_t olen, TwipBuf* bytes, TwipBuf* meta);
 int32_t twip_font_add(TwipEngine* engine, const uint8_t* bytes, size_t len, TwipBuf* out);
 
+/* Headless conversion (native only): no engine or session, callable from any thread at the same time.
+ * twip_pdf_fonts_new: opts is {"includeSystemFonts", "fontFiles", "substitutions", "defaultFamily"} or empty, with
+ * count font files passed as bytes; *out gets the set, faces gets {"ok": FaceInfo[]}. twip_pdf_fonts_families: out
+ * gets {"ok": string[]}. twip_pdf_convert: opts is an api::PdfOptions or empty, cancel may be NULL; the PDF goes to
+ * pdf, raw, and meta gets {"ok": {"warnings"}}. A set or flag is freed only after the calls using it return. */
+typedef struct TwipPdfFonts TwipPdfFonts;
+typedef struct TwipPdfCancel TwipPdfCancel;
+int32_t twip_pdf_fonts_new(const uint8_t* opts, size_t olen, const uint8_t* const* fonts, const size_t* lens, size_t count, TwipPdfFonts** out, TwipBuf* faces);
+void twip_pdf_fonts_free(TwipPdfFonts* fonts);
+int32_t twip_pdf_fonts_families(const TwipPdfFonts* fonts, TwipBuf* out);
+TwipPdfCancel* twip_pdf_cancel_new(void);
+void twip_pdf_cancel_set(const TwipPdfCancel* cancel);
+void twip_pdf_cancel_free(TwipPdfCancel* cancel);
+int32_t twip_pdf_convert(const uint8_t* docx, size_t len, const TwipPdfFonts* fonts, const uint8_t* opts, size_t olen, const TwipPdfCancel* cancel, TwipBuf* pdf, TwipBuf* meta);
+
 /* Hot input. key: a TwipKey; mods: TWIP_MOD_* bits. twip_key returns 0 unhandled, 1 handled, or 2 + n for host
  * command n in api::HostCommand order (save, saveAs, print, open, new, find, replace, goTo, insertHyperlink,
  * nextMisspelling, focusFont, focusFontSize, help). Composition phase: start 0, update 1, end 2. Pointer kind: down

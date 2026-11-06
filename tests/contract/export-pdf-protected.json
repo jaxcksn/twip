@@ -1,0 +1,16 @@
+{
+  "name": "export-pdf-protected",
+  "fixture": "text-basics.docx",
+  "steps": [
+    { "op": "open" },
+    {
+      "op": "export",
+      "format": "pdf",
+      "pdf": { "openPassword": "secret" },
+      "match": { "head": "%PDF" },
+      "contains": ["/Encrypt", "/AESV3"]
+    },
+    { "op": "export", "format": "pdf", "pdf": { "openPassword": "" } },
+    { "op": "expectError", "code": "invalid-argument" }
+  ]
+}

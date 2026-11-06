@@ -89,15 +89,27 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
 
     /// <summary>Exports PDF to a file, replaced safely.</summary>
     /// <param name="path">The file.</param>
+    /// <param name="options">An open password and keywords; none when null.</param>
     /// <param name="ct">Cancels the export.</param>
     /// <returns>The revision exported, and the export warnings.</returns>
-    public Task<SaveResult> ExportPdfAsync(string path, CancellationToken ct = default) => ExportToFileAsync("pdf", path, ct);
+    /// <exception cref="ArgumentException">The open password is empty.</exception>
+    public Task<SaveResult> ExportPdfAsync(string path, PdfOptions? options = null, CancellationToken ct = default)
+    {
+        options?.Validate();
+        return ExportToFileAsync("pdf", path, ct, options);
+    }
 
     /// <summary>Exports PDF to a stream. The stream stays open.</summary>
     /// <param name="stream">The stream.</param>
+    /// <param name="options">An open password and keywords; none when null.</param>
     /// <param name="ct">Cancels the export.</param>
     /// <returns>The revision exported, and the export warnings.</returns>
-    public Task<SaveResult> ExportPdfAsync(Stream stream, CancellationToken ct = default) => ExportToStreamAsync("pdf", stream, ct);
+    /// <exception cref="ArgumentException">The open password is empty.</exception>
+    public Task<SaveResult> ExportPdfAsync(Stream stream, PdfOptions? options = null, CancellationToken ct = default)
+    {
+        options?.Validate();
+        return ExportToStreamAsync("pdf", stream, ct, options);
+    }
 
     // Edits
 
@@ -494,9 +506,9 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
         return new ImportResult(warnings);
     }, ct);
 
-    private Task<(byte[] Bytes, SaveResult Result)> ExportAsync(string format, CancellationToken ct) => Enqueue(id =>
+    private Task<(byte[] Bytes, SaveResult Result)> ExportAsync(string format, PdfOptions? pdf, CancellationToken ct) => Enqueue(id =>
     {
-        var options = WireJson.ToUtf8(new ExportOptionsWire(format));
+        var options = WireJson.ToUtf8(new ExportOptionsWire(format, pdf?.OpenPassword, pdf?.Keywords is { Count: > 0 } k ? k : null));
         TwipBuf bytes = default, meta = default;
         int status;
         unsafe
@@ -516,18 +528,18 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
         }
     }, ct);
 
-    internal async Task<SaveResult> ExportToStreamAsync(string format, Stream stream, CancellationToken ct)
+    internal async Task<SaveResult> ExportToStreamAsync(string format, Stream stream, CancellationToken ct, PdfOptions? pdf = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        var (bytes, result) = await ExportAsync(format, ct).ConfigureAwait(false);
+        var (bytes, result) = await ExportAsync(format, pdf, ct).ConfigureAwait(false);
         await stream.WriteAsync(bytes, ct).ConfigureAwait(false);
         return result;
     }
 
-    private async Task<SaveResult> ExportToFileAsync(string format, string path, CancellationToken ct)
+    private async Task<SaveResult> ExportToFileAsync(string format, string path, CancellationToken ct, PdfOptions? pdf = null)
     {
         var full = Path.GetFullPath(path);
-        var (bytes, result) = await ExportAsync(format, ct).ConfigureAwait(false);
+        var (bytes, result) = await ExportAsync(format, pdf, ct).ConfigureAwait(false);
         var temp = Path.Combine(Path.GetDirectoryName(full)!, $".{Path.GetFileName(full)}.{Guid.NewGuid():N}.tmp");
         try
         {

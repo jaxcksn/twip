@@ -117,6 +117,7 @@ export interface Warning {
     | 'font-substituted'
     | 'rewritten-content'
     | 'pdf-font-fallback'
+    | 'pdf-archival-claim-dropped'
     | 'revision-id-missing'
     | 'range-unpaired'
     | 'author-missing'
