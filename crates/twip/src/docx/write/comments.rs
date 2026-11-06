@@ -78,7 +78,7 @@ impl Part {
                     if let Some(i) = c.initials.as_ref().or(person.and_then(|p| p.initials.as_ref())) {
                         a.push_str(&format!(" w:initials=\"{}\"", esc(i)));
                     }
-                    let body = comment_body(&new_blocks_xml(shell, &c.body, people)?, c.para_id);
+                    let body = comment_body(&new_blocks_xml(shell, &c.body, &Default::default(), people)?, c.para_id);
                     out.push_str(&format!("<w:comment{a}>{body}</w:comment>"));
                 }
             }

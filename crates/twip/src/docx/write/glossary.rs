@@ -29,7 +29,7 @@ pub(super) fn write(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u
             );
             let mut text = String::new();
             for (n, b) in made.iter().enumerate() {
-                text.push_str(&part_xml_of("w:", b, n, &new_blocks_xml(&shell, &b.body, &doc.people)?));
+                text.push_str(&part_xml_of("w:", b, n, &new_blocks_xml(&shell, &b.body, &doc.controls, &doc.people)?));
             }
             let xml = shell.replace("<w:docParts></w:docParts>", &format!("<w:docParts>{text}</w:docParts>"));
             let name = "word/glossary/document.xml";
@@ -96,7 +96,7 @@ fn patched(doc: &Document, g: &Glossary, gs: &GlossarySource) -> Result<Option<S
     }
     let mut text = String::new();
     for (n, b) in g.parts.iter().enumerate().skip(gs.parts.len()).filter(|(_, b)| b.state == PartState::Added) {
-        text.push_str(&part_xml_of(&w, b, n, &new_blocks_xml(&gs.xml, &b.body, &doc.people)?));
+        text.push_str(&part_xml_of(&w, b, n, &new_blocks_xml(&gs.xml, &b.body, &doc.controls, &doc.people)?));
     }
     if !text.is_empty() {
         let list = dom.descendants().find(|n| is_w(*n, "docParts")).ok_or("a glossary without its parts list")?;
