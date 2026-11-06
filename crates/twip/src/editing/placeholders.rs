@@ -38,13 +38,35 @@ impl Editor {
         }
     }
 
-    pub(super) fn activate_placeholder(&mut self) -> bool {
+    /// The innermost control open at the selected picture; its paragraph's block control otherwise.
+    fn selected_picture_control(&self) -> Option<crate::docx::ControlId> {
+        let Selection::Object(ObjectRef::Inline { para, offset }) = self.selection else { return None };
+        let p = self.index.para(&self.doc, para)?;
+        let mut open = p.controls.clone();
+        let mut at = 0;
+        for i in &p.inlines {
+            let n = i.units();
+            if n > 0 && (offset.0 as usize) < at + n {
+                break;
+            }
+            match i {
+                Inline::ControlStart(c) => open.push(*c),
+                Inline::ControlEnd(_) => drop(open.pop()),
+                _ => {}
+            }
+            at += n;
+        }
+        open.last().copied()
+    }
+
+    pub(crate) fn activate_placeholder(&mut self) -> bool {
         if self.mode == super::Mode::Design {
             return false;
         }
         match self.selected_placeholder() {
             Some(info) => {
-                self.events.push(super::input::Notice::Placeholder(info.key.clone()));
+                let control = self.selected_picture_control();
+                self.events.push(super::input::Notice::Placeholder { key: info.key.clone(), control });
                 self.requests.push(Request::Placeholder(info));
                 true
             }

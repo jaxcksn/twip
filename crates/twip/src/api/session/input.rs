@@ -165,6 +165,18 @@ impl Session {
     /// A command from input: checked as the API's are, and recorded as the user's.
     fn input(&mut self, command: Command) -> Result<super::Commit, crate::api::error::Error> {
         use crate::editing::autocorrect::{Trigger, may_trigger};
+        // Enter or Space on an unfilled placeholder activates it, read only too: it changes nothing.
+        let activates = match &command {
+            Command::InsertParagraph => true,
+            Command::InsertText(t) => t == " ",
+            _ => false,
+        };
+        if self.read_only && activates && self.editor.selected_placeholder().is_some() {
+            return self.apply_with(Origin::User, |e, _| {
+                e.activate_placeholder();
+                Outcome::Unchanged("placeholder activated")
+            });
+        }
         if let Err(e) = self.check(&command) {
             // An edit the user tried in a read-only document is said to be refused, as Word does; the API's aren't.
             if e.code == crate::api::error::ErrorCode::ReadOnly {
@@ -216,7 +228,10 @@ impl Session {
                     Event::FieldsUpdateRequested { token, fields: fields.into_iter().map(|(e, code)| FieldRequest { id: id(e), code }).collect() }
                 }
                 Notice::Link { address, ctrl } => Event::LinkActivated { address, via: if ctrl { LinkVia::CtrlClick } else { LinkVia::Click } },
-                Notice::Placeholder(key) => Event::PlaceholderActivated(crate::api::services::PlaceholderInfo { key, element: None }),
+                Notice::Placeholder { key, control } => Event::PlaceholderActivated(crate::api::services::PlaceholderInfo {
+                    key,
+                    element: control.map(|c| id(crate::docx::ElementId::Control(c))),
+                }),
                 Notice::Warning(code, message) => Event::Warning(crate::docx::diagnostics::Warning { code, message, count: 1, location: None }),
                 Notice::Refused { sub_template, element } => Event::EditRefused {
                     reason: match sub_template {
