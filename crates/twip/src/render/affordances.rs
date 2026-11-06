@@ -310,7 +310,6 @@ impl Renderer {
         }
         canvas.restore();
     }
-
 }
 
 fn rect(r: &[f64; 4]) -> Rect {

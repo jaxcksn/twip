@@ -10,9 +10,7 @@ use super::commands::Outcome;
 use super::merge::Where;
 use super::selection::Selection;
 use super::sub_templates::Resolution;
-pub use super::view::{
-    AffordanceView, Block, BlockState, Button, CardState, FieldState, Icon, MONO_ADVANCE, Part, Segment, Tab, Target, mono_width,
-};
+pub use super::view::{AffordanceView, Block, BlockState, Button, CardState, FieldState, Icon, MONO_ADVANCE, Part, Segment, Tab, Target, mono_width};
 
 /// The affordances' state: view settings from the host and what the pointer is over. Never saved, never undone.
 #[derive(Clone, Debug, Default)]
@@ -279,7 +277,8 @@ impl Editor {
         }
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no block") };
         let moved: Vec<Inline> = p.inlines[first..=last].to_vec();
-        let unmarked: Vec<Inline> = p.inlines.iter().filter(|i| !matches!(i, Inline::ControlStart(x) | Inline::ControlEnd(x) if *x == c)).cloned().collect();
+        let unmarked: Vec<Inline> =
+            p.inlines.iter().filter(|i| !matches!(i, Inline::ControlStart(x) | Inline::ControlEnd(x) if *x == c)).cloned().collect();
         let at = if dst == para && at > end { Unit(at.0 - (end.0 - start.0)) } else { at };
         let mut tx = self.begin("Move Object");
         let ok = self.step(&mut tx, Step::Restyle { para, inlines: unmarked }).is_ok()

@@ -655,7 +655,6 @@ fn an_if_is_tinted_and_shows_its_condition_only_while_hovered() {
     assert!(tab.rect[3] <= rects[0][1] + 0.01, "above the region");
 }
 
-
 #[test]
 fn a_hovered_field_is_the_hosts_tooltip_not_a_drawn_caption() {
     use crate::api::services::TooltipKind;
