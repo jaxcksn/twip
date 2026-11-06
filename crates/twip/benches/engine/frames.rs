@@ -94,27 +94,3 @@ fn select_line(bencher: Bencher, part: &str) {
             .bench_local_values(|()| frame());
     }
 }
-
-/// An unchanged frame of a page with 100 merge fields in design mode, the placeholder affordances off and on (their
-/// marks built and drawn each frame), on the CPU raster. Budget: under 8.3 ms, one 120 Hz frame. Filling the marks'
-/// tint is per pixel here; GPU targets fill it for nearly nothing.
-#[divan::bench(args = [false, true])]
-fn design_marks_100(bencher: Bencher, on: bool) {
-    use twip::api::command::{Command, InsertField, ViewOptions};
-    use twip::api::state::Mode;
-    let mut pixels = vec![0u8; (W * H * 4) as usize];
-    let mut engine = Engine::new(FontLibrary::system());
-    let id = engine.create_session(SessionOptions::default());
-    let s = engine.session(id).expect("the session was just created");
-    for k in 0..100 {
-        s.run(Command::InsertText(format!(" Item {k}: "))).expect("types");
-        s.run(Command::InsertField(InsertField { code: format!("MERGEFIELD Item.Field_{k}"), display: None, show_code: None })).expect("a field");
-    }
-    s.run(Command::SetMode(Mode::Design)).expect("design mode");
-    s.run(Command::SetViewOptions(ViewOptions { placeholder_ui: Some(on), ..ViewOptions::default() })).expect("the option");
-    s.host().set_size(f64::from(W), f64::from(H), 1.0);
-    s.host().set_focus(true);
-    while s.host().idle() {}
-    s.host().frame_rgba(&mut pixels, W, H).expect("a frame");
-    bencher.bench_local(|| s.host().frame_rgba(&mut pixels, W, H).expect("a frame"));
-}

@@ -2,7 +2,7 @@ import type { EditorError } from './errors.js';
 import type { BalloonPlacement, CommentAnchor } from './review.js';
 import type { AnnouncementKind } from './services/accessibility.js';
 import type { DialogKind } from './services/dialogs.js';
-import type { ElementInfo, SubTemplateReference } from './services/elements.js';
+import type { ElementInfo } from './services/elements.js';
 import type { ContextMenuEvent } from './services/menus.js';
 import type { RulerView } from './services/ruler.js';
 import type { GestureEvent, Popover } from './services/view.js';
@@ -19,22 +19,8 @@ export interface TwipEvents {
   editingTargetChanged: EditingTarget;
   /** A link was activated: a click when read only, Ctrl+click otherwise. */
   linkActivated: { address: string; via: 'ctrlClick' | 'click' };
-  /**
-   * An unfilled picture placeholder was clicked, or one of its buttons (`action`: the button's id).
-   */
-  placeholderActivated: { key: string; element: ElementId | null; action?: string };
-  /**
-   * With `placeholderUi` on, the pointer starts or stops being over a placeholder, or the hovered one's anchor moves;
-   * `null` when it leaves.
-   */
-  placeholderHovered: PlaceholderTarget | null;
-  /**
-   * With `placeholderUi` on, the selection starts or stops covering exactly one placeholder, or the selected one's
-   * anchor moves (scroll, zoom, layout); `null` when it's no longer selected.
-   */
-  placeholderSelected: PlaceholderTarget | null;
-  /** A shown sub-template's newer-version notice (`setSubTemplateVersions`) was pressed: the application updates it. */
-  subTemplateUpdateRequested: { name: string; category: string };
+  /** An unfilled picture placeholder was clicked. */
+  placeholderActivated: { key: string; element: ElementId | null };
   /**
    * Typing, pasting or dropping was refused: into a sub-template's body shown in place of its reference (edit the
    * sub-template instead), or into a locked control.
@@ -124,36 +110,11 @@ export type HostCommand =
 /** A hover tooltip to show. */
 export interface Tooltip {
   /** What is hovered. */
-  kind: 'link' | 'mark' | 'revision' | 'comment' | 'placeholder';
+  kind: 'link' | 'mark' | 'revision' | 'comment';
   /** The text to show. */
   text: string;
   /** The pointer. */
   at: ClientPoint;
   /** The hovered thing's box. */
   rect: ClientRect;
-}
-
-/** What kind of placeholder a {@link PlaceholderTarget} is. */
-export type PlaceholderKind = 'field' | 'control' | 'repeatingSection' | 'subTemplate' | 'inputBlock' | 'ifField';
-
-/** A placeholder the pointer is over or the selection covers, with `placeholderUi` on. */
-export interface PlaceholderTarget {
-  /** The field or control; absent for an input block outside a content control. */
-  element?: ElementId;
-  /** What it is. */
-  kind: PlaceholderKind;
-  /** What it shows, in full: a field's label or result, a control's title. */
-  label: string;
-  /** A field's name (its first argument), a control's tag, or a picture placeholder's key. */
-  key?: string;
-  /** A field's code. */
-  code?: string;
-  /** The caption's type text: `setFieldTypes`' text for the code, else the field type (`MERGEFIELD`), or a control's kind. */
-  typeText: string;
-  /** The data source lacks the field (`setUnmappedFields`). */
-  unmapped: boolean;
-  /** For a sub-template reference: what it names and whether its body shows. */
-  reference?: SubTemplateReference;
-  /** Where it is, in the same space as a popover's anchor: a field's last line, else its box. */
-  anchor: ClientRect;
 }

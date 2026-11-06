@@ -49,9 +49,8 @@ pub enum Notice {
     Activate(crate::docx::ElementId),
     FieldUpdate { token: u64, fields: Vec<(crate::docx::ElementId, String)> },
     Link { address: String, ctrl: bool },
-    Placeholder { key: String, action: Option<String> },
+    Placeholder(String),
     Refused { sub_template: Option<String>, element: Option<crate::docx::ElementId> },
-    SubTemplateUpdate { name: String, category: String },
     Warning(crate::docx::diagnostics::WarningCode, String),
 }
 

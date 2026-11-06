@@ -252,12 +252,7 @@ public sealed class EditorElements
 /// <summary>An unfilled picture placeholder.</summary>
 /// <param name="Key">Its key, what filling it takes.</param>
 /// <param name="Element">The control it is in.</param>
-public sealed record PlaceholderInfo(string Key, ElementId? Element)
-{
-    /// <summary>The input block's button pressed (its id); null for the block itself.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Action { get; init; }
-}
+public sealed record PlaceholderInfo(string Key, ElementId? Element);
 
 /// <summary>A text match on element codes, tags or titles.</summary>
 /// <param name="In">Which text.</param>

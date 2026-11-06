@@ -34,23 +34,6 @@ pub struct CellContext {
     pub misspelled: Option<(ParaId, usize)>,
     /// The selection is all of its story.
     pub all: bool,
-    /// The placeholder the selection is, with the placeholder affordances on.
-    pub placeholder: Option<crate::editing::view::Target>,
-}
-
-/// What a selected placeholder is, as said: "Field: Applicant name, merge field".
-fn placeholder_said(e: &mut Editor, t: crate::editing::view::Target) -> Option<String> {
-    use crate::editing::view::Target;
-    let d = e.describe(t)?;
-    let label = d.label.trim_matches(['\u{ab}', '\u{bb}']).to_string();
-    Some(match t {
-        Target::Field(_) => format!("Field: {label}, merge field"),
-        Target::Control(_) => format!("Field: {label}, {} control", d.type_text),
-        Target::RepeatingSection(_) => format!("Repeating section: {label}"),
-        Target::SubTemplate(f) => format!("Sub-template: {label}, {}", if e.reference_expanded(f) { "expanded" } else { "collapsed" }),
-        Target::InputBlock(_) => format!("{label}, input block"),
-        Target::IfField(_) => format!("Condition: {label}"),
-    })
 }
 
 /// The review marks on the unit after the caret.
@@ -137,7 +120,6 @@ impl Announcer {
         now.misspelled = spelling.at_selection(e, language).map(|m| (m.para, m.error.start));
         let edited = std::mem::replace(&mut self.revision, e.revision()) != e.revision();
         now.all = e.selects_story();
-        now.placeholder = e.selected_target();
         let was = std::mem::replace(&mut self.last, now.clone());
         if !std::mem::replace(&mut self.primed, true) {
             return Vec::new();
@@ -218,11 +200,6 @@ impl Announcer {
         }
         if now.all && !was.all {
             said.push((AnnouncementKind::Selection, "Selected all".into()));
-        }
-        if now.placeholder != was.placeholder
-            && let Some(text) = now.placeholder.and_then(|t| placeholder_said(e, t))
-        {
-            said.push((AnnouncementKind::Selection, text));
         }
         said
     }
@@ -354,31 +331,6 @@ mod tests {
         // The last page: a page change.
         let page = go(&mut a, &mut e, &fonts, &s, "Appendix B", 0);
         assert!(kinds(&page, AnnouncementKind::Page).first().is_some_and(|p| p.starts_with("Page ")), "{page:?}");
-    }
-
-    #[test]
-    fn a_selected_placeholder_is_said_once_and_its_marks_are_never_read() {
-        let (mut e, fonts) = open("FX-PLACEHOLDER-UI.docx");
-        e.view_settings.placeholder_ui = true;
-        e.set_mode(crate::editing::Mode::Design);
-        e.complete(&fonts);
-        let s = Spellers::default();
-        let mut a = Announcer::default();
-        a.next(&mut e, &s, "en-US", false);
-        let all = crate::editing::elements::enumerate(e.document(), e.index(), &crate::editing::elements::Filter::default());
-        let email = all.iter().find(|x| x.code.as_deref().is_some_and(|c| c.trim() == "MERGEFIELD Applicant.Email")).expect("the field");
-        let id = crate::api::value::ElementId(crate::editing::elements::id_str(email.id));
-        e.select_element(&id, false, &fonts);
-        assert_eq!(kinds(&a.next(&mut e, &s, "en-US", false), AnnouncementKind::Selection), ["Field: Email, merge field"]);
-        assert!(kinds(&a.next(&mut e, &s, "en-US", false), AnnouncementKind::Selection).is_empty(), "once");
-        fn texts(n: &AccessibleNode, out: &mut String) {
-            out.push_str(n.text.as_deref().unwrap_or(""));
-            out.push_str(n.name.as_deref().unwrap_or(""));
-            n.children.iter().for_each(|c| texts(c, out));
-        }
-        let mut all = String::new();
-        texts(&tree(&e, &s, "en-US"), &mut all);
-        assert!(!all.contains("{ }") && !all.contains("each Sections") && !all.contains("Click to add"), "no caption, tab or hint");
     }
 
     #[test]

@@ -2038,6 +2038,37 @@ fn drag_and_drop_moves_and_copies_text() {
     assert_eq!(texts(&r.e), before);
 }
 
+#[test]
+fn dragging_a_whole_control_keeps_its_properties() {
+    use serde_json::json;
+    let mut r = super::scenarios::Run::from_bytes(&blank_with("The quick brown fox.
+Jumps over."), "dnd-control");
+    r.step(&json!({ "click": { "para": 0, "offset": 4 } }));
+    for _ in 0..5 {
+        r.step(&json!({ "key": "ArrowRight", "mods": { "shift": true } }));
+    }
+    let wrap = crate::api::command::InsertControl {
+        kind: crate::api::value::ControlKind::RichText,
+        tag: Some("q".into()),
+        title: None,
+        lock: None,
+        placeholder: None,
+        binding: None,
+        options: None,
+        wrap_selection: Some(true),
+    };
+    r.e.execute(Command::InsertControl(wrap), fonts());
+    r.step(&json!({ "click": { "para": 0, "offset": 3 } }));
+    for _ in 0..8 {
+        r.step(&json!({ "key": "ArrowRight", "mods": { "shift": true } }));
+    }
+    assert!(r.e.selected_text().contains("quick"), "{:?}", r.e.selected_text());
+    r.step(&json!({ "drag": { "from": { "para": 0, "offset": 6 }, "to": { "para": 1, "offset": "end" } } }));
+    assert!(texts(&r.e)[1].contains("quick"), "{:?}", texts(&r.e));
+    let tags: Vec<_> = r.e.document().controls.values().map(|c| c.props.tag.clone()).collect();
+    assert_eq!(tags, vec![Some("q".to_string())], "the moved control keeps its definition");
+}
+
 fn typed_table(cells: &[&[&str]]) -> super::super::Editor {
     let mut e = super::super::Editor::open(&blank_with(""), fonts()).unwrap();
     e.execute(Command::InsertTable(crate::api::command::TableSize { rows: cells.len() as u32, columns: cells[0].len() as u32 }), fonts());

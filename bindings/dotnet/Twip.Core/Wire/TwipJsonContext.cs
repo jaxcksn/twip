@@ -86,7 +86,6 @@ namespace Twip.Wire;
         typeof(CamelEnum<ReferenceResolution>),
         typeof(CamelEnum<RefusalKind>),
         typeof(CamelEnum<EditingTargetKind>),
-        typeof(CamelEnum<PlaceholderKind>),
         typeof(CamelEnum<StyleType>),
         typeof(CamelEnum<TabAlignment>),
         typeof(CamelEnum<TabLeader>),
@@ -405,13 +404,6 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(Person))]
 [JsonSerializable(typeof(PictureSizeDialogValues))]
 [JsonSerializable(typeof(PlaceholderInfo))]
-[JsonSerializable(typeof(PlaceholderKind))]
-[JsonSerializable(typeof(PlaceholderTarget))]
-[JsonSerializable(typeof(PlaceholderTargetPayload))]
-[JsonSerializable(typeof(PlaceholderAction))]
-[JsonSerializable(typeof(SubTemplateVersion))]
-[JsonSerializable(typeof(IReadOnlyList<SubTemplateVersion>))]
-[JsonSerializable(typeof(SubTemplateUpdateRequestedPayload))]
 [JsonSerializable(typeof(PlaceholderAppearance))]
 [JsonSerializable(typeof(PlaceholderLook))]
 [JsonSerializable(typeof(PlaceholderMatch))]

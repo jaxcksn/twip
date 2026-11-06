@@ -163,7 +163,6 @@ impl Editor {
             self.hover = None;
             self.hover_region = None;
             self.table_hover = None;
-            self.affordances.hovered = None;
         }
     }
 

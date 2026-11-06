@@ -113,7 +113,6 @@ impl Renderer {
                 }
             }
         }
-        crate::prof::time("draw:affordances", || self.affordances(canvas, &view.affordances, i, 1.0 / k.max(0.01)));
         // The correction just made: a dashed accent underline, and its options button (16 x 12 px) under it.
         if let Some(c) = &view.correction {
             let mut dash = Paint::default();
@@ -355,8 +354,11 @@ impl Renderer {
             canvas.draw_rect(Rect::new(x0 as f32, y0 as f32, x1 as f32, y1 as f32), &line(t.ink3, Some([3.0, 3.0])));
             canvas.restore();
         }
-        let Some(mono6) = super::chrome_typeface(super::ChromeFace::Mono600) else { return };
-        let label_font = Font::from_typeface(mono6, (10.0 * u) as f32);
+        let (Some(mono5), Some(mono6)) = (super::chrome_typeface(super::ChromeFace::Mono500), super::chrome_typeface(super::ChromeFace::Mono600))
+        else {
+            return;
+        };
+        let (chip_font, label_font) = (Font::from_typeface(mono5, (10.0 * u) as f32), Font::from_typeface(mono6, (10.0 * u) as f32));
         let tone = |tone: Tone| match tone {
             Tone::Accent => accent,
             Tone::Muted => t.ink2,
@@ -378,17 +380,11 @@ impl Renderer {
                 }
                 // The ink chip with paper text: 4 x 7 px padding, 2 px corners.
                 Measure::Chip { at, label } => {
-                    let chip = super::affordances::Chip {
-                        text: label,
-                        size: 10.0,
-                        pad: (7.0, 4.0),
-                        radius: 2.0,
-                        fill: t.ink,
-                        border: None,
-                        ink: t.paper,
-                        face: super::ChromeFace::Mono500,
-                    };
-                    self.chip(canvas, at[0].pt().0, at[1].pt().0, &chip, u);
+                    let (x, y) = (at[0].pt().0, at[1].pt().0);
+                    let w = f64::from(chip_font.measure_str(label, None).0);
+                    let r = Rect::from_xywh(x as f32, y as f32, (w + 14.0 * u) as f32, (18.0 * u) as f32);
+                    canvas.draw_round_rect(r, (2.0 * u) as f32, (2.0 * u) as f32, &fill(t.ink));
+                    canvas.draw_str(label, ((x + 7.0 * u) as f32, (y + 12.5 * u) as f32), &chip_font, &fill(t.paper));
                 }
                 Measure::Status { at, label, tone: c } => {
                     canvas.draw_str(label, (at[0].0 as f32, (at[1].0 + 8.0 * u) as f32), &label_font, &fill(tone(*c)));

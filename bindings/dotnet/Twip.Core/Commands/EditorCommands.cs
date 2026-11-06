@@ -1157,10 +1157,9 @@ public sealed class EditorCommands
     /// <param name="detail">How much the editor measures while you drag and hover.</param>
     /// <param name="objectGrid">When the dot grid objects snap to shows (unrelated to <paramref name="gridlines"/>).</param>
     /// <param name="themeColors">The application's colours for the light and dark schemes, to match its own UI.</param>
-    /// <param name="placeholderUi">Draws placeholders as editor UI: field marks, repeating sections, sub-template cards and input blocks. Never changes the output.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, bool? placeholderUi = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid, themeColors, placeholderUi), ct);
+    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid, themeColors), ct);
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>
@@ -1218,41 +1217,6 @@ public sealed class EditorCommands
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the command has run.</returns>
     public Task DescribeFormattingAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.DescribeFormatting(), ct);
-
-    /// <summary>The type text a field's caption shows, by field code (default: the field type, <c>MERGEFIELD</c>), as <see cref="EditorCommands.SetFieldLabelsAsync"/> sets labels. A view setting.</summary>
-    /// <param name="types">The type text for each field code.</param>
-    /// <param name="merge">Keep the type texts for codes not listed.</param>
-    /// <param name="ct">Cancels the command before it runs.</param>
-    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetFieldTypesAsync(IReadOnlyDictionary<string, string> types, bool? merge = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetFieldTypes(types, merge), ct);
-
-    /// <summary>Draws a placeholder hovered until cleared, as when the application's field list hovers it. A view setting.</summary>
-    /// <param name="id">The placeholder; null clears it.</param>
-    /// <param name="ct">Cancels the command before it runs.</param>
-    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task HighlightElementAsync(ElementId? id, CancellationToken ct = default) => _session.RunAsync(EditorOperation.HighlightElement(id), ct);
-
-    /// <summary>Selects the next placeholder in document order, wrapping; Tab while one is selected. A view change.</summary>
-    /// <param name="ct">Cancels the command before it runs.</param>
-    /// <returns>Completes when the selection has moved and <see cref="EditorSession.State"/> says so.</returns>
-    public Task SelectNextPlaceholderAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.SelectNextPlaceholder(), ct);
-
-    /// <summary>Selects the previous placeholder in document order, wrapping; Shift+Tab while one is selected. A view change.</summary>
-    /// <param name="ct">Cancels the command before it runs.</param>
-    /// <returns>Completes when the selection has moved and <see cref="EditorSession.State"/> says so.</returns>
-    public Task SelectPreviousPlaceholderAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.SelectPreviousPlaceholder(), ct);
-
-    /// <summary>The version text sub-templates' cards and tabs show, and their newer versions; replaces the list. A view setting.</summary>
-    /// <param name="versions">One entry per sub-template; entries naming none are kept.</param>
-    /// <param name="ct">Cancels the command before it runs.</param>
-    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetSubTemplateVersionsAsync(IReadOnlyList<SubTemplateVersion> versions, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetSubTemplateVersions(versions), ct);
-
-    /// <summary>The merge fields (by name, their first argument) the data source lacks: drawn neutral, struck through; replaces the list, and an empty one clears it. A view setting.</summary>
-    /// <param name="names">The field names.</param>
-    /// <param name="ct">Cancels the command before it runs.</param>
-    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetUnmappedFieldsAsync(IReadOnlyList<string> names, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetUnmappedFields(names), ct);
 
     /// <summary>The application's own field types (a code's first word, compared without case), replacing those set before: their fields keep their results, show their labels in design mode, are listed by update requests and are never read as bookmark references; an empty list clears them. A view setting.</summary>
     /// <param name="types">The field types.</param>

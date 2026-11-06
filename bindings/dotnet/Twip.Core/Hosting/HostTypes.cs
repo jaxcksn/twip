@@ -27,8 +27,6 @@ namespace Twip
         Revision,
         /// <summary>A comment.</summary>
         Comment,
-        /// <summary>A placeholder's key and type, with the placeholder affordances on.</summary>
-        Placeholder,
     }
 
     /// <summary>A tooltip to show.</summary>

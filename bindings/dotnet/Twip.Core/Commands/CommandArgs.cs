@@ -998,32 +998,5 @@ public sealed record PlaceholderAppearance(
 
 /// <summary>A placeholder look and the placeholders it applies to.</summary>
 /// <param name="Match">The placeholders.</param>
-/// <param name="Look">The look. With <see cref="ViewState.PlaceholderUi"/> on, its <see cref="PlaceholderAppearance.Fill"/> is the input block's base colour: its tint, outlines and primary button are derived from it.</param>
-public sealed record PlaceholderLook(PlaceholderMatch Match, PlaceholderAppearance Look)
-{
-    /// <summary>The hint an input block shows while hovered; null for "Click to add".</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Hint { get; init; }
-
-    /// <summary>The buttons a selected input block shows, in order; a press on one raises <see cref="EditorSession.PlaceholderActivated"/> with its id. Null: a press on the block activates it.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public IReadOnlyList<PlaceholderAction>? Actions { get; init; }
-}
-
-/// <summary>A button on a selected input block.</summary>
-/// <param name="Id">What <see cref="PlaceholderActivatedEventArgs.Action"/> names when it's pressed.</param>
-/// <param name="Label">Its text.</param>
-/// <param name="Primary">Filled in the block's colour (the others are outlined); Enter presses it.</param>
-public sealed record PlaceholderAction(
-    string Id, string Label,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Primary = false);
-
-/// <summary>A sub-template's version, as its card and a shown body's tab show it.</summary>
-/// <param name="Name">The sub-template's name.</param>
-/// <param name="Version">The version text (<c>v4</c>).</param>
-/// <param name="Category">Its building block category; null for the first reference rule's.</param>
-/// <param name="Newer">A newer version's notice (<c>v5 available</c>); a press on it raises <see cref="EditorSession.SubTemplateUpdateRequested"/>.</param>
-public sealed record SubTemplateVersion(
-    string Name, string Version,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Category = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Newer = null);
+/// <param name="Look">The look.</param>
+public sealed record PlaceholderLook(PlaceholderMatch Match, PlaceholderAppearance Look);

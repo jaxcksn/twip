@@ -542,8 +542,6 @@ export interface ViewState {
   detail: MeasureDetail;
   /** When the objects' dot grid shows. */
   objectGrid: ObjectGrid;
-  /** Placeholders are drawn as editor UI (`placeholderUi`). */
-  placeholderUi: boolean;
   /** Which fields are sub-template references (`setSubTemplateRules`); absent when none are. */
   subTemplateRules?: ReferenceRule[];
 }

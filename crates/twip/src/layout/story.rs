@@ -16,7 +16,7 @@ use super::ids::{FloatId, ParaId};
 use super::job::{Memos, Yield};
 use super::join::LaidBlock;
 use super::line::{Frame, Line, ParaLines, band, break_lines, draw_line, neighbour_borders};
-use super::paragraph::{contextual_in, gap, gap_plain, space_after};
+use super::paragraph::{contextual_in, gap, gap_plain, space_after, space_before};
 use super::space::ParaSpace;
 use super::table::TableLayout;
 use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape};
@@ -228,7 +228,7 @@ pub fn layout_with(
                     fit: ends.fit,
                 };
                 let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
-                let (mut before, mut after) = (env.ctx.space_before(p, style), space_after(text, style));
+                let (mut before, mut after) = (space_before(text, style), space_after(text, style));
                 if in_cell && style.before_auto && bi == 0 {
                     before = 0.0;
                 }
@@ -916,7 +916,7 @@ pub fn hf_floats(
     for (bi, b) in blocks.iter().enumerate() {
         let Block::Para(p) = b else { continue };
         let Some(u) = story.units.iter().find(|u| u.block == bi) else { continue };
-        let para_top = top + u.top - if bi == 0 { env.ctx.space_before(p, p.para_style_in(env.ctx.env.text.review.view)) } else { 0.0 };
+        let para_top = top + u.top - if bi == 0 { space_before(&env.ctx.env.text, p.para_style_in(env.ctx.env.text.review.view)) } else { 0.0 };
         for f in env.ctx.floats_of(p) {
             let fitted = fit_frame(f, fr.column.1, env, memos)?;
             let f = fitted.as_ref().unwrap_or(f);

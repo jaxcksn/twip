@@ -245,9 +245,6 @@ impl Editor {
     }
 
     pub fn selected_object(&self) -> Option<SelectedObject> {
-        if self.input_block_selected() {
-            return None;
-        }
         match self.selection {
             Selection::Object(ObjectRef::Inline { para, offset }) => {
                 match self.index.para(&self.doc, para).and_then(|p| super::stories::inline_at(p, offset)) {
@@ -288,7 +285,6 @@ impl Editor {
             list_start: self.tab_changes_level(),
             float: matches!(self.selection, Selection::Object(ObjectRef::Floating(_))),
             mac: self.mac,
-            placeholder_selected: self.affordances_on() && self.selected_target().is_some(),
         };
         match super::keymap::command(code, mods, cx)? {
             Bound::Run(c) => Some(c),

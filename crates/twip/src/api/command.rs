@@ -483,19 +483,6 @@ commands! {
     /// Says the formatting at the caret to screen readers (paragraph style, font and size, emphasis, colour,
     /// highlight) as an announcement; changes nothing. Undo: view.
     DescribeFormatting,
-    /// The type text a field's caption shows, by field code (default: the field type, `MERGEFIELD`). Undo: view.
-    SetFieldTypes(FieldTypes),
-    /// Draws a placeholder hovered until cleared (`null`), as when the application's field list hovers it. Undo: view.
-    HighlightElement(HighlightElement),
-    /// Selects the next placeholder in document order, wrapping; Tab while one is selected. Undo: view.
-    SelectNextPlaceholder,
-    /// Selects the previous placeholder in document order, wrapping; Shift+Tab while one is selected. Undo: view.
-    SelectPreviousPlaceholder,
-    /// The version text sub-templates' cards and tabs show, and their newer versions; replaces the list. Undo: view.
-    SetSubTemplateVersions(SubTemplateVersions),
-    /// The merge fields (by name, their first argument) the data source lacks: drawn neutral, struck through;
-    /// replaces the list, and `[]` clears it. Undo: view.
-    SetUnmappedFields(UnmappedFields),
 }
 
 /// The kinds of section break.
@@ -1366,58 +1353,6 @@ pub struct FieldLabels {
     pub merge: Option<bool>,
 }
 
-/// `setFieldTypes`' options: caption type texts by field code.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct FieldTypes {
-    /// The type text a field's caption shows for each field code.
-    pub types: BTreeMap<String, String>,
-    /// Keeps type texts for codes not listed. Default: false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub merge: Option<bool>,
-}
-
-/// `setUnmappedFields`' options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct UnmappedFields {
-    /// The field names.
-    pub names: Vec<String>,
-}
-
-/// `setSubTemplateVersions`' options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SubTemplateVersions {
-    /// One entry per sub-template; entries naming none are kept, as the document may gain it.
-    pub versions: Vec<SubTemplateVersion>,
-}
-
-/// A sub-template's version, as a card and a shown body's tab show it.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SubTemplateVersion {
-    /// The sub-template's name.
-    pub name: String,
-    /// Its category; default: the first reference rule's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub category: Option<String>,
-    /// The version text (`v4`).
-    pub version: String,
-    /// A newer version's notice (`v5 available`); a press on it raises `subTemplateUpdateRequested`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub newer: Option<String>,
-}
-
-/// `highlightElement`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct HighlightElement {
-    /// The placeholder to draw hovered; `null` clears it.
-    #[serde(default)]
-    pub id: Option<ElementId>,
-}
-
 /// `insertControl`'s options.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1663,29 +1598,8 @@ pub struct PlaceholderLookRule {
     /// Which placeholders the rule applies to.
     #[serde(rename = "match")]
     pub matches: PlaceholderMatch,
-    /// How they look. With `placeholderUi` on, a drawn look's `fill` is the input block's base colour: its tint,
-    /// outlines and primary button are derived from it (lightened on a dark page).
+    /// How they look.
     pub look: PlaceholderLook,
-    /// The hint an input block shows while hovered (default: "Click to add").
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hint: Option<String>,
-    /// The buttons a selected input block shows, in order; a press on one raises `placeholderActivated` with its id.
-    /// None: a press on the block activates it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub actions: Option<Vec<PlaceholderAction>>,
-}
-
-/// A button on a selected input block.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PlaceholderAction {
-    /// What `placeholderActivated` names when it's pressed.
-    pub id: String,
-    /// Its text.
-    pub label: String,
-    /// Filled in the block's colour (the others are outlined); Enter presses it. Default: false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub primary: Option<bool>,
 }
 
 /// `setPlaceholderLooks`'s options.
@@ -1837,10 +1751,6 @@ pub struct ViewOptions {
     /// When the dot grid objects snap to shows (unrelated to `gridlines`, the table gridlines).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_grid: Option<super::services::ObjectGrid>,
-    /// Draws placeholders as editor UI: field marks, repeating sections, sub-template cards and input blocks. Off by
-    /// default. Never changes the output.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub placeholder_ui: Option<bool>,
 }
 
 /// What a command returns besides its commit, for the commands that create something.
