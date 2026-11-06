@@ -819,6 +819,9 @@ export type ControlOptions = {
     }[];
 } | {
     multiline?: boolean;
+} | {
+    width?: Points;
+    height?: Points;
 };
 
 // @public

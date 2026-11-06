@@ -9,7 +9,7 @@ use crate::api::services::{
     SubTemplateReference, VerticalMerge,
 };
 use crate::api::state::ElementKind;
-use crate::api::value::{CheckboxOptions, ControlLock, ControlOptions, DataBinding, DateOptions, ElementId, ListItem, ListOptions, PlainTextOptions};
+use crate::api::value::{CheckboxOptions, ControlLock, ControlOptions, DataBinding, DateOptions, ElementId, ListItem, ListOptions, PictureOptions, PlainTextOptions, Points};
 use crate::docx::{ControlKind, Lock};
 use crate::editing::elements::{self, Element};
 
@@ -78,7 +78,7 @@ fn attribute(xml: &str, name: &str) -> Option<String> {
 }
 
 /// A control kind's settings.
-fn options(e: &Element) -> Option<ControlOptions> {
+fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
     let p = e.props.as_ref()?;
     Some(match &p.kind {
         ControlKind::Checkbox { checked, .. } => ControlOptions::Checkbox(CheckboxOptions { checked: Some(e.display == checked.to_string()) }),
@@ -98,6 +98,17 @@ fn options(e: &Element) -> Option<ControlOptions> {
             ControlOptions::List(ListOptions { items })
         }
         ControlKind::PlainText { multi_line } => ControlOptions::PlainText(PlainTextOptions { multiline: Some(*multi_line) }),
+        ControlKind::Picture => {
+            use crate::docx::Inline;
+            let crate::docx::ElementId::Control(c) = e.id else { return None };
+            let para = s.editor.index().para(s.editor.document(), e.at?)?;
+            let start = para.inlines.iter().position(|i| matches!(i, Inline::ControlStart(x) if *x == c))?;
+            let pic = para.inlines[start..].iter().take_while(|i| !matches!(i, Inline::ControlEnd(x) if *x == c)).find_map(|i| match i {
+                Inline::Picture(pic, _) => Some(pic),
+                _ => None,
+            })?;
+            ControlOptions::Picture(PictureOptions { width: Some(Points(pic.w)), height: Some(Points(pic.h)) })
+        }
         _ => return None,
     })
 }
@@ -255,7 +266,7 @@ impl Session {
                     prefix_mappings: attribute(x, "w:prefixMappings"),
                 })
             }),
-            options: options(e),
+            options: options(self, e),
             children: all.iter().filter(|c| c.parent == Some(want)).map(|c| ElementId(elements::id_str(c.id))).collect(),
         })
     }

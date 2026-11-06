@@ -873,12 +873,16 @@ public sealed record ControlListItem(string Text, string Value);
 /// <param name="Locale">A date's locale.</param>
 /// <param name="Items">A drop-down list's or combo box's items.</param>
 /// <param name="Multiline">Whether plain text allows line breaks.</param>
+/// <param name="Width">A picture's width, 1 to 1584 pt: its placeholder's, and the picture's once filled.</param>
+/// <param name="Height">A picture's height, 1 to 1584 pt.</param>
 public sealed record ControlOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Checked = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Format = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Locale = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ControlListItem>? Items = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Multiline = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Multiline = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Width = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Height = null);
 
 /// <summary>A content control to insert.</summary>
 /// <param name="Kind">The kind.</param>

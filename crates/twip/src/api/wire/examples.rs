@@ -525,6 +525,7 @@ fn control_options() -> Vec<ControlOptions> {
         ControlOptions::Date(DateOptions { format: Some("yyyy-MM-dd".into()), locale: Some("en-GB".into()) }),
         ControlOptions::List(ListOptions { items: vec![ListItem { text: "Yes".into(), value: "y".into() }] }),
         ControlOptions::PlainText(PlainTextOptions { multiline: Some(true) }),
+        ControlOptions::Picture(PictureOptions { width: Some(Points(216.0)), height: Some(Points(54.0)) }),
     ]
 }
 

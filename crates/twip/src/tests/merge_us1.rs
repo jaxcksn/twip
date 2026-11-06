@@ -88,3 +88,30 @@ fn paste_between_editors_keeps_fields() {
     assert!(fields(&a).iter().all(|f| f.id != pasted.id));
     assert_eq!(a.history().undo_depth(), depth);
 }
+
+/// A picture control inserted at a size reads it back, takes a new one in one undo step, and keeps it through a
+/// save and reopen.
+#[test]
+fn picture_control_size() {
+    let (mut engine, id) = super::session(&fixture("FX-TEXT.docx"));
+    let e = engine.session(id).expect("a session");
+    let size = |e: &Session, c: &Value| {
+        let d = serde_json::to_value(e.element(serde_json::from_value(c.clone()).expect("an id")).expect("the control")).expect("json");
+        (d["options"]["width"].as_f64(), d["options"]["height"].as_f64())
+    };
+    let c = command(e, json!({ "type": "insertControl", "kind": "picture", "tag": "Barcode", "options": { "width": 216, "height": 54 } }))["id"]
+        .clone();
+    assert_eq!(size(e, &c), (Some(216.0), Some(54.0)));
+    command(e, json!({ "type": "setControl", "id": c, "options": { "width": 288 } }));
+    assert_eq!(size(e, &c), (Some(288.0), Some(54.0)), "height kept");
+    command(e, json!({ "type": "undo" }));
+    assert_eq!(size(e, &c), (Some(216.0), Some(54.0)), "one undo step");
+    command(e, json!({ "type": "redo" }));
+    let bad = serde_json::from_value(json!({ "type": "setControl", "id": c, "options": { "height": 0 } })).expect("a command");
+    assert!(e.run(bad).is_err(), "out of range");
+    let saved = e.export(&Default::default()).expect("saves").bytes.0;
+    let (mut again, id) = super::session(&saved);
+    let again = again.session(id).expect("a session");
+    let c = serde_json::to_value(&again.elements(&ElementFilter::default())[0].id).expect("an id");
+    assert_eq!(size(again, &c), (Some(288.0), Some(54.0)), "read back");
+}

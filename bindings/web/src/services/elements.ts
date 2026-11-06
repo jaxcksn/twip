@@ -2,7 +2,7 @@ import type { Op } from '../commands.js';
 import type { Session } from '../editor.js';
 import type { SelectionSummary } from '../state.js';
 import { Method } from '../transport/protocol.js';
-import type { ClientPoint, ElementId } from '../types.js';
+import type { ClientPoint, ElementId, Points } from '../types.js';
 
 /** A content control's kind. */
 export type ControlKind =
@@ -136,12 +136,16 @@ export interface DataBinding {
   prefixMappings?: string;
 }
 
-/** A content control's options, by kind: checkbox, date, list, or plain text. */
+/**
+ * A content control's options, by kind: checkbox, date, list, plain text, or picture. A picture's size (1…1584 pt) is
+ * its placeholder's, and the picture's once filled (fitted to it); `setControl` keeps a side not given.
+ */
 export type ControlOptions =
   | { checked?: boolean }
   | { format?: string; locale?: string }
   | { items: { text: string; value: string }[] }
-  | { multiline?: boolean };
+  | { multiline?: boolean }
+  | { width?: Points; height?: Points };
 
 /** A block of the document structure. */
 export type Block =

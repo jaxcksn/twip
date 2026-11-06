@@ -570,8 +570,8 @@ Twip.ControlOptions
 Twip.ControlOptions.<Clone>$() -> Twip.ControlOptions!
 Twip.ControlOptions.Checked.get -> bool?
 Twip.ControlOptions.Checked.init -> void
-Twip.ControlOptions.ControlOptions(bool? Checked = null, string? Format = null, string? Locale = null, System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items = null, bool? Multiline = null) -> void
-Twip.ControlOptions.Deconstruct(out bool? Checked, out string? Format, out string? Locale, out System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items, out bool? Multiline) -> void
+Twip.ControlOptions.ControlOptions(bool? Checked = null, string? Format = null, string? Locale = null, System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items = null, bool? Multiline = null, Twip.Length? Width = null, Twip.Length? Height = null) -> void
+Twip.ControlOptions.Deconstruct(out bool? Checked, out string? Format, out string? Locale, out System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items, out bool? Multiline, out Twip.Length? Width, out Twip.Length? Height) -> void
 Twip.ControlOptions.Equals(Twip.ControlOptions? other) -> bool
 Twip.ControlOptions.Format.get -> string?
 Twip.ControlOptions.Format.init -> void
@@ -581,6 +581,10 @@ Twip.ControlOptions.Locale.get -> string?
 Twip.ControlOptions.Locale.init -> void
 Twip.ControlOptions.Multiline.get -> bool?
 Twip.ControlOptions.Multiline.init -> void
+Twip.ControlOptions.Width.get -> Twip.Length?
+Twip.ControlOptions.Width.init -> void
+Twip.ControlOptions.Height.get -> Twip.Length?
+Twip.ControlOptions.Height.init -> void
 Twip.DataBinding
 Twip.DataBinding.<Clone>$() -> Twip.DataBinding!
 Twip.DataBinding.DataBinding(string! XPath, string? StoreItemId = null, string? PrefixMappings = null) -> void
