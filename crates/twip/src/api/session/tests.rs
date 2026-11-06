@@ -1286,3 +1286,65 @@ fn picture_control_placeholder_images() {
     run(s, json!({ "type": "fillControl", "id": c, "image": png })).expect("fills");
     assert!(set(s, json!({ "data": png, "mime": "image/png" })).is_err(), "filled: no placeholder to replace");
 }
+
+#[test]
+fn an_activated_placeholder_names_its_control() {
+    use crate::api::input::{Key, Modifiers, Point, PointerButton, PointerKind};
+    let (mut engine, events) = {
+        let mut engine = Engine::new(FontLibrary::system());
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let sink = events.clone();
+        engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
+        (engine, events)
+    };
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-PLACEHOLDER.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    s.host().attach(|_| {});
+    s.host().set_size(2000.0, 4000.0, 1.0);
+    let listed = s.placeholders();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert!(listed[0].element.is_some(), "{listed:?}");
+    let k = s.presentation.zoom() * 96.0 / 72.0;
+    let pictures = crate::editing::inspect::inspect(&mut s.editor, "geometry", true)["geometry"]["pictures"].as_array().cloned().unwrap_or_default();
+    let activated = |events: &Rc<RefCell<Vec<Event>>>| -> Vec<_> {
+        events.borrow_mut().drain(..).filter_map(|e| if let Event::PlaceholderActivated(p) = e { Some(p) } else { None }).collect()
+    };
+    let click = |s: &mut crate::api::session::Session, r: &serde_json::Value| {
+        let r: Vec<f64> = r.as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+        let at = Point { x: (r[0] + r[2]) / 2.0 * k, y: (r[1] + r[3]) / 2.0 * k };
+        for kind in [PointerKind::Down, PointerKind::Up] {
+            s.pointer(kind, at, PointerButton::Primary, 1, Modifiers::default());
+        }
+    };
+    let rect = pictures
+        .iter()
+        .map(|p| p["rect"].clone())
+        .find(|r| {
+            click(s, r);
+            s.editor.selected_placeholder().is_some()
+        })
+        .expect("a drawn placeholder");
+    // Editable, then read only (a form locked after its first signature): a click, Enter and Space each name it.
+    for read_only in [false, true] {
+        s.set_read_only(read_only);
+        activated(&events);
+        click(s, &rect);
+        s.key(Key::Enter, Modifiers::default());
+        s.text(" ");
+        assert_eq!(activated(&events), vec![listed[0].clone(); 3], "read only: {read_only}");
+    }
+    s.set_read_only(false);
+    let data = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx")).expect("fixture");
+    let image = crate::editing::Editor::open(&data, &s.fonts.fonts()).expect("opens").document().images.last().cloned().expect("an image");
+    s.run(Command::FillPlaceholder(crate::api::command::FillPlaceholder {
+        key: Some(listed[0].key.clone()),
+        image: crate::api::value::Bytes(image),
+    }))
+    .expect("fills");
+    activated(&events);
+    click(s, &rect);
+    s.key(Key::Enter, Modifiers::default());
+    assert!(activated(&events).is_empty(), "filled: nothing");
+}
