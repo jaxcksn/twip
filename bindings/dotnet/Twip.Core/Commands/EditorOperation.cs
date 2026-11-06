@@ -765,12 +765,18 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation CloseSubTemplate() => Op(CommandId.CloseSubTemplate);
 
-    /// <summary>A new sub-template, empty or with the body of the DOCX <paramref name="from"/>. One undo step.</summary>
+    /// <summary>A new sub-template: empty, with the body of the DOCX <paramref name="from"/>, or a copy of the sub-template <paramref name="copyOf"/>. One undo step.</summary>
     /// <param name="name">Its name, unique in its category.</param>
     /// <param name="category">Its building block category; null for the first rule's.</param>
     /// <param name="from">A DOCX whose body becomes its body.</param>
+    /// <param name="copyOf">A sub-template in the same category whose body (formatting, fields, controls, pictures, references) is copied; not with <paramref name="from"/>.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation CreateSubTemplate(string name, string? category = null, ReadOnlyMemory<byte>? from = null) => Op(CommandId.CreateSubTemplate, new Arg("name", Node(name)), new Arg("category", category is { } category_ ? Node(category_) : null, Optional: true), new Arg("from", from is { } from_ ? Node(from_) : null, Optional: true));
+    public static EditorOperation CreateSubTemplate(string name, string? category = null, ReadOnlyMemory<byte>? from = null, string? copyOf = null) => Op(CommandId.CreateSubTemplate, new Arg("name", Node(name)), new Arg("category", category is { } category_ ? Node(category_) : null, Optional: true), new Arg("from", from is { } from_ ? Node(from_) : null, Optional: true), new Arg("copyOf", copyOf is { } copyOf_ ? Node(copyOf_) : null, Optional: true));
+
+    /// <summary>The template's body becomes the DOCX <paramref name="from"/>'s body, on its last section's page; its sub-templates, custom XML data parts, settings, styles, headers and footers stay. Closes a sub-template being edited first. One undo step.</summary>
+    /// <param name="from">The DOCX.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ReplaceBody(ReadOnlyMemory<byte> from) => Op(CommandId.ReplaceBody, new Arg("from", Node(from)));
 
     /// <summary>Renames a sub-template, and optionally every reference to it. One undo step.</summary>
     /// <param name="name">Its name now.</param>

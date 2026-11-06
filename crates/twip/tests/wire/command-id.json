@@ -150,6 +150,7 @@
   "createSubTemplate",
   "renameSubTemplate",
   "removeSubTemplate",
+  "replaceBody",
   "insertControl",
   "setControl",
   "removeControl",

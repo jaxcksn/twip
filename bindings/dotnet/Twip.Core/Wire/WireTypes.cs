@@ -224,6 +224,8 @@ internal sealed record AccessibilityDialogValues(IReadOnlyList<AccessibilityIssu
 
 internal sealed record FindRequest(FindQuery Query, NavigationDirection Direction);
 
+internal sealed record SubTemplateExportRequest(string Name, string? Category);
+
 internal sealed record ReplaceRequest(FindQuery Query, string With);
 
 internal sealed record ReplaceAllResult(int Count);

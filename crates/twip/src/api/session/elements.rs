@@ -9,7 +9,10 @@ use crate::api::services::{
     SubTemplateReference, VerticalMerge,
 };
 use crate::api::state::ElementKind;
-use crate::api::value::{CheckboxOptions, ControlLock, ControlOptions, DataBinding, DateOptions, ElementId, ListItem, ListOptions, PictureOptions, PlainTextOptions, Points};
+use crate::api::value::{
+    CheckboxOptions, ControlLock, ControlOptions, DataBinding, DateOptions, ElementId, ListItem, ListOptions, PictureOptions, PlainTextOptions,
+    Points,
+};
 use crate::docx::{ControlKind, Lock};
 use crate::editing::elements::{self, Element};
 
@@ -232,6 +235,12 @@ impl Session {
                 }
             })
             .collect()
+    }
+
+    /// A standalone DOCX of a sub-template's body, with the document's styles, numbering, theme and fonts, that
+    /// `createSubTemplate`'s `from` reads back unchanged (`category`: when several rules name categories).
+    pub fn export_sub_template(&self, name: &str, category: Option<&str>) -> Result<crate::api::value::Bytes, Error> {
+        self.editor.export_sub_template(name, category).map(crate::api::value::Bytes)
     }
 
     /// One element with its settings and children.

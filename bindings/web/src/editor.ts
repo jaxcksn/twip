@@ -439,8 +439,9 @@ export class HeadlessEditor {
   }
 
   /**
-   * Exports the document as DOCX or PDF, with the revision it captures. A PDF can take an open password and keywords;
-   * an empty password rejects with `invalid-argument`.
+   * Exports the document as DOCX or PDF, with the revision it captures: the whole document, template and every
+   * sub-template, whether or not a sub-template is being edited. A PDF can take an open password and keywords; an
+   * empty password rejects with `invalid-argument`.
    */
   export(options: ExportOptions): Promise<ExportResult> {
     const s = sessionOf(this);

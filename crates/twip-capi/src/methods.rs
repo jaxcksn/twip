@@ -207,6 +207,8 @@ methods! {
     HostCaretWindowSelect = 79,
     /// `AnnouncementKind[]` (the kinds the editor makes) → `null`.
     AnnouncementsSet = 80,
+    /// `{ name, category? }` → `Bytes`: a standalone DOCX of the sub-template's body.
+    SubTemplateExport = 81,
 }
 
 #[derive(Deserialize)]
@@ -273,6 +275,14 @@ struct SelectElementRequest {
     id: ElementId,
     #[serde(default)]
     reveal: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SubTemplateExportRequest {
+    name: String,
+    #[serde(default)]
+    category: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -481,6 +491,10 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         Method::Element => to_value(s.element(request(json)?)?),
         Method::Placeholders => to_value(s.placeholders()),
         Method::SubTemplates => to_value(s.sub_templates()),
+        Method::SubTemplateExport => {
+            let r: SubTemplateExportRequest = request(json)?;
+            to_value(s.export_sub_template(&r.name, r.category.as_deref())?)
+        }
         Method::Structure => {
             let r: StructureRequest = request::<Option<StructureRequest>>(json)?.unwrap_or_default();
             to_value(s.structure(r.root, r.depth))

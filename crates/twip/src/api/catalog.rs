@@ -268,6 +268,7 @@ const ENTRIES: &[Entry] = {
         (C::CreateSubTemplate, "New Sub-template", G::Field, &[], &[], true, true, U::Step),
         (C::RenameSubTemplate, "Rename Sub-template", G::Field, &[], &[], true, true, U::Step),
         (C::RemoveSubTemplate, "Remove Sub-template", G::Field, &[], &[], true, true, U::Step),
+        (C::ReplaceBody, "Replace Body", G::Field, &[], &[], true, true, U::Step),
         (C::InsertControl, "Content Control", G::Control, &[], &[], true, true, U::Step),
         (C::SetControl, "Control Properties", G::Control, &[], &[], true, true, U::Step),
         (C::RemoveControl, "Remove Content Control", G::Control, &[], &[], true, true, U::Step),

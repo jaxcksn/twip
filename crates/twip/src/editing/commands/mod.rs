@@ -351,6 +351,7 @@ impl Editor {
             Command::SetSubTemplateView(v) => self.set_sub_template_view(v),
             Command::EditSubTemplate(n) => self.edit_sub_template(&n, fonts),
             Command::CreateSubTemplate(c) => self.create_sub_template(c, fonts),
+            Command::ReplaceBody(r) => self.replace_body(&r.from.0, fonts),
             Command::RenameSubTemplate(r) => self.rename_sub_template(r, fonts),
             Command::RemoveSubTemplate(n) => self.remove_sub_template(&n, fonts),
             Command::CloseSubTemplate => {

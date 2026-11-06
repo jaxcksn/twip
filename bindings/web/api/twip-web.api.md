@@ -254,6 +254,7 @@ export interface Commands {
         name: string;
         category?: string;
         from?: Uint8Array;
+        copyOf?: string;
     }): Promise<void>;
     cut(): Promise<void>;
     decreaseIndent(): Promise<void>;
@@ -426,6 +427,9 @@ export interface Commands {
         updateReferences?: boolean;
     }): Promise<void>;
     repeat(): Promise<void>;
+    replaceBody(options: {
+        from: Uint8Array;
+    }): Promise<void>;
     replaceInElements(options: {
         find: string;
         replace: string;
@@ -2129,8 +2133,12 @@ export interface SubTemplates {
     create(name: string, options?: {
         category?: string;
         from?: Uint8Array;
+        copyOf?: string;
     }): Promise<void>;
     edit(name: string, category?: string): Promise<void>;
+    export(name: string, options?: {
+        category?: string;
+    }): Promise<Uint8Array>;
     list(): Promise<SubTemplateInfo[]>;
     remove(name: string, options?: {
         category?: string;

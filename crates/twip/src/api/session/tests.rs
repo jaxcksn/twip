@@ -970,6 +970,28 @@ fn sub_template_bodies_shown_inline_never_reach_the_output() {
     assert_eq!(export(s, ExportFormat::Pdf), pdf);
 }
 
+/// A sub-template being edited doesn't change what an export writes: the whole document, template and every
+/// sub-template, as after closing it.
+#[test]
+fn exports_while_a_sub_template_is_edited_write_the_whole_document() {
+    use crate::api::command::{ReferenceRule, SubTemplateName, SubTemplateRules};
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
+    s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
+    s.run(Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: None })).expect("edits it");
+    s.run(Command::InsertText("x".into())).expect("types");
+    let export = |s: &mut crate::api::session::Session, f| undated(s.export(&ExportOptions::from(f)).expect("exports").bytes.0);
+    let (docx, pdf) = (export(s, ExportFormat::Docx), export(s, ExportFormat::Pdf));
+    assert!(s.state().editing != crate::api::state::EditingTarget::Template, "still on the sub-template");
+    s.run(Command::CloseSubTemplate).expect("closes");
+    assert_eq!(export(s, ExportFormat::Docx), docx);
+    assert_eq!(export(s, ExportFormat::Pdf), pdf);
+}
+
 #[test]
 fn the_editing_target_is_reported_once_per_change() {
     use crate::api::command::{ReferenceRule, SubTemplateName, SubTemplateRules};

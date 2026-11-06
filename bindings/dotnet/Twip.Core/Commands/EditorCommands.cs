@@ -926,13 +926,20 @@ public sealed class EditorCommands
     /// <returns>Completes when the template shows and <see cref="EditorSession.State"/> says so.</returns>
     public Task CloseSubTemplateAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.CloseSubTemplate(), ct);
 
-    /// <summary>A new sub-template, empty or with the body of the DOCX <paramref name="from"/>. One undo step.</summary>
+    /// <summary>A new sub-template: empty, with the body of the DOCX <paramref name="from"/>, or a copy of the sub-template <paramref name="copyOf"/>. One undo step.</summary>
     /// <param name="name">Its name, unique in its category.</param>
     /// <param name="category">Its building block category; null for the first rule's.</param>
     /// <param name="from">A DOCX whose body becomes its body.</param>
+    /// <param name="copyOf">A sub-template in the same category whose body (formatting, fields, controls, pictures, references) is copied; not with <paramref name="from"/>.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task CreateSubTemplateAsync(string name, string? category = null, ReadOnlyMemory<byte>? from = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.CreateSubTemplate(name, category, from), ct);
+    public Task CreateSubTemplateAsync(string name, string? category = null, ReadOnlyMemory<byte>? from = null, string? copyOf = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.CreateSubTemplate(name, category, from, copyOf), ct);
+
+    /// <summary>The template's body becomes the DOCX <paramref name="from"/>'s body, on its last section's page; its sub-templates, custom XML data parts, settings, styles, headers and footers stay. Closes a sub-template being edited first. One undo step.</summary>
+    /// <param name="from">The DOCX.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task ReplaceBodyAsync(ReadOnlyMemory<byte> from, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ReplaceBody(from), ct);
 
     /// <summary>Renames a sub-template, and optionally every reference to it. One undo step.</summary>
     /// <param name="name">Its name now.</param>

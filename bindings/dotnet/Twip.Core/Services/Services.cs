@@ -311,14 +311,23 @@ public sealed class EditorSubTemplates
     /// <returns>Completes when the template shows.</returns>
     public Task CloseAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.CloseSubTemplate(), ct);
 
-    /// <summary>A new sub-template, empty or with the body of the DOCX <paramref name="from"/>. One undo step.</summary>
+    /// <summary>A new sub-template: empty, with the body of the DOCX <paramref name="from"/>, or a copy of the sub-template <paramref name="copyOf"/>. One undo step.</summary>
     /// <param name="name">Its name, unique in its category.</param>
     /// <param name="category">Its building block category; null for the first rule's.</param>
     /// <param name="from">A DOCX whose body becomes its body.</param>
+    /// <param name="copyOf">A sub-template in the same category whose body (formatting, fields, controls, pictures, references) is copied; not with <paramref name="from"/>.</param>
     /// <param name="ct">Cancels the request.</param>
     /// <returns>Completes when it has committed.</returns>
-    public Task CreateAsync(string name, string? category = null, ReadOnlyMemory<byte>? from = null, CancellationToken ct = default) =>
-        _session.RunAsync(EditorOperation.CreateSubTemplate(name, category, from), ct);
+    public Task CreateAsync(string name, string? category = null, ReadOnlyMemory<byte>? from = null, string? copyOf = null, CancellationToken ct = default) =>
+        _session.RunAsync(EditorOperation.CreateSubTemplate(name, category, from, copyOf), ct);
+
+    /// <summary>A standalone DOCX of a sub-template's body, with the document's styles, numbering, theme and fonts and without its headers, footers or other sub-templates; <see cref="CreateAsync"/>'s <c>from</c> reads it back unchanged.</summary>
+    /// <param name="name">The sub-template.</param>
+    /// <param name="category">Its building block category, when several rules name categories.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The DOCX.</returns>
+    public Task<byte[]> ExportAsync(string name, string? category = null, CancellationToken ct = default) =>
+        _session.CallAsync<byte[]>(Method.SubTemplateExport, WireJson.ToUtf8(new SubTemplateExportRequest(name, category)), ct);
 
     /// <summary>Renames a sub-template, and optionally every reference to it. One undo step.</summary>
     /// <param name="name">Its name now.</param>

@@ -5280,17 +5280,17 @@ static Twip.SubTemplateInfo.operator ==(Twip.SubTemplateInfo? left, Twip.SubTemp
 Twip.CommandId.CreateSubTemplate = 188 -> Twip.CommandId
 Twip.CommandId.RemoveSubTemplate = 190 -> Twip.CommandId
 Twip.CommandId.RenameSubTemplate = 189 -> Twip.CommandId
-Twip.EditorSubTemplates.CreateAsync(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSubTemplates.CreateAsync(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, string? copyOf = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSubTemplates.RemoveAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSubTemplates.RenameAsync(string! name, string! to, bool updateReferences = false, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.WarningCode.SubTemplateCycle = 14 -> Twip.WarningCode
 Twip.WarningCode.SubTemplateNearMatch = 16 -> Twip.WarningCode
 Twip.WarningCode.SubTemplateTooDeep = 15 -> Twip.WarningCode
 Twip.WarningCode.PdfArchivalClaimDropped = 17 -> Twip.WarningCode
-static Twip.EditorOperation.CreateSubTemplate(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.CreateSubTemplate(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, string? copyOf = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.RemoveSubTemplate(string! name, string? category = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.RenameSubTemplate(string! name, string! to, bool? updateReferences = null, string? category = null) -> Twip.EditorOperation!
-Twip.EditorCommands.CreateSubTemplateAsync(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.CreateSubTemplateAsync(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, string? copyOf = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.RemoveSubTemplateAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.RenameSubTemplateAsync(string! name, string! to, bool? updateReferences = null, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.PdfConversion
@@ -5340,3 +5340,7 @@ static Twip.PdfFontSetOptions.operator ==(Twip.PdfFontSetOptions? left, Twip.Pdf
 Twip.CommandId.SetApplicationFieldTypes = 192 -> Twip.CommandId
 Twip.EditorCommands.SetApplicationFieldTypesAsync(System.Collections.Generic.IReadOnlyList<string!>! types, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Twip.EditorOperation.SetApplicationFieldTypes(System.Collections.Generic.IReadOnlyList<string!>! types) -> Twip.EditorOperation!
+Twip.CommandId.ReplaceBody = 193 -> Twip.CommandId
+Twip.EditorCommands.ReplaceBodyAsync(System.ReadOnlyMemory<byte> from, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Twip.EditorOperation.ReplaceBody(System.ReadOnlyMemory<byte> from) -> Twip.EditorOperation!
+Twip.EditorSubTemplates.ExportAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!

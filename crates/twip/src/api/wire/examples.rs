@@ -750,7 +750,12 @@ fn commands() -> Vec<Command> {
         Command::SetSubTemplateView(SubTemplateView { ids: Some(vec![id("field-7")]), expanded: false }),
         Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: Some("Sub-templates".into()) }),
         Command::CloseSubTemplate,
-        Command::CreateSubTemplate(CreateSubTemplate { name: "Payment".into(), category: Some("Sub-templates".into()), from: None }),
+        Command::CreateSubTemplate(CreateSubTemplate {
+            name: "Payment".into(),
+            category: Some("Sub-templates".into()),
+            from: None,
+            copy_of: Some("Fees".into()),
+        }),
         Command::RenameSubTemplate(RenameSubTemplate {
             name: "Violation".into(),
             to: "Citation".into(),
@@ -758,6 +763,7 @@ fn commands() -> Vec<Command> {
             update_references: Some(true),
         }),
         Command::RemoveSubTemplate(SubTemplateName { name: "Cycle-B".into(), category: None }),
+        Command::ReplaceBody(ReplaceBody { from: Bytes(b"PK".to_vec()) }),
         Command::InsertControl(InsertControl {
             kind: ControlKind::DropDown,
             tag: Some("status".into()),

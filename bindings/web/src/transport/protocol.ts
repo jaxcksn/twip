@@ -96,6 +96,7 @@ export const Method = {
   AccessibleGo: 78,
   HostCaretWindowSelect: 79,
   AnnouncementsSet: 80,
+  SubTemplateExport: 81,
 } as const;
 
 /** A structured call number. */

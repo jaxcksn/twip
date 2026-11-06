@@ -36,10 +36,17 @@ editor to that sub-template: its body on its own pages, sized as the template's 
 event then concerns the body; page setup, headers and footers and new comments are unavailable. `state.editing` says
 where the editor is and `editingTargetChanged` fires once per switch, including when undo or redo goes into or out of a
 sub-template. Twip draws nothing for the switch: show it in your own UI, with a way back (`subTemplates.close()`).
+An export (DOCX or PDF) writes the whole document, template and every sub-template, whether one is open or not: there
+is no need to close it first.
 
 ## Authoring
 
 `subTemplates.list()` gives each sub-template with its reference counts and the fields and controls in its body.
-`create` makes one, empty or from a DOCX's body; `rename` renames one and, with `updateReferences`, every reference to
-it; `remove` takes one out, leaving its references `missing`. Each is one undo step. Styles in a body resolve as a
+`create` makes one, empty, from a DOCX's body, or (`copyOf`) as a copy of another in its category with its formatting,
+fields, controls, pictures and references; `rename` renames one and, with `updateReferences`, every reference to it;
+`remove` takes one out, leaving its references `missing`. Each is one undo step. `subTemplates.export(name)` gives one
+body as a standalone DOCX (the document's styles, numbering, theme and fonts, without its headers, footers or other
+sub-templates) that `create(name, { from })` reads back unchanged. The `replaceBody({ from })` command replaces the
+template's own body with a DOCX's, on its last section's page, keeping its sub-templates, custom XML data parts,
+settings, styles, headers and footers, in one undo step. Styles in a body resolve as a
 merge does: a style the template defines by name is the template's; one only the glossary defines is the glossary's.

@@ -190,8 +190,16 @@ export interface SubTemplates {
   edit(name: string, category?: string): Promise<void>;
   /** Back to the template, at its selection from before. */
   close(): Promise<void>;
-  /** A new sub-template, empty or with the body of the DOCX `from`. One undo step. */
-  create(name: string, options?: { category?: string; from?: Uint8Array }): Promise<void>;
+  /**
+   * A new sub-template: empty, with the body of the DOCX `from`, or a copy of the sub-template `copyOf` in the same
+   * category (its formatting, fields, controls, pictures and references). One undo step.
+   */
+  create(name: string, options?: { category?: string; from?: Uint8Array; copyOf?: string }): Promise<void>;
+  /**
+   * A standalone DOCX of a sub-template's body, with the document's styles, numbering, theme and fonts and without
+   * its headers, footers or other sub-templates; `create(name, { from })` reads it back unchanged.
+   */
+  export(name: string, options?: { category?: string }): Promise<Uint8Array>;
   /** Renames a sub-template; `updateReferences` renames every reference to it too. One undo step. */
   rename(name: string, to: string, options?: { category?: string; updateReferences?: boolean }): Promise<void>;
   /** Removes a sub-template; its references no longer resolve. One undo step. */
@@ -216,6 +224,10 @@ export function createSubTemplates(s: Session): SubTemplates {
     },
     remove: async (name, options) => {
       await s.run({ type: 'removeSubTemplate', name, ...options } as Op);
+    },
+    export: async (name, options) => {
+      const docx = await s.call<string>(Method.SubTemplateExport, { name, ...options });
+      return Uint8Array.from(atob(docx), (c) => c.charCodeAt(0));
     },
   };
 }

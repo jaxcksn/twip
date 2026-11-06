@@ -365,6 +365,7 @@ fn create(e: &mut Editor, name: &str, from: Option<Vec<u8>>) -> super::super::co
             name: name.into(),
             category: None,
             from: from.map(crate::api::value::Bytes),
+            copy_of: None,
         }),
         fonts(),
     )
@@ -477,4 +478,155 @@ fn a_chain_seventeen_deep_stops_at_the_seventeenth() {
     assert_eq!(at("L17"), Some(R::TooDeep), "the 17th level");
     e.complete(fonts());
     assert!(e.expansions.as_ref().is_some_and(|x| x.paras.contains_key(&p)));
+}
+
+/// A body's paragraphs as their style, mark, list label run and runs (text and formatting), tables by their cells',
+/// and its fields' codes and controls' tags and kinds. A label's number counts on across bodies sharing a list.
+fn body_shape(e: &Editor, name: &str) -> (Vec<String>, Vec<(Option<String>, Option<String>)>) {
+    let g = e.document().glossary.as_ref().expect("a glossary");
+    let k = g.find(name, "Sub-templates", None).expect("the sub-template");
+    fn blocks(list: &[Block], out: &mut Vec<String>) {
+        for b in list {
+            match b {
+                Block::Para(p) => {
+                    let runs: Vec<String> = p
+                        .inlines
+                        .iter()
+                        .filter_map(|i| match i {
+                            Inline::Text(s, r) => Some(format!("{s:?} {r:?}")),
+                            Inline::Picture(pic, _) => Some(format!("picture {}x{}", pic.w, pic.h)),
+                            _ => None,
+                        })
+                        .collect();
+                    out.push(format!("{:?} {:?} {:?} {runs:?}", p.style, p.mark, p.list.as_ref().map(|l| &l.run)));
+                }
+                Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| blocks(&c.blocks, out)),
+            }
+        }
+    }
+    let mut paras = Vec::new();
+    blocks(&g.parts[k].body, &mut paras);
+    let els = elements::enumerate(e.document(), e.index(), &elements::Filter::default())
+        .into_iter()
+        .filter(|x| x.story == StoryId::BuildingBlock(k as u32))
+        .map(|x| (x.code, x.props.map(|p| format!("{:?} {:?}", p.kind, p.tag))))
+        .collect();
+    (paras, els)
+}
+
+#[test]
+fn a_sub_template_exports_alone_and_copies_whole() {
+    use super::super::commands::Outcome;
+    let (mut e, _) = expanded();
+    e.execute(Command::EditSubTemplate(crate::api::command::SubTemplateName { name: "Violation".into(), category: None }), fonts());
+    let picture = serde_json::json!({ "kind": "picture", "tag": "Photo", "options": { "width": 90, "height": 60 } });
+    e.execute(Command::InsertControl(serde_json::from_value(picture).unwrap()), fonts());
+    e.execute(Command::CloseSubTemplate, fonts());
+    let violation = body_shape(&e, "Violation");
+    assert!(violation.1.iter().any(|(c, _)| c.as_deref().is_some_and(|c| c.contains("MERGEFIELD Fee"))), "{violation:?}");
+    assert!(violation.0.iter().any(|p| p.contains("picture 90x60")));
+
+    let docx = e.export_sub_template("Violation", None).expect("exports");
+    let alone = crate::docx::read_editable(&docx).expect("reads");
+    assert_eq!(alone.sections.len(), 1);
+    assert!(alone.glossary.as_ref().is_none_or(|g| g.parts.iter().all(|b| b.state == crate::docx::PartState::Removed) || g.parts.is_empty()));
+    assert!(alone.images.iter().any(|i| !i.is_empty()), "the picture's image");
+    assert!(e.export_sub_template("Nope", None).is_err());
+
+    let copy = |e: &mut Editor, name: &str, of: &str| {
+        e.execute(
+            Command::CreateSubTemplate(crate::api::command::CreateSubTemplate {
+                name: name.into(),
+                category: None,
+                from: None,
+                copy_of: Some(of.into()),
+            }),
+            fonts(),
+        )
+    };
+    let depth = e.history().undo_depth();
+    assert!(matches!(copy(&mut e, "Violation copy", "Violation"), Outcome::Changed(_)));
+    assert_eq!(e.history().undo_depth(), depth + 1, "one undo step");
+    assert_eq!(body_shape(&e, "Violation copy"), violation);
+    assert!(matches!(create(&mut e, "Violation imported", Some(docx)), Outcome::Changed(_)));
+    assert_eq!(body_shape(&e, "Violation imported"), violation, "the export imports back unchanged");
+    assert!(matches!(copy(&mut e, "Cycle-A copy", "Cycle-A"), Outcome::Changed(_)));
+    assert!(
+        body_shape(&e, "Cycle-A copy").1.iter().any(|(c, _)| c.as_deref().is_some_and(|c| c.contains("SUBTEMPLATE Cycle-B"))),
+        "nested reference"
+    );
+    assert!(matches!(copy(&mut e, "X", "Nope"), Outcome::Refused(_)));
+
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(body_shape(&again, "Violation copy"), violation, "saved and read back, its controls with it");
+}
+
+#[test]
+fn an_exported_sub_template_has_no_headers_or_footers() {
+    let mut e = open("FX-STORIES.docx");
+    e.execute(super::super::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
+    create(&mut e, "Notice", None);
+    let main = |b: &[u8]| {
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(b.to_vec())).expect("a package");
+        std::io::read_to_string(z.by_name("word/document.xml").expect("the main part")).expect("text")
+    };
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    assert!(main(&saved).contains("footerReference"), "the template has them");
+    let alone = e.export_sub_template("Notice", None).expect("exports");
+    let xml = main(&alone);
+    assert!(!xml.contains("headerReference") && !xml.contains("footerReference"), "{xml}");
+    crate::docx::read_editable(&alone).expect("reads");
+}
+
+fn body_texts(doc: &crate::docx::Document) -> Vec<String> {
+    doc.sections
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .map(|p| p.inlines.iter().filter_map(|i| if let Inline::Text(s, _) = i { Some(s.as_str()) } else { None }).collect())
+        .collect()
+}
+
+#[test]
+fn the_body_is_replaced_from_a_docx_keeping_the_sub_templates() {
+    use super::super::commands::Outcome;
+    let replace = |e: &mut Editor, from: Vec<u8>| {
+        e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(from) }), fonts())
+    };
+    let (mut e, _) = expanded();
+    let ns = "urn:tylertech:court:forms:merge:1";
+    let data = crate::api::command::WriteDataPart { namespace: ns.into(), item_id: None, xml: format!("<merge xmlns=\"{ns}\"/>") };
+    e.execute(Command::WriteDataPart(data), fonts());
+    let docx = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-TEXT.docx")).unwrap();
+    let want = body_texts(&crate::docx::read_editable(&docx).unwrap());
+    let (before, names, settings) = (body_texts(e.document()), part_names(&e), format!("{:?}", e.document().settings));
+    assert_eq!(e.document().sections.len(), 2);
+    e.execute(Command::EditSubTemplate(crate::api::command::SubTemplateName { name: "Violation".into(), category: None }), fonts());
+    let depth = e.history().undo_depth();
+    assert!(matches!(replace(&mut e, docx.clone()), Outcome::Changed(_)));
+    assert_eq!(e.editing_sub_template(), None, "back on the template");
+    assert_eq!(e.history().undo_depth(), depth + 1, "one undo step");
+    assert_eq!((body_texts(e.document()), e.document().sections.len()), (want.clone(), 1));
+    assert_eq!((part_names(&e), format!("{:?}", e.document().settings)), (names.clone(), settings));
+    e.execute(Command::Undo, fonts());
+    assert_eq!((body_texts(e.document()), e.document().sections.len()), (before, 2));
+    e.execute(Command::Redo, fonts());
+    assert_eq!(body_texts(e.document()), want);
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!((body_texts(again.document()), part_names(&again)), (want, names));
+    assert!(again.document().data_parts.iter().any(|d| d.xml.contains(ns)), "the data part stays");
+    assert!(matches!(replace(&mut e, b"not a docx".to_vec()), Outcome::Refused(_)));
+
+    // An exported sub-template's body comes back as the template's, its fields and controls with it.
+    let violation = body_shape(&e, "Violation");
+    let alone = e.export_sub_template("Violation", None).expect("exports");
+    replace(&mut e, alone);
+    let template: Vec<_> = elements::enumerate(e.document(), e.index(), &elements::Filter::default())
+        .into_iter()
+        .filter(|x| x.story == StoryId::Body)
+        .map(|x| (x.code, x.props.map(|p| format!("{:?} {:?}", p.kind, p.tag))))
+        .collect();
+    assert_eq!(template, violation.1);
 }
