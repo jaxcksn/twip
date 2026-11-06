@@ -967,7 +967,7 @@ fn a_floating_picture_control() {
     let mut r = super::scenarios::Run::from_bytes(&bytes, "float-control");
     let (c, size) = control(&r.e);
     assert_eq!(size, Some((72.0, 54.0)), "the float's size");
-    let svg = crate::render::svg::tests::ADAPTIVE;
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"><rect width="100%" height="100%" fill="#3F51B5"/></svg>"##;
     let set = json!({
         "id": crate::editing::elements::id_str(crate::docx::ElementId::Control(c)), "options": { "width": 144, "height": 108 },
         "placeholderImage": { "data": crate::api::value::base64(svg.as_bytes()), "mime": "image/svg+xml" },
