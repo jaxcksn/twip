@@ -23,6 +23,8 @@ cc = "1"
 harfrust = "0.15.0"
 roxmltree = "0.21.1"
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
+# PNG fallbacks for SVG pictures (render::svg): zip's deflate, already built.
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 # Spell checking with Hunspell dictionaries (pure Rust), for the editor's squiggles and suggestions.
 spellbook = "0.4.2"
 # Grapheme, word and sentence boundaries (UAX #29) for caret movement, deletion and selection (editing::text).

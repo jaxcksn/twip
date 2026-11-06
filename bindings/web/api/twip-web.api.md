@@ -316,6 +316,7 @@ export interface Commands {
         placeholder?: string;
         binding?: DataBinding;
         options?: ControlOptions;
+        placeholderImage?: PlaceholderImage;
         wrapSelection?: boolean;
     }): Promise<{
         id: ElementId;
@@ -510,6 +511,7 @@ export interface Commands {
         placeholder?: string;
         binding?: DataBinding | null;
         options?: ControlOptions;
+        placeholderImage?: PlaceholderImage;
     }): Promise<void>;
     setDefaultTabStop(spacing: Points): Promise<void>;
     setDifferentFirstPage(on: boolean): Promise<void>;
@@ -602,10 +604,6 @@ export interface Commands {
     }): Promise<void>;
     setParagraphStyle(styleId: StyleId): Promise<void>;
     setPictureAdjust(change: PictureAdjustChange): Promise<void>;
-    setPlaceholderLooks(options: {
-        looks: PlaceholderLook[];
-        merge?: boolean;
-    }): Promise<void>;
     setRowCanBreak(on: boolean): Promise<void>;
     setRowHeight(height: RowHeight): Promise<void>;
     setRulerTabType(type: TabSelector): Promise<void>;
@@ -1102,6 +1100,10 @@ export interface ElementContext {
     exact: boolean;
     id: ElementId;
     kind: 'field' | ControlKind | 'repeatingItem';
+    size?: {
+        width: Points;
+        height: Points;
+    };
     tag?: string;
     title?: string;
 }
@@ -1129,6 +1131,10 @@ export interface ElementInfo {
     locked: boolean;
     parent: ElementId | null;
     reference?: SubTemplateReference;
+    size?: {
+        width: Points;
+        height: Points;
+    };
     story: SelectionSummary['story'];
     subTemplate?: string;
     tag?: string;
@@ -1748,28 +1754,15 @@ export interface PictureAdjustChange {
 }
 
 // @public
-export interface PlaceholderInfo {
-    element: ElementId | null;
-    key: string;
+export interface PlaceholderImage {
+    data: Uint8Array;
+    mime: string;
 }
 
 // @public
-export interface PlaceholderLook {
-    look: {
-        fill?: Color;
-        label?: string;
-        iconSvg?: string;
-    } | {
-        image: Uint8Array;
-        mime: string;
-    };
-    match: {
-        id: ElementId;
-    } | {
-        tag: string;
-    } | {
-        prefix: string;
-    } | 'default';
+export interface PlaceholderInfo {
+    element: ElementId | null;
+    key: string;
 }
 
 // @public

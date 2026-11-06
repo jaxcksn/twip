@@ -372,7 +372,16 @@ public record ElementInfo(
     /// <summary>A sub-template reference field's sub-template.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SubTemplateReference? Reference { get; init; }
+
+    /// <summary>A picture control's picture size (inline or floating).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PictureSize? Size { get; init; }
 }
+
+/// <summary>A picture's width and height.</summary>
+/// <param name="Width">The width.</param>
+/// <param name="Height">The height.</param>
+public sealed record PictureSize(Length Width, Length Height);
 
 /// <summary>
 /// One sub-template reference rule: a field of type <paramref name="FieldType"/> names, in its <see cref="Argument"/>

@@ -1,5 +1,5 @@
 import type { RichText } from './review.js';
-import type { ControlKind, ControlOptions, DataBinding, ReferenceRule } from './services/elements.js';
+import type { ControlKind, ControlOptions, DataBinding, PlaceholderImage, ReferenceRule } from './services/elements.js';
 import type { TabAlignment, TabLeader, TabSelector } from './services/ruler.js';
 import type { ViewOptions } from './services/view.js';
 import type {
@@ -40,14 +40,6 @@ import type {
 export interface FieldTargets {
   /** The fields; default: the selection's. */
   ids?: ElementId[];
-}
-
-/** How a picture placeholder looks before it is filled. */
-export interface PlaceholderLook {
-  /** Which placeholders: one, those with a tag or a key prefix, or the default for the rest. */
-  match: { id: ElementId } | { tag: string } | { prefix: string } | 'default';
-  /** A fill, label and icon, or an image. */
-  look: { fill?: Color; label?: string; iconSvg?: string } | { image: Uint8Array; mime: string };
 }
 
 /**
@@ -446,9 +438,18 @@ export interface Commands {
     placeholder?: string;
     binding?: DataBinding;
     options?: ControlOptions;
+    /**
+     * A picture control's placeholder picture (PNG, JPEG, GIF, BMP or SVG): what the editor, the saved DOCX and a
+     * PDF show until it is filled. An SVG is drawn with the picture's box as its viewport, so one with percentage
+     * geometry and no `viewBox` adapts to every size. Default: the engine's.
+     */
+    placeholderImage?: PlaceholderImage;
     wrapSelection?: boolean;
   }): Promise<{ id: ElementId }>;
-  /** Changes a content control; a `null` binding removes it. */
+  /**
+   * Changes a content control; a `null` binding removes it. `placeholderImage` replaces a picture control's
+   * placeholder picture while it shows it (else it rejects with `unavailable`).
+   */
   setControl(options: {
     id: ElementId;
     tag?: string;
@@ -457,6 +458,7 @@ export interface Commands {
     placeholder?: string;
     binding?: DataBinding | null;
     options?: ControlOptions;
+    placeholderImage?: PlaceholderImage;
   }): Promise<void>;
   /** Removes a content control, optionally keeping its content. */
   removeControl(options: { id: ElementId; keepContent?: boolean }): Promise<void>;
@@ -481,8 +483,6 @@ export interface Commands {
     marks: { id: ElementId; severity: 'error' | 'warning' | 'info'; message: string }[];
     clear?: boolean;
   }): Promise<void>;
-  /** Sets how picture placeholders look. View. */
-  setPlaceholderLooks(options: { looks: PlaceholderLook[]; merge?: boolean }): Promise<void>;
   /** Fills the selected placeholder, or every unfilled one with `key`: each becomes a plain picture, its content control removed. */
   fillPlaceholder(options: { key?: string; image: Uint8Array }): Promise<void>;
 
@@ -797,7 +797,6 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   removeElement: 'value',
   replaceInElements: 'spread',
   markElements: 'spread',
-  setPlaceholderLooks: 'spread',
   fillPlaceholder: 'spread',
   writeDataPart: 'spread',
   removeDataPart: 'spread',

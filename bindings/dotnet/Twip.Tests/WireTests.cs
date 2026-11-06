@@ -48,8 +48,6 @@ public sealed class WireTests
         ["commandvalue"] = Ctx.Object,
         ["zoom"] = Ctx.ZoomLevel,
         ["zoomfit"] = Ctx.ZoomLevel,
-        ["defaultkeyword"] = Ctx.PlaceholderMatch,
-        ["placeholderlook"] = Ctx.PlaceholderAppearance,
         ["placeholderinfo"] = Ctx.PlaceholderInfo,
         ["tooltip"] = Ctx.TooltipWire,
         ["contextmenuevent"] = Ctx.ContextMenuPayload,

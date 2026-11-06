@@ -720,6 +720,27 @@ pub struct PlainTextOptions {
     pub multiline: Option<bool>,
 }
 
+/// A width and height.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Size {
+    /// The width.
+    pub width: Points,
+    /// The height.
+    pub height: Points,
+}
+
+/// A picture control's placeholder picture: what it shows while it shows its placeholder (`w:showingPlcHdr`), in the
+/// editor, the saved DOCX and a PDF alike.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlaceholderImage {
+    /// The picture: PNG, JPEG, GIF, BMP or SVG.
+    pub data: Bytes,
+    /// Its MIME type (`image/png`, `image/svg+xml`); the data must be one.
+    pub mime: String,
+}
+
 /// A picture control's picture size (1…1584 pt): its placeholder's, and the picture's once filled (fitted to it).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -9,6 +9,7 @@ mod overlay;
 pub mod retained;
 pub mod ruler;
 mod shape;
+pub mod svg;
 pub mod theme;
 #[cfg(target_os = "emscripten")]
 pub mod web;
@@ -44,10 +45,6 @@ pub struct Renderer {
     images: HashMap<ImageKey, Option<Image>>,
     /// Skia paths of the shapes drawn, by geometry.
     paths: shape::PathCache,
-    /// Placeholder icons as Skia paths, by the icon's address.
-    icons: HashMap<usize, Vec<(skia_safe::Path, Option<u32>)>>,
-    /// The host's look images, decoded once, by the bytes' address.
-    look_images: HashMap<usize, Option<Image>>,
     pub background: Option<Color>,
     /// Table gridlines (cell edges without borders) show, on screen only.
     pub gridlines: bool,
@@ -257,63 +254,6 @@ impl Renderer {
         }
     }
 
-    /// An unfilled placeholder the host's way: its box tinted, a border in the colour, the icon at its left and
-    /// the label beside it. The canvas is in page points.
-    fn placeholder(&mut self, canvas: &Canvas, ph: &crate::editing::view::PlaceholderView) {
-        let [x0, y0, x1, y1] = ph.rect.map(|v| v as f32);
-        let r = Rect::new(x0, y0, x1, y1);
-        let (a, rr, g, b) = ((ph.color >> 24) as u8, (ph.color >> 16) as u8, (ph.color >> 8) as u8, ph.color as u8);
-        let mut fill = Paint::default();
-        fill.set_color(self.ink(0xFF_FFFF));
-        canvas.draw_rect(r, &fill);
-        fill.set_color(Color::from_argb(a, rr, g, b));
-        canvas.draw_rect(r, &fill);
-        let mut border = Paint::default();
-        border.set_anti_alias(true);
-        border.set_style(skia_safe::paint::Style::Stroke);
-        border.set_stroke_width(0.75);
-        border.set_color(Color::from_rgb(rr, g, b));
-        canvas.draw_rect(r, &border);
-        let h = (y1 - y0).max(1.0);
-        let pad = (h * 0.12).clamp(1.0, 4.0);
-        let mut x = x0 + pad;
-        if let Some(icon) = &ph.icon {
-            // Vector shapes, scaled into the box's height (a texture-free icon).
-            let paths = self
-                .icons
-                .entry(std::rc::Rc::as_ptr(icon) as usize)
-                .or_insert_with(|| icon.paths.iter().filter_map(|(d, f)| Some((skia_safe::Path::from_svg(d)?, *f))).collect());
-            let [vx, vy, vw, vh] = icon.view_box;
-            let s = ((h - 2.0 * pad) / vh.max(0.01)).min(((x1 - x0) * 0.4) / vw.max(0.01));
-            let (w, ih) = (vw * s, vh * s);
-            canvas.save();
-            canvas.translate((x, y0 + (h - ih) / 2.0));
-            canvas.scale((s, s));
-            canvas.translate((-vx, -vy));
-            let mut shape = Paint::default();
-            shape.set_anti_alias(true);
-            for (path, fill) in paths.iter() {
-                shape.set_color(fill.map_or(Color::from_rgb(rr, g, b), Color::new));
-                canvas.draw_path(path, &shape);
-            }
-            canvas.restore();
-            x += w + pad;
-        }
-        if !ph.label.is_empty()
-            && let Some(tf) = self.typefaces.values().flatten().next().cloned()
-        {
-            let size = (h * 0.45).clamp(4.0, 14.0);
-            let font = Font::from_typeface(tf, size);
-            let mut text = Paint::default();
-            text.set_anti_alias(true);
-            text.set_color(Color::from_rgb(rr / 2, g / 2, b / 2));
-            canvas.save();
-            canvas.clip_rect(r, None, true);
-            canvas.draw_str(&ph.label, (x, y0 + h / 2.0 + size * 0.35), &font, &text);
-            canvas.restore();
-        }
-    }
-
     /// Draws one page item; the canvas is in page points.
     pub fn draw_item(&mut self, canvas: &Canvas, item: &Item, images: &[Vec<u8>]) {
         self.item(canvas, item, images);
@@ -364,6 +304,11 @@ impl Renderer {
             }
             Item::Image { rect: [x0, y0, x1, y1], key } => {
                 let dst = Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32);
+                if let Some(bytes) = key.index.and_then(|i| images.get(i)).filter(|b| crate::docx::image::is_svg(b))
+                    && svg::draw(canvas, bytes, dst)
+                {
+                    return;
+                }
                 let image = self
                     .images
                     .entry(*key)

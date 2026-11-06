@@ -80,6 +80,8 @@ export interface ElementInfo {
   locked: boolean;
   /** A sub-template reference field's sub-template. */
   reference?: SubTemplateReference;
+  /** A picture control's picture size (inline or floating). */
+  size?: { width: Points; height: Points };
 }
 
 /**
@@ -134,6 +136,14 @@ export interface DataBinding {
   storeItemId?: string;
   /** The XPath's namespace prefixes. */
   prefixMappings?: string;
+}
+
+/** A picture control's placeholder picture: PNG, JPEG, GIF, BMP or SVG (`image/svg+xml`). */
+export interface PlaceholderImage {
+  /** The picture's bytes. */
+  data: Uint8Array;
+  /** Its MIME type; the data must be one. */
+  mime: string;
 }
 
 /**

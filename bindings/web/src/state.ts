@@ -420,6 +420,8 @@ export interface ElementContext {
   tag?: string;
   /** A control's title. */
   title?: string;
+  /** A picture control's picture size (inline or floating). */
+  size?: { width: Points; height: Points };
 }
 
 /** The selection's character formatting. */

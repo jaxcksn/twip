@@ -38,33 +38,6 @@ impl Editor {
         }
     }
 
-    pub(super) fn placeholder_views(&mut self, pages: &std::ops::Range<usize>) -> Vec<super::view::PlaceholderView> {
-        if self.placeholder_looks.is_empty() || self.doc.placeholders.is_empty() {
-            return Vec::new();
-        }
-        let mut out = Vec::new();
-        for page in pages.clone() {
-            let Some(geo) = self.pages.page(page, &self.index) else { continue };
-            for l in &geo.lines {
-                for w in l.stops.windows(2).filter(|w| w[1].para == w[0].para && w[1].unit.0 == w[0].unit.0 + 1) {
-                    let Some(p) = self.index.para(&self.doc, w[0].para) else { continue };
-                    let Some(Inline::Picture(pic, _)) = super::stories::inline_at(p, w[0].unit) else { continue };
-                    let Some(info) = self.placeholder_of(pic.image, pic.w, pic.h) else { continue };
-                    let Some(look) = self.placeholder_looks.get(&info.key).or_else(|| self.placeholder_looks.get("")) else { continue };
-                    let Some(rect) = self.inline_box(&geo, w[0].para, w[0].unit) else { continue };
-                    out.push(super::view::PlaceholderView {
-                        page,
-                        rect,
-                        color: look.color.unwrap_or(0x40_00_78_D4),
-                        label: look.label.clone().unwrap_or(info.label.clone()),
-                        icon: look.icon.clone(),
-                    });
-                }
-            }
-        }
-        out
-    }
-
     pub(super) fn activate_placeholder(&mut self) -> bool {
         if self.mode == super::Mode::Design {
             return false;

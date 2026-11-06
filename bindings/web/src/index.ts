@@ -17,7 +17,6 @@ export type {
   NoArgumentCommandId,
   Op,
   OpArgs,
-  PlaceholderLook,
 } from './commands.js';
 export type {
   AutoCorrectChange,
@@ -90,6 +89,7 @@ export type {
   Block,
   ControlKind,
   ControlOptions,
+  PlaceholderImage,
   DataBinding,
   DataParts,
   ElementDetail,

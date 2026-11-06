@@ -569,7 +569,12 @@ public sealed record ElementContext(
     ElementId Id, ElementKind Kind, bool Exact,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Code = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Tag = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Title = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Title = null)
+{
+    /// <summary>A picture control's picture size (inline or floating).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PictureSize? Size { get; init; }
+}
 
 /// <summary>The selection's character formatting.</summary>
 public sealed record CharacterFormatting

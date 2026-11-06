@@ -1841,7 +1841,7 @@ impl Reader {
         let w = extent.and_then(|e| emu(e.attribute("cx"))).unwrap_or(0.0);
         let h = extent.and_then(|e| emu(e.attribute("cy"))).unwrap_or(0.0);
         let blip = item.descendants().find(|n| is(*n, A, "blip"));
-        let image = blip.and_then(|b| b.attribute((R, "embed"))).map(str::to_string).and_then(|rid| self.image(&rid, pkg));
+        let image = blip.and_then(crate::drawing::paint::blip_embed).map(str::to_string).and_then(|rid| self.image(&rid, pkg));
         let txbx = item.descendants().find(|n| is_w(*n, "txbxContent"));
         let shape = self.drawing_shape(item, pkg);
         let alt: Rc<str> = item
@@ -2032,7 +2032,7 @@ impl Reader {
                 }
                 "pic" => {
                     if let Some(f) = child_xfrm(c, "spPr") {
-                        let rid = c.descendants().find(|n| is(*n, A, "blip")).and_then(|b| b.attribute((R, "embed"))).map(str::to_string);
+                        let rid = c.descendants().find(|n| is(*n, A, "blip")).and_then(crate::drawing::paint::blip_embed).map(str::to_string);
                         let image = rid.and_then(|r| self.image(&r, pkg));
                         out.push(GroupPart { rect: map.rect(&f), image, text_box: None, path: path.clone() });
                     }

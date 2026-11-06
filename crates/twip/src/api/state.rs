@@ -426,7 +426,7 @@ pub enum ElementKind {
 }
 
 /// An element the selection is in or covers.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementContext {
     /// The element's id.
@@ -444,6 +444,9 @@ pub struct ElementContext {
     /// A control's title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// A picture control's picture size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<super::value::Size>,
 }
 
 /// The link at the selection.

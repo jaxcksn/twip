@@ -320,7 +320,8 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
             o.TryGetProperty("lock", out var l) ? l.Deserialize(TwipJsonContext.Default.ControlLock) : null, Str("placeholder"),
             !removed && o.TryGetProperty("binding", out var b) ? b.Deserialize(TwipJsonContext.Default.DataBinding) : null,
             o.TryGetProperty("options", out var opts) ? opts.Deserialize(TwipJsonContext.Default.ControlOptions) : null,
-            removed);
+            removed,
+            o.TryGetProperty("placeholderImage", out var pi) ? pi.Deserialize(TwipJsonContext.Default.PlaceholderImage) : null);
     }
 
     public override void Write(Utf8JsonWriter writer, ControlChanges value, JsonSerializerOptions options)
@@ -334,30 +335,7 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
         if (value.Binding is not null) { writer.WritePropertyName("binding"); JsonSerializer.Serialize(writer, value.Binding, TwipJsonContext.Default.DataBinding); }
         else if (value.RemoveBinding) writer.WriteNull("binding");
         if (value.Options is not null) { writer.WritePropertyName("options"); JsonSerializer.Serialize(writer, value.Options, TwipJsonContext.Default.ControlOptions); }
-        writer.WriteEndObject();
-    }
-}
-
-/// <summary><c>{ id } | { tag } | { prefix } | 'default'</c>.</summary>
-internal sealed class PlaceholderMatchConverter : JsonConverter<PlaceholderMatch>
-{
-    public override PlaceholderMatch Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        if (reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("default")) return PlaceholderMatch.Default;
-        var o = JsonElement.ParseValue(ref reader);
-        if (o.TryGetProperty("id", out var id)) return PlaceholderMatch.ById(new ElementId(id.GetString()!));
-        if (o.TryGetProperty("tag", out var tag)) return PlaceholderMatch.ByTag(tag.GetString()!);
-        if (o.TryGetProperty("prefix", out var prefix)) return PlaceholderMatch.ByPrefix(prefix.GetString()!);
-        throw new JsonException("not a placeholder match");
-    }
-
-    public override void Write(Utf8JsonWriter writer, PlaceholderMatch value, JsonSerializerOptions options)
-    {
-        if (value.IsDefault) { writer.WriteStringValue("default"); return; }
-        writer.WriteStartObject();
-        if (value.Id is { } id) writer.WriteString("id", id.Value);
-        else if (value.Tag is not null) writer.WriteString("tag", value.Tag);
-        else writer.WriteString("prefix", value.Prefix);
+        if (value.PlaceholderImage is not null) { writer.WritePropertyName("placeholderImage"); JsonSerializer.Serialize(writer, value.PlaceholderImage, TwipJsonContext.Default.PlaceholderImage); }
         writer.WriteEndObject();
     }
 }

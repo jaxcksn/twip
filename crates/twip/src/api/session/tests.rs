@@ -1221,3 +1221,68 @@ fn a_sub_template_body_shown_in_place_is_read_as_a_group_and_goes_to_its_referen
     s.accessible_go(inside).expect("goes");
     assert_eq!(s.editor.selection().focus().and_then(|p| p.para_offset()).map(|(p, _)| p.0), Some(reference.0));
 }
+
+/// The blue pixels of the session's first page as drawn (the adaptive placeholder's colour).
+fn blue_pixels(s: &mut crate::api::session::Session) -> usize {
+    use crate::render::{Frame, Renderer};
+    let fonts = s.fonts.fonts();
+    s.editor.complete(&fonts);
+    let view = s.editor.view(0..1);
+    let images = s.editor.document().images.clone();
+    let f = Frame { origin_x: 0.0, origin_y: 0.0, width: 700.0, height: 900.0, dpr: 1.0, px_per_pt: 1.0, caret: false };
+    let mut surface = skia_safe::surfaces::raster_n32_premul((700, 900)).expect("a raster surface");
+    Renderer::default().draw(surface.canvas(), &view, &images, &f);
+    let info = skia_safe::ImageInfo::new((700, 900), skia_safe::ColorType::RGBA8888, skia_safe::AlphaType::Unpremul, None);
+    let mut px = vec![0u8; 700 * 900 * 4];
+    assert!(surface.read_pixels(&info, &mut px, 700 * 4, (0, 0)));
+    px.chunks(4).filter(|p| p[0].abs_diff(0x3F) < 10 && p[1].abs_diff(0x51) < 10 && p[2].abs_diff(0xB5) < 10).count()
+}
+
+/// The application's placeholder picture: an SVG one is drawn, saved as Word saves one (a PNG fallback and an
+/// `asvg:svgBlip`), read back preferring the SVG, and replaced only while the control shows its placeholder.
+#[test]
+fn picture_control_placeholder_images() {
+    use serde_json::json;
+    use std::io::Read;
+    let run = |s: &mut crate::api::session::Session, op: serde_json::Value| s.run(serde_json::from_value(op).expect("a command"));
+    let svg = crate::render::svg::tests::ADAPTIVE.as_bytes().to_vec();
+    let red = br##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#C00000"/></svg>"##;
+    let png = crate::api::value::base64(&crate::render::svg::fallback_png(red, 8, 8).expect("a PNG"));
+    let open = |engine: &mut Engine, bytes: &[u8]| {
+        let id = engine.create_session(SessionOptions::default());
+        engine.session(id).expect("a session").open(bytes).expect("opens");
+        id
+    };
+    let mut engine = Engine::new(FontLibrary::system());
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-TEXT.docx");
+    let id = open(&mut engine, &std::fs::read(path).expect("fixture"));
+    let s = engine.session(id).expect("a session");
+    let insert = json!({
+        "type": "insertControl", "kind": "picture", "tag": "Photo", "options": { "width": 250, "height": 125 },
+        "placeholderImage": { "data": crate::api::value::base64(&svg), "mime": "image/svg+xml" },
+    });
+    let c = serde_json::to_value(run(s, insert).expect("inserts").value).expect("json")["id"].clone();
+    assert!(blue_pixels(s) > 1000, "the SVG is drawn");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).expect("a package");
+    let names: Vec<String> = z.file_names().filter_map(|n| n.ok().map(|n| n.to_string())).collect();
+    assert!(names.iter().any(|n| n.ends_with(".svg")) && names.iter().any(|n| n.ends_with("f.png")), "{names:?}");
+    let mut xml = String::new();
+    z.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+    assert!(xml.contains("asvg:svgBlip") && xml.contains("showingPlcHdr"), "an svgBlip in a placeholder");
+
+    let again = open(&mut engine, &saved);
+    let a = engine.session(again).expect("a session");
+    assert!(a.editor.document().images.contains(&svg), "read back as the SVG");
+    assert!(blue_pixels(a) > 1000, "drawn again from the DOCX");
+
+    let s = engine.session(id).expect("a session");
+    let set =
+        |s: &mut crate::api::session::Session, image: serde_json::Value| run(s, json!({ "type": "setControl", "id": c, "placeholderImage": image }));
+    assert!(set(s, json!({ "data": png, "mime": "image/png" })).is_ok(), "replaced while it shows the placeholder");
+    assert!(blue_pixels(s) < 50, "the PNG shows instead");
+    assert!(set(s, json!({ "data": png, "mime": "image/svg+xml" })).is_err(), "the data must be what the type says");
+    assert!(set(s, json!({ "data": png, "mime": "image/webp" })).is_err(), "not a type it takes");
+    run(s, json!({ "type": "fillControl", "id": c, "image": png })).expect("fills");
+    assert!(set(s, json!({ "data": png, "mime": "image/png" })).is_err(), "filled: no placeholder to replace");
+}

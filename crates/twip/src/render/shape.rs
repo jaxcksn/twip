@@ -424,6 +424,18 @@ impl Renderer {
                     canvas.draw_path(path, &paint);
                 }
             }
+            Fill::Picture { image, mode: BlipMode::Stretch(f), .. }
+                if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::is_svg(b)) =>
+            {
+                // An SVG: its viewport is the box the stretch fills, clipped to the shape.
+                let bytes = image.and_then(|i| images.get(i)).map_or(&[][..], Vec::as_slice);
+                let f = f.map(|v| v.fraction() as f32);
+                let (w, h) = (size[0] as f32, size[1] as f32);
+                canvas.save();
+                canvas.clip_path(path, None, true);
+                super::svg::draw(canvas, bytes, Rect::from_ltrb(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h));
+                canvas.restore();
+            }
             Fill::Picture { image, src, mode: blip, adjust, .. } => {
                 picture_adjust(adjust, &mut paint);
                 let key = ImageKey { index: *image, generation: 0 };

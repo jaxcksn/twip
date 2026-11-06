@@ -893,6 +893,7 @@ public sealed record ControlOptions(
 /// <param name="Binding">The data binding.</param>
 /// <param name="Options">Kind-specific options.</param>
 /// <param name="WrapSelection">Wrap the selection instead of inserting an empty control.</param>
+/// <param name="PlaceholderImage">A picture control's placeholder picture; null for the engine's.</param>
 public sealed record InsertControlOptions(
     ControlKind Kind,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Tag = null,
@@ -901,7 +902,13 @@ public sealed record InsertControlOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Placeholder = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DataBinding? Binding = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ControlOptions? Options = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WrapSelection = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WrapSelection = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlaceholderImage? PlaceholderImage = null);
+
+/// <summary>A picture control's placeholder picture: what the editor, the saved DOCX and a PDF show until it is filled. An SVG is drawn with the picture's box as its viewport.</summary>
+/// <param name="Data">The picture: PNG, JPEG, GIF, BMP or SVG.</param>
+/// <param name="Mime">Its MIME type (<c>image/png</c>, <c>image/svg+xml</c>); the data must be one.</param>
+public sealed record PlaceholderImage(ReadOnlyMemory<byte> Data, string Mime);
 
 /// <summary>Changes to a content control; unset values are kept.</summary>
 /// <param name="Id">The control.</param>
@@ -912,10 +919,11 @@ public sealed record InsertControlOptions(
 /// <param name="Binding">The new data binding.</param>
 /// <param name="Options">The new kind-specific options.</param>
 /// <param name="RemoveBinding">Remove the data binding (ignored when <paramref name="Binding"/> is set).</param>
+/// <param name="PlaceholderImage">A picture control's new placeholder picture, while it shows its placeholder.</param>
 [JsonConverter(typeof(ControlChangesConverter))]
 public sealed record ControlChanges(
     ElementId Id, string? Tag = null, string? Title = null, ControlLock? Lock = null, string? Placeholder = null,
-    DataBinding? Binding = null, ControlOptions? Options = null, bool RemoveBinding = false);
+    DataBinding? Binding = null, ControlOptions? Options = null, bool RemoveBinding = false, PlaceholderImage? PlaceholderImage = null);
 
 /// <summary>What to fill a content control with: exactly one of text, a picture or a document.</summary>
 public sealed record ControlContent
@@ -953,54 +961,3 @@ public sealed record ControlContent
 /// <param name="Message">The tooltip text.</param>
 public sealed record ElementMark(ElementId Id, MarkSeverity Severity, string Message);
 
-/// <summary>Which placeholders a look applies to.</summary>
-[JsonConverter(typeof(PlaceholderMatchConverter))]
-public sealed record PlaceholderMatch
-{
-    private PlaceholderMatch() { }
-
-    /// <summary>The element id, for <see cref="ById"/>.</summary>
-    public ElementId? Id { get; private init; }
-
-    /// <summary>The tag, for <see cref="ByTag"/>.</summary>
-    public string? Tag { get; private init; }
-
-    /// <summary>The tag prefix, for <see cref="ByPrefix"/>.</summary>
-    public string? Prefix { get; private init; }
-
-    /// <summary>Whether this is the default look.</summary>
-    public bool IsDefault { get; private init; }
-
-    /// <summary>Every placeholder without a more specific look.</summary>
-    public static PlaceholderMatch Default { get; } = new() { IsDefault = true };
-
-    /// <summary>One placeholder.</summary>
-    /// <param name="id">The element.</param>
-    public static PlaceholderMatch ById(ElementId id) => new() { Id = id };
-
-    /// <summary>Placeholders with a tag.</summary>
-    /// <param name="tag">The tag.</param>
-    public static PlaceholderMatch ByTag(string tag) => new() { Tag = tag };
-
-    /// <summary>Placeholders whose tag starts with a prefix.</summary>
-    /// <param name="prefix">The prefix.</param>
-    public static PlaceholderMatch ByPrefix(string prefix) => new() { Prefix = prefix };
-}
-
-/// <summary>How placeholders look: a fill, label and icon, or an image.</summary>
-/// <param name="Fill">The fill colour.</param>
-/// <param name="Label">The label.</param>
-/// <param name="IconSvg">An SVG icon.</param>
-/// <param name="Image">An image instead of the fill, label and icon.</param>
-/// <param name="Mime">The image's MIME type.</param>
-public sealed record PlaceholderAppearance(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Fill = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Label = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? IconSvg = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReadOnlyMemory<byte>? Image = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Mime = null);
-
-/// <summary>A placeholder look and the placeholders it applies to.</summary>
-/// <param name="Match">The placeholders.</param>
-/// <param name="Look">The look.</param>
-public sealed record PlaceholderLook(PlaceholderMatch Match, PlaceholderAppearance Look);

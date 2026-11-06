@@ -209,13 +209,11 @@ pub struct View {
     pub table_preview: Option<(usize, [f64; 4])>,
     pub correction: Option<CorrectionView>,
     pub cursor: super::input::Cursor,
-    pub placeholders: Vec<PlaceholderView>,
     pub spelling: Vec<(usize, [f64; 4])>,
     pub drop: Option<CaretView>,
     pub marks: Vec<MarkView>,
     pub tooltip: Option<Tooltip>,
     pub regions: Vec<RegionView>,
-    pub looks: Vec<LookView>,
     pub comments: Vec<CommentView>,
     pub comment_anchors: Vec<(crate::docx::review::CommentId, usize, [f64; 2])>,
     pub formatting_marks: Vec<FormattingMark>,
@@ -244,16 +242,6 @@ pub struct CommentView {
     pub thread: crate::docx::review::CommentId,
     pub rects: Vec<(usize, [f64; 4])>,
     pub active: bool,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct LookView {
-    pub page: usize,
-    pub rect: [f64; 4],
-    pub fill: Option<u32>,
-    pub label: Option<String>,
-    pub icon: Option<std::rc::Rc<SvgIcon>>,
-    pub image: Option<std::rc::Rc<Vec<u8>>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -312,82 +300,6 @@ pub struct Tooltip {
     pub rect: [f64; 4],
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct PlaceholderLook {
-    pub color: Option<u32>,
-    pub label: Option<String>,
-    pub icon: Option<std::rc::Rc<SvgIcon>>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct SvgIcon {
-    pub view_box: [f32; 4],
-    pub paths: Vec<(String, Option<u32>)>,
-}
-
-impl SvgIcon {
-    pub fn parse(svg: &str) -> Option<SvgIcon> {
-        let attr = |tag: &str, name: &str| -> Option<String> {
-            let k = tag.find(&format!(" {name}=\""))? + name.len() + 3;
-            Some(tag[k..].split('"').next()?.to_string())
-        };
-        let num = |tag: &str, name: &str| attr(tag, name).and_then(|v| v.trim_end_matches("px").parse::<f32>().ok());
-        let root = svg.find("<svg").map(|k| &svg[k..svg[k..].find('>').map_or(svg.len(), |e| k + e)])?;
-        let view_box = match attr(root, "viewBox")
-            .map(|v| v.split([' ', ',']).filter(|s| !s.is_empty()).filter_map(|s| s.parse::<f32>().ok()).collect::<Vec<_>>())
-        {
-            Some(v) if v.len() == 4 => [v[0], v[1], v[2], v[3]],
-            _ => [0.0, 0.0, num(root, "width").unwrap_or(24.0), num(root, "height").unwrap_or(24.0)],
-        };
-        let fill = |tag: &str| -> Option<Option<u32>> {
-            match attr(tag, "fill").as_deref() {
-                Some("none") => None,
-                Some(c) if c.starts_with('#') && c.len() == 7 => Some(u32::from_str_radix(&c[1..], 16).ok().map(|n| 0xFF00_0000 | n)),
-                _ => Some(None),
-            }
-        };
-        let mut paths = Vec::new();
-        let mut rest = svg;
-        while let Some(k) = rest.find('<') {
-            let end = rest[k..].find('>').map_or(rest.len(), |e| k + e + 1);
-            let tag = &rest[k..end];
-            let name = tag[1..].split(|c: char| c.is_whitespace() || c == '>' || c == '/').next().unwrap_or("");
-            let d = match name {
-                "path" => attr(tag, "d"),
-                "circle" => {
-                    let (cx, cy, r) = (num(tag, "cx").unwrap_or(0.0), num(tag, "cy").unwrap_or(0.0), num(tag, "r").unwrap_or(0.0));
-                    Some(format!("M{} {}a{r} {r} 0 1 0 {} 0a{r} {r} 0 1 0 {} 0Z", cx - r, cy, 2.0 * r, -2.0 * r))
-                }
-                "rect" => {
-                    let (x, y, w, h) = (
-                        num(tag, "x").unwrap_or(0.0),
-                        num(tag, "y").unwrap_or(0.0),
-                        num(tag, "width").unwrap_or(0.0),
-                        num(tag, "height").unwrap_or(0.0),
-                    );
-                    Some(format!("M{x} {y}h{w}v{h}h{}Z", -w))
-                }
-                "polygon" => attr(tag, "points").map(|p| format!("M{}Z", p.trim())),
-                _ => None,
-            };
-            if let (Some(d), Some(f)) = (d, fill(tag)) {
-                paths.push((d, f));
-            }
-            rest = &rest[end..];
-        }
-        (!paths.is_empty()).then_some(SvgIcon { view_box, paths })
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct PlaceholderView {
-    pub page: usize,
-    pub rect: [f64; 4],
-    pub color: u32,
-    pub label: String,
-    pub icon: Option<std::rc::Rc<SvgIcon>>,
-}
-
 #[cfg(any(test, feature = "inspect"))]
 fn r2(x: f64) -> f64 {
     (x * 100.0).round() / 100.0
@@ -423,12 +335,6 @@ pub fn canonical(v: &View) -> String {
         out["marks"] = serde_json::json!(
             v.marks.iter().map(|m| serde_json::json!({ "page": m.page, "rect": rects(&m.rect), "severity": m.severity.name() })).collect::<Vec<_>>()
         );
-    }
-    if !v.looks.is_empty() {
-        out["looks"] =
-            serde_json::json!(v.looks.iter().map(|l| serde_json::json!({
-            "page": l.page, "rect": rects(&l.rect), "image": l.image.is_some(), "label": l.label, "fill": l.fill.map(|f| format!("{f:08X}")),
-        })).collect::<Vec<_>>());
     }
     if !v.regions.is_empty() {
         out["regions"] = serde_json::json!(

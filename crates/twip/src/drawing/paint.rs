@@ -111,10 +111,17 @@ pub struct BlipFill {
     pub rot_with_shape: bool,
 }
 
+/// The relationship a blip's picture is read from: its SVG (`asvg:svgBlip`, Office 2016) when it has one, else its
+/// own (the SVG's PNG fallback).
+pub fn blip_embed<'a>(blip: Node<'a, '_>) -> Option<&'a str> {
+    let r = (crate::docx::xml::R, "embed");
+    blip.descendants().find(|n| n.tag_name().name() == "svgBlip").and_then(|s| s.attribute(r)).or_else(|| blip.attribute(r))
+}
+
 impl BlipFill {
     pub fn parse(n: Node, image: ImageLookup) -> BlipFill {
         let blip = a_child(n, "blip");
-        let rid = blip.and_then(|b| b.attribute((crate::docx::xml::R, "embed")));
+        let rid = blip.and_then(blip_embed);
         let adjust = blip
             .into_iter()
             .flat_map(|b| b.children().filter(Node::is_element))

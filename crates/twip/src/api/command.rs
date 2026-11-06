@@ -16,8 +16,8 @@ use super::services::TabSelector;
 use super::state::{Mode, TextDistance};
 use super::value::{
     Alignment, AutoOr, Bytes, CellAlignment, Color, CommentId, ControlKind, ControlLock, ControlOptions, DataBinding, Direction, ElementId,
-    HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, ObjectWrap, Order, Orientation, Points, RevisionId, RowHeight, StyleId,
-    TabAlignment, TabLeader, TableWidth, UnderlineStyle, VerticalPosition, WrapSide,
+    HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, ObjectWrap, Order, Orientation, PlaceholderImage, Points, RevisionId,
+    RowHeight, StyleId, TabAlignment, TabLeader, TableWidth, UnderlineStyle, VerticalPosition, WrapSide,
 };
 use super::wire::value;
 
@@ -411,8 +411,6 @@ commands! {
     ReplaceInElements(ReplaceInElements),
     /// Wavy marks with a tooltip on elements. Undo: view.
     MarkElements(MarkElements),
-    /// How unfilled picture placeholders look. Undo: view.
-    SetPlaceholderLooks(PlaceholderLooks),
     /// Fills the selected placeholder, or every unfilled one with `key`: each becomes a plain picture, its content
     /// control removed. Undo: one step.
     FillPlaceholder(FillPlaceholder),
@@ -1392,6 +1390,9 @@ pub struct InsertControl {
     /// The kind's options (list items, date format, checkbox symbols).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<ControlOptions>,
+    /// A picture control's placeholder picture; default: the engine's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder_image: Option<PlaceholderImage>,
     /// Wraps the selection instead of inserting an empty control.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrap_selection: Option<bool>,
@@ -1421,6 +1422,9 @@ pub struct SetControl {
     /// The new options.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<ControlOptions>,
+    /// A picture control's new placeholder picture, while it shows its placeholder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder_image: Option<PlaceholderImage>,
 }
 
 /// `removeControl`'s options.
@@ -1547,85 +1551,6 @@ pub struct MarkElements {
     /// Removes the earlier marks first. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clear: Option<bool>,
-}
-
-/// The `'default'` keyword of [`PlaceholderMatch`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DefaultKeyword {
-    /// `'default'`.
-    Default,
-}
-
-/// Which placeholders a look applies to.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PlaceholderMatch {
-    /// Every placeholder no other rule matches.
-    Default(DefaultKeyword),
-    /// One placeholder.
-    Id {
-        /// The placeholder's element id.
-        id: ElementId,
-    },
-    /// Placeholders with this tag.
-    Tag {
-        /// The tag.
-        tag: String,
-    },
-    /// Placeholders whose key starts with this prefix.
-    Prefix {
-        /// The key prefix.
-        prefix: String,
-    },
-}
-
-/// How a placeholder looks: drawn by the engine, or an image.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PlaceholderLook {
-    /// An image drawn in the placeholder's box.
-    Image {
-        /// The image's bytes.
-        image: Bytes,
-        /// The image's MIME type (`image/png`).
-        mime: String,
-    },
-    /// A box the engine draws.
-    #[serde(rename_all = "camelCase")]
-    Drawn {
-        /// The fill color; `None` keeps the default.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        fill: Option<Color>,
-        /// The label; `None` keeps the default.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        label: Option<String>,
-        /// An SVG icon drawn with the label.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        icon_svg: Option<String>,
-    },
-}
-
-/// One look rule.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PlaceholderLookRule {
-    /// Which placeholders the rule applies to.
-    #[serde(rename = "match")]
-    pub matches: PlaceholderMatch,
-    /// How they look.
-    pub look: PlaceholderLook,
-}
-
-/// `setPlaceholderLooks`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PlaceholderLooks {
-    /// The look rules.
-    pub looks: Vec<PlaceholderLookRule>,
-    /// Keeps rules for matches not listed. Default: false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub merge: Option<bool>,
 }
 
 /// `fillPlaceholder`'s options.

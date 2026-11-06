@@ -48,10 +48,30 @@ fn dpi(d: &[u8]) -> (f64, f64) {
     (96.0, 96.0)
 }
 
-/// MIME type and extension from the file signature (PNG, JPEG, GIF, BMP, TIFF).
+/// Whether the bytes are an SVG document: text whose first element is `svg`.
+pub fn is_svg(d: &[u8]) -> bool {
+    let head = &d[..d.len().min(4096)];
+    let text = match std::str::from_utf8(head) {
+        Ok(t) => t,
+        Err(e) => std::str::from_utf8(&head[..e.valid_up_to()]).unwrap_or(""),
+    };
+    let mut rest = text.trim_start_matches('\u{feff}').trim_start();
+    // Past the prolog: the XML declaration, comments, processing instructions and a doctype.
+    while let Some(r) = rest.strip_prefix("<?").or_else(|| rest.strip_prefix("<!")) {
+        let end = if r.starts_with("--") { r.find("-->").map(|k| k + 3) } else { r.find('>').map(|k| k + 1) };
+        let Some(end) = end else { return false };
+        rest = r[end..].trim_start();
+    }
+    rest.strip_prefix("<svg").is_some_and(|r| r.starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/'))
+}
+
+/// MIME type and extension from the file signature (PNG, JPEG, GIF, BMP, TIFF, SVG).
 pub fn image_type(d: &[u8]) -> Option<(&'static str, &'static str)> {
     if d.len() < 4 {
         return None;
+    }
+    if is_svg(d) {
+        return Some(("image/svg+xml", "svg"));
     }
     Some(match d {
         [0x89, b'P', b'N', b'G', ..] => ("image/png", "png"),

@@ -852,12 +852,6 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation MarkElements(IReadOnlyList<ElementMark> marks, bool? clear = null) => Op(CommandId.MarkElements, new Arg("marks", Node(marks)), new Arg("clear", clear is { } clear_ ? Node(clear_) : null, Optional: true));
 
-    /// <summary>Sets how placeholders look in design mode. A view setting.</summary>
-    /// <param name="looks">The looks.</param>
-    /// <param name="merge">Merge with the current looks.</param>
-    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetPlaceholderLooks(IReadOnlyList<PlaceholderLook> looks, bool? merge = null) => Op(CommandId.SetPlaceholderLooks, new Arg("looks", Node(looks)), new Arg("merge", merge is { } merge_ ? Node(merge_) : null, Optional: true));
-
     /// <summary>Fills the selected picture placeholder, or every unfilled one with a key.</summary>
     /// <param name="image">The picture.</param>
     /// <param name="key">The placeholder key.</param>

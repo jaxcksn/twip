@@ -598,7 +598,7 @@ impl Editor {
                             let s = crate::docx::fields::span_at(&p.inlines, k)?;
                             Some(crate::docx::fields::code_text(&p.inlines, s).trim().to_string())
                         });
-                        ElementContext { id, kind: ElementKind::Field, exact, code, tag: None, title: None }
+                        ElementContext { id, kind: ElementKind::Field, exact, code, tag: None, title: None, size: None }
                     }
                     crate::docx::ElementId::Control(c) => {
                         let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
@@ -616,7 +616,7 @@ impl Editor {
                             crate::docx::ControlKind::RepeatingItem => ElementKind::RepeatingItem,
                             crate::docx::ControlKind::RichText | crate::docx::ControlKind::Other => ElementKind::RichText,
                         };
-                        ElementContext { id, kind, exact, code: None, tag: props.tag, title: props.alias }
+                        ElementContext { id, kind, exact, code: None, tag: props.tag, title: props.alias, size: self.picture_control_size(c) }
                     }
                 }
             })

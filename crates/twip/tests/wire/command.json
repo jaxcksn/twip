@@ -764,6 +764,10 @@
     "options": {
       "checked": false
     },
+    "placeholderImage": {
+      "data": "iVBORw==",
+      "mime": "image/png"
+    },
     "tag": "status",
     "type": "setControl"
   },
@@ -812,21 +816,6 @@
       }
     ],
     "type": "markElements"
-  },
-  {
-    "looks": [
-      {
-        "look": {
-          "fill": "#EEEEEE",
-          "label": "Logo"
-        },
-        "match": {
-          "tag": "logo"
-        }
-      }
-    ],
-    "merge": false,
-    "type": "setPlaceholderLooks"
   },
   {
     "image": "iVBORw==",

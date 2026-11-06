@@ -199,6 +199,10 @@
           "exact": true,
           "id": "field-1",
           "kind": "field",
+          "size": {
+            "height": 54.0,
+            "width": 216.0
+          },
           "tag": "name",
           "title": "Name"
         }
