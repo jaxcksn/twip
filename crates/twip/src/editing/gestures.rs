@@ -25,7 +25,7 @@ const TEXT: GestureTarget = GestureTarget::Menu(MenuTarget::Text);
 
 impl Editor {
     pub fn dragging(&self) -> bool {
-        self.object_drag.is_some() || self.border_drag.is_some() || self.table_drag.is_some()
+        self.object_drag.is_some() || self.shape_drag.is_some() || self.border_drag.is_some() || self.table_drag.is_some()
     }
 
     pub fn pointer_input(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {

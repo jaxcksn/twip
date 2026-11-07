@@ -2561,15 +2561,21 @@ impl Editor {
                 match o {
                     _ if let Some(d) = self.object_drag.filter(|d| d.obj == o && !d.live) => {
                         if page == d.page {
-                            out.push((page, d.rect(self.object_locked(o))));
+                            out.push(view::Outline { page, rect: d.rect(self.object_locked(o)), rot: d.rot });
                         }
                     }
                     selection::ObjectRef::Floating(_) => {
                         for f in self.selected_floats() {
-                            out.extend(geo.stories.iter().filter(|s| s.float == Some(f)).map(|s| (page, s.rect)));
+                            if geo.stories.iter().any(|s| s.float == Some(f))
+                                && let Some((rect, rot)) = self.float_frame(f, page)
+                            {
+                                out.push(view::Outline { page, rect, rot });
+                            }
                         }
                     }
-                    selection::ObjectRef::Inline { para, offset } => out.extend(self.inline_box(&geo, para, offset).map(|r| (page, r))),
+                    selection::ObjectRef::Inline { para, offset } => {
+                        out.extend(self.inline_box(&geo, para, offset).map(|rect| view::Outline { page, rect, rot: 0.0 }))
+                    }
                 }
             }
             let dragged = self.object_drag.is_some_and(|d| d.now != d.start) || self.shape_drag.is_some();
@@ -2640,7 +2646,7 @@ impl Editor {
                 let locked = self.selected_object().and_then(|o| o.locked) == Some(true);
                 let moving = self.object_drag.filter(|d| d.handle.is_none() && d.now != d.start && !locked);
                 let to = moving.and_then(|d| {
-                    let (para, _) = self.anchor_at(d.page, self.index.float_anchor(f)?, d.rect(false)[1])?;
+                    let (para, _) = self.anchor_at(d.page, self.index.float_anchor(f)?, d.placed(d.rect(false))[1])?;
                     Some((d.page, para))
                 });
                 let at = |e: &mut Self, page: usize, para: ParaId| {
@@ -2664,6 +2670,7 @@ impl Editor {
             },
             from: d.rect,
             to: d.rect(self.object_locked(d.obj)),
+            rot: d.rot,
         });
         let (mut guides, mut measures, original) = self.object_feedback(visible.clone(), anchor);
         let (table, table_preview) = self.table_feedback(visible.clone(), &mut guides, &mut measures);
@@ -2716,9 +2723,15 @@ impl Editor {
     pub fn selection_contains(&mut self, x: f64, y: f64) -> bool {
         let Some((page, px, py)) = self.stack().page_at(x, y) else { return false };
         match self.selection_view(page..page + 1) {
-            SelectionView::Text(r) | SelectionView::Cells(r) | SelectionView::Object(r, _) => {
+            SelectionView::Text(r) | SelectionView::Cells(r) => {
                 r.iter().any(|(p, [x0, y0, x1, y1])| *p == page && px >= *x0 && px <= *x1 && py >= *y0 && py <= *y1)
             }
+            SelectionView::Object(r, _) => r.iter().any(|o| {
+                let [x0, y0, x1, y1] = o.rect;
+                let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+                let (ux, uy) = objects::turned((px - cx, py - cy), -o.rot);
+                o.page == page && cx + ux >= x0 && cx + ux <= x1 && cy + uy >= y0 && cy + uy <= y1
+            }),
             SelectionView::None => false,
         }
     }

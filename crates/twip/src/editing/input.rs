@@ -26,6 +26,7 @@ pub enum Cursor {
     CellSelect,
     ColumnSelect,
     RowSelect,
+    Rotate,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

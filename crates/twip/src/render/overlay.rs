@@ -179,10 +179,13 @@ impl Renderer {
                     })
                     .collect(),
             };
+            // Centre to centre, scaled along the frame's own (turned) sides.
             canvas.save_layer_alpha_f(None, 0.5);
-            canvas.translate((c0 as f32, d0 as f32));
+            canvas.translate((((c0 + c1) / 2.0) as f32, ((d0 + d1) / 2.0) as f32));
+            canvas.rotate(g.rot as f32, None);
             canvas.scale((((c1 - c0) / (a1 - a0).max(0.01)) as f32, ((d1 - d0) / (b1 - b0).max(0.01)) as f32));
-            canvas.translate((-a0 as f32, -b0 as f32));
+            canvas.rotate(-g.rot as f32, None);
+            canvas.translate((-((a0 + a1) / 2.0) as f32, -((b0 + b1) / 2.0) as f32));
             for it in &items {
                 self.item(canvas, it, images);
             }
@@ -207,20 +210,24 @@ impl Renderer {
                     canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &highlight);
                 }
             }
-            SelectionView::Object(rects, handles) => {
-                // A 1 px outline and eight 8 px handles, filled with the page's colour, with a 1 px border.
-                for (_, [x0, y0, x1, y1]) in rects.iter().filter(|(pg, _)| *pg == i) {
-                    canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &hair);
-                    if !handles {
-                        continue;
-                    }
+            SelectionView::Object(outlines, handles) => {
+                // A 1 px outline and eight 8 px handles, filled with the page's colour, with a 1 px border, all
+                // turned with the object.
+                for o in outlines.iter().filter(|o| o.page == i) {
+                    let [x0, y0, x1, y1] = o.rect;
                     let (xm, ym) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-                    let r = (4.0 / k) as f32;
-                    for (hx, hy) in [(*x0, *y0), (xm, *y0), (*x1, *y0), (*x1, ym), (*x1, *y1), (xm, *y1), (*x0, *y1), (*x0, ym)] {
-                        let h = Rect::from_xywh(hx as f32 - r, hy as f32 - r, 2.0 * r, 2.0 * r);
-                        canvas.draw_rect(h, &paper);
-                        canvas.draw_rect(h, &hair);
+                    canvas.save();
+                    canvas.rotate(o.rot as f32, Some((xm as f32, ym as f32).into()));
+                    canvas.draw_rect(Rect::new(x0 as f32, y0 as f32, x1 as f32, y1 as f32), &hair);
+                    if *handles {
+                        let r = (4.0 / k) as f32;
+                        for (hx, hy) in [(x0, y0), (xm, y0), (x1, y0), (x1, ym), (x1, y1), (xm, y1), (x0, y1), (x0, ym)] {
+                            let h = Rect::from_xywh(hx as f32 - r, hy as f32 - r, 2.0 * r, 2.0 * r);
+                            canvas.draw_rect(h, &paper);
+                            canvas.draw_rect(h, &hair);
+                        }
                     }
+                    canvas.restore();
                 }
             }
             SelectionView::None => {}

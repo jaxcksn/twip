@@ -205,6 +205,9 @@ pub(super) struct ObjectDrag {
     pub snapping: Snapping,
     pub snap: [f64; 2],
     pub snapped: [Option<SnapLine>; 2],
+    /// A turned float's rotation; `rect` is then its frame, unturned, which a quarter-turned float lays out swapped.
+    pub rot: f64,
+    pub swap: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -248,7 +251,19 @@ impl ObjectDrag {
             snapping: Snapping::On,
             snap: [0.0; 2],
             snapped: [None; 2],
+            rot: 0.0,
+            swap: false,
         }
+    }
+
+    /// `r`, a frame, as the box the float lays out in.
+    pub fn placed(&self, r: [f64; 4]) -> [f64; 4] {
+        if !self.swap {
+            return r;
+        }
+        let [x0, y0, x1, y1] = r;
+        let (cx, cy, hw, hh) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (y1 - y0) / 2.0, (x1 - x0) / 2.0);
+        [cx - hw, cy - hh, cx + hw, cy + hh]
     }
 
     pub fn rect(&self, locked: bool) -> [f64; 4] {
@@ -262,6 +277,8 @@ impl ObjectDrag {
             return [x0 + dx + sx, y0 + dy + sy, x1 + dx + sx, y1 + dy + sy];
         };
         let locked = locked || self.shift;
+        // A turned frame resizes along its own sides.
+        (dx, dy) = turned((dx, dy), -self.rot);
         let (sx, sy) = HANDLES[k];
         let both = if self.ctrl { 2.0 } else { 1.0 };
         let (w0, h0) = (x1 - x0, y1 - y0);
@@ -286,24 +303,43 @@ impl ObjectDrag {
         } else {
             y0
         };
-        [nx0, ny0, nx0 + w, ny0 + h]
+        if self.ctrl || self.rot == 0.0 {
+            return [nx0, ny0, nx0 + w, ny0 + h];
+        }
+        // The opposite handle stays where it's drawn: the frame turns about its own centre, which moved.
+        let fixed = |x0: f64, y0: f64, w: f64, h: f64| {
+            let (fx, fy) = turned((-sx * w / 2.0, -sy * h / 2.0), self.rot);
+            (x0 + w / 2.0 + fx, y0 + h / 2.0 + fy)
+        };
+        let ((ax, ay), (bx, by)) = (fixed(x0, y0, w0, h0), fixed(nx0, ny0, w, h));
+        let (ox, oy) = (ax - bx, ay - by);
+        [nx0 + ox, ny0 + oy, nx0 + w + ox, ny0 + h + oy]
     }
 }
 
+/// `(x, y)` turned `deg` clockwise about the origin.
+pub(super) fn turned((x, y): (f64, f64), deg: f64) -> (f64, f64) {
+    let (s, c) = deg.to_radians().sin_cos();
+    (x * c - y * s, x * s + y * c)
+}
+
 impl Editor {
-    pub(super) fn handle_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(ObjectRef, [f64; 4], usize, usize)> {
+    pub(super) fn handle_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(ObjectRef, [f64; 4], f64, usize, usize)> {
         let stack = self.stack();
         let (page, px, py) = stack.page_at(x, y)?;
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
         let one = 0.75 / self.viewport.zoom.max(0.1);
-        let (obj, rect) = match self.selection {
-            Selection::Object(o @ ObjectRef::Floating(f)) => geo.stories.iter().find(|s| s.float == Some(f)).map(|s| (o, s.rect)),
-            Selection::Object(o @ ObjectRef::Inline { para, offset }) => self.inline_box(&geo, para, offset).map(|r| (o, r)),
+        let (obj, rect, rot) = match self.selection {
+            Selection::Object(o @ ObjectRef::Floating(f)) => self.float_frame(f, page).map(|(r, rot)| (o, r, rot)),
+            Selection::Object(o @ ObjectRef::Inline { para, offset }) => self.inline_box(&geo, para, offset).map(|r| (o, r, 0.0)),
             _ => None,
         }
-        .filter(|(o, _)| !self.object_fixed(*o))?;
+        .filter(|(o, ..)| !self.object_fixed(*o))?;
         let [x0, y0, x1, y1] = rect;
+        let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        let (ux, uy) = turned((px - cx, py - cy), -rot);
+        let (px, py) = (cx + ux, cy + uy);
         let at = |side: f64, lo: f64, hi: f64| match side {
             s if s < 0.0 => lo,
             s if s > 0.0 => hi,
@@ -313,19 +349,25 @@ impl Editor {
             let (sx, sy) = HANDLES[k];
             (px - at(sx, x0, x1)).abs() <= 4.0 * one && (py - at(sy, y0, y1)).abs() <= 4.0 * one
         })?;
-        Some((obj, rect, page, k))
+        Some((obj, rect, rot, page, k))
+    }
+
+    /// A float's frame on `page`, unturned, and its rotation.
+    pub(super) fn float_frame(&mut self, f: FloatId, page: usize) -> Option<([f64; 4], f64)> {
+        let rot = self.float_of(f)?.shape.as_ref().map_or(0.0, |s| s.xfrm.rot.degrees());
+        Some((self.shape_root(f, page)?, rot))
     }
 
     pub(super) fn object_press(&mut self, x: f64, y: f64, ctrl: bool, fonts: &Fonts) -> bool {
-        if let Some((obj, rect, page, k)) = self.handle_at(x, y, fonts) {
-            self.object_drag = Some(ObjectDrag::new(obj, Some(k), (x, y), rect, page, ctrl));
+        if let Some((obj, rect, rot, page, k)) = self.handle_at(x, y, fonts) {
+            let swap = matches!(obj, ObjectRef::Floating(f) if self.float_of(f).is_some_and(|fl| fl.rot_swap));
+            self.object_drag = Some(ObjectDrag { rot, swap, ..ObjectDrag::new(obj, Some(k), (x, y), rect, page, ctrl) });
             self.requests.push(Request::CapturePointer);
             return true;
         }
         let stack = self.stack();
         let Some((page, ..)) = stack.page_at(x, y) else { return false };
         self.ensure_page(page, fonts);
-        let Some(geo) = self.pages.page(page, &self.index) else { return false };
         let Some(s) = self.object_hit(x, y, fonts) else { return false };
         let was = self.selection;
         self.set_selection(s);
@@ -352,9 +394,10 @@ impl Editor {
         }
         if let Selection::Object(obj @ ObjectRef::Floating(f)) = s
             && !self.object_fixed(obj)
-            && let Some(st) = geo.stories.iter().find(|t| t.float == Some(f))
+            && let Some((rect, rot)) = self.float_frame(f, page)
         {
-            self.object_drag = Some(ObjectDrag::new(obj, None, (x, y), st.rect, page, ctrl));
+            let swap = self.float_of(f).is_some_and(|fl| fl.rot_swap);
+            self.object_drag = Some(ObjectDrag { rot, swap, ..ObjectDrag::new(obj, None, (x, y), rect, page, ctrl) });
             self.build_snaps(page, Dragged::Float(f));
             self.requests.push(Request::CapturePointer);
         }
@@ -376,7 +419,9 @@ impl Editor {
         let label = if d.handle.is_some() { "Resize Object" } else { "Move Object" };
         let out = match d.obj {
             _ if d.now == d.start => Outcome::Unchanged("no drag"),
-            ObjectRef::Floating(f) => self.place_float(f, d.page, d.rect, d.rect(self.float_locked(f)), label, d.handle.is_none(), fonts),
+            ObjectRef::Floating(f) => {
+                self.place_float(f, d.page, d.placed(d.rect), d.placed(d.rect(self.float_locked(f))), label, d.handle.is_none(), fonts)
+            }
             ObjectRef::Inline { para, offset } => {
                 let [x0, y0, x1, y1] = d.rect(self.object_locked(d.obj));
                 self.set_picture_size(para, offset, x1 - x0, y1 - y0, fonts)
@@ -401,7 +446,7 @@ impl Editor {
                 } else {
                     [false, true]
                 };
-                let (off, hit) = super::snap::snap(d.rect(false), &self.snaps, self.snap_threshold());
+                let (off, hit) = super::snap::snap(super::snap::turned_bounds(d.rect(false), d.rot), &self.snaps, self.snap_threshold());
                 for k in 0..2 {
                     if free[k] {
                         (d.snap[k], d.snapped[k]) = (off[k], hit[k]);
@@ -415,8 +460,8 @@ impl Editor {
         };
         d.live |= self.live_layout && d.now != d.start;
         if d.live {
-            let to = d.rect(self.float_locked(f));
-            let preview = self.moved_float(f, d.page, d.rect, to).and_then(|mut float| {
+            let to = d.placed(d.rect(self.float_locked(f)));
+            let preview = self.moved_float(f, d.page, d.placed(d.rect), to).and_then(|mut float| {
                 let anchor = self.index.float_anchor(f)?;
                 let dest = if d.handle.is_none() { self.reanchor(d.page, anchor, to, &mut float) } else { None };
                 Some(crate::layout::Preview { float, anchor: dest.unwrap_or(anchor) })
@@ -1377,7 +1422,7 @@ impl Editor {
             let (ox, oy) = self.stack().to_doc(d.page, 0.0, 0.0).unwrap_or((0.0, 0.0));
             match d.handle {
                 None => {
-                    let [x0, y0, x1, y1] = d.rect(false);
+                    let [x0, y0, x1, y1] = super::snap::turned_bounds(d.rect(false), d.rot);
                     let [ml, _, mr, _] = self.snaps.margins;
                     let anchor_link = anchor.filter(|(p, _)| *p == d.page).and_then(|(_, [ax, ay])| {
                         let (rx, ry) = ((ax - 18.0 * one).max(10.0 * one) + 6.0 * one, ay + 8.0 * one);
@@ -1406,7 +1451,7 @@ impl Editor {
                 }
                 Some(_) => {
                     let [x0, y0, x1, y1] = d.rect(self.object_locked(d.obj));
-                    original = Some(Outline { page: d.page, rect: d.rect, rot: 0.0 });
+                    original = Some(Outline { page: d.page, rect: d.rect, rot: d.rot });
                     measures.push((d.page, chip([d.now.0 - ox, d.now.1 - oy], size_label(x1 - x0, y1 - y0, set.unit))));
                 }
             }

@@ -56,7 +56,8 @@ pub enum SelectionView {
     None,
     Text(Vec<(usize, [f64; 4])>),
     Cells(Vec<(usize, [f64; 4])>),
-    Object(Vec<(usize, [f64; 4])>, bool),
+    /// Each selected object's frame, turned as it's drawn, and whether it shows its handles.
+    Object(Vec<Outline>, bool),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -65,6 +66,8 @@ pub struct Ghost {
     pub float: Option<crate::layout::FloatId>,
     pub from: [f64; 4],
     pub to: [f64; 4],
+    /// The frames' rotation: the drawing scales along the frame's own sides.
+    pub rot: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -315,7 +318,7 @@ pub fn canonical(v: &View) -> String {
             serde_json::json!({ "cells": rs.iter().map(|(p, r)| serde_json::json!({ "page": p, "rect": rects(r) })).collect::<Vec<_>>() })
         }
         SelectionView::Object(rs, handles) => {
-            serde_json::json!({ "object": rs.iter().map(|(p, r)| serde_json::json!({ "page": p, "rect": rects(r) })).collect::<Vec<_>>(), "handles": handles })
+            serde_json::json!({ "object": rs.iter().map(|o| serde_json::json!({ "page": o.page, "rect": rects(&o.rect) })).collect::<Vec<_>>(), "handles": handles })
         }
     };
     let mut out = serde_json::json!({

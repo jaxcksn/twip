@@ -655,3 +655,91 @@ fn linked_boxes_show_their_story_in_turn_and_take_typing_in_any_box() {
     assert_eq!(box_text(&again), Some(text));
     assert_eq!(page_lines(&again).iter().map(|l| l.0.clone()).collect::<Vec<_>>(), page_lines(&e).iter().map(|l| l.0.clone()).collect::<Vec<_>>());
 }
+
+fn hover(e: &mut Editor, p: [f64; 2]) -> super::super::input::Cursor {
+    let (x, y) = e.stack().to_doc(0, p[0], p[1]).expect("on the stack");
+    e.pointer_input(PointerKind::Move, x, y, 0, Mods::default(), fonts());
+    e.view(0..1).cursor
+}
+
+#[test]
+fn the_rotate_and_adjust_handles_show_their_cursor_and_a_drag_shows_its_preview() {
+    use super::super::input::Cursor;
+    use super::super::view::Measure;
+    let rr = sp(0, 0, 100, 100, "roundRect", "", "0000FF");
+    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(200, 300, 100, 100, 1, false, 1, &rr)));
+    click(&mut e, 250.0, 350.0);
+    let frame = e.view(0..1).shapes.first().cloned().expect("a shape frame");
+    assert_eq!(hover(&mut e, frame.rotate), Cursor::Rotate);
+    assert_eq!(hover(&mut e, frame.adjust[0]), Cursor::Default);
+    let doc = |e: &Editor, p: [f64; 2]| e.stack().to_doc(0, p[0], p[1]).expect("on the stack");
+    let (a, b) = (doc(&e, frame.rotate), doc(&e, [350.0, 345.0]));
+    e.pointer_input(PointerKind::Down, a.0, a.1, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Move, b.0, b.1, 0, Mods::default(), fonts());
+    assert!(e.dragging(), "a rotate drag asks for frames");
+    e.complete(fonts());
+    let v = e.view(0..1);
+    assert_eq!(v.cursor, Cursor::Rotate);
+    assert!(v.original.is_some() && v.measures.iter().any(|(_, m)| matches!(m, Measure::Chip { .. })), "the ghost and the angle");
+    let snap = e.snapshot();
+    let drawn = crate::layout::traverse::paint_items(&snap.pages()[0]).into_iter().find_map(|it| match it {
+        crate::layout::fragment::Item::Shape(s) => Some(s.rot),
+        _ => None,
+    });
+    assert_eq!(drawn, Some(90.0), "the shape turns as it's dragged");
+}
+
+#[test]
+fn a_turned_shape_shows_its_handles_turned_and_resizes_along_its_sides() {
+    use super::super::input::Cursor;
+    use super::super::view::SelectionView;
+    let square = sp(0, 0, 100, 100, "rect", r#" rot="1800000""#, "0000FF");
+    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(200, 300, 100, 100, 1, false, 1, &square)));
+    click(&mut e, 250.0, 350.0);
+    let outline = |e: &mut Editor| match e.view(0..1).selection {
+        SelectionView::Object(o, true) => o[0],
+        s => panic!("no handles: {s:?}"),
+    };
+    let o = outline(&mut e);
+    assert!((o.rot - 30.0).abs() < 1e-6 && o.rect == [200.0, 300.0, 300.0, 400.0], "{o:?}");
+    // The top handle, turned 30° about the centre; the bottom one opposite it stays put.
+    let (s, c) = 30f64.to_radians().sin_cos();
+    let top = [250.0 + 50.0 * s, 350.0 - 50.0 * c];
+    let bottom = |o: super::super::view::Outline| {
+        let [x0, y0, x1, y1] = o.rect;
+        let (s, c) = o.rot.to_radians().sin_cos();
+        let h = (y1 - y0) / 2.0;
+        [(x0 + x1) / 2.0 - h * s, (y0 + y1) / 2.0 + h * c]
+    };
+    let before = bottom(o);
+    assert_eq!(hover(&mut e, top), Cursor::ResizeNorthEastSouthWest, "the arrow turns with the handle");
+    drag(&mut e, top, [top[0] + 20.0 * s, top[1] - 20.0 * c], Mods::default());
+    e.complete(fonts());
+    let o = outline(&mut e);
+    assert!(((o.rect[2] - o.rect[0]) - 100.0).abs() < 0.1 && ((o.rect[3] - o.rect[1]) - 120.0).abs() < 0.1, "{o:?}");
+    let after = bottom(o);
+    assert!((after[0] - before[0]).abs() < 0.2 && (after[1] - before[1]).abs() < 0.2, "{before:?} {after:?}");
+}
+
+#[test]
+fn a_quarter_turned_shape_resizes_along_its_own_length() {
+    use super::super::view::SelectionView;
+    let bar = sp(0, 0, 200, 20, "rect", r#" rot="5400000""#, "00FF00");
+    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(72, 400, 200, 20, 1, false, 1, &bar)));
+    click(&mut e, 172.0, 330.0);
+    let outline = |e: &mut Editor| match e.view(0..1).selection {
+        SelectionView::Object(o, true) => o[0],
+        s => panic!("no handles: {s:?}"),
+    };
+    let o = outline(&mut e);
+    let [x0, y0, x1, y1] = o.rect;
+    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    assert!((o.rot - 90.0).abs() < 1e-6 && ((x1 - x0) - 200.0).abs() < 1e-6, "{o:?}");
+    // Its right side, turned, is at the bottom; dragging it 30 down lengthens the bar and keeps its top.
+    drag(&mut e, [cx, cy + 100.0], [cx, cy + 130.0], Mods::default());
+    same_as_full(&mut e);
+    let o = outline(&mut e);
+    let [x0, y0, x1, y1] = o.rect;
+    assert!(((x1 - x0) - 230.0).abs() < 0.1 && ((y1 - y0) - 20.0).abs() < 0.1, "{o:?}");
+    assert!(((y0 + y1) / 2.0 - (x1 - x0) / 2.0 - (cy - 100.0)).abs() < 0.2, "the top stays: {o:?}");
+}

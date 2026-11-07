@@ -19,8 +19,13 @@ impl Editor {
 
     fn shape_at(&mut self, x: f64, y: f64, mods: Mods, fonts: &Fonts) -> Cursor {
         if !mods.shift {
-            if let Some((.., k)) = self.handle_at(x, y, fonts) {
-                return handle_cursor(k);
+            if !mods.ctrl
+                && let Some((_, h, _)) = self.shape_handle_at(x, y)
+            {
+                return shape_cursor(h);
+            }
+            if let Some((.., rot, _, k)) = self.handle_at(x, y, fonts) {
+                return handle_cursor(k, rot);
             }
             match self.object_hit(x, y, fonts) {
                 Some(Selection::Object(o @ ObjectRef::Floating(_))) => return if self.object_fixed(o) { Cursor::Default } else { Cursor::Move },
@@ -66,8 +71,11 @@ impl Editor {
                 Border::Handle => Cursor::ResizeNorthWestSouthEast,
             });
         }
+        if let Some(d) = &self.shape_drag {
+            return Some(shape_cursor(d.handle));
+        }
         if let Some(d) = self.object_drag {
-            return Some(d.handle.map_or(Cursor::Move, handle_cursor));
+            return Some(d.handle.map_or(Cursor::Move, |k| handle_cursor(k, d.rot)));
         }
         if self.table_drag.is_some() {
             return Some(Cursor::Move);
@@ -84,8 +92,17 @@ impl Editor {
     }
 }
 
-fn handle_cursor(k: usize) -> Cursor {
-    match k % 4 {
+fn shape_cursor(h: super::shapes::ShapeHandle) -> Cursor {
+    match h {
+        super::shapes::ShapeHandle::Rotate => Cursor::Rotate,
+        super::shapes::ShapeHandle::Adjust(_) => Cursor::Default,
+        super::shapes::ShapeHandle::Move => Cursor::Move,
+    }
+}
+
+/// Handle `k`'s resize arrow, turned with its frame to the nearest of the four.
+fn handle_cursor(k: usize, rot: f64) -> Cursor {
+    match (k as i64 + (rot / 45.0).round() as i64).rem_euclid(4) {
         0 => Cursor::ResizeNorthWestSouthEast,
         1 => Cursor::ResizeVertical,
         2 => Cursor::ResizeNorthEastSouthWest,

@@ -131,7 +131,8 @@ export type Cursor =
   | 'copy'
   | 'cellSelect'
   | 'columnSelect'
-  | 'rowSelect';
+  | 'rowSelect'
+  | 'rotate';
 
 /** What a copy puts on the clipboard: the engine's `ClipboardData`. */
 export interface ClipboardData {

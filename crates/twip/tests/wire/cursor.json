@@ -12,5 +12,6 @@
   "copy",
   "cellSelect",
   "columnSelect",
-  "rowSelect"
+  "rowSelect",
+  "rotate"
 ]
