@@ -1155,7 +1155,7 @@ mod tests {
 
     #[test]
     fn a_fork_lays_out_like_its_original() {
-        let fonts = Fonts::system();
+        let fonts = Fonts::system_recommended();
         let pages = |bytes: &[u8], fonts: &Fonts| {
             let doc = crate::docx::read_at(bytes, 0).expect("fixtures read");
             // Ids come from process-wide counters, so integers are masked; every position and size is a float and

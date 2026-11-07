@@ -63,7 +63,7 @@ fn assert_same_lines(name: &str, view: MarkupView, twin: &str, fonts: &Fonts) {
 
 #[test]
 fn no_markup_lays_out_as_accepted_and_original_as_rejected() {
-    let fonts = Fonts::system();
+    let fonts = Fonts::system_recommended();
     for name in ["FX-REVIEW-RUNS", "FX-REVIEW-TABLES", "FX-REVIEW-SECTIONS"] {
         assert_same_lines(name, MarkupView::NoMarkup, &format!("{name}-ACCEPTED"), &fonts);
     }
@@ -75,12 +75,12 @@ fn no_markup_lays_out_as_accepted_and_original_as_rejected() {
 /// Original lays a table out with its table, row and cell properties before their tracked changes.
 #[test]
 fn original_tables() {
-    assert_same_lines("FX-REVIEW-TABLES", MarkupView::Original, "FX-REVIEW-TABLES-REJECTED", &Fonts::system());
+    assert_same_lines("FX-REVIEW-TABLES", MarkupView::Original, "FX-REVIEW-TABLES-REJECTED", &Fonts::system_recommended());
 }
 
 #[test]
 fn paragraph_marks_by_view() {
-    let fonts = Fonts::system();
+    let fonts = Fonts::system_recommended();
     assert_same_lines("FX-REVIEW-MARKS", MarkupView::NoMarkup, "FX-REVIEW-MARKS-ACCEPTED", &fonts);
     assert_same_lines("FX-REVIEW-MARKS", MarkupView::Original, "FX-REVIEW-MARKS-REJECTED", &fonts);
 }
@@ -91,7 +91,7 @@ fn joined_paragraphs_share_their_line_for_editing() {
     use crate::editing::commands::Command;
     use crate::editing::position::{Affinity, Position, StoryId};
     use crate::layout::Unit;
-    let fonts = Fonts::system();
+    let fonts = Fonts::system_recommended();
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-MARKS.docx");
     let mut e = Editor::open(&std::fs::read(p).expect("the fixture"), &fonts).expect("opens");
     e.execute(Command::SetMarkupView(MarkupView::NoMarkup), &fonts);
@@ -134,7 +134,7 @@ fn paragraphs(blocks: &[Block], out: &mut Vec<Paragraph>) {
 /// Each view's page count and lines per paragraph equal the expected layout's, for the paragraphs it maps.
 #[test]
 fn views_match_expected_layouts() {
-    let fonts = Fonts::system();
+    let fonts = Fonts::system_recommended();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios/review/expected");
     for name in ["FX-REVIEW-RUNS", "FX-REVIEW-TABLES", "FX-REVIEW-SECTIONS", "FX-REVIEW-MOVES", "FX-REVIEW-MARKS"] {
         let Ok(text) = std::fs::read_to_string(dir.join(format!("views-{name}.json"))) else {
@@ -220,7 +220,7 @@ fn bars(rs: &[([f64; 4], u32)], left: f64) -> Vec<[f64; 4]> {
 
 #[test]
 fn all_markup_draws_revision_marks_colours_and_change_bars() {
-    let fonts = Fonts::system();
+    let fonts = Fonts::system_recommended();
     let author = AuthorPalette::DEFAULT[0];
     for name in ["FX-REVIEW-RUNS", "FX-REVIEW-TABLES", "FX-REVIEW-MOVES"] {
         let d = fixture(name);
@@ -266,7 +266,7 @@ fn all_markup_draws_revision_marks_colours_and_change_bars() {
 /// The change bars of FX-REVIEW-MOVES (a page without balloons) where the expected export draws them.
 #[test]
 fn change_bars_match_the_expected_export() {
-    let fonts = Fonts::system();
+    let fonts = Fonts::system_recommended();
     let Ok(text) = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios/review/expected/change-bars.json")) else {
         eprintln!("skipped: no change-bars.json");
         return;
@@ -295,7 +295,7 @@ fn change_bars_match_the_expected_export() {
 fn view_commands_relayout_without_editing() {
     use crate::editing::Editor;
     use crate::editing::commands::{Command, Outcome};
-    let fonts = Fonts::system();
+    let fonts = Fonts::system_recommended();
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-RUNS.docx");
     let mut e = Editor::open(&std::fs::read(p).expect("the fixture"), &fonts).expect("opens");
     let run = |e: &mut Editor, cmd: Command| {
