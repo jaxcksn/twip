@@ -1,6 +1,6 @@
 {
   "name": "@twip/web",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0",
   "description": "The Twip DOCX editor for the browser and Node: a managed, framework-independent editor over the WebAssembly engine.",
   "type": "module",
   "license": "Apache-2.0",
