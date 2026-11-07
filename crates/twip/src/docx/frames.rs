@@ -65,10 +65,13 @@ fn float(group: Vec<Paragraph>) -> Float {
             Block::Para(p)
         })
         .collect();
-    let anchor = |a: Option<&str>, text: &str| match a {
+    let anchor = |a: Option<&str>, text: &str, missing: &str| match a {
         Some(a @ ("margin" | "page")) => a.to_string(),
-        _ => text.to_string(),
+        Some(_) => text.to_string(),
+        None => missing.to_string(),
     };
+    // Word omits vAnchor for a margin-relative frame; a drop cap sits in its paragraph whatever it says.
+    let drop_cap = fr.drop_cap.as_deref().is_some_and(|d| d != "none");
     Float {
         id: super::next_para_id(),
         w: fr.w.unwrap_or(0.0) + lx + rx,
@@ -84,10 +87,10 @@ fn float(group: Vec<Paragraph>) -> Float {
             auto_fit: fr.h_rule.as_deref() != Some("exact"),
             v_anchor: 0,
         }),
-        h_relative: if margin_cap { "leftMargin".into() } else { anchor(fr.h_anchor.as_deref(), "column") },
+        h_relative: if margin_cap { "leftMargin".into() } else { anchor(fr.h_anchor.as_deref(), "column", "column") },
         h_align: if margin_cap { Some("right".into()) } else { fr.x_align.clone() },
         h_offset: fr.x.unwrap_or(0.0),
-        v_relative: anchor(fr.v_anchor.as_deref(), "paragraph"),
+        v_relative: anchor(fr.v_anchor.as_deref(), "paragraph", if drop_cap { "paragraph" } else { "margin" }),
         v_align: fr.y_align.clone().filter(|a| a != "inline"),
         v_offset: fr.y.unwrap_or(0.0),
         wrap: match fr.wrap.as_deref() {
