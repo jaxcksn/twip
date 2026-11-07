@@ -42,7 +42,7 @@ operations reject, new ones reject, and `destroy()` still works.
 | `shortcut` | `ShortcutPressed` | An application shortcut from `shortcuts.register`. |
 | `gesture` | `GestureRequested` | A pointer gesture you bound to `emit`. Mounted or attached only. |
 | `wordAdded` | `WordAdded` | The user added a word to the dictionary: persist it. |
-| `fontsChanged` | `FontsChanged` | The families being fetched, or that nothing could resolve, changed. |
+| `fontsChanged` | `FontsChanged` | The document's families that draw with a stand-in (being fetched, or nothing provided them), or its characters no font has, changed: the whole report, as `state.fonts` has it. See [Fonts](fonts#missing-font-reports). |
 | `elementActivated` | `ElementActivated` | Design mode: Enter or a double-click on a field or content control. |
 | `elementsChanged` | `ElementsChanged` | Fields or content controls were added, removed or changed. |
 | `fieldsUpdateRequested` | `FieldsUpdateRequested` | The user asked to update fields. Compute their results and answer with `setFieldResults`, passing the token. |

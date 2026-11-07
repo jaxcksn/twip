@@ -38,6 +38,16 @@ export interface AccessibleNode {
 }
 
 // @public
+export interface Alias {
+    bold?: boolean;
+    from: string;
+    italic?: boolean;
+    to: string | {
+        category: GenericFamily;
+    };
+}
+
+// @public
 export type AnnouncementKind = 'table' | 'list' | 'page' | 'review' | 'comment' | 'spelling' | 'formatting' | 'mode' | 'readOnly' | 'command' | 'selection';
 
 // @public
@@ -431,6 +441,16 @@ export interface Commands {
     replaceBody(options: {
         from: Uint8Array;
     }): Promise<void>;
+    replaceFont(options: {
+        from: string;
+        to: string;
+        scope?: ReplaceScope;
+        bold?: boolean;
+        italic?: boolean;
+    }): Promise<{
+        changed: number;
+        skipped: number;
+    }>;
     replaceInElements(options: {
         find: string;
         replace: string;
@@ -1039,10 +1059,7 @@ export interface EditorState {
         readonly [K in Exclude<DialogKind, 'autoCorrect'>]: boolean;
     };
     editing?: EditingTarget;
-    fonts: {
-        pending: string[];
-        unresolved: string[];
-    };
+    fonts: FontsState;
     formatPainter: boolean;
     formatting: CharacterFormatting;
     history: {
@@ -1277,23 +1294,65 @@ export interface FindResult {
 export type FlipAxis = 'horizontal' | 'vertical';
 
 // @public
+export type FontAnswer = Uint8Array | URL | string | {
+    family: string;
+} | {
+    category: GenericFamily;
+} | null;
+
+// @public
+export type FontClass = 'roman' | 'swiss' | 'modern' | 'script' | 'decorative' | 'auto';
+
+// @public
+export interface FontDescription {
+    charset?: number;
+    class?: FontClass;
+    panose?: string;
+    pitch?: FontPitch;
+}
+
+// @public
 export class FontLibrary {
     add(source: Uint8Array | URL | string): Promise<FaceInfo[]>;
     static default(): FontLibrary;
     families(): Promise<string[]>;
-    setDefault(family: string): void;
-    setResolver(resolver: (request: FontRequest, signal: AbortSignal) => Promise<Uint8Array | URL | null>): void;
-    substitute(rules: Record<string, string> | SubstitutionRule[]): void;
-    useGoogleFonts(options?: {
-        families?: string[];
+    setAliases(aliases: Record<string, string> | Alias[]): void;
+    setCharacterFallback(families: string[]): void;
+    setClassification(options: {
+        fromDocument: boolean;
     }): void;
+    setFallback(family: string | null): void;
+    setGenericDefaults(defaults: GenericDefaults): void;
+    setReplacements(rules: Record<string, string> | FontRule[]): void;
+    setResolver(resolver: (request: FontRequest, signal: AbortSignal) => Promise<FontAnswer>): void;
+    setSymbolFallback(font: 'bundled' | 'off' | Uint8Array | URL | string): Promise<void>;
 }
+
+// @public
+export type FontPitch = 'fixed' | 'variable' | 'default';
 
 // @public
 export interface FontRequest {
     bold: boolean;
+    description?: FontDescription;
     family: string;
     italic: boolean;
+    proposed?: GenericFamily;
+}
+
+// @public
+export interface FontRule {
+    bold?: boolean;
+    from: string;
+    italic?: boolean;
+    to: string;
+}
+
+// @public
+export interface FontsState {
+    characters: MissingCharacters[];
+    missing: MissingFont[];
+    pending: MissingFont[];
 }
 
 // @public
@@ -1305,6 +1364,18 @@ export interface FrameStats {
     pagesReused: number;
     recordingBytes: number;
 }
+
+// @public
+export interface GenericDefaults {
+    decorative?: string;
+    monospace?: string;
+    sansSerif?: string;
+    script?: string;
+    serif?: string;
+}
+
+// @public
+export type GenericFamily = 'serif' | 'sansSerif' | 'monospace' | 'script' | 'decorative';
 
 // @public
 export type GestureAction = 'default' | 'emit' | 'none' | {
@@ -1554,6 +1625,25 @@ export type MenuTarget = {
 };
 
 // @public
+export interface MissingCharacters {
+    characters: string;
+    family: string;
+    truncated: boolean;
+}
+
+// @public
+export interface MissingFont {
+    bold: boolean;
+    by: StandIn;
+    category?: GenericFamily;
+    drawnWith?: string;
+    error?: string;
+    family: string;
+    italic: boolean;
+    tried: string[];
+}
+
+// @public
 export type Mixed<T> = T | 'mixed' | null;
 
 // @public
@@ -1800,6 +1890,9 @@ export interface ReferenceRule {
     fieldType: string;
     gallery?: string;
 }
+
+// @public
+export type ReplaceScope = 'document' | 'selection';
 
 // @public
 export interface Review {
@@ -2065,6 +2158,17 @@ export interface Spelling {
 }
 
 // @public
+export type StandIn =
+/** A replacement's target is missing, so the document's own family draws. */
+'original'
+/** The default family of its generic category. */
+| 'generic'
+/** The general fallback family. */
+| 'fallback'
+/** The first face added to the library (or the symbol fallback, in an empty library). */
+| 'lastResort';
+
+// @public
 export type StyleId = string & {
     readonly [brand]: 'style';
 };
@@ -2093,14 +2197,6 @@ export interface Styles {
     list(options?: {
         type?: 'paragraph' | 'character' | 'table';
     }): Promise<StyleInfo[]>;
-}
-
-// @public
-export interface SubstitutionRule {
-    bold?: boolean;
-    from: string;
-    italic?: boolean;
-    to: string;
 }
 
 // @public
@@ -2312,10 +2408,7 @@ export interface TwipEvents {
             code: string;
         }[];
     };
-    fontsChanged: {
-        pending: string[];
-        unresolved: string[];
-    };
+    fontsChanged: FontsState;
     gesture: GestureEvent;
     hostCommand: {
         command: HostCommand;
@@ -2416,7 +2509,7 @@ export interface ViewState {
 
 // @public
 export interface Warning {
-    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'font-substituted' | 'rewritten-content' | 'pdf-font-fallback' | 'pdf-archival-claim-dropped' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match';
+    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'rewritten-content' | 'pdf-font-fallback' | 'pdf-archival-claim-dropped' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match';
     count: number;
     location?: {
         part: string;

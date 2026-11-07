@@ -135,6 +135,10 @@ export class WorkerTransport implements Transport {
     return this.#request('addFont', [bytes], { library: true });
   }
 
+  setSymbolFallback(bytes: Uint8Array): Promise<void> {
+    return this.#request('setSymbolFallback', [bytes], { library: true });
+  }
+
   input(session: number, input: Input): Promise<number> {
     return this.#request('input', [session, input]);
   }

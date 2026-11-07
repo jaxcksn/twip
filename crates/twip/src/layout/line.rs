@@ -1166,7 +1166,7 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
 // Line height
 fn picture_line_height(sp: &ShapedPara, line: &[Piece], mark: &Run, fonts: &Fonts, last: bool, compat: Compat, run_h: f64) -> f64 {
     let height = |run: &Run| {
-        fonts.face(&run.ascii, run.bold, run.italic).map_or(0.0, |f| {
+        fonts.face(&run.ascii, None, run.bold, run.italic).map_or(0.0, |f| {
             let (a, d, e) = sp.metrics(&f, run, run.size);
             a + e + d
         })
@@ -1250,7 +1250,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         un_asc = a;
         un_desc = d;
     } else if (!has_content || (last && !has_text))
-        && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
+        && let Some(f) = fonts.face(&mark.ascii, None, mark.bold, mark.italic)
     {
         let (a, d, e) = sp.metrics(&f, mark, mark_size);
         asc = asc.max(a + e);
@@ -1261,7 +1261,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     if last
         && object
         && un_text_asc + un_text_desc + num_asc == 0.0
-        && let Some(f) = fonts.face(&mark.ascii, mark.bold, mark.italic)
+        && let Some(f) = fonts.face(&mark.ascii, None, mark.bold, mark.italic)
     {
         let (a, d, e) = sp.metrics(&f, mark, mark_size);
         asc = asc.max(a + e + d);
@@ -1422,7 +1422,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         };
         let mut places = caret_places(o, line).into_iter().peekable();
         let mark = src.mark_in(o.review.view);
-        let face = places.peek().and_then(|_| fonts.face(&mark.ascii, mark.bold, mark.italic));
+        let face = places.peek().and_then(|_| fonts.face(&mark.ascii, None, mark.bold, mark.italic));
         let caret = |x: f64, q: ParaId| {
             face.as_ref().map(|f| {
                 let (glyphs, chars) = (Box::new([]), Box::new([]));

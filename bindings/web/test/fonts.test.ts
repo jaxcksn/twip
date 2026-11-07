@@ -1,6 +1,7 @@
 // The page's font library against a stand-in engine: library calls keep their order, and an engine font request goes
-// to the resolver, then Google Fonts (with fetch stubbed), and is marked unresolved when neither has the family.
+// to the resolver, whose answer (a font, a family, a category, none, or a failure) goes back to the engine.
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { FontLibrary, type FaceInfo } from '../dist/index.js';
 import { answerFontRequest, useEngine } from '../dist/fonts/library.js';
@@ -25,79 +26,72 @@ const request = { family: 'Roboto Slab', bold: false, italic: false };
 test('one library per page, and its settings reach the engine in call order', () => {
   assert.equal(FontLibrary.default(), library);
   reset();
-  library.substitute({ 'Times New Roman': 'Tinos' });
-  library.substitute([{ from: 'Arial', bold: true, to: 'Arimo' }]);
-  library.setDefault('Tinos');
+  library.setReplacements({ 'Times New Roman': 'Tinos' });
+  library.setReplacements([{ from: 'Arial', bold: true, to: 'Arimo' }]);
+  library.setFallback('Tinos');
+  library.setAliases({ Arial: 'Arimo' });
+  library.setAliases([{ from: 'Garamond', to: { category: 'serif' }, bold: true }]);
+  library.setGenericDefaults({ serif: 'Tinos', monospace: 'Cousine' });
+  library.setClassification({ fromDocument: false });
+  library.setCharacterFallback(['Noto Sans Symbols', 'Noto Sans CJK']);
   assert.deepEqual(calls, [
-    [Method.FontSetSubstitutions, [{ from: 'Times New Roman', to: 'Tinos' }]],
-    [Method.FontSetSubstitutions, [{ from: 'Arial', bold: true, to: 'Arimo' }]],
-    [Method.FontSetDefault, 'Tinos'],
+    [Method.FontSetReplacements, [{ from: 'Times New Roman', to: 'Tinos' }]],
+    [Method.FontSetReplacements, [{ from: 'Arial', bold: true, to: 'Arimo' }]],
+    [Method.FontSetFallback, 'Tinos'],
+    [Method.FontSetAliases, [{ from: 'Arial', to: 'Arimo' }]],
+    [Method.FontSetAliases, [{ from: 'Garamond', to: { category: 'serif' }, bold: true }]],
+    [Method.FontSetGenericDefaults, { serif: 'Tinos', monospace: 'Cousine' }],
+    [Method.FontSetClassification, false],
+    [Method.FontSetCharacterFallback, ['Noto Sans Symbols', 'Noto Sans CJK']],
   ]);
 });
 
-test('a request goes to the resolver; a miss is marked unresolved', async () => {
+test('a request goes to the resolver, and its answer back to the engine', async () => {
   reset();
   const asked: unknown[] = [];
   library.setResolver(async (r) => (asked.push(r), r.family === 'Roboto Slab' ? new Uint8Array([1]) : null));
-  assert.deepEqual(calls, [[Method.FontSetResolver, true]], 'with a resolver, the engine asks instead of calling a family unresolved');
+  assert.deepEqual(calls, [[Method.FontSetResolver, true]], 'with a resolver, the engine asks instead of calling a family missing');
   reset();
   faces = [{ family: 'roboto slab', bold: false, italic: false }];
   listeners.get(0)!({ kind: Kind.FontRequest, sessionId: 0, payload: request });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual([asked, added.length, calls], [[request], 1, []], 'the engine’s request (session 0) reaches the resolver');
-  await answerFontRequest({ ...request, family: 'Zzyzx Unknown' });
-  assert.deepEqual(calls, [[Method.FontMarkUnresolved, { ...request, family: 'Zzyzx Unknown' }]]);
+  assert.deepEqual([asked, added.length], [[request], 1], 'the engine’s request (session 0) reaches the resolver');
+  assert.deepEqual(calls, [[Method.FontAnswer, { request, answer: { kind: 'font' } }]], 'the font is added, then answered');
+  reset();
+  const unknown = { ...request, family: 'Zzyzx Unknown' };
+  await answerFontRequest(unknown);
+  assert.deepEqual(calls, [[Method.FontAnswer, { request: unknown, answer: { kind: 'missing' } }]]);
 });
 
-test('Google Fonts: the stylesheet’s files are added, each family fetched once, and an unknown family is unresolved', async (t) => {
+test('a resolver answers with a family or a category', async () => {
+  library.setResolver(async (r) => (r.family === 'Garamond' ? { category: 'serif' } : { family: 'Arimo' }));
   reset();
-  library.setResolver(async () => null);
-  library.useGoogleFonts();
-  reset();
-  const fetched: string[] = [];
-  t.mock.method(globalThis, 'fetch', async (url: string) => {
-    fetched.push(String(url));
-    if (String(url).includes('Zzyzx')) return new Response('', { status: 400 });
-    if (String(url).includes('ital')) return new Response('', { status: 400 }); // no italics
-    if (String(url).startsWith('https://fonts.googleapis.com/')) {
-      return new Response("@font-face { src: url(https://fonts.gstatic.com/a.ttf) format('truetype'); }\n@font-face { src: url('https://fonts.gstatic.com/b.ttf'); }");
-    }
-    return new Response(new Uint8Array([0, 1, 0, 0]));
-  });
+  const garamond = { family: 'Garamond', bold: true, italic: false, proposed: 'serif' as const, description: { class: 'roman' as const } };
+  await answerFontRequest(garamond);
   await answerFontRequest(request);
-  await answerFontRequest({ ...request, bold: true });
-  assert.deepEqual(fetched, [
-    'https://fonts.googleapis.com/css2?family=Roboto+Slab:ital,wght@0,400;0,700;1,400;1,700',
-    'https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700',
-    'https://fonts.gstatic.com/a.ttf',
-    'https://fonts.gstatic.com/b.ttf',
+  assert.deepEqual(calls, [
+    [Method.FontAnswer, { request: garamond, answer: { kind: 'category', category: 'serif' } }],
+    [Method.FontAnswer, { request, answer: { kind: 'family', family: 'Arimo' } }],
   ]);
-  assert.deepEqual([added.length, calls], [2, []]);
-  fetched.length = 0;
-  await answerFontRequest({ ...request, family: 'Zzyzx Unknown' });
-  assert.equal(fetched.length, 3);
-  assert.deepEqual(calls, [[Method.FontMarkUnresolved, { ...request, family: 'Zzyzx Unknown' }]]);
 });
 
-test('Google Fonts: a family the browser can’t fetch (no CORS on the 400) is unresolved, with nothing logged', async (t) => {
-  reset();
-  const fetched = t.mock.method(globalThis, 'fetch', async () => {
-    throw new TypeError('Failed to fetch');
+test('a resolver that throws answers failed with the error, logging nothing', async (t) => {
+  library.setResolver(async () => {
+    throw new Error('offline');
   });
   const logged = t.mock.method(console, 'error', () => {});
-  await answerFontRequest({ ...request, family: 'Calibri' });
-  assert.equal(fetched.mock.callCount(), 1);
+  reset();
+  const offline = { ...request, family: 'Offline' };
+  await answerFontRequest(offline);
+  assert.deepEqual(calls, [[Method.FontAnswer, { request: offline, answer: { kind: 'failed', message: 'offline' } }]]);
   assert.equal(logged.mock.callCount(), 0);
-  assert.deepEqual(calls, [[Method.FontMarkUnresolved, { ...request, family: 'Calibri' }]]);
 });
 
-test('useGoogleFonts({ families }) asks Google only for those', async (t) => {
-  reset();
-  library.useGoogleFonts({ families: ['Tinos'] });
-  assert.deepEqual(calls, [[Method.FontSetResolver, true]]);
-  reset();
-  const fetched = t.mock.method(globalThis, 'fetch', async () => new Response('', { status: 500 }));
-  await answerFontRequest(request);
-  assert.equal(fetched.mock.callCount(), 0);
-  assert.deepEqual(calls, [[Method.FontMarkUnresolved, request]]);
+test('the package contacts no font service', () => {
+  const dist = new URL('../dist/', import.meta.url);
+  const files = readdirSync(dist, { recursive: true, withFileTypes: true }).filter((f) => f.isFile());
+  for (const f of files) {
+    const text = readFileSync(`${f.parentPath}/${f.name}`).toString('latin1');
+    for (const host of ['fonts.googleapis.com', 'fonts.gstatic.com']) assert.ok(!text.includes(host), `${f.name} names ${host}`);
+  }
 });

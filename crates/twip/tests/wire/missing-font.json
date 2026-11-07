@@ -1,0 +1,21 @@
+[
+  {
+    "bold": true,
+    "by": "generic",
+    "category": "serif",
+    "drawnWith": "Tinos",
+    "family": "Garamond",
+    "italic": false,
+    "tried": [
+      "EB Garamond"
+    ]
+  },
+  {
+    "bold": false,
+    "by": "lastResort",
+    "error": "offline",
+    "family": "Brand Sans",
+    "italic": true,
+    "tried": []
+  }
+]

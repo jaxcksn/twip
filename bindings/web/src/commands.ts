@@ -37,6 +37,7 @@ import type {
 } from './types.js';
 
 /** Which elements a field command acts on: the given ids, or the selection's by default. */
+
 export interface FieldTargets {
   /** The fields; default: the selection's. */
   ids?: ElementId[];
@@ -478,6 +479,18 @@ export interface Commands {
     kind?: 'field' | 'control';
     ids?: ElementId[];
   }): Promise<{ changed: number }>;
+  /**
+   * Rewrites a font family's name in the document itself, so the saved file names `to`: one undo step. In document
+   * scope with no style filter it rewrites the text (runs, paragraph marks, symbols) and the tables below it (styles,
+   * document defaults, numbering levels, the theme's font slots and the font table). In selection scope, or with a
+   * filter, it rewrites only the text, and a matching run whose family comes from a style or the theme gets `to` as
+   * its own. With tracked changes on, the text's changes are formatting revisions. Text inside locked content
+   * controls is skipped and counted.
+   */
+  replaceFont(options: { from: string; to: string; scope?: ReplaceScope; bold?: boolean; italic?: boolean }): Promise<{
+    changed: number;
+    skipped: number;
+  }>;
   /** Draws wavy marks with a tooltip on elements. View. */
   markElements(options: {
     marks: { id: ElementId; severity: 'error' | 'warning' | 'info'; message: string }[];
@@ -796,6 +809,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   wrapInRepeatingSection: 'spread',
   removeElement: 'value',
   replaceInElements: 'spread',
+  replaceFont: 'spread',
   markElements: 'spread',
   fillPlaceholder: 'spread',
   writeDataPart: 'spread',
@@ -854,3 +868,6 @@ export function createCommands(run: (op: Op) => Promise<unknown>): Commands {
   for (const id of Object.keys(encodings) as CommandId[]) commands[id] = (arg) => run(toOp(id, arg));
   return Object.freeze(commands) as unknown as Commands;
 }
+
+/** Where `replaceFont` rewrites: the whole document (every story, and the tables below the text) or the selected text. */
+export type ReplaceScope = 'document' | 'selection';

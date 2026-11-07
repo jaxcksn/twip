@@ -17,6 +17,7 @@ export type {
   NoArgumentCommandId,
   Op,
   OpArgs,
+  ReplaceScope,
 } from './commands.js';
 export type {
   AutoCorrectChange,
@@ -60,7 +61,22 @@ export type { HostCommand, Tooltip, TransactionRecord, TwipEvents } from './even
 export { EditorError } from './errors.js';
 export type { ErrorCode } from './errors.js';
 export { FontLibrary } from './fonts/library.js';
-export type { FaceInfo, FontRequest, SubstitutionRule } from './fonts/library.js';
+export type {
+  Alias,
+  FaceInfo,
+  FontAnswer,
+  FontClass,
+  FontDescription,
+  FontPitch,
+  FontRequest,
+  FontRule,
+  FontsState,
+  GenericDefaults,
+  GenericFamily,
+  MissingCharacters,
+  MissingFont,
+  StandIn,
+} from './fonts/library.js';
 export type {
   BalloonPlacement,
   Comment,

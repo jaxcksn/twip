@@ -846,6 +846,15 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation ReplaceInElements(string find, string replace, ElementTextField @in, ElementCategory? kind = null, IReadOnlyList<ElementId>? ids = null) => Op(CommandId.ReplaceInElements, new Arg("find", Node(find)), new Arg("replace", Node(replace)), new Arg("in", Node(@in)), new Arg("kind", kind is { } kind_ ? Node(kind_) : null, Optional: true), new Arg("ids", ids is { } ids_ ? Node(ids_) : null, Optional: true));
 
+    /// <summary>Rewrites a font family's name in the document itself: see <see cref="EditorCommands.ReplaceFontAsync"/>.</summary>
+    /// <param name="from">The family to rewrite, case-insensitive.</param>
+    /// <param name="to">The family it becomes.</param>
+    /// <param name="scope">The whole document, or the selection.</param>
+    /// <param name="bold">Only bold (true) or regular-weight (false) text.</param>
+    /// <param name="italic">Only italic (true) or upright (false) text.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ReplaceFont(string from, string to, ReplaceScope scope = ReplaceScope.Document, bool? bold = null, bool? italic = null) => Op(CommandId.ReplaceFont, new Arg("from", Node(from)), new Arg("to", Node(to)), new Arg("scope", Node(scope)), new Arg("bold", bold is { } bold_ ? Node(bold_) : null, Optional: true), new Arg("italic", italic is { } italic_ ? Node(italic_) : null, Optional: true));
+
     /// <summary>Marks elements with wavy lines and a tooltip. A view setting.</summary>
     /// <param name="marks">The marks.</param>
     /// <param name="clear">Clear the existing marks first.</param>

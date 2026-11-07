@@ -174,6 +174,7 @@ const skip: Record<string, string> = {
   balloons: 'not a type: the cases review.stackBalloons must give (anchors, heights, gap, tops)',
   'caret-blink': 'the C ABI blink settings; the SDK takes ms (view.setCaretBlink)',
   'clipboard-data': 'the C ABI copy and paste payload; the SDK owns the system clipboard',
+  'font-answer': 'the engine form of a resolver answer, which the SDK builds from FontAnswer',
   commit: "the C ABI's command result; the SDK resolves the promise and emits documentChanged",
   'composition-phase': 'IME input the SDK forwards',
   'frame-info': 'the C ABI frame the SDK draws',

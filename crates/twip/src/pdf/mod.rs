@@ -28,10 +28,11 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 pub use crate::api::error::Error;
-pub use crate::api::fonts::{FaceInfo, SubstitutionRule};
+pub use crate::api::fonts::{Alias, AliasTarget, FaceInfo, FontRule, GenericDefaults, GenericFamily, SymbolFallback};
 pub use crate::api::session::PdfOptions;
+pub use crate::api::state::{MissingCharacters, MissingFont, StandIn};
 pub use crate::api::warning::Warning;
-use crate::font::{Catalog, Fonts};
+use crate::font::{Catalog, FontSettings, Fonts};
 
 /// The faces conversions draw with, and how document font names map to them. Immutable once built; clone it to share
 /// it between threads (a clone is a reference count).
@@ -47,7 +48,7 @@ impl FontSet {
         FontSetBuilder::default()
     }
 
-    /// The fonts installed on this system, with no substitution rules and no default family.
+    /// The fonts installed on this system and the bundled symbol fallback, with no other settings.
     pub fn system() -> FontSet {
         FontSet { catalog: Arc::clone(Fonts::system().catalog()) }
     }
@@ -71,8 +72,7 @@ pub struct FontSetBuilder {
     system: bool,
     fonts: Vec<Vec<u8>>,
     files: Vec<PathBuf>,
-    rules: Vec<SubstitutionRule>,
-    default: Option<String>,
+    settings: FontSettings,
 }
 
 impl FontSetBuilder {
@@ -94,15 +94,47 @@ impl FontSetBuilder {
         self
     }
 
-    /// Rules that draw one family in another, replacing earlier ones.
-    pub fn substitutions(mut self, rules: Vec<SubstitutionRule>) -> Self {
-        self.rules = rules;
+    /// Draw-time replacements, replacing earlier ones: each applies even when the replaced family is in the set.
+    pub fn replacements(mut self, rules: Vec<FontRule>) -> Self {
+        self.settings.replacements = rules;
         self
     }
 
-    /// The family drawn when nothing else resolves a name.
-    pub fn default_family(mut self, family: impl Into<String>) -> Self {
-        self.default = Some(family.into());
+    /// Aliases, replacing earlier ones: each applies when its family isn't in the set.
+    pub fn aliases(mut self, aliases: Vec<Alias>) -> Self {
+        self.settings.aliases = aliases;
+        self
+    }
+
+    /// The family drawn for a missing font of each generic category. None by default.
+    pub fn generic_defaults(mut self, defaults: GenericDefaults) -> Self {
+        self.settings.generic = defaults;
+        self
+    }
+
+    /// Whether a document's font table gives a missing family its generic category. On by default; it has no effect
+    /// until a generic default is set.
+    pub fn classification(mut self, from_document: bool) -> Self {
+        self.settings.classify_from_document = from_document;
+        self
+    }
+
+    /// The general fallback: the family drawn when nothing else resolves a name.
+    pub fn fallback(mut self, family: impl Into<String>) -> Self {
+        self.settings.fallback = Some(family.into());
+        self
+    }
+
+    /// The families searched, in order, for a character a run's font lacks.
+    pub fn character_fallback(mut self, families: Vec<String>) -> Self {
+        self.settings.character_fallback = families;
+        self
+    }
+
+    /// The face for characters no other font has. [`SymbolFallback::Bundled`] by default; a font that doesn't read
+    /// fails the build.
+    pub fn symbol_fallback(mut self, fallback: SymbolFallback) -> Self {
+        self.settings.symbol_fallback = fallback;
         self
     }
 
@@ -120,12 +152,10 @@ impl FontSetBuilder {
             let added = fonts.add_bytes(bytes).map_err(|e| Error::invalid(format!("{}: {}", path.display(), e.message)))?;
             faces.extend(added);
         }
-        if !self.rules.is_empty() {
-            fonts.set_rules(self.rules);
+        if let SymbolFallback::Font(bytes) = &self.settings.symbol_fallback {
+            Fonts::default().add_bytes(bytes.as_ref().clone()).map_err(|e| Error::invalid(format!("symbol fallback: {}", e.message)))?;
         }
-        if let Some(family) = self.default {
-            fonts.set_default(&family);
-        }
+        fonts.set_settings(|s| *s = self.settings);
         Ok((FontSet { catalog: Arc::clone(fonts.catalog()) }, faces))
     }
 }
@@ -138,6 +168,19 @@ pub struct Conversion {
     /// What the PDF couldn't keep exactly: the read's approximations, text drawn in another font, and what the
     /// options dropped.
     pub warnings: Vec<Warning>,
+    /// The document's fonts the set couldn't draw as the document asks, and the characters no font has.
+    pub fonts: FontsReport,
+}
+
+/// The document's families (per style) that drew with a stand-in, and the characters no font has: the same report a
+/// session gives, without pending families, since a conversion has no resolver.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FontsReport {
+    /// Families that drew with a stand-in.
+    pub missing: Vec<MissingFont>,
+    /// Characters no font has, by the family their runs name.
+    pub characters: Vec<MissingCharacters>,
 }
 
 /// Converts DOCX bytes to a PDF of the final document (no revision marks or comments) on the calling thread. Safe to
@@ -156,6 +199,6 @@ pub fn convert_cancellable(docx: &[u8], fonts: &FontSet, options: &PdfOptions, c
 
 fn run(docx: &[u8], fonts: &FontSet, options: &PdfOptions, cancel: Option<&AtomicBool>) -> Result<Conversion, Error> {
     let fonts = Fonts::with_catalog(Arc::clone(&fonts.catalog));
-    let (bytes, warnings) = export::convert(docx, &fonts, options, cancel)?;
-    Ok(Conversion { bytes, warnings })
+    let (bytes, warnings, state) = export::convert(docx, &fonts, options, cancel)?;
+    Ok(Conversion { bytes, warnings, fonts: FontsReport { missing: state.missing, characters: state.characters } })
 }

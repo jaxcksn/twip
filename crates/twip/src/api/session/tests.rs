@@ -166,7 +166,7 @@ fn undoing_to_the_save_clears_modified() {
 
 #[test]
 fn a_pdf_export_keeps_modified_and_warns_of_fallbacks() {
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     s.run(Command::InsertText("Hi".into())).expect("types");
@@ -181,7 +181,7 @@ fn a_pdf_export_keeps_modified_and_warns_of_fallbacks() {
 
 #[test]
 fn dark_mode_changes_neither_the_pdf_nor_the_layout() {
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     s.run(Command::InsertText("Dark and light".into())).expect("types");
@@ -229,7 +229,7 @@ fn typed(s: &mut crate::api::session::Session, text: &str) {
 
 #[test]
 fn typing_corrects_what_it_finishes_and_one_undo_takes_the_correction_back() {
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     typed(s, "Word teh ");
@@ -270,7 +270,7 @@ fn typing_corrects_what_it_finishes_and_one_undo_takes_the_correction_back() {
 #[test]
 fn enter_corrects_the_paragraph_it_ends_and_tracking_marks_corrections() {
     use crate::api::input::{Key, Modifiers};
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     typed(s, "Word word--");
@@ -288,7 +288,7 @@ fn enter_corrects_the_paragraph_it_ends_and_tracking_marks_corrections() {
 #[test]
 fn the_correction_mark_stays_while_the_caret_moves_onto_its_word() {
     use crate::api::input::{Key, Modifiers};
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     typed(s, "Word teh ");
@@ -304,7 +304,7 @@ fn a_correction_offers_its_options_and_never_correct_stops_it() {
     use crate::api::command::CommandId;
     use crate::api::event::Event;
     use crate::api::services::Popover;
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let events: std::rc::Rc<std::cell::RefCell<Vec<Event>>> = Default::default();
     let sink = events.clone();
     engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
@@ -343,7 +343,7 @@ fn a_correction_offers_its_options_and_never_correct_stops_it() {
 fn a_typed_list_start_begins_a_list_and_one_undo_puts_it_back() {
     use crate::api::input::{Key, Modifiers};
     use crate::api::state::{ListState, Tri};
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     typed(s, "1. ");
@@ -469,6 +469,7 @@ fn the_state_carries_the_selected_text_up_to_its_limit() {
 fn a_relayout_no_edit_laid_out_is_laid_out_before_the_caret_and_clicks_read_it() {
     use crate::api::input::{Modifiers, Point, PointerButton, PointerKind};
     let mut engine = Engine::new(FontLibrary::empty());
+    engine.fonts().set_symbol_fallback(crate::api::fonts::SymbolFallback::Off).expect("off");
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bindings/hello.docx");
@@ -476,7 +477,7 @@ fn a_relayout_no_edit_laid_out_is_laid_out_before_the_caret_and_clicks_read_it()
     s.host().attach(|_| {});
     s.host().set_size(800.0, 600.0, 1.0);
     s.host().set_focus(true);
-    assert!(!s.host().frame_info().caret_visible, "no font: no lines, no caret");
+    assert!(!s.host().frame_info().caret_visible, "no face at all: no lines, no caret");
     // A font arrives: the whole document lays out again, and no edit asks for it.
     let font = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/fonts/stand-in-serif.ttf");
     engine.fonts().add(&std::fs::read(font).expect("the font")).expect("adds");
@@ -527,12 +528,9 @@ fn applying_a_font_checks_it_against_the_library() {
     events.borrow_mut().clear();
     s.run(Command::SetFont("Zorble Sans".into())).expect("sets the font");
     let events = events.borrow();
-    assert!(
-        events.iter().any(|e| matches!(e, Event::FontsChanged { unresolved, .. } if unresolved.iter().any(|f| f == "Zorble Sans"))),
-        "{events:?}"
-    );
+    assert!(events.iter().any(|e| matches!(e, Event::FontsChanged(state) if state.missing.iter().any(|m| m.family == "Zorble Sans"))), "{events:?}");
     assert!(events.iter().any(|e| matches!(e, Event::Warning(w) if w.message.contains("Zorble Sans"))), "{events:?}");
-    assert!(s.state().fonts.unresolved.iter().any(|f| f == "Zorble Sans"), "the state has it too");
+    assert!(s.state().fonts.missing.iter().any(|m| m.family == "Zorble Sans"), "the state has it too");
 }
 
 #[test]
@@ -561,7 +559,7 @@ fn darkest(pixels: &[u8], width: usize, x: usize, y0: usize, y1: usize) -> u8 {
 fn the_caret_is_drawn_and_blinks_while_focused() {
     use crate::api::session::CaretBlink;
     // System fonts: with none, an empty document has no line for a caret.
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     s.host().set_size(400.0, 300.0, 1.0);
@@ -623,7 +621,7 @@ fn the_caret_is_drawn_and_blinks_while_focused() {
 fn formatting_marks_and_text_boundaries_draw_when_shown() {
     use crate::api::command::ViewOptions;
     use crate::editing::view::MarkKind;
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     s.run(Command::InsertText("a b\tc".into())).expect("types");
@@ -651,7 +649,7 @@ fn formatting_marks_and_text_boundaries_draw_when_shown() {
 fn dark_frames_from_retained_pages_equal_frames_drawn_from_scratch_and_switching_records_again() {
     use crate::api::command::ViewOptions;
     use crate::api::services::{ChromeTheme, DocumentAppearance};
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/objects.docx");
@@ -675,7 +673,7 @@ fn dark_frames_from_retained_pages_equal_frames_drawn_from_scratch_and_switching
 fn a_new_accent_draws_without_recording_the_pages_again() {
     // The accent colours only what's drawn over the pages.
     use crate::api::command::ViewOptions;
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     s.run(Command::InsertText("Accent".into())).expect("types");
@@ -695,7 +693,7 @@ fn a_new_accent_draws_without_recording_the_pages_again() {
 #[test]
 fn frames_from_retained_pages_equal_frames_drawn_from_scratch() {
     use crate::api::command::Zoom;
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/objects.docx");
@@ -729,7 +727,7 @@ fn frames_from_retained_pages_equal_frames_drawn_from_scratch() {
 fn zoom_keeps_the_caret_line_or_the_viewport_centre_in_place() {
     use crate::api::command::Zoom;
     use crate::api::session::HostRequest;
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     for _ in 0..60 {
@@ -775,7 +773,7 @@ fn zoom_keeps_the_caret_line_or_the_viewport_centre_in_place() {
 fn retained_pages_record_once_and_again_only_where_layout_changed() {
     use crate::api::command::Zoom;
     use crate::api::session::PaintBudget;
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/big.docx");
@@ -899,7 +897,7 @@ fn application_field_types_keep_their_results_and_show_their_labels() {
         field("CUSTOMCOUNT Lines", "3")
     );
     // System fonts, so design mode's labels draw.
-    let (mut engine, events) = (Engine::new(FontLibrary::system()), Rc::new(RefCell::new(Vec::new())));
+    let (mut engine, events) = (Engine::new(FontLibrary::system_recommended()), Rc::new(RefCell::new(Vec::new())));
     let sink = events.clone();
     engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
     let id = engine.create_session(SessionOptions::default());
@@ -954,7 +952,7 @@ fn application_field_types_keep_their_results_and_show_their_labels() {
 #[test]
 fn sub_template_bodies_shown_inline_never_reach_the_output() {
     use crate::api::command::{ReferenceRule, SubTemplateRules, SubTemplateView};
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
@@ -975,7 +973,7 @@ fn sub_template_bodies_shown_inline_never_reach_the_output() {
 #[test]
 fn exports_while_a_sub_template_is_edited_write_the_whole_document() {
     use crate::api::command::{ReferenceRule, SubTemplateName, SubTemplateRules};
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
@@ -1181,7 +1179,7 @@ fn the_accessibility_tree_goes_whole_then_as_throttled_changes() {
 fn a_sub_template_body_shown_in_place_is_read_as_a_group_and_goes_to_its_reference() {
     use crate::api::command::{ReferenceRule, SubTemplateRules};
     use crate::api::services::{AccessibleNode, AccessibleRole};
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
@@ -1253,7 +1251,7 @@ fn picture_control_placeholder_images() {
         engine.session(id).expect("a session").open(bytes).expect("opens");
         id
     };
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-TEXT.docx");
     let id = open(&mut engine, &std::fs::read(path).expect("fixture"));
     let s = engine.session(id).expect("a session");
@@ -1291,7 +1289,7 @@ fn picture_control_placeholder_images() {
 fn an_activated_placeholder_names_its_control() {
     use crate::api::input::{Key, Modifiers, Point, PointerButton, PointerKind};
     let (mut engine, events) = {
-        let mut engine = Engine::new(FontLibrary::system());
+        let mut engine = Engine::new(FontLibrary::system_recommended());
         let events = Rc::new(RefCell::new(Vec::new()));
         let sink = events.clone();
         engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
@@ -1347,4 +1345,453 @@ fn an_activated_placeholder_names_its_control() {
     click(s, &rect);
     s.key(Key::Enter, Modifiers::default());
     assert!(activated(&events).is_empty(), "filled: nothing");
+}
+
+/// The editor fixture `name`.
+fn editor_fixture(name: &str) -> Vec<u8> {
+    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(name)).expect("the fixture")
+}
+
+/// The stand-in font `file`.
+fn stand_in(file: &str) -> Vec<u8> {
+    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/fonts").join(file)).expect("the font")
+}
+
+/// An engine with only Stand-in Sans, and a session with `FX-FONT-TABLE` open.
+fn font_table() -> (Engine, crate::api::engine::SessionId, Rc<RefCell<Vec<Event>>>) {
+    let (mut engine, events) = engine();
+    engine.fonts().add(&stand_in("stand-in-sans.ttf")).expect("adds");
+    let id = engine.create_session(SessionOptions::default());
+    engine.session(id).expect("a session").open(&editor_fixture("FX-FONT-TABLE.docx")).expect("opens");
+    (engine, id, events)
+}
+
+fn missing_of(state: &crate::api::state::FontsState) -> Vec<(String, bool, crate::api::state::StandIn, Option<String>)> {
+    state.missing.iter().map(|m| (m.family.clone(), m.bold, m.by, m.drawn_with.clone())).collect()
+}
+
+#[test]
+fn missing_fonts_are_reported_per_style_with_what_draws_them() {
+    use crate::api::state::StandIn::LastResort;
+    let (mut engine, id, events) = font_table();
+    let s = engine.session(id).expect("a session");
+    let sans = Some("Stand-in Sans".to_string());
+    assert_eq!(
+        missing_of(&s.state().fonts),
+        vec![
+            ("Consolas".into(), false, LastResort, sans.clone()),
+            ("Garamond".into(), false, LastResort, sans.clone()),
+            ("Garamond".into(), true, LastResort, sans.clone()),
+            ("Mystery Sans".into(), false, LastResort, sans.clone()),
+            ("Zzyzx Unknown".into(), false, LastResort, sans.clone()),
+        ]
+    );
+    let chars = &s.state().fonts.characters;
+    assert!(chars.iter().any(|c| c.family == "Stand-in Sans" && c.characters.contains('\u{6f22}')), "{chars:?}");
+    let opened = events.borrow().iter().filter(|e| matches!(e, Event::FontsChanged(_))).count();
+    assert_eq!(opened, 1, "one report for the open");
+    // A font for one family arrives: that family's entry goes, and the report is sent again.
+    engine.fonts().add(&stand_in("zzyzx-unknown.ttf")).expect("adds");
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    assert!(!s.state().fonts.missing.iter().any(|m| m.family == "Zzyzx Unknown"));
+    let last = events.borrow().iter().rev().find_map(|e| match e {
+        Event::FontsChanged(state) => Some(state.clone()),
+        _ => None,
+    });
+    assert_eq!(last.as_ref(), Some(&s.state().fonts));
+    // A library change that moves no list sends no report.
+    let before = events.borrow().len();
+    engine.fonts().set_fallback(Some("Not Installed"));
+    engine.sync_fonts();
+    assert!(!events.borrow()[before..].iter().any(|e| matches!(e, Event::FontsChanged(_))));
+}
+
+#[test]
+fn the_missing_font_warning_names_each_family_and_what_draws_it_once() {
+    let (mut engine, events) = engine();
+    engine.fonts().add(&stand_in("stand-in-sans.ttf")).expect("adds");
+    let id = engine.create_session(SessionOptions::default());
+    let warnings = engine.session(id).expect("a session").open(&editor_fixture("FX-FONT-TABLE.docx")).expect("opens");
+    let font = warnings.iter().find(|w| w.code == crate::api::warning::WarningCode::FontUnresolved).expect("a warning");
+    assert!(font.message.contains("Garamond (bold); Stand-in Sans draws it"), "{}", font.message);
+    assert_eq!(font.count, 5);
+    events.borrow_mut().clear();
+    engine.fonts().set_fallback(None);
+    engine.sync_fonts();
+    assert!(!events.borrow().iter().any(|e| matches!(e, Event::Warning(_))), "not warned again");
+}
+
+#[test]
+fn incremental_character_coverage_equals_a_full_rebuild() {
+    use crate::api::command::DeleteOptions;
+    use crate::api::value::Direction;
+    struct Rng(u64);
+    impl Rng {
+        fn below(&mut self, n: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % n.max(1) as u64) as usize
+        }
+    }
+    let (mut engine, id, _) = font_table();
+    let s = engine.session(id).expect("a session");
+    s.run(Command::SelectAll).expect("selects");
+    s.run(Command::Delete(DeleteOptions { direction: Direction::Backward, unit: None })).expect("clears");
+    let mut rng = Rng(0x5EED_F0E7);
+    let texts = ["a", "\u{6f22}", "\u{F0B7}", "\u{2603}", "bc", "\u{201c}"];
+    for _ in 0..200 {
+        match rng.below(4) {
+            0 | 1 => s.run(Command::InsertText(texts[rng.below(texts.len())].into())).map(drop),
+            2 => s.run(Command::Delete(DeleteOptions { direction: Direction::Backward, unit: None })).map(drop),
+            _ => s.run(Command::InsertParagraph).map(drop),
+        }
+        .expect("edits");
+    }
+    let incremental = (s.watch.coverage.clone(), s.state().fonts.characters.clone());
+    s.cover_all();
+    let full = s.watch.coverage.clone();
+    assert_eq!(incremental.0, full, "per-paragraph coverage");
+    assert_eq!(incremental.1, super::fonts::characters(&full), "reported characters");
+}
+
+fn alias(from: &str, to: &str, bold: Option<bool>) -> crate::api::fonts::Alias {
+    crate::api::fonts::Alias { from: from.into(), bold, italic: None, to: crate::api::fonts::AliasTarget::Family(to.into()) }
+}
+
+fn missing_names(state: &crate::api::state::FontsState) -> Vec<(String, bool)> {
+    state.missing.iter().map(|m| (m.family.clone(), m.bold)).collect()
+}
+
+#[test]
+fn an_alias_draws_a_missing_family_and_the_document_keeps_its_name() {
+    let (mut engine, id, _) = font_table();
+    engine.fonts().add(&stand_in("stand-in-serif.ttf")).expect("adds");
+    engine.fonts().set_aliases(vec![alias("Garamond", "Stand-in Serif", None)]);
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    let missing = missing_names(&s.state().fonts);
+    assert!(!missing.iter().any(|(f, _)| f == "Garamond"), "{missing:?}");
+    assert_eq!(s.fonts().fonts().face("Garamond", None, false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in Serif"));
+    s.find(&crate::api::services::FindQuery { text: "Garamond text".into(), ..Default::default() }, crate::api::services::FindDirection::Next);
+    assert_eq!(s.state().formatting.font, crate::api::state::Tri::Uniform("Garamond".into()), "the font box names the document's family");
+    let saved = s.export(&ExportOptions::default()).expect("saves");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(saved.bytes.0)).expect("a package");
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").expect("the body"), &mut xml).expect("reads");
+    assert!(xml.contains(r#"w:ascii="Garamond""#), "the saved file keeps the family");
+}
+
+#[test]
+fn an_alias_applies_per_style_and_reports_its_missing_target() {
+    let (mut engine, id, _) = font_table();
+    engine.fonts().add(&stand_in("stand-in-serif.ttf")).expect("adds");
+    engine.fonts().set_aliases(vec![alias("Garamond", "Stand-in Serif", Some(true)), alias("Consolas", "Nowhere", None)]);
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    let state = s.state().fonts.clone();
+    let missing = missing_names(&state);
+    assert!(missing.contains(&("Garamond".into(), false)) && !missing.contains(&("Garamond".into(), true)), "{missing:?}");
+    let consolas = state.missing.iter().find(|m| m.family == "Consolas").expect("Consolas");
+    assert_eq!(consolas.tried, ["Nowhere"]);
+    // An alias for a family the library has doesn't apply.
+    engine.fonts().set_aliases(vec![alias("Stand-in Sans", "Stand-in Serif", None)]);
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    assert_eq!(s.fonts().fonts().face("Stand-in Sans", None, false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in Sans"));
+}
+
+fn defaults(serif: Option<&str>, monospace: Option<&str>) -> crate::api::fonts::GenericDefaults {
+    crate::api::fonts::GenericDefaults { serif: serif.map(Into::into), monospace: monospace.map(Into::into), ..Default::default() }
+}
+
+fn by_family(
+    state: &crate::api::state::FontsState,
+) -> Vec<(String, crate::api::state::StandIn, Option<crate::api::fonts::GenericFamily>, Option<String>)> {
+    state.missing.iter().filter(|m| !m.bold).map(|m| (m.family.clone(), m.by, m.category, m.drawn_with.clone())).collect()
+}
+
+#[test]
+fn generic_defaults_draw_missing_families_by_what_the_font_table_says() {
+    use crate::api::fonts::GenericFamily::{Monospace, SansSerif, Serif};
+    use crate::api::state::StandIn::{Generic, LastResort};
+    let (mut engine, id, _) = font_table();
+    for font in ["stand-in-serif.ttf", "stand-in-mono.ttf"] {
+        engine.fonts().add(&stand_in(font)).expect("adds");
+    }
+    engine.fonts().set_fallback(Some("Stand-in Sans"));
+    engine.fonts().set_generic_defaults(defaults(Some("Stand-in Serif"), Some("Stand-in Mono")));
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    let sans = Some("Stand-in Sans".to_string());
+    use crate::api::state::StandIn::Fallback;
+    assert_eq!(
+        by_family(&s.state().fonts),
+        vec![
+            ("Consolas".into(), Generic, Some(Monospace), Some("Stand-in Mono".into())),
+            ("Garamond".into(), Generic, Some(Serif), Some("Stand-in Serif".into())),
+            ("Mystery Sans".into(), Fallback, Some(SansSerif), sans.clone()),
+            ("Zzyzx Unknown".into(), Fallback, None, sans.clone()),
+        ]
+    );
+    // Off: only aliases to a category give one.
+    engine.fonts().set_classification(false);
+    engine.fonts().set_aliases(vec![crate::api::fonts::Alias {
+        from: "Garamond".into(),
+        bold: None,
+        italic: None,
+        to: crate::api::fonts::AliasTarget::Category { category: Serif },
+    }]);
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    let state = by_family(&s.state().fonts);
+    assert!(state.contains(&("Garamond".into(), Generic, Some(Serif), Some("Stand-in Serif".into()))), "{state:?}");
+    assert!(state.iter().any(|(f, by, c, _)| f == "Consolas" && *by == Fallback && c.is_none()), "{state:?}");
+    // A category whose default is missing falls to the fallback; with no fallback, the first face.
+    engine.fonts().set_classification(true);
+    engine.fonts().set_aliases(Vec::new());
+    engine.fonts().set_generic_defaults(defaults(Some("Not Installed"), None));
+    engine.fonts().set_fallback(None);
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    let state = by_family(&s.state().fonts);
+    assert!(state.contains(&("Garamond".into(), LastResort, Some(Serif), sans.clone())), "{state:?}");
+}
+
+#[test]
+fn with_no_generic_defaults_layout_is_the_same_as_without_the_feature() {
+    let docx = editor_fixture("FX-FONT-TABLE.docx");
+    let dump = |classify: bool| {
+        let mut fonts = crate::font::Fonts::default();
+        for font in ["stand-in-sans.ttf", "stand-in-serif.ttf", "stand-in-mono.ttf"] {
+            fonts.add_bytes(stand_in(font)).expect("adds");
+        }
+        fonts.set_settings(|s| s.classify_from_document = classify);
+        let doc = crate::docx::read(&docx).expect("reads");
+        let text = format!("{:?}", crate::layout::layout(&doc, &fonts).pages());
+        // Ids come from process-wide counters: integers are masked, floats compared as written.
+        let mut out = String::with_capacity(text.len());
+        let mut digits = false;
+        for (k, c) in text.char_indices() {
+            let float = text[k..].starts_with(|c: char| c.is_ascii_digit())
+                && (text[..k].ends_with('.') || text[k..].trim_start_matches(|c: char| c.is_ascii_digit()).starts_with('.'));
+            if c.is_ascii_digit() && !float {
+                if !digits {
+                    out.push('#');
+                }
+                digits = true;
+            } else {
+                digits = false;
+                out.push(c);
+            }
+        }
+        out
+    };
+    assert_eq!(dump(true), dump(false));
+}
+
+#[test]
+fn a_replacement_draws_even_when_the_family_is_installed_and_the_document_is_unchanged() {
+    use crate::api::fonts::FontRule;
+    let (mut engine, id, _) = font_table();
+    engine.fonts().add(&stand_in("stand-in-serif.ttf")).expect("adds");
+    let before = engine.session(id).expect("a session").export(&ExportOptions::default()).expect("saves").bytes.0;
+    engine.fonts().set_replacements(vec![FontRule { from: "Stand-in Sans".into(), bold: None, italic: None, to: "Stand-in Serif".into() }]);
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    assert_eq!(s.fonts().fonts().face("Stand-in Sans", None, false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in Serif"));
+    assert_eq!(s.export(&ExportOptions::default()).expect("saves").bytes.0, before, "the saved document is unchanged");
+    s.find(&crate::api::services::FindQuery { text: "CJK".into(), ..Default::default() }, crate::api::services::FindDirection::Next);
+    assert_eq!(s.state().formatting.font, crate::api::state::Tri::Uniform("Stand-in Sans".into()), "the font box names the document's family");
+    // A replacement whose target is missing: the document's family draws, and the target is reported.
+    engine.fonts().set_replacements(vec![FontRule { from: "Stand-in Sans".into(), bold: None, italic: None, to: "Nowhere Serif".into() }]);
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    let state = s.state().fonts.clone();
+    let target = state.missing.iter().find(|m| m.family == "Nowhere Serif").expect("the target is reported");
+    assert_eq!((target.by, target.drawn_with.as_deref()), (crate::api::state::StandIn::Original, Some("Stand-in Sans")));
+    assert!(!state.missing.iter().any(|m| m.family == "Stand-in Sans"), "the family itself draws");
+}
+
+/// An engine with Stand-in Sans and a session with `FX-FONT-REWRITE` open.
+fn font_rewrite() -> (Engine, crate::api::engine::SessionId) {
+    let (mut engine, _) = engine();
+    engine.fonts().add(&stand_in("stand-in-sans.ttf")).expect("adds");
+    let id = engine.create_session(SessionOptions::default());
+    engine.session(id).expect("a session").open(&editor_fixture("FX-FONT-REWRITE.docx")).expect("opens");
+    (engine, id)
+}
+
+fn rewrite(from: &str, to: &str) -> crate::api::command::ReplaceFont {
+    crate::api::command::ReplaceFont { from: from.into(), to: to.into(), scope: Default::default(), bold: None, italic: None }
+}
+
+/// A part of the session's saved document.
+fn saved_part(s: &mut super::Session, name: &str) -> String {
+    let saved = s.export(&ExportOptions::default()).expect("saves");
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(saved.bytes.0)).expect("a package");
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name(name).expect("the part"), &mut xml).expect("reads");
+    xml
+}
+
+/// The `w:r` element whose text is `text`.
+fn run_xml<'a>(xml: &'a str, text: &str) -> &'a str {
+    let at = xml.find(&format!(">{text}<")).unwrap_or_else(|| panic!("no run with {text}"));
+    let start = xml[..at].rfind("<w:r>").or_else(|| xml[..at].rfind("<w:r ")).expect("a run");
+    &xml[start..at]
+}
+
+#[test]
+fn replace_font_rewrites_the_texts_family_skips_locked_controls_and_undoes_in_one_step() {
+    use crate::api::command::CommandResult;
+    let (mut engine, id) = font_rewrite();
+    let s = engine.session(id).expect("a session");
+    let before = saved_part(s, "word/document.xml");
+    let commit = s.run(Command::ReplaceFont(rewrite("Calibri", "Stand-in Sans"))).expect("replaces");
+    let Some(CommandResult::FontReplaced { changed, skipped }) = commit.value else { panic!("{:?}", commit.value) };
+    assert!(changed >= 5 && skipped == 1, "changed {changed}, skipped {skipped}");
+    let xml = saved_part(s, "word/document.xml");
+    for text in ["Direct Calibri.", "Bold Calibri."] {
+        assert!(run_xml(&xml, text).contains(r#"w:ascii="Stand-in Sans""#), "{text}: {}", run_xml(&xml, text));
+    }
+    assert!(run_xml(&xml, "Locked Calibri.").contains(r#"w:ascii="Calibri""#), "the locked control keeps its font");
+    assert!(!xml.contains(r#"w:font="Calibri""#), "the symbol no longer names Calibri");
+    assert!(run_xml(&xml, "Times New Roman.").contains("Times New Roman"));
+    s.run(Command::Undo).expect("undoes");
+    assert_eq!(saved_part(s, "word/document.xml"), before, "one undo restores the text");
+}
+
+#[test]
+fn replace_font_records_formatting_revisions_and_honours_its_filters() {
+    let (mut engine, id) = font_rewrite();
+    let s = engine.session(id).expect("a session");
+    s.run(Command::SetTrackChanges(true)).expect("tracks");
+    let bold = crate::api::command::ReplaceFont { bold: Some(true), ..rewrite("Calibri", "Stand-in Sans") };
+    s.run(Command::ReplaceFont(bold)).expect("replaces");
+    let xml = saved_part(s, "word/document.xml");
+    assert!(run_xml(&xml, "Bold Calibri.").contains("w:rPrChange"), "{}", run_xml(&xml, "Bold Calibri."));
+    assert!(run_xml(&xml, "Direct Calibri.").contains(r#"w:ascii="Calibri""#), "the filter keeps regular text");
+}
+
+#[test]
+fn replace_font_in_a_selection_gives_theme_text_its_own_family() {
+    let (mut engine, id) = font_rewrite();
+    let s = engine.session(id).expect("a session");
+    s.find(&crate::api::services::FindQuery { text: "Theme Calibri.".into(), ..Default::default() }, crate::api::services::FindDirection::Next);
+    let selection = crate::api::command::ReplaceFont { scope: crate::api::command::ReplaceScope::Selection, ..rewrite("Calibri", "Stand-in Sans") };
+    s.run(Command::ReplaceFont(selection)).expect("replaces");
+    let xml = saved_part(s, "word/document.xml");
+    let run = run_xml(&xml, "Theme Calibri.");
+    assert!(run.contains(r#"w:ascii="Stand-in Sans""#) && !run.contains("asciiTheme"), "{run}");
+    assert!(run_xml(&xml, "Direct Calibri.").contains(r#"w:ascii="Calibri""#), "outside the selection");
+}
+
+#[test]
+fn replace_font_with_nothing_to_change_adds_no_undo_step_and_a_read_only_session_refuses() {
+    use crate::api::command::CommandResult;
+    let (mut engine, id) = font_rewrite();
+    let s = engine.session(id).expect("a session");
+    let commit = s.run(Command::ReplaceFont(rewrite("Nope", "Other"))).expect("runs");
+    assert_eq!(commit.value, Some(CommandResult::FontReplaced { changed: 0, skipped: 0 }));
+    assert!(!s.state().history.can_undo && commit.record.is_none(), "no undo step");
+    assert_eq!(s.run(Command::ReplaceFont(rewrite("Calibri", "calibri"))).map(drop).expect_err("same family").code, ErrorCode::InvalidArgument);
+    s.set_read_only(true);
+    assert_eq!(s.run(Command::ReplaceFont(rewrite("Calibri", "Arial"))).map(drop).expect_err("read-only").code, ErrorCode::ReadOnly);
+}
+
+#[test]
+fn replace_font_rewrites_the_tables_below_the_text_and_undo_restores_every_part() {
+    let (mut engine, id) = font_rewrite();
+    let s = engine.session(id).expect("a session");
+    let parts = ["word/document.xml", "word/styles.xml", "word/numbering.xml", "word/theme/theme1.xml", "word/fontTable.xml"];
+    let before: Vec<String> = parts.iter().map(|p| saved_part(s, p)).collect();
+    s.run(Command::ReplaceFont(rewrite("Calibri", "Stand-in Sans"))).expect("replaces");
+    for part in &parts[1..] {
+        let xml = saved_part(s, part);
+        assert!(!xml.contains("\"Calibri\""), "{part} still names Calibri");
+        assert!(xml.contains("\"Stand-in Sans\""), "{part} names the new family");
+    }
+    let doc = saved_part(s, "word/document.xml");
+    let locked = run_xml(&doc, "Locked Calibri.");
+    assert_eq!(doc.matches("\"Calibri\"").count(), locked.matches("\"Calibri\"").count(), "only the locked control keeps Calibri");
+    // The run that follows the theme's minor font now resolves to the new family, and matches a fresh read.
+    let family_of = |doc: &crate::docx::Document, text: &str| {
+        let index = crate::editing::index::DocIndex::build(doc);
+        index
+            .para_ids()
+            .filter_map(|id| index.para(doc, id))
+            .flat_map(|p| p.inlines.iter())
+            .find_map(|i| match i {
+                crate::docx::Inline::Text(t, run) if t == text => Some((run.ascii.clone(), run.h_ansi.clone())),
+                _ => None,
+            })
+            .expect("the run")
+    };
+    let saved = s.export(&ExportOptions::default()).expect("saves").bytes.0;
+    let fresh = crate::docx::read(&saved).expect("reads");
+    for text in ["Theme Calibri.", "Styled Calibri.", "Default Calibri."] {
+        let live = family_of(s.editor.document(), text);
+        assert_eq!(live.0, "Stand-in Sans", "{text}");
+        assert_eq!(live, family_of(&fresh, text), "{text}: incremental equals a fresh read");
+    }
+    s.run(Command::Undo).expect("undoes");
+    let after: Vec<String> = parts.iter().map(|p| saved_part(s, p)).collect();
+    assert_eq!(after, before, "one undo restores every part");
+}
+
+#[test]
+fn character_fallback_draws_characters_the_runs_font_lacks() {
+    let (mut engine, id, _) = font_table();
+    let s = engine.session(id).expect("a session");
+    assert!(s.state().fonts.characters.iter().any(|c| c.characters.contains('\u{6f22}')), "missing before");
+    engine.fonts().add(&stand_in("stand-in-cjk.ttf")).expect("adds");
+    engine.fonts().set_character_fallback(vec!["Stand-in CJK".into()]);
+    engine.sync_fonts();
+    let s = engine.session(id).expect("a session");
+    assert!(!s.state().fonts.characters.iter().any(|c| c.characters.contains('\u{6f22}')), "{:?}", s.state().fonts.characters);
+    let fonts = s.fonts().fonts();
+    assert_eq!(fonts.fallback('\u{6f22}', false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in CJK"));
+}
+
+/// `FX-FONT-TABLE` laid out with Stand-in Sans and `extra`, as a dump with integers (ids, glyph ids) masked.
+fn font_table_layout(extra: Option<Vec<u8>>, aliases: Vec<crate::api::fonts::Alias>) -> String {
+    let mut fonts = crate::font::Fonts::default();
+    fonts.add_bytes(stand_in("stand-in-sans.ttf")).expect("adds");
+    if let Some(bytes) = extra {
+        fonts.add_bytes(bytes).expect("adds");
+    }
+    fonts.set_settings(|s| s.aliases = aliases);
+    let doc = crate::docx::read(&editor_fixture("FX-FONT-TABLE.docx")).expect("reads");
+    let text = format!("{:?}", crate::layout::layout(&doc, &fonts).pages());
+    let mut out = String::with_capacity(text.len());
+    let mut digits = false;
+    for (k, c) in text.char_indices() {
+        let float = text[k..].starts_with(|c: char| c.is_ascii_digit())
+            && (text[..k].ends_with('.') || text[k..].trim_start_matches(|c: char| c.is_ascii_digit()).starts_with('.'));
+        if c.is_ascii_digit() && !float {
+            if !digits {
+                out.push('#');
+            }
+            digits = true;
+        } else {
+            digits = false;
+            out.push(c);
+        }
+    }
+    out
+}
+
+#[test]
+fn shared_east_asian_characters_lay_out_as_with_ms_mincho_without_it() {
+    let bundled = font_table_layout(None, Vec::new());
+    // An alias to a font of the application's wins over the bundled face.
+    let aliased = font_table_layout(Some(stand_in("stand-in-serif.ttf")), vec![alias("MS Mincho", "Stand-in Serif", None)]);
+    assert_ne!(bundled, aliased, "the alias draws instead");
+    let path = std::path::Path::new(&std::env::var("LOCALAPPDATA").unwrap_or_default()).join(r"Microsoft\Windows\Fonts\MSMINCHO.TTF");
+    let Ok(mincho) = std::fs::read(&path) else { return };
+    // Only the face's name differs: every position and width is the same.
+    let real = font_table_layout(Some(mincho), Vec::new()).replace("Face(MS Mincho", "Face(Twip East Asian Punctuation");
+    assert!(bundled == real, "the bundled face lays out as MS Mincho does");
 }

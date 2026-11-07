@@ -226,17 +226,23 @@ public sealed class WordAddedEventArgs : EditorEventArgs
     public string Language { get; }
 }
 
-/// <summary>Fonts arrived or were found missing.</summary>
+/// <summary>
+/// The document's fonts that draw with a stand-in (being fetched, or nothing provided them), or its characters no
+/// font has, changed. Carries the whole report, as <see cref="EditorState.Fonts"/> has it.
+/// </summary>
 public sealed class FontsChangedEventArgs : EditorEventArgs
 {
-    internal FontsChangedEventArgs(IReadOnlyList<string> pending, IReadOnlyList<string> unresolved, EditorState snapshot) : base(snapshot) =>
-        (Pending, Unresolved) = (pending, unresolved);
+    internal FontsChangedEventArgs(IReadOnlyList<MissingFont> pending, IReadOnlyList<MissingFont> missing, IReadOnlyList<MissingCharacters> characters, EditorState snapshot) : base(snapshot) =>
+        (Pending, Missing, Characters) = (pending, missing, characters);
 
-    /// <summary>Families being resolved.</summary>
-    public IReadOnlyList<string> Pending { get; }
+    /// <summary>Families a resolver is fetching; they draw with a stand-in meanwhile.</summary>
+    public IReadOnlyList<MissingFont> Pending { get; }
 
-    /// <summary>Families that couldn't be found.</summary>
-    public IReadOnlyList<string> Unresolved { get; }
+    /// <summary>Families nothing provided; they draw with a stand-in.</summary>
+    public IReadOnlyList<MissingFont> Missing { get; }
+
+    /// <summary>Characters no font has, by the family their runs name.</summary>
+    public IReadOnlyList<MissingCharacters> Characters { get; }
 }
 
 /// <summary>Why typing, pasting or dropping was refused.</summary>

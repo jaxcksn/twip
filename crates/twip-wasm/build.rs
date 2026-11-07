@@ -22,6 +22,7 @@ fn main() {
         "twip_open_prepare",
         "twip_export",
         "twip_font_add",
+        "twip_font_symbol_fallback",
         "twip_key",
         "twip_text",
         "twip_composition",

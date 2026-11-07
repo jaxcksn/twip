@@ -1013,6 +1013,23 @@ public sealed class EditorCommands
     /// <returns>The number of elements changed, once the change has committed.</returns>
     public Task<int> ReplaceInElementsAsync(string find, string replace, ElementTextField @in, ElementCategory? kind = null, IReadOnlyList<ElementId>? ids = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ReplaceInElements(find, replace, @in, kind, ids), CommitValue.Changed, ct);
 
+    /// <summary>
+    /// Rewrites a font family's name in the document itself, so the saved file names <paramref name="to"/>: one undo
+    /// step. In document scope with no style filter it rewrites the text (runs, paragraph marks, symbols) and the
+    /// tables below it (styles, document defaults, numbering levels, the theme's font slots and the font table). In
+    /// selection scope, or with a filter, it rewrites only the text, and a matching run whose family comes from a style
+    /// or the theme gets <paramref name="to"/> as its own. With tracked changes on, the text's changes are formatting
+    /// revisions. Text inside locked content controls is skipped and counted.
+    /// </summary>
+    /// <param name="from">The family to rewrite, case-insensitive.</param>
+    /// <param name="to">The family it becomes.</param>
+    /// <param name="scope">The whole document, or the selection.</param>
+    /// <param name="bold">Only bold (true) or regular-weight (false) text.</param>
+    /// <param name="italic">Only italic (true) or upright (false) text.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>What changed and what was skipped, once the change has committed.</returns>
+    public Task<FontReplaceResult> ReplaceFontAsync(string from, string to, ReplaceScope scope = ReplaceScope.Document, bool? bold = null, bool? italic = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ReplaceFont(from, to, scope, bold, italic), CommitValue.FontReplaced, ct);
+
     /// <summary>Marks elements with wavy lines and a tooltip. A view setting.</summary>
     /// <param name="marks">The marks.</param>
     /// <param name="clear">Clear the existing marks first.</param>

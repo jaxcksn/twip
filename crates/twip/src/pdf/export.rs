@@ -9,6 +9,7 @@
 // shortcut: no hyperlink annotations, figure alt text or Note elements: the docx model carries no hyperlinks, alt
 // text or story of a run yet.
 
+use crate::api::state::FontsState;
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::CString;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -99,7 +100,12 @@ fn body_paragraphs(doc: &Document) -> Vec<(Vec<usize>, Vec<bool>, &Paragraph)> {
 /// Reads `docx` and writes it as a PDF on this thread: the final document, without revision marks or comments, laid
 /// out with `fonts` in steps so `cancel` stops it early. The warnings are the read's, the text drawn in another font,
 /// and what writing the PDF dropped.
-pub(crate) fn convert(docx: &[u8], fonts: &Fonts, options: &PdfOptions, cancel: Option<&AtomicBool>) -> Result<(Vec<u8>, Vec<Warning>), Error> {
+pub(crate) fn convert(
+    docx: &[u8],
+    fonts: &Fonts,
+    options: &PdfOptions,
+    cancel: Option<&AtomicBool>,
+) -> Result<(Vec<u8>, Vec<Warning>, FontsState), Error> {
     options.validate()?;
     if fonts.face_count() == 0 {
         return Err(Error::new(ErrorCode::ExportFailed, "the font library has no font to draw text with"));
@@ -111,9 +117,10 @@ pub(crate) fn convert(docx: &[u8], fonts: &Fonts, options: &PdfOptions, cancel: 
         .ok_or_else(|| cancelled(cancel).expect_err("layout stops only when cancelled"))?;
     let (bytes, written) = export(&doc, &snapshot, "", options, cancel)?;
     let mut warnings = doc.diagnostics.warnings.clone();
-    warnings.extend(crate::api::session::documents::document_font_fallbacks(&doc, fonts));
+    let state = crate::api::session::unopened_document_fonts(&doc, fonts);
+    warnings.extend(crate::api::session::documents::fallback_warnings(&state));
     warnings.extend(written);
-    Ok((bytes, warnings))
+    Ok((bytes, warnings, state))
 }
 
 /// Whether `cancel` asks the conversion to stop.
@@ -406,7 +413,7 @@ mod tests {
     /// Exports fixtures and checks the PDF's shape; `PDF_OUT` (a folder) keeps the files for inspection.
     #[test]
     fn exports_fixtures() {
-        let fonts = Fonts::system();
+        let fonts = Fonts::system_recommended();
         let root = std::env::var_os("TWIP_REFERENCE_FIXTURES").map(std::path::PathBuf::from).unwrap_or_default();
         let mut files: Vec<std::path::PathBuf> =
             ["T1/T1g_two_rows.docx", "L1/L1l_multilevel.docx", "P1/P1c_word_default.docx"].iter().map(|f| root.join(f)).collect();

@@ -19,28 +19,110 @@ pub struct Edges {
 
 #[derive(Clone, Debug)]
 pub enum Step {
-    Text { para: ParaId, range: Range<Unit>, with: Vec<Inline>, edges: Edges },
-    Split { para: ParaId, at: Unit, second: Paragraph },
-    Join { first: ParaId, second: ParaId },
-    Blocks { container: Container, range: Range<usize>, with: Vec<Block> },
-    Rows { table: TableId, range: Range<usize>, with: Vec<Row>, grid: Option<Vec<f64>> },
-    Para { para: ParaId, style: Rc<crate::docx::ParaStyle>, mark: crate::docx::Run, list: Option<crate::docx::ListLabel> },
-    Restyle { para: ParaId, inlines: Vec<Inline> },
-    TableWidth { table: TableId, width: crate::docx::props::Width },
-    ImageData { index: usize, data: Vec<u8>, filled: bool },
-    HeaderPart { name: String, section: usize, footer: bool, slot: usize, blocks: Option<Vec<Block>> },
-    BuildingBlock { k: u32, part: Option<Box<crate::docx::BuildingBlock>> },
-    TableProps { table: TableId, props: TableProps },
-    Note { kind: crate::docx::NoteKind, id: i64, blocks: Option<Vec<Block>> },
-    SectionPage { section: usize, page: crate::docx::SectionPage, change: Option<Rc<crate::docx::review::SectionChange>> },
-    Control { id: crate::docx::ControlId, control: Option<crate::docx::Control> },
-    DataPart { item_id: String, part: Option<crate::docx::DataPart> },
-    Comment { id: crate::docx::review::CommentId, after: Option<crate::docx::review::Comment> },
-    FieldViews { para: ParaId, views: Vec<(crate::docx::FieldId, crate::docx::FieldView)> },
-    AddImage { index: usize, data: Option<Vec<u8>> },
-    Numbering { resolver: Option<Rc<crate::docx::resolve::Resolver>>, added: Vec<crate::docx::AddedList> },
+    Text {
+        para: ParaId,
+        range: Range<Unit>,
+        with: Vec<Inline>,
+        edges: Edges,
+    },
+    Split {
+        para: ParaId,
+        at: Unit,
+        second: Paragraph,
+    },
+    Join {
+        first: ParaId,
+        second: ParaId,
+    },
+    Blocks {
+        container: Container,
+        range: Range<usize>,
+        with: Vec<Block>,
+    },
+    Rows {
+        table: TableId,
+        range: Range<usize>,
+        with: Vec<Row>,
+        grid: Option<Vec<f64>>,
+    },
+    Para {
+        para: ParaId,
+        style: Rc<crate::docx::ParaStyle>,
+        mark: crate::docx::Run,
+        list: Option<crate::docx::ListLabel>,
+    },
+    Restyle {
+        para: ParaId,
+        inlines: Vec<Inline>,
+    },
+    TableWidth {
+        table: TableId,
+        width: crate::docx::props::Width,
+    },
+    ImageData {
+        index: usize,
+        data: Vec<u8>,
+        filled: bool,
+    },
+    HeaderPart {
+        name: String,
+        section: usize,
+        footer: bool,
+        slot: usize,
+        blocks: Option<Vec<Block>>,
+    },
+    BuildingBlock {
+        k: u32,
+        part: Option<Box<crate::docx::BuildingBlock>>,
+    },
+    TableProps {
+        table: TableId,
+        props: TableProps,
+    },
+    Note {
+        kind: crate::docx::NoteKind,
+        id: i64,
+        blocks: Option<Vec<Block>>,
+    },
+    SectionPage {
+        section: usize,
+        page: crate::docx::SectionPage,
+        change: Option<Rc<crate::docx::review::SectionChange>>,
+    },
+    Control {
+        id: crate::docx::ControlId,
+        control: Option<crate::docx::Control>,
+    },
+    DataPart {
+        item_id: String,
+        part: Option<crate::docx::DataPart>,
+    },
+    Comment {
+        id: crate::docx::review::CommentId,
+        after: Option<crate::docx::review::Comment>,
+    },
+    FieldViews {
+        para: ParaId,
+        views: Vec<(crate::docx::FieldId, crate::docx::FieldView)>,
+    },
+    AddImage {
+        index: usize,
+        data: Option<Vec<u8>>,
+    },
+    Numbering {
+        resolver: Option<Rc<crate::docx::resolve::Resolver>>,
+        added: Vec<crate::docx::AddedList>,
+    },
+    /// The style, numbering and theme tables with a family renamed, and the renames the save applies.
+    Fonts {
+        resolver: Option<Rc<crate::docx::resolve::Resolver>>,
+        renames: Vec<crate::docx::font_table::FontRename>,
+    },
     DefaultTab(f64),
-    SectionBreak { section: usize, back: Option<Box<SectionBack>> },
+    SectionBreak {
+        section: usize,
+        back: Option<Box<SectionBack>>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -96,7 +178,10 @@ impl Step {
     }
 
     pub fn lays_out(&self) -> bool {
-        !matches!(self, Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. } | Step::AddImage { .. } | Step::Numbering { .. })
+        !matches!(
+            self,
+            Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. } | Step::AddImage { .. } | Step::Numbering { .. } | Step::Fonts { .. }
+        )
     }
 }
 
@@ -751,6 +836,14 @@ impl Step {
                 let resolver = std::mem::replace(&mut doc.resolver, resolver);
                 let added = std::mem::replace(&mut doc.added_lists, added);
                 Ok(Applied { inverse: Step::Numbering { resolver, added }, map: Map::Same, hint: None })
+            }
+            Step::Fonts { resolver, renames } => {
+                let resolver = std::mem::replace(&mut doc.resolver, resolver);
+                let renames = std::mem::replace(&mut doc.font_renames, renames);
+                if let Some(res) = &doc.resolver {
+                    doc.line_number_run = Some(crate::docx::line_number_run(res));
+                }
+                Ok(Applied { inverse: Step::Fonts { resolver, renames }, map: Map::Same, hint: None })
             }
             Step::DefaultTab(v) => {
                 let old = std::mem::replace(&mut doc.settings.default_tab, v);

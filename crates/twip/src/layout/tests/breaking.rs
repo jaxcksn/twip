@@ -16,7 +16,7 @@ fn lines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64)
 
 fn baselines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64, f64)>> {
     let fonts = fonts();
-    fonts.face("Arial", false, false)?;
+    fonts.face("Arial", None, false, false)?;
     let compat = if settings.contains("compatibilityMode") {
         ""
     } else {
@@ -503,7 +503,7 @@ fn a_missing_paragraph_default_is_words_own() {
         });
         ys[1] - ys[0]
     };
-    if fonts().face("Arial", false, false).is_none() {
+    if fonts().face("Arial", None, false, false).is_none() {
         return;
     }
     assert!((gap("<w:pPrDefault/>") - 13.8).abs() < 0.01);

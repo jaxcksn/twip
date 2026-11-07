@@ -885,7 +885,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                         let mark_w = env
                             .ctx
                             .fonts
-                            .face(&mark.ascii, mark.bold, mark.italic)
+                            .face(&mark.ascii, None, mark.bold, mark.italic)
                             .and_then(|f| Some(f.advance(f.glyph(glyph)?) * f.scale(mark.size)));
                         w = w.max(full + mark_w.unwrap_or(0.0) + s.ind_right);
                     }

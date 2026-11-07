@@ -1,4 +1,5 @@
 import type { CommandId } from './commands.js';
+import type { FontsState } from './fonts/library.js';
 import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind, ReferenceRule } from './services/elements.js';
 import type { RulerModel, RulerUnit, TabSelector } from './services/ruler.js';
@@ -54,8 +55,8 @@ export interface EditorState {
   review: ReviewState;
   /** Spell checking. */
   spelling: { enabled: boolean; language: string; misspellings: number };
-  /** Fonts being fetched and fonts that could not be found. */
-  fonts: { pending: string[]; unresolved: string[] };
+  /** The document's fonts that draw with a stand-in, and the characters no font has. */
+  fonts: FontsState;
   /** The ruler model for the selection, in points, with no viewport mapping. */
   ruler: RulerModel;
   /** Whether formatting is held for `pasteFormatting`. */

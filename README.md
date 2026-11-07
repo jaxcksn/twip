@@ -59,8 +59,9 @@ own toolbar, menus and panes around a page the engine already handles.
 
 ### Text and paragraphs
 
-- Fonts from the system, from files (TrueType, OpenType, collections, WOFF and WOFF2), from a resolver you supply or
-  from Google Fonts, with named instances of variable fonts as faces of their own
+- Fonts from the system, from files (TrueType, OpenType, collections, WOFF and WOFF2) or from a resolver you supply,
+  with named instances of variable fonts as faces of their own. Your application decides every font choice: aliases,
+  replacements, generic defaults, fallbacks, and reports of what's missing
 - Styles, with paragraph, character, table and numbering styles and the document defaults
 - Line breaking, justification, tab stops with leaders, line and paragraph spacing, borders, shading and the document
   grid

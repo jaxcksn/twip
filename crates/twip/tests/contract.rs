@@ -314,12 +314,34 @@ impl Runner {
         }
         match method {
             "catalog" => return Ok(to_json(Session::catalog())),
-            "fonts.substitute" => {
+            "fonts.setReplacements" | "fonts.setAliases" => {
+                // `{ from: to }` or a list of rules.
                 let rules: Vec<Value> = match arg(0) {
                     Value::Object(o) => o.into_iter().map(|(from, to)| json!({ "from": from, "to": to })).collect(),
                     v => arg_of(v)?,
                 };
-                self.engine.fonts().set_substitutions(arg_of(Value::Array(rules))?);
+                let fonts = self.engine.fonts();
+                if method == "fonts.setAliases" {
+                    fonts.set_aliases(arg_of(Value::Array(rules))?);
+                } else {
+                    fonts.set_replacements(arg_of(Value::Array(rules))?);
+                }
+                self.engine.sync_fonts();
+                return Ok(Value::Null);
+            }
+            "fonts.setGenericDefaults"
+            | "fonts.setClassification"
+            | "fonts.setFallback"
+            | "fonts.setCharacterFallback"
+            | "fonts.setSymbolFallback" => {
+                let fonts = self.engine.fonts();
+                match method {
+                    "fonts.setGenericDefaults" => fonts.set_generic_defaults(arg_of(arg(0))?),
+                    "fonts.setClassification" => fonts.set_classification(arg(0)["fromDocument"].as_bool().ok_or(Err("fromDocument".to_string()))?),
+                    "fonts.setFallback" => fonts.set_fallback(arg(0).as_str()),
+                    "fonts.setSymbolFallback" => fonts.set_symbol_fallback(arg_of(arg(0))?).map_err(Ok)?,
+                    _ => fonts.set_character_fallback(arg_of(arg(0))?),
+                }
                 self.engine.sync_fonts();
                 return Ok(Value::Null);
             }

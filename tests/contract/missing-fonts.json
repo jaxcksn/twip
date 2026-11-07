@@ -1,0 +1,43 @@
+{
+  "name": "missing-fonts",
+  "fixture": "editor/FX-FONT-TABLE.docx",
+  "fonts": "empty",
+  "steps": [
+    { "op": "font", "file": "editor/fonts/stand-in-sans.ttf" },
+    { "op": "open", "match": { "warnings": { "$has": [{ "code": "font-unresolved", "count": 5 }] } } },
+    {
+      "op": "expectState",
+      "match": {
+        "fonts": {
+          "pending": { "$exact": [] },
+          "missing": [
+            { "family": "Consolas", "bold": false, "by": "lastResort", "drawnWith": "Stand-in Sans", "tried": { "$exact": [] } },
+            { "family": "Garamond", "bold": false, "by": "lastResort", "drawnWith": "Stand-in Sans" },
+            { "family": "Garamond", "bold": true, "by": "lastResort", "drawnWith": "Stand-in Sans" },
+            { "family": "Mystery Sans", "by": "lastResort" },
+            { "family": "Zzyzx Unknown", "by": "lastResort" }
+          ],
+          "characters": { "$has": [{ "family": "Stand-in Sans", "truncated": false }] }
+        }
+      }
+    },
+
+    { "op": "font", "file": "editor/fonts/zzyzx-unknown.ttf" },
+    { "op": "expectEvents", "match": [{ "type": "fontsChanged", "missing": [{ "family": "Consolas" }, { "family": "Garamond" }, { "family": "Garamond" }, { "family": "Mystery Sans" }] }] },
+    {
+      "op": "expectState",
+      "match": {
+        "fonts": {
+          "missing": {
+            "$exact": [
+              { "family": "Consolas", "bold": false, "italic": false, "tried": [], "category": "monospace", "drawnWith": "Stand-in Sans", "by": "lastResort" },
+              { "family": "Garamond", "bold": false, "italic": false, "tried": [], "category": "serif", "drawnWith": "Stand-in Sans", "by": "lastResort" },
+              { "family": "Garamond", "bold": true, "italic": false, "tried": [], "category": "serif", "drawnWith": "Stand-in Sans", "by": "lastResort" },
+              { "family": "Mystery Sans", "bold": false, "italic": false, "tried": [], "category": "sansSerif", "drawnWith": "Stand-in Sans", "by": "lastResort" }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

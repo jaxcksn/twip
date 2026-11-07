@@ -24,7 +24,10 @@ use super::record::PageEffects;
 use super::space::{BorderKey, ColumnSpace, ParaSpace};
 use super::story::{NestedRow, StoryEnv, StoryLayout, StoryUnit};
 use super::table::{CellPart, DrawnRow, TableLayout, draw_row, draw_whole_row, whole};
-use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape};
+use super::text::{FieldValues, FontMetrics, Kind, Object, ShapedPara, para_id, shape};
+
+/// Default footnote separator line metrics.
+const SEPARATOR_METRICS: FontMetrics = FontMetrics { ascent: 1950.0, descent: 550.0, leading: 0.0, upem: 2048.0 };
 use super::token::{At, FlowState, FlowToken, NotePart};
 use super::units::Lu;
 
@@ -628,10 +631,8 @@ impl<'d> PageFill<'d, '_> {
                 super::story::layout(&blocks, width, &env, None, memos)?
             }
             None => Rc::new({
-                let h = self.ctx.fonts.face("Calibri", false, false).map_or(13.43, |f| {
-                    let (a, d, e) = super::text::metrics(&f, 11.0);
-                    a + d + e
-                });
+                let (a, d, e) = super::text::metrics_from(SEPARATOR_METRICS, 11.0);
+                let h = a + d + e;
                 let rule = Item::rect([0.0, h * 0.78 - 2.7, 144.0, h * 0.78 - 2.1], 0);
                 let content: Rc<[Child]> = Rc::from([Child::Items(Box::new([rule]))]);
                 StoryLayout {

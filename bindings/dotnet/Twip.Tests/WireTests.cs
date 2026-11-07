@@ -18,6 +18,7 @@ public sealed class WireTests
     /// <summary>Fixture names (without separators, lower case) for types whose fixture isn't named after the C# type.</summary>
     private static readonly Dictionary<string, JsonTypeInfo> Aliases = new()
     {
+        ["fontanswer"] = Ctx.FontAnswerWire,
         ["state"] = Ctx.EditorState,
         ["command"] = Ctx.EditorOperation,
         ["op"] = Ctx.EditorOperation,
@@ -288,7 +289,7 @@ public sealed class WireTests
         var e = WireJson.ToException(JsonDocument.Parse("""{"code":"invalid-argument","message":"rows out of range","details":null}""").RootElement);
         Assert.Equal(EditorErrorCode.InvalidArgument, e.Code);
         Assert.Equal("\"read-only\"", JsonSerializer.Serialize(EditorErrorCode.ReadOnly, Ctx.EditorErrorCode));
-        Assert.Equal("\"font-substituted\"", JsonSerializer.Serialize(WarningCode.FontSubstituted, Ctx.WarningCode));
+        Assert.Equal("\"font-unresolved\"", JsonSerializer.Serialize(WarningCode.FontUnresolved, Ctx.WarningCode));
     }
 
     [Fact]

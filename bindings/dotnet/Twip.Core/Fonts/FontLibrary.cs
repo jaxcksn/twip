@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using Twip.Engine;
 using Twip.Native;
 using Twip.Wire;
@@ -11,7 +10,7 @@ namespace Twip;
 /// The fonts sessions lay out and draw with. Share one per process: fonts added after sessions exist reach every
 /// session that uses the library.
 /// </summary>
-public sealed partial class FontLibrary
+public sealed class FontLibrary
 {
     private static readonly Lazy<HttpClient> Http = new(() => new HttpClient());
     private volatile Func<FontRequest, CancellationToken, ValueTask<FontSource?>>? _resolver;
@@ -45,10 +44,14 @@ public sealed partial class FontLibrary
         await AddAsync(await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
     /// <summary>
-    /// Resolves fonts a document uses that the library doesn't have. The engine asks once per family and style; the
-    /// resolver runs on the thread pool, and a null answer (or an exception) reports the family unresolved.
+    /// Sets the resolver: the engine asks it, once per family and style, for a font a document uses that the library
+    /// doesn't have. The request carries the document's description of the family and the category it gives. Return
+    /// the font (<see cref="FontSource.FromBytes"/>, <see cref="FontSource.FromUri"/>), another family or a category to
+    /// draw it with (<see cref="FontSource.FromFamily"/>, <see cref="FontSource.FromCategory"/>), or null. The resolver
+    /// runs on the thread pool; while it runs, the family is pending and draws with a stand-in. An exception, a failed
+    /// download or bytes that aren't a font report the family missing with the error.
     /// </summary>
-    /// <param name="resolver">Returns the font, or null when it can't be found.</param>
+    /// <param name="resolver">Returns the answer, or null when there is none.</param>
     public void SetResolver(Func<FontRequest, CancellationToken, ValueTask<FontSource?>> resolver)
     {
         ArgumentNullException.ThrowIfNull(resolver);
@@ -56,47 +59,115 @@ public sealed partial class FontLibrary
         AskEngine();
     }
 
-    /// <summary>Resolves missing fonts from Google Fonts, after the resolver set before it.</summary>
-    /// <param name="options">Which families to allow.</param>
-    public void UseGoogleFonts(GoogleFontsOptions? options = null)
-    {
-        var before = _resolver;
-        var allowed = options?.Families?.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        _resolver = async (request, ct) =>
-        {
-            if (before is not null && await before(request, ct).ConfigureAwait(false) is { } found) return found;
-            if (allowed is not null && !allowed.Contains(request.Family)) return null;
-            return await GoogleFontAsync(request, ct).ConfigureAwait(false);
-        };
-        AskEngine();
-    }
-
-    /// <summary>With a resolver, the engine requests missing faces instead of reporting them unresolved at once.</summary>
+    /// <summary>With a resolver, the engine requests missing faces instead of reporting them missing at once.</summary>
     private void AskEngine() => Send(Method.FontSetResolver, WireJson.ToUtf8(true));
 
-    /// <summary>Draws one family with another, such as Times New Roman with Tinos. Saved documents keep the original name.</summary>
-    /// <param name="rules">The substitutes, keyed by the family they replace.</param>
-    public void Substitute(IReadOnlyDictionary<string, string> rules)
+    /// <summary>
+    /// Sets the draw-time replacements, replacing earlier ones: each family is drawn with another, such as Times New
+    /// Roman with Tinos, even when the replaced family is in the library. Saved documents keep the original name.
+    /// </summary>
+    /// <param name="rules">The replacements, keyed by the family they replace.</param>
+    public void SetReplacements(IReadOnlyDictionary<string, string> rules)
     {
         ArgumentNullException.ThrowIfNull(rules);
-        Substitute(rules.Select(r => new SubstitutionRule(r.Key, r.Value)));
+        SetReplacements(rules.Select(r => new FontRule(r.Key, r.Value)));
     }
 
-    /// <summary>Draws one family with another, per style. The rules replace the ones set before.</summary>
+    /// <summary>
+    /// Sets the draw-time replacements per style, replacing earlier ones. A replacement is the first step of
+    /// resolution; when its target isn't in the library, the replaced family resolves as if there were no rule.
+    /// </summary>
     /// <param name="rules">The rules.</param>
-    public void Substitute(IEnumerable<SubstitutionRule> rules)
+    public void SetReplacements(IEnumerable<FontRule> rules)
     {
         ArgumentNullException.ThrowIfNull(rules);
-        Send(Method.FontSetSubstitutions, WireJson.ToUtf8<IReadOnlyList<SubstitutionRule>>([.. rules]));
+        Send(Method.FontSetReplacements, WireJson.ToUtf8<IReadOnlyList<FontRule>>([.. rules]));
     }
 
-    /// <summary>Sets the family used when nothing else resolves.</summary>
-    /// <param name="family">The family.</param>
-    public void SetDefault(string family)
+    /// <summary>
+    /// Sets the aliases, replacing earlier ones: each family that isn't in the library is drawn with another, such as
+    /// Arial with Arimo. Saved documents keep the original name. Families a resolver answered, or found missing, are
+    /// requested again.
+    /// </summary>
+    /// <param name="aliases">The aliases, keyed by the family they stand in for.</param>
+    public void SetAliases(IReadOnlyDictionary<string, string> aliases)
     {
-        ArgumentNullException.ThrowIfNull(family);
-        Send(Method.FontSetDefault, WireJson.ToUtf8(family));
+        ArgumentNullException.ThrowIfNull(aliases);
+        SetAliases(aliases.Select(a => new Alias(a.Key, a.Value)));
     }
+
+    /// <summary>
+    /// Sets the aliases per style, or to a generic category, replacing earlier ones. An alias applies only when its
+    /// family isn't in the library; aliases chain up to 8 hops.
+    /// </summary>
+    /// <param name="aliases">The aliases.</param>
+    public void SetAliases(IEnumerable<Alias> aliases)
+    {
+        ArgumentNullException.ThrowIfNull(aliases);
+        Send(Method.FontSetAliases, WireJson.ToUtf8<IReadOnlyList<Alias>>([.. aliases]));
+    }
+
+    /// <summary>
+    /// Sets the default family of each generic category, for a missing family of that category (from the document's
+    /// font table, an alias or a resolver answer). Opt-in: <c>new GenericDefaults()</c> turns it off.
+    /// </summary>
+    /// <param name="defaults">The defaults.</param>
+    public void SetGenericDefaults(GenericDefaults defaults)
+    {
+        ArgumentNullException.ThrowIfNull(defaults);
+        Send(Method.FontSetGenericDefaults, WireJson.ToUtf8(defaults));
+    }
+
+    /// <summary>
+    /// Sets whether a document's font table gives a missing family its generic category. On by default; it has no
+    /// effect until a generic default is set. Off, only aliases to a category and resolver answers give one.
+    /// </summary>
+    /// <param name="fromDocument">Whether the document's font table classifies.</param>
+    public void SetClassification(bool fromDocument) => Send(Method.FontSetClassification, WireJson.ToUtf8(fromDocument));
+
+    /// <summary>
+    /// Sets the face for characters no other font has, after the character-fallback families: the bundled symbol font
+    /// (the default), none, or a font's first face. It is never a family a document can name.
+    /// </summary>
+    /// <param name="fallback">The fallback.</param>
+    /// <param name="ct">Cancels before setting it.</param>
+    /// <returns>Completes once it is set.</returns>
+    /// <exception cref="EditorException">The font holds no face (<see cref="EditorErrorCode.InvalidArgument"/>); the setting is unchanged.</exception>
+    public async Task SetSymbolFallbackAsync(SymbolFallback fallback, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(fallback);
+        var data = fallback.Path is { } path ? await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false) : fallback.Data;
+        await EngineThread.Instance.Post(() =>
+        {
+            if (data is { } bytes) SetSymbolFont(bytes.Span);
+            else Native.Call(0, Method.FontSetSymbolFallback, WireJson.ToUtf8(fallback.Name));
+            return true;
+        }, ct).ConfigureAwait(false);
+    }
+
+    private unsafe void SetSymbolFont(ReadOnlySpan<byte> data)
+    {
+        TwipBuf output = default;
+        int status;
+        fixed (byte* p = data) status = TwipNative.FontSymbolFallback(Native.Handle, p, (nuint)data.Length, &output);
+        try { WireJson.Unwrap(output.Span, status); }
+        finally { EngineThread.Free(ref output); }
+    }
+
+    /// <summary>Sets the families searched, in order, for a character a run's font lacks, before the symbol fallback.</summary>
+    /// <param name="families">The families.</param>
+    public void SetCharacterFallback(IEnumerable<string> families)
+    {
+        ArgumentNullException.ThrowIfNull(families);
+        Send(Method.FontSetCharacterFallback, WireJson.ToUtf8<IReadOnlyList<string>>([.. families]));
+    }
+
+    /// <summary>
+    /// Sets the general fallback: the family that draws a font nothing else resolves (after replacements, aliases,
+    /// resolver answers and generic defaults). With null, or when it isn't in the library, the first face added draws.
+    /// </summary>
+    /// <param name="family">The family, or null for none.</param>
+    public void SetFallback(string? family) => Send(Method.FontSetFallback, WireJson.ToUtf8(family));
 
     /// <summary>Every family the library can draw now, for a font box.</summary>
     /// <param name="ct">Cancels the request.</param>
@@ -116,73 +187,115 @@ public sealed partial class FontLibrary
         finally { EngineThread.Free(ref output); }
     }
 
-    /// <summary>On the engine thread: the engine needs a font. Runs the resolver, then adds what it found or reports the family unresolved.</summary>
+    /// <summary>On the engine thread: the engine needs a font. Runs the resolver on the thread pool, then answers.</summary>
     internal void OnFontRequest(byte[] payload)
     {
         var request = JsonSerializer.Deserialize(payload, TwipJsonContext.Default.FontRequest)!;
         if (_resolver is not { } resolver)
         {
-            Send(Method.FontMarkUnresolved, WireJson.ToUtf8(request));
+            Send(Method.FontAnswer, Answer(request, FontAnswerWire.Missing));
             return;
         }
         _ = Task.Run(async () =>
         {
+            FontAnswerWire answer;
             byte[]? data = null;
             try
             {
-                data = await resolver(request, CancellationToken.None).ConfigureAwait(false) switch
+                var source = await resolver(request, CancellationToken.None).ConfigureAwait(false);
+                answer = source switch
                 {
-                    null => null,
+                    null => FontAnswerWire.Missing,
+                    { Family: { } family } => new FontAnswerWire("family", Family: family),
+                    { Category: { } category } => new FontAnswerWire("category", Category: category),
+                    _ => new FontAnswerWire("font"),
+                };
+                data = source switch
+                {
                     { Uri: { IsFile: true } file } => await File.ReadAllBytesAsync(file.LocalPath).ConfigureAwait(false),
                     { Uri: { } uri } => await Http.Value.GetByteArrayAsync(uri).ConfigureAwait(false),
-                    var source => source.Data.ToArray(),
+                    { Family: null, Category: null } bytes => bytes.Data.ToArray(),
+                    _ => null,
                 };
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // A failing resolver or download leaves the family unresolved, as a null answer does.
+                answer = FontAnswerWire.Missing;
+            }
+            catch (Exception e)
+            {
+                answer = new FontAnswerWire("failed", Message: e.Message);
             }
             EngineThread.Instance.Post(() =>
             {
-                try
+                if (data is not null)
                 {
-                    if (data is not null && Add(data).Count > 0) return;
+                    try
+                    {
+                        Add(data);
+                    }
+                    catch (EditorException e)
+                    {
+                        answer = new FontAnswerWire("failed", Message: e.Message);
+                    }
                 }
-                catch (EditorException)
-                {
-                    // Not a font: unresolved.
-                }
-                Native.Call(0, Method.FontMarkUnresolved, WireJson.ToUtf8(request));
+                Native.Call(0, Method.FontAnswer, Answer(request, answer));
             });
         });
     }
 
-    /// <summary>One face from the Google Fonts CSS API, as TTF (which it serves to clients that send no user agent).</summary>
-    private static async ValueTask<FontSource?> GoogleFontAsync(FontRequest request, CancellationToken ct)
-    {
-        var family = Uri.EscapeDataString(request.Family).Replace("%20", "+", StringComparison.Ordinal);
-        var css = $"https://fonts.googleapis.com/css2?family={family}:ital,wght@{(request.Italic ? 1 : 0)},{(request.Bold ? 700 : 400)}";
-        using var response = await Http.Value.GetAsync(css, ct).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode) return null; // 400: Google doesn't have this family or face
-        var url = GoogleSource().Match(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
-        return url.Success ? FontSource.FromUri(new Uri(url.Groups[1].Value)) : null;
-    }
-
-#if NETFRAMEWORK
-    private static readonly Regex s_googleSource = new(@"src:\s*url\(([^)]+)\)");
-
-    private static Regex GoogleSource() => s_googleSource;
-#else
-    [GeneratedRegex(@"src:\s*url\(([^)]+)\)")]
-    private static partial Regex GoogleSource();
-#endif
+    private static byte[] Answer(FontRequest request, FontAnswerWire answer) => WireJson.ToUtf8(new FontAnswerPayload(request, answer));
 }
 
-/// <summary>A font the engine needs.</summary>
-/// <param name="Family">The family.</param>
+/// <summary>A font the engine needs, asked once per family and style.</summary>
+/// <param name="Family">The family, as the document names it.</param>
 /// <param name="Bold">Bold.</param>
 /// <param name="Italic">Italic.</param>
-public sealed record FontRequest(string Family, bool Bold, bool Italic);
+/// <param name="Description">The document's description of the family, when its font table has one.</param>
+/// <param name="Proposed">The generic category that description gives, whether or not classification is on.</param>
+public sealed record FontRequest(
+    string Family, bool Bold, bool Italic,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FontDescription? Description = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GenericFamily? Proposed = null);
+
+/// <summary>A font table's general class of a family.</summary>
+public enum FontClass
+{
+    /// <summary>Serif (<c>roman</c>).</summary>
+    Roman,
+    /// <summary>Sans serif (<c>swiss</c>).</summary>
+    Swiss,
+    /// <summary>Fixed pitch (<c>modern</c>).</summary>
+    Modern,
+    /// <summary>Script (<c>script</c>).</summary>
+    Script,
+    /// <summary>Decorative (<c>decorative</c>).</summary>
+    Decorative,
+    /// <summary>Not stated (<c>auto</c>).</summary>
+    Auto,
+}
+
+/// <summary>A font table's pitch of a family.</summary>
+public enum FontPitch
+{
+    /// <summary>Every character has the same width.</summary>
+    Fixed,
+    /// <summary>Widths vary.</summary>
+    Variable,
+    /// <summary>Not stated.</summary>
+    Default,
+}
+
+/// <summary>A document's description of a font family, from its font table. Each member is null when the document doesn't state it.</summary>
+/// <param name="Class">The general class (<c>w:family</c>).</param>
+/// <param name="Pitch">The pitch (<c>w:pitch</c>).</param>
+/// <param name="Panose">The PANOSE classification (<c>w:panose1</c>), 20 hex digits.</param>
+/// <param name="Charset">The character set (<c>w:charset</c>).</param>
+public sealed record FontDescription(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FontClass? Class = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FontPitch? Pitch = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Panose = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Charset = null);
 
 /// <summary>A font face.</summary>
 /// <param name="Family">The family.</param>
@@ -190,20 +303,41 @@ public sealed record FontRequest(string Family, bool Bold, bool Italic);
 /// <param name="Italic">Italic.</param>
 public sealed record FaceInfo(string Family, bool Bold, bool Italic);
 
-/// <summary>A substitution rule.</summary>
-/// <param name="From">The family to replace.</param>
+/// <summary>A draw-time replacement: <paramref name="From"/> is drawn with <paramref name="To"/>, even when it is in the library.</summary>
+/// <param name="From">The family to replace, case-insensitive.</param>
 /// <param name="To">The family to draw with.</param>
 /// <param name="Bold">Only for bold (true) or regular (false) faces.</param>
 /// <param name="Italic">Only for italic (true) or upright (false) faces.</param>
-public sealed record SubstitutionRule(
+public sealed record FontRule(
     string From, string To,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Bold = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Italic = null);
 
-/// <summary>Where a resolved font comes from: its bytes, or a URI to fetch.</summary>
+/// <summary>A resolver's answer: the font's bytes or a URI to fetch, or a family or category to draw the requested family with.</summary>
 public sealed class FontSource
 {
-    private FontSource(ReadOnlyMemory<byte> data, Uri? uri) => (Data, Uri) = (data, uri);
+    private FontSource(ReadOnlyMemory<byte> data, Uri? uri, string? family = null, GenericFamily? category = null) =>
+        (Data, Uri, Family, Category) = (data, uri, family, category);
+
+    /// <summary>The family to draw with, when the answer is one.</summary>
+    public string? Family { get; }
+
+    /// <summary>The category whose default draws, when the answer is one.</summary>
+    public GenericFamily? Category { get; }
+
+    /// <summary>Draw the requested family with another, for every style, until aliases or replacements change.</summary>
+    /// <param name="family">The family.</param>
+    /// <returns>The answer.</returns>
+    public static FontSource FromFamily(string family)
+    {
+        ArgumentNullException.ThrowIfNull(family);
+        return new(default, null, family);
+    }
+
+    /// <summary>Draw the requested family with the default of a generic category, for every style.</summary>
+    /// <param name="category">The category.</param>
+    /// <returns>The answer.</returns>
+    public static FontSource FromCategory(GenericFamily category) => new(default, null, null, category);
 
     /// <summary>The font bytes, when given as bytes.</summary>
     public ReadOnlyMemory<byte> Data { get; }
@@ -219,7 +353,3 @@ public sealed class FontSource
     /// <param name="uri">The URI.</param>
     public static FontSource FromUri(Uri uri) => new(default, uri);
 }
-
-/// <summary>Options for Google Fonts.</summary>
-/// <param name="Families">Only these families; by default any.</param>
-public sealed record GoogleFontsOptions(IReadOnlyList<string>? Families = null);

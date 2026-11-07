@@ -55,7 +55,7 @@ pub(crate) fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync)
 
 pub fn fonts() -> &'static Fonts {
     thread_local! {
-        static FONTS: &'static Fonts = Box::leak(Box::new(Fonts::system()));
+        static FONTS: &'static Fonts = Box::leak(Box::new(Fonts::system_recommended()));
     }
     FONTS.with(|f| *f)
 }

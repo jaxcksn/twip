@@ -25,7 +25,7 @@ cancelled conversion leaves an existing file as it was. Streams you pass stay op
 
 Disposing a font set while conversions use it is safe: each running conversion holds its own reference, and later
 ones throw `ObjectDisposedException`. A font set is not a `FontLibrary`. A `FontLibrary` belongs to editor sessions and
-changes over time (resolvers, Google Fonts, added faces); a font set never changes.
+changes over time (resolvers, added faces, new settings); a font set never changes.
 
 Failures throw `EditorException`: `ImportFailed` for bytes that aren't a readable DOCX, `Unsupported` for an encrypted
 or binary document, and `ExportFailed` for a font set with no faces. Cancellation throws `OperationCanceledException`.
@@ -49,7 +49,8 @@ for pdf in pdfs {
 }
 ```
 
-`FontSet::builder()` adds font files and bytes, substitution rules and a default family. `convert_cancellable` takes
+`FontSet::builder()` adds font files and bytes, and takes the same settings as a `FontLibrary`: `replacements`,
+`aliases`, `generic_defaults`, `classification`, `fallback`, `character_fallback` and `symbol_fallback`. `convert_cancellable` takes
 an `AtomicBool` and stops with `Aborted` soon after it is set. Errors are `twip::api::error::Error`, with the codes
 above.
 
@@ -74,10 +75,22 @@ every SDK.
 
 ## Fonts on a server
 
-Twip draws with the fonts you give it and doesn't download any. When a family the document asks for isn't in the font
-set, the text is drawn in the default family and the conversion warns with `pdf-font-fallback`. On a server, either
-install the fonts your documents use or pass their files to the font set, with substitution rules for families you
-replace (Calibri with Carlito, Cambria with Caladea).
+Twip draws with the fonts you give it, makes no font choices of its own, and doesn't download any. A font set takes
+the settings a `FontLibrary` does, resolved in the same order (see [How a family resolves](fonts#how-a-family-resolves)):
+
+| .NET (`PdfFontSetOptions`) | Rust (`FontSetBuilder`) | |
+|---|---|---|
+| `Replacements` | `replacements` | [draw-time replacements](fonts#draw-time-replacements) |
+| `Aliases` | `aliases` | [aliases](fonts#aliases), for families the set doesn't have |
+| `GenericDefaults`, `ClassifyFromDocument` | `generic_defaults`, `classification` | [generic defaults](fonts#generic-defaults) |
+| `Fallback` | `fallback` | [the general fallback](fonts#the-general-fallback-and-the-last-resort) |
+| `CharacterFallback`, `SymbolFallback` | `character_fallback`, `symbol_fallback` | [character fallback](fonts#character-fallback-and-the-symbol-font) |
+
+A conversion has no resolver, so every family the set can't draw is missing. The result's `Fonts` (`fonts` in Rust)
+lists them, per family and style, with what drew them and why, and the characters no font had, the same report an
+editor session gives. Each also warns with `pdf-font-fallback`. On a server, install the fonts your documents use or
+pass their files to the font set, and alias the families you can't ship to metric-compatible ones (Calibri to Carlito,
+Cambria to Caladea): see [A recommended setup](fonts#a-recommended-setup).
 
 ## Alpine and other containers
 

@@ -479,10 +479,10 @@ fn missing_faces_are_requested_once() {
     assert!(requests.iter().any(|r| r["family"] == "Georgia"), "{log:?}");
     assert!(log.iter().filter(|(_, k, _)| *k == kind::FONT_REQUEST).all(|(session, ..)| *session == 0), "font requests are the engine's");
     for r in &requests {
-        assert_eq!(f.call(0, Method::FontMarkUnresolved, (*r).clone()).0, 0);
+        assert_eq!(f.call(0, Method::FontAnswer, json!({ "request": r, "answer": { "kind": "missing" } })).0, 0);
     }
     let log = f.take_log();
-    assert!(log.iter().any(|(_, k, e)| *k == kind::EVENT && e["type"] == "fontsChanged"), "unresolved families are reported: {log:?}");
+    assert!(log.iter().any(|(_, k, e)| *k == kind::EVENT && e["type"] == "fontsChanged"), "missing families are reported: {log:?}");
     // SAFETY: as above.
     assert_eq!(unsafe { twip_open(f.engine, s, docx.as_ptr(), docx.len(), std::ptr::null(), 0, &mut out) }, 0);
     take(&mut out);

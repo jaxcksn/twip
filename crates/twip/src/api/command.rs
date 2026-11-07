@@ -409,6 +409,8 @@ commands! {
     RemoveElement(#[serde(with = "value")] ElementId),
     /// Replaces text in element codes, tags or titles, case-sensitive; result `{ changed }`. Undo: one step.
     ReplaceInElements(ReplaceInElements),
+    /// Rewrites a font family's name in the document; result `{ changed, skipped }`. Undo: one step.
+    ReplaceFont(ReplaceFont),
     /// Wavy marks with a tooltip on elements. Undo: view.
     MarkElements(MarkElements),
     /// Fills the selected placeholder, or every unfilled one with `key`: each becomes a plain picture, its content
@@ -1518,6 +1520,46 @@ pub struct ReplaceInElements {
     pub ids: Option<Vec<ElementId>>,
 }
 
+/// `replaceFont`'s options: rewrite `from` to `to` in the document itself, so the saved file names `to`.
+///
+/// In document scope with no style filter it rewrites the text (each run's family slots, paragraph marks and symbol
+/// characters) and the tables below it: styles, document defaults, numbering levels, the theme's font slots and the
+/// font table. In selection scope, or with a filter, it rewrites only the text, and a matching run whose family comes
+/// from a style or the theme gets `to` as its own. With tracked changes on, the text's changes are formatting
+/// revisions. Text inside locked content controls is skipped and counted.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceFont {
+    /// The family to rewrite, case-insensitive.
+    pub from: String,
+    /// The family it becomes.
+    pub to: String,
+    /// The whole document (the default) or the selection.
+    #[serde(default, skip_serializing_if = "is_document")]
+    pub scope: ReplaceScope,
+    /// Only bold (`true`) or regular-weight (`false`) text; `None` for both.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bold: Option<bool>,
+    /// Only italic (`true`) or upright (`false`) text; `None` for both.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
+}
+
+fn is_document(scope: &ReplaceScope) -> bool {
+    *scope == ReplaceScope::Document
+}
+
+/// Where `replaceFont` rewrites.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReplaceScope {
+    /// The whole document: every story, and the tables below the text.
+    #[default]
+    Document,
+    /// The selected text.
+    Selection,
+}
+
 /// How serious an element mark is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1712,6 +1754,15 @@ pub enum CommandResult {
     DataPart {
         /// The data part's item id.
         item_id: String,
+    },
+    // Before `Changed`: untagged, the variant with more fields reads first.
+    /// What `replaceFont` rewrote: `{ changed, skipped }`.
+    FontReplaced {
+        /// The places rewritten: runs, paragraph marks, symbol characters, styles, document defaults, numbering
+        /// levels, theme font slots and font table entries.
+        changed: u32,
+        /// The places inside locked content controls, left as they were.
+        skipped: u32,
     },
     /// Elements changed by `replaceInElements`: `{ changed }`.
     Changed {

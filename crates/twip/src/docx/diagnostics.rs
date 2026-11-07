@@ -11,10 +11,8 @@ pub enum WarningCode {
     UnsupportedElement,
     /// An image whose data isn't a format the engine decodes: it draws as an empty box.
     ImageUndecodable,
-    /// A font family no face in the library has: text falls back to another family.
+    /// A font family the library can't draw as the document asks: a stand-in draws it.
     FontUnresolved,
-    /// A family drawn with a substitute the substitution rules name (informational, off by default).
-    FontSubstituted,
     /// Content a write had to rewrite, losing bookmarks, comments or hyperlinks inside it.
     RewrittenContent,
     /// Text a PDF export drew with a fallback font.
@@ -52,7 +50,6 @@ impl WarningCode {
             WarningCode::UnsupportedElement => "unsupported-element",
             WarningCode::ImageUndecodable => "image-undecodable",
             WarningCode::FontUnresolved => "font-unresolved",
-            WarningCode::FontSubstituted => "font-substituted",
             WarningCode::RewrittenContent => "rewritten-content",
             WarningCode::PdfFontFallback => "pdf-font-fallback",
             WarningCode::PdfArchivalClaimDropped => "pdf-archival-claim-dropped",

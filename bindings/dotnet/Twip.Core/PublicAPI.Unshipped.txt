@@ -235,10 +235,6 @@ Twip.CommandGroup.Tabs = 6 -> Twip.CommandGroup
 Twip.CommandGroup.Text = 0 -> Twip.CommandGroup
 Twip.CommandGroup.View = 16 -> Twip.CommandGroup
 Twip.CommandId
-Twip.CommandId.AcceptAllRevisions = 160 -> Twip.CommandId
-Twip.CommandId.AcceptRevision = 156 -> Twip.CommandId
-Twip.CommandId.AcceptRevisionsInSelection = 158 -> Twip.CommandId
-Twip.CommandId.AddComment = 163 -> Twip.CommandId
 Twip.CommandId.AddTabStop = 59 -> Twip.CommandId
 Twip.CommandId.AutoFitColumns = 98 -> Twip.CommandId
 Twip.CommandId.ChangeCase = 44 -> Twip.CommandId
@@ -252,20 +248,17 @@ Twip.CommandId.DecreaseIndent = 52 -> Twip.CommandId
 Twip.CommandId.Delete = 8 -> Twip.CommandId
 Twip.CommandId.DeleteCells = 91 -> Twip.CommandId
 Twip.CommandId.DeleteColumns = 89 -> Twip.CommandId
-Twip.CommandId.DeleteComment = 166 -> Twip.CommandId
 Twip.CommandId.DeleteObject = 121 -> Twip.CommandId
 Twip.CommandId.DeleteRows = 88 -> Twip.CommandId
 Twip.CommandId.DeleteTabStop = 61 -> Twip.CommandId
 Twip.CommandId.DeleteTable = 90 -> Twip.CommandId
 Twip.CommandId.DistributeColumns = 96 -> Twip.CommandId
 Twip.CommandId.DistributeRows = 95 -> Twip.CommandId
-Twip.CommandId.EditComment = 165 -> Twip.CommandId
 Twip.CommandId.EditFooter = 73 -> Twip.CommandId
 Twip.CommandId.EditHeader = 72 -> Twip.CommandId
 Twip.CommandId.EditHyperlink = 83 -> Twip.CommandId
 Twip.CommandId.Escape = 22 -> Twip.CommandId
 Twip.CommandId.FillControl = 145 -> Twip.CommandId
-Twip.CommandId.FillPlaceholder = 151 -> Twip.CommandId
 Twip.CommandId.GoBack = 21 -> Twip.CommandId
 Twip.CommandId.GoToPage = 24 -> Twip.CommandId
 Twip.CommandId.GrowFont = 37 -> Twip.CommandId
@@ -289,7 +282,6 @@ Twip.CommandId.InsertTab = 6 -> Twip.CommandId
 Twip.CommandId.InsertTable = 76 -> Twip.CommandId
 Twip.CommandId.InsertText = 0 -> Twip.CommandId
 Twip.CommandId.InsertTextBox = 78 -> Twip.CommandId
-Twip.CommandId.MarkElements = 150 -> Twip.CommandId
 Twip.CommandId.MergeCells = 92 -> Twip.CommandId
 Twip.CommandId.MoveColumnBoundary = 71 -> Twip.CommandId
 Twip.CommandId.MoveRows = 97 -> Twip.CommandId
@@ -302,29 +294,19 @@ Twip.CommandId.Paste = 11 -> Twip.CommandId
 Twip.CommandId.PasteFormatting = 46 -> Twip.CommandId
 Twip.CommandId.PasteText = 12 -> Twip.CommandId
 Twip.CommandId.Redo = 14 -> Twip.CommandId
-Twip.CommandId.RejectAllRevisions = 161 -> Twip.CommandId
-Twip.CommandId.RejectRevision = 157 -> Twip.CommandId
-Twip.CommandId.RejectRevisionsInSelection = 159 -> Twip.CommandId
 Twip.CommandId.RemoveControl = 144 -> Twip.CommandId
-Twip.CommandId.RemoveDataPart = 153 -> Twip.CommandId
 Twip.CommandId.RemoveElement = 148 -> Twip.CommandId
 Twip.CommandId.RemoveHyperlink = 84 -> Twip.CommandId
 Twip.CommandId.Repeat = 15 -> Twip.CommandId
 Twip.CommandId.ReplaceInElements = 149 -> Twip.CommandId
-Twip.CommandId.ReplyToComment = 164 -> Twip.CommandId
 Twip.CommandId.ResetObjectSize = 115 -> Twip.CommandId
-Twip.CommandId.ResolveComment = 167 -> Twip.CommandId
 Twip.CommandId.Select = 17 -> Twip.CommandId
 Twip.CommandId.SelectAll = 16 -> Twip.CommandId
-Twip.CommandId.SelectComment = 169 -> Twip.CommandId
 Twip.CommandId.SelectNextObject = 23 -> Twip.CommandId
-Twip.CommandId.SelectRevision = 162 -> Twip.CommandId
-Twip.CommandId.SetActiveComment = 168 -> Twip.CommandId
 Twip.CommandId.SetAlignment = 47 -> Twip.CommandId
 Twip.CommandId.SetAllCaps = 33 -> Twip.CommandId
 Twip.CommandId.SetAltText = 120 -> Twip.CommandId
 Twip.CommandId.SetAnchorLocked = 117 -> Twip.CommandId
-Twip.CommandId.SetAuthorColor = 170 -> Twip.CommandId
 Twip.CommandId.SetBold = 25 -> Twip.CommandId
 Twip.CommandId.SetCellAlignment = 99 -> Twip.CommandId
 Twip.CommandId.SetCellBorders = 101 -> Twip.CommandId
@@ -357,8 +339,6 @@ Twip.CommandId.SetLineSpacing = 48 -> Twip.CommandId
 Twip.CommandId.SetList = 54 -> Twip.CommandId
 Twip.CommandId.SetListLevel = 55 -> Twip.CommandId
 Twip.CommandId.SetMargins = 64 -> Twip.CommandId
-Twip.CommandId.SetMarkupView = 155 -> Twip.CommandId
-Twip.CommandId.SetMode = 173 -> Twip.CommandId
 Twip.CommandId.SetObjectSize = 114 -> Twip.CommandId
 Twip.CommandId.SetObjectWrap = 116 -> Twip.CommandId
 Twip.CommandId.SetOrientation = 65 -> Twip.CommandId
@@ -380,10 +360,7 @@ Twip.CommandId.SetTableIndent = 111 -> Twip.CommandId
 Twip.CommandId.SetTableStyle = 112 -> Twip.CommandId
 Twip.CommandId.SetTableStyleOptions = 113 -> Twip.CommandId
 Twip.CommandId.SetTableWidth = 109 -> Twip.CommandId
-Twip.CommandId.SetTrackChanges = 154 -> Twip.CommandId
 Twip.CommandId.SetUnderline = 27 -> Twip.CommandId
-Twip.CommandId.SetViewOptions = 172 -> Twip.CommandId
-Twip.CommandId.SetZoom = 171 -> Twip.CommandId
 Twip.CommandId.ShowFieldCodes = 140 -> Twip.CommandId
 Twip.CommandId.ShrinkFont = 38 -> Twip.CommandId
 Twip.CommandId.SplitCells = 93 -> Twip.CommandId
@@ -392,7 +369,6 @@ Twip.CommandId.Undo = 13 -> Twip.CommandId
 Twip.CommandId.UnlinkFields = 139 -> Twip.CommandId
 Twip.CommandId.UpdateFields = 137 -> Twip.CommandId
 Twip.CommandId.WrapInRepeatingSection = 147 -> Twip.CommandId
-Twip.CommandId.WriteDataPart = 152 -> Twip.CommandId
 Twip.CommandInfo
 Twip.CommandInfo.<Clone>$() -> Twip.CommandInfo!
 Twip.CommandInfo.CommandInfo(Twip.CommandId Id, string! Label, Twip.CommandGroup Group, Twip.Shortcuts! Shortcuts, bool TakesArguments, bool Mutates, Twip.UndoGrouping Undo) -> void
@@ -1288,20 +1264,17 @@ Twip.FontLibrary
 Twip.FontLibrary.AddAsync(System.ReadOnlyMemory<byte> data, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.FaceInfo!>!>!
 Twip.FontLibrary.AddAsync(string! path, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.FaceInfo!>!>!
 Twip.FontLibrary.GetFamiliesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
-Twip.FontLibrary.SetDefault(string! family) -> void
+Twip.FontLibrary.SetFallback(string? family) -> void
 Twip.FontLibrary.SetResolver(System.Func<Twip.FontRequest!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Twip.FontSource?>>! resolver) -> void
-Twip.FontLibrary.Substitute(System.Collections.Generic.IEnumerable<Twip.SubstitutionRule!>! rules) -> void
-Twip.FontLibrary.Substitute(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! rules) -> void
-Twip.FontLibrary.UseGoogleFonts(Twip.GoogleFontsOptions? options = null) -> void
+Twip.FontLibrary.SetReplacements(System.Collections.Generic.IEnumerable<Twip.FontRule!>! rules) -> void
+Twip.FontLibrary.SetReplacements(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! rules) -> void
 Twip.FontRequest
 Twip.FontRequest.<Clone>$() -> Twip.FontRequest!
 Twip.FontRequest.Bold.get -> bool
 Twip.FontRequest.Bold.init -> void
-Twip.FontRequest.Deconstruct(out string! Family, out bool Bold, out bool Italic) -> void
 Twip.FontRequest.Equals(Twip.FontRequest? other) -> bool
 Twip.FontRequest.Family.get -> string!
 Twip.FontRequest.Family.init -> void
-Twip.FontRequest.FontRequest(string! Family, bool Bold, bool Italic) -> void
 Twip.FontRequest.Italic.get -> bool
 Twip.FontRequest.Italic.init -> void
 Twip.FontSource
@@ -1311,18 +1284,13 @@ Twip.FontStatus
 Twip.FontStatus.<Clone>$() -> Twip.FontStatus!
 Twip.FontStatus.Equals(Twip.FontStatus? other) -> bool
 Twip.FontStatus.FontStatus() -> void
-Twip.FontStatus.Pending.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Twip.FontStatus.Pending.init -> void
-Twip.FontStatus.Unresolved.get -> System.Collections.Generic.IReadOnlyList<string!>!
-Twip.FontStatus.Unresolved.init -> void
 Twip.FontStyleChoice
 Twip.FontStyleChoice.Bold = 2 -> Twip.FontStyleChoice
 Twip.FontStyleChoice.BoldItalic = 3 -> Twip.FontStyleChoice
 Twip.FontStyleChoice.Italic = 1 -> Twip.FontStyleChoice
 Twip.FontStyleChoice.Regular = 0 -> Twip.FontStyleChoice
 Twip.FontsChangedEventArgs
-Twip.FontsChangedEventArgs.Pending.get -> System.Collections.Generic.IReadOnlyList<string!>!
-Twip.FontsChangedEventArgs.Unresolved.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Twip.FormatValue<T>
 Twip.FormatValue<T>.Equals(Twip.FormatValue<T> other) -> bool
 Twip.FormatValue<T>.FormatValue() -> void
@@ -1389,13 +1357,6 @@ Twip.GestureTarget.Content.init -> void
 Twip.GestureTarget.Deconstruct(out Twip.MenuTarget? Content, out Twip.GestureArea? Area) -> void
 Twip.GestureTarget.Equals(Twip.GestureTarget? other) -> bool
 Twip.GestureTarget.GestureTarget(Twip.MenuTarget? Content, Twip.GestureArea? Area) -> void
-Twip.GoogleFontsOptions
-Twip.GoogleFontsOptions.<Clone>$() -> Twip.GoogleFontsOptions!
-Twip.GoogleFontsOptions.Deconstruct(out System.Collections.Generic.IReadOnlyList<string!>? Families) -> void
-Twip.GoogleFontsOptions.Equals(Twip.GoogleFontsOptions? other) -> bool
-Twip.GoogleFontsOptions.Families.get -> System.Collections.Generic.IReadOnlyList<string!>?
-Twip.GoogleFontsOptions.Families.init -> void
-Twip.GoogleFontsOptions.GoogleFontsOptions(System.Collections.Generic.IReadOnlyList<string!>? Families = null) -> void
 Twip.HeaderFooterInfo
 Twip.HeaderFooterInfo.<Clone>$() -> Twip.HeaderFooterInfo!
 Twip.HeaderFooterInfo.Deconstruct(out Twip.HeaderFooterKind Kind, out Twip.HeaderFooterType Type, out int Section, out int Page, out string! Label) -> void
@@ -2593,19 +2554,19 @@ Twip.SubmenuItem.Items.init -> void
 Twip.SubmenuItem.Label.get -> string!
 Twip.SubmenuItem.Label.init -> void
 Twip.SubmenuItem.SubmenuItem(string! Label, System.Collections.Generic.IReadOnlyList<Twip.MenuItem!>! Items) -> void
-Twip.SubstitutionRule
-Twip.SubstitutionRule.<Clone>$() -> Twip.SubstitutionRule!
-Twip.SubstitutionRule.Bold.get -> bool?
-Twip.SubstitutionRule.Bold.init -> void
-Twip.SubstitutionRule.Deconstruct(out string! From, out string! To, out bool? Bold, out bool? Italic) -> void
-Twip.SubstitutionRule.Equals(Twip.SubstitutionRule? other) -> bool
-Twip.SubstitutionRule.From.get -> string!
-Twip.SubstitutionRule.From.init -> void
-Twip.SubstitutionRule.Italic.get -> bool?
-Twip.SubstitutionRule.Italic.init -> void
-Twip.SubstitutionRule.SubstitutionRule(string! From, string! To, bool? Bold = null, bool? Italic = null) -> void
-Twip.SubstitutionRule.To.get -> string!
-Twip.SubstitutionRule.To.init -> void
+Twip.FontRule
+Twip.FontRule.<Clone>$() -> Twip.FontRule!
+Twip.FontRule.Bold.get -> bool?
+Twip.FontRule.Bold.init -> void
+Twip.FontRule.Deconstruct(out string! From, out string! To, out bool? Bold, out bool? Italic) -> void
+Twip.FontRule.Equals(Twip.FontRule? other) -> bool
+Twip.FontRule.From.get -> string!
+Twip.FontRule.From.init -> void
+Twip.FontRule.Italic.get -> bool?
+Twip.FontRule.Italic.init -> void
+Twip.FontRule.FontRule(string! From, string! To, bool? Bold = null, bool? Italic = null) -> void
+Twip.FontRule.To.get -> string!
+Twip.FontRule.To.init -> void
 Twip.SuggestionItem
 Twip.SuggestionItem.Action.get -> Twip.MenuAction!
 Twip.SuggestionItem.Action.init -> void
@@ -2895,17 +2856,16 @@ Twip.Warning.Message.get -> string!
 Twip.Warning.Message.init -> void
 Twip.Warning.Warning(Twip.WarningCode Code, string! Message, int Count, Twip.WarningLocation? Location = null) -> void
 Twip.WarningCode
-Twip.WarningCode.AuthorMissing = 8 -> Twip.WarningCode
-Twip.WarningCode.CommentReferenceOrphan = 10 -> Twip.WarningCode
-Twip.WarningCode.UnknownPreset = 11 -> Twip.WarningCode
-Twip.WarningCode.CommentUnanchored = 9 -> Twip.WarningCode
-Twip.WarningCode.FontSubstituted = 3 -> Twip.WarningCode
+Twip.WarningCode.AuthorMissing = 7 -> Twip.WarningCode
+Twip.WarningCode.CommentReferenceOrphan = 9 -> Twip.WarningCode
+Twip.WarningCode.UnknownPreset = 10 -> Twip.WarningCode
+Twip.WarningCode.CommentUnanchored = 8 -> Twip.WarningCode
 Twip.WarningCode.FontUnresolved = 2 -> Twip.WarningCode
 Twip.WarningCode.ImageUndecodable = 1 -> Twip.WarningCode
-Twip.WarningCode.PdfFontFallback = 5 -> Twip.WarningCode
-Twip.WarningCode.RangeUnpaired = 7 -> Twip.WarningCode
-Twip.WarningCode.RevisionIdMissing = 6 -> Twip.WarningCode
-Twip.WarningCode.RewrittenContent = 4 -> Twip.WarningCode
+Twip.WarningCode.PdfFontFallback = 4 -> Twip.WarningCode
+Twip.WarningCode.RangeUnpaired = 6 -> Twip.WarningCode
+Twip.WarningCode.RevisionIdMissing = 5 -> Twip.WarningCode
+Twip.WarningCode.RewrittenContent = 3 -> Twip.WarningCode
 Twip.WarningCode.UnsupportedElement = 0 -> Twip.WarningCode
 Twip.WarningEventArgs
 Twip.WarningEventArgs.Warning.get -> Twip.Warning!
@@ -3113,9 +3073,6 @@ override Twip.GestureBinding.ToString() -> string!
 override Twip.GestureTarget.Equals(object? obj) -> bool
 override Twip.GestureTarget.GetHashCode() -> int
 override Twip.GestureTarget.ToString() -> string!
-override Twip.GoogleFontsOptions.Equals(object? obj) -> bool
-override Twip.GoogleFontsOptions.GetHashCode() -> int
-override Twip.GoogleFontsOptions.ToString() -> string!
 override Twip.HeaderFooterInfo.Equals(object? obj) -> bool
 override Twip.HeaderFooterInfo.GetHashCode() -> int
 override Twip.HeaderFooterInfo.ToString() -> string!
@@ -3323,9 +3280,9 @@ override Twip.StylePreview.ToString() -> string!
 override Twip.SubmenuItem.Equals(object? obj) -> bool
 override Twip.SubmenuItem.GetHashCode() -> int
 override Twip.SubmenuItem.ToString() -> string!
-override Twip.SubstitutionRule.Equals(object? obj) -> bool
-override Twip.SubstitutionRule.GetHashCode() -> int
-override Twip.SubstitutionRule.ToString() -> string!
+override Twip.FontRule.Equals(object? obj) -> bool
+override Twip.FontRule.GetHashCode() -> int
+override Twip.FontRule.ToString() -> string!
 override Twip.SuggestionItem.Equals(object? obj) -> bool
 override Twip.SuggestionItem.GetHashCode() -> int
 override Twip.SuggestionItem.ToString() -> string!
@@ -3677,8 +3634,6 @@ static Twip.GestureBinding.operator !=(Twip.GestureBinding? left, Twip.GestureBi
 static Twip.GestureBinding.operator ==(Twip.GestureBinding? left, Twip.GestureBinding? right) -> bool
 static Twip.GestureTarget.operator !=(Twip.GestureTarget? left, Twip.GestureTarget? right) -> bool
 static Twip.GestureTarget.operator ==(Twip.GestureTarget? left, Twip.GestureTarget? right) -> bool
-static Twip.GoogleFontsOptions.operator !=(Twip.GoogleFontsOptions? left, Twip.GoogleFontsOptions? right) -> bool
-static Twip.GoogleFontsOptions.operator ==(Twip.GoogleFontsOptions? left, Twip.GoogleFontsOptions? right) -> bool
 static Twip.HeaderFooterInfo.operator !=(Twip.HeaderFooterInfo? left, Twip.HeaderFooterInfo? right) -> bool
 static Twip.HeaderFooterInfo.operator ==(Twip.HeaderFooterInfo? left, Twip.HeaderFooterInfo? right) -> bool
 static Twip.Heading.operator !=(Twip.Heading? left, Twip.Heading? right) -> bool
@@ -3851,8 +3806,8 @@ static Twip.StylePreview.operator !=(Twip.StylePreview? left, Twip.StylePreview?
 static Twip.StylePreview.operator ==(Twip.StylePreview? left, Twip.StylePreview? right) -> bool
 static Twip.SubmenuItem.operator !=(Twip.SubmenuItem? left, Twip.SubmenuItem? right) -> bool
 static Twip.SubmenuItem.operator ==(Twip.SubmenuItem? left, Twip.SubmenuItem? right) -> bool
-static Twip.SubstitutionRule.operator !=(Twip.SubstitutionRule? left, Twip.SubstitutionRule? right) -> bool
-static Twip.SubstitutionRule.operator ==(Twip.SubstitutionRule? left, Twip.SubstitutionRule? right) -> bool
+static Twip.FontRule.operator !=(Twip.FontRule? left, Twip.FontRule? right) -> bool
+static Twip.FontRule.operator ==(Twip.FontRule? left, Twip.FontRule? right) -> bool
 static Twip.SuggestionItem.operator !=(Twip.SuggestionItem? left, Twip.SuggestionItem? right) -> bool
 static Twip.SuggestionItem.operator ==(Twip.SuggestionItem? left, Twip.SuggestionItem? right) -> bool
 static Twip.TabStop.operator !=(Twip.TabStop? left, Twip.TabStop? right) -> bool
@@ -3922,7 +3877,6 @@ virtual Twip.MenuTarget.PrintMembers(System.Text.StringBuilder! builder) -> bool
 ~override Twip.StyleId.Equals(object obj) -> bool
 ~override Twip.ZoomLevel.Equals(object obj) -> bool
 ~override Twip.ZoomLevel.ToString() -> string
-
 Twip.AccessibleMark.Misspelling = 2 -> Twip.AccessibleMark
 Twip.AccessibleNode.AccessibleNode(long Id, Twip.AccessibleRole Role, System.Collections.Generic.IReadOnlyList<Twip.AccessibleNode!>! Children) -> void
 Twip.AccessibleNode.Author.get -> string?
@@ -4217,7 +4171,6 @@ Twip.ColorTransformKind.SatOff = 5 -> Twip.ColorTransformKind
 Twip.ColorTransformKind.Shade = 1 -> Twip.ColorTransformKind
 Twip.ColorTransformKind.Tint = 0 -> Twip.ColorTransformKind
 Twip.CommandId.ArrangeObject = 131 -> Twip.CommandId
-Twip.CommandId.DescribeFormatting = 190 -> Twip.CommandId
 Twip.CommandId.FlipObject = 130 -> Twip.CommandId
 Twip.CommandId.GroupObjects = 132 -> Twip.CommandId
 Twip.CommandId.InsertShape = 79 -> Twip.CommandId
@@ -4769,9 +4722,6 @@ Twip.ChromeThemeKind
 Twip.ChromeThemeKind.Dark = 1 -> Twip.ChromeThemeKind
 Twip.ChromeThemeKind.HighContrast = 2 -> Twip.ChromeThemeKind
 Twip.ChromeThemeKind.Light = 0 -> Twip.ChromeThemeKind
-Twip.CommandId.SetRulerTabType = 174 -> Twip.CommandId
-Twip.CommandId.ShowTabStop = 176 -> Twip.CommandId
-Twip.CommandId.ShowTabTypes = 175 -> Twip.CommandId
 Twip.DialogKind.AutoCorrect = 10 -> Twip.DialogKind
 Twip.DocumentAppearance
 Twip.DocumentAppearance.Dark = 1 -> Twip.DocumentAppearance
@@ -4982,10 +4932,6 @@ Twip.AutoCorrectOptions.SmartQuotes.get -> bool
 Twip.AutoCorrectOptions.SmartQuotes.init -> void
 Twip.AutoCorrectOptions.TwoInitialCapitals.get -> bool
 Twip.AutoCorrectOptions.TwoInitialCapitals.init -> void
-Twip.CommandId.NeverAutoCorrect = 179 -> Twip.CommandId
-Twip.CommandId.RevertAutoCorrect = 178 -> Twip.CommandId
-Twip.CommandId.SetAutoCorrect = 177 -> Twip.CommandId
-Twip.CommandId.ShowAutoCorrectOptions = 180 -> Twip.CommandId
 Twip.EditorCommands.NeverAutoCorrectAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.RevertAutoCorrectAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetAutoCorrectAsync(Twip.AutoCorrectChange! change, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -5011,7 +4957,6 @@ static Twip.EditorOperation.NeverAutoCorrect() -> Twip.EditorOperation!
 static Twip.EditorOperation.RevertAutoCorrect() -> Twip.EditorOperation!
 static Twip.EditorOperation.SetAutoCorrect(Twip.AutoCorrectChange! change) -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowAutoCorrectOptions() -> Twip.EditorOperation!
-Twip.CommandId.SetTablePosition = 181 -> Twip.CommandId
 Twip.EditorCommands.SetTablePositionAsync(Twip.TablePosition? position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.TablePosition
 Twip.TablePosition.<Clone>$() -> Twip.TablePosition!
@@ -5030,7 +4975,6 @@ override Twip.TablePosition.ToString() -> string!
 static Twip.EditorOperation.SetTablePosition(Twip.TablePosition? position) -> Twip.EditorOperation!
 static Twip.TablePosition.operator !=(Twip.TablePosition? left, Twip.TablePosition? right) -> bool
 static Twip.TablePosition.operator ==(Twip.TablePosition? left, Twip.TablePosition? right) -> bool
-Twip.CommandId.ClosePopover = 182 -> Twip.CommandId
 Twip.EditorCommands.ClosePopoverAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Twip.EditorOperation.ClosePopover() -> Twip.EditorOperation!
 Twip.Hosting.EditorHost.ResetBackground() -> void
@@ -5082,8 +5026,6 @@ Twip.AutoCorrectOptions.NumberedLists.get -> bool
 Twip.AutoCorrectOptions.NumberedLists.init -> void
 Twip.AutoCorrectOptions.BulletedLists.get -> bool
 Twip.AutoCorrectOptions.BulletedLists.init -> void
-Twip.CommandId.SetSubTemplateRules = 183 -> Twip.CommandId
-Twip.CommandId.SetSubTemplateView = 184 -> Twip.CommandId
 Twip.EditRefusedEventArgs
 Twip.EditRefusedEventArgs.Element.get -> Twip.ElementId?
 Twip.EditRefusedEventArgs.Reason.get -> Twip.RefusalReason!
@@ -5143,8 +5085,8 @@ Twip.SubTemplateReference.Resolution.init -> void
 Twip.SubTemplateReference.SubTemplateReference(string! Name, Twip.ReferenceResolution Resolution, bool Expanded) -> void
 Twip.ViewState.SubTemplateRules.get -> System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>?
 Twip.ViewState.SubTemplateRules.init -> void
-Twip.WarningCode.DuplicateBuildingBlock = 13 -> Twip.WarningCode
-Twip.WarningCode.GlossaryUnreadable = 12 -> Twip.WarningCode
+Twip.WarningCode.DuplicateBuildingBlock = 12 -> Twip.WarningCode
+Twip.WarningCode.GlossaryUnreadable = 11 -> Twip.WarningCode
 override Twip.ReferenceRule.Equals(object? obj) -> bool
 override Twip.ReferenceRule.GetHashCode() -> int
 override Twip.ReferenceRule.ToString() -> string!
@@ -5162,8 +5104,6 @@ static Twip.RefusalReason.operator !=(Twip.RefusalReason? left, Twip.RefusalReas
 static Twip.RefusalReason.operator ==(Twip.RefusalReason? left, Twip.RefusalReason? right) -> bool
 static Twip.SubTemplateReference.operator !=(Twip.SubTemplateReference? left, Twip.SubTemplateReference? right) -> bool
 static Twip.SubTemplateReference.operator ==(Twip.SubTemplateReference? left, Twip.SubTemplateReference? right) -> bool
-Twip.CommandId.CloseSubTemplate = 186 -> Twip.CommandId
-Twip.CommandId.EditSubTemplate = 185 -> Twip.CommandId
 Twip.EditingTarget
 Twip.EditingTarget.<Clone>$() -> Twip.EditingTarget!
 Twip.EditingTarget.Category.get -> string?
@@ -5220,16 +5160,13 @@ override Twip.SubTemplateInfo.GetHashCode() -> int
 override Twip.SubTemplateInfo.ToString() -> string!
 static Twip.SubTemplateInfo.operator !=(Twip.SubTemplateInfo? left, Twip.SubTemplateInfo? right) -> bool
 static Twip.SubTemplateInfo.operator ==(Twip.SubTemplateInfo? left, Twip.SubTemplateInfo? right) -> bool
-Twip.CommandId.CreateSubTemplate = 187 -> Twip.CommandId
-Twip.CommandId.RemoveSubTemplate = 189 -> Twip.CommandId
-Twip.CommandId.RenameSubTemplate = 188 -> Twip.CommandId
 Twip.EditorSubTemplates.CreateAsync(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, string? copyOf = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSubTemplates.RemoveAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSubTemplates.RenameAsync(string! name, string! to, bool updateReferences = false, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.WarningCode.SubTemplateCycle = 14 -> Twip.WarningCode
-Twip.WarningCode.SubTemplateNearMatch = 16 -> Twip.WarningCode
-Twip.WarningCode.SubTemplateTooDeep = 15 -> Twip.WarningCode
-Twip.WarningCode.PdfArchivalClaimDropped = 17 -> Twip.WarningCode
+Twip.WarningCode.SubTemplateCycle = 13 -> Twip.WarningCode
+Twip.WarningCode.SubTemplateNearMatch = 15 -> Twip.WarningCode
+Twip.WarningCode.SubTemplateTooDeep = 14 -> Twip.WarningCode
+Twip.WarningCode.PdfArchivalClaimDropped = 16 -> Twip.WarningCode
 static Twip.EditorOperation.CreateSubTemplate(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, string? copyOf = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.RemoveSubTemplate(string! name, string? category = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.RenameSubTemplate(string! name, string! to, bool? updateReferences = null, string? category = null) -> Twip.EditorOperation!
@@ -5240,9 +5177,7 @@ Twip.PdfConversion
 Twip.PdfConversion.<Clone>$() -> Twip.PdfConversion!
 Twip.PdfConversion.Bytes.get -> byte[]!
 Twip.PdfConversion.Bytes.init -> void
-Twip.PdfConversion.Deconstruct(out byte[]! Bytes, out System.Collections.Generic.IReadOnlyList<Twip.Warning!>! Warnings) -> void
 Twip.PdfConversion.Equals(Twip.PdfConversion? other) -> bool
-Twip.PdfConversion.PdfConversion(byte[]! Bytes, System.Collections.Generic.IReadOnlyList<Twip.Warning!>! Warnings) -> void
 Twip.PdfConversion.Warnings.get -> System.Collections.Generic.IReadOnlyList<Twip.Warning!>!
 Twip.PdfConversion.Warnings.init -> void
 Twip.PdfConverter
@@ -5252,8 +5187,8 @@ Twip.PdfFontSet.Faces.get -> System.Collections.Generic.IReadOnlyList<Twip.FaceI
 Twip.PdfFontSet.Families.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Twip.PdfFontSetOptions
 Twip.PdfFontSetOptions.<Clone>$() -> Twip.PdfFontSetOptions!
-Twip.PdfFontSetOptions.DefaultFamily.get -> string?
-Twip.PdfFontSetOptions.DefaultFamily.init -> void
+Twip.PdfFontSetOptions.Fallback.get -> string?
+Twip.PdfFontSetOptions.Fallback.init -> void
 Twip.PdfFontSetOptions.Equals(Twip.PdfFontSetOptions? other) -> bool
 Twip.PdfFontSetOptions.FontFiles.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Twip.PdfFontSetOptions.FontFiles.init -> void
@@ -5262,8 +5197,8 @@ Twip.PdfFontSetOptions.Fonts.init -> void
 Twip.PdfFontSetOptions.IncludeSystemFonts.get -> bool
 Twip.PdfFontSetOptions.IncludeSystemFonts.init -> void
 Twip.PdfFontSetOptions.PdfFontSetOptions() -> void
-Twip.PdfFontSetOptions.Substitutions.get -> System.Collections.Generic.IReadOnlyList<Twip.SubstitutionRule!>!
-Twip.PdfFontSetOptions.Substitutions.init -> void
+Twip.PdfFontSetOptions.Replacements.get -> System.Collections.Generic.IReadOnlyList<Twip.FontRule!>!
+Twip.PdfFontSetOptions.Replacements.init -> void
 override Twip.PdfConversion.Equals(object? obj) -> bool
 override Twip.PdfConversion.GetHashCode() -> int
 override Twip.PdfConversion.ToString() -> string!
@@ -5280,10 +5215,8 @@ static Twip.PdfFontSet.Create(Twip.PdfFontSetOptions! options) -> Twip.PdfFontSe
 static Twip.PdfFontSet.System.get -> Twip.PdfFontSet!
 static Twip.PdfFontSetOptions.operator !=(Twip.PdfFontSetOptions? left, Twip.PdfFontSetOptions? right) -> bool
 static Twip.PdfFontSetOptions.operator ==(Twip.PdfFontSetOptions? left, Twip.PdfFontSetOptions? right) -> bool
-Twip.CommandId.SetApplicationFieldTypes = 191 -> Twip.CommandId
 Twip.EditorCommands.SetApplicationFieldTypesAsync(System.Collections.Generic.IReadOnlyList<string!>! types, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Twip.EditorOperation.SetApplicationFieldTypes(System.Collections.Generic.IReadOnlyList<string!>! types) -> Twip.EditorOperation!
-Twip.CommandId.ReplaceBody = 192 -> Twip.CommandId
 Twip.EditorCommands.ReplaceBodyAsync(System.ReadOnlyMemory<byte> from, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Twip.EditorOperation.ReplaceBody(System.ReadOnlyMemory<byte> from) -> Twip.EditorOperation!
 Twip.EditorSubTemplates.ExportAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
@@ -5327,3 +5260,253 @@ static Twip.PictureSize.operator !=(Twip.PictureSize? left, Twip.PictureSize? ri
 static Twip.PictureSize.operator ==(Twip.PictureSize? left, Twip.PictureSize? right) -> bool
 static Twip.PlaceholderImage.operator !=(Twip.PlaceholderImage? left, Twip.PlaceholderImage? right) -> bool
 static Twip.PlaceholderImage.operator ==(Twip.PlaceholderImage? left, Twip.PlaceholderImage? right) -> bool
+Twip.FontStatus.Characters.get -> System.Collections.Generic.IReadOnlyList<Twip.MissingCharacters!>!
+Twip.FontStatus.Characters.init -> void
+Twip.FontStatus.Missing.get -> System.Collections.Generic.IReadOnlyList<Twip.MissingFont!>!
+Twip.FontStatus.Missing.init -> void
+Twip.FontStatus.Pending.get -> System.Collections.Generic.IReadOnlyList<Twip.MissingFont!>!
+Twip.FontsChangedEventArgs.Characters.get -> System.Collections.Generic.IReadOnlyList<Twip.MissingCharacters!>!
+Twip.FontsChangedEventArgs.Missing.get -> System.Collections.Generic.IReadOnlyList<Twip.MissingFont!>!
+Twip.FontsChangedEventArgs.Pending.get -> System.Collections.Generic.IReadOnlyList<Twip.MissingFont!>!
+Twip.FontsReport
+Twip.FontsReport.<Clone>$() -> Twip.FontsReport!
+Twip.FontsReport.Characters.get -> System.Collections.Generic.IReadOnlyList<Twip.MissingCharacters!>!
+Twip.FontsReport.Characters.init -> void
+Twip.FontsReport.Deconstruct(out System.Collections.Generic.IReadOnlyList<Twip.MissingFont!>! Missing, out System.Collections.Generic.IReadOnlyList<Twip.MissingCharacters!>! Characters) -> void
+Twip.FontsReport.Equals(Twip.FontsReport? other) -> bool
+Twip.FontsReport.FontsReport(System.Collections.Generic.IReadOnlyList<Twip.MissingFont!>! Missing, System.Collections.Generic.IReadOnlyList<Twip.MissingCharacters!>! Characters) -> void
+Twip.FontsReport.Missing.get -> System.Collections.Generic.IReadOnlyList<Twip.MissingFont!>!
+Twip.FontsReport.Missing.init -> void
+Twip.GenericFamily
+Twip.GenericFamily.Decorative = 4 -> Twip.GenericFamily
+Twip.GenericFamily.Monospace = 2 -> Twip.GenericFamily
+Twip.GenericFamily.SansSerif = 1 -> Twip.GenericFamily
+Twip.GenericFamily.Script = 3 -> Twip.GenericFamily
+Twip.GenericFamily.Serif = 0 -> Twip.GenericFamily
+Twip.MissingCharacters
+Twip.MissingCharacters.<Clone>$() -> Twip.MissingCharacters!
+Twip.MissingCharacters.Characters.get -> string!
+Twip.MissingCharacters.Characters.init -> void
+Twip.MissingCharacters.Deconstruct(out string! Family, out string! Characters, out bool Truncated) -> void
+Twip.MissingCharacters.Equals(Twip.MissingCharacters? other) -> bool
+Twip.MissingCharacters.Family.get -> string!
+Twip.MissingCharacters.Family.init -> void
+Twip.MissingCharacters.MissingCharacters(string! Family, string! Characters, bool Truncated) -> void
+Twip.MissingCharacters.Truncated.get -> bool
+Twip.MissingCharacters.Truncated.init -> void
+Twip.MissingFont
+Twip.MissingFont.<Clone>$() -> Twip.MissingFont!
+Twip.MissingFont.Bold.get -> bool
+Twip.MissingFont.Bold.init -> void
+Twip.MissingFont.By.get -> Twip.StandIn
+Twip.MissingFont.By.init -> void
+Twip.MissingFont.Category.get -> Twip.GenericFamily?
+Twip.MissingFont.Category.init -> void
+Twip.MissingFont.Deconstruct(out string! Family, out bool Bold, out bool Italic, out System.Collections.Generic.IReadOnlyList<string!>! Tried, out Twip.GenericFamily? Category, out string? DrawnWith, out Twip.StandIn By, out string? Error) -> void
+Twip.MissingFont.DrawnWith.get -> string?
+Twip.MissingFont.DrawnWith.init -> void
+Twip.MissingFont.Equals(Twip.MissingFont? other) -> bool
+Twip.MissingFont.Error.get -> string?
+Twip.MissingFont.Error.init -> void
+Twip.MissingFont.Family.get -> string!
+Twip.MissingFont.Family.init -> void
+Twip.MissingFont.Italic.get -> bool
+Twip.MissingFont.Italic.init -> void
+Twip.MissingFont.MissingFont(string! Family, bool Bold, bool Italic, System.Collections.Generic.IReadOnlyList<string!>! Tried, Twip.GenericFamily? Category, string? DrawnWith, Twip.StandIn By, string? Error) -> void
+Twip.MissingFont.Tried.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Twip.MissingFont.Tried.init -> void
+Twip.PdfConversion.Deconstruct(out byte[]! Bytes, out System.Collections.Generic.IReadOnlyList<Twip.Warning!>! Warnings, out Twip.FontsReport! Fonts) -> void
+Twip.PdfConversion.Fonts.get -> Twip.FontsReport!
+Twip.PdfConversion.Fonts.init -> void
+Twip.PdfConversion.PdfConversion(byte[]! Bytes, System.Collections.Generic.IReadOnlyList<Twip.Warning!>! Warnings, Twip.FontsReport! Fonts) -> void
+Twip.StandIn
+Twip.StandIn.Fallback = 2 -> Twip.StandIn
+Twip.StandIn.Generic = 1 -> Twip.StandIn
+Twip.StandIn.LastResort = 3 -> Twip.StandIn
+Twip.StandIn.Original = 0 -> Twip.StandIn
+override Twip.FontsReport.Equals(object? obj) -> bool
+override Twip.FontsReport.GetHashCode() -> int
+override Twip.FontsReport.ToString() -> string!
+override Twip.MissingCharacters.Equals(object? obj) -> bool
+override Twip.MissingCharacters.GetHashCode() -> int
+override Twip.MissingCharacters.ToString() -> string!
+override Twip.MissingFont.Equals(object? obj) -> bool
+override Twip.MissingFont.GetHashCode() -> int
+override Twip.MissingFont.ToString() -> string!
+static Twip.FontsReport.operator !=(Twip.FontsReport? left, Twip.FontsReport? right) -> bool
+static Twip.FontsReport.operator ==(Twip.FontsReport? left, Twip.FontsReport? right) -> bool
+static Twip.MissingCharacters.operator !=(Twip.MissingCharacters? left, Twip.MissingCharacters? right) -> bool
+static Twip.MissingCharacters.operator ==(Twip.MissingCharacters? left, Twip.MissingCharacters? right) -> bool
+static Twip.MissingFont.operator !=(Twip.MissingFont? left, Twip.MissingFont? right) -> bool
+static Twip.MissingFont.operator ==(Twip.MissingFont? left, Twip.MissingFont? right) -> bool
+Twip.Alias
+Twip.Alias.<Clone>$() -> Twip.Alias!
+Twip.Alias.Alias(string! From, Twip.AliasTarget! To, bool? Bold = null, bool? Italic = null) -> void
+Twip.Alias.Bold.get -> bool?
+Twip.Alias.Bold.init -> void
+Twip.Alias.Deconstruct(out string! From, out Twip.AliasTarget! To, out bool? Bold, out bool? Italic) -> void
+Twip.Alias.Equals(Twip.Alias? other) -> bool
+Twip.Alias.From.get -> string!
+Twip.Alias.From.init -> void
+Twip.Alias.Italic.get -> bool?
+Twip.Alias.Italic.init -> void
+Twip.Alias.To.get -> Twip.AliasTarget!
+Twip.Alias.To.init -> void
+Twip.AliasTarget
+Twip.AliasTarget.Category.get -> Twip.GenericFamily?
+Twip.AliasTarget.Equals(Twip.AliasTarget? other) -> bool
+Twip.AliasTarget.Family.get -> string?
+Twip.FontLibrary.SetAliases(System.Collections.Generic.IEnumerable<Twip.Alias!>! aliases) -> void
+Twip.FontLibrary.SetAliases(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! aliases) -> void
+Twip.FontLibrary.SetCharacterFallback(System.Collections.Generic.IEnumerable<string!>! families) -> void
+Twip.FontLibrary.SetClassification(bool fromDocument) -> void
+Twip.FontLibrary.SetGenericDefaults(Twip.GenericDefaults! defaults) -> void
+Twip.GenericDefaults
+Twip.GenericDefaults.<Clone>$() -> Twip.GenericDefaults!
+Twip.GenericDefaults.Deconstruct(out string? Serif, out string? SansSerif, out string? Monospace, out string? Script, out string? Decorative) -> void
+Twip.GenericDefaults.Decorative.get -> string?
+Twip.GenericDefaults.Decorative.init -> void
+Twip.GenericDefaults.Equals(Twip.GenericDefaults? other) -> bool
+Twip.GenericDefaults.GenericDefaults(string? Serif = null, string? SansSerif = null, string? Monospace = null, string? Script = null, string? Decorative = null) -> void
+Twip.GenericDefaults.Monospace.get -> string?
+Twip.GenericDefaults.Monospace.init -> void
+Twip.GenericDefaults.SansSerif.get -> string?
+Twip.GenericDefaults.SansSerif.init -> void
+Twip.GenericDefaults.Script.get -> string?
+Twip.GenericDefaults.Script.init -> void
+Twip.GenericDefaults.Serif.get -> string?
+Twip.GenericDefaults.Serif.init -> void
+override Twip.Alias.Equals(object? obj) -> bool
+override Twip.Alias.GetHashCode() -> int
+override Twip.Alias.ToString() -> string!
+override Twip.AliasTarget.Equals(object? obj) -> bool
+override Twip.AliasTarget.GetHashCode() -> int
+override Twip.AliasTarget.ToString() -> string!
+override Twip.GenericDefaults.Equals(object? obj) -> bool
+override Twip.GenericDefaults.GetHashCode() -> int
+override Twip.GenericDefaults.ToString() -> string!
+static Twip.Alias.operator !=(Twip.Alias? left, Twip.Alias? right) -> bool
+static Twip.Alias.operator ==(Twip.Alias? left, Twip.Alias? right) -> bool
+static Twip.AliasTarget.ToCategory(Twip.GenericFamily category) -> Twip.AliasTarget!
+static Twip.AliasTarget.ToFamily(string! family) -> Twip.AliasTarget!
+static Twip.AliasTarget.implicit operator Twip.AliasTarget!(string! family) -> Twip.AliasTarget!
+static Twip.GenericDefaults.operator !=(Twip.GenericDefaults? left, Twip.GenericDefaults? right) -> bool
+static Twip.GenericDefaults.operator ==(Twip.GenericDefaults? left, Twip.GenericDefaults? right) -> bool
+Twip.PdfFontSetOptions.Aliases.get -> System.Collections.Generic.IReadOnlyList<Twip.Alias!>!
+Twip.PdfFontSetOptions.Aliases.init -> void
+Twip.PdfFontSetOptions.CharacterFallback.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Twip.PdfFontSetOptions.CharacterFallback.init -> void
+Twip.PdfFontSetOptions.ClassifyFromDocument.get -> bool
+Twip.PdfFontSetOptions.ClassifyFromDocument.init -> void
+Twip.PdfFontSetOptions.GenericDefaults.get -> Twip.GenericDefaults!
+Twip.PdfFontSetOptions.GenericDefaults.init -> void
+Twip.FontClass
+Twip.FontClass.Auto = 5 -> Twip.FontClass
+Twip.FontClass.Decorative = 4 -> Twip.FontClass
+Twip.FontClass.Modern = 2 -> Twip.FontClass
+Twip.FontClass.Roman = 0 -> Twip.FontClass
+Twip.FontClass.Script = 3 -> Twip.FontClass
+Twip.FontClass.Swiss = 1 -> Twip.FontClass
+Twip.FontDescription
+Twip.FontDescription.<Clone>$() -> Twip.FontDescription!
+Twip.FontDescription.Charset.get -> int?
+Twip.FontDescription.Charset.init -> void
+Twip.FontDescription.Class.get -> Twip.FontClass?
+Twip.FontDescription.Class.init -> void
+Twip.FontDescription.Deconstruct(out Twip.FontClass? Class, out Twip.FontPitch? Pitch, out string? Panose, out int? Charset) -> void
+Twip.FontDescription.Equals(Twip.FontDescription? other) -> bool
+Twip.FontDescription.FontDescription(Twip.FontClass? Class = null, Twip.FontPitch? Pitch = null, string? Panose = null, int? Charset = null) -> void
+Twip.FontDescription.Panose.get -> string?
+Twip.FontDescription.Panose.init -> void
+Twip.FontDescription.Pitch.get -> Twip.FontPitch?
+Twip.FontDescription.Pitch.init -> void
+Twip.FontPitch
+Twip.FontPitch.Default = 2 -> Twip.FontPitch
+Twip.FontPitch.Fixed = 0 -> Twip.FontPitch
+Twip.FontPitch.Variable = 1 -> Twip.FontPitch
+Twip.FontRequest.Deconstruct(out string! Family, out bool Bold, out bool Italic, out Twip.FontDescription? Description, out Twip.GenericFamily? Proposed) -> void
+Twip.FontRequest.Description.get -> Twip.FontDescription?
+Twip.FontRequest.Description.init -> void
+Twip.FontRequest.FontRequest(string! Family, bool Bold, bool Italic, Twip.FontDescription? Description = null, Twip.GenericFamily? Proposed = null) -> void
+Twip.FontRequest.Proposed.get -> Twip.GenericFamily?
+Twip.FontRequest.Proposed.init -> void
+Twip.FontSource.Category.get -> Twip.GenericFamily?
+Twip.FontSource.Family.get -> string?
+override Twip.FontDescription.Equals(object? obj) -> bool
+override Twip.FontDescription.GetHashCode() -> int
+override Twip.FontDescription.ToString() -> string!
+static Twip.FontDescription.operator !=(Twip.FontDescription? left, Twip.FontDescription? right) -> bool
+static Twip.FontDescription.operator ==(Twip.FontDescription? left, Twip.FontDescription? right) -> bool
+static Twip.FontSource.FromCategory(Twip.GenericFamily category) -> Twip.FontSource!
+static Twip.FontSource.FromFamily(string! family) -> Twip.FontSource!
+Twip.CommandId.AcceptAllRevisions = 161 -> Twip.CommandId
+Twip.CommandId.AcceptRevision = 157 -> Twip.CommandId
+Twip.CommandId.AcceptRevisionsInSelection = 159 -> Twip.CommandId
+Twip.CommandId.AddComment = 164 -> Twip.CommandId
+Twip.CommandId.ClosePopover = 183 -> Twip.CommandId
+Twip.CommandId.CloseSubTemplate = 187 -> Twip.CommandId
+Twip.CommandId.CreateSubTemplate = 188 -> Twip.CommandId
+Twip.CommandId.DeleteComment = 167 -> Twip.CommandId
+Twip.CommandId.DescribeFormatting = 191 -> Twip.CommandId
+Twip.CommandId.EditComment = 166 -> Twip.CommandId
+Twip.CommandId.EditSubTemplate = 186 -> Twip.CommandId
+Twip.CommandId.FillPlaceholder = 152 -> Twip.CommandId
+Twip.CommandId.MarkElements = 151 -> Twip.CommandId
+Twip.CommandId.NeverAutoCorrect = 180 -> Twip.CommandId
+Twip.CommandId.RejectAllRevisions = 162 -> Twip.CommandId
+Twip.CommandId.RejectRevision = 158 -> Twip.CommandId
+Twip.CommandId.RejectRevisionsInSelection = 160 -> Twip.CommandId
+Twip.CommandId.RemoveDataPart = 154 -> Twip.CommandId
+Twip.CommandId.RemoveSubTemplate = 190 -> Twip.CommandId
+Twip.CommandId.RenameSubTemplate = 189 -> Twip.CommandId
+Twip.CommandId.ReplaceBody = 193 -> Twip.CommandId
+Twip.CommandId.ReplaceFont = 150 -> Twip.CommandId
+Twip.CommandId.ReplyToComment = 165 -> Twip.CommandId
+Twip.CommandId.ResolveComment = 168 -> Twip.CommandId
+Twip.CommandId.RevertAutoCorrect = 179 -> Twip.CommandId
+Twip.CommandId.SelectComment = 170 -> Twip.CommandId
+Twip.CommandId.SelectRevision = 163 -> Twip.CommandId
+Twip.CommandId.SetActiveComment = 169 -> Twip.CommandId
+Twip.CommandId.SetApplicationFieldTypes = 192 -> Twip.CommandId
+Twip.CommandId.SetAuthorColor = 171 -> Twip.CommandId
+Twip.CommandId.SetAutoCorrect = 178 -> Twip.CommandId
+Twip.CommandId.SetMarkupView = 156 -> Twip.CommandId
+Twip.CommandId.SetMode = 174 -> Twip.CommandId
+Twip.CommandId.SetRulerTabType = 175 -> Twip.CommandId
+Twip.CommandId.SetSubTemplateRules = 184 -> Twip.CommandId
+Twip.CommandId.SetSubTemplateView = 185 -> Twip.CommandId
+Twip.CommandId.SetTablePosition = 182 -> Twip.CommandId
+Twip.CommandId.SetTrackChanges = 155 -> Twip.CommandId
+Twip.CommandId.SetViewOptions = 173 -> Twip.CommandId
+Twip.CommandId.SetZoom = 172 -> Twip.CommandId
+Twip.CommandId.ShowAutoCorrectOptions = 181 -> Twip.CommandId
+Twip.CommandId.ShowTabStop = 177 -> Twip.CommandId
+Twip.CommandId.ShowTabTypes = 176 -> Twip.CommandId
+Twip.CommandId.WriteDataPart = 153 -> Twip.CommandId
+Twip.EditorCommands.ReplaceFontAsync(string! from, string! to, Twip.ReplaceScope scope = Twip.ReplaceScope.Document, bool? bold = null, bool? italic = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.FontReplaceResult!>!
+Twip.FontReplaceResult
+Twip.FontReplaceResult.<Clone>$() -> Twip.FontReplaceResult!
+Twip.FontReplaceResult.Changed.get -> int
+Twip.FontReplaceResult.Changed.init -> void
+Twip.FontReplaceResult.Deconstruct(out int Changed, out int Skipped) -> void
+Twip.FontReplaceResult.Equals(Twip.FontReplaceResult? other) -> bool
+Twip.FontReplaceResult.FontReplaceResult(int Changed, int Skipped) -> void
+Twip.FontReplaceResult.Skipped.get -> int
+Twip.FontReplaceResult.Skipped.init -> void
+Twip.ReplaceScope
+Twip.ReplaceScope.Document = 0 -> Twip.ReplaceScope
+Twip.ReplaceScope.Selection = 1 -> Twip.ReplaceScope
+override Twip.FontReplaceResult.Equals(object? obj) -> bool
+override Twip.FontReplaceResult.GetHashCode() -> int
+override Twip.FontReplaceResult.ToString() -> string!
+static Twip.EditorOperation.ReplaceFont(string! from, string! to, Twip.ReplaceScope scope = Twip.ReplaceScope.Document, bool? bold = null, bool? italic = null) -> Twip.EditorOperation!
+static Twip.FontReplaceResult.operator !=(Twip.FontReplaceResult? left, Twip.FontReplaceResult? right) -> bool
+static Twip.FontReplaceResult.operator ==(Twip.FontReplaceResult? left, Twip.FontReplaceResult? right) -> bool
+Twip.FontLibrary.SetSymbolFallbackAsync(Twip.SymbolFallback! fallback, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.SymbolFallback
+static Twip.SymbolFallback.Bundled.get -> Twip.SymbolFallback!
+static Twip.SymbolFallback.FromBytes(System.ReadOnlyMemory<byte> data) -> Twip.SymbolFallback!
+static Twip.SymbolFallback.FromFile(string! path) -> Twip.SymbolFallback!
+static Twip.SymbolFallback.Off.get -> Twip.SymbolFallback!
+Twip.PdfFontSetOptions.SymbolFallback.get -> Twip.SymbolFallback!
+Twip.PdfFontSetOptions.SymbolFallback.init -> void

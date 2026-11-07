@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn listener_hears_each_commit_in_order_after_the_state() {
-        let mut engine = Engine::new(FontLibrary::system());
+        let mut engine = Engine::new(FontLibrary::system_recommended());
         let heard: Rc<RefCell<Vec<(&str, u64)>>> = Rc::default();
         let sink = heard.clone();
         engine.set_listener(move |_, e| match e {

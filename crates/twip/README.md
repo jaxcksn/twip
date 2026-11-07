@@ -14,17 +14,21 @@ On Linux, Skia links FreeType and Fontconfig: install `libfreetype6-dev libfontc
 The first build downloads a prebuilt Skia.
 
 ```rust
-use twip::font::Fonts;
-use twip::host::Engine;
+use twip::api::command::Command;
+use twip::api::engine::{Engine, SessionOptions};
+use twip::api::fonts::{Alias, AliasTarget, FontLibrary};
+use twip::api::session::ExportOptions;
 
-let mut engine = Engine::with_fonts(Fonts::system());
-engine.try_open(&std::fs::read("report.docx")?)?;
-println!("{} page(s)", engine.page_sizes().len());
+// The system's fonts, with Calibri drawn in Carlito where Calibri isn't installed.
+let fonts = FontLibrary::system();
+fonts.set_aliases(vec![Alias { from: "Calibri".into(), bold: None, italic: None, to: AliasTarget::Family("Carlito".into()) }]);
 
-engine.key("End", true, false, false); // Ctrl+End
-engine.text(" Added by Twip.");
-std::fs::write("report-edited.docx", engine.save()?)?;
-std::fs::write("report.pdf", engine.export_pdf("Report"))?;
+let mut engine = Engine::new(fonts);
+let id = engine.create_session(SessionOptions::default());
+let session = engine.session(id).expect("the session just created");
+session.open(&std::fs::read("report.docx")?)?;
+session.run(Command::InsertText(" Added by Twip.".into()))?;
+std::fs::write("report-edited.docx", session.export(&ExportOptions::default())?.bytes.0)?;
 ```
 
 To convert without an editor, on as many threads as you like, use `twip::pdf`: build a `FontSet` once and share it.

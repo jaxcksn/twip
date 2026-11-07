@@ -38,6 +38,11 @@ namespace Twip.Wire;
         typeof(CamelEnum<ElementTextField>),
         typeof(CamelEnum<FieldKind>),
         typeof(CamelEnum<FontStyleChoice>),
+        typeof(CamelEnum<GenericFamily>),
+        typeof(CamelEnum<FontClass>),
+        typeof(CamelEnum<FontPitch>),
+        typeof(CamelEnum<StandIn>),
+        typeof(CamelEnum<ReplaceScope>),
         typeof(CamelEnum<GestureArea>),
         typeof(CamelEnum<GestureId>),
         typeof(CamelEnum<HeaderFooterKind>),
@@ -258,6 +263,20 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(FontRequest))]
 [JsonSerializable(typeof(FontsChangedPayload))]
 [JsonSerializable(typeof(FontStatus))]
+[JsonSerializable(typeof(MissingFont))]
+[JsonSerializable(typeof(FontDescription))]
+[JsonSerializable(typeof(FontAnswerWire))]
+[JsonSerializable(typeof(FontAnswerPayload))]
+[JsonSerializable(typeof(FontClass))]
+[JsonSerializable(typeof(FontPitch))]
+[JsonSerializable(typeof(Alias))]
+[JsonSerializable(typeof(IReadOnlyList<Alias>))]
+[JsonSerializable(typeof(GenericDefaults))]
+[JsonSerializable(typeof(MissingCharacters))]
+[JsonSerializable(typeof(FontsReport))]
+[JsonSerializable(typeof(StandIn))]
+[JsonSerializable(typeof(ReplaceScope))]
+[JsonSerializable(typeof(GenericFamily))]
 [JsonSerializable(typeof(FontStyleChoice))]
 [JsonSerializable(typeof(FormatValue<bool>))]
 [JsonSerializable(typeof(FrameInfo))]
@@ -268,7 +287,6 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(GestureId))]
 [JsonSerializable(typeof(GestureSetRequest))]
 [JsonSerializable(typeof(GestureTarget))]
-[JsonSerializable(typeof(GoogleFontsOptions))]
 [JsonSerializable(typeof(HeaderFooterInfo))]
 [JsonSerializable(typeof(HeaderFooterKind))]
 [JsonSerializable(typeof(HeaderFooterType))]
@@ -309,7 +327,7 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(IReadOnlyList<RevisionInfo>))]
 [JsonSerializable(typeof(IReadOnlyList<string>))]
 [JsonSerializable(typeof(IReadOnlyList<StyleInfo>))]
-[JsonSerializable(typeof(IReadOnlyList<SubstitutionRule>))]
+[JsonSerializable(typeof(IReadOnlyList<FontRule>))]
 [JsonSerializable(typeof(IReadOnlyList<Warning>))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(System.Text.Json.Nodes.JsonObject))]
@@ -461,7 +479,7 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(StylePreview))]
 [JsonSerializable(typeof(StyleType))]
 [JsonSerializable(typeof(SubmenuItem))]
-[JsonSerializable(typeof(SubstitutionRule))]
+[JsonSerializable(typeof(FontRule))]
 [JsonSerializable(typeof(SuggestionItem))]
 [JsonSerializable(typeof(SuggestionsRequest))]
 [JsonSerializable(typeof(TabAlignment))]

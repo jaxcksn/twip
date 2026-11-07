@@ -11,13 +11,18 @@ static class PdfConversionExample
         using var fonts = PdfFontSet.Create(new PdfFontSetOptions
         {
             IncludeSystemFonts = true,
-            FontFiles = ["fonts/Carlito-Regular.ttf"],
-            Substitutions = [new SubstitutionRule("Calibri", "Carlito")],
+            FontFiles = ["fonts/Carlito-Regular.ttf", "fonts/Tinos-Regular.ttf"],
+            Aliases = [new Alias("Calibri", "Carlito"), new Alias("Times New Roman", "Tinos")],
+            GenericDefaults = new GenericDefaults(Serif: "Tinos", SansSerif: "Carlito"),
+            Fallback = "Carlito",
         });
 
         // Each conversion runs on a thread pool thread; none waits on another.
         var warnings = await Task.WhenAll(files.Select(f => PdfConverter.ConvertAsync(f, Path.ChangeExtension(f, ".pdf"), fonts)));
         foreach (var w in warnings.SelectMany(w => w)) Console.WriteLine($"{w.Code}: {w.Message}");
+        // A conversion's result also lists, per family and style, what it couldn't draw and what drew it.
+        var one = await PdfConverter.ConvertAsync(await File.ReadAllBytesAsync(files[0]), fonts);
+        foreach (var m in one.Fonts.Missing) Console.WriteLine($"{m.Family}: drawn with {m.DrawnWith} ({m.By})");
         #endregion
     }
 

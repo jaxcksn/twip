@@ -915,14 +915,23 @@ public sealed record SpellingState
     public int Misspellings { get; init; }
 }
 
-/// <summary>Fonts still loading or not found.</summary>
+/// <summary>
+/// The document's fonts the library can't draw as the document asks: per family and style, those a resolver is
+/// fetching and those nothing provided, and the characters no font has. Each list is sorted by family, then style.
+/// </summary>
 public sealed record FontStatus
 {
-    /// <summary>Families being resolved.</summary>
-    public IReadOnlyList<string> Pending { get; init; } = [];
+    /// <summary>Families a resolver is fetching; they draw with a stand-in meanwhile.</summary>
+    public IReadOnlyList<MissingFont> Pending { get; init; } = [];
 
-    /// <summary>Families that couldn't be found.</summary>
-    public IReadOnlyList<string> Unresolved { get; init; } = [];
+    /// <summary>Families nothing provided; they draw with a stand-in.</summary>
+    public IReadOnlyList<MissingFont> Missing { get; init; } = [];
+
+    /// <summary>
+    /// Characters that neither their run's font, the character-fallback families nor the symbol fallback has; they
+    /// draw as their font's missing-glyph box.
+    /// </summary>
+    public IReadOnlyList<MissingCharacters> Characters { get; init; } = [];
 }
 
 /// <summary>The ruler model for the selection, in points, with no viewport mapping.</summary>

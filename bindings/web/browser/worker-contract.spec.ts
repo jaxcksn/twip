@@ -211,7 +211,11 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
       target = (target as Record<string, unknown> | undefined)?.[key];
     }
     if (target === undefined) fail(at, `no member ${method}`);
-    return typeof target === 'function' ? await (target as (...a: unknown[]) => unknown).apply(owner, args) : target;
+    const result = typeof target === 'function' ? await (target as (...a: unknown[]) => unknown).apply(owner, args) : target;
+    // A library setting returns before the worker applies it: a session call queued behind it ends once the state it
+    // changed has arrived.
+    if (first === 'fonts') await editor.wordCount();
+    return result;
   };
   const frames = (n: number) => new Promise<void>((done) => {
     const next = () => (n-- > 0 ? requestAnimationFrame(next) : done());

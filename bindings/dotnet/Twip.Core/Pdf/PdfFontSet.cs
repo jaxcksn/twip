@@ -19,11 +19,29 @@ public sealed record PdfFontSetOptions
     /// <summary>Font files by path, read when the set is created.</summary>
     public IReadOnlyList<string> FontFiles { get; init; } = [];
 
-    /// <summary>Rules that draw one family in another.</summary>
-    public IReadOnlyList<SubstitutionRule> Substitutions { get; init; } = [];
+    /// <summary>Draw-time replacements: each applies even when the replaced family is in the set.</summary>
+    public IReadOnlyList<FontRule> Replacements { get; init; } = [];
 
-    /// <summary>The family drawn when nothing else resolves a name.</summary>
-    public string? DefaultFamily { get; init; }
+    /// <summary>Aliases: each applies when its family isn't in the set.</summary>
+    public IReadOnlyList<Alias> Aliases { get; init; } = [];
+
+    /// <summary>The family drawn for a missing font of each generic category. None by default.</summary>
+    public GenericDefaults GenericDefaults { get; init; } = new();
+
+    /// <summary>
+    /// Whether a document's font table gives a missing family its generic category. On by default; it has no effect
+    /// until a generic default is set.
+    /// </summary>
+    public bool ClassifyFromDocument { get; init; } = true;
+
+    /// <summary>The general fallback: the family drawn when nothing else resolves a name.</summary>
+    public string? Fallback { get; init; }
+
+    /// <summary>The families searched, in order, for a character a run's font lacks, before the symbol fallback.</summary>
+    public IReadOnlyList<string> CharacterFallback { get; init; } = [];
+
+    /// <summary>The face for characters no other font has: <see cref="SymbolFallback.Bundled"/> by default.</summary>
+    public SymbolFallback SymbolFallback { get; init; } = SymbolFallback.Bundled;
 }
 
 /// <summary>
@@ -80,17 +98,25 @@ public sealed class PdfFontSet : IDisposable
     private static unsafe PdfFontSet Create(PdfFontSetOptions options, bool owned)
     {
         ArgumentNullException.ThrowIfNull(options);
-        var json = WireJson.ToUtf8(new PdfFontSetWire(options.IncludeSystemFonts, options.FontFiles, options.Substitutions, options.DefaultFamily));
-        var pins = new MemoryHandle[options.Fonts.Count];
+        var fonts = options.Fonts;
+        System.Text.Json.Nodes.JsonNode symbol = options.SymbolFallback.Name ?? "bundled";
+        if (options.SymbolFallback.Name is null)
+        {
+            var bytes = options.SymbolFallback.Data ?? File.ReadAllBytes(options.SymbolFallback.Path!);
+            fonts = [.. fonts, bytes];
+            symbol = new System.Text.Json.Nodes.JsonObject { ["font"] = fonts.Count - 1 };
+        }
+        var json = WireJson.ToUtf8(new PdfFontSetWire(options.IncludeSystemFonts, options.FontFiles, options.Replacements, options.Aliases, options.GenericDefaults, options.ClassifyFromDocument, options.Fallback, options.CharacterFallback, symbol));
+        var pins = new MemoryHandle[fonts.Count];
         var pointers = new nint[pins.Length];
         var lengths = new nuint[pins.Length];
         try
         {
             for (var i = 0; i < pins.Length; i++)
             {
-                pins[i] = options.Fonts[i].Pin();
+                pins[i] = fonts[i].Pin();
                 pointers[i] = (nint)pins[i].Pointer;
-                lengths[i] = (nuint)options.Fonts[i].Length;
+                lengths[i] = (nuint)fonts[i].Length;
             }
             nint set = 0;
             TwipBuf faces = default;

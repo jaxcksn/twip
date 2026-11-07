@@ -303,6 +303,8 @@ public enum CommandId
     RemoveElement,
     /// <summary>Replaces text in element codes, tags or titles (case-sensitive, every occurrence).</summary>
     ReplaceInElements,
+    /// <summary>Rewrites a font family's name in the document itself.</summary>
+    ReplaceFont,
     /// <summary>Marks elements with wavy lines and a tooltip. A view setting.</summary>
     MarkElements,
     /// <summary>Fills the selected picture placeholder, or every unfilled one with a key.</summary>

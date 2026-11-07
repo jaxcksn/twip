@@ -158,6 +158,7 @@ pub fn step_bytes(s: &Step) -> usize {
         | Step::TableProps { .. }
         | Step::SectionPage { .. }
         | Step::Numbering { .. }
+        | Step::Fonts { .. }
         | Step::DefaultTab(_)
         | Step::SectionBreak { .. } => 32,
         Step::ImageData { data, .. } => 32 + data.len(),

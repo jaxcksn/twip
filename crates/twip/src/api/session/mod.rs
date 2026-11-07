@@ -17,6 +17,7 @@ use std::rc::Rc;
 
 pub use documents::{Export, ExportFormat, ExportOptions, OpenToken, PdfOptions};
 pub use edit::Commit;
+pub(crate) use fonts::unopened_document_fonts;
 pub use host::{CaretBlink, Cursor, FrameInfo, FrameStats, HostRequest, HostSurface, OverlayPalette, PaintBudget};
 pub use input::{Gestures, Shortcuts};
 pub use services::Spelling;

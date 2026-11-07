@@ -536,6 +536,27 @@ pub unsafe extern "C" fn twip_font_add(engine: *mut TwipEngine, bytes_ptr: *cons
     unsafe { respond(out, result) }
 }
 
+/// Sets the engine's symbol fallback to a font file's first face; `out` gets `{"ok": null}`, or the error when the
+/// bytes hold no face (the setting is left as it was).
+///
+/// # Safety
+/// `engine` is from twip_engine_new; `bytes` is null or valid for `len` bytes; `out` is null or valid for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twip_font_symbol_fallback(engine: *mut TwipEngine, bytes_ptr: *const u8, len: usize, out: *mut TwipBuf) -> i32 {
+    // SAFETY: the caller's promise.
+    let data = unsafe { bytes(bytes_ptr, len) };
+    let result = guard(engine, 0, |e| {
+        e.engine.fonts().set_symbol_fallback(engine::api::fonts::SymbolFallback::Font(std::sync::Arc::new(data.to_vec())))?;
+        e.engine.sync_fonts();
+        for s in &e.surfaces {
+            e.emit(*s, kind::REQUEST_FRAME, &[]);
+        }
+        Ok(Value::Null)
+    });
+    // SAFETY: the caller's promise.
+    unsafe { respond(out, result) }
+}
+
 // ---------------- hot input ----------------
 
 /// A key press: `key` from the key table (`KeyboardEvent.code`), `mods` Ctrl 1, Shift 2, Alt 4, Meta 8. Returns 0

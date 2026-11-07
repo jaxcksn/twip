@@ -320,7 +320,15 @@ public sealed class ContractTests
                 case "setReadOnly": await _session.SetReadOnlyAsync(Parse<bool>(0)); return null;
                 case "setAuthor": await _session.SetAuthorAsync(Parse<Author>(0)); return null;
                 case "catalog": return Json(_session.Catalog);
-                case "fonts.substitute": _session.Fonts.Substitute(Parse<IReadOnlyDictionary<string, string>>(0)); return null;
+                case "fonts.setReplacements" when Arg(0) is JsonObject: _session.Fonts.SetReplacements(Parse<IReadOnlyDictionary<string, string>>(0)); return null;
+                case "fonts.setReplacements": _session.Fonts.SetReplacements(Parse<IReadOnlyList<FontRule>>(0)); return null;
+                case "fonts.setAliases" when Arg(0) is JsonObject: _session.Fonts.SetAliases(Parse<IReadOnlyDictionary<string, string>>(0)); return null;
+                case "fonts.setAliases": _session.Fonts.SetAliases(Parse<IReadOnlyList<Alias>>(0)); return null;
+                case "fonts.setGenericDefaults": _session.Fonts.SetGenericDefaults(Parse<GenericDefaults>(0)); return null;
+                case "fonts.setClassification": _session.Fonts.SetClassification(Arg(0)!["fromDocument"]!.GetValue<bool>()); return null;
+                case "fonts.setFallback": _session.Fonts.SetFallback(Arg(0)?.GetValue<string>()); return null;
+                case "fonts.setCharacterFallback": _session.Fonts.SetCharacterFallback(Parse<IReadOnlyList<string>>(0)); return null;
+                case "fonts.setSymbolFallback": await _session.Fonts.SetSymbolFallbackAsync(Arg(0)!.GetValue<string>() == "off" ? SymbolFallback.Off : SymbolFallback.Bundled, ct); return null;
                 case "find.next": return Json(await _session.Find.NextAsync(Parse<FindQuery>(0), ct));
                 case "find.previous": return Json(await _session.Find.PreviousAsync(Parse<FindQuery>(0), ct));
                 case "find.all": return Json(await _session.Find.FindAllAsync(Parse<FindQuery>(0), ct));
@@ -534,7 +542,7 @@ public sealed class ContractTests
             _session.PopoverRequested += (_, e) => Record("popoverRequested", JsonSerializer.SerializeToNode(e.Popover, Ctx.Popover));
             _session.PopoverClosed += (_, _) => Record("popoverClosed", null);
             _session.WordAdded += (_, e) => Record("wordAdded", new JsonObject { ["word"] = e.Word, ["language"] = e.Language });
-            _session.FontsChanged += (_, e) => Record("fontsChanged", new JsonObject { ["pending"] = WireJson.ToNode(e.Pending), ["unresolved"] = WireJson.ToNode(e.Unresolved) });
+            _session.FontsChanged += (_, e) => Record("fontsChanged", JsonSerializer.SerializeToNode(new FontStatus { Pending = e.Pending, Missing = e.Missing, Characters = e.Characters }, Ctx.FontStatus));
             _session.ElementActivated += (_, e) => Record("elementActivated", new JsonObject { ["id"] = e.Id.Value });
             _session.RevisionsChanged += (_, _) => Record("revisionsChanged", null);
             _session.CommentsChanged += (_, _) => Record("commentsChanged", null);

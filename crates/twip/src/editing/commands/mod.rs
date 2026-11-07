@@ -371,6 +371,7 @@ impl Editor {
             Command::WrapInRepeatingSection(r) => self.wrap_in_repeating_section(r, fonts),
             Command::RemoveElement(id) => self.remove_element(&id, false, fonts),
             Command::ReplaceInElements(r) => self.replace_in_elements(r, fonts),
+            Command::ReplaceFont(r) => self.replace_font(&r, fonts),
             Command::MarkElements(m) => self.mark_elements(m),
             Command::FillPlaceholder(f) => self.fill_placeholders(f.key.as_deref(), f.image.0, fonts),
             // Data parts
