@@ -39,3 +39,39 @@ fn frame_1_a_framed_page_field_in_a_footer_shows_the_page_number_on_one_line() {
     let ten = footer(1);
     assert!(ten[0].2 == ten[1].2 && ten[1].1 > ten[0].1, "{ten:?}");
 }
+
+#[test]
+fn frame_2_a_frame_without_v_anchor_is_relative_to_the_margin() {
+    use crate::docx::model::{Block, Inline};
+    let frame = |v: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:framePr w:w="2000" w:wrap="around" {v} w:hAnchor="page" w:x="1000" w:y="500"/></w:pPr><w:r><w:t>F</w:t></w:r></w:p>"#
+        )
+    };
+    let body = format!(
+        r#"<w:document {W}><w:body>{}{}<w:p><w:pPr><w:framePr w:dropCap="drop" w:lines="2" w:wrap="around" w:hAnchor="text"/></w:pPr><w:r><w:t>D</w:t></w:r></w:p><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+        frame(""),
+        frame(r#"w:vAnchor="text""#)
+    );
+    let Some(doc) = package(&[
+        (
+            "[Content_Types].xml",
+            r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/document.xml", &body),
+    ]) else {
+        return;
+    };
+    let v: Vec<&str> = doc.sections[0]
+        .blocks
+        .iter()
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .flat_map(|p| p.inlines.iter())
+        .filter_map(|i| if let Inline::Float(f, _) = i { Some(f.v_relative.as_str()) } else { None })
+        .collect();
+    assert_eq!(v, ["margin", "paragraph", "paragraph"]);
+}

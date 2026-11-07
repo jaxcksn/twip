@@ -39,14 +39,16 @@ internal sealed class WinFormsAdapter(DocumentEditor control) : IEditorHostAdapt
         EditorCursor.CellSelect => CellSelect.Value,
         EditorCursor.ColumnSelect => ColumnSelect.Value,
         EditorCursor.RowSelect => RowSelect.Value,
+        EditorCursor.Rotate => Rotate.Value,
         _ => Cursors.Default,
     };
 
-    // The selection arrows Windows has no cursor for (Cursors/, written by its make-cursors.py), loaded
+    // The selection and rotate arrows Windows has no cursor for (Cursors/, written by its make-cursors.py), loaded
     // once and shared by every control for the process's life, as the system cursors are.
     private static readonly Lazy<Cursor> CellSelect = new(() => Load("cell-select.cur"));
     private static readonly Lazy<Cursor> ColumnSelect = new(() => Load("column-select.cur"));
     private static readonly Lazy<Cursor> RowSelect = new(() => Load("row-select.cur"));
+    private static readonly Lazy<Cursor> Rotate = new(() => Load("rotate.cur"));
 
     private static Cursor Load(string name)
     {

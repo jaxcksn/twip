@@ -227,7 +227,7 @@ impl Editor {
         true
     }
 
-    fn shape_root(&mut self, f: FloatId, page: usize) -> Option<[f64; 4]> {
+    pub(super) fn shape_root(&mut self, f: FloatId, page: usize) -> Option<[f64; 4]> {
         let swap = self.float_of(f)?.rot_swap;
         let geo = self.pages.page(page, &self.index)?;
         let [x0, y0, x1, y1] = geo.stories.iter().find(|s| s.float == Some(f))?.rect;

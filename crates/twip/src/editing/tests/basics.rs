@@ -1004,7 +1004,7 @@ fn reset_size_gives_a_picture_its_own_size() {
 fn object_box(e: &mut super::super::Editor) -> [f64; 4] {
     while e.idle(fonts()) {}
     match e.view(0..3).selection {
-        super::super::view::SelectionView::Object(r, _) => r[0].1,
+        super::super::view::SelectionView::Object(r, _) => r[0].rect,
         s => panic!("no object outline: {s:?}"),
     }
 }

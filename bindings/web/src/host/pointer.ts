@@ -4,7 +4,7 @@
 // context menu held back while the application listens for `contextMenu`.
 import type { Session } from '../editor.js';
 import { type Cursor, Kind, type HostRequest, type Message } from '../transport/protocol.js';
-import { CELL_SELECT, COLUMN_SELECT, ROW_SELECT } from './cursors.js';
+import { CELL_SELECT, COLUMN_SELECT, ROTATE, ROW_SELECT } from './cursors.js';
 import type { Dom, Ledger } from './dom.js';
 import { modsOf } from './keys.js';
 import type { Scroll } from './scroll.js';
@@ -17,7 +17,7 @@ const buttons: Readonly<Record<number, number>> = { 0: 0, 2: 1, 1: 2 };
 /** A `.cur` cursor, over the browser's own `fallback` where it can't show one. */
 const cur = (c: { url: string; x: number; y: number }, fallback: string): string => `url("${c.url}") ${c.x} ${c.y}, ${fallback}`;
 
-/** The browser's cursors, and the selection arrows it has none of (`cursors.ts`, the WinForms host's `.cur` files). */
+/** The browser's cursors, and the selection and rotate arrows it has none of (`cursors.ts`, the WinForms host's `.cur` files). */
 const cursors: Readonly<Record<Cursor, string>> = {
   default: 'default',
   text: 'text',
@@ -33,6 +33,7 @@ const cursors: Readonly<Record<Cursor, string>> = {
   cellSelect: cur(CELL_SELECT, 'cell'),
   columnSelect: cur(COLUMN_SELECT, 'default'),
   rowSelect: cur(ROW_SELECT, 'default'),
+  rotate: cur(ROTATE, 'grab'),
 };
 
 /** Presses closer than this in time (ms) and distance (CSS px) count as one multi-click. */

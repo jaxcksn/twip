@@ -149,6 +149,8 @@ namespace Twip.Hosting
         ColumnSelect,
         /// <summary>Selecting rows, or lines from the margin: the white arrow pointing up and right.</summary>
         RowSelect,
+        /// <summary>Turning a shape by its rotate handle: a circular arrow.</summary>
+        Rotate,
     }
 
     /// <summary>The caret, for the IME window and the system caret.</summary>
