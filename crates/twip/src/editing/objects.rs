@@ -157,10 +157,14 @@ impl Editor {
 
     pub(super) fn delete_object(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let Selection::Object(o) = self.selection else { return None };
-        // A protected picture goes with its whole control in design mode, and stays otherwise.
+        // A protected picture goes with its whole control in design mode (a floating one with its box), and stays
+        // otherwise.
         if let Some(c) = self.picture_control_at(o).filter(|c| self.control_protected(*c)) {
             if self.mode != super::Mode::Design {
                 return Some(Outcome::Unchanged("protected picture"));
+            }
+            if let ObjectRef::Floating(f) = o {
+                return Some(self.remove_float(f, fonts));
             }
             return Some(self.remove_element(&super::merge::api_id(crate::docx::ElementId::Control(c)), false, fonts));
         }
