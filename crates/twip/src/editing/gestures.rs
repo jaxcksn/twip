@@ -30,8 +30,24 @@ impl Editor {
 
     pub fn pointer_input(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {
         let activate = (kind == PointerKind::Down && clicks == 2 && self.mode == Mode::Design).then(|| self.hit_laid_out(x, y));
+        if kind == PointerKind::Down {
+            self.press_clicks = clicks;
+            if clicks <= 1 {
+                self.click_activated = None;
+            }
+        }
         self.pointer(kind, x, y, clicks, mods, fonts);
         self.settle_provisional(fonts);
+        // A double-click on a picture control activates it, once with the click before it.
+        if kind == PointerKind::Down
+            && clicks == 2
+            && self.mode != Mode::Design
+            && !self.activation_suppressed
+            && let Some(c) = self.selected_picture_control()
+            && self.click_activated != Some(c)
+        {
+            self.activate_picture_control();
+        }
         if let Some(at) = activate {
             let object = matches!(self.selection, Selection::Object(_));
             match at.filter(|_| !object) {
@@ -77,8 +93,16 @@ impl Editor {
             return found(G::ElementDoubleClick, GestureTarget::Menu(MenuTarget::Element { id: super::api_id(id) }));
         }
         if !shift && let Some(s) = self.object_hit(x, y, fonts) {
-            let placeholder = self.mode != Mode::Design && self.with_selection(s, |e| e.selected_placeholder().is_some());
-            return if clicks == 1 && placeholder { found(G::PlaceholderClick, GestureTarget::Menu(MenuTarget::Picture)) } else { None };
+            let (control, unfilled) = if self.mode == Mode::Design {
+                (false, false)
+            } else {
+                self.with_selection(s, |e| (e.selected_picture_control().is_some(), e.selected_picture_unfilled()))
+            };
+            return match clicks {
+                1 if unfilled => found(G::PictureControlClick, GestureTarget::Menu(MenuTarget::Picture)),
+                2 if control => found(G::PictureControlDoubleClick, GestureTarget::Menu(MenuTarget::Picture)),
+                _ => None,
+            };
         }
         if !shift && self.checkbox_toggles_at(x, y, fonts).is_some() {
             return None;
@@ -398,7 +422,7 @@ mod tests {
     fn bindings_emit_ignore_or_run_an_op_and_reset() {
         let mut f = Fixture::open("editor/FX-bad-image.docx");
         let bindings = f.s().gestures().bindings();
-        assert_eq!(bindings.len(), 20);
+        assert_eq!(bindings.len(), 21);
         assert!(bindings.iter().all(|b| b.action == GestureAction::Default && !b.label.is_empty()));
         let at = f.at("Type");
         f.click(at, 1, NONE);

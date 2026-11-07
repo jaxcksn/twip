@@ -51,7 +51,6 @@ test('find, spelling, styles, elements and data parts send the engine’s shapes
   await createSpelling(s).suggestions('teh');
   await createStyles(s).list();
   await createElements(s).select('field-1' as never);
-  await createElements(s).placeholders();
   assert.deepEqual(t.calls, [
     [Method.Find, { query, direction: 'next' }],
     [Method.Find, { query, direction: 'previous' }],
@@ -60,7 +59,6 @@ test('find, spelling, styles, elements and data parts send the engine’s shapes
     [Method.SpellingSuggestions, { word: 'teh' }],
     [Method.Styles, null],
     [Method.SelectElement, { id: 'field-1', reveal: false }],
-    [Method.Placeholders, null],
   ]);
   t.answers.set(Method.DataParts, [fixture('data-part')]);
   assert.deepEqual(await createDataParts(s).list(), [{ namespace: null, itemId: '{6A9C}' }]);

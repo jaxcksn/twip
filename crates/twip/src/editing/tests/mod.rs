@@ -9,6 +9,7 @@ mod fuzz;
 mod json;
 mod merge;
 mod perf;
+mod picture_controls;
 mod provisional;
 pub(crate) mod recorder;
 pub(crate) mod scenarios;

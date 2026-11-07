@@ -61,16 +61,16 @@ public sealed class LinkActivatedEventArgs : EditorEventArgs
     public LinkActivation Via { get; }
 }
 
-/// <summary>The user clicked an unfilled picture placeholder.</summary>
-public sealed class PlaceholderActivatedEventArgs : EditorEventArgs
+/// <summary>
+/// A picture control was activated: clicked while unfilled, double-clicked or given Enter in editing and read-only
+/// modes, or named by <see cref="EditorCommands.ActivatePictureControlAsync"/>.
+/// </summary>
+public sealed class PictureControlActivatedEventArgs : EditorEventArgs
 {
-    internal PlaceholderActivatedEventArgs(string key, ElementId? element, EditorState snapshot) : base(snapshot) => (Key, Element) = (key, element);
+    internal PictureControlActivatedEventArgs(ElementId element, EditorState snapshot) : base(snapshot) => Element = element;
 
-    /// <summary>The placeholder key.</summary>
-    public string Key { get; }
-
-    /// <summary>The placeholder's element, when it is one.</summary>
-    public ElementId? Element { get; }
+    /// <summary>The picture control.</summary>
+    public ElementId Element { get; }
 }
 
 /// <summary>How a context menu was opened.</summary>

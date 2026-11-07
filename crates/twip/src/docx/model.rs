@@ -283,6 +283,34 @@ pub struct GroupPart {
 }
 
 impl Float {
+    /// The picture control a floating picture control holds: the float is a text box with no fill, no line and no
+    /// insets whose story is one paragraph holding only that control's one picture.
+    pub fn picture_control(&self, controls: &HashMap<ControlId, Control>) -> Option<ControlId> {
+        let tb = self.text_box.as_ref()?;
+        if tb.insets != [0.0; 4] || tb.outline != 0.0 || tb.blocks.len() != 1 {
+            return None;
+        }
+        if let Some(crate::drawing::ShapeKind::Sp(sp)) = self.shape.as_ref().map(|s| &s.kind) {
+            match &sp.fill {
+                Some(crate::drawing::paint::Fill::None) => {}
+                None if sp.style.is_none() => {}
+                _ => return None,
+            }
+        }
+        let Block::Para(p) = &tb.blocks[0] else { return None };
+        let picture = |c: &ControlId| controls.get(c).is_some_and(|k| k.props.kind == ControlKind::Picture);
+        let content: Vec<&Inline> = p
+            .inlines
+            .iter()
+            .filter(|i| !matches!(i, Inline::Bookmark(..) | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .collect();
+        match content.as_slice() {
+            [Inline::ControlStart(a), Inline::Picture(..), Inline::ControlEnd(b)] if a == b && picture(a) => Some(*a),
+            [Inline::Picture(..)] if p.controls.len() == 1 && picture(&p.controls[0]) => Some(p.controls[0]),
+            _ => None,
+        }
+    }
+
     pub fn in_cell(&self, compat: Compat) -> bool {
         compat == Compat::Generic || self.layout_in_cell || self.h_relative == "character" || self.v_relative == "line"
     }
@@ -936,17 +964,9 @@ pub struct Document {
     pub glossary: Option<Glossary>,
     /// The item parts of data parts removed since reading (taken out of the package on save).
     pub removed_data: Vec<String>,
-    /// Pictures of merge images and placeholders still showing their box (`w:showingPlcHdr`): image index →
-    /// (merge image, label). They draw as their picture.
-    pub placeholders: HashMap<usize, (bool, String)>,
-    /// The placeholders' keys (their tag after `Placeholder:` or `MergeImage:`), by image index.
-    pub placeholder_keys: HashMap<usize, String>,
     /// Placeholders filled since reading, by image index: drawn as their image, saved without
     /// `w:showingPlcHdr`.
     pub filled: std::collections::HashSet<usize>,
-    /// Pictures that can't be resized or moved, by image index: those in placeholder and merge image controls (filled
-    /// or not; the ones a click acts on) and in picture controls whose content is locked (`w:lock`).
-    pub fixed: std::collections::HashSet<usize>,
     /// Sections whose page ([`SectionPage`]) was edited: saving writes their `w:sectPr` page properties.
     pub edited_sections: std::collections::HashSet<usize>,
     /// How many sections as read each section holds: more than one once section breaks were deleted. Empty: one
@@ -955,8 +975,8 @@ pub struct Document {
     /// Pictures that can't be deleted, by image index: those in picture controls that can't be deleted (`w:lock`
     /// `sdtLocked` or `sdtContentLocked`).
     pub undeletable: std::collections::HashSet<usize>,
-    /// Pictures in picture controls, by image index: their corner handles keep the aspect ratio.
-    pub controlled: std::collections::HashSet<usize>,
+    /// Pictures in picture controls, by image index: the innermost picture control of each picture showing it.
+    pub controlled: HashMap<usize, Vec<ControlId>>,
     pub settings: Settings,
     pub line_number_run: Option<Run>,
     /// What the document was read from, when read for editing.
@@ -988,19 +1008,26 @@ impl Document {
         self.glossary.iter().flat_map(|g| g.parts.iter()).filter(|b| b.state != PartState::Removed).map(|b| &b.body)
     }
 
-    /// Rebuilds the image sets kept for picture controls (`fixed`, `undeletable`, `placeholders`,
-    /// `placeholder_keys`) from the controls holding the pictures, so they follow the controls' tags and locks (spec
-    /// 003 C5). Run after reading, and after a transaction that changes a control or moves pictures.
+    /// Rebuilds the image sets kept for picture controls (`controlled`, `undeletable`) from the controls holding the
+    /// pictures, so they follow the controls' locks. Run after reading, and after a transaction that changes a control
+    /// or moves pictures.
     pub fn derive_image_sets(&mut self) {
-        self.fixed.clear();
         self.undeletable.clear();
         self.controlled.clear();
-        self.placeholders.clear();
-        self.placeholder_keys.clear();
-        if !self.controls.values().any(|c| c.props.kind == ControlKind::Picture) {
-            return;
+        for (img, c) in self.picture_controls() {
+            self.controlled.entry(img).or_default().push(c);
+            if matches!(self.controls[&c].props.lock, Lock::ControlLocked | Lock::Both) {
+                self.undeletable.insert(img);
+            }
         }
-        type Found = Vec<(usize, bool, ControlId)>;
+    }
+
+    /// Each picture in a picture control, by image index, with its innermost picture control.
+    pub fn picture_controls(&self) -> Vec<(usize, ControlId)> {
+        if !self.controls.values().any(|c| c.props.kind == ControlKind::Picture) {
+            return Vec::new();
+        }
+        type Found = Vec<(usize, ControlId)>;
         // The innermost picture control around an inline: an open inline one, else the paragraph's.
         fn pick(open: &[ControlId], block: Option<ControlId>, controls: &HashMap<ControlId, Control>) -> Option<ControlId> {
             open.iter().rev().copied().find(|c| controls.get(c).is_some_and(|k| k.props.kind == ControlKind::Picture)).or(block)
@@ -1021,12 +1048,12 @@ impl Document {
                                 }
                                 Inline::Picture(pic, _) => {
                                     if let (Some(img), Some(c)) = (pic.image, pick(&open, block, controls)) {
-                                        out.push((img, true, c));
+                                        out.push((img, c));
                                     }
                                 }
                                 Inline::Float(f, _) => {
                                     if let (Some(img), Some(c)) = (f.image, pick(&open, block, controls)) {
-                                        out.push((img, false, c));
+                                        out.push((img, c));
                                     }
                                     if let Some(tb) = &f.text_box {
                                         walk(&tb.blocks, controls, out);
@@ -1044,28 +1071,7 @@ impl Document {
         let stories =
             self.sections.iter().map(|s| &s.blocks).chain(self.stories.values()).chain(self.footnotes.values()).chain(self.endnotes.values());
         stories.for_each(|b| walk(b, &self.controls, &mut found));
-        for (img, inline, c) in found {
-            self.controlled.insert(img);
-            let props = &self.controls[&c].props;
-            // `Placeholder:key` and `MergeImage:key` tags.
-            let (kind, key) = props
-                .tag
-                .as_deref()
-                .and_then(|t| t.split_once(':'))
-                .map_or(("", ""), |(k, rest)| (k.trim(), rest.split(';').next().unwrap_or("").trim()));
-            let merge = kind.eq_ignore_ascii_case("MergeImage");
-            let placeholder = merge || kind.eq_ignore_ascii_case("Placeholder");
-            if placeholder || matches!(props.lock, Lock::ContentLocked | Lock::Both) {
-                self.fixed.insert(img);
-            }
-            if matches!(props.lock, Lock::ControlLocked | Lock::Both) {
-                self.undeletable.insert(img);
-            }
-            if inline && placeholder && props.showing_placeholder {
-                self.placeholders.insert(img, (merge, props.alias.clone().unwrap_or_else(|| key.to_string())));
-                self.placeholder_keys.insert(img, key.to_string());
-            }
-        }
+        found
     }
 }
 

@@ -43,7 +43,7 @@ const DIALOG_KEYS: [(Key, bool, bool, bool, DialogKind); 1] = [(Key::KeyD, true,
 const MENU_KEYS: [Chord; 2] = [(Key::ContextMenu, false, false, false), (Key::F10, false, true, false)];
 
 /// Every gesture, with its label for a settings screen.
-const GESTURES: [(GestureId, &str); 20] = [
+const GESTURES: [(GestureId, &str); 21] = [
     (GestureId::HeaderAreaDoubleClick, "Double-click the header area"),
     (GestureId::FooterAreaDoubleClick, "Double-click the footer area"),
     (GestureId::BodyDoubleClickInHeaderFooter, "Double-click the body while editing a header or footer"),
@@ -58,7 +58,8 @@ const GESTURES: [(GestureId, &str); 20] = [
     (GestureId::ObjectDrag, "Drag a picture or text box"),
     (GestureId::TextDrag, "Drag selected text"),
     (GestureId::ElementDoubleClick, "Double-click an element in design mode"),
-    (GestureId::PlaceholderClick, "Click a picture placeholder"),
+    (GestureId::PictureControlClick, "Click a picture control"),
+    (GestureId::PictureControlDoubleClick, "Double-click a picture control"),
     (GestureId::RulerClick, "Click the ruler"),
     (GestureId::RulerDrag, "Drag a ruler marker"),
     (GestureId::RulerDragOff, "Drag a tab stop off the ruler"),
@@ -165,16 +166,16 @@ impl Session {
     /// A command from input: checked as the API's are, and recorded as the user's.
     fn input(&mut self, command: Command) -> Result<super::Commit, crate::api::error::Error> {
         use crate::editing::autocorrect::{Trigger, may_trigger};
-        // Enter or Space on an unfilled placeholder activates it, read only too: it changes nothing.
+        // Enter on a picture control, or Space on an unfilled one, activates it in read only too: it changes nothing.
         let activates = match &command {
-            Command::InsertParagraph => true,
-            Command::InsertText(t) => t == " ",
+            Command::InsertParagraph => self.editor.selected_picture_control().is_some(),
+            Command::InsertText(t) => t == " " && self.editor.selected_picture_unfilled(),
             _ => false,
         };
-        if self.read_only && activates && self.editor.selected_placeholder().is_some() {
+        if self.read_only && activates {
             return self.apply_with(Origin::User, |e, _| {
-                e.activate_placeholder();
-                Outcome::Unchanged("placeholder activated")
+                e.activate_picture_control();
+                Outcome::Unchanged("picture control activated")
             });
         }
         if let Err(e) = self.check(&command) {
@@ -228,9 +229,8 @@ impl Session {
                     Event::FieldsUpdateRequested { token, fields: fields.into_iter().map(|(e, code)| FieldRequest { id: id(e), code }).collect() }
                 }
                 Notice::Link { address, ctrl } => Event::LinkActivated { address, via: if ctrl { LinkVia::CtrlClick } else { LinkVia::Click } },
-                Notice::Placeholder { key, control } => Event::PlaceholderActivated(crate::api::services::PlaceholderInfo {
-                    key,
-                    element: control.map(|c| id(crate::docx::ElementId::Control(c))),
+                Notice::PictureControl { control } => Event::PictureControlActivated(crate::api::services::PictureControlActivation {
+                    element: id(crate::docx::ElementId::Control(control)),
                 }),
                 Notice::Warning(code, message) => Event::Warning(crate::docx::diagnostics::Warning { code, message, count: 1, location: None }),
                 Notice::Refused { sub_template, element } => Event::EditRefused {
@@ -289,6 +289,13 @@ impl Session {
             (PointerKind::Down, PointerButton::Primary) => {
                 let pressed = self.editor.press_gesture(x, y, clicks, mods, &self.fonts.fonts());
                 match self.bindings.rebound(pressed) {
+                    // A picture control rebound still takes the press: it is selected, not activated.
+                    Some(g) if matches!(g.id, GestureId::PictureControlClick | GestureId::PictureControlDoubleClick) => {
+                        self.editor.set_activation_suppressed(true);
+                        self.drive(kind, x, y, clicks, mods);
+                        self.editor.set_activation_suppressed(false);
+                        self.run_binding(g, at);
+                    }
                     Some(g) => self.run_binding(g, at),
                     None => self.drive(kind, x, y, clicks, mods),
                 }

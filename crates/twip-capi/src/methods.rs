@@ -185,8 +185,6 @@ methods! {
     /// `font_request` callback, answered with `FontAnswer` (after `twip_font_add` for a font); without one it is unresolved
     /// at once.
     FontSetResolver = 69,
-    /// → `PlaceholderInfo[]`: the unfilled picture placeholders.
-    Placeholders = 70,
     /// `{ intervalMs, stopAfterMs }` (`CaretBlink`) → `null`.
     HostSetCaretBlink = 71,
     /// → `FrameStats`: what the frames have cost so far.
@@ -536,7 +534,6 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         Method::People => to_value(s.people()),
         Method::Elements => to_value(s.elements(&request::<Option<ElementFilter>>(json)?.unwrap_or_default())),
         Method::Element => to_value(s.element(request(json)?)?),
-        Method::Placeholders => to_value(s.placeholders()),
         Method::SubTemplates => to_value(s.sub_templates()),
         Method::SubTemplateExport => {
             let r: SubTemplateExportRequest = request(json)?;

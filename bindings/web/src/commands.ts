@@ -446,6 +446,11 @@ export interface Commands {
      */
     placeholderImage?: PlaceholderImage;
     wrapSelection?: boolean;
+    /**
+     * Floats a picture control, positioned and wrapped as `setObjectWrap` and `setObjectPosition` place an object;
+     * `wrap` can't be `inline`.
+     */
+    float?: { wrap: ObjectWrap; horizontal?: HorizontalPosition; vertical?: VerticalPosition };
   }): Promise<{ id: ElementId }>;
   /**
    * Changes a content control; a `null` binding removes it. `placeholderImage` replaces a picture control's
@@ -496,8 +501,14 @@ export interface Commands {
     marks: { id: ElementId; severity: 'error' | 'warning' | 'info'; message: string }[];
     clear?: boolean;
   }): Promise<void>;
-  /** Fills the selected placeholder, or every unfilled one with `key`: each becomes a plain picture, its content control removed. */
-  fillPlaceholder(options: { key?: string; image: Uint8Array }): Promise<void>;
+  /**
+   * Sets the tag prefixes (compared without case) whose picture controls keep their pictures: editing can't delete,
+   * paste over or replace such a picture; `fillControl` and `setControl` still change it, and in design mode deleting
+   * it removes its whole control. Replaces the prefixes set before; an empty list protects none. Not saved.
+   */
+  setProtectedPictureControls(options: { tagPrefixes: string[] }): Promise<void>;
+  /** Selects a picture control (the selected one when none is named) and emits `pictureControlActivated`, in any mode. */
+  activatePictureControl(options?: { element?: ElementId }): Promise<void>;
 
   // Data parts
   /** Writes a custom XML data part (well-formed). */
@@ -811,7 +822,8 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   replaceInElements: 'spread',
   replaceFont: 'spread',
   markElements: 'spread',
-  fillPlaceholder: 'spread',
+  setProtectedPictureControls: 'spread',
+  activatePictureControl: 'spread',
   writeDataPart: 'spread',
   removeDataPart: 'spread',
   setTrackChanges: 'value',

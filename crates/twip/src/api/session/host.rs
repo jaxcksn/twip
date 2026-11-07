@@ -791,7 +791,7 @@ impl Session {
                 }
                 // shortcut: hosts autoscroll a drag themselves, and placeholder activation is an event the
                 // pointer work emits; neither reaches the host from here.
-                Request::Autoscroll { .. } | Request::Placeholder(_) => {}
+                Request::Autoscroll { .. } => {}
             }
         }
         let view = self.editor.view(0..0);

@@ -28,7 +28,7 @@ pub(crate) use merge::api_id;
 pub mod navigate;
 mod notes;
 pub mod objects;
-pub mod placeholders;
+pub mod picture_controls;
 pub mod pointer;
 pub mod position;
 mod resize;
@@ -154,6 +154,16 @@ pub struct Editor {
     sub_template_rules: Vec<sub_templates::Rule>,
     /// The application's field types, upper case.
     application_field_types: Vec<String>,
+    /// Tag prefixes whose picture controls keep their pictures.
+    protected_prefixes: Vec<String>,
+    /// A fill or a control's settings are changing pictures: protected ones may change.
+    picture_writes: bool,
+    /// The clicks of the press under way.
+    press_clicks: u8,
+    /// The picture control the last single click activated.
+    click_activated: Option<crate::docx::ControlId>,
+    /// The press selects a picture control without activating it: its gesture is rebound.
+    activation_suppressed: bool,
     references: sub_templates::References,
     collapsed: std::collections::HashSet<crate::docx::FieldId>,
     warned: std::collections::HashSet<(crate::docx::diagnostics::WarningCode, String)>,
@@ -299,6 +309,11 @@ impl Editor {
             field_labels: HashMap::new(),
             sub_template_rules: Vec::new(),
             application_field_types: Vec::new(),
+            protected_prefixes: Vec::new(),
+            picture_writes: false,
+            press_clicks: 0,
+            click_activated: None,
+            activation_suppressed: false,
             references: sub_templates::References::default(),
             collapsed: std::collections::HashSet::new(),
             warned: std::collections::HashSet::new(),
@@ -851,6 +866,9 @@ impl Editor {
         if tx.kept < 0 {
             return Err("a content control that can't be deleted");
         }
+        if tx.pictures && !self.picture_writes && self.loses_protected_picture() {
+            return Err("a protected picture");
+        }
         if tx.undo.iter().any(|s| !matches!(s, Step::Text { .. } | Step::Restyle { .. } | Step::AddImage { .. })) {
             crate::prof::time("edit:renumber", || self.renumber(tx));
         }
@@ -1298,7 +1316,7 @@ impl Editor {
         if text.is_empty() {
             return Outcome::Unchanged("empty text");
         }
-        if text == " " && self.activate_placeholder() {
+        if text == " " && self.mode != Mode::Design && self.selected_picture_unfilled() && self.activate_picture_control() {
             return Outcome::Unchanged("placeholder activated");
         }
         if text == " "
@@ -1470,8 +1488,8 @@ impl Editor {
         if self.mode == Mode::Design && self.activate(false) {
             return Outcome::Unchanged("activated");
         }
-        if self.activate_placeholder() {
-            return Outcome::Unchanged("placeholder activated");
+        if self.mode != Mode::Design && self.activate_picture_control() {
+            return Outcome::Unchanged("picture control activated");
         }
         if let Some(o) = self.list_enter(fonts) {
             return o;

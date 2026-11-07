@@ -20,8 +20,11 @@ export interface TwipEvents {
   editingTargetChanged: EditingTarget;
   /** A link was activated: a click when read only, Ctrl+click otherwise. */
   linkActivated: { address: string; via: 'ctrlClick' | 'click' };
-  /** An unfilled picture placeholder was clicked. */
-  placeholderActivated: { key: string; element: ElementId | null };
+  /**
+   * A picture control was activated: clicked while unfilled, double-clicked or given Enter in editing and read-only
+   * modes, or named by `activatePictureControl`.
+   */
+  pictureControlActivated: { element: ElementId };
   /**
    * Typing, pasting or dropping was refused: into a sub-template's body shown in place of its reference (edit the
    * sub-template instead), or into a locked control.

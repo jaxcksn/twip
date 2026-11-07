@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::error::{Error, ErrorCode};
 use super::record::TransactionRecord;
 use super::review::{BalloonPlacement, CommentAnchor};
-use super::services::{ContextMenuEvent, DialogKind, ElementInfo, GestureEvent, PlaceholderInfo, Popover, RulerView, Tooltip};
+use super::services::{ContextMenuEvent, DialogKind, ElementInfo, GestureEvent, PictureControlActivation, Popover, RulerView, Tooltip};
 use super::state::{FontsState, SelectionSummary, State};
 use super::value::ElementId;
 use super::warning::Warning;
@@ -32,8 +32,9 @@ pub enum Event {
         /// How it was activated.
         via: LinkVia,
     },
-    /// An unfilled picture placeholder was clicked.
-    PlaceholderActivated(PlaceholderInfo),
+    /// A picture control was activated: clicked while unfilled, double-clicked or given Enter in editing and read-only
+    /// modes, or named by `activatePictureControl`.
+    PictureControlActivated(PictureControlActivation),
     /// A context menu to open.
     ContextMenu(ContextMenuEvent),
     /// A click or command asked for a popover by its anchor. Opening one closes the one open.

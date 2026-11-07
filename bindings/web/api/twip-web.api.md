@@ -242,6 +242,9 @@ export interface Commands {
     }): Promise<void>;
     acceptRevision(id: RevisionId): Promise<void>;
     acceptRevisionsInSelection(): Promise<void>;
+    activatePictureControl(options?: {
+        element?: ElementId;
+    }): Promise<void>;
     addComment(body: string | RichText): Promise<{
         id: CommentId;
     }>;
@@ -303,10 +306,6 @@ export interface Commands {
         image?: Uint8Array;
         docx?: Uint8Array;
     }): Promise<void>;
-    fillPlaceholder(options: {
-        key?: string;
-        image: Uint8Array;
-    }): Promise<void>;
     flipObject(axis: FlipAxis): Promise<void>;
     goBack(): Promise<void>;
     goToPage(page: number): Promise<void>;
@@ -328,6 +327,11 @@ export interface Commands {
         options?: ControlOptions;
         placeholderImage?: PlaceholderImage;
         wrapSelection?: boolean;
+        float?: {
+            wrap: ObjectWrap;
+            horizontal?: HorizontalPosition;
+            vertical?: VerticalPosition;
+        };
     }): Promise<{
         id: ElementId;
     }>;
@@ -624,6 +628,9 @@ export interface Commands {
     }): Promise<void>;
     setParagraphStyle(styleId: StyleId): Promise<void>;
     setPictureAdjust(change: PictureAdjustChange): Promise<void>;
+    setProtectedPictureControls(options: {
+        tagPrefixes: string[];
+    }): Promise<void>;
     setRowCanBreak(on: boolean): Promise<void>;
     setRowHeight(height: RowHeight): Promise<void>;
     setRulerTabType(type: TabSelector): Promise<void>;
@@ -1148,6 +1155,7 @@ export interface ElementInfo {
     locked: boolean;
     parent: ElementId | null;
     reference?: SubTemplateReference;
+    showingPlaceholder?: boolean;
     size?: {
         width: Points;
         height: Points;
@@ -1170,7 +1178,6 @@ export interface Elements {
         story?: SelectionSummary['story'];
         subTemplate?: string;
     }): Promise<ElementInfo[]>;
-    placeholders(): Promise<PlaceholderInfo[]>;
     select(id: ElementId, options?: {
         reveal?: boolean;
     }): Promise<void>;
@@ -1400,7 +1407,7 @@ export interface GestureEvent {
 }
 
 // @public
-export type GestureId = 'headerAreaDoubleClick' | 'footerAreaDoubleClick' | 'bodyDoubleClickInHeaderFooter' | 'textDoubleClick' | 'textTripleClick' | 'textCtrlClick' | 'linkActivate' | 'marginClick' | 'marginDoubleClick' | 'tableBorderDoubleClick' | 'tableBorderDrag' | 'objectDrag' | 'textDrag' | 'elementDoubleClick' | 'placeholderClick' | 'rulerClick' | 'rulerDrag' | 'rulerDragOff' | 'rulerDoubleClick' | 'contextClick';
+export type GestureId = 'headerAreaDoubleClick' | 'footerAreaDoubleClick' | 'bodyDoubleClickInHeaderFooter' | 'textDoubleClick' | 'textTripleClick' | 'textCtrlClick' | 'linkActivate' | 'marginClick' | 'marginDoubleClick' | 'tableBorderDoubleClick' | 'tableBorderDrag' | 'objectDrag' | 'textDrag' | 'elementDoubleClick' | 'pictureControlClick' | 'pictureControlDoubleClick' | 'rulerClick' | 'rulerDrag' | 'rulerDragOff' | 'rulerDoubleClick' | 'contextClick';
 
 // @public
 export interface Gestures {
@@ -1847,12 +1854,6 @@ export interface PictureAdjustChange {
 export interface PlaceholderImage {
     data: Uint8Array;
     mime: string;
-}
-
-// @public
-export interface PlaceholderInfo {
-    element: ElementId | null;
-    key: string;
 }
 
 // @public
@@ -2417,9 +2418,8 @@ export interface TwipEvents {
         address: string;
         via: 'ctrlClick' | 'click';
     };
-    placeholderActivated: {
-        key: string;
-        element: ElementId | null;
+    pictureControlActivated: {
+        element: ElementId;
     };
     popoverClosed: {};
     popoverRequested: Popover;

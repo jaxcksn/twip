@@ -373,7 +373,8 @@ impl Editor {
             Command::ReplaceInElements(r) => self.replace_in_elements(r, fonts),
             Command::ReplaceFont(r) => self.replace_font(&r, fonts),
             Command::MarkElements(m) => self.mark_elements(m),
-            Command::FillPlaceholder(f) => self.fill_placeholders(f.key.as_deref(), f.image.0, fonts),
+            Command::SetProtectedPictureControls(p) => self.set_protected_picture_controls(p),
+            Command::ActivatePictureControl(a) => self.activate_picture_control_cmd(a.element.as_ref()),
             // Data parts
             Command::WriteDataPart(w) => self.write_data_part(w, fonts),
             Command::RemoveDataPart(r) => self.remove_data_part(r, fonts),

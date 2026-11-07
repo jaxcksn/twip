@@ -679,7 +679,10 @@ pub fn issues(doc: &crate::docx::Document) -> Vec<AccessibilityIssue> {
                     for i in &p.inlines {
                         if let Inline::Picture(pic, _) = i
                             && pic.alt.is_empty()
-                            && !pic.image.is_some_and(|k| doc.placeholders.contains_key(&k) || doc.placeholder_keys.contains_key(&k))
+                            && !pic
+                                .image
+                                .and_then(|k| doc.controlled.get(&k))
+                                .is_some_and(|cs| cs.iter().any(|c| doc.controls.get(c).is_some_and(|k| k.props.showing_placeholder)))
                         {
                             out.push(AccessibilityIssue {
                                 id: format!("picture:{}:{at}", p.id),

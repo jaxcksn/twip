@@ -307,8 +307,10 @@ public enum CommandId
     ReplaceFont,
     /// <summary>Marks elements with wavy lines and a tooltip. A view setting.</summary>
     MarkElements,
-    /// <summary>Fills the selected picture placeholder, or every unfilled one with a key.</summary>
-    FillPlaceholder,
+    /// <summary>Sets the tag prefixes whose picture controls keep their pictures. A view setting.</summary>
+    SetProtectedPictureControls,
+    /// <summary>Selects a picture control and raises <see cref="EditorSession.PictureControlActivated"/>.</summary>
+    ActivatePictureControl,
     /// <summary>Writes a custom XML data part.</summary>
     WriteDataPart,
     /// <summary>Removes a custom XML data part.</summary>

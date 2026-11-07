@@ -198,7 +198,7 @@ impl Session {
                 Ok(())
             }
             C::MarkElements(m) => m.marks.iter().try_for_each(|m| self.known_element(&m.id)),
-            C::FillPlaceholder(f) => picture(&f.image.0),
+            C::ActivatePictureControl(a) => a.element.as_ref().map_or(Ok(()), |id| self.known_element(id)),
             C::WriteDataPart(w) => text("the namespace", &w.namespace),
             C::RemoveDataPart(r) => text("the namespace", &r.namespace),
             C::AcceptRevision(id) | C::RejectRevision(id) => match crate::api::record::parse_revision_id(id) {

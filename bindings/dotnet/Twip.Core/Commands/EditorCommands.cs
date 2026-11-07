@@ -1037,12 +1037,22 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task MarkElementsAsync(IReadOnlyList<ElementMark> marks, bool? clear = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.MarkElements(marks, clear), ct);
 
-    /// <summary>Fills the selected picture placeholder, or every unfilled one with a key: each becomes a plain picture, its content control removed.</summary>
-    /// <param name="image">The picture.</param>
-    /// <param name="key">The placeholder key.</param>
+    /// <summary>
+    /// Sets the tag prefixes (compared without case) whose picture controls keep their pictures: editing can't delete,
+    /// paste over or replace such a picture; <see cref="FillControlAsync"/> and <see cref="SetControlAsync"/> still
+    /// change it, and in design mode deleting it removes its whole control. Replaces the prefixes set before; an empty
+    /// list protects none. Not saved.
+    /// </summary>
+    /// <param name="tagPrefixes">The tag prefixes.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task FillPlaceholderAsync(ReadOnlyMemory<byte> image, string? key = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.FillPlaceholder(image, key), ct);
+    public Task SetProtectedPictureControlsAsync(IReadOnlyList<string> tagPrefixes, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetProtectedPictureControls(tagPrefixes), ct);
+
+    /// <summary>Selects a picture control (the selected one when none is given) and raises <see cref="EditorSession.PictureControlActivated"/>, in any mode.</summary>
+    /// <param name="element">The picture control; null for the selected one.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task ActivatePictureControlAsync(ElementId? element = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ActivatePictureControl(element), ct);
 
     /// <summary>Writes a custom XML data part.</summary>
     /// <param name="namespace">The part's namespace.</param>

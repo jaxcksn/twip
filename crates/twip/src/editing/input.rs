@@ -49,7 +49,7 @@ pub enum Notice {
     Activate(crate::docx::ElementId),
     FieldUpdate { token: u64, fields: Vec<(crate::docx::ElementId, String)> },
     Link { address: String, ctrl: bool },
-    Placeholder { key: String, control: Option<crate::docx::ControlId> },
+    PictureControl { control: crate::docx::ControlId },
     Refused { sub_template: Option<String>, element: Option<crate::docx::ElementId> },
     Warning(crate::docx::diagnostics::WarningCode, String),
 }
@@ -61,5 +61,4 @@ pub enum Request {
     CapturePointer,
     ReleasePointer,
     Clipboard { text: String, html: Option<String> },
-    Placeholder(super::placeholders::PlaceholderInfo),
 }

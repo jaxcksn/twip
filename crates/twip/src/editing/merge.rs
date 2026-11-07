@@ -657,7 +657,9 @@ impl Editor {
     // Control fill
     pub(super) fn fill_control(&mut self, f: FillControl, fonts: &Fonts) -> Outcome {
         self.begin_batch(None);
+        self.picture_writes = true;
         let r = self.control_fill(f, fonts);
+        self.picture_writes = false;
         let out = self.end_batch(r.is_ok(), fonts);
         outcome(r.map(|_| out))
     }
@@ -1540,8 +1542,34 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
-    pub(super) fn insert_control(&mut self, c: InsertControl, fonts: &Fonts) -> Outcome {
-        outcome(self.control_insert(c, fonts))
+    pub(super) fn insert_control(&mut self, mut c: InsertControl, fonts: &Fonts) -> Outcome {
+        let Some(float) = c.float.take() else { return outcome(self.control_insert(c, fonts)) };
+        if c.kind != KindArg::Picture {
+            return Outcome::Refused(Error::invalid("only a picture control floats"));
+        }
+        if float.wrap == crate::api::value::ObjectWrap::Inline {
+            return Outcome::Refused(Error::invalid("a float needs a floating wrap"));
+        }
+        let before: std::collections::HashSet<ControlId> = self.doc.controls.keys().copied().collect();
+        self.begin_batch(Some("Insert Content Control".into()));
+        let inserted = self.control_insert(c, fonts);
+        let new = self.doc.controls.keys().copied().find(|k| !before.contains(k));
+        let Some(o) = new.filter(|_| matches!(inserted, Ok(Outcome::Changed(_)))).and_then(|k| self.picture_of_control(k)) else {
+            self.end_batch(false, fonts);
+            return outcome(inserted);
+        };
+        self.set_selection(Selection::Object(o));
+        let floated = matches!(self.set_object_wrap(float.wrap, fonts), Outcome::Changed(_));
+        if floated && (float.horizontal.is_some() || float.vertical.is_some()) {
+            let at = crate::api::command::ObjectPosition {
+                horizontal: float.horizontal,
+                vertical: float.vertical,
+                allow_overlap: None,
+                layout_in_cell: None,
+            };
+            self.set_object_position(at, fonts);
+        }
+        self.end_batch(floated, fonts)
     }
 
     // Content controls
@@ -1760,7 +1788,10 @@ impl Editor {
     }
 
     pub(super) fn set_control(&mut self, c: SetControl, fonts: &Fonts) -> Outcome {
-        outcome(self.control_set(c, fonts))
+        self.picture_writes = true;
+        let out = self.control_set(c, fonts);
+        self.picture_writes = false;
+        outcome(out)
     }
 
     fn control_set(&mut self, set: SetControl, fonts: &Fonts) -> Result<Outcome, Refused> {

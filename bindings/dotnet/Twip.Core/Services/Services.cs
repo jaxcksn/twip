@@ -241,18 +241,7 @@ public sealed class EditorElements
     /// <returns>Completes when it is selected.</returns>
     public Task SelectAsync(ElementId id, bool reveal = true, CancellationToken ct = default) =>
         _session.CallAsync(Method.SelectElement, WireJson.ToUtf8(new SelectElementRequest(id, reveal)), ct);
-
-    /// <summary>The unfilled picture placeholders, in document order (the headers and footers after the body).</summary>
-    /// <param name="ct">Cancels the request.</param>
-    /// <returns>The placeholders.</returns>
-    public Task<IReadOnlyList<PlaceholderInfo>> PlaceholdersAsync(CancellationToken ct = default) =>
-        _session.CallAsync<IReadOnlyList<PlaceholderInfo>>(Method.Placeholders, [], ct);
 }
-
-/// <summary>An unfilled picture placeholder.</summary>
-/// <param name="Key">Its key, what filling it takes.</param>
-/// <param name="Element">The control it is in.</param>
-public sealed record PlaceholderInfo(string Key, ElementId? Element);
 
 /// <summary>A text match on element codes, tags or titles.</summary>
 /// <param name="In">Which text.</param>
@@ -372,6 +361,10 @@ public record ElementInfo(
     /// <summary>A sub-template reference field's sub-template.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SubTemplateReference? Reference { get; init; }
+
+    /// <summary>Whether a content control shows its placeholder.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ShowingPlaceholder { get; init; }
 
     /// <summary>A picture control's picture size (inline or floating).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -728,8 +721,10 @@ public enum GestureId
     TextDrag,
     /// <summary>A double-click on an element in design mode.</summary>
     ElementDoubleClick,
-    /// <summary>A click on an unfilled picture placeholder.</summary>
-    PlaceholderClick,
+    /// <summary>A click on an unfilled picture control in editing and read-only modes: activates it.</summary>
+    PictureControlClick,
+    /// <summary>A double-click on a picture control in editing and read-only modes: activates it.</summary>
+    PictureControlDoubleClick,
     /// <summary>A click on an empty spot of the horizontal ruler.</summary>
     RulerClick,
     /// <summary>Dragging a ruler marker or boundary.</summary>

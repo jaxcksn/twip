@@ -138,7 +138,7 @@ const types: Record<string, string> = {
   'page-number-place': "NonNullable<Arg<'insertPageNumber'>['where']>",
   'page-rect': "ReturnType<T.View['visiblePages']>[number]",
   'paste-as': "NonNullable<Arg<'paste'>['as']>",
-  'placeholder-info': 'T.PlaceholderInfo',
+  'picture-control-activation': "T.TwipEvents['pictureControlActivated']",
   'popover-autocorrect': "Extract<T.Popover, { kind: 'autoCorrect' }>",
   'popover-tab-stop': "Extract<T.Popover, { kind: 'tabStop' }>",
   'popover-tab-type': "Extract<T.Popover, { kind: 'tabType' }>",
