@@ -85,7 +85,6 @@ export const Method = {
   OpenDiscard: 67,
   DialogSelectIssue: 68,
   FontSetResolver: 69,
-  Placeholders: 70,
   HostSetCaretBlink: 71,
   HostFrameStats: 72,
   HostSetOverlayPalette: 73,

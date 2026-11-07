@@ -5,8 +5,8 @@ use crate::api::command::ElementField;
 use crate::api::error::Error;
 use crate::api::record::Origin;
 use crate::api::services::{
-    Block, BlockCell, BlockRow, DataPart, ElementDetail, ElementFilter, ElementInfo, PlaceholderInfo, ReferenceResolution, SubTemplateInfo,
-    SubTemplateReference, VerticalMerge,
+    Block, BlockCell, BlockRow, DataPart, ElementDetail, ElementFilter, ElementInfo, ReferenceResolution, SubTemplateInfo, SubTemplateReference,
+    VerticalMerge,
 };
 use crate::api::state::ElementKind;
 use crate::api::value::{
@@ -50,6 +50,7 @@ fn info(s: &Session, e: &Element) -> ElementInfo {
         },
         parent: e.parent.map(|p| ElementId(elements::id_str(p))),
         locked: e.locked,
+        showing_placeholder: p.map(|p| p.showing_placeholder),
         reference: match e.id {
             crate::docx::ElementId::Field(f) => s.editor.references().by_field.get(&f).map(|r| reference(s, f, r)),
             crate::docx::ElementId::Control(_) => None,
@@ -310,39 +311,6 @@ impl Session {
         self.apply_with(Origin::Api, |e, fonts| e.select_element(&id, reveal, fonts)).map(|_| ())
     }
 
-    /// The unfilled picture placeholders in document order (the headers and footers after the body), each with its
-    /// key and the control it is in. `fillPlaceholder` fills them.
-    pub fn placeholders(&self) -> Vec<PlaceholderInfo> {
-        use crate::docx::{Block as B, Inline};
-        fn walk(s: &Session, list: &[B], out: &mut Vec<PlaceholderInfo>) {
-            for b in list {
-                match b {
-                    B::Para(p) => {
-                        // The innermost control open at each picture; a block control's otherwise.
-                        let mut open: Vec<crate::docx::ControlId> = p.controls.clone();
-                        for i in &p.inlines {
-                            match i {
-                                Inline::ControlStart(c) => open.push(*c),
-                                Inline::ControlEnd(_) => drop(open.pop()),
-                                Inline::Picture(pic, _) => out.extend(s.editor.placeholder_of(pic.image, pic.w, pic.h).map(|p| PlaceholderInfo {
-                                    key: p.key,
-                                    element: open.last().map(|c| ElementId(elements::id_str(crate::docx::ElementId::Control(*c)))),
-                                })),
-                                _ => {}
-                            }
-                        }
-                    }
-                    B::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(s, &c.blocks, out)),
-                }
-            }
-        }
-        let doc = self.editor.document();
-        let mut out = Vec::new();
-        let stories = doc.sections.iter().map(|s| &s.blocks).chain(doc.stories.values());
-        stories.for_each(|b| walk(self, b, &mut out));
-        out
-    }
-
     /// The custom XML data parts with this namespace and item id (either may be left out).
     pub fn data_parts(&self, namespace: Option<&str>, item_id: Option<&str>) -> Vec<DataPart> {
         self.editor
@@ -388,19 +356,21 @@ mod tests {
     }
 
     #[test]
-    fn placeholders_list_until_filled() {
+    fn unfilled_picture_controls_list_until_filled() {
         let mut engine = Engine::new(FontLibrary::system_recommended());
         let id = engine.create_session(SessionOptions::default());
         let s = engine.session(id).expect("a session");
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-PLACEHOLDER.docx");
         s.open(&std::fs::read(path).expect("fixture")).expect("opens");
-        let all = s.placeholders();
-        assert!(!all.is_empty() && all.iter().all(|p| p.element.is_some()), "{all:?}");
+        let unfilled = |s: &crate::api::session::Session| -> Vec<crate::api::services::ElementInfo> {
+            s.elements(&ElementFilter::default()).into_iter().filter(|e| e.size.is_some() && e.showing_placeholder == Some(true)).collect()
+        };
+        let all = unfilled(s);
+        assert!(!all.is_empty(), "{all:?}");
         let obj = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx")).expect("fixture");
         let png = crate::docx::read(&obj).expect("reads").images.last().cloned().expect("an image");
-        let key = all[0].key.clone();
-        let fill = crate::api::command::FillPlaceholder { key: Some(key.clone()), image: crate::api::value::Bytes(png) };
-        s.run(crate::api::command::Command::FillPlaceholder(fill)).expect("fills");
-        assert!(s.placeholders().iter().all(|p| p.key != key), "filled ones go");
+        let fill = crate::api::command::FillControl { id: all[0].id.clone(), text: None, image: Some(crate::api::value::Bytes(png)), docx: None };
+        s.run(crate::api::command::Command::FillControl(fill)).expect("fills");
+        assert!(unfilled(s).iter().all(|e| e.id != all[0].id), "filled ones go");
     }
 }

@@ -5,6 +5,7 @@
     "kind": "plainText",
     "locked": false,
     "parent": "control-1",
+    "showingPlaceholder": true,
     "size": {
       "height": 54.0,
       "width": 216.0

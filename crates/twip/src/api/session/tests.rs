@@ -1285,68 +1285,6 @@ fn picture_control_placeholder_images() {
     assert!(set(s, json!({ "data": png, "mime": "image/png" })).is_err(), "filled: no placeholder to replace");
 }
 
-#[test]
-fn an_activated_placeholder_names_its_control() {
-    use crate::api::input::{Key, Modifiers, Point, PointerButton, PointerKind};
-    let (mut engine, events) = {
-        let mut engine = Engine::new(FontLibrary::system_recommended());
-        let events = Rc::new(RefCell::new(Vec::new()));
-        let sink = events.clone();
-        engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
-        (engine, events)
-    };
-    let id = engine.create_session(SessionOptions::default());
-    let s = engine.session(id).expect("a session");
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-PLACEHOLDER.docx");
-    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
-    s.host().attach(|_| {});
-    s.host().set_size(2000.0, 4000.0, 1.0);
-    let listed = s.placeholders();
-    assert_eq!(listed.len(), 1, "{listed:?}");
-    assert!(listed[0].element.is_some(), "{listed:?}");
-    let k = s.presentation.zoom() * 96.0 / 72.0;
-    let pictures = crate::editing::inspect::inspect(&mut s.editor, "geometry", true)["geometry"]["pictures"].as_array().cloned().unwrap_or_default();
-    let activated = |events: &Rc<RefCell<Vec<Event>>>| -> Vec<_> {
-        events.borrow_mut().drain(..).filter_map(|e| if let Event::PlaceholderActivated(p) = e { Some(p) } else { None }).collect()
-    };
-    let click = |s: &mut crate::api::session::Session, r: &serde_json::Value| {
-        let r: Vec<f64> = r.as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
-        let at = Point { x: (r[0] + r[2]) / 2.0 * k, y: (r[1] + r[3]) / 2.0 * k };
-        for kind in [PointerKind::Down, PointerKind::Up] {
-            s.pointer(kind, at, PointerButton::Primary, 1, Modifiers::default());
-        }
-    };
-    let rect = pictures
-        .iter()
-        .map(|p| p["rect"].clone())
-        .find(|r| {
-            click(s, r);
-            s.editor.selected_placeholder().is_some()
-        })
-        .expect("a drawn placeholder");
-    // Editable, then read only (a form locked after its first signature): a click, Enter and Space each name it.
-    for read_only in [false, true] {
-        s.set_read_only(read_only);
-        activated(&events);
-        click(s, &rect);
-        s.key(Key::Enter, Modifiers::default());
-        s.text(" ");
-        assert_eq!(activated(&events), vec![listed[0].clone(); 3], "read only: {read_only}");
-    }
-    s.set_read_only(false);
-    let data = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx")).expect("fixture");
-    let image = crate::editing::Editor::open(&data, &s.fonts.fonts()).expect("opens").document().images.last().cloned().expect("an image");
-    s.run(Command::FillPlaceholder(crate::api::command::FillPlaceholder {
-        key: Some(listed[0].key.clone()),
-        image: crate::api::value::Bytes(image),
-    }))
-    .expect("fills");
-    activated(&events);
-    click(s, &rect);
-    s.key(Key::Enter, Modifiers::default());
-    assert!(activated(&events).is_empty(), "filled: nothing");
-}
-
 /// The editor fixture `name`.
 fn editor_fixture(name: &str) -> Vec<u8> {
     std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(name)).expect("the fixture")
@@ -1794,4 +1732,223 @@ fn shared_east_asian_characters_lay_out_as_with_ms_mincho_without_it() {
     // Only the face's name differs: every position and width is the same.
     let real = font_table_layout(Some(mincho), Vec::new()).replace("Face(MS Mincho", "Face(Twip East Asian Punctuation");
     assert!(bundled == real, "the bundled face lays out as MS Mincho does");
+}
+
+#[test]
+fn an_activated_picture_control_names_it() {
+    use crate::api::input::{Key, Modifiers, Point, PointerButton, PointerKind};
+    let (mut engine, events) = {
+        let mut engine = Engine::new(FontLibrary::system());
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let sink = events.clone();
+        engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
+        (engine, events)
+    };
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-PLACEHOLDER.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    s.host().attach(|_| {});
+    s.host().set_size(2000.0, 4000.0, 1.0);
+    let listed: Vec<_> = s
+        .elements(&crate::api::services::ElementFilter::default())
+        .into_iter()
+        .filter(|e| e.size.is_some() && e.showing_placeholder == Some(true))
+        .map(|e| crate::api::services::PictureControlActivation { element: e.id })
+        .collect();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    let k = s.presentation.zoom() * 96.0 / 72.0;
+    let pictures = crate::editing::inspect::inspect(&mut s.editor, "geometry", true)["geometry"]["pictures"].as_array().cloned().unwrap_or_default();
+    let activated = |events: &Rc<RefCell<Vec<Event>>>| -> Vec<_> {
+        events.borrow_mut().drain(..).filter_map(|e| if let Event::PictureControlActivated(p) = e { Some(p) } else { None }).collect()
+    };
+    let click = |s: &mut crate::api::session::Session, r: &serde_json::Value| {
+        let r: Vec<f64> = r.as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+        let at = Point { x: (r[0] + r[2]) / 2.0 * k, y: (r[1] + r[3]) / 2.0 * k };
+        for kind in [PointerKind::Down, PointerKind::Up] {
+            s.pointer(kind, at, PointerButton::Primary, 1, Modifiers::default());
+        }
+    };
+    let rect = pictures
+        .iter()
+        .map(|p| p["rect"].clone())
+        .find(|r| {
+            click(s, r);
+            s.editor.selected_picture_unfilled()
+        })
+        .expect("a drawn placeholder");
+    // Editable, then read only (a form locked after its first signature): a click, Enter and Space each name it.
+    for read_only in [false, true] {
+        s.set_read_only(read_only);
+        activated(&events);
+        click(s, &rect);
+        s.key(Key::Enter, Modifiers::default());
+        s.text(" ");
+        assert_eq!(activated(&events), vec![listed[0].clone(); 3], "read only: {read_only}");
+    }
+    s.set_read_only(false);
+    let data = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx")).expect("fixture");
+    let image = crate::editing::Editor::open(&data, &s.fonts.fonts()).expect("opens").document().images.last().cloned().expect("an image");
+    s.run(Command::FillControl(crate::api::command::FillControl {
+        id: listed[0].element.clone(),
+        text: None,
+        image: Some(crate::api::value::Bytes(image)),
+        docx: None,
+    }))
+    .expect("fills");
+    activated(&events);
+    let pictures = crate::editing::inspect::inspect(&mut s.editor, "geometry", true)["geometry"]["pictures"].as_array().cloned().unwrap_or_default();
+    let found = pictures.iter().any(|p| {
+        click(s, &p["rect"]);
+        s.editor.selected_picture_control().is_some()
+    });
+    assert!(found, "the filled picture control");
+    assert!(activated(&events).is_empty(), "filled: a click selects only");
+    s.key(Key::Enter, Modifiers::default());
+    assert_eq!(activated(&events), vec![listed[0].clone()], "filled: Enter still activates");
+}
+
+/// A click selects a picture control whatever its gesture is bound to; activation comes from the click's default, a
+/// double-click (once) or Enter in editing and read-only modes, and from `activatePictureControl` in any mode. In design
+/// mode a double-click or Enter activates the element instead.
+#[test]
+fn picture_control_activation() {
+    use crate::api::input::{Key, Modifiers, Point, PointerButton, PointerKind};
+    use crate::api::services::{GestureAction, GestureId};
+    let (mut engine, events) = {
+        let mut engine = Engine::new(FontLibrary::system());
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let sink = events.clone();
+        engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
+        (engine, events)
+    };
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&editor_fixture("FX-PICTURE-CONTROLS.docx")).expect("opens");
+    s.run(Command::InsertControl(serde_json::from_value(serde_json::json!({ "kind": "plainText", "tag": "Text" })).unwrap()))
+        .expect("a text control");
+    s.host().attach(|_| {});
+    s.host().set_size(2000.0, 4000.0, 1.0);
+    let k = s.presentation.zoom() * 96.0 / 72.0;
+    let sig = s
+        .elements(&crate::api::services::ElementFilter::default())
+        .into_iter()
+        .find(|e| e.tag.as_deref() == Some("Placeholder:Signature.X"))
+        .expect("the signature control")
+        .id;
+    let tally = |events: &Rc<RefCell<Vec<Event>>>| -> (Vec<crate::api::value::ElementId>, usize, usize) {
+        let all: Vec<Event> = events.borrow_mut().drain(..).collect();
+        let activated = all.iter().filter_map(|e| if let Event::PictureControlActivated(p) = e { Some(p.element.clone()) } else { None }).collect();
+        let gestures = all
+            .iter()
+            .filter(|e| matches!(e, Event::Gesture(g) if matches!(g.gesture, GestureId::PictureControlClick | GestureId::PictureControlDoubleClick)))
+            .count();
+        let elements = all.iter().filter(|e| matches!(e, Event::ElementActivated { .. })).count();
+        (activated, gestures, elements)
+    };
+    let press = |s: &mut crate::api::session::Session, r: &serde_json::Value, clicks: u8| {
+        let r: Vec<f64> = r.as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+        let at = Point { x: (r[0] + r[2]) / 2.0 * k, y: (r[1] + r[3]) / 2.0 * k };
+        for kind in [PointerKind::Down, PointerKind::Up] {
+            s.pointer(kind, at, PointerButton::Primary, clicks, Modifiers::default());
+        }
+    };
+    let pictures = crate::editing::inspect::inspect(&mut s.editor, "geometry", true)["geometry"]["pictures"].as_array().cloned().unwrap_or_default();
+    let rect = pictures
+        .iter()
+        .map(|p| p["rect"].clone())
+        .find(|r| {
+            press(s, r, 1);
+            s.editor
+                .selected_picture_control()
+                .is_some_and(|c| crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(c))) == sig)
+        })
+        .expect("the drawn signature");
+    let selected = |s: &crate::api::session::Session| {
+        s.editor
+            .selected_picture_control()
+            .map(|c| crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(c))))
+    };
+    for read_only in [false, true] {
+        s.set_read_only(read_only);
+        for (binding, click) in [(GestureAction::Default, 1), (GestureAction::None, 0), (GestureAction::Emit, 0)] {
+            s.gestures().set(GestureId::PictureControlClick, binding.clone()).expect("binds");
+            s.run(Command::SelectAll).expect("selects");
+            tally(&events);
+            press(s, &rect, 1);
+            let (a, g, _) = tally(&events);
+            assert_eq!(selected(s), Some(sig.clone()), "{read_only} {binding:?}: the click selects");
+            assert_eq!(a.len(), click, "{read_only} {binding:?}: the click activates");
+            assert_eq!(g, (binding == GestureAction::Emit) as usize, "{read_only} {binding:?}: the gesture event");
+            press(s, &rect, 1);
+            press(s, &rect, 2);
+            let (a, _, _) = tally(&events);
+            assert_eq!(a, vec![sig.clone()], "{read_only} {binding:?}: one activation per double-click");
+            s.key(Key::Enter, Modifiers::default());
+            assert_eq!(tally(&events).0, vec![sig.clone()], "{read_only} {binding:?}: Enter");
+        }
+    }
+    s.set_read_only(false);
+    s.gestures().set(GestureId::PictureControlClick, GestureAction::Default).expect("binds");
+    s.run(Command::SetMode(crate::api::state::Mode::Design)).expect("design");
+    tally(&events);
+    press(s, &rect, 1);
+    press(s, &rect, 2);
+    s.key(Key::Enter, Modifiers::default());
+    let (a, _, elements) = tally(&events);
+    assert!(a.is_empty() && elements >= 1, "design mode activates the element: {a:?} {elements}");
+    for mode in [crate::api::state::Mode::Design, crate::api::state::Mode::Editing] {
+        s.run(Command::SetMode(mode)).expect("mode");
+        tally(&events);
+        s.run(Command::ActivatePictureControl(crate::api::command::ActivatePictureControl { element: Some(sig.clone()) })).expect("activates");
+        assert_eq!((tally(&events).0, selected(s)), (vec![sig.clone()], Some(sig.clone())), "{mode:?}: by the API");
+        s.run(Command::ActivatePictureControl(Default::default())).expect("the selected one");
+        assert_eq!(tally(&events).0, vec![sig.clone()]);
+    }
+    s.run(Command::SelectAll).expect("selects");
+    let none = s.run(Command::ActivatePictureControl(Default::default())).unwrap_err();
+    assert_eq!(none.code, crate::api::error::ErrorCode::Unavailable);
+    let text = s
+        .elements(&crate::api::services::ElementFilter::default())
+        .into_iter()
+        .find(|e| e.tag.as_deref() == Some("Text"))
+        .expect("the text control")
+        .id;
+    let bad = s.run(Command::ActivatePictureControl(crate::api::command::ActivatePictureControl { element: Some(text) })).unwrap_err();
+    assert_eq!(bad.code, crate::api::error::ErrorCode::InvalidArgument);
+}
+
+/// A click on a floating picture control activates it in editing mode, naming its control.
+#[test]
+fn floating_picture_control_activates() {
+    use crate::api::input::{Modifiers, Point, PointerButton, PointerKind};
+    let (mut engine, events) = {
+        let mut engine = Engine::new(FontLibrary::system());
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let sink = events.clone();
+        engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));
+        (engine, events)
+    };
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&editor_fixture("FX-PICTURE-CONTROLS.docx")).expect("opens");
+    s.host().attach(|_| {});
+    s.host().set_size(2000.0, 4000.0, 1.0);
+    let secure = s
+        .elements(&crate::api::services::ElementFilter::default())
+        .into_iter()
+        .find(|e| e.tag.as_deref() == Some("Placeholder:Secure.Y"))
+        .expect("the floating control")
+        .id;
+    let k = s.presentation.zoom() * 96.0 / 72.0;
+    let floats = crate::editing::inspect::inspect(&mut s.editor, "geometry", true)["geometry"]["floats"].as_array().cloned().unwrap_or_default();
+    let r: Vec<f64> = floats[0]["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    let at = Point { x: (r[0] + r[2]) / 2.0 * k, y: (r[1] + r[3]) / 2.0 * k };
+    events.borrow_mut().clear();
+    for kind in [PointerKind::Down, PointerKind::Up] {
+        s.pointer(kind, at, PointerButton::Primary, 1, Modifiers::default());
+    }
+    let activated: Vec<_> =
+        events.borrow().iter().filter_map(|e| if let Event::PictureControlActivated(p) = e { Some(p.element.clone()) } else { None }).collect();
+    assert_eq!(activated, vec![secure]);
 }

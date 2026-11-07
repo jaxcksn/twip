@@ -69,6 +69,8 @@ internal sealed record FontsChangedPayload(IReadOnlyList<MissingFont> Pending, I
 
 internal sealed record ElementActivatedPayload(ElementId Id);
 
+internal sealed record PictureControlActivation(ElementId Element);
+
 internal sealed record EditRefusedPayload(RefusalReason Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementId? Element);
 
 internal sealed record ElementsChangedPayload(IReadOnlyList<ElementInfo> Added, IReadOnlyList<ElementId> Removed, IReadOnlyList<ElementInfo> Changed);

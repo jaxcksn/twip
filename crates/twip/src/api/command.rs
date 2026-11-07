@@ -413,9 +413,13 @@ commands! {
     ReplaceFont(ReplaceFont),
     /// Wavy marks with a tooltip on elements. Undo: view.
     MarkElements(MarkElements),
-    /// Fills the selected placeholder, or every unfilled one with `key`: each becomes a plain picture, its content
-    /// control removed. Undo: one step.
-    FillPlaceholder(FillPlaceholder),
+    /// The tag prefixes whose picture controls keep their pictures (compared without case), replacing those set before:
+    /// editing can't delete, paste over or replace such a picture; `fillControl` and `setControl` still change it, and
+    /// in design mode deleting it removes its whole control. Undo: view.
+    SetProtectedPictureControls(ProtectedPictureControls),
+    /// Selects a picture control (the selected one when none is named) and emits `pictureControlActivated`, in any
+    /// mode. Undo: none.
+    ActivatePictureControl(ActivatePictureControl),
 
     // Data parts
     /// Writes a custom XML data part (well-formed); result `{ itemId }`. Undo: one step.
@@ -1398,6 +1402,23 @@ pub struct InsertControl {
     /// Wraps the selection instead of inserting an empty control.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrap_selection: Option<bool>,
+    /// A picture control floats: positioned and wrapped as `setObjectWrap` and `setObjectPosition` place an object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub float: Option<ControlFloat>,
+}
+
+/// How `insertControl` floats a picture control.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ControlFloat {
+    /// How text wraps around it; not `inline`.
+    pub wrap: ObjectWrap,
+    /// The horizontal place; where it would sit in line when not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horizontal: Option<HorizontalPosition>,
+    /// The vertical place; where it would sit in line when not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertical: Option<VerticalPosition>,
 }
 
 /// `setControl`'s options. `binding: null` removes the binding.
@@ -1595,15 +1616,21 @@ pub struct MarkElements {
     pub clear: Option<bool>,
 }
 
-/// `fillPlaceholder`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// `setProtectedPictureControls`' options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct FillPlaceholder {
-    /// Fills every unfilled placeholder with this key; `None` fills the selected one.
+pub struct ProtectedPictureControls {
+    /// The tag prefixes, replacing those set before; an empty list protects none.
+    pub tag_prefixes: Vec<String>,
+}
+
+/// `activatePictureControl`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActivatePictureControl {
+    /// The picture control; the selected one when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key: Option<String>,
-    /// The image's bytes.
-    pub image: Bytes,
+    pub element: Option<ElementId>,
 }
 
 /// `writeDataPart`'s options.

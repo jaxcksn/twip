@@ -62,20 +62,43 @@ call the commands:
 A custom .NET host supplies the system clipboard through `IEditorHostAdapter.SetClipboard` and
 `GetClipboardAsync` (see [hosting](dotnet#hosting-a-session-in-another-ui-framework)).
 
-## Picture placeholders
+## Picture controls
 
-A picture content control with no picture shows its placeholder picture (`w:showingPlcHdr`), as Word does: the
-editor, the saved DOCX and the PDF all show that picture. `insertControl({ kind: 'picture', placeholderImage })` sets
-it (PNG, JPEG, GIF, BMP or SVG), and `setControl` replaces it while the control still shows it.
+A picture content control with no picture shows its placeholder picture (`w:showingPlcHdr`): the editor, the saved
+DOCX and the PDF all show that picture. `insertControl({ kind: 'picture', placeholderImage })` sets it (PNG, JPEG,
+GIF, BMP or SVG), and `setControl` replaces it while the control still shows it. `elements.list()` reports each
+control's tag, size and `showingPlaceholder`, so the application finds the unfilled ones and decides what each tag
+means; `fillControl({ id, image })` fills one, fitted to its box.
 
-A click on an unfilled placeholder selects it and emits `placeholderActivated` with its key (the control's tag) and
-element. `fillPlaceholder({ image })` fills the selected placeholder, and `fillPlaceholder({ key, image })` fills
-every unfilled placeholder with that key.
+In design mode a picture control resizes from its handles (a corner keeps the aspect, a side stretches) and drags to
+another place in the text, its control going with it. Outside design mode, or when its control is locked, it can't
+be moved or resized.
 
-```ts file=../../examples/web/placeholders.ts
+`setProtectedPictureControls({ tagPrefixes })` protects the pictures of the controls whose tag starts with one of the
+prefixes (compared without case), as a content lock does: editing can't delete, paste over or replace them, only
+`fillControl` and `setControl` change them, and in design mode deleting one removes its whole control. The setting
+belongs to the session and isn't saved.
+
+A picture control floats with `insertControl({ kind: 'picture', float: { wrap, horizontal, vertical } })`, or with
+`setObjectWrap` on a selected one; `setObjectWrap('inline')` puts it back in line. A floating picture control drags,
+resizes and takes the wrap and position commands as any floating object does. It is saved as a floating text box with
+no line, no fill and no insets holding the inline picture control at the box's size, with no VML copy, and a text box
+of that shape reads back as one.
+
+A click selects a picture control. Activation, which asks the application to act on it, is separate:
+
+| Mode | `pictureControlActivated` comes from |
+|---|---|
+| editing, read only | a click on an unfilled picture control (the `pictureControlClick` gesture), a double-click on one (`pictureControlDoubleClick`), Enter while one is selected, `activatePictureControl` |
+| design | `activatePictureControl` only; a double-click or Enter emits `elementActivated` for the control |
+
+Binding `pictureControlClick` to `'none'` with `gestures.set` makes a click select only; the double-click and Enter
+still activate. A double-click activates once, even when its first click already did.
+
+```ts file=../../examples/web/picture-controls.ts
 ```
 
-```csharp file=../../examples/dotnet/Placeholders.cs#placeholders
+```csharp file=../../examples/dotnet/PictureControls.cs#picture-controls
 ```
 
 ## Navigation and styles

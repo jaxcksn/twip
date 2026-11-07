@@ -661,7 +661,6 @@ Twip.EditorCommands.EditHeaderAsync(System.Threading.CancellationToken ct = defa
 Twip.EditorCommands.EditHyperlinkAsync(string? address = null, string? text = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.EscapeAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.FillControlAsync(Twip.ElementId id, Twip.ControlContent! content, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.FillPlaceholderAsync(System.ReadOnlyMemory<byte> image, string? key = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.GoBackAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.GoToPageAsync(int page, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.GrowFontAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -806,7 +805,6 @@ Twip.EditorElements
 Twip.EditorElements.GetAsync(Twip.ElementId id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.ElementDetail!>!
 Twip.EditorElements.GetStructureAsync(Twip.ElementId? root = null, int? depth = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.Block!>!>!
 Twip.EditorElements.ListAsync(Twip.ElementFilter? filter = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.ElementInfo!>!>!
-Twip.EditorElements.PlaceholdersAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.PlaceholderInfo!>!>!
 Twip.EditorElements.SelectAsync(Twip.ElementId id, bool reveal = true, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorErrorCode
 Twip.EditorErrorCode.Aborted = 6 -> Twip.EditorErrorCode
@@ -896,7 +894,6 @@ Twip.EditorSession.Navigation.get -> Twip.EditorNavigation!
 Twip.EditorSession.NewDocumentAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSession.OpenAsync(System.IO.Stream! stream, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.ImportResult!>!
 Twip.EditorSession.OpenAsync(string! path, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.ImportResult!>!
-Twip.EditorSession.PlaceholderActivated -> System.EventHandler<Twip.PlaceholderActivatedEventArgs!>?
 Twip.EditorSession.Review.get -> Twip.EditorReview!
 Twip.EditorSession.RevisionsChanged -> System.EventHandler?
 Twip.EditorSession.RulerChanged -> System.EventHandler<Twip.RulerChangedEventArgs!>?
@@ -1329,7 +1326,7 @@ Twip.GestureEventArgs.Page.get -> int
 Twip.GestureEventArgs.Target.get -> Twip.GestureTarget!
 Twip.GestureId
 Twip.GestureId.BodyDoubleClickInHeaderFooter = 2 -> Twip.GestureId
-Twip.GestureId.ContextClick = 19 -> Twip.GestureId
+Twip.GestureId.ContextClick = 20 -> Twip.GestureId
 Twip.GestureId.ElementDoubleClick = 13 -> Twip.GestureId
 Twip.GestureId.FooterAreaDoubleClick = 1 -> Twip.GestureId
 Twip.GestureId.HeaderAreaDoubleClick = 0 -> Twip.GestureId
@@ -1337,11 +1334,10 @@ Twip.GestureId.LinkActivate = 6 -> Twip.GestureId
 Twip.GestureId.MarginClick = 7 -> Twip.GestureId
 Twip.GestureId.MarginDoubleClick = 8 -> Twip.GestureId
 Twip.GestureId.ObjectDrag = 11 -> Twip.GestureId
-Twip.GestureId.PlaceholderClick = 14 -> Twip.GestureId
-Twip.GestureId.RulerClick = 15 -> Twip.GestureId
-Twip.GestureId.RulerDoubleClick = 18 -> Twip.GestureId
-Twip.GestureId.RulerDrag = 16 -> Twip.GestureId
-Twip.GestureId.RulerDragOff = 17 -> Twip.GestureId
+Twip.GestureId.RulerClick = 16 -> Twip.GestureId
+Twip.GestureId.RulerDoubleClick = 19 -> Twip.GestureId
+Twip.GestureId.RulerDrag = 17 -> Twip.GestureId
+Twip.GestureId.RulerDragOff = 18 -> Twip.GestureId
 Twip.GestureId.TableBorderDoubleClick = 9 -> Twip.GestureId
 Twip.GestureId.TableBorderDrag = 10 -> Twip.GestureId
 Twip.GestureId.TextCtrlClick = 5 -> Twip.GestureId
@@ -2203,18 +2199,6 @@ Twip.PictureSizeDialogValues.ScaleWidth.get -> double
 Twip.PictureSizeDialogValues.ScaleWidth.init -> void
 Twip.PictureSizeDialogValues.Width.get -> Twip.Length
 Twip.PictureSizeDialogValues.Width.init -> void
-Twip.PlaceholderActivatedEventArgs
-Twip.PlaceholderActivatedEventArgs.Element.get -> Twip.ElementId?
-Twip.PlaceholderActivatedEventArgs.Key.get -> string!
-Twip.PlaceholderInfo
-Twip.PlaceholderInfo.<Clone>$() -> Twip.PlaceholderInfo!
-Twip.PlaceholderInfo.Deconstruct(out string! Key, out Twip.ElementId? Element) -> void
-Twip.PlaceholderInfo.Element.get -> Twip.ElementId?
-Twip.PlaceholderInfo.Element.init -> void
-Twip.PlaceholderInfo.Equals(Twip.PlaceholderInfo? other) -> bool
-Twip.PlaceholderInfo.Key.get -> string!
-Twip.PlaceholderInfo.Key.init -> void
-Twip.PlaceholderInfo.PlaceholderInfo(string! Key, Twip.ElementId? Element) -> void
 Twip.ReviewState
 Twip.ReviewState.<Clone>$() -> Twip.ReviewState!
 Twip.ReviewState.ActiveComment.get -> Twip.CommentId?
@@ -3212,9 +3196,6 @@ override Twip.Person.ToString() -> string!
 override Twip.PictureSizeDialogValues.Equals(object? obj) -> bool
 override Twip.PictureSizeDialogValues.GetHashCode() -> int
 override Twip.PictureSizeDialogValues.ToString() -> string!
-override Twip.PlaceholderInfo.Equals(object? obj) -> bool
-override Twip.PlaceholderInfo.GetHashCode() -> int
-override Twip.PlaceholderInfo.ToString() -> string!
 override Twip.ReviewState.Equals(object? obj) -> bool
 override Twip.ReviewState.GetHashCode() -> int
 override Twip.ReviewState.ToString() -> string!
@@ -3446,7 +3427,6 @@ static Twip.EditorOperation.EditHeader() -> Twip.EditorOperation!
 static Twip.EditorOperation.EditHyperlink(string? address = null, string? text = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.Escape() -> Twip.EditorOperation!
 static Twip.EditorOperation.FillControl(Twip.ElementId id, Twip.ControlContent! content) -> Twip.EditorOperation!
-static Twip.EditorOperation.FillPlaceholder(System.ReadOnlyMemory<byte> image, string? key = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.GoBack() -> Twip.EditorOperation!
 static Twip.EditorOperation.GoToPage(int page) -> Twip.EditorOperation!
 static Twip.EditorOperation.GrowFont() -> Twip.EditorOperation!
@@ -3750,8 +3730,6 @@ static Twip.Person.operator !=(Twip.Person? left, Twip.Person? right) -> bool
 static Twip.Person.operator ==(Twip.Person? left, Twip.Person? right) -> bool
 static Twip.PictureSizeDialogValues.operator !=(Twip.PictureSizeDialogValues? left, Twip.PictureSizeDialogValues? right) -> bool
 static Twip.PictureSizeDialogValues.operator ==(Twip.PictureSizeDialogValues? left, Twip.PictureSizeDialogValues? right) -> bool
-static Twip.PlaceholderInfo.operator !=(Twip.PlaceholderInfo? left, Twip.PlaceholderInfo? right) -> bool
-static Twip.PlaceholderInfo.operator ==(Twip.PlaceholderInfo? left, Twip.PlaceholderInfo? right) -> bool
 static Twip.ReviewState.operator !=(Twip.ReviewState? left, Twip.ReviewState? right) -> bool
 static Twip.ReviewState.operator ==(Twip.ReviewState? left, Twip.ReviewState? right) -> bool
 static Twip.RevisionId.operator !=(Twip.RevisionId left, Twip.RevisionId right) -> bool
@@ -5228,8 +5206,6 @@ Twip.ElementContext.Size.get -> Twip.PictureSize?
 Twip.ElementContext.Size.init -> void
 Twip.ElementInfo.Size.get -> Twip.PictureSize?
 Twip.ElementInfo.Size.init -> void
-Twip.InsertControlOptions.Deconstruct(out Twip.ControlKind Kind, out string? Tag, out string? Title, out Twip.ControlLock? Lock, out string? Placeholder, out Twip.DataBinding? Binding, out Twip.ControlOptions? Options, out bool? WrapSelection, out Twip.PlaceholderImage? PlaceholderImage) -> void
-Twip.InsertControlOptions.InsertControlOptions(Twip.ControlKind Kind, string? Tag = null, string? Title = null, Twip.ControlLock? Lock = null, string? Placeholder = null, Twip.DataBinding? Binding = null, Twip.ControlOptions? Options = null, bool? WrapSelection = null, Twip.PlaceholderImage? PlaceholderImage = null) -> void
 Twip.InsertControlOptions.PlaceholderImage.get -> Twip.PlaceholderImage?
 Twip.InsertControlOptions.PlaceholderImage.init -> void
 Twip.PictureSize
@@ -5439,50 +5415,49 @@ static Twip.FontDescription.operator !=(Twip.FontDescription? left, Twip.FontDes
 static Twip.FontDescription.operator ==(Twip.FontDescription? left, Twip.FontDescription? right) -> bool
 static Twip.FontSource.FromCategory(Twip.GenericFamily category) -> Twip.FontSource!
 static Twip.FontSource.FromFamily(string! family) -> Twip.FontSource!
-Twip.CommandId.AcceptAllRevisions = 161 -> Twip.CommandId
-Twip.CommandId.AcceptRevision = 157 -> Twip.CommandId
-Twip.CommandId.AcceptRevisionsInSelection = 159 -> Twip.CommandId
-Twip.CommandId.AddComment = 164 -> Twip.CommandId
-Twip.CommandId.ClosePopover = 183 -> Twip.CommandId
-Twip.CommandId.CloseSubTemplate = 187 -> Twip.CommandId
-Twip.CommandId.CreateSubTemplate = 188 -> Twip.CommandId
-Twip.CommandId.DeleteComment = 167 -> Twip.CommandId
-Twip.CommandId.DescribeFormatting = 191 -> Twip.CommandId
-Twip.CommandId.EditComment = 166 -> Twip.CommandId
-Twip.CommandId.EditSubTemplate = 186 -> Twip.CommandId
-Twip.CommandId.FillPlaceholder = 152 -> Twip.CommandId
+Twip.CommandId.AcceptAllRevisions = 162 -> Twip.CommandId
+Twip.CommandId.AcceptRevision = 158 -> Twip.CommandId
+Twip.CommandId.AcceptRevisionsInSelection = 160 -> Twip.CommandId
+Twip.CommandId.AddComment = 165 -> Twip.CommandId
+Twip.CommandId.ClosePopover = 184 -> Twip.CommandId
+Twip.CommandId.CloseSubTemplate = 188 -> Twip.CommandId
+Twip.CommandId.CreateSubTemplate = 189 -> Twip.CommandId
+Twip.CommandId.DeleteComment = 168 -> Twip.CommandId
+Twip.CommandId.DescribeFormatting = 192 -> Twip.CommandId
+Twip.CommandId.EditComment = 167 -> Twip.CommandId
+Twip.CommandId.EditSubTemplate = 187 -> Twip.CommandId
 Twip.CommandId.MarkElements = 151 -> Twip.CommandId
-Twip.CommandId.NeverAutoCorrect = 180 -> Twip.CommandId
-Twip.CommandId.RejectAllRevisions = 162 -> Twip.CommandId
-Twip.CommandId.RejectRevision = 158 -> Twip.CommandId
-Twip.CommandId.RejectRevisionsInSelection = 160 -> Twip.CommandId
-Twip.CommandId.RemoveDataPart = 154 -> Twip.CommandId
-Twip.CommandId.RemoveSubTemplate = 190 -> Twip.CommandId
-Twip.CommandId.RenameSubTemplate = 189 -> Twip.CommandId
-Twip.CommandId.ReplaceBody = 193 -> Twip.CommandId
+Twip.CommandId.NeverAutoCorrect = 181 -> Twip.CommandId
+Twip.CommandId.RejectAllRevisions = 163 -> Twip.CommandId
+Twip.CommandId.RejectRevision = 159 -> Twip.CommandId
+Twip.CommandId.RejectRevisionsInSelection = 161 -> Twip.CommandId
+Twip.CommandId.RemoveDataPart = 155 -> Twip.CommandId
+Twip.CommandId.RemoveSubTemplate = 191 -> Twip.CommandId
+Twip.CommandId.RenameSubTemplate = 190 -> Twip.CommandId
+Twip.CommandId.ReplaceBody = 194 -> Twip.CommandId
 Twip.CommandId.ReplaceFont = 150 -> Twip.CommandId
-Twip.CommandId.ReplyToComment = 165 -> Twip.CommandId
-Twip.CommandId.ResolveComment = 168 -> Twip.CommandId
-Twip.CommandId.RevertAutoCorrect = 179 -> Twip.CommandId
-Twip.CommandId.SelectComment = 170 -> Twip.CommandId
-Twip.CommandId.SelectRevision = 163 -> Twip.CommandId
-Twip.CommandId.SetActiveComment = 169 -> Twip.CommandId
-Twip.CommandId.SetApplicationFieldTypes = 192 -> Twip.CommandId
-Twip.CommandId.SetAuthorColor = 171 -> Twip.CommandId
-Twip.CommandId.SetAutoCorrect = 178 -> Twip.CommandId
-Twip.CommandId.SetMarkupView = 156 -> Twip.CommandId
-Twip.CommandId.SetMode = 174 -> Twip.CommandId
-Twip.CommandId.SetRulerTabType = 175 -> Twip.CommandId
-Twip.CommandId.SetSubTemplateRules = 184 -> Twip.CommandId
-Twip.CommandId.SetSubTemplateView = 185 -> Twip.CommandId
-Twip.CommandId.SetTablePosition = 182 -> Twip.CommandId
-Twip.CommandId.SetTrackChanges = 155 -> Twip.CommandId
-Twip.CommandId.SetViewOptions = 173 -> Twip.CommandId
-Twip.CommandId.SetZoom = 172 -> Twip.CommandId
-Twip.CommandId.ShowAutoCorrectOptions = 181 -> Twip.CommandId
-Twip.CommandId.ShowTabStop = 177 -> Twip.CommandId
-Twip.CommandId.ShowTabTypes = 176 -> Twip.CommandId
-Twip.CommandId.WriteDataPart = 153 -> Twip.CommandId
+Twip.CommandId.ReplyToComment = 166 -> Twip.CommandId
+Twip.CommandId.ResolveComment = 169 -> Twip.CommandId
+Twip.CommandId.RevertAutoCorrect = 180 -> Twip.CommandId
+Twip.CommandId.SelectComment = 171 -> Twip.CommandId
+Twip.CommandId.SelectRevision = 164 -> Twip.CommandId
+Twip.CommandId.SetActiveComment = 170 -> Twip.CommandId
+Twip.CommandId.SetApplicationFieldTypes = 193 -> Twip.CommandId
+Twip.CommandId.SetAuthorColor = 172 -> Twip.CommandId
+Twip.CommandId.SetAutoCorrect = 179 -> Twip.CommandId
+Twip.CommandId.SetMarkupView = 157 -> Twip.CommandId
+Twip.CommandId.SetMode = 175 -> Twip.CommandId
+Twip.CommandId.SetRulerTabType = 176 -> Twip.CommandId
+Twip.CommandId.SetSubTemplateRules = 185 -> Twip.CommandId
+Twip.CommandId.SetSubTemplateView = 186 -> Twip.CommandId
+Twip.CommandId.SetTablePosition = 183 -> Twip.CommandId
+Twip.CommandId.SetTrackChanges = 156 -> Twip.CommandId
+Twip.CommandId.SetViewOptions = 174 -> Twip.CommandId
+Twip.CommandId.SetZoom = 173 -> Twip.CommandId
+Twip.CommandId.ShowAutoCorrectOptions = 182 -> Twip.CommandId
+Twip.CommandId.ShowTabStop = 178 -> Twip.CommandId
+Twip.CommandId.ShowTabTypes = 177 -> Twip.CommandId
+Twip.CommandId.WriteDataPart = 154 -> Twip.CommandId
 Twip.EditorCommands.ReplaceFontAsync(string! from, string! to, Twip.ReplaceScope scope = Twip.ReplaceScope.Document, bool? bold = null, bool? italic = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.FontReplaceResult!>!
 Twip.FontReplaceResult
 Twip.FontReplaceResult.<Clone>$() -> Twip.FontReplaceResult!
@@ -5510,3 +5485,36 @@ static Twip.SymbolFallback.FromFile(string! path) -> Twip.SymbolFallback!
 static Twip.SymbolFallback.Off.get -> Twip.SymbolFallback!
 Twip.PdfFontSetOptions.SymbolFallback.get -> Twip.SymbolFallback!
 Twip.PdfFontSetOptions.SymbolFallback.init -> void
+Twip.CommandId.SetProtectedPictureControls = 152 -> Twip.CommandId
+Twip.CommandId.ActivatePictureControl = 153 -> Twip.CommandId
+Twip.GestureId.PictureControlClick = 14 -> Twip.GestureId
+Twip.GestureId.PictureControlDoubleClick = 15 -> Twip.GestureId
+Twip.EditorCommands.SetProtectedPictureControlsAsync(System.Collections.Generic.IReadOnlyList<string!>! tagPrefixes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.ActivatePictureControlAsync(Twip.ElementId? element = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Twip.EditorOperation.SetProtectedPictureControls(System.Collections.Generic.IReadOnlyList<string!>! tagPrefixes) -> Twip.EditorOperation!
+static Twip.EditorOperation.ActivatePictureControl(Twip.ElementId? element = null) -> Twip.EditorOperation!
+Twip.EditorSession.PictureControlActivated -> System.EventHandler<Twip.PictureControlActivatedEventArgs!>?
+Twip.PictureControlActivatedEventArgs
+Twip.PictureControlActivatedEventArgs.Element.get -> Twip.ElementId
+Twip.ElementInfo.ShowingPlaceholder.get -> bool?
+Twip.ElementInfo.ShowingPlaceholder.init -> void
+Twip.InsertControlOptions.Deconstruct(out Twip.ControlKind Kind, out string? Tag, out string? Title, out Twip.ControlLock? Lock, out string? Placeholder, out Twip.DataBinding? Binding, out Twip.ControlOptions? Options, out bool? WrapSelection, out Twip.PlaceholderImage? PlaceholderImage, out Twip.ControlFloat? Float) -> void
+Twip.InsertControlOptions.InsertControlOptions(Twip.ControlKind Kind, string? Tag = null, string? Title = null, Twip.ControlLock? Lock = null, string? Placeholder = null, Twip.DataBinding? Binding = null, Twip.ControlOptions? Options = null, bool? WrapSelection = null, Twip.PlaceholderImage? PlaceholderImage = null, Twip.ControlFloat? Float = null) -> void
+Twip.InsertControlOptions.Float.get -> Twip.ControlFloat?
+Twip.InsertControlOptions.Float.init -> void
+Twip.ControlFloat
+Twip.ControlFloat.<Clone>$() -> Twip.ControlFloat!
+Twip.ControlFloat.ControlFloat(Twip.ObjectWrap Wrap, Twip.HorizontalPosition? Horizontal = null, Twip.VerticalPosition? Vertical = null) -> void
+Twip.ControlFloat.Deconstruct(out Twip.ObjectWrap Wrap, out Twip.HorizontalPosition? Horizontal, out Twip.VerticalPosition? Vertical) -> void
+Twip.ControlFloat.Equals(Twip.ControlFloat? other) -> bool
+Twip.ControlFloat.Horizontal.get -> Twip.HorizontalPosition?
+Twip.ControlFloat.Horizontal.init -> void
+Twip.ControlFloat.Vertical.get -> Twip.VerticalPosition?
+Twip.ControlFloat.Vertical.init -> void
+Twip.ControlFloat.Wrap.get -> Twip.ObjectWrap
+Twip.ControlFloat.Wrap.init -> void
+override Twip.ControlFloat.Equals(object? obj) -> bool
+override Twip.ControlFloat.GetHashCode() -> int
+override Twip.ControlFloat.ToString() -> string!
+static Twip.ControlFloat.operator !=(Twip.ControlFloat? left, Twip.ControlFloat? right) -> bool
+static Twip.ControlFloat.operator ==(Twip.ControlFloat? left, Twip.ControlFloat? right) -> bool

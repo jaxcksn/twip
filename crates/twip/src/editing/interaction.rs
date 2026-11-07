@@ -48,6 +48,13 @@ impl Editor {
     pub(super) fn text_drag_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.text_drag.take()?;
         self.requests.push(Request::ReleasePointer);
+        // A picture that is all of a picture control moves with its control.
+        if let (Selection::Object(super::selection::ObjectRef::Inline { para, offset }), true, false, Some(drop)) =
+            (self.selection, d.moved, d.copy, d.drop)
+            && let Some(out) = self.move_picture_control(para, offset, drop, fonts)
+        {
+            return Some(out);
+        }
         let object = match self.selection {
             s @ Selection::Object(super::selection::ObjectRef::Inline { para, offset }) if d.moved => {
                 let at = |u: u32| Position::text(d.press.story, para, Unit(u));

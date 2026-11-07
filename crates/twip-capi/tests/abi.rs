@@ -305,10 +305,14 @@ fn the_header_declares_the_abi() {
     }
 }
 
+/// Numbers of methods taken out: never given to another.
+const RETIRED: &[u32] = &[70];
+
 #[test]
 fn method_numbers_are_unique_and_stable() {
     let numbers: Vec<u32> = Method::ALL.iter().map(|m| *m as u32).collect();
-    assert_eq!(numbers, (1..=Method::ALL.len() as u32).collect::<Vec<_>>());
+    let all = (1..=(Method::ALL.len() + RETIRED.len()) as u32).filter(|n| !RETIRED.contains(n)).collect::<Vec<_>>();
+    assert_eq!(numbers, all);
     assert_eq!((Method::Run as u32, Method::Batch as u32, Method::State as u32, Method::Catalog as u32, Method::NewDocument as u32), (1, 2, 3, 4, 5));
 }
 

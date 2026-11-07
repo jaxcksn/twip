@@ -32,16 +32,6 @@ export interface Elements {
   structure(options?: { root?: ElementId; depth?: number }): Promise<Block[]>;
   /** Selects an element; enters a header or footer when needed. */
   select(id: ElementId, options?: { reveal?: boolean }): Promise<void>;
-  /** The unfilled picture placeholders, in document order (the headers and footers after the body). */
-  placeholders(): Promise<PlaceholderInfo[]>;
-}
-
-/** An unfilled picture placeholder. */
-export interface PlaceholderInfo {
-  /** Its key: what `fillPlaceholder` takes. */
-  key: string;
-  /** The control it is in. */
-  element: ElementId | null;
 }
 
 /** {@link Elements} on a mounted editor: adds drop targets and hit testing. */
@@ -82,6 +72,8 @@ export interface ElementInfo {
   reference?: SubTemplateReference;
   /** A picture control's picture size (inline or floating). */
   size?: { width: Points; height: Points };
+  /** Whether a content control shows its placeholder. */
+  showingPlaceholder?: boolean;
 }
 
 /**
@@ -249,7 +241,6 @@ export function createElements(s: Session): Elements {
     get: (id) => s.call(Method.Element, id),
     structure: (options) => s.call(Method.Structure, options ?? null),
     select: (id, options) => s.call(Method.SelectElement, { id, reveal: options?.reveal ?? false }),
-    placeholders: () => s.call(Method.Placeholders),
   };
 }
 

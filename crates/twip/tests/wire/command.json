@@ -825,9 +825,14 @@
     "type": "markElements"
   },
   {
-    "image": "iVBORw==",
-    "key": "logo",
-    "type": "fillPlaceholder"
+    "tagPrefixes": [
+      "Placeholder:"
+    ],
+    "type": "setProtectedPictureControls"
+  },
+  {
+    "element": "control-3",
+    "type": "activatePictureControl"
   },
   {
     "itemId": "{6A9C}",

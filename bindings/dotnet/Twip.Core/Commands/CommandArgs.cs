@@ -894,6 +894,7 @@ public sealed record ControlOptions(
 /// <param name="Options">Kind-specific options.</param>
 /// <param name="WrapSelection">Wrap the selection instead of inserting an empty control.</param>
 /// <param name="PlaceholderImage">A picture control's placeholder picture; null for the engine's.</param>
+/// <param name="Float">Floats a picture control; null keeps it in line.</param>
 public sealed record InsertControlOptions(
     ControlKind Kind,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Tag = null,
@@ -903,7 +904,20 @@ public sealed record InsertControlOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DataBinding? Binding = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ControlOptions? Options = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WrapSelection = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlaceholderImage? PlaceholderImage = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlaceholderImage? PlaceholderImage = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ControlFloat? Float = null);
+
+/// <summary>
+/// Floats a picture control, positioned and wrapped as <see cref="EditorCommands.SetObjectWrapAsync"/> and
+/// <see cref="EditorCommands.SetObjectPositionAsync"/> place an object.
+/// </summary>
+/// <param name="Wrap">How text wraps around it; it can't be <see cref="ObjectWrap.Inline"/>.</param>
+/// <param name="Horizontal">The horizontal place; null for where it would sit in line.</param>
+/// <param name="Vertical">The vertical place; null for where it would sit in line.</param>
+public sealed record ControlFloat(
+    ObjectWrap Wrap,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] HorizontalPosition? Horizontal = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VerticalPosition? Vertical = null);
 
 /// <summary>A picture control's placeholder picture: what the editor, the saved DOCX and a PDF show until it is filled. An SVG is drawn with the picture's box as its viewport.</summary>
 /// <param name="Data">The picture: PNG, JPEG, GIF, BMP or SVG.</param>

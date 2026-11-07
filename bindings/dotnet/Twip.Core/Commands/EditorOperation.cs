@@ -861,11 +861,15 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation MarkElements(IReadOnlyList<ElementMark> marks, bool? clear = null) => Op(CommandId.MarkElements, new Arg("marks", Node(marks)), new Arg("clear", clear is { } clear_ ? Node(clear_) : null, Optional: true));
 
-    /// <summary>Fills the selected picture placeholder, or every unfilled one with a key.</summary>
-    /// <param name="image">The picture.</param>
-    /// <param name="key">The placeholder key.</param>
+    /// <summary>Sets the tag prefixes (compared without case) whose picture controls keep their pictures, replacing those set before; an empty list protects none.</summary>
+    /// <param name="tagPrefixes">The tag prefixes.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation FillPlaceholder(ReadOnlyMemory<byte> image, string? key = null) => Op(CommandId.FillPlaceholder, new Arg("image", Node(image)), new Arg("key", key is { } key_ ? Node(key_) : null, Optional: true));
+    public static EditorOperation SetProtectedPictureControls(IReadOnlyList<string> tagPrefixes) => Op(CommandId.SetProtectedPictureControls, new Arg("tagPrefixes", Node(tagPrefixes)));
+
+    /// <summary>Selects a picture control (the selected one when none is given) and raises <see cref="EditorSession.PictureControlActivated"/>, in any mode.</summary>
+    /// <param name="element">The picture control; null for the selected one.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ActivatePictureControl(ElementId? element = null) => Op(CommandId.ActivatePictureControl, new Arg("element", element is { } element_ ? Node(element_) : null, Optional: true));
 
     /// <summary>Writes a custom XML data part.</summary>
     /// <param name="namespace">The part's namespace.</param>

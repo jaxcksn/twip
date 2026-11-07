@@ -656,9 +656,8 @@
     "via": "ctrlClick"
   },
   {
-    "element": null,
-    "key": "logo",
-    "type": "placeholderActivated"
+    "element": "control-3",
+    "type": "pictureControlActivated"
   },
   {
     "at": {
@@ -806,6 +805,7 @@
         "kind": "plainText",
         "locked": false,
         "parent": "control-1",
+        "showingPlaceholder": true,
         "size": {
           "height": 54.0,
           "width": 216.0

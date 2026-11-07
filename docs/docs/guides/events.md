@@ -35,7 +35,7 @@ operations reject, new ones reject, and `destroy()` still works.
 | — | `StateChanged` | The state changed. Coalesced: the latest snapshot after one or more changes. (TypeScript: `subscribe`.) |
 | `selectionChanged` | `SelectionChanged` | The selection moved. Coalesced per frame. |
 | `linkActivated` | `LinkActivated` | Ctrl+click on a link, or a click when read only. Open the address yourself. |
-| `placeholderActivated` | `PlaceholderActivated` | A click on an unfilled picture placeholder. See [placeholders](services#picture-placeholders). |
+| `pictureControlActivated` | `PictureControlActivated` | A picture control was activated: a click on an unfilled one, a double-click or Enter in editing and read-only modes, or `activatePictureControl`. Carries its element. See [picture controls](services#picture-controls). |
 | `contextMenu` | `ContextMenuRequested` | Right-click, the context-menu key or Shift+F10. Carries the menu model and where to show it. |
 | `dialogRequested` | `DialogRequested` | A key or gesture asked for a dialog (Ctrl+D asks for `font`). |
 | `hostCommand` | `HostCommandRequested` | A key the application owns: save, save as, print, open, new, find, replace, go to, insert hyperlink, next misspelling, focus the font or size box, help. The browser's default is suppressed. |

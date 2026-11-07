@@ -888,6 +888,9 @@ pub struct ElementInfo {
     /// A sub-template reference field's sub-template.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference: Option<SubTemplateReference>,
+    /// Whether a content control shows its placeholder (`w:showingPlcHdr`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub showing_placeholder: Option<bool>,
     /// A picture control's picture size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<crate::api::value::Size>,
@@ -1064,14 +1067,12 @@ pub struct DataPartInfo {
     pub item_id: String,
 }
 
-/// An unfilled picture placeholder the user activated.
+/// A picture control the user or the application activated.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PlaceholderInfo {
-    /// The placeholder's key.
-    pub key: String,
-    /// The content control it is in.
-    pub element: Option<ElementId>,
+pub struct PictureControlActivation {
+    /// The picture control.
+    pub element: ElementId,
 }
 
 // ---------------- accessibility, shortcuts, gestures ----------------
@@ -1436,8 +1437,10 @@ pub enum GestureId {
     TextDrag,
     /// A double-click on a field or content control in design mode.
     ElementDoubleClick,
-    /// A click on a picture placeholder.
-    PlaceholderClick,
+    /// A click on an unfilled picture control in editing and read-only modes: activates it.
+    PictureControlClick,
+    /// A double-click on a picture control in editing and read-only modes: activates it.
+    PictureControlDoubleClick,
     /// A click on the ruler: adds a tab stop.
     RulerClick,
     /// Dragging a ruler marker.

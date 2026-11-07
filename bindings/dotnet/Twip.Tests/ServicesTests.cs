@@ -25,7 +25,7 @@ public sealed class ServicesTests
         "spelling.addDictionary", "spelling.setEnabled", "spelling.setLanguage", "spelling.ignore", "spelling.add",
         "spelling.loadUserWords", "spelling.suggestions", "spelling.next", "navigation.headings", "navigation.select",
         "styles.list", "styles.listOne", "review.revisions", "review.comments", "review.people", "elements.list",
-        "elements.listFiltered", "elements.get", "elements.structure", "elements.select", "elements.placeholders",
+        "elements.listFiltered", "elements.get", "elements.structure", "elements.select",
         "dataParts.list", "dataParts.get", "accessibility.tree", "gestures.bindings", "gestures.set", "gestures.reset",
         "shortcuts.register", "shortcuts.lookup", "wordCount",
     ];
@@ -100,7 +100,6 @@ public sealed class ServicesTests
             case "review.comments": await s.Review.GetCommentsAsync(Ct); break;
             case "review.people": await s.Review.GetPeopleAsync(Ct); break;
             case "elements.list": await s.Elements.ListAsync(ct: Ct); break;
-            case "elements.placeholders": Assert.Empty(await s.Elements.PlaceholdersAsync(Ct)); break;
             case "elements.listFiltered": await s.Elements.ListAsync(Wire<ElementFilter>("element-filter"), Ct); break;
             case "elements.get": await s.Elements.GetAsync(Wire<ElementId>("element-id"), Ct); break;
             case "elements.structure": await s.Elements.GetStructureAsync(Wire<ElementId>("element-id"), 2, Ct); break;

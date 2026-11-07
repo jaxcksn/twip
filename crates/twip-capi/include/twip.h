@@ -143,7 +143,7 @@ enum TwipMethod {
     TWIP_OPEN_DISCARD = 67,           /* token (twip_open_prepare) -> null */
     TWIP_DIALOG_SELECT_ISSUE = 68,    /* string (an accessibility issue id) -> null */
     TWIP_FONT_SET_RESOLVER = 69,      /* bool: the SDK has a resolver (font requests come as kind 5) -> null */
-    TWIP_PLACEHOLDERS = 70,           /* -> PlaceholderInfo[] (the unfilled picture placeholders) */
+    /* 70 is retired. */
     TWIP_HOST_SET_CARET_BLINK = 71,   /* CaretBlink { intervalMs, stopAfterMs } -> null */
     TWIP_HOST_FRAME_STATS = 72,       /* -> FrameStats (what the frames have cost so far) */
     TWIP_HOST_SET_OVERLAY_PALETTE = 73, /* OverlayPalette (colours #RRGGBB) | null (the theme's) -> null */

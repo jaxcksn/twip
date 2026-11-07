@@ -282,8 +282,11 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     /// <summary>The user activated a hyperlink.</summary>
     public event EventHandler<LinkActivatedEventArgs>? LinkActivated;
 
-    /// <summary>The user clicked an unfilled picture placeholder.</summary>
-    public event EventHandler<PlaceholderActivatedEventArgs>? PlaceholderActivated;
+    /// <summary>
+    /// A picture control was activated: clicked while unfilled, double-clicked or given Enter in editing and read-only
+    /// modes, or named by <see cref="EditorCommands.ActivatePictureControlAsync"/>.
+    /// </summary>
+    public event EventHandler<PictureControlActivatedEventArgs>? PictureControlActivated;
 
     /// <summary>The user asked for a context menu.</summary>
     public event EventHandler<ContextMenuRequestedEventArgs>? ContextMenuRequested;
@@ -606,9 +609,9 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
                 var refused = root.Deserialize(ctx.EditRefusedPayload)!;
                 Notify(() => Raise(EditRefused, new EditRefusedEventArgs(refused.Reason, refused.Element, snapshot)));
                 break;
-            case "placeholderActivated":
-                var placeholder = root.Deserialize(ctx.PlaceholderInfo)!;
-                Notify(() => Raise(PlaceholderActivated, new PlaceholderActivatedEventArgs(placeholder.Key, placeholder.Element, snapshot)));
+            case "pictureControlActivated":
+                var picture = root.Deserialize(ctx.PictureControlActivation)!;
+                Notify(() => Raise(PictureControlActivated, new PictureControlActivatedEventArgs(picture.Element, snapshot)));
                 break;
             case "contextMenu":
                 var menu = root.Deserialize(ctx.ContextMenuPayload)!;

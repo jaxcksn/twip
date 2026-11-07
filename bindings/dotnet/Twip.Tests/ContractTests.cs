@@ -547,7 +547,7 @@ public sealed class ContractTests
             _session.RevisionsChanged += (_, _) => Record("revisionsChanged", null);
             _session.CommentsChanged += (_, _) => Record("commentsChanged", null);
             _session.AccessibilityAnnouncement += (_, e) => Record("announcement", new JsonObject { ["text"] = e.Text, ["kind"] = WireJson.ToNode(e.Kind) });
-            _session.PlaceholderActivated += (_, e) => Record("placeholderActivated", JsonSerializer.SerializeToNode(new PlaceholderInfo(e.Key, e.Element), Ctx.PlaceholderInfo));
+            _session.PictureControlActivated += (_, e) => Record("pictureControlActivated", new JsonObject { ["element"] = e.Element.Value });
             _session.GestureRequested += (_, e) => Record("gesture", JsonSerializer.SerializeToNode(new GestureEvent(e.Gesture, e.Location, e.Page, e.Target), Ctx.GestureEvent));
             _session.ElementsChanged += (_, e) => Record("elementsChanged", JsonSerializer.SerializeToNode(new ElementsChangedPayload(e.Added, e.Removed, e.Changed), Ctx.ElementsChangedPayload));
             _session.FieldsUpdateRequested += (_, e) => Record("fieldsUpdateRequested", JsonSerializer.SerializeToNode(new FieldsUpdateRequestedPayload(e.Token, e.Fields), Ctx.FieldsUpdateRequestedPayload));

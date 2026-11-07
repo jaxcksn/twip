@@ -112,7 +112,6 @@ export type {
   ElementInfo,
   Elements,
   MountedElements,
-  PlaceholderInfo,
   ReferenceResolution,
   ReferenceRule,
   SubTemplateInfo,

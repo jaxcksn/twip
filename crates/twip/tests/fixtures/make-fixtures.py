@@ -247,21 +247,32 @@ class Doc:
         )
         return f"<w:r>{self._drawing(i, 'Picture', cx, cy, graphic, float_at, alt, decorative)}</w:r>"
 
-    def textbox(self, content, w, h, float_at):
-        """A floating DrawingML text box (wps:wsp) holding block content, inside mc:AlternateContent as Word writes it."""
+    def textbox(self, content, w, h, float_at, bare=False, line=True, fallback=None):
+        """A floating DrawingML text box (wps:wsp) holding block content, inside mc:AlternateContent as Word writes it.
+        `bare` gives it no fill and zero insets (with no line unless `line`); `fallback` adds an mc:Fallback with a VML
+        text box holding that content."""
         i = self.uid()
         cx, cy = round(w * EMU), round(h * EMU)
+        fill = "<a:noFill/>" if bare else '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
+        ln = '<a:ln w="6350"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>' if line else "<a:ln><a:noFill/></a:ln>"
+        ins = 'lIns="0" tIns="0" rIns="0" bIns="0"' if bare else 'lIns="91440" tIns="45720" rIns="91440" bIns="45720"'
         graphic = (
             '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp>'
             f'<wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
-            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
-            '<a:ln w="6350"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></wps:spPr>'
+            f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{fill}{ln}</wps:spPr>'
             f"<wps:txbx><w:txbxContent>{content}</w:txbxContent></wps:txbx>"
-            '<wps:bodyPr rot="0" vert="horz" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" anchor="t" '
+            f'<wps:bodyPr rot="0" vert="horz" wrap="square" {ins} anchor="t" '
             'anchorCtr="0"><a:noAutofit/></wps:bodyPr></wps:wsp></a:graphicData></a:graphic>'
         )
         drawing = self._drawing(i, "Text Box", cx, cy, graphic, float_at)
-        return f'<w:r><mc:AlternateContent><mc:Choice Requires="wps">{drawing}</mc:Choice></mc:AlternateContent></w:r>'
+        vml = ""
+        if fallback is not None:
+            vml = (
+                '<mc:Fallback><w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="Text Box ' + str(i) + '" '
+                f'type="#_x0000_t202" style="position:absolute;width:{w * 72:g}pt;height:{h * 72:g}pt" filled="f" stroked="f">'
+                f'<v:textbox inset="0,0,0,0"><w:txbxContent>{fallback}</w:txbxContent></v:textbox></v:shape></w:pict></mc:Fallback>'
+            )
+        return f'<w:r><mc:AlternateContent><mc:Choice Requires="wps">{drawing}</mc:Choice>{vml}</mc:AlternateContent></w:r>'
 
     def footnote(self, text):
         n = len(self.footnotes) + 1
@@ -1323,6 +1334,29 @@ def fx_placeholder(d):
     )
 
 
+def fx_picture_controls(d):
+    """Picture controls: an inline signature placeholder in a sentence, a block-level picture control, a floating one as
+    a borderless zero-inset text box holding one inline picture control (with a VML fallback copy), the
+    same box with a border, and a content-locked one."""
+    s = Sdt(9600)
+    sig = s.wrap(d.picture(2.0, 0.5, 3), kind="<w:picture />", alias="Signature", tag="Placeholder:Signature.X", extra="<w:showingPlcHdr/>")
+    logo = s.wrap(p(d.picture(1.0, 0.5, 1)), kind="<w:picture />", alias="Logo", tag="Logo")
+    at = anchor_at(SQUARE, ("column", 1.0), ("paragraph", 0.0))
+    secure = '<w:sdt><w:sdtPr><w:alias w:val="Secure"/><w:tag w:val="Placeholder:Secure.Y"/><w:id w:val="4242"/><w:showingPlcHdr/><w:picture /></w:sdtPr><w:sdtContent>{}</w:sdtContent></w:sdt>'
+    inner = p(secure.format(d.picture(1.5, 0.5, 3)))
+    boxed = p(s.wrap(d.picture(1.5, 0.5, 3), kind="<w:picture />", alias="Boxed", tag="Boxed"))
+    locked = s.wrap(d.picture(1.0, 0.5, 1), kind="<w:picture />", alias="Locked", tag="Locked", lock="sdtContentLocked")
+    return (
+        P("FX-PICTURE-CONTROLS", HEADING)
+        + p(r("Sign: ") + sig + r(" here."))
+        + logo
+        + p(r("Secure: ") + d.textbox(inner, 1.5, 0.5, at, bare=True, line=False, fallback=inner) + r(filler(30)))
+        + p(r("Boxed: ") + d.textbox(boxed, 1.5, 0.5, anchor_at(SQUARE, ("column", 3.5), ("paragraph", 0.0)), bare=True) + r(filler(30, 3)))
+        + p(r("Locked: ") + locked)
+        + P("After the controls.")
+    )
+
+
 def fx_row_clip(d):
     """A line drawn just below an exact-height row whose paragraph it clips (hit testing must pick the drawn line),
     then a paragraph three tables deep."""
@@ -2216,6 +2250,7 @@ FIXTURES = {
     "FX-ROW-CLIP": fx_row_clip,
     "FX-GRID-WIDE": fx_grid_wide,
     "FX-PLACEHOLDER": fx_placeholder,
+    "FX-PICTURE-CONTROLS": fx_picture_controls,
     "FX-MERGE-FIELDS": fx_merge_fields,
     "FX-MERGE-CONTROLS": fx_merge_controls,
     "FX-MERGE-REGIONS": fx_merge_regions,

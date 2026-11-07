@@ -1263,6 +1263,8 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn changed_inline(&self, p: &Paragraph) -> bool {
         p.inlines.iter().any(|i| match i {
             Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. } => self.controls.get(c).is_some_and(|k| !k.as_read()),
+            // A floating picture control is written without the fallback copy beside it.
+            Inline::Float(f, _) => f.picture_control(&self.controls).is_some() && f.src.clone().is_some_and(|r| self.alternate_content(r).is_some()),
             _ => false,
         })
     }
@@ -2648,9 +2650,12 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     let txbx = format!("<wps:txbx><{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx>", w = s.w);
                     shape.get_or_insert_with(Vec::new).push((at..at, txbx));
                 }
-                let edited = shape.is_some();
+                // A floating picture control drops the fallback copy beside it: its bare Choice drawing.
+                let bare = b.picture_control(&s.controls).is_some() && s.alternate_content(src.clone()).is_some();
+                let edited = shape.is_some() || bare;
                 let mut p = match Placement::changed(a, b) {
                     Some(p) => Placement { shape, ..p },
+                    None if bare => Placement { shape, ..Placement::default() },
                     None => Placement { shape: Some(shape?), ..Placement::default() },
                 };
                 // an edited shape inside `mc:AlternateContent` is written as its bare Choice drawing.
@@ -2950,7 +2955,15 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 let run = self.cur[j].run.clone().expect("a unit in a run");
                 if !in_run {
                     // A whole field (its runs) or a simple field: reformatted, every run of it takes the formatting.
-                    if Rc::as_ptr(&run) == self.orig[i].run {
+                    // A content control around a resized picture: its drawing with the new extents.
+                    if let Some(size) = resized(self, i).filter(|_| Rc::as_ptr(&run) == self.orig[i].run) {
+                        let p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
+                        let x = p.apply(&self.src(range.clone()));
+                        self.flush();
+                        self.open_to(self.stack.len());
+                        self.out.push_str(&x);
+                        self.fmt_run = None;
+                    } else if Rc::as_ptr(&run) == self.orig[i].run {
                         self.verbatim(range.clone());
                         self.fmt_run = None;
                     } else {
@@ -3430,16 +3443,23 @@ impl Saver<'_, '_> {
                     "<a:ln><a:noFill/></a:ln>".to_string()
                 };
                 let fit = if tb.auto_fit { "<a:spAutoFit/>" } else { "<a:noAutofit/>" };
+                // A floating picture control's box has no fill.
+                let fill = if f.picture_control(&self.controls).is_some() {
+                    "<a:noFill/>"
+                } else {
+                    r#"<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>"#
+                };
                 format!(
                     concat!(
                         r#"<a:graphicData uri="{wps}"><wps:wsp xmlns:wps="{wps}"><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/>"#,
-                        r#"<a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/>"#,
-                        r#"</a:solidFill>{line}</wps:spPr><wps:txbx><{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx><wps:bodyPr rot="0" vert="horz" "#,
+                        r#"<a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{fill}"#,
+                        r#"{line}</wps:spPr><wps:txbx><{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx><wps:bodyPr rot="0" vert="horz" "#,
                         r#"wrap="square" lIns="{l}" tIns="{t}" rIns="{r}" bIns="{b}" anchor="t" anchorCtr="0">{fit}</wps:bodyPr></wps:wsp></a:graphicData>"#
                     ),
                     wps = WPS,
                     cx = cx,
                     cy = cy,
+                    fill = fill,
                     line = line,
                     w = self.w,
                     blocks = blocks,

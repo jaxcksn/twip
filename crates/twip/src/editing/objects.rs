@@ -43,7 +43,7 @@ impl Editor {
             if self.float_behind(f) && text_over() {
                 continue;
             }
-            if !text_box {
+            if !text_box || self.float_of(f).is_some_and(|fl| fl.picture_control(&self.doc.controls).is_some()) {
                 return Some(Selection::Object(ObjectRef::Floating(f)));
             }
             let left = px - x0 < band;
@@ -157,6 +157,13 @@ impl Editor {
 
     pub(super) fn delete_object(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let Selection::Object(o) = self.selection else { return None };
+        // A protected picture goes with its whole control in design mode, and stays otherwise.
+        if let Some(c) = self.picture_control_at(o).filter(|c| self.control_protected(*c)) {
+            if self.mode != super::Mode::Design {
+                return Some(Outcome::Unchanged("protected picture"));
+            }
+            return Some(self.remove_element(&super::merge::api_id(crate::docx::ElementId::Control(c)), false, fonts));
+        }
         match o {
             ObjectRef::Inline { para, offset } => {
                 let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));
@@ -332,7 +339,10 @@ impl Editor {
             _ => None,
         };
         self.drag = None;
-        self.activate_placeholder();
+        if self.press_clicks <= 1 && !self.activation_suppressed && self.mode != super::Mode::Design && self.selected_picture_unfilled() {
+            self.activate_picture_control();
+            self.click_activated = self.selected_picture_control();
+        }
         if let Selection::Object(obj @ ObjectRef::Floating(f)) = s
             && self.selected_child().is_some()
             && !self.object_fixed(obj)
@@ -431,20 +441,11 @@ impl Editor {
         }
     }
 
+    /// The object can't be moved or resized: a picture control's picture outside design mode, or a locked one's.
     pub(super) fn object_fixed(&self, o: ObjectRef) -> bool {
-        let image = match o {
-            ObjectRef::Inline { para, offset } => match self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)) {
-                Some(Inline::Picture(p, _)) => p.image,
-                _ => None,
-            },
-            ObjectRef::Floating(f) => self.index.float_anchor(f).and_then(|a| self.index.para(&self.doc, a)).and_then(|p| {
-                p.inlines.iter().find_map(|i| match i {
-                    Inline::Float(fl, _) if FloatId(fl.id) == f => fl.image,
-                    _ => None,
-                })
-            }),
-        };
-        image.is_some_and(|i| self.doc.fixed.contains(&i))
+        self.picture_control_at(o)
+            .and_then(|c| self.doc.controls.get(&c))
+            .is_some_and(|k| self.mode != super::Mode::Design || k.props.lock != crate::docx::Lock::None)
     }
 
     pub(super) fn object_locked(&self, o: ObjectRef) -> bool {
@@ -452,17 +453,20 @@ impl Editor {
             ObjectRef::Floating(f) => self.float_locked(f),
             ObjectRef::Inline { para, offset } => matches!(
                 self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)),
-                Some(Inline::Picture(p, _)) if p.lock_aspect || p.image.is_some_and(|i| self.doc.controlled.contains(&i))
+                Some(Inline::Picture(p, _)) if p.lock_aspect || p.image.is_some_and(|i| self.doc.controlled.contains_key(&i))
             ),
         }
     }
 
     pub(super) fn float_locked(&self, f: FloatId) -> bool {
+        if self.float_of(f).is_some_and(|fl| fl.picture_control(&self.doc.controls).is_some()) {
+            return true;
+        }
         self.index.text_box(&self.doc, f).is_none()
             && self.index.float_anchor(f).and_then(|a| self.index.para(&self.doc, a)).is_some_and(|p| {
                 p.inlines.iter().any(|i| {
                     matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f
-                            && (fl.lock_aspect || fl.image.is_some_and(|k| self.doc.controlled.contains(&k))))
+                            && (fl.lock_aspect || fl.image.is_some_and(|k| self.doc.controlled.contains_key(&k))))
                 })
             })
     }
@@ -777,6 +781,7 @@ impl Editor {
             return Outcome::Unchanged("already so");
         }
         **fl = n;
+        fit_picture_control(fl, &self.doc.controls);
         let mut tx = self.begin(label);
         if self.step(&mut tx, Step::Restyle { para: anchor, inlines }).is_err() {
             self.abort(tx);
@@ -896,15 +901,24 @@ impl Editor {
             w => (w, false),
         };
         let id = crate::docx::next_para_id();
+        // A picture that is all of a picture control floats with its control, in a box of its own.
+        let control = self.whole_picture_control(para, offset);
+        let boxed = control.and_then(|(c, _)| {
+            let mut q = self.index.para(&self.doc, para)?.clone();
+            q.controls.clear();
+            q.inlines = vec![Inline::ControlStart(c), Inline::Picture(pic.clone(), run.clone()), Inline::ControlEnd(c)];
+            let crate::docx::Block::Para(q) = super::clipboard::fresh(&crate::docx::Block::Para(q)) else { return None };
+            Some(crate::docx::TextBox { blocks: vec![crate::docx::Block::Para(q)], insets: [0.0; 4], outline: 0.0, auto_fit: false, v_anchor: 0 })
+        });
         let float = crate::docx::Float {
             id,
             w: pic.w,
             auto_w: false,
             h: pic.h,
-            image: pic.image,
+            image: if boxed.is_some() { None } else { pic.image },
             alt: pic.alt.clone(),
-            lock_aspect: pic.lock_aspect,
-            text_box: pic.text.clone().map(|t| t.text_box),
+            lock_aspect: pic.lock_aspect || boxed.is_some(),
+            text_box: boxed.clone().or_else(|| pic.text.clone().map(|t| t.text_box)),
             h_relative: "column".into(),
             h_align: None,
             h_offset: 0.0,
@@ -925,11 +939,27 @@ impl Editor {
             locked: false,
             frame_src: None,
             parts: Vec::new(),
-            shape: pic.shape.clone(),
+            shape: if boxed.is_some() { None } else { pic.shape.clone() },
             rot_swap: false,
         };
         self.begin_batch(Some("Wrap Text".into()));
         let mut tx = self.begin("Wrap Text");
+        if let Some((c, inline)) = control {
+            if !self.lift_picture_control(&mut tx, para, offset, c, inline, Some(Inline::Float(Box::new(float), run))) {
+                self.abort(tx);
+                self.end_batch(false, fonts);
+                return Outcome::Unchanged("stale object");
+            }
+            let f = FloatId(id);
+            self.selection = Selection::Object(ObjectRef::Floating(f));
+            self.commit(tx, None, fonts);
+            if let (Some((page, r)), Some((on, now))) = (was, self.float_box(f, fonts))
+                && on == page
+            {
+                self.place_float(f, page, now, [r[0], r[1], r[0] + now[2] - now[0], r[1] + now[3] - now[1]], "Wrap Text", false, fonts);
+            }
+            return self.end_batch(true, fonts);
+        }
         let removed = self.step(&mut tx, Step::Text { para, range: offset..Unit(offset.0 + 1), with: Vec::new(), edges: Default::default() });
         let inlines = self.index.para(&self.doc, para).map(|p| {
             let mut v = p.inlines.clone();
@@ -959,6 +989,26 @@ impl Editor {
             return Outcome::Unchanged("no float");
         };
         let Inline::Float(fl, run) = &p.inlines[k] else { return Outcome::Unchanged("no float") };
+        // A floating picture control goes back in line as its control around its picture.
+        let control = fl.picture_control(&self.doc.controls).and_then(|c| {
+            let Some(crate::docx::Block::Para(q)) = fl.text_box.as_ref()?.blocks.first() else { return None };
+            Some((c, q.inlines.iter().find(|i| matches!(i, Inline::Picture(..)))?.clone()))
+        });
+        if let Some((c, picture)) = control {
+            let at = Unit(p.inlines[..k].iter().map(|i| i.units() as u32).sum());
+            let mut inlines = p.inlines.clone();
+            inlines.remove(k);
+            let mut tx = self.begin("Wrap Text");
+            let with = vec![Inline::ControlStart(c), picture, Inline::ControlEnd(c)];
+            if self.step(&mut tx, Step::Restyle { para: anchor, inlines }).is_err()
+                || self.step(&mut tx, Step::Text { para: anchor, range: at..at, with, edges: Default::default() }).is_err()
+            {
+                self.abort(tx);
+                return Outcome::Unchanged("stale object");
+            }
+            self.selection = Selection::Object(ObjectRef::Inline { para: anchor, offset: at });
+            return self.commit(tx, None, fonts);
+        }
         if !fl.parts.is_empty() || fl.shape.is_none() && (fl.image.is_none() || fl.text_box.is_some()) {
             return Outcome::unsupported("only a picture or a shape goes in line with text");
         }
@@ -1010,6 +1060,7 @@ impl Editor {
             return Outcome::Unchanged("no float");
         };
         **fl = moved;
+        fit_picture_control(fl, &self.doc.controls);
         let to = if reanchor { self.reanchor(page, anchor, new, fl) } else { None };
         let mut tx = self.begin(label);
         let ok = match to {
@@ -1382,5 +1433,20 @@ impl Editor {
             }
         }
         (guides, measures, original)
+    }
+}
+
+/// A floating picture control's picture takes its box's size.
+fn fit_picture_control(fl: &mut crate::docx::Float, controls: &std::collections::HashMap<crate::docx::ControlId, crate::docx::Control>) {
+    if fl.picture_control(controls).is_none() {
+        return;
+    }
+    let (w, h) = (fl.w, fl.h);
+    if let Some(crate::docx::Block::Para(p)) = fl.text_box.as_mut().and_then(|tb| tb.blocks.first_mut()) {
+        for i in &mut p.inlines {
+            if let Inline::Picture(pic, _) = i {
+                (pic.w, pic.h) = (w, h);
+            }
+        }
     }
 }

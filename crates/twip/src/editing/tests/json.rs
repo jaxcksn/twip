@@ -400,7 +400,7 @@ fn notice(n: &Notice) -> Value {
             json!({ "type": "field_update", "token": token, "fields": fields })
         }
         Notice::Link { address, ctrl } => json!({ "type": "link", "address": address, "ctrl": ctrl }),
-        Notice::Placeholder { key, .. } => json!({ "type": "placeholder_activated", "key": key }),
+        Notice::PictureControl { control } => json!({ "type": "picture_control_activated", "id": id(&ElementId::Control(*control)) }),
         Notice::Warning(code, message) => json!({ "type": "warning", "code": code.name(), "message": message }),
         Notice::Refused { sub_template, element } => json!({ "type": "refused", "sub_template": sub_template, "element": element.as_ref().map(id) }),
     }
@@ -413,10 +413,6 @@ fn request(r: &Request) -> Value {
         Request::CapturePointer => json!({ "type": "capture_pointer" }),
         Request::ReleasePointer => json!({ "type": "release_pointer" }),
         Request::Clipboard { text, html } => json!({ "type": "clipboard", "text": text, "html": html }),
-        Request::Placeholder(p) => json!({
-            "type": "placeholder",
-            "placeholder": { "key": p.key, "label": p.label, "width": p.width, "height": p.height, "merge": p.merge },
-        }),
     }
 }
 

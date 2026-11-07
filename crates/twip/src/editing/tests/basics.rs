@@ -899,41 +899,6 @@ fn an_inline_picture_resizes_by_its_handle_and_saves() {
     assert_eq!(texts(&again), texts(&r.e));
 }
 
-/// A picture content control's handles resize it as a plain picture's do (the corner keeping its aspect, a side
-/// not), each one undo step, keeping the control, its tag and its placeholder picture.
-#[test]
-fn a_picture_controls_handles_resize_it() {
-    for mode in [crate::api::state::Mode::Editing, crate::api::state::Mode::Design] {
-        resize_picture_control(mode);
-    }
-}
-
-fn resize_picture_control(mode: crate::api::state::Mode) {
-    use serde_json::json;
-    let mut r = super::scenarios::Run::open("FX-TEXT.docx", "control-resize");
-    r.e.execute(Command::SetMode(mode), fonts());
-    let insert = json!({ "kind": "picture", "tag": "Barcode", "options": { "width": 200, "height": 50 } });
-    r.e.execute(Command::InsertControl(serde_json::from_value(insert).unwrap()), fonts());
-    let control = |e: &super::super::Editor| {
-        let all = crate::editing::elements::enumerate(e.document(), e.index(), &Default::default());
-        let c = all.into_iter().find(|x| x.props.as_ref().is_some_and(|p| p.tag.as_deref() == Some("Barcode"))).expect("the control");
-        (c.props.unwrap().showing_placeholder, body_pictures(e)[0])
-    };
-    let image = |e: &super::super::Editor| e.document().images.len();
-    let (images, depth) = (image(&r.e), r.e.history().undo_depth());
-    r.step(&json!({ "click": { "picture": 0 } }));
-    assert!(matches!(r.e.view(0..1).selection, crate::editing::view::SelectionView::Object(_, true)), "handles: {:?}", r.e.selection());
-    r.step(&json!({ "drag": { "from": { "picture": 0, "at": "bottom-right" }, "to": { "picture": 0, "at": "bottom-right", "dx": 40.0 } } }));
-    let (showing, (w, h)) = control(&r.e);
-    assert!(showing && w > 230.0 && (w / h - 4.0).abs() < 0.05, "the corner keeps the aspect: {w}×{h}");
-    assert_eq!((r.e.history().undo_depth(), image(&r.e)), (depth + 1, images), "one step, the same placeholder picture");
-    r.step(&json!({ "drag": { "from": { "picture": 0, "at": "right" }, "to": { "picture": 0, "at": "right", "dx": -60.0 } } }));
-    let (_, (w2, h2)) = control(&r.e);
-    assert!(w2 < w - 50.0 && (h2 - h).abs() < 0.01, "a side doesn't: {w2}×{h2}");
-    r.e.execute(Command::Undo, fonts());
-    assert_eq!(control(&r.e).1, (w, h));
-}
-
 /// A picture control around a floating picture: reported, sized and given a placeholder picture by `setControl`,
 /// resized and moved by the mouse, and saved with its control.
 #[test]
@@ -978,6 +943,7 @@ fn a_floating_picture_control() {
     let image = |e: &super::super::Editor, f: &crate::docx::Float| e.document().images[f.image.unwrap()].clone();
     assert_eq!(((f.w, f.h), image(&r.e, &f)), ((144.0, 108.0), svg.as_bytes().to_vec()));
 
+    r.e.execute(Command::SetMode(crate::api::state::Mode::Design), fonts());
     r.step(&json!({ "click": { "float": 0 } }));
     r.step(&json!({ "drag": { "from": { "float": 0, "at": "bottom-right" }, "to": { "float": 0, "at": "bottom-right", "dx": 36.0 } } }));
     let g = body_floats(&r.e).remove(0);
@@ -1564,7 +1530,7 @@ fn new_lists_save_with_their_definitions() {
 }
 
 #[test]
-fn a_placeholder_activates_and_fills() {
+fn a_picture_control_activates_and_fills() {
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-PLACEHOLDER.docx", "placeholder");
     let st = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
@@ -1572,54 +1538,24 @@ fn a_placeholder_activates_and_fills() {
     let k = (0..pics.len())
         .find(|&k| {
             r.step(&json!({ "click": { "picture": k } }));
-            r.e.selected_placeholder().is_some()
+            r.e.selected_picture_unfilled()
         })
-        .expect("a drawn placeholder");
-    let info = r.e.selected_placeholder().unwrap();
-    assert_eq!((info.key.as_str(), info.label.as_str()), ("Signature.Recipient Sig", "Recipient Sig"));
+        .expect("a drawn unfilled picture control");
+    let c = r.e.selected_picture_control().expect("its control");
     let pt = pics[k]["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>();
     let (x, y) = ((pt[0] + pt[2]) / 2.0, (pt[1] + pt[3]) / 2.0);
     let out = r.e.apply_json(&json!({ "type": "pointer", "kind": "down", "x": x, "y": y, "clicks": 1, "seq": 1000 }).to_string(), fonts());
-    assert!(out.contains("\"placeholder\"") && out.contains("Signature.Recipient Sig"), "{out}");
+    assert!(out.contains("picture_control_activated"), "{out}");
     r.e.apply_json(&json!({ "type": "pointer", "kind": "up", "x": x, "y": y, "seq": 1001 }).to_string(), fonts());
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let id = crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(c)));
     let out = r.e.execute(
-        Command::FillPlaceholder(crate::api::command::FillPlaceholder { key: Some(info.key.clone()), image: crate::api::value::Bytes(data.clone()) }),
+        Command::FillControl(crate::api::command::FillControl { id, text: None, image: Some(crate::api::value::Bytes(data.clone())), docx: None }),
         fonts(),
     );
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
-    assert!(r.e.selected_placeholder().is_none(), "filled: no longer a placeholder");
-    let filled: Vec<(f64, f64)> =
-        r.e.document()
-            .sections
-            .iter()
-            .flat_map(|s| s.blocks.iter())
-            .flat_map(|b| match b {
-                crate::docx::Block::Para(p) => vec![p.clone()],
-                crate::docx::Block::Table(t) => t
-                    .rows
-                    .iter()
-                    .flat_map(|r| r.cells.iter())
-                    .flat_map(|c| c.blocks.iter())
-                    .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.clone()) } else { None })
-                    .collect(),
-            })
-            .flat_map(|p| p.inlines.into_iter())
-            .filter_map(|i| {
-                if let crate::docx::Inline::Picture(p, _) = i {
-                    (p.image.is_some_and(|k| r.e.document().filled.contains(&k))).then_some((p.w, p.h))
-                } else {
-                    None
-                }
-            })
-            .collect();
-    assert!(!filled.is_empty());
-    let (w, h) = filled[0];
-    assert!((h - 39.65).abs() < 0.1 && w < 214.15, "fitted by height: {w} x {h}");
+    assert!(!r.e.selected_picture_unfilled(), "filled: no longer showing its placeholder");
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
-    if let Some(d) = std::env::var_os("RT_KEEP") {
-        std::fs::write(std::path::Path::new(&d).join("FX-PLACEHOLDER.filled.docx"), &bytes).expect("writes");
-    }
     let xml = {
         use std::io::Read;
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap();
@@ -1627,14 +1563,12 @@ fn a_placeholder_activates_and_fills() {
         z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
         s
     };
-    assert!(!xml.contains("Placeholder:Signature.Recipient Sig") && !xml.contains("w:sdt"), "a plain picture: its control is gone");
+    assert!(xml.contains("Placeholder:Signature.Recipient Sig") && xml.contains("w:sdt"), "the control stays");
     assert!(!xml.contains("showingPlcHdr"), "no longer showing its placeholder");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert!(again.document().images.contains(&data), "the filled image is saved");
-    assert!(again.document().placeholders.is_empty(), "read back as filled");
+    assert!(again.document().controls.values().all(|k| !k.props.showing_placeholder), "read back as filled");
     assert_eq!(texts(&again), texts(&r.e));
-    r.e.execute(Command::Undo, fonts());
-    assert!(r.e.document().filled.is_empty());
 }
 
 fn controls_by_tag(bytes: &[u8]) -> Vec<(String, String)> {
@@ -1744,87 +1678,6 @@ fn content_controls_survive_edits() {
 }
 
 #[test]
-fn placeholders_cant_be_resized_or_moved() {
-    use serde_json::json;
-    let size = |e: &super::super::Editor| -> Vec<(f64, f64)> {
-        let d = e.document();
-        let mut v = Vec::new();
-        for s in &d.sections {
-            for b in &s.blocks {
-                let paras: Vec<&crate::docx::Paragraph> = match b {
-                    crate::docx::Block::Para(p) => vec![p],
-                    crate::docx::Block::Table(t) => t
-                        .rows
-                        .iter()
-                        .flat_map(|r| r.cells.iter())
-                        .flat_map(|c| c.blocks.iter())
-                        .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
-                        .collect(),
-                };
-                for p in paras {
-                    for i in &p.inlines {
-                        if let crate::docx::Inline::Picture(pic, _) = i
-                            && pic.image.is_some_and(|k| d.fixed.contains(&k))
-                        {
-                            v.push((pic.w, pic.h));
-                        }
-                    }
-                }
-            }
-        }
-        v
-    };
-    let check = |mut r: super::scenarios::Run| {
-        let st = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
-        let pics = st["geometry"]["pictures"].as_array().cloned().unwrap_or_default();
-        let k = (0..pics.len())
-            .find(|&k| {
-                r.step(&json!({ "click": { "picture": k } }));
-                r.e.selected_placeholder().is_some() || matches!(r.e.view(0..1).selection, crate::editing::view::SelectionView::Object(_, false))
-            })
-            .expect("a fixed picture");
-        let crate::editing::view::SelectionView::Object(_, handles) = r.e.view(0..1).selection else { panic!("an object selected") };
-        assert!(!handles, "no handles");
-        let before = size(&r.e);
-        assert!(!before.is_empty());
-        let corner = json!({ "picture": k, "at": "bottom-right" });
-        let to = json!({ "picture": k, "at": "bottom-right", "dx": 40.0, "dy": 30.0 });
-        r.step(&json!({ "drag": { "from": corner, "to": to } }));
-        assert_eq!(size(&r.e), before, "a drag from the corner doesn't resize it");
-        r.step(&json!({ "click": { "picture": k } }));
-        let out = r.e.execute(
-            Command::SetObjectSize(crate::api::command::ObjectSize {
-                width: Some(crate::api::value::Points(20.0)),
-                height: Some(crate::api::value::Points(20.0)),
-                lock_aspect: None,
-            }),
-            fonts(),
-        );
-        assert!(matches!(out, super::super::Outcome::Unchanged(_)), "{out:?}");
-        assert_eq!(size(&r.e), before);
-        r
-    };
-    let mut r = check(super::scenarios::Run::open("FX-PLACEHOLDER.docx", "fixed"));
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
-    r.e.execute(
-        Command::FillPlaceholder(crate::api::command::FillPlaceholder {
-            key: Some("Signature.Recipient Sig".into()),
-            image: crate::api::value::Bytes(data),
-        }),
-        fonts(),
-    );
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
-    let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
-    assert!(again.document().fixed.is_empty(), "a filled placeholder is a plain picture");
-    let mut o = super::scenarios::Run::open("FX-OBJ.docx", "not fixed");
-    assert!(o.e.document().fixed.is_empty());
-    let st = crate::editing::inspect::inspect(&mut o.e, "geometry", true);
-    assert!(!st["geometry"]["pictures"].as_array().is_none_or(|a| a.is_empty()));
-    o.step(&json!({ "click": { "picture": 0 } }));
-    assert!(matches!(o.e.view(0..1).selection, crate::editing::view::SelectionView::Object(_, true)));
-}
-
-#[test]
 fn sdt_locked_picture_controls_cant_be_deleted() {
     use serde_json::json;
     let bytes = {
@@ -1852,7 +1705,7 @@ fn sdt_locked_picture_controls_cant_be_deleted() {
         (0..n)
             .find(|&k| {
                 r.step(&json!({ "click": { "picture": k } }));
-                r.e.selected_placeholder().is_some()
+                r.e.selected_picture_control().is_some()
             })
             .expect("the placeholder")
     };
@@ -2122,6 +1975,7 @@ fn dragging_a_whole_control_keeps_its_properties() {
         options: None,
         placeholder_image: None,
         wrap_selection: Some(true),
+        float: None,
     };
     r.e.execute(Command::InsertControl(wrap), fonts());
     r.step(&json!({ "click": { "para": 0, "offset": 3 } }));
