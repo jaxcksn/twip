@@ -56,7 +56,7 @@ typedef struct TwipFrameInfo {
 #define TWIP_KIND_STATE 2         /* api::State (JSON) */
 #define TWIP_KIND_REQUEST_FRAME 3 /* no payload: draw a frame */
 #define TWIP_KIND_SET_TIMER 4     /* {"timer", "ms"}: arm a one-shot timer, then call twip_timer_fired */
-#define TWIP_KIND_FONT_REQUEST 5  /* api::FontRequest: resolve, then twip_font_add or FontMarkUnresolved */
+#define TWIP_KIND_FONT_REQUEST 5  /* api::FontRequest: resolve, then TWIP_FONT_ANSWER (after twip_font_add for a font) */
 #define TWIP_KIND_HOST_REQUEST 6  /* {"type": cursor | capture | release | clipboard | caret | scroll | scroll_to | a11y | announce} */
 
 typedef void (*twip_callback)(void* ctx, uint32_t session, uint32_t kind, const uint8_t* ptr, size_t len);
@@ -122,9 +122,9 @@ enum TwipMethod {
     TWIP_COPY = 46,                   /* {cut} -> ClipboardData | null */
     TWIP_PASTE = 47,                  /* {data, asText} -> null */
     TWIP_FONT_FAMILIES = 48,          /* -> string[] */
-    TWIP_FONT_SET_SUBSTITUTIONS = 49, /* SubstitutionRule[] -> null */
-    TWIP_FONT_SET_DEFAULT = 50,       /* string -> null */
-    TWIP_FONT_MARK_UNRESOLVED = 51,   /* FontRequest -> null */
+    TWIP_FONT_SET_REPLACEMENTS = 49,  /* FontRule[] -> null */
+    TWIP_FONT_SET_FALLBACK = 50,      /* string | null -> null */
+    TWIP_FONT_ANSWER = 51,            /* {request: FontRequest, answer: FontAnswer} -> null */
     TWIP_HOST_SET_BACKGROUND = 52,    /* Color | null (the theme's) -> null */
     TWIP_HOST_SET_MARKUP_PANE_WIDTH = 53, /* number -> null */
     TWIP_HOST_SET_RULERS = 54,        /* {horizontal, vertical} -> null */
@@ -154,7 +154,12 @@ enum TwipMethod {
     TWIP_ACCESSIBLE_GO = 78,          /* AccessibleId -> null: the caret to the start of the node's content */
     TWIP_HOST_CARET_WINDOW_SELECT = 79, /* { anchor, focus } (WindowPoints of the last caret window) -> null */
     TWIP_ANNOUNCEMENTS_SET = 80,      /* AnnouncementKind[] (the kinds the editor makes) -> null */
-    TWIP_SUB_TEMPLATE_EXPORT = 81     /* { name, category? } -> Bytes: a standalone DOCX of the sub-template's body */
+    TWIP_SUB_TEMPLATE_EXPORT = 81,    /* { name, category? } -> Bytes: a standalone DOCX of the sub-template's body */
+    TWIP_FONT_SET_ALIASES = 82,       /* Alias[] -> null */
+    TWIP_FONT_SET_GENERIC_DEFAULTS = 83, /* GenericDefaults -> null */
+    TWIP_FONT_SET_CHARACTER_FALLBACK = 84, /* string[] -> null */
+    TWIP_FONT_SET_CLASSIFICATION = 85, /* bool (from the document's font table) -> null */
+    TWIP_FONT_SET_SYMBOL_FALLBACK = 86 /* "bundled" | "off" -> null; a font: twip_font_symbol_fallback */
 };
 
 int32_t twip_call(TwipEngine* engine, uint32_t session, uint32_t method, const uint8_t* req, size_t len, TwipBuf* out);
@@ -168,12 +173,13 @@ int32_t twip_open(TwipEngine* engine, uint32_t session, const uint8_t* bytes, si
 int32_t twip_open_prepare(TwipEngine* engine, uint32_t session, const uint8_t* bytes, size_t len, const uint8_t* opts, size_t olen, TwipBuf* out);
 int32_t twip_export(TwipEngine* engine, uint32_t session, const uint8_t* opts, size_t olen, TwipBuf* bytes, TwipBuf* meta);
 int32_t twip_font_add(TwipEngine* engine, const uint8_t* bytes, size_t len, TwipBuf* out);
+int32_t twip_font_symbol_fallback(TwipEngine* engine, const uint8_t* bytes, size_t len, TwipBuf* out);
 
 /* Headless conversion (native only): no engine or session, callable from any thread at the same time.
- * twip_pdf_fonts_new: opts is {"includeSystemFonts", "fontFiles", "substitutions", "defaultFamily"} or empty, with
- * count font files passed as bytes; *out gets the set, faces gets {"ok": FaceInfo[]}. twip_pdf_fonts_families: out
+ * twip_pdf_fonts_new: opts is {"includeSystemFonts", "fontFiles", "replacements", "aliases", "genericDefaults",
+ * "classification", "fallback", "characterFallback", "symbolFallback"} or empty, with count font files passed as bytes; *out gets the set, faces gets {"ok": FaceInfo[]}. twip_pdf_fonts_families: out
  * gets {"ok": string[]}. twip_pdf_convert: opts is an api::PdfOptions or empty, cancel may be NULL; the PDF goes to
- * pdf, raw, and meta gets {"ok": {"warnings"}}. A set or flag is freed only after the calls using it return. */
+ * pdf, raw, and meta gets {"ok": {"warnings", "fonts"}}. A set or flag is freed only after the calls using it return. */
 typedef struct TwipPdfFonts TwipPdfFonts;
 typedef struct TwipPdfCancel TwipPdfCancel;
 int32_t twip_pdf_fonts_new(const uint8_t* opts, size_t olen, const uint8_t* const* fonts, const size_t* lens, size_t count, TwipPdfFonts** out, TwipBuf* faces);

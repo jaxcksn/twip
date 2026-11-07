@@ -67,3 +67,26 @@ fn renderers_read_only_the_view() {
         assert!(v.is_empty(), "{m} reads editing internals:\n{}", v.join("\n"));
     }
 }
+
+#[test]
+fn the_only_bundled_fonts_are_the_symbol_fallback_and_the_interface_font() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    sources(&root, &mut files);
+    let allowed = ["symbol-fallback.ttf", "east-asian-punctuation.otf", "chrome_fonts/jetbrains-mono-500.ttf", "chrome_fonts/jetbrains-mono-600.ttf"];
+    let mut bundled = Vec::new();
+    for f in files {
+        let text = fs::read_to_string(&f).unwrap_or_default();
+        let code = text.split("#[cfg(test)]").next().unwrap_or_default();
+        for (i, _) in code.match_indices("include_bytes!(\"") {
+            let path: String = code[i + 16..].chars().take_while(|c| *c != '"').collect();
+            if [".ttf", ".otf", ".ttc", ".woff", ".woff2"].iter().any(|x| path.ends_with(x)) {
+                bundled.push(path);
+            }
+        }
+    }
+    bundled.sort();
+    let mut want: Vec<String> = allowed.iter().map(|s| s.to_string()).collect();
+    want.sort();
+    assert_eq!(bundled, want, "fonts the engine bundles");
+}

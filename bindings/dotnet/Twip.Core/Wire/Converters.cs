@@ -202,6 +202,45 @@ internal sealed class RowHeightConverter : JsonConverter<RowHeight>
     }
 }
 
+/// <summary>An alias target: a family as a string, or <c>{ "category": ... }</c>.</summary>
+internal sealed class AliasTargetConverter : JsonConverter<AliasTarget>
+{
+    public override AliasTarget Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String) return AliasTarget.ToFamily(reader.GetString()!);
+        var node = JsonNode.Parse(ref reader) as JsonObject ?? throw new JsonException("not an alias target");
+        var category = node["category"]?.GetValue<string>() ?? throw new JsonException("an alias target needs a family or a category");
+        return AliasTarget.ToCategory(category switch
+        {
+            "serif" => GenericFamily.Serif,
+            "sansSerif" => GenericFamily.SansSerif,
+            "monospace" => GenericFamily.Monospace,
+            "script" => GenericFamily.Script,
+            "decorative" => GenericFamily.Decorative,
+            _ => throw new JsonException($"not a generic family: {category}"),
+        });
+    }
+
+    public override void Write(Utf8JsonWriter writer, AliasTarget value, JsonSerializerOptions options)
+    {
+        if (value.Family is { } family)
+        {
+            writer.WriteStringValue(family);
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WriteString("category", value.Category switch
+        {
+            GenericFamily.Serif => "serif",
+            GenericFamily.SansSerif => "sansSerif",
+            GenericFamily.Monospace => "monospace",
+            GenericFamily.Script => "script",
+            _ => "decorative",
+        });
+        writer.WriteEndObject();
+    }
+}
+
 internal sealed class ZoomLevelConverter : JsonConverter<ZoomLevel>
 {
     public override ZoomLevel Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

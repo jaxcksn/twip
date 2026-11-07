@@ -764,7 +764,7 @@ mod tests {
 
     #[test]
     fn text_below_the_page_is_excluded() {
-        let face = crate::font::Fonts::system().face("Calibri", false, false);
+        let face = crate::font::Fonts::system_recommended().face("Calibri", None, false, false);
         let Some(face) = face else { return };
         let run = |baseline: f64| {
             Item::Glyphs(GlyphRun {

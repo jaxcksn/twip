@@ -125,6 +125,15 @@ fn page_colour(b: Node, theme: &crate::drawing::theme::Theme, map: &crate::drawi
     }
 }
 
+/// The run line numbers draw with: the document defaults and the LineNumber character style.
+pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
+    let mut rp = res.styles.doc_rpr.clone();
+    if res.styles.get("LineNumber").is_some() {
+        rp.merge_level(&res.styles.chain_rpr(Some("LineNumber")));
+    }
+    res.run_style(&rp)
+}
+
 fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
     let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(|e| e.to_string())?;
     let mut pkg = Package { zip };
@@ -176,8 +185,11 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let people_xml = part_of("people").and_then(|p| pkg.read_str(&p));
     let people_part = super::comments::people(people_xml.as_deref());
 
+    let font_descriptions = part_of("fontTable").and_then(|p| pkg.read_str(&p)).map(|x| super::font_table::parse(&x)).unwrap_or_default();
+    let mut res = Resolver::new(styles, numbering, theme);
+    res.categories = Rc::new(super::font_table::categories(&font_descriptions));
     let mut r = Reader {
-        res: Resolver::new(styles, numbering, theme),
+        res,
         settings,
         counters: Counters::default(),
         images: Vec::new(),
@@ -320,13 +332,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     for (name, identity) in &people_part {
         r.people.author(name, identity.as_ref());
     }
-    doc.line_number_run = Some({
-        let mut rp = r.res.styles.doc_rpr.clone();
-        if r.res.styles.get("LineNumber").is_some() {
-            rp.merge_level(&r.res.styles.chain_rpr(Some("LineNumber")));
-        }
-        r.res.run_style(&rp)
-    });
+    doc.line_number_run = Some(line_number_run(&r.res));
     let mut image_parts = vec![String::new(); r.images.len()];
     for (part, &i) in &r.image_index {
         image_parts[i] = part.clone();
@@ -341,6 +347,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     doc.review_ids = r.ids;
     doc.diagnostics = r.diagnostics;
     doc.resolver = Some(Rc::new(r.res));
+    doc.font_descriptions = font_descriptions;
     super::fields::evaluate(&mut doc, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();

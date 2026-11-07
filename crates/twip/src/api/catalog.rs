@@ -277,6 +277,7 @@ const ENTRIES: &[Entry] = {
         (C::WrapInRepeatingSection, "Repeating Section", G::Control, &[], &[], true, true, U::Step),
         (C::RemoveElement, "Remove", G::Control, &[], &[], true, true, U::Step),
         (C::ReplaceInElements, "Replace in Fields and Controls", G::Control, &[], &[], true, true, U::Step),
+        (C::ReplaceFont, "Replace Font", G::Character, &[], &[], true, true, U::Step),
         (C::MarkElements, "Mark", G::Control, &[], &[], true, false, U::View),
         (C::FillPlaceholder, "Fill Placeholder", G::Control, &[], &[], true, true, U::Step),
         (C::WriteDataPart, "Write Data", G::Data, &[], &[], true, true, U::Step),

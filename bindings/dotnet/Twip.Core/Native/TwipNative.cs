@@ -88,9 +88,9 @@ internal enum Method : uint
     Copy = 46,
     Paste = 47,
     FontFamilies = 48,
-    FontSetSubstitutions = 49,
-    FontSetDefault = 50,
-    FontMarkUnresolved = 51,
+    FontSetReplacements = 49,
+    FontSetFallback = 50,
+    FontAnswer = 51,
     HostSetBackground = 52,
     HostSetMarkupPaneWidth = 53,
     HostSetRulers = 54,
@@ -121,6 +121,11 @@ internal enum Method : uint
     HostCaretWindowSelect = 79,
     AnnouncementsSet = 80,
     SubTemplateExport = 81,
+    FontSetAliases = 82,
+    FontSetGenericDefaults = 83,
+    FontSetCharacterFallback = 84,
+    FontSetClassification = 85,
+    FontSetSymbolFallback = 86,
 }
 
 /// <summary>Status codes the C functions return.</summary>
@@ -188,6 +193,9 @@ internal static unsafe partial class TwipNative
 
     [DllImport(Library, EntryPoint = "twip_font_add")]
     public static extern int FontAdd(nint engine, byte* bytes, nuint len, TwipBuf* output);
+
+    [DllImport(Library, EntryPoint = "twip_font_symbol_fallback")]
+    public static extern int FontSymbolFallback(nint engine, byte* bytes, nuint len, TwipBuf* output);
 
     [DllImport(Library, EntryPoint = "twip_key")]
     public static extern uint Key(nint engine, uint session, uint key, uint mods);

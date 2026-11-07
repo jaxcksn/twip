@@ -23,6 +23,7 @@ export interface TwipModule {
   _twip_open_prepare(engine: Ptr, session: number, bytes: Ptr, len: number, options: Ptr, optionsLen: number, out: Ptr): number;
   _twip_export(engine: Ptr, session: number, options: Ptr, optionsLen: number, bytes: Ptr, meta: Ptr): number;
   _twip_font_add(engine: Ptr, bytes: Ptr, len: number, out: Ptr): number;
+  _twip_font_symbol_fallback(engine: Ptr, bytes: Ptr, len: number, out: Ptr): number;
   _twip_key(engine: Ptr, session: number, key: number, mods: number): number;
   _twip_text(engine: Ptr, session: number, utf8: Ptr, len: number): void;
   _twip_composition(engine: Ptr, session: number, phase: number, utf8: Ptr, len: number): void;

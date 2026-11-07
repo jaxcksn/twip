@@ -1,4 +1,5 @@
 import type { EditorError } from './errors.js';
+import type { FontsState } from './fonts/library.js';
 import type { BalloonPlacement, CommentAnchor } from './review.js';
 import type { AnnouncementKind } from './services/accessibility.js';
 import type { DialogKind } from './services/dialogs.js';
@@ -45,8 +46,11 @@ export interface TwipEvents {
   gesture: GestureEvent;
   /** A word was added to the user's dictionary: persist it. */
   wordAdded: { word: string; language: string };
-  /** Fonts started or finished loading, or could not be found. */
-  fontsChanged: { pending: string[]; unresolved: string[] };
+  /**
+   * The document's fonts that draw with a stand-in (being fetched, or nothing provided them), or its characters no
+   * font has, changed. Carries the whole report, as `state.fonts` has it.
+   */
+  fontsChanged: FontsState;
   /** Design mode: Enter or double-click on an element. */
   elementActivated: { id: ElementId };
   /** Elements were added, removed or changed. */

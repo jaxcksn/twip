@@ -64,9 +64,9 @@ export const Method = {
   Copy: 46,
   Paste: 47,
   FontFamilies: 48,
-  FontSetSubstitutions: 49,
-  FontSetDefault: 50,
-  FontMarkUnresolved: 51,
+  FontSetReplacements: 49,
+  FontSetFallback: 50,
+  FontAnswer: 51,
   HostSetBackground: 52,
   HostSetMarkupPaneWidth: 53,
   HostSetRulers: 54,
@@ -97,6 +97,11 @@ export const Method = {
   HostCaretWindowSelect: 79,
   AnnouncementsSet: 80,
   SubTemplateExport: 81,
+  FontSetAliases: 82,
+  FontSetGenericDefaults: 83,
+  FontSetCharacterFallback: 84,
+  FontSetClassification: 85,
+  FontSetSymbolFallback: 86,
 } as const;
 
 /** A structured call number. */
@@ -252,6 +257,8 @@ export interface Transport {
   ): Promise<{ bytes: Uint8Array; revision: number; warnings: Warning[] }>;
   /** Adds a font to the shared library. */
   addFont(bytes: Uint8Array): Promise<FaceInfo[]>;
+  /** Sets the shared library's symbol fallback to a font's first face; rejects for bytes holding no face. */
+  setSymbolFallback(bytes: Uint8Array): Promise<void>;
   /** Forwards input; a key resolves with its outcome (0 unhandled, 1 handled, 2 and up a host key). */
   input(session: number, input: Input): Promise<number>;
   /**

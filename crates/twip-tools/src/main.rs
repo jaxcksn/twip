@@ -147,7 +147,7 @@ fn main() {
         // twip metrics <family> [bold] [italic]: the face's vertical metrics in font units
         let a: Vec<String> = args.skip(1).collect();
         let fonts = twip::internal::font::Fonts::system();
-        let f = fonts.face(&a[0], a.iter().any(|x| x == "bold"), a.iter().any(|x| x == "italic")).expect("no such font");
+        let f = fonts.face(&a[0], None, a.iter().any(|x| x == "bold"), a.iter().any(|x| x == "italic")).expect("no such font");
         println!(
             "{} upem {} ascent {} descent {} leading {} sup size {} offset {} sub size {} offset {}",
             f.family, f.upem, f.ascent, f.descent, f.leading, f.sup_size, f.sup_offset, f.sub_size, f.sub_offset

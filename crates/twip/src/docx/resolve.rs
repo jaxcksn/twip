@@ -17,6 +17,8 @@ pub struct Resolver {
     pub numbering: Numbering,
     pub theme: ThemeFonts,
     pub style_links: HashMap<(i64, i64), String>,
+    /// The generic category of each family the document's font table describes, by lowercase name.
+    pub categories: Rc<HashMap<String, super::font_table::GenericFamily>>,
 }
 
 impl std::fmt::Debug for Resolver {
@@ -39,7 +41,7 @@ pub struct ParaResolved {
 
 impl Resolver {
     pub fn new(styles: Styles, numbering: Numbering, theme: ThemeFonts) -> Resolver {
-        let mut r = Resolver { styles, numbering, theme, style_links: HashMap::new() };
+        let mut r = Resolver { styles, numbering, theme, style_links: HashMap::new(), categories: Rc::default() };
         r.compute_style_links();
         r
     }
@@ -80,11 +82,17 @@ impl Resolver {
         let east_asia_unset = p.east_asia_below.is_none()
             && matches!(p.east_asia.as_ref().filter(|e| matches!(e, FontRef::Theme(_))).or(p.east_asia_theme.as_ref()),
                 Some(FontRef::Theme(t)) if self.theme.ea_unset(t));
+        let ascii_name = ascii.clone().or_else(|| h_ansi.clone()).unwrap_or_else(fallback);
+        let h_ansi_name = h_ansi.clone().or_else(|| ascii.clone()).unwrap_or_else(fallback);
+        let east_asia_name = east_asia.clone().unwrap_or_else(fallback);
+        let category = |family: &str| self.categories.get(&family.to_lowercase()).copied();
+        let categories =
+            if self.categories.is_empty() { [None; 3] } else { [category(&ascii_name), category(&h_ansi_name), category(&east_asia_name)] };
         Rc::new(RunStyle {
-            ascii: ascii.clone().or_else(|| h_ansi.clone()).unwrap_or_else(fallback),
-            h_ansi: h_ansi.clone().or_else(|| ascii.clone()).unwrap_or_else(fallback),
+            ascii: ascii_name,
+            h_ansi: h_ansi_name,
             east_asia_named: !east_asia_unset && east_asia.as_deref().is_some_and(|n| !n.is_empty() && !n.eq_ignore_ascii_case("Times New Roman")),
-            east_asia: east_asia.unwrap_or_else(fallback),
+            east_asia: east_asia_name,
             cs: self.font(&p.cs).unwrap_or_else(fallback),
             east_asia_unset,
             hint_east_asia: p.hint.as_deref() == Some("eastAsia"),
@@ -112,6 +120,7 @@ impl Resolver {
             style_id: p.style.clone(),
             direct: Raw::default(),
             rev: Default::default(),
+            categories,
         })
     }
 

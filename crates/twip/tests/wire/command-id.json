@@ -159,6 +159,7 @@
   "wrapInRepeatingSection",
   "removeElement",
   "replaceInElements",
+  "replaceFont",
   "markElements",
   "fillPlaceholder",
   "writeDataPart",

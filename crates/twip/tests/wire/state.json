@@ -44,11 +44,35 @@
       "name": "Violation"
     },
     "fonts": {
-      "pending": [
-        "Aptos"
+      "characters": [
+        {
+          "characters": "漢☃",
+          "family": "Calibri",
+          "truncated": false
+        }
       ],
-      "unresolved": [
-        "Brand Sans"
+      "missing": [
+        {
+          "bold": true,
+          "by": "generic",
+          "category": "serif",
+          "drawnWith": "Tinos",
+          "family": "Garamond",
+          "italic": false,
+          "tried": [
+            "EB Garamond"
+          ]
+        }
+      ],
+      "pending": [
+        {
+          "bold": false,
+          "by": "fallback",
+          "drawnWith": "Carlito",
+          "family": "Aptos",
+          "italic": false,
+          "tried": []
+        }
       ]
     },
     "formatPainter": false,

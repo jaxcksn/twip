@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn elements_list_filter_and_select() {
-        let mut engine = Engine::new(FontLibrary::system());
+        let mut engine = Engine::new(FontLibrary::system_recommended());
         let id = engine.create_session(SessionOptions::default());
         let s = engine.session(id).expect("a session");
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-MERGE-FIELDS.docx");
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn placeholders_list_until_filled() {
-        let mut engine = Engine::new(FontLibrary::system());
+        let mut engine = Engine::new(FontLibrary::system_recommended());
         let id = engine.create_session(SessionOptions::default());
         let s = engine.session(id).expect("a session");
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-PLACEHOLDER.docx");

@@ -190,7 +190,8 @@ impl Session {
                     doc.review.view = crate::docx::review::MarkupView::NoMarkup;
                     crate::pdf::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", pdf, None)?
                 };
-                let mut warnings = font_fallbacks(self.editor.document(), self.editor.index(), &fonts);
+                let state = super::fonts::document_fonts(self.editor.document(), self.editor.index(), &fonts);
+                let mut warnings = fallback_warnings(&state);
                 warnings.extend(written);
                 Ok(Export { bytes: Bytes(bytes), revision, warnings })
             }
@@ -206,26 +207,15 @@ pub(crate) fn unsupported_package(bytes: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-/// As [`font_fallbacks`], for a document no editor holds.
-pub(crate) fn document_font_fallbacks(doc: &Document, fonts: &crate::font::Fonts) -> Vec<Warning> {
-    font_fallbacks(doc, &crate::editing::index::DocIndex::build(doc), fonts)
-}
-
-/// The families the document's text asks for that nothing in the library draws, which a PDF draws in the default.
-pub(crate) fn font_fallbacks(doc: &Document, index: &crate::editing::index::DocIndex, fonts: &crate::font::Fonts) -> Vec<Warning> {
-    let mut seen = std::collections::HashSet::new();
+/// What a PDF draws in another font: one warning per missing family and style, and one per family with missing
+/// characters.
+pub(crate) fn fallback_warnings(state: &crate::api::state::FontsState) -> Vec<Warning> {
     let mut diagnostics = crate::docx::diagnostics::Diagnostics::default();
-    for p in index.para_ids().filter_map(|id| index.para(doc, id)) {
-        for i in &p.inlines {
-            if let crate::docx::Inline::Text(_, run) = i
-                && !run.ascii.is_empty()
-                && seen.insert(run.ascii.as_str())
-                && !fonts.resolves(&run.ascii, run.bold, run.italic)
-            {
-                let drawn = fonts.face(&run.ascii, run.bold, run.italic).map_or_else(|| "no font".to_string(), |f| f.family.clone());
-                diagnostics.warn(WarningCode::PdfFontFallback, None, || format!("{} is drawn in {drawn}", run.ascii));
-            }
-        }
+    for m in &state.missing {
+        diagnostics.warn(WarningCode::PdfFontFallback, None, || super::fonts::describe(m));
+    }
+    for c in &state.characters {
+        diagnostics.warn(WarningCode::PdfFontFallback, None, || format!("no font has {} ({})", c.characters, c.family));
     }
     diagnostics.warnings
 }

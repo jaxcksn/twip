@@ -27,6 +27,8 @@ const native = [
   ['DejaVu Sans (subset)', 'Bitstream-Vera', 'both', 'dejavu-fonts.txt'],
   // The preset shape geometries (drawing/geom/presets.rs), generated from the standard's definitions.
   ['ECMA-376 preset shape definitions', 'LicenseRef-Ecma', 'both', 'ecma-376.txt'],
+  // The East Asian punctuation font, a subset of Noto Serif JP with MS Mincho's widths (font.rs).
+  ['Noto Serif JP (subset)', 'OFL-1.1', 'both', 'noto-serif-jp.txt'],
   // The editor chrome's typeface, subsets (render/chrome_fonts/).
   ['JetBrains Mono (subset)', 'OFL-1.1', 'both', 'jetbrains-mono.txt'],
   // The AutoCorrect replacement list (editing/autocorrect/en-US.tsv).

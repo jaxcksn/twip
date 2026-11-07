@@ -152,12 +152,26 @@ pub fn metrics(face: &Face, size: f64) -> (f64, f64, f64) {
 }
 
 pub fn metrics_at(face: &Face, size: f64, em1000: bool) -> (f64, f64, f64) {
-    let (a, d, g, upem) = if em1000 {
+    if em1000 {
         let r = |v: f64| (v * 1000.0 / face.upem).round();
-        (r(face.ascent), r(face.descent), r(face.leading), 1000.0)
+        metrics_from(FontMetrics { ascent: r(face.ascent), descent: r(face.descent), leading: r(face.leading), upem: 1000.0 }, size)
     } else {
-        (face.ascent, face.descent, face.leading, face.upem)
-    };
+        metrics_from(FontMetrics { ascent: face.ascent, descent: face.descent, leading: face.leading, upem: face.upem }, size)
+    }
+}
+
+/// Vertical metrics in font units.
+#[derive(Clone, Copy)]
+pub struct FontMetrics {
+    pub ascent: f64,
+    pub descent: f64,
+    pub leading: f64,
+    pub upem: f64,
+}
+
+/// Ascent, descent and gap in points at `size`.
+pub fn metrics_from(m: FontMetrics, size: f64) -> (f64, f64, f64) {
+    let FontMetrics { ascent: a, descent: d, leading: g, upem } = m;
     let above = Lu::from_font(a + g, size, upem);
     let gap = Lu::from_font(g, size, upem);
     let below = Lu::from_font(d, size, upem);
@@ -219,7 +233,7 @@ pub fn symbol_unicode(family: &str, c: char) -> char {
     char::from_u32(mapped).filter(|_| mapped != 0).unwrap_or(c)
 }
 
-fn family_for(c: char, run: &RunStyle) -> &str {
+pub(crate) fn family_for(c: char, run: &RunStyle) -> &str {
     let cp = c as u32;
     if is_east_asian(cp) || (run.hint_east_asia && shared_with_east_asia(cp)) {
         return &run.east_asia;
@@ -230,6 +244,12 @@ fn family_for(c: char, run: &RunStyle) -> &str {
 fn is_east_asian(cp: u32) -> bool {
     matches!(cp, 0x1100..=0x11FF | 0x2E80..=0x9FFF | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFFEF | 0x20000..=0x2FFFF)
 }
+
+/// List suffix space width, in em.
+const LIST_SUFFIX_SPACE_EM: f64 = 569.0 / 2048.0;
+
+/// East Asian punctuation family.
+const EAST_ASIAN_PUNCTUATION: &str = "MS Mincho";
 
 fn shared_with_east_asia(cp: u32) -> bool {
     match cp {
@@ -266,7 +286,7 @@ struct NewPiece {
 
 impl Builder<'_> {
     fn face(&self, family: &str, run: &RunStyle) -> Option<Rc<Face>> {
-        self.fonts.face(family, run.bold, run.italic)
+        self.fonts.face(family, run.category(family), run.bold, run.italic)
     }
 
     fn style_index(&mut self, s: PieceStyle) -> u32 {
@@ -456,7 +476,16 @@ impl Builder<'_> {
                     && std::ptr::eq(fam, run.east_asia.as_str())
                     && face.as_ref().is_some_and(|f| !f.east_asian)
                 {
-                    fam = if run.east_asia == "Times New Roman" { &run.h_ansi } else { "MS Mincho" };
+                    fam = if run.east_asia == "Times New Roman" {
+                        &run.h_ansi
+                    } else if self.fonts.resolves(EAST_ASIAN_PUNCTUATION, run.bold, run.italic) {
+                        EAST_ASIAN_PUNCTUATION
+                    } else {
+                        if let Some(f) = self.fonts.east_asian_punctuation(run.bold, run.italic).filter(|f| f.has_glyph(c)) {
+                            face = Some(f);
+                        }
+                        break;
+                    };
                     continue;
                 }
                 break;
@@ -564,15 +593,11 @@ impl Builder<'_> {
                 "space" => {
                     let s = self.pieces.len();
                     self.text(" ", &l.run)?;
-                    let arial = self.fonts.face("Arial", l.run.bold, l.run.italic);
-                    let space = arial.as_ref().and_then(|f| Some(f.advance(f.glyph(' ')?) / f.upem));
                     for i in s..self.pieces.len() {
                         let size = self.styles[self.pieces[i].style as usize].size;
                         let p = &mut self.pieces[i];
                         p.break_after = false;
-                        if let Some(em) = space {
-                            p.width = em * size * l.run.scale / 100.0 + l.run.spacing;
-                        }
+                        p.width = LIST_SUFFIX_SPACE_EM * size * l.run.scale / 100.0 + l.run.spacing;
                     }
                 }
                 "nothing" => {}
@@ -768,7 +793,7 @@ impl Builder<'_> {
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
         if let Some(dd) = &space.balance
-            && (dd.is_empty() || self.fonts.face(dd, false, false).is_some_and(|f| f.east_asian))
+            && (dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian))
         {
             self.balance_spaces();
         }
@@ -897,6 +922,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         style_id,
         direct: _,
         rev: _,
+        categories,
     } = &**a;
     Rc::ptr_eq(a, b)
         || (*ascii == b.ascii
@@ -927,7 +953,8 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *em == b.em
             && *toc == b.toc
             && *lang == b.lang
-            && *style_id == b.style_id)
+            && *style_id == b.style_id
+            && *categories == b.categories)
 }
 
 // Shape cache

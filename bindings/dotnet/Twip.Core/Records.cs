@@ -140,10 +140,8 @@ public enum WarningCode
     UnsupportedElement,
     /// <summary>An image couldn't be decoded.</summary>
     ImageUndecodable,
-    /// <summary>A font couldn't be found.</summary>
+    /// <summary>A font couldn't be drawn as the document asks; a stand-in draws it.</summary>
     FontUnresolved,
-    /// <summary>A font was substituted.</summary>
-    FontSubstituted,
     /// <summary>Content was rewritten to be valid.</summary>
     RewrittenContent,
     /// <summary>A PDF used a fallback font.</summary>

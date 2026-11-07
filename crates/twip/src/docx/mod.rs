@@ -4,6 +4,7 @@ pub mod blank;
 pub mod comments;
 pub mod diagnostics;
 pub mod fields;
+pub mod font_table;
 mod frames;
 pub mod glossary;
 pub mod image;
@@ -18,6 +19,7 @@ pub mod styles;
 pub mod xml;
 
 pub use model::*;
+pub(crate) use reader::line_number_run;
 pub use reader::{now_utc, read, read_at, read_editable};
 #[cfg(test)]
 mod merge_tests;

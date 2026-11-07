@@ -641,7 +641,7 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
                 break;
             case "fontsChanged":
                 var fonts = root.Deserialize(ctx.FontsChangedPayload)!;
-                Notify(() => Raise(FontsChanged, new FontsChangedEventArgs(fonts.Pending, fonts.Unresolved, snapshot)));
+                Notify(() => Raise(FontsChanged, new FontsChangedEventArgs(fonts.Pending, fonts.Missing, fonts.Characters, snapshot)));
                 break;
             case "elementActivated":
                 var element = root.Deserialize(ctx.ElementActivatedPayload)!;

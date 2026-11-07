@@ -15,7 +15,7 @@ fn part(bytes: &[u8], name: &str) -> Vec<u8> {
 
 fn layout_text(s: &mut Session) -> String {
     s.with_editor(|ed| {
-        ed.complete(&Fonts::system());
+        ed.complete(&Fonts::system_recommended());
         crate::layout::dump::page_text(&ed.snapshot(), ed.document())
     })
 }

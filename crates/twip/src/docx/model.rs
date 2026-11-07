@@ -1,5 +1,6 @@
 //! The layout engine's input: a document with every style resolved (the STYLE rules). Lengths are points.
 
+use super::font_table::GenericFamily;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -52,6 +53,16 @@ pub struct RunStyle {
     pub direct: Raw,
     /// Tracked insertion, deletion and formatting change of the run (or, on a paragraph's mark, of the mark).
     pub rev: RunRevisions,
+    /// The generic categories the document's font table gives the families of the `ascii`, `h_ansi` and `east_asia`
+    /// slots.
+    pub categories: [Option<GenericFamily>; 3],
+}
+
+impl RunStyle {
+    /// The generic category the document's font table gives `family`, when it is one of this run's slots.
+    pub fn category(&self, family: &str) -> Option<GenericFamily> {
+        [&self.ascii, &self.h_ansi, &self.east_asia].iter().position(|f| f.as_str() == family).and_then(|k| self.categories[k])
+    }
 }
 
 pub type Run = Rc<RunStyle>;
@@ -953,6 +964,11 @@ pub struct Document {
     /// The styles, numbering and theme it resolves with. `Rc`: clipboard fragments carry their source
     /// document's resolver to resolve pasted formatting (plan, Complexity Tracking).
     pub resolver: Option<Rc<super::resolve::Resolver>>,
+    /// The font table's description of each family, by lowercase name: what a resolver is told about a missing one.
+    pub font_descriptions: HashMap<String, super::font_table::FontDescription>,
+    /// Families the style, numbering, theme and font table parts were rewritten from and to, in order: the save
+    /// rewrites those parts.
+    pub font_renames: Vec<super::font_table::FontRename>,
     /// Lists made by the Numbering and Bullets commands since reading: written into the numbering part.
     pub added_lists: Vec<AddedList>,
     /// Who made the document's revisions and comments.

@@ -52,7 +52,7 @@ pub fn doc(path: &Path) -> Option<Document> {
 }
 
 pub fn fonts() -> Fonts {
-    Fonts::system()
+    Fonts::system_recommended()
 }
 
 pub fn gate_set(features: &[&str]) -> Vec<(PathBuf, Document)> {

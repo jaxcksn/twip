@@ -4,10 +4,10 @@
   "fonts": "empty",
   "steps": [
     { "op": "font", "file": "editor/fonts/stand-in-serif.ttf" },
-    { "op": "call", "method": "fonts.substitute", "args": [{ "Times New Roman": "Stand-in Serif", "Roboto Slab": "Stand-in Serif" }] },
+    { "op": "call", "method": "fonts.setReplacements", "args": [{ "Times New Roman": "Stand-in Serif", "Roboto Slab": "Stand-in Serif" }] },
     { "op": "open", "match": { "warnings": { "$has": [{ "code": "font-unresolved", "count": { "$type": "number" } }] } } },
-    { "op": "expectEvents", "match": [{ "type": "fontsChanged", "unresolved": { "$exact": ["Zzyzx Unknown"] } }] },
-    { "op": "expectState", "match": { "fonts": { "unresolved": { "$exact": ["Zzyzx Unknown"] }, "pending": { "$exact": [] } } } },
+    { "op": "expectEvents", "match": [{ "type": "fontsChanged", "missing": [{ "family": "Zzyzx Unknown", "bold": false, "by": "lastResort", "drawnWith": "Stand-in Serif" }] }] },
+    { "op": "expectState", "match": { "fonts": { "missing": [{ "family": "Zzyzx Unknown", "tried": { "$exact": [] } }], "pending": { "$exact": [] } } } },
 
     { "op": "call", "method": "find.next", "args": [{ "text": "Times New Roman text" }], "result": { "found": true } },
     { "op": "expectState", "match": { "formatting": { "font": "Times New Roman" } } },
@@ -17,8 +17,8 @@
     { "op": "expectState", "match": { "formatting": { "font": "Zzyzx Unknown" } } },
 
     { "op": "font", "file": "editor/fonts/zzyzx-unknown.ttf" },
-    { "op": "expectEvents", "match": [{ "type": "fontsChanged", "unresolved": { "$exact": [] } }] },
-    { "op": "expectState", "match": { "revision": 1, "fonts": { "unresolved": { "$exact": [] } }, "formatting": { "font": "Zzyzx Unknown" } } },
+    { "op": "expectEvents", "match": [{ "type": "fontsChanged", "missing": { "$exact": [] } }] },
+    { "op": "expectState", "match": { "revision": 1, "fonts": { "missing": { "$exact": [] } }, "formatting": { "font": "Zzyzx Unknown" } } },
 
     { "op": "export", "format": "docx", "match": { "revision": 1 } },
     { "op": "reopen" },

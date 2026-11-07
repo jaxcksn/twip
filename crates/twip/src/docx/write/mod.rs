@@ -22,6 +22,7 @@ use super::*;
 
 mod comments;
 mod drawing;
+mod fonts;
 mod glossary;
 pub mod props;
 mod revisions;
@@ -85,6 +86,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     section_pages(doc, &mut parts)?;
     new_stories(doc, &mut parts)?;
     added_lists(doc, &mut parts)?;
+    fonts::font_renames(doc, &mut parts)?;
     filled_placeholders(doc, &mut parts)?;
     review_parts(doc, &mut parts)?;
     default_tab_part(doc, &mut parts)?;
@@ -2084,7 +2086,7 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         (Inline::CommentRef { id: a, run: r }, Inline::CommentRef { id: b, run: q }) => a == b && Rc::ptr_eq(r, q),
         (Inline::ControlStart(a), Inline::ControlStart(b)) | (Inline::ControlEnd(a), Inline::ControlEnd(b)) => a == b,
         // A toggled checkbox keeps its run and changes its face.
-        (Inline::Sym { ch: a, run: r, .. }, Inline::Sym { ch: b, run: q, .. }) => a == b && Rc::ptr_eq(r, q),
+        (Inline::Sym { ch: a, font: f, run: r, .. }, Inline::Sym { ch: b, font: g, run: q, .. }) => a == b && f == g && Rc::ptr_eq(r, q),
         // Moved or resized floats are written patched (their text boxes' content is its own container).
         (Inline::Float(a, r), Inline::Float(b, q)) => {
             a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && Rc::ptr_eq(r, q)
@@ -2135,7 +2137,7 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
                 Inline::NoteRef { id, .. } => id.hash(&mut h),
                 // A checkbox by its control: toggling keeps it (its face is patched, `Emit::seg`).
                 Inline::Sym { control: Some(c), .. } => c.hash(&mut h),
-                Inline::Sym { ch, .. } => ch.hash(&mut h),
+                Inline::Sym { ch, font, .. } => (ch, font).hash(&mut h),
                 Inline::PTab(t, _) => t.hash(&mut h),
                 // A field's markers by their field: editing its code keeps them.
                 Inline::FieldBegin { id, .. } | Inline::FieldSep { id, .. } | Inline::FieldEnd { id, .. } => id.hash(&mut h),

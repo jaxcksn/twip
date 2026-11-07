@@ -9,6 +9,7 @@ pub mod comments;
 pub mod elements;
 pub mod extend;
 pub mod find;
+mod fonts;
 pub mod format;
 pub mod geometry;
 pub(crate) mod gestures;

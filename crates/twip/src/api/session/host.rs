@@ -1792,7 +1792,7 @@ mod tests {
 
         #[test]
         fn in_a_table_the_ruler_measures_the_columns_either_side_of_a_dragged_border() {
-            let (mut engine, id, _) = ruled_with(FontLibrary::system());
+            let (mut engine, id, _) = ruled_with(FontLibrary::system_recommended());
             let s = engine.session(id).expect("a session");
             s.run(Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 3 })).expect("inserts");
             // A frame lays the table out; the next state has its column boundaries.
@@ -1814,7 +1814,7 @@ mod tests {
 
     #[test]
     fn a_drop_runs_its_command_at_the_hit_position() {
-        let mut engine = Engine::new(FontLibrary::system());
+        let mut engine = Engine::new(FontLibrary::system_recommended());
         let id = engine.create_session(SessionOptions::default());
         let s = engine.session(id).expect("a session");
         s.run(Command::InsertText("Hello".into())).expect("types");

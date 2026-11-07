@@ -21,14 +21,16 @@ internal sealed record ExportOptionsWire(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords = null);
 
 internal sealed record PdfFontSetWire(
-    bool IncludeSystemFonts, IReadOnlyList<string> FontFiles, IReadOnlyList<SubstitutionRule> Substitutions,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DefaultFamily);
+    bool IncludeSystemFonts, IReadOnlyList<string> FontFiles, IReadOnlyList<FontRule> Replacements, IReadOnlyList<Alias> Aliases,
+    GenericDefaults GenericDefaults, [property: JsonPropertyName("classification")] bool ClassifyFromDocument,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Fallback, IReadOnlyList<string> CharacterFallback,
+    System.Text.Json.Nodes.JsonNode SymbolFallback);
 
 internal sealed record PdfOptionsWire(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? OpenPassword,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords);
 
-internal sealed record PdfConvertMeta(IReadOnlyList<Warning> Warnings);
+internal sealed record PdfConvertMeta(IReadOnlyList<Warning> Warnings, FontsReport Fonts);
 
 /// <summary>An export's metadata; the C ABI returns the bytes apart, so <see cref="Bytes"/> is unset there.</summary>
 internal sealed record ExportMeta(
@@ -63,7 +65,7 @@ internal sealed record ShortcutPayload(string Id);
 
 internal sealed record WordAddedPayload(string Word, string Language);
 
-internal sealed record FontsChangedPayload(IReadOnlyList<string> Pending, IReadOnlyList<string> Unresolved);
+internal sealed record FontsChangedPayload(IReadOnlyList<MissingFont> Pending, IReadOnlyList<MissingFont> Missing, IReadOnlyList<MissingCharacters> Characters);
 
 internal sealed record ElementActivatedPayload(ElementId Id);
 
@@ -195,11 +197,12 @@ internal sealed record KeyOutcome(string Type, [property: JsonIgnore(Condition =
 internal sealed record FrameInfo(
     double ContentWidth, double ContentHeight, double CaretX, double CaretY, double CaretHeight, bool CaretVisible, int Pages);
 
-/// <summary>What a command made: an element or comment <c>id</c>, a data part's <c>itemId</c>, or a <c>changed</c> count.</summary>
+/// <summary>What a command made: an element or comment <c>id</c>, a data part's <c>itemId</c>, or a <c>changed</c> count (and a <c>skipped</c> one).</summary>
 internal sealed record CommandResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Id = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ItemId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Changed = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Changed = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Skipped = null);
 
 /// <summary>A command's commit: its record, and what it made.</summary>
 internal sealed record Commit(TransactionRecord? Record, CommandResult? Value);
@@ -248,3 +251,15 @@ internal sealed record GestureSetRequest(GestureId Gesture, GestureAction Action
 
 /// <summary>A dialog update: the model, and a patch of its <c>kind</c> and the changed fields.</summary>
 internal sealed record DialogUpdateRequest(DialogModel Model, System.Text.Json.Nodes.JsonObject Patch);
+
+/// <summary>A resolver's answer as the engine takes it: <c>{ kind, family?, category?, message? }</c>.</summary>
+internal sealed record FontAnswerWire(
+    string Kind,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Family = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GenericFamily? Category = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Message = null)
+{
+    public static FontAnswerWire Missing { get; } = new("missing");
+}
+
+internal sealed record FontAnswerPayload(FontRequest Request, FontAnswerWire Answer);

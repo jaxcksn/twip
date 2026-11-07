@@ -8,7 +8,7 @@ use super::{Message, TwipEngine, kind, request, to_value};
 use engine::api::command::Command;
 use engine::api::engine::Dictionary;
 use engine::api::error::Error;
-use engine::api::fonts::{FontRequest, SubstitutionRule};
+use engine::api::fonts::{Alias, FontAnswer, FontRequest, FontRule, GenericDefaults, SymbolFallback};
 use engine::api::input::{ClipboardData, Point};
 use engine::api::record::Author;
 use engine::api::review::CommentAnchor;
@@ -141,12 +141,12 @@ methods! {
     Paste = 47,
     /// → `string[]`: the families the library draws (any session).
     FontFamilies = 48,
-    /// `SubstitutionRule[]` → `null` (any session).
-    FontSetSubstitutions = 49,
-    /// `string` → `null` (any session).
-    FontSetDefault = 50,
-    /// `FontRequest` → `null` (any session).
-    FontMarkUnresolved = 51,
+    /// `FontRule[]` → `null` (any session): the draw-time replacements.
+    FontSetReplacements = 49,
+    /// `string | null` → `null` (any session): the general fallback family.
+    FontSetFallback = 50,
+    /// `{ request: FontRequest, answer: FontAnswer }` → `null` (any session): a resolver's answer.
+    FontAnswer = 51,
     /// `Color` → `null`; `null` puts back the theme's desk.
     HostSetBackground = 52,
     /// `number` (CSS px) → `null`.
@@ -182,7 +182,7 @@ methods! {
     /// `string` (an accessibility issue's id, from the Accessibility dialog) → `null`.
     DialogSelectIssue = 68,
     /// `bool` → `null` (any session): whether the SDK has a resolver. While it does, a face layout lacks is a
-    /// `font_request` callback, answered with `twip_font_add` or `FontMarkUnresolved`; without one it is unresolved
+    /// `font_request` callback, answered with `FontAnswer` (after `twip_font_add` for a font); without one it is unresolved
     /// at once.
     FontSetResolver = 69,
     /// → `PlaceholderInfo[]`: the unfilled picture placeholders.
@@ -209,6 +209,25 @@ methods! {
     AnnouncementsSet = 80,
     /// `{ name, category? }` → `Bytes`: a standalone DOCX of the sub-template's body.
     SubTemplateExport = 81,
+    /// `Alias[]` → `null` (any session): the aliases, for families the library doesn't have.
+    FontSetAliases = 82,
+    /// `GenericDefaults` → `null` (any session): the family per generic category, for missing families.
+    FontSetGenericDefaults = 83,
+    /// `string[]` → `null` (any session): the families searched for characters a run's font lacks.
+    FontSetCharacterFallback = 84,
+    /// `bool` → `null` (any session): whether a document's font table gives missing families their category.
+    FontSetClassification = 85,
+    /// `"bundled" | "off"` → `null` (any session): the symbol fallback; a font of the application's goes through
+    /// `twip_font_symbol_fallback`.
+    FontSetSymbolFallback = 86,
+}
+
+/// A resolver's answer to a font request.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Answer {
+    request: FontRequest,
+    answer: FontAnswer,
 }
 
 #[derive(Deserialize)]
@@ -367,14 +386,31 @@ fn engine_call(e: &mut TwipEngine, method: Method, json: &[u8]) -> Option<Result
         Method::Catalog => to_value(Session::catalog()),
         Method::ShapeGallery => to_value(Session::shape_gallery()),
         Method::FontFamilies => to_value(fonts.families()),
-        Method::FontSetSubstitutions => request::<Vec<SubstitutionRule>>(json).map(|r| {
-            fonts.set_substitutions(r);
+        Method::FontSetReplacements => request::<Vec<FontRule>>(json).map(|r| {
+            fonts.set_replacements(r);
             Value::Null
         }),
-        Method::FontSetDefault => request::<String>(json).map(|f| {
-            fonts.set_default(&f);
+        Method::FontSetFallback => request::<Option<String>>(json).map(|f| {
+            fonts.set_fallback(f.as_deref());
             Value::Null
         }),
+        Method::FontSetAliases => request::<Vec<Alias>>(json).map(|a| {
+            fonts.set_aliases(a);
+            Value::Null
+        }),
+        Method::FontSetGenericDefaults => request::<GenericDefaults>(json).map(|d| {
+            fonts.set_generic_defaults(d);
+            Value::Null
+        }),
+        Method::FontSetCharacterFallback => request::<Vec<String>>(json).map(|f| {
+            fonts.set_character_fallback(f);
+            Value::Null
+        }),
+        Method::FontSetClassification => request::<bool>(json).map(|on| {
+            fonts.set_classification(on);
+            Value::Null
+        }),
+        Method::FontSetSymbolFallback => request::<SymbolFallback>(json).and_then(|f| fonts.set_symbol_fallback(f).map(|()| Value::Null)),
         Method::FontSetResolver => request::<bool>(json).map(|on| {
             if on {
                 let queue = e.outbox.clone();
@@ -388,8 +424,8 @@ fn engine_call(e: &mut TwipEngine, method: Method, json: &[u8]) -> Option<Result
             }
             Value::Null
         }),
-        Method::FontMarkUnresolved => request::<FontRequest>(json).map(|r| {
-            fonts.mark_unresolved(&r);
+        Method::FontAnswer => request::<Answer>(json).map(|a| {
+            fonts.answer(&a.request, a.answer);
             Value::Null
         }),
         Method::StackBalloons => {
@@ -398,7 +434,18 @@ fn engine_call(e: &mut TwipEngine, method: Method, json: &[u8]) -> Option<Result
         _ => return None,
     };
     if result.is_ok()
-        && matches!(method, Method::FontSetSubstitutions | Method::FontSetDefault | Method::FontSetResolver | Method::FontMarkUnresolved)
+        && matches!(
+            method,
+            Method::FontSetReplacements
+                | Method::FontSetFallback
+                | Method::FontSetAliases
+                | Method::FontSetGenericDefaults
+                | Method::FontSetCharacterFallback
+                | Method::FontSetClassification
+                | Method::FontSetSymbolFallback
+                | Method::FontSetResolver
+                | Method::FontAnswer
+        )
     {
         e.engine.sync_fonts();
     }
@@ -608,9 +655,14 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         Method::Catalog
         | Method::ShapeGallery
         | Method::FontFamilies
-        | Method::FontSetSubstitutions
-        | Method::FontSetDefault
-        | Method::FontMarkUnresolved
+        | Method::FontSetReplacements
+        | Method::FontSetFallback
+        | Method::FontSetAliases
+        | Method::FontSetGenericDefaults
+        | Method::FontSetCharacterFallback
+        | Method::FontSetClassification
+        | Method::FontSetSymbolFallback
+        | Method::FontAnswer
         | Method::FontSetResolver
         | Method::StackBalloons
         | Method::OpenCommit

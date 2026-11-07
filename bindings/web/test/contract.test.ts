@@ -186,7 +186,7 @@ async function run(file: string, script: Script): Promise<void> {
     return use(late.signal).finally(() => late.abort());
   };
 
-  /** Calls a member by its TypeScript path: `find.next`, `catalog`, `fonts.substitute`, `@saved.member`. */
+  /** Calls a member by its TypeScript path: `find.next`, `catalog`, `fonts.setReplacements`, `@saved.member`. */
   const call = async (method: string, args: unknown[], at: string): Promise<unknown> => {
     const path = method.split('.');
     const first = path.shift()!;

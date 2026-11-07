@@ -1,0 +1,14 @@
+[
+  {
+    "from": "Arial",
+    "to": "Arimo"
+  },
+  {
+    "bold": true,
+    "from": "Garamond",
+    "italic": false,
+    "to": {
+      "category": "serif"
+    }
+  }
+]

@@ -11,7 +11,8 @@ namespace Twip;
 /// What the PDF couldn't keep exactly: the read's approximations, text drawn in another font, and what the options
 /// dropped.
 /// </param>
-public sealed record PdfConversion(byte[] Bytes, IReadOnlyList<Warning> Warnings);
+/// <param name="Fonts">The document's fonts the set couldn't draw as the document asks, and the characters no font has.</param>
+public sealed record PdfConversion(byte[] Bytes, IReadOnlyList<Warning> Warnings, FontsReport Fonts);
 
 /// <summary>
 /// Converts DOCX to PDF without an editor session: the final document, without revision marks or comments. Every
@@ -135,7 +136,7 @@ public static class PdfConverter
             }
             var info = WireJson.Unwrap(meta.Span, status)?.Deserialize(TwipJsonContext.Default.PdfConvertMeta)
                 ?? throw new EditorException(EditorErrorCode.Internal, "the conversion returned no result");
-            return new PdfConversion(pdf.Span.ToArray(), info.Warnings);
+            return new PdfConversion(pdf.Span.ToArray(), info.Warnings, info.Fonts);
         }
         catch (EditorException e) when (e.Code == EditorErrorCode.Aborted)
         {

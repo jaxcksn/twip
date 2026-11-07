@@ -5,7 +5,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use engine::api::error::{Error, ErrorCode};
-use engine::pdf::{FontSet, PdfOptions, SubstitutionRule};
+use engine::pdf::{Alias, FontRule, FontSet, GenericDefaults, PdfOptions};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -17,8 +17,22 @@ use super::{TwipBuf, bytes, put, request, respond, to_value};
 struct FontSetOptions {
     include_system_fonts: bool,
     font_files: Vec<String>,
-    substitutions: Vec<SubstitutionRule>,
-    default_family: Option<String>,
+    replacements: Vec<FontRule>,
+    aliases: Vec<Alias>,
+    generic_defaults: GenericDefaults,
+    classification: Option<bool>,
+    fallback: Option<String>,
+    character_fallback: Vec<String>,
+    symbol_fallback: Option<SymbolFallbackOption>,
+}
+
+/// The PDF font set's symbol fallback: `"bundled"`, `"off"`, or `{ "font": i }`, the font bytes at index `i` (which
+/// then aren't added to the set).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SymbolFallbackOption {
+    Named(engine::pdf::SymbolFallback),
+    Font { font: usize },
 }
 
 /// `f` with a panic reported as `Internal`.
@@ -26,7 +40,8 @@ fn caught<T>(f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|_| Err(Error::new(ErrorCode::Internal, "the conversion failed")))
 }
 
-/// Builds a font set (`opts`: `{ includeSystemFonts, fontFiles, substitutions, defaultFamily }`) with `count` font
+/// Builds a font set (`opts`: `{ includeSystemFonts, fontFiles, replacements, aliases, genericDefaults, classification,
+/// fallback, characterFallback, symbolFallback }`) with `count` font
 /// files passed as bytes. `*out` gets the set, freed with `twip_pdf_fonts_free`; `faces` gets `{"ok": [FaceInfo]}` or
 /// the error.
 ///
@@ -55,15 +70,35 @@ pub unsafe extern "C" fn twip_pdf_fonts_new(
     };
     let result = caught(|| {
         let options: FontSetOptions = if opts.is_empty() { FontSetOptions::default() } else { request(opts)? };
-        let mut builder = FontSet::builder().system_fonts(options.include_system_fonts).substitutions(options.substitutions);
-        for font in data {
-            builder = builder.font(font);
+        let mut builder = FontSet::builder()
+            .system_fonts(options.include_system_fonts)
+            .replacements(options.replacements)
+            .aliases(options.aliases)
+            .generic_defaults(options.generic_defaults)
+            .classification(options.classification.unwrap_or(true))
+            .character_fallback(options.character_fallback);
+        let symbol = match options.symbol_fallback {
+            Some(SymbolFallbackOption::Font { font }) => {
+                let bytes = data.get(font).ok_or_else(|| Error::invalid(format!("symbol fallback: no font {font}")))?;
+                builder = builder.symbol_fallback(engine::pdf::SymbolFallback::Font(std::sync::Arc::new(bytes.to_vec())));
+                Some(font)
+            }
+            Some(SymbolFallbackOption::Named(f)) => {
+                builder = builder.symbol_fallback(f);
+                None
+            }
+            None => None,
+        };
+        for (i, font) in data.into_iter().enumerate() {
+            if Some(i) != symbol {
+                builder = builder.font(font);
+            }
         }
         for file in options.font_files {
             builder = builder.font_file(file);
         }
-        if let Some(family) = options.default_family {
-            builder = builder.default_family(family);
+        if let Some(family) = options.fallback {
+            builder = builder.fallback(family);
         }
         builder.build()
     });
@@ -136,7 +171,7 @@ pub unsafe extern "C" fn twip_pdf_cancel_free(cancel: *mut AtomicBool) {
 }
 
 /// Converts a DOCX to PDF on the calling thread (`opts`: an `api::PdfOptions`; `cancel` may be null). The PDF goes
-/// to `pdf`, raw; `meta` gets `{"ok": {warnings}}` or the error.
+/// to `pdf`, raw; `meta` gets `{"ok": {warnings, fonts}}` or the error.
 ///
 /// # Safety
 /// `docx` and `opts` are null or valid for their lengths; `fonts` is from `twip_pdf_fonts_new` and not freed during
@@ -166,7 +201,7 @@ pub unsafe extern "C" fn twip_pdf_convert(
     let result = result.map(|conversion| {
         // SAFETY: the caller's promise.
         unsafe { put(pdf, conversion.bytes) };
-        json!({ "warnings": conversion.warnings })
+        json!({ "warnings": conversion.warnings, "fonts": conversion.fonts })
     });
     // SAFETY: the caller's promise.
     unsafe { respond(meta, result) }

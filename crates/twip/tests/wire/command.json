@@ -807,6 +807,13 @@
     "type": "replaceInElements"
   },
   {
+    "bold": true,
+    "from": "Calibri",
+    "scope": "selection",
+    "to": "Aptos",
+    "type": "replaceFont"
+  },
+  {
     "clear": true,
     "marks": [
       {

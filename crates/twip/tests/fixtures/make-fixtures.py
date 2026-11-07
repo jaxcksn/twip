@@ -3,7 +3,9 @@
 One FX-<ID>.docx per fixture family (see that folder's README.md for what each exercises). Standard library only and
 no randomness: the same bytes on every run. Every package is plain OOXML that Word opens without a repair prompt.
 Fonts are limited to Calibri, Times New Roman, Arial and Segoe UI Emoji, except FX-font-families, which also names a
-web-only family and an unknown one, and FX-BULLETS and FX-CHECKBOXES, which name the symbol fonts lists and checkboxes use. fonts/ gets three generated stand-in fonts, one variable.
+web-only family and an unknown one, FX-BULLETS and FX-CHECKBOXES, which name the symbol fonts lists and checkboxes use, and
+FX-FONT-TABLE and FX-FONT-REWRITE, which describe fonts in a font table and name families nothing provides. fonts/ gets six
+generated stand-in fonts, one variable.
 Run: python -I crates/twip/tests/fixtures/make-fixtures.py [out dir]
 """
 
@@ -1473,6 +1475,107 @@ def fx_bullets(d):
     return "".join(body)
 
 
+def font_entry(name, family=None, pitch=None, panose=None, charset=None):
+    kids = (f'<w:panose1 w:val="{panose}"/>' if panose else "") + (f'<w:charset w:val="{charset}"/>' if charset else "")
+    kids += (f'<w:family w:val="{family}"/>' if family else "") + (f'<w:pitch w:val="{pitch}"/>' if pitch else "")
+    return f'<w:font w:name="{name}">{kids}</w:font>'
+
+
+def font_table(d, entries):
+    xml = f'{XML_DECL}<w:fonts xmlns:w="{NS["w"]}">{"".join(entries)}</w:fonts>'
+    d.parts.append(("fontTable.xml", xml, f"{CT}fontTable+xml"))
+    d.rel("fontTable", "fontTable.xml")
+
+
+def theme(d, minor="Calibri", major="Calibri Light"):
+    """A theme part: the Office colour and format schemes, with these fonts as its major and minor Latin faces."""
+    colours = "".join(
+        f'<a:{k}><a:srgbClr val="{v}"/></a:{k}>'
+        for k, v in (("dk1", "000000"), ("lt1", "FFFFFF"), ("dk2", "44546A"), ("lt2", "E7E6E6"), ("accent1", "4472C4"),
+                     ("accent2", "ED7D31"), ("accent3", "A5A5A5"), ("accent4", "FFC000"), ("accent5", "5B9BD5"),
+                     ("accent6", "70AD47"), ("hlink", "0563C1"), ("folHlink", "954F72"))
+    )
+    fill = '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>'
+    line = f'<a:ln w="6350">{fill}</a:ln>'
+    face = lambda tag, latin: f'<a:{tag}><a:latin typeface="{latin}"/><a:ea typeface=""/><a:cs typeface=""/></a:{tag}>'  # noqa: E731
+    xml = (
+        f'{XML_DECL}<a:theme xmlns:a="{NS["a"]}" name="Office Theme"><a:themeElements>'
+        f'<a:clrScheme name="Office">{colours}</a:clrScheme>'
+        f'<a:fontScheme name="Office">{face("majorFont", major)}{face("minorFont", minor)}</a:fontScheme>'
+        f'<a:fmtScheme name="Office"><a:fillStyleLst>{fill * 3}</a:fillStyleLst><a:lnStyleLst>{line * 3}</a:lnStyleLst>'
+        f'<a:effectStyleLst>{"<a:effectStyle><a:effectLst/></a:effectStyle>" * 3}</a:effectStyleLst>'
+        f'<a:bgFillStyleLst>{fill * 3}</a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>'
+    )
+    d.parts.append(("theme/theme1.xml", xml, "application/vnd.openxmlformats-officedocument.theme+xml"))
+    d.rel("theme", "theme/theme1.xml")
+
+
+def fx_font_table(d):
+    """A font table describing Garamond (serif), Consolas (fixed pitch) and Mystery Sans (only its PANOSE numbers
+    say sans), text in each and in Zzyzx Unknown (not described), Symbol and Wingdings bullets, a CJK character, and
+    shared punctuation in a run hinted East Asian whose East Asian font is a Latin one. Stand-in Sans is the default."""
+    d.styles = STYLES.replace("Calibri", "Stand-in Sans")
+    font_table(d, [
+        font_entry("Stand-in Sans", "swiss", "variable"),
+        font_entry("Garamond", "roman", "variable", "02020404030301010803"),
+        font_entry("Consolas", "modern", "fixed", "020B0609020204030204"),
+        font_entry("Mystery Sans", "auto", None, "020B0604020202020204"),
+    ])
+    rpr = lambda face: f'<w:rPr><w:rFonts w:ascii="{face}" w:hAnsi="{face}" w:hint="default"/></w:rPr>'  # noqa: E731
+    levels = [("bullet", BULLET_LIBRARY[0][1], rpr("Symbol"))], [("bullet", BULLET_LIBRARY[2][1], rpr("Wingdings"))]
+    abstracts = "".join(f'<w:abstractNum w:abstractNumId="{k}"><w:multiLevelType w:val="hybridMultilevel"/>{_levels(lv)}</w:abstractNum>' for k, lv in enumerate(levels))
+    nums = "".join(f'<w:num w:numId="{k + 1}"><w:abstractNumId w:val="{k}"/></w:num>' for k in range(len(levels)))
+    d.numbering = f"{XML_DECL}<w:numbering {NAMESPACES}>{abstracts}{nums}</w:numbering>"
+    hinted = '<w:rFonts w:ascii="Stand-in Sans" w:hAnsi="Stand-in Sans" w:eastAsia="Stand-in Sans" w:hint="eastAsia"/>'
+    return (
+        p(r("Garamond text.", font("Garamond")))
+        + p(r("Garamond bold text.", font("Garamond") + B))
+        + p(r("Consolas text.", font("Consolas")))
+        + p(r("Mystery Sans text.", font("Mystery Sans")))
+        + p(r("Zzyzx Unknown text.", font("Zzyzx Unknown")))
+        + P("A Symbol bullet.", numbered(0, 1))
+        + P("A Wingdings bullet.", numbered(0, 2))
+        + p(r("CJK: 漢 end.", font("Stand-in Sans")))
+        + p(r("Shared: “quoted” § 10° → end.", hinted))
+    )
+
+
+def fx_font_rewrite(d):
+    """Calibri everywhere a family can be named: direct formatting, a paragraph style, the document defaults, the
+    theme's minor font (one run follows it), a numbering level, a paragraph mark, a symbol character, a locked
+    content control and the font table. Also a bold Calibri run and a Times New Roman run."""
+    d.styles = STYLES.replace(
+        "</w:styles>",
+        '<w:style w:type="paragraph" w:styleId="CalibriBody"><w:name w:val="Calibri Body"/><w:basedOn w:val="Normal"/>'
+        '<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/></w:rPr></w:style></w:styles>',
+    )
+    theme(d)
+    font_table(d, [font_entry("Calibri", "swiss", "variable", "020F0502020204030204"), font_entry("Times New Roman", "roman", "variable")])
+    levels = [("bullet", "•", '<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:hint="default"/></w:rPr>')]
+    d.numbering = (
+        f'{XML_DECL}<w:numbering {NAMESPACES}><w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/>'
+        f'{_levels(levels)}</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    )
+    themed = '<w:rFonts w:asciiTheme="minorHAnsi" w:hAnsi="Calibri"/>'
+    locked = (
+        '<w:sdt><w:sdtPr><w:alias w:val="Locked"/><w:tag w:val="locked"/><w:id w:val="7001"/><w:lock w:val="contentLocked"/></w:sdtPr>'
+        f'<w:sdtContent>{r("Locked Calibri.", font("Calibri"))}</w:sdtContent></w:sdt>'
+    )
+    mark = '<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/></w:rPr>'
+    return (
+        p(r("Direct Calibri.", font("Calibri")))
+        + p(r("Bold Calibri.", font("Calibri") + B))
+        + p(r("Times New Roman.", font("Times New Roman")))
+        + P("Styled Calibri.", '<w:pStyle w:val="CalibriBody"/>')
+        + p(r("Theme Calibri.", themed))
+        + P("Default Calibri.")
+        + P("A Calibri bullet.", numbered(0, 1))
+        + p(r("Marked."), mark)
+        + p(r("Symbol: ") + '<w:r><w:sym w:font="Calibri" w:char="2022"/></w:r>')
+        + p(r("Before. ") + locked + r(" After."))
+    )
+
+
 def fx_checkboxes(d):
     """Checkbox content controls: unchecked and checked in body text, one in a table cell, one whose contents are
     locked, and one with custom faces (heavy check, ballot box)."""
@@ -1562,9 +1665,10 @@ API = {
 }
 
 
-def stand_in_font(family, variable=False):
-    """A minimal TrueType font named `family`: a box glyph for every printable ASCII character, for scripts that
-    add a font to an empty library. No real font's outlines or names. `variable` adds a weight axis (100-900, 400 by
+def stand_in_font(family, variable=False, advance=500, extra=()):
+    """A minimal TrueType font named `family`: a box glyph for every printable ASCII character (and the code point
+    ranges in `extra`), `advance` units wide, for scripts that add a font to an empty library. No real font's
+    outlines or names. `variable` adds a weight axis (100-900, 400 by
     default) and named instances (WEIGHTS); the box is 300 units wide at 100 and 800 at 900 (500 at 400), its advance
     with it."""
 
@@ -1575,9 +1679,7 @@ def stand_in_font(family, variable=False):
     box = struct.pack(">hhhhhHH4B4h4h", 1, 50, 0, 450, 700, 3, 0, 1, 1, 1, 1, 50, 0, 400, 0, 0, 700, 0, -700)
     glyf = box + box  # .notdef, then the box; the space glyph (1) is empty
     loca = struct.pack(">4I", 0, len(box), len(box), len(glyf))
-    cmap4 = struct.pack(">7H", 4, 40 + 2 * 94, 0, 6, 4, 1, 2) + struct.pack(">3H", 0x20, 0x7E, 0xFFFF) + b"\0\0"
-    cmap4 += struct.pack(">3H", 0x20, 0x21, 0xFFFF) + struct.pack(">3H", (1 - 0x20) & 0xFFFF, 0, 1) + struct.pack(">3H", 0, 4, 0)
-    cmap4 += struct.pack(">94H", *[2] * 94)
+    cmap4 = box_cmap([(0x21, 0x7E), *extra])
     names = [(1, family), (2, "Regular"), (4, f"{family} Regular"), (6, family.replace(" ", "") + "-Regular")]
     if variable:
         names += [(256, "Weight")] + [(257 + i, sub) for i, (sub, _) in enumerate(WEIGHTS)]
@@ -1593,8 +1695,8 @@ def stand_in_font(family, variable=False):
         b"cmap": struct.pack(">2H2HI", 0, 1, 3, 1, 12) + cmap4,
         b"glyf": glyf,
         b"head": struct.pack(">4I2H2q4h2H3h", 0x00010000, 0x00010000, 0, 0x5F0F3CF5, 0x000B, 1000, 0, 0, 50, 0, 450, 700, 0, 8, 2, 1, 0),
-        b"hhea": struct.pack(">I3hH11hH", 0x00010000, 800, -200, 0, 500, 0, 0, 450, 1, 0, 0, 0, 0, 0, 0, 0, 3),
-        b"hmtx": struct.pack(">HhHhHh", 500, 50, 250, 0, 500, 50),
+        b"hhea": struct.pack(">I3hH11hH", 0x00010000, 800, -200, 0, max(500, advance), 0, 0, 450, 1, 0, 0, 0, 0, 0, 0, 0, 3),
+        b"hmtx": struct.pack(">HhHhHh", 500, 50, 250, 0, advance, 50),
         b"loca": loca,
         b"maxp": struct.pack(">I14H", 0x00010000, 3, 4, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0),
         b"name": name + b"".join(strings),
@@ -1619,6 +1721,26 @@ def stand_in_font(family, variable=False):
     return bytes(font_bytes)
 
 
+def box_cmap(ranges):
+    """A format 4 cmap: the space to glyph 1, and every code point in `ranges` (inclusive pairs, ascending, above the
+    space) to the box glyph 2."""
+    segments = [(0x20, 0x20)] + list(ranges) + [(0xFFFF, 0xFFFF)]
+    n = len(segments)
+    search = 2 ** (n.bit_length() - 1)
+    glyph_ids, offsets = [], []
+    for k, (start, end) in enumerate(segments):
+        if 0 < k < n - 1:
+            offsets.append(2 * (n - k) + 2 * len(glyph_ids))
+            glyph_ids += [2] * (end - start + 1)
+        else:
+            offsets.append(0)
+    deltas = [(1 - 0x20) & 0xFFFF] + [0] * (n - 2) + [1]
+    body = struct.pack(f">{n}H", *[e for _, e in segments]) + b"\0\0" + struct.pack(f">{n}H", *[st for st, _ in segments])
+    body += struct.pack(f">{n}H", *deltas) + struct.pack(f">{n}H", *offsets) + struct.pack(f">{len(glyph_ids)}H", *glyph_ids)
+    header = struct.pack(">7H", 4, 14 + len(body), 0, 2 * n, 2 * search, search.bit_length() - 1, 2 * n - 2 * search)
+    return header + body
+
+
 # The variable stand-in's named instances: subfamily name and weight.
 WEIGHTS = [("Thin", 100), ("Light", 300), ("Regular", 400), ("SemiBold", 600), ("Bold", 700), ("Black", 900)]
 
@@ -1641,6 +1763,12 @@ def box_gvar():
 
 
 FONTS = {"stand-in-serif.ttf": "Stand-in Serif", "zzyzx-unknown.ttf": "Zzyzx Unknown"}
+# Stand-ins with their own widths, so a test can tell which one drew; the CJK one also has U+6F22.
+SIZED_FONTS = {
+    "stand-in-sans.ttf": ("Stand-in Sans", 550, ()),
+    "stand-in-mono.ttf": ("Stand-in Mono", 600, ()),
+    "stand-in-cjk.ttf": ("Stand-in CJK", 1000, ((0x6F22, 0x6F22),)),
+}
 VARIABLE_FONTS = {"stand-in-variable.ttf": "Stand-in Variable"}
 
 
@@ -2132,6 +2260,8 @@ FIXTURES = {
     "FX-SECTIONS": fx_sections,
     "FX-BULLETS": fx_bullets,
     "FX-CHECKBOXES": fx_checkboxes,
+    "FX-FONT-TABLE": fx_font_table,
+    "FX-FONT-REWRITE": fx_font_rewrite,
     "FX-UNDERLINE-TABS": fx_underline_tabs,
     "FX-UNDERLINE-TABS-TRAIL": lambda d: fx_underline_tabs(d, trailing=True),
 }
@@ -2153,8 +2283,10 @@ def main():
         (out / "fonts" / file).write_bytes(stand_in_font(family))
     for file, family in VARIABLE_FONTS.items():
         (out / "fonts" / file).write_bytes(stand_in_font(family, variable=True))
+    for file, (family, advance, extra) in SIZED_FONTS.items():
+        (out / "fonts" / file).write_bytes(stand_in_font(family, advance=advance, extra=extra))
     print(f"wrote {len(FIXTURES) + len(API)} fixtures to {out}, {len(MERGE_SET)} to {out / 'merge-set'}, {len(REVIEW)} to {out / 'review'}"
-          f" and {len(FONTS) + len(VARIABLE_FONTS)} fonts to {out / 'fonts'}")
+          f" and {len(FONTS) + len(VARIABLE_FONTS) + len(SIZED_FONTS)} fonts to {out / 'fonts'}")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ use serde::de::{DeserializeOwned, Error as _};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::command::{CommandId, SelectionMode};
+use super::fonts::GenericFamily;
 use super::services::{DialogKind, RulerModel, RulerUnit, TabSelector};
 use super::value::{
     Alignment, AutoOr, CellAlignment, Color, CommentId, ElementId, HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, NoneOr,
@@ -831,14 +832,70 @@ impl Default for SpellingState {
     }
 }
 
-/// Font families being fetched, and those no font could be found for.
+/// The document's fonts the library can't draw as the document asks: per family and style, those a resolver is
+/// fetching and those nothing provided, and the characters no font has. Each list is sorted by family, then style.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FontsState {
-    /// Families being fetched.
-    pub pending: Vec<String>,
-    /// Families no font was found for.
-    pub unresolved: Vec<String>,
+    /// Families a resolver is fetching; they draw with a stand-in meanwhile.
+    pub pending: Vec<MissingFont>,
+    /// Families nothing provided; they draw with a stand-in.
+    pub missing: Vec<MissingFont>,
+    /// Characters that neither their run's font, the character-fallback families nor the symbol fallback has; they
+    /// draw as their font's missing-glyph box.
+    pub characters: Vec<MissingCharacters>,
+}
+
+/// A family, in one style, that draws with a stand-in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MissingFont {
+    /// The family as the document names it, or the replacement target for [`StandIn::Original`].
+    pub family: String,
+    /// The bold style.
+    pub bold: bool,
+    /// The italic style.
+    pub italic: bool,
+    /// The replacement target and alias targets tried, in order.
+    #[serde(default)]
+    pub tried: Vec<String>,
+    /// The generic category the family has, from the document's font table, an alias or a resolver.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<GenericFamily>,
+    /// The family that draws instead; `None` when nothing draws (an empty library with no symbol fallback).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drawn_with: Option<String>,
+    /// Why that family draws.
+    pub by: StandIn,
+    /// The resolver's failure, when it failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Which stand-in draws a missing family.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StandIn {
+    /// A replacement's target is missing, so the document's own family draws.
+    Original,
+    /// The default family of its generic category.
+    Generic,
+    /// The general fallback family.
+    Fallback,
+    /// The first face added to the library (or the symbol fallback, in an empty library).
+    LastResort,
+}
+
+/// Characters no font has, by the family their runs name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MissingCharacters {
+    /// The family the runs name.
+    pub family: String,
+    /// The distinct characters, in code point order, at most 64.
+    pub characters: String,
+    /// More than 64 characters are missing.
+    pub truncated: bool,
 }
 
 /// The session settings a state build reports.

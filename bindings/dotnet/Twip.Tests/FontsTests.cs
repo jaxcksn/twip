@@ -3,7 +3,7 @@ using Xunit;
 
 namespace Twip.Tests;
 
-/// <summary>Font libraries: the system fonts, added fonts, the resolver, substitution and unresolved families.</summary>
+/// <summary>Font libraries: the system fonts, added fonts, the resolver, its answers and settings, and missing families.</summary>
 public sealed class FontsTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -16,6 +16,36 @@ public sealed class FontsTests
         var library = FontLibrary.CreateEmpty();
         await library.AddAsync(Font("stand-in-serif.ttf"), Ct);
         return library;
+    }
+
+    [Fact]
+    public void TheAssemblyContactsNoFontService()
+    {
+        var bytes = File.ReadAllBytes(typeof(FontLibrary).Assembly.Location);
+        foreach (var host in new[] { "fonts.googleapis.com", "fonts.gstatic.com" })
+        {
+            var utf16 = System.Text.Encoding.Unicode.GetBytes(host);
+            var utf8 = System.Text.Encoding.UTF8.GetBytes(host);
+            Assert.False(bytes.AsSpan().IndexOf(utf16) >= 0 || bytes.AsSpan().IndexOf(utf8) >= 0, host);
+        }
+    }
+
+    [Fact]
+    public async Task AResolversFailureReachesTheReport()
+    {
+        Native.Require();
+        var library = await StandInAsync();
+        library.SetResolver((request, _) => request.Family == "Zzyzx Unknown" ? throw new InvalidOperationException("offline") : new ValueTask<FontSource?>((FontSource?)null));
+        await using var session = new EditorSession(new EditorSessionOptions(Fonts: library));
+        var changed = new TaskCompletionSource<FontsChangedEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.FontsChanged += (_, e) =>
+        {
+            if (e.Missing.Any(m => m.Error is not null)) changed.TrySetResult(e);
+        };
+        await session.OpenAsync(Native.Fixture("FX-font-families.docx"), Ct);
+        var e = await changed.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var zzyzx = Assert.Single(e.Missing, m => m.Family == "Zzyzx Unknown");
+        Assert.Equal("offline", zzyzx.Error);
     }
 
     [Fact]
@@ -67,11 +97,11 @@ public sealed class FontsTests
     }
 
     [Fact]
-    public async Task SubstitutesDrawAndOnlyMissingFamiliesAreUnresolved()
+    public async Task ReplacementsDrawAndOnlyMissingFamiliesAreUnresolved()
     {
         Native.Require();
         var library = await StandInAsync();
-        library.Substitute(new Dictionary<string, string> { ["Times New Roman"] = "Stand-in Serif", ["Roboto Slab"] = "Stand-in Serif" });
+        library.SetReplacements(new Dictionary<string, string> { ["Times New Roman"] = "Stand-in Serif", ["Roboto Slab"] = "Stand-in Serif" });
         await using var session = new EditorSession(new EditorSessionOptions(Fonts: library));
         var changes = new List<FontsChangedEventArgs>();
         session.FontsChanged += (_, e) => changes.Add(e);
@@ -79,11 +109,12 @@ public sealed class FontsTests
         var opened = await session.OpenAsync(Native.Fixture("FX-font-families.docx"), Ct);
         await session.WhenIdleAsync();
         Assert.Contains(opened.Warnings, w => w.Code == WarningCode.FontUnresolved);
-        Assert.Equal(["Zzyzx Unknown"], session.State.Fonts.Unresolved);
-        Assert.Equal(["Zzyzx Unknown"], Assert.Single(changes).Unresolved);
+        Assert.Equal(["Zzyzx Unknown"], session.State.Fonts.Missing.Select(m => m.Family));
+        var missing = Assert.Single(Assert.Single(changes).Missing);
+        Assert.Equal(("Zzyzx Unknown", StandIn.LastResort, "Stand-in Serif"), (missing.Family, missing.By, missing.DrawnWith));
 
         await library.AddAsync(Font("zzyzx-unknown.ttf"), Ct);
         await session.WhenIdleAsync();
-        Assert.Empty(session.State.Fonts.Unresolved);
+        Assert.Empty(session.State.Fonts.Missing);
     }
 }

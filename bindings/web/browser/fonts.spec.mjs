@@ -1,38 +1,33 @@
-// Fonts from Google Fonts in a real browser, over a throttled network (10 Mbps down, 40 ms latency): the font
-// fixture's families arrive within 2 s of mount.
+// Fonts in a real browser from a resolver on the page's own origin: settings made before the first editor (and, in
+// worker mode, before the worker exists) apply, and a resolver's font, family and category answers draw within 2 s.
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
-const fixture = [...readFileSync(new URL('../../../crates/twip/tests/fixtures/editor/FX-font-families.docx', import.meta.url))];
+const fixtures = new URL('../../../crates/twip/tests/fixtures/editor/', import.meta.url);
+const fixture = [...readFileSync(new URL('FX-font-families.docx', fixtures))];
 
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', (e) => console.log(`page error: ${e.message}`));
-  // An empty page on the test server's origin, which the SDK loads from.
+  // An empty page on the test server's origin, which the SDK loads from, and the stand-in fonts beside it.
   await page.route('**/blank.html', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8">' }));
+  await page.route('**/fonts/*.ttf', (route) =>
+    route.fulfill({ contentType: 'font/ttf', body: readFileSync(new URL(`fonts/${new URL(route.request().url()).pathname.split('/').pop()}`, fixtures)) }),
+  );
   await page.goto('/blank.html');
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 40, downloadThroughput: 10e6 / 8, uploadThroughput: 10e6 / 8 });
 });
 
-test('Google Fonts’ stylesheet and font files are readable from the page (CORS)', async ({ page }) => {
-  const sizes = await page.evaluate(async () => {
-    const css = await (await fetch('https://fonts.googleapis.com/css2?family=Tinos:ital,wght@0,400;0,700;1,400;1,700')).text();
-    const url = /src:\s*url\(([^)]+)\)/.exec(css)?.[1];
-    return [css.length, url ? (await (await fetch(url)).arrayBuffer()).byteLength : 0];
-  });
-  expect(sizes[0]).toBeGreaterThan(0);
-  expect(sizes[1]).toBeGreaterThan(1000);
-});
-
-// In worker mode the library's settings, made before the worker exists, reach it after the editor's session does.
 for (const execution of ['main', 'worker']) {
-  test(`the font fixture’s families arrive within 2 s of mount (${execution})`, async ({ page }) => {
+  test(`settings made before the editor apply, and resolver answers draw within 2 s (${execution})`, async ({ page }) => {
     const started = await page.evaluate(
       async ({ docx, execution }) => {
         const { Editor, FontLibrary } = await import('/web/dist/index.js');
         const fonts = FontLibrary.default();
-        fonts.useGoogleFonts();
-        fonts.substitute({ 'Times New Roman': 'Tinos' });
+        await fonts.add('/fonts/stand-in-serif.ttf');
+        fonts.setAliases({ 'Times New Roman': 'Stand-in Serif' });
+        fonts.setGenericDefaults({ serif: 'Stand-in Serif' });
+        fonts.setResolver(async (request) =>
+          request.family === 'Zzyzx Unknown' ? '/fonts/zzyzx-unknown.ttf' : request.family === 'Roboto Slab' ? { category: 'serif' } : null,
+        );
         const container = Object.assign(document.createElement('div'), { style: 'width: 640px; height: 480px' });
         document.body.append(container);
         window.editor = await Editor.mount(container, { document: new Uint8Array(docx), execution });
@@ -42,8 +37,15 @@ for (const execution of ['main', 'worker']) {
       { docx: fixture, execution },
     );
     await expect
-      .poll(() => page.evaluate(async () => [window.editor.getState().fonts, await window.fonts.families()]), { timeout: 2000 })
-      .toEqual([{ pending: [], unresolved: ['Zzyzx Unknown'] }, expect.arrayContaining(['Tinos', 'Roboto Slab'])]);
+      .poll(
+        () =>
+          page.evaluate(async () => {
+            const { pending, missing } = window.editor.getState().fonts;
+            return [pending.length, missing.map((m) => [m.family, m.by, m.drawnWith ?? null]), await window.fonts.families()];
+          }),
+        { timeout: 2000 },
+      )
+      .toEqual([0, [['Roboto Slab', 'generic', 'Stand-in Serif']], expect.arrayContaining(['Stand-in Serif', 'Zzyzx Unknown'])]);
     expect(await page.evaluate(() => performance.now())).toBeLessThan(started + 2000);
   });
 }

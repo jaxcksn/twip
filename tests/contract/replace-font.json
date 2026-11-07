@@ -1,0 +1,23 @@
+{
+  "name": "replace-font",
+  "fixture": "editor/FX-FONT-REWRITE.docx",
+  "fonts": "empty",
+  "steps": [
+    { "op": "font", "file": "editor/fonts/stand-in-sans.ttf" },
+    { "op": "open" },
+    { "op": "call", "method": "commands.replaceFont", "args": [{ "from": "Nope", "to": "Other" }], "result": { "changed": 0, "skipped": 0 } },
+    { "op": "expectState", "match": { "history": { "canUndo": false } } },
+
+    { "op": "call", "method": "commands.replaceFont", "args": [{ "from": "Calibri", "to": "Stand-in Sans" }], "result": { "changed": { "$type": "number" }, "skipped": 1 } },
+    { "op": "expectState", "match": { "history": { "canUndo": true } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Theme Calibri." }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "font": "Stand-in Sans" } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Locked Calibri." }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "font": "Calibri" } } },
+
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Default Calibri." }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "font": "Stand-in Sans" } } }
+  ]
+}

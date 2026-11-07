@@ -189,6 +189,14 @@ impl Session {
             }
             C::RemoveElement(id) => self.known_element(id),
             C::ReplaceInElements(r) => text("find", &r.find).and(self.known_elements(r.ids.as_deref())),
+            C::ReplaceFont(r) => {
+                text("from", &r.from)?;
+                text("to", &r.to)?;
+                if r.from.eq_ignore_ascii_case(&r.to) {
+                    return Err(Error::invalid("from and to must name different families"));
+                }
+                Ok(())
+            }
             C::MarkElements(m) => m.marks.iter().try_for_each(|m| self.known_element(&m.id)),
             C::FillPlaceholder(f) => picture(&f.image.0),
             C::WriteDataPart(w) => text("the namespace", &w.namespace),

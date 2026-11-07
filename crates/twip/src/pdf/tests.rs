@@ -223,3 +223,22 @@ fn a_protected_pdf_keeps_its_keywords_and_warns() {
     let empty = PdfOptions { open_password: Some(String::new()), ..PdfOptions::default() };
     assert_eq!(convert(&bytes, &fonts, &empty).expect_err("rejected").code, ErrorCode::InvalidArgument);
 }
+
+#[test]
+fn a_conversion_reports_the_fonts_an_editor_session_does() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor");
+    let sans = std::fs::read(dir.join("fonts/stand-in-sans.ttf")).expect("the font");
+    let docx = std::fs::read(dir.join("FX-FONT-TABLE.docx")).expect("the fixture");
+    let (set, _) = FontSet::builder().font(sans.clone()).build().expect("builds");
+    let converted = convert(&docx, &set, &PdfOptions::default()).expect("converts");
+    let mut engine = Engine::new(FontLibrary::empty());
+    engine.fonts().add(&sans).expect("adds");
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&docx).expect("opens");
+    let state = s.state().fonts.clone();
+    assert!(!converted.fonts.missing.is_empty());
+    assert_eq!((&converted.fonts.missing, &converted.fonts.characters), (&state.missing, &state.characters));
+    let fallbacks = converted.warnings.iter().filter(|w| w.code == crate::api::warning::WarningCode::PdfFontFallback).count();
+    assert!(fallbacks >= 1, "{:?}", converted.warnings);
+}

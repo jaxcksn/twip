@@ -211,7 +211,7 @@ mod tests {
 
     impl Fixture {
         fn open(name: &str) -> Fixture {
-            let mut engine = Engine::new(FontLibrary::system());
+            let mut engine = Engine::new(FontLibrary::system_recommended());
             let events: Rc<RefCell<Vec<Event>>> = Rc::default();
             let sink = events.clone();
             engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));

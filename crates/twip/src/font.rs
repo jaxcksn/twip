@@ -8,7 +8,7 @@ use std::sync::{Arc, OnceLock};
 use harfrust::{Buffer, Direction, Feature, ShapeOptions, ShaperFont, Tag};
 
 use crate::api::error::Error;
-use crate::api::fonts::{FaceInfo, SubstitutionRule};
+use crate::api::fonts::{Alias, AliasTarget, FaceInfo, FontRule, GenericDefaults, GenericFamily, SymbolFallback};
 
 #[derive(Clone, Debug)]
 struct Entry {
@@ -278,12 +278,11 @@ impl std::fmt::Debug for Face {
 pub struct Catalog {
     entries: Vec<Entry>,
     by_name: HashMap<String, Vec<usize>>,
-    rules: Vec<SubstitutionRule>,
-    default: Option<String>,
+    settings: FontSettings,
     /// Each font file's bytes by path, read on first use. A `OnceLock` so a catalog shared between threads loads a file
     /// once without a lock; faces of one collection share their file's slot.
     files: HashMap<String, OnceLock<Option<Arc<Vec<u8>>>>>,
-    /// Bumped whenever faces, rules or the default change: part of every layout cache key that used fonts.
+    /// Bumped whenever faces or settings change: part of every layout cache key that used fonts.
     revision: u64,
 }
 
@@ -292,16 +291,83 @@ const _: () = {
     shareable::<Catalog>();
 };
 
-/// The fonts layout may use, and how document font names map to faces: the substitution rules first, then the
-/// installed families, then the built-in substitutes, then the default family. The catalog is shared (an `Arc`, so a
+/// The application's font settings: how document families map to the faces the catalog has. The engine adds no
+/// family of its own.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct FontSettings {
+    pub replacements: Vec<FontRule>,
+    pub aliases: Vec<Alias>,
+    pub generic: GenericDefaults,
+    pub fallback: Option<String>,
+    pub character_fallback: Vec<String>,
+    pub symbol_fallback: SymbolFallback,
+    pub classify_from_document: bool,
+    /// What resolvers answered with a family or a category, as aliases for every style.
+    pub learned: Vec<Alias>,
+}
+
+impl Default for FontSettings {
+    fn default() -> Self {
+        FontSettings {
+            replacements: Vec::new(),
+            aliases: Vec::new(),
+            generic: GenericDefaults::default(),
+            fallback: None,
+            character_fallback: Vec::new(),
+            symbol_fallback: SymbolFallback::Bundled,
+            classify_from_document: true,
+            learned: Vec::new(),
+        }
+    }
+}
+
+/// Which step of resolution found the family that draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Resolution {
+    Replacement,
+    Itself,
+    Alias,
+    Learned,
+    Generic(GenericFamily),
+    Fallback,
+    LastResort,
+}
+
+impl Resolution {
+    /// The family drew as the document asked: itself, or a stand-in the application chose for it by name.
+    pub fn found(self) -> bool {
+        matches!(self, Resolution::Replacement | Resolution::Itself | Resolution::Alias | Resolution::Learned)
+    }
+}
+
+/// A family resolved: the catalog family that draws it (`None` only in an empty catalog), how, and the replacement
+/// and alias targets tried on the way, in order.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Resolved {
+    pub family: Option<String>,
+    pub by: Resolution,
+    pub tried: Vec<String>,
+    /// The category an alias or a resolver answer gave, else the one passed in.
+    pub category: Option<GenericFamily>,
+    /// The target of the replacement that matched, whether or not it is in the catalog.
+    pub replacement: Option<String>,
+}
+
+/// The most alias hops followed for one family.
+const ALIAS_HOPS: usize = 8;
+
+/// The fonts layout may use, and how document font names map to faces through the application's settings
+/// ([`FontSettings`]). The catalog is shared (an `Arc`, so a
 /// [`fork`](Fonts::fork) on another thread reads the same faces and file bytes); the memos below stay on one thread.
 #[derive(Default, Clone)]
 pub struct Fonts {
     catalog: Arc<Catalog>,
-    faces: RefCell<HashMap<(String, bool, bool), Option<Rc<Face>>>>,
-    resolved: RefCell<HashMap<(String, bool, bool), String>>,
+    faces: RefCell<HashMap<(String, Option<GenericFamily>, bool, bool), Option<Rc<Face>>>>,
+    resolved: RefCell<HashMap<(String, Option<GenericFamily>, bool, bool), Resolved>>,
     fallbacks: RefCell<HashMap<(char, bool, bool), Option<Rc<Face>>>>,
-    /// [`SYMBOL_FALLBACK`]'s face, loaded on first use behind `&self` like the caches above.
+    /// The bundled East Asian punctuation faces, loaded on first use behind `&self` like the caches above.
+    east_asian_punctuation: std::cell::OnceCell<Box<Fonts>>,
+    /// The symbol fallback's face ([`SymbolFallback`]), loaded on first use behind `&self` like the caches above.
     symbol_fallback: std::cell::OnceCell<Option<Rc<Face>>>,
 }
 
@@ -313,49 +379,12 @@ pub struct Fonts {
 /// then name IDs 1, 4 and 16 set to "Twip Symbol Fallback" (6: "TwipSymbolFallback").
 const SYMBOL_FALLBACK: &[u8] = include_bytes!("symbol-fallback.ttf");
 
-/// Office cloud fonts often missing outside Office, and metric-compatible open fonts.
-const SUBSTITUTES: &[(&str, &str)] = &[
-    ("Calibri Light", "Calibri"),
-    ("Aptos", "Calibri"),
-    ("Aptos Display", "Calibri"),
-    ("Aptos Narrow", "Arial Narrow"),
-    ("Helvetica", "Arial"),
-    ("Helvetica Neue", "Arial"),
-    ("Times", "Times New Roman"),
-    ("Courier", "Courier New"),
-    // As Word draws them without a font table entry.
-    ("CourierPS", "Courier New"),
-    ("Courier New CE", "Courier New"),
-    ("Myriad Pro", "Segoe UI"),
-    ("Liberation Serif", "Times New Roman"),
-    ("Liberation Sans", "Arial"),
-    ("Liberation Mono", "Courier New"),
-    ("DejaVu Sans", "Verdana"),
-    ("Arial Unicode MS", "Segoe UI"),
-    ("MS Mincho", "MS Gothic"),
-    ("MS Gothic", "Yu Gothic"),
-    ("Calibri", "Carlito"),
-    ("Cambria", "Caladea"),
-    ("Arial", "Liberation Sans"),
-    ("Times New Roman", "Liberation Serif"),
-    ("Courier New", "Liberation Mono"),
-];
-
-const FALLBACK_FAMILIES: &[&str] = &[
-    "Segoe UI Symbol",
-    "Segoe UI",
-    "Arial",
-    "Cambria Math",
-    "MS Gothic",
-    "Yu Gothic",
-    "Microsoft YaHei",
-    "SimSun",
-    "Malgun Gothic",
-    "Nirmala UI",
-    "Segoe UI Emoji",
-    "Noto Sans",
-    "DejaVu Sans",
-];
+/// The face shared characters in East Asian-hinted runs draw with when the library has no MS Mincho: the characters
+/// of that rule MS Mincho has, with Noto Serif JP 2.003's outlines (SIL OFL 1.1, `licenses/noto-serif-jp.txt`) and MS
+/// Mincho's advance widths, named "Twip East Asian Punctuation". Made by
+/// `crates/twip-tools/scripts/make-punctuation-font.py MSMINCHO.TTF NotoSerifJP-Regular.otf` (Noto's Serif/SubsetOTF/JP
+/// build); `east-asian-punctuation.widths.json` beside it lists each character's width.
+const EAST_ASIAN_PUNCTUATION: &[u8] = include_bytes!("east-asian-punctuation.otf");
 
 impl Fonts {
     /// Fonts drawing from `catalog`, with empty memos.
@@ -462,19 +491,18 @@ impl Fonts {
         self.faces.borrow_mut().clear();
         self.resolved.borrow_mut().clear();
         self.fallbacks.borrow_mut().clear();
+        self.symbol_fallback = std::cell::OnceCell::new();
     }
 
-    /// The substitution rules, replacing earlier ones.
-    pub fn set_rules(&mut self, rules: Vec<SubstitutionRule>) {
-        Arc::make_mut(&mut self.catalog).rules = rules;
+    /// Changes the settings, and drops everything resolved with the old ones.
+    pub(crate) fn set_settings(&mut self, f: impl FnOnce(&mut FontSettings)) {
+        f(&mut Arc::make_mut(&mut self.catalog).settings);
         self.changed();
     }
 
-    /// The family drawn when nothing else resolves a name. Until one is set: Calibri or a metric-compatible family
-    /// when installed, else the first font added.
-    pub fn set_default(&mut self, family: &str) {
-        Arc::make_mut(&mut self.catalog).default = Some(family.to_string());
-        self.changed();
+    /// The settings.
+    pub(crate) fn settings(&self) -> &FontSettings {
+        &self.catalog.settings
     }
 
     fn scan(&mut self, d: &[u8], path: Option<String>, data: Option<Arc<Vec<u8>>>) {
@@ -568,52 +596,104 @@ impl Fonts {
         self.catalog.by_name.contains_key(&family.to_lowercase())
     }
 
-    /// The family a substitution rule draws `name` in, else `name`. Matching is case-insensitive, and a rule with
-    /// `bold` or `italic` set applies only to that style.
-    pub fn render_family<'a>(&'a self, name: &'a str, bold: bool, italic: bool) -> &'a str {
-        self.catalog
-            .rules
+    /// The family the first replacement for `name` in this style names.
+    fn replacement_for(&self, name: &str, bold: bool, italic: bool) -> Option<&str> {
+        let rules = &self.catalog.settings.replacements;
+        rules
             .iter()
             .find(|r| r.from.eq_ignore_ascii_case(name) && r.bold.is_none_or(|b| b == bold) && r.italic.is_none_or(|i| i == italic))
-            .map_or(name, |r| r.to.as_str())
+            .map(|r| r.to.as_str())
     }
 
-    /// The installed family that draws `name`: itself, or a built-in substitute.
-    fn installed_for(&self, name: &str) -> Option<String> {
-        let sub = |n: &str| SUBSTITUTES.iter().find(|(a, _)| a.eq_ignore_ascii_case(n)).map(|(_, b)| *b);
-        if self.is_installed(name) {
-            Some(name.to_string())
-        } else if let Some(s) = sub(name).filter(|s| self.is_installed(s)) {
-            Some(s.to_string())
-        } else {
-            sub(name).and_then(sub).filter(|s| self.is_installed(s)).map(str::to_string)
+    /// Follows `name`'s aliases (the application's, then learned ones): the first family in the catalog, or the
+    /// category a chain ends in. Stops after [`ALIAS_HOPS`] hops and at a family already seen.
+    fn through_aliases(
+        &self,
+        name: &str,
+        bold: bool,
+        italic: bool,
+        tried: &mut Vec<String>,
+    ) -> Option<(Option<String>, Resolution, Option<GenericFamily>)> {
+        let settings = &self.catalog.settings;
+        let applies =
+            |a: &&Alias, n: &str| a.from.eq_ignore_ascii_case(n) && a.bold.is_none_or(|b| b == bold) && a.italic.is_none_or(|i| i == italic);
+        let mut current = name.to_string();
+        let mut seen = vec![name.to_lowercase()];
+        for _ in 0..ALIAS_HOPS {
+            let (alias, by) = match settings.aliases.iter().find(|a| applies(a, &current)) {
+                Some(a) => (a, Resolution::Alias),
+                None => (settings.learned.iter().find(|a| applies(a, &current))?, Resolution::Learned),
+            };
+            match &alias.to {
+                AliasTarget::Category { category } => return Some((None, by, Some(*category))),
+                AliasTarget::Family(to) => {
+                    let lower = to.to_lowercase();
+                    if seen.contains(&lower) {
+                        return None;
+                    }
+                    tried.push(to.clone());
+                    if self.is_installed(to) {
+                        return Some((Some(to.clone()), by, None));
+                    }
+                    seen.push(lower);
+                    current = to.clone();
+                }
+            }
         }
+        None
     }
 
-    /// Whether `name` in this style draws without falling back to the default: its rule's family, or else `name`, is
-    /// installed or has an installed built-in substitute.
+    /// Whether `name` in this style draws as the document asked: through a replacement, itself, an alias or a
+    /// resolver's family answer, not a category default or a fallback.
     pub fn resolves(&self, name: &str, bold: bool, italic: bool) -> bool {
-        self.installed_for(self.render_family(name, bold, italic)).is_some()
+        self.resolve(name, None, bold, italic).by.found()
     }
 
-    /// The installed family that renders `name` in this style: its rule's family, `name` or a built-in substitute,
-    /// then the default.
-    fn resolve(&self, name: &str, bold: bool, italic: bool) -> String {
-        let key = (name.to_string(), bold, italic);
+    /// The catalog family that draws `name` in this style, and how: a replacement (whose target resolves through
+    /// itself and its aliases), the family itself, its aliases and learned answers, the default for its generic
+    /// category, the general fallback, then the first face added.
+    pub(crate) fn resolve(&self, name: &str, category: Option<GenericFamily>, bold: bool, italic: bool) -> Resolved {
+        let key = (name.to_lowercase(), category, bold, italic);
         if let Some(r) = self.resolved.borrow().get(&key) {
             return r.clone();
         }
-        let target = self.render_family(name, bold, italic);
-        let r = self
-            .installed_for(target)
-            // A rule's family not added yet: the document's family draws meanwhile.
-            .or_else(|| if target != name { self.installed_for(name) } else { None })
-            .or_else(|| self.catalog.default.clone().filter(|d| self.is_installed(d)))
-            .or_else(|| ["Calibri", "Carlito", "Arial", "Liberation Sans"].iter().find(|f| self.is_installed(f)).map(|s| s.to_string()))
-            .or_else(|| self.catalog.entries.first().map(|e| e.family.clone()))
-            .unwrap_or_else(|| name.to_string());
+        let r = self.resolve_uncached(name, category, bold, italic);
         self.resolved.borrow_mut().insert(key, r.clone());
         r
+    }
+
+    fn resolve_uncached(&self, name: &str, category: Option<GenericFamily>, bold: bool, italic: bool) -> Resolved {
+        let settings = &self.catalog.settings;
+        let mut tried = Vec::new();
+        let replacement = self.replacement_for(name, bold, italic).map(str::to_string);
+        let done = |family: Option<String>, by, tried, category| Resolved { family, by, tried, category, replacement: replacement.clone() };
+        if let Some(to) = self.replacement_for(name, bold, italic) {
+            tried.push(to.to_string());
+            if self.is_installed(to) {
+                return done(Some(to.to_string()), Resolution::Replacement, tried, category);
+            }
+            if let Some((Some(family), _, _)) = self.through_aliases(to, bold, italic, &mut tried) {
+                return done(Some(family), Resolution::Replacement, tried, category);
+            }
+        }
+        if self.is_installed(name) {
+            return done(Some(name.to_string()), Resolution::Itself, tried, category);
+        }
+        let mut category = if settings.classify_from_document { category } else { None };
+        match self.through_aliases(name, bold, italic, &mut tried) {
+            Some((Some(family), by, _)) => return done(Some(family), by, tried, category),
+            Some((None, _, aliased)) => category = aliased,
+            None => {}
+        }
+        if let Some(c) = category
+            && let Some(family) = settings.generic.get(c).filter(|f| self.is_installed(f))
+        {
+            return done(Some(family.to_string()), Resolution::Generic(c), tried, category);
+        }
+        if let Some(family) = settings.fallback.as_deref().filter(|f| self.is_installed(f)) {
+            return done(Some(family.to_string()), Resolution::Fallback, tried, category);
+        }
+        done(self.catalog.entries.first().map(|e| e.family.clone()), Resolution::LastResort, tried, category)
     }
 
     fn matches(&self, family: &str, bold: bool, italic: bool) -> Option<usize> {
@@ -650,44 +730,137 @@ impl Fonts {
         Face::load(e, requested, data, bold && e.weight < 600, italic && !e.italic).map(Rc::new)
     }
 
-    /// The face for a family and style (bold/italic synthesized when the family has no such face).
-    pub fn face(&self, family: &str, bold: bool, italic: bool) -> Option<Rc<Face>> {
-        let key = (family.to_lowercase(), bold, italic);
+    /// The face for a family and style (bold/italic synthesized when the family has no such face). `category` is the
+    /// family's generic category as the document describes it, for the generic defaults.
+    pub fn face(&self, family: &str, category: Option<GenericFamily>, bold: bool, italic: bool) -> Option<Rc<Face>> {
+        let key = (family.to_lowercase(), category, bold, italic);
         if let Some(f) = self.faces.borrow().get(&key) {
             return f.clone();
         }
-        let f = match self.matches(&self.resolve(family, bold, italic), bold, italic) {
+        let f = match self.resolve(family, category, bold, italic).family.and_then(|r| self.matches(&r, bold, italic)) {
             Some(i) => self.load(i, family, bold, italic),
-            None => (!self.catalog.entries.is_empty()).then(|| self.load(0, family, bold, italic)).flatten(),
+            None if self.catalog.entries.is_empty() => self.symbol_fallback(),
+            None => self.load(0, family, bold, italic),
         };
         self.faces.borrow_mut().insert(key, f.clone());
         f
     }
 
-    /// A face with a glyph for `c` when the run's font has none.
+    /// A face with a glyph for `c` when the run's font has none: the character-fallback families in order, then the
+    /// symbol fallback. Faces come from the face memo, so neighbouring characters in one fallback font share a face.
     pub fn fallback(&self, c: char, bold: bool, italic: bool) -> Option<Rc<Face>> {
         if let Some(f) = self.fallbacks.borrow().get(&(c, bold, italic)) {
             return f.clone();
         }
-        let f = FALLBACK_FAMILIES
+        let f = self
+            .catalog
+            .settings
+            .character_fallback
             .iter()
-            .filter_map(|fam| Some((fam, self.matches(fam, bold, italic)?)))
-            .filter_map(|(fam, i)| self.load(i, fam, bold, italic))
+            .filter(|fam| self.is_installed(fam))
+            .filter_map(|fam| self.face(fam, None, bold, italic))
             .find(|f| f.has_glyph(c))
             .or_else(|| self.symbol_fallback().filter(|f| f.has_glyph(c)));
         self.fallbacks.borrow_mut().insert((c, bold, italic), f.clone());
         f
     }
 
-    /// The shipped [`SYMBOL_FALLBACK`] face: outside the catalog, so it is never a family a document can name.
+    /// The bundled East Asian punctuation face in this style: outside the catalog, so it is never a family a document
+    /// can name.
+    pub fn east_asian_punctuation(&self, bold: bool, italic: bool) -> Option<Rc<Face>> {
+        let own = self.east_asian_punctuation.get_or_init(|| {
+            let mut own = Fonts::default();
+            own.set_settings(|s| s.symbol_fallback = SymbolFallback::Off);
+            let _ = own.add_bytes(EAST_ASIAN_PUNCTUATION.to_vec());
+            Box::new(own)
+        });
+        own.face("Twip East Asian Punctuation", None, bold, italic)
+    }
+
+    /// The symbol fallback's face: outside the catalog, so it is never a family a document can name.
     fn symbol_fallback(&self) -> Option<Rc<Face>> {
         self.symbol_fallback
             .get_or_init(|| {
+                let bytes = match &self.catalog.settings.symbol_fallback {
+                    SymbolFallback::Bundled => SYMBOL_FALLBACK.to_vec(),
+                    SymbolFallback::Font(bytes) => bytes.as_ref().clone(),
+                    SymbolFallback::Off => return None,
+                };
                 let mut own = Fonts::default();
-                own.add_bytes(SYMBOL_FALLBACK.to_vec()).ok()?;
-                own.load(0, "Twip Symbol Fallback", false, false)
+                own.add_bytes(bytes).ok()?;
+                let family = own.catalog.entries.first()?.family.clone();
+                own.load(0, &family, false, false)
             })
             .clone()
+    }
+}
+
+/// The settings the fonts guide recommends, which tests lay out with so their output doesn't depend on which of a
+/// family's metric-compatible stand-ins a machine has.
+#[cfg(test)]
+pub(crate) mod recommended {
+    use super::{Alias, AliasTarget, Fonts};
+
+    /// Aliases for office families that are often missing, to installed or metric-compatible open families.
+    pub const ALIASES: &[(&str, &str)] = &[
+        ("Calibri Light", "Calibri"),
+        ("Aptos", "Calibri"),
+        ("Aptos Display", "Calibri"),
+        ("Aptos Narrow", "Arial Narrow"),
+        ("Helvetica", "Arial"),
+        ("Helvetica Neue", "Arial"),
+        ("Times", "Times New Roman"),
+        ("Courier", "Courier New"),
+        ("CourierPS", "Courier New"),
+        ("Courier New CE", "Courier New"),
+        ("Myriad Pro", "Segoe UI"),
+        ("Liberation Serif", "Times New Roman"),
+        ("Liberation Sans", "Arial"),
+        ("Liberation Mono", "Courier New"),
+        ("DejaVu Sans", "Verdana"),
+        ("Arial Unicode MS", "Segoe UI"),
+        ("MS Mincho", "MS Gothic"),
+        ("MS Gothic", "Yu Gothic"),
+        ("Calibri", "Carlito"),
+        ("Cambria", "Caladea"),
+        ("Arial", "Liberation Sans"),
+        ("Times New Roman", "Liberation Serif"),
+        ("Courier New", "Liberation Mono"),
+    ];
+
+    /// Families searched for characters a run's font lacks.
+    pub const CHARACTER_FALLBACK: &[&str] = &[
+        "Segoe UI Symbol",
+        "Segoe UI",
+        "Arial",
+        "Cambria Math",
+        "MS Gothic",
+        "Yu Gothic",
+        "Microsoft YaHei",
+        "SimSun",
+        "Malgun Gothic",
+        "Nirmala UI",
+        "Segoe UI Emoji",
+        "Noto Sans",
+        "DejaVu Sans",
+    ];
+
+    /// `fonts` with these settings.
+    pub fn apply(fonts: &mut Fonts) {
+        fonts.set_settings(|s| {
+            s.aliases =
+                ALIASES.iter().map(|&(from, to)| Alias { from: from.into(), bold: None, italic: None, to: AliasTarget::Family(to.into()) }).collect();
+            s.character_fallback = CHARACTER_FALLBACK.iter().map(|f| f.to_string()).collect();
+        });
+    }
+
+    impl Fonts {
+        /// The system's fonts with the recommended settings.
+        pub(crate) fn system_recommended() -> Fonts {
+            let mut fonts = Fonts::system();
+            apply(&mut fonts);
+            fonts
+        }
     }
 }
 
@@ -1029,7 +1202,7 @@ mod tests {
         let s = engine.session(id).unwrap();
         assert!(s.fonts().generation() > before);
         assert_eq!(s.fonts().families(), ["Stand-in Serif"]);
-        assert_eq!(s.fonts().fonts().face("Stand-in Serif", false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in Serif"));
+        assert_eq!(s.fonts().fonts().face("Stand-in Serif", None, false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in Serif"));
     }
 
     #[test]
@@ -1038,7 +1211,7 @@ mod tests {
             let lib = FontLibrary::empty();
             let faces = lib.add(&file).unwrap_or_else(|e| panic!("{}: {e:?}", String::from_utf8_lossy(&file[..4])));
             assert_eq!(faces.iter().map(|f| f.family.as_str()).collect::<Vec<_>>(), ["Stand-in Serif"]);
-            assert!(lib.fonts().face("Stand-in Serif", false, false).is_some_and(|f| f.has_glyph('A')));
+            assert!(lib.fonts().face("Stand-in Serif", None, false, false).is_some_and(|f| f.has_glyph('A')));
         }
     }
 
@@ -1074,7 +1247,7 @@ mod tests {
         let mut f = Fonts::default();
         f.add_bytes(VARIABLE.to_vec()).unwrap();
         let advance = |family: &str, bold: bool| {
-            let face = f.face(family, bold, false).unwrap();
+            let face = f.face(family, None, bold, false).unwrap();
             (face.weight, face.sim_bold, face.shape("A", true, 0)[0].advance, face.advance(face.glyph('A').unwrap()))
         };
         assert_eq!(advance("Stand-in Variable", false), (400, false, 500.0, 500.0));
@@ -1084,20 +1257,158 @@ mod tests {
         assert_eq!(advance("stand-in variable black", false), (900, false, 800.0, 800.0));
     }
 
-    #[test]
-    fn a_bold_rule_applies_only_to_bold() {
+    const SANS: &[u8] = include_bytes!("../tests/fixtures/editor/fonts/stand-in-sans.ttf");
+
+    fn rule(from: &str, to: &str, bold: Option<bool>) -> FontRule {
+        FontRule { from: from.into(), bold, italic: None, to: to.into() }
+    }
+
+    fn alias(from: &str, to: &str) -> Alias {
+        Alias { from: from.into(), bold: None, italic: None, to: AliasTarget::Family(to.into()) }
+    }
+
+    /// Serif, Sans and Zzyzx in the catalog.
+    fn three() -> Fonts {
         let mut f = Fonts::default();
-        f.add_bytes(SERIF.to_vec()).unwrap();
-        f.add_bytes(ZZYZX.to_vec()).unwrap();
-        f.set_rules(vec![SubstitutionRule { from: "Doc Family".into(), bold: Some(true), italic: None, to: "Zzyzx Unknown".into() }]);
-        let bold = f.face("doc family", true, false).unwrap();
-        assert_eq!((bold.requested.as_str(), bold.family.as_str()), ("doc family", "Zzyzx Unknown"));
-        assert!(f.resolves("DOC FAMILY", true, true));
+        for bytes in [SERIF, SANS, ZZYZX] {
+            f.add_bytes(bytes.to_vec()).unwrap();
+        }
+        f
+    }
+
+    fn drawn(f: &Fonts, family: &str, bold: bool) -> (Option<String>, Resolution) {
+        let r = f.resolve(family, None, bold, false);
+        (r.family, r.by)
+    }
+
+    #[test]
+    fn a_replacement_applies_even_when_the_family_is_installed_and_only_to_its_style() {
+        let mut f = three();
+        f.set_settings(|s| s.replacements = vec![rule("Stand-in Serif", "Stand-in Sans", Some(true))]);
+        assert_eq!(drawn(&f, "stand-in serif", true), (Some("Stand-in Sans".into()), Resolution::Replacement));
+        assert_eq!(drawn(&f, "Stand-in Serif", false), (Some("Stand-in Serif".into()), Resolution::Itself));
+        let bold = f.face("doc family", None, true, false).unwrap();
+        assert_eq!(bold.requested, "doc family");
+    }
+
+    #[test]
+    fn a_replacement_whose_target_is_missing_uses_the_family() {
+        let mut f = three();
+        f.set_settings(|s| s.replacements = vec![rule("Stand-in Serif", "Nowhere", None)]);
+        let r = f.resolve("Stand-in Serif", None, false, false);
+        assert_eq!((r.family.as_deref(), r.by, r.tried), (Some("Stand-in Serif"), Resolution::Itself, vec!["Nowhere".to_string()]));
+    }
+
+    #[test]
+    fn an_alias_applies_only_when_the_family_is_missing() {
+        let mut f = three();
+        f.set_settings(|s| s.aliases = vec![alias("Arial", "Stand-in Sans"), alias("Stand-in Serif", "Stand-in Sans")]);
+        assert_eq!(drawn(&f, "ARIAL", false), (Some("Stand-in Sans".into()), Resolution::Alias));
+        assert_eq!(drawn(&f, "Stand-in Serif", false), (Some("Stand-in Serif".into()), Resolution::Itself));
+        assert!(f.resolves("arial", false, false));
+    }
+
+    #[test]
+    fn alias_chains_resolve_stop_at_cycles_and_follow_at_most_eight_hops() {
+        let mut f = three();
+        f.set_settings(|s| s.aliases = vec![alias("A", "B"), alias("B", "Stand-in Sans")]);
+        let r = f.resolve("A", None, false, false);
+        assert_eq!((r.family.as_deref(), r.by, r.tried), (Some("Stand-in Sans"), Resolution::Alias, vec!["B".into(), "Stand-in Sans".into()]));
+
+        f.set_settings(|s| s.aliases = vec![alias("A", "B"), alias("B", "A")]);
+        assert_eq!(drawn(&f, "A", false), (Some("Stand-in Serif".into()), Resolution::LastResort));
+
+        let chain: Vec<Alias> = (0..9).map(|k| alias(&format!("F{k}"), &format!("F{}", k + 1))).chain([alias("F9", "Stand-in Sans")]).collect();
+        f.set_settings(|s| s.aliases = chain);
+        assert_eq!(drawn(&f, "F2", false), (Some("Stand-in Sans".into()), Resolution::Alias), "8 hops reach it");
+        assert_eq!(drawn(&f, "F0", false).1, Resolution::LastResort, "10 hops don't");
+    }
+
+    #[test]
+    fn a_missing_family_uses_the_fallback_then_the_first_face() {
+        let mut f = three();
+        assert_eq!(drawn(&f, "Doc Family", false), (Some("Stand-in Serif".into()), Resolution::LastResort));
+        f.set_settings(|s| s.fallback = Some("Zzyzx Unknown".into()));
+        assert_eq!(drawn(&f, "Doc Family", false), (Some("Zzyzx Unknown".into()), Resolution::Fallback));
+        assert_eq!(f.face("Doc Family", None, false, false).unwrap().family, "Zzyzx Unknown");
+        f.set_settings(|s| s.fallback = Some("Not Installed".into()));
+        assert_eq!(drawn(&f, "Doc Family", false).1, Resolution::LastResort);
         assert!(!f.resolves("Doc Family", false, false));
-        // Unresolved, it falls back to the first font, until a default is set.
-        assert_eq!(f.face("Doc Family", false, false).unwrap().family, "Stand-in Serif");
-        f.set_default("Zzyzx Unknown");
-        assert_eq!(f.face("Doc Family", false, false).unwrap().family, "Zzyzx Unknown");
+        assert_eq!(Fonts::default().resolve("Doc Family", None, false, false).family, None);
+    }
+
+    #[test]
+    fn generic_defaults_apply_only_when_set_and_classification_is_on() {
+        let mut f = three();
+        let serif = Some(GenericFamily::Serif);
+        assert_eq!(f.resolve("Garamond", serif, false, false).by, Resolution::LastResort, "no default set");
+        f.set_settings(|s| s.generic.serif = Some("Zzyzx Unknown".into()));
+        let r = f.resolve("Garamond", serif, false, false);
+        assert_eq!((r.family.as_deref(), r.by), (Some("Zzyzx Unknown"), Resolution::Generic(GenericFamily::Serif)));
+        assert_eq!(f.resolve("Garamond", None, false, false).by, Resolution::LastResort, "no category");
+        f.set_settings(|s| s.classify_from_document = false);
+        assert_eq!(f.resolve("Garamond", serif, false, false).by, Resolution::LastResort, "classification off");
+        f.set_settings(|s| {
+            s.aliases =
+                vec![Alias { from: "Garamond".into(), bold: None, italic: None, to: AliasTarget::Category { category: GenericFamily::Serif } }]
+        });
+        assert_eq!(f.resolve("Garamond", None, false, false).by, Resolution::Generic(GenericFamily::Serif), "an alias to a category");
+    }
+
+    const CJK: &[u8] = include_bytes!("../tests/fixtures/editor/fonts/stand-in-cjk.ttf");
+    const MONO: &[u8] = include_bytes!("../tests/fixtures/editor/fonts/stand-in-mono.ttf");
+
+    #[test]
+    fn character_fallback_searches_the_applications_families_in_order() {
+        let mut f = three();
+        f.add_bytes(CJK.to_vec()).unwrap();
+        f.add_bytes(MONO.to_vec()).unwrap();
+        f.set_settings(|s| s.symbol_fallback = SymbolFallback::Off);
+        assert!(f.fallback('\u{6f22}', false, false).is_none(), "an empty list searches nothing");
+        f.set_settings(|s| s.character_fallback = vec!["Stand-in Mono".into(), "Stand-in CJK".into()]);
+        assert_eq!(f.fallback('\u{6f22}', false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in CJK"), "the first that has it");
+        f.set_settings(|s| s.character_fallback = vec!["Stand-in Mono".into(), "Stand-in Sans".into()]);
+        assert_eq!(f.fallback('A', false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in Mono"), "list order");
+        let (a, b) = (f.fallback('A', false, false).unwrap(), f.fallback('B', false, false).unwrap());
+        assert!(Rc::ptr_eq(&a, &b), "neighbouring characters share one face");
+        f.set_settings(|s| s.symbol_fallback = SymbolFallback::Bundled);
+        assert!(f.fallback('\u{2022}', false, false).is_some_and(|f| f.has_glyph('\u{2022}')), "then the symbol fallback");
+    }
+
+    #[test]
+    fn the_symbol_fallback_is_bundled_replaceable_or_off_and_never_a_named_family() {
+        let mut f = three();
+        assert!(f.fallback('\u{2022}', false, false).is_some_and(|f| f.has_glyph('\u{2022}')), "bundled");
+        f.set_settings(|s| s.symbol_fallback = SymbolFallback::Off);
+        assert!(f.fallback('\u{2022}', false, false).is_none(), "off");
+        f.set_settings(|s| s.symbol_fallback = SymbolFallback::Font(Arc::new(CJK.to_vec())));
+        assert_eq!(f.fallback('\u{6f22}', false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in CJK"), "the application's");
+        assert!(!f.is_installed("Stand-in CJK") && !f.is_installed("Twip Symbol Fallback"), "outside the catalog");
+        assert_eq!(f.resolve("Twip Symbol Fallback", None, false, false).by, Resolution::LastResort, "a document can't name it");
+    }
+
+    #[test]
+    fn an_empty_library_draws_with_the_symbol_fallback_face_until_it_is_off() {
+        let mut f = Fonts::default();
+        let face = f.face("Anything", None, false, false).expect("the symbol fallback face");
+        assert!(face.advance(face.glyph('?').unwrap_or(0)) > 0.0, "text takes up space");
+        f.set_settings(|s| s.symbol_fallback = SymbolFallback::Off);
+        assert!(f.face("Anything", None, false, false).is_none());
+    }
+
+    #[test]
+    fn the_east_asian_punctuation_face_has_ms_minchos_widths() {
+        let widths: std::collections::BTreeMap<String, f64> =
+            serde_json::from_str(include_str!("east-asian-punctuation.widths.json")).expect("the widths");
+        let face = Fonts::default().east_asian_punctuation(false, false).expect("the face");
+        assert!(widths.len() > 500);
+        for (hex, width) in &widths {
+            let c = char::from_u32(u32::from_str_radix(hex, 16).unwrap()).unwrap();
+            let glyph = face.glyph(c).unwrap_or_else(|| panic!("{hex} has no glyph"));
+            assert_eq!((face.advance(glyph) * 1000.0 / face.upem).round(), *width, "{hex}");
+        }
+        assert!(face.east_asian, "it is an East Asian face, as MS Mincho is");
+        assert!(Fonts::default().east_asian_punctuation(true, false).is_some_and(|f| f.sim_bold), "bold is synthesized");
     }
 
     #[test]
@@ -1107,21 +1418,28 @@ mod tests {
         let asked = Rc::new(RefCell::new(Vec::new()));
         let sink = asked.clone();
         lib.on_request(move |r: &FontRequest| sink.borrow_mut().push((r.family.clone(), r.bold, r.italic)));
-        let faces =
-            [("Zzyzx Unknown", false, false), ("zzyzx unknown", false, false), ("Zzyzx Unknown", true, false), ("Stand-in Serif", false, false)];
+        let faces = [
+            ("Zzyzx Unknown", None, false, false),
+            ("zzyzx unknown", None, false, false),
+            ("Zzyzx Unknown", None, true, false),
+            ("Stand-in Serif", None, false, false),
+        ];
+        let styles = |list: &[crate::api::state::MissingFont]| list.iter().map(|m| (m.family.clone(), m.bold)).collect::<Vec<_>>();
+        let both = vec![("Zzyzx Unknown".to_string(), false), ("Zzyzx Unknown".to_string(), true)];
         for _ in 0..2 {
-            let state = lib.check(faces);
-            assert_eq!((state.pending, state.unresolved), (vec!["Zzyzx Unknown".to_string()], vec![]));
+            let state = lib.check(faces, &Default::default());
+            assert_eq!((styles(&state.pending), styles(&state.missing)), (both.clone(), vec![]));
         }
         assert_eq!(asked.borrow().len(), 2, "{:?}", asked.borrow());
         // Answered with nothing: unresolved, and not asked again. A face added later resolves it.
         for bold in [false, true] {
-            lib.mark_unresolved(&FontRequest { family: "Zzyzx Unknown".into(), bold, italic: false });
+            let request = FontRequest { family: "Zzyzx Unknown".into(), bold, italic: false, ..FontRequest::default() };
+            lib.answer(&request, crate::api::fonts::FontAnswer::Missing);
         }
-        let state = lib.check(faces);
-        assert_eq!((state.pending, state.unresolved), (vec![], vec!["Zzyzx Unknown".to_string()]));
+        let state = lib.check(faces, &Default::default());
+        assert_eq!((styles(&state.pending), styles(&state.missing)), (vec![], both));
         lib.add(ZZYZX).unwrap();
-        assert_eq!(lib.check(faces), Default::default());
+        assert_eq!(lib.check(faces, &Default::default()), Default::default());
         assert_eq!(asked.borrow().len(), 2);
     }
 }

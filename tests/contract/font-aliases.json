@@ -1,0 +1,40 @@
+{
+  "name": "font-aliases",
+  "fixture": "editor/FX-FONT-TABLE.docx",
+  "fonts": "empty",
+  "steps": [
+    { "op": "font", "file": "editor/fonts/stand-in-sans.ttf" },
+    { "op": "font", "file": "editor/fonts/stand-in-serif.ttf" },
+    { "op": "call", "method": "fonts.setAliases", "args": [{ "Garamond": "Stand-in Serif" }] },
+    { "op": "open" },
+    {
+      "op": "expectState",
+      "match": {
+        "fonts": {
+          "missing": [
+            { "family": "Consolas", "by": "lastResort" },
+            { "family": "Mystery Sans", "by": "lastResort" },
+            { "family": "Zzyzx Unknown", "by": "lastResort" }
+          ]
+        }
+      }
+    },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Garamond text" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "font": "Garamond" } } },
+
+    { "op": "call", "method": "fonts.setAliases", "args": [[{ "from": "Garamond", "bold": true, "to": "Stand-in Serif" }, { "from": "Consolas", "to": "Nowhere" }]] },
+    {
+      "op": "expectState",
+      "match": {
+        "fonts": {
+          "missing": [
+            { "family": "Consolas", "tried": ["Nowhere"] },
+            { "family": "Garamond", "bold": false },
+            { "family": "Mystery Sans" },
+            { "family": "Zzyzx Unknown" }
+          ]
+        }
+      }
+    }
+  ]
+}

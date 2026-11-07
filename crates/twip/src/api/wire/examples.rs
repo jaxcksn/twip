@@ -14,7 +14,9 @@ use crate::api::drawing as dr;
 use crate::api::engine::{Dictionary, SessionId, SessionOptions};
 use crate::api::error::{Error, ErrorCode};
 use crate::api::event::{Event, FieldRequest, HostCommand, KeyOutcome, LinkVia, RefusalReason};
-use crate::api::fonts::{FaceInfo, FontRequest, SubstitutionRule};
+use crate::api::fonts::{
+    Alias, AliasTarget, FaceInfo, FontAnswer, FontClass, FontDescription, FontPitch, FontRequest, FontRule, GenericDefaults, GenericFamily,
+};
 use crate::api::input::{ClipboardData, CompositionPhase, Key, Modifiers, Point, PointerButton, PointerKind};
 use crate::api::record::{Author, ChangeSummary, Identity, Origin, Timestamp, TransactionRecord};
 use crate::api::review::*;
@@ -125,7 +127,9 @@ pub fn fixtures() -> Vec<Fixture> {
         "error-code": ErrorCode,
         "export-format": ExportFormat,
         "field-kind": FieldKind,
+        "font-class": FontClass,
         "font-style": FontStyle,
+        "generic-family": GenericFamily,
         "gesture-id": GestureId,
         "header-footer-kind": HeaderFooterKind,
         "header-footer-type": HeaderFooterType,
@@ -153,6 +157,7 @@ pub fn fixtures() -> Vec<Fixture> {
         "orientation": Orientation,
         "origin": Origin,
         "page-number-format": PageNumberFormat,
+        "font-pitch": FontPitch,
         "page-number-place": PageNumberPlace,
         "paste-as": PasteAs,
         "pointer-button": PointerButton,
@@ -161,11 +166,13 @@ pub fn fixtures() -> Vec<Fixture> {
         "revision-kind": RevisionKind,
         "ruler-unit": RulerUnit,
         "section-break-kind": SectionBreakKind,
+        "replace-scope": ReplaceScope,
         "select-unit": SelectUnit,
         "selection-kind": SelectionKind,
         "selection-mode": SelectionMode,
         "severity": Severity,
         "special-indent": SpecialIndent,
+        "stand-in": StandIn,
         "story": Story,
         "style-type": StyleType,
         "tab-alignment": TabAlignment,
@@ -400,11 +407,77 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("word-count", WordCount, vec![word_count()]),
         // fonts, engine, input, documents
         fixture!("face-info", FaceInfo, vec![FaceInfo { family: "Carlito".into(), bold: true, italic: false }]),
-        fixture!("font-request", FontRequest, vec![FontRequest { family: "Calibri".into(), bold: false, italic: true }]),
         fixture!(
-            "substitution-rule",
-            SubstitutionRule,
-            vec![substitution(), SubstitutionRule { from: "Arial".into(), bold: None, italic: None, to: "Arimo".into() }]
+            "font-request",
+            FontRequest,
+            vec![
+                FontRequest { family: "Calibri".into(), bold: false, italic: true, description: None, proposed: None },
+                FontRequest {
+                    family: "Garamond".into(),
+                    bold: true,
+                    italic: false,
+                    description: Some(font_description()),
+                    proposed: Some(GenericFamily::Serif)
+                },
+            ]
+        ),
+        fixture!("font-description", FontDescription, vec![font_description(), FontDescription::default()]),
+        fixture!(
+            "font-answer",
+            FontAnswer,
+            vec![
+                FontAnswer::Font,
+                FontAnswer::Family { family: "Arimo".into() },
+                FontAnswer::Category { category: GenericFamily::Serif },
+                FontAnswer::Missing,
+                FontAnswer::Failed { message: "offline".into() },
+            ]
+        ),
+        fixture!("font-rule", FontRule, vec![substitution(), FontRule { from: "Arial".into(), bold: None, italic: None, to: "Arimo".into() }]),
+        fixture!(
+            "missing-font",
+            MissingFont,
+            vec![
+                missing_font(),
+                MissingFont {
+                    family: "Brand Sans".into(),
+                    bold: false,
+                    italic: true,
+                    tried: Vec::new(),
+                    category: None,
+                    drawn_with: None,
+                    by: StandIn::LastResort,
+                    error: Some("offline".into()),
+                },
+            ]
+        ),
+        fixture!("missing-characters", MissingCharacters, vec![missing_characters()]),
+        fixture!(
+            "alias",
+            Alias,
+            vec![
+                Alias { from: "Arial".into(), bold: None, italic: None, to: AliasTarget::Family("Arimo".into()) },
+                Alias {
+                    from: "Garamond".into(),
+                    bold: Some(true),
+                    italic: Some(false),
+                    to: AliasTarget::Category { category: GenericFamily::Serif }
+                },
+            ]
+        ),
+        fixture!(
+            "generic-defaults",
+            GenericDefaults,
+            vec![
+                GenericDefaults::default(),
+                GenericDefaults {
+                    serif: Some("Tinos".into()),
+                    sans_serif: Some("Arimo".into()),
+                    monospace: Some("Cousine".into()),
+                    script: Some("Dancing Script".into()),
+                    decorative: Some("Lobster".into()),
+                },
+            ]
         ),
         fixture!("session-id", SessionId, vec![SessionId(3)]),
         fixture!(
@@ -794,6 +867,13 @@ fn commands() -> Vec<Command> {
             kind: Some(ElementClass::Field),
             ids: ids(),
         }),
+        Command::ReplaceFont(ReplaceFont {
+            from: "Calibri".into(),
+            to: "Aptos".into(),
+            scope: ReplaceScope::Selection,
+            bold: Some(true),
+            italic: None,
+        }),
         Command::MarkElements(MarkElements {
             marks: vec![ElementMark { id: id("field-1"), severity: Severity::Warning, message: "Unknown field".into() }],
             clear: Some(true),
@@ -874,7 +954,12 @@ fn popovers() -> [Popover; 3] {
 }
 
 fn command_results() -> Vec<CommandResult> {
-    vec![CommandResult::Element { id: id("field-1") }, CommandResult::DataPart { item_id: "{6A9C}".into() }, CommandResult::Changed { changed: 4 }]
+    vec![
+        CommandResult::Element { id: id("field-1") },
+        CommandResult::DataPart { item_id: "{6A9C}".into() },
+        CommandResult::Changed { changed: 4 },
+        CommandResult::FontReplaced { changed: 12, skipped: 1 },
+    ]
 }
 
 fn command_info() -> CommandInfo {
@@ -1079,7 +1164,7 @@ fn state() -> State {
         view: ViewState::default(),
         review: review_state(),
         spelling: SpellingState { enabled: true, language: "en-US".into(), misspellings: 2 },
-        fonts: FontsState { pending: vec!["Aptos".into()], unresolved: vec!["Brand Sans".into()] },
+        fonts: fonts_state(),
         ruler: ruler(),
         format_painter: false,
         theme_colours: vec![Color(0x000000), Color(0xFFFFFF)],
@@ -1565,8 +1650,48 @@ fn word_count() -> WordCount {
     WordCount { words: 120, characters: 640, characters_with_spaces: 760, paragraphs: 9, lines: 22, pages: 2 }
 }
 
-fn substitution() -> SubstitutionRule {
-    SubstitutionRule { from: "Times New Roman".into(), bold: Some(true), italic: Some(false), to: "Tinos".into() }
+fn font_description() -> FontDescription {
+    FontDescription {
+        class: Some(FontClass::Roman),
+        pitch: Some(FontPitch::Variable),
+        panose: Some([2, 2, 4, 4, 3, 3, 1, 1, 8, 3]),
+        charset: Some(0),
+    }
+}
+
+fn missing_font() -> MissingFont {
+    MissingFont {
+        family: "Garamond".into(),
+        bold: true,
+        italic: false,
+        tried: vec!["EB Garamond".into()],
+        category: Some(GenericFamily::Serif),
+        drawn_with: Some("Tinos".into()),
+        by: StandIn::Generic,
+        error: None,
+    }
+}
+
+fn missing_characters() -> MissingCharacters {
+    MissingCharacters { family: "Calibri".into(), characters: "\u{6f22}\u{2603}".into(), truncated: false }
+}
+
+fn fonts_state() -> FontsState {
+    let pending = MissingFont {
+        family: "Aptos".into(),
+        bold: false,
+        italic: false,
+        tried: Vec::new(),
+        category: None,
+        drawn_with: Some("Carlito".into()),
+        by: StandIn::Fallback,
+        error: None,
+    };
+    FontsState { pending: vec![pending], missing: vec![missing_font()], characters: vec![missing_characters()] }
+}
+
+fn substitution() -> FontRule {
+    FontRule { from: "Times New Roman".into(), bold: Some(true), italic: Some(false), to: "Tinos".into() }
 }
 
 fn session_options() -> SessionOptions {
@@ -1608,7 +1733,7 @@ fn events() -> Vec<Event> {
         Event::Shortcut { id: "insertSignature".into() },
         Event::Gesture(gesture_event()),
         Event::WordAdded { word: "Twip".into(), language: "en-US".into() },
-        Event::FontsChanged { pending: vec!["Aptos".into()], unresolved: vec!["Brand Sans".into()] },
+        Event::FontsChanged(fonts_state()),
         Event::ElementActivated { id: id("field-1") },
         Event::ElementsChanged { added: vec![element_info()], removed: vec![id("field-2")], changed: Vec::new() },
         Event::FieldsUpdateRequested { token: 4, fields: vec![FieldRequest { id: id("field-1"), code: "DOCPROPERTY Client".into() }] },

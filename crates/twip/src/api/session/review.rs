@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn revisions_and_comments_list_and_report() {
-        let mut engine = Engine::new(FontLibrary::system());
+        let mut engine = Engine::new(FontLibrary::system_recommended());
         let events: Events = Rc::default();
         let sink = events.clone();
         engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));

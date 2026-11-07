@@ -7,7 +7,7 @@ use super::error::{Error, ErrorCode};
 use super::record::TransactionRecord;
 use super::review::{BalloonPlacement, CommentAnchor};
 use super::services::{ContextMenuEvent, DialogKind, ElementInfo, GestureEvent, PlaceholderInfo, Popover, RulerView, Tooltip};
-use super::state::{SelectionSummary, State};
+use super::state::{FontsState, SelectionSummary, State};
 use super::value::ElementId;
 use super::warning::Warning;
 use super::wire::value;
@@ -64,13 +64,9 @@ pub enum Event {
         /// Its language tag (`en-US`).
         language: String,
     },
-    /// Fonts being fetched, or with no font found, changed.
-    FontsChanged {
-        /// The families being fetched.
-        pending: Vec<String>,
-        /// The families no source had: they draw with a substitute.
-        unresolved: Vec<String>,
-    },
+    /// The document's families that draw with a stand-in (being fetched, or nothing provided them), or its
+    /// characters no font has, changed. Carries the whole report, as `State.fonts` has it.
+    FontsChanged(FontsState),
     /// Design mode: Enter or a double-click on an element.
     ElementActivated {
         /// The element.

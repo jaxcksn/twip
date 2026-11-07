@@ -329,7 +329,7 @@ mod tests {
 
     /// An engine with a session on a fixture, and the events it hears.
     fn open(name: &str) -> (Engine, SessionId, Events) {
-        let mut engine = Engine::new(FontLibrary::system());
+        let mut engine = Engine::new(FontLibrary::system_recommended());
         let events: Events = Rc::default();
         let sink = events.clone();
         engine.set_listener(move |_, e| sink.borrow_mut().push(e.clone()));

@@ -114,7 +114,6 @@ export interface Warning {
     | 'unsupported-element'
     | 'image-undecodable'
     | 'font-unresolved'
-    | 'font-substituted'
     | 'rewritten-content'
     | 'pdf-font-fallback'
     | 'pdf-archival-claim-dropped'

@@ -178,6 +178,6 @@ fn line_14_the_extra_height_is_whole_font_units() {
     if !fonts.is_installed("MS Mincho") {
         return;
     }
-    let Some(f) = fonts.face("MS Mincho", false, false) else { return };
+    let Some(f) = fonts.face("MS Mincho", None, false, false) else { return };
     assert_eq!((f.ascent, f.descent, f.leading), (258.0, 74.0, 0.0));
 }

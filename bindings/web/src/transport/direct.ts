@@ -183,6 +183,14 @@ export class DirectTransport implements Transport {
     });
   }
 
+  setSymbolFallback(bytes: Uint8Array): Promise<void> {
+    return this.#enqueue(() => {
+      let status = 0;
+      const out = this.#withBytes(bytes, (p, n) => this.#readBuf((buf) => (status = this.#m._twip_font_symbol_fallback(this.#engine, p, n, buf))));
+      envelope(status, out);
+    });
+  }
+
   input(session: number, input: Input): Promise<number> {
     return this.#enqueue(() => {
       const [m, e] = [this.#m, this.#engine];

@@ -709,7 +709,7 @@ mod tests {
     use crate::font::Fonts;
 
     fn open(name: &str) -> (Editor, Fonts) {
-        let fonts = Fonts::system();
+        let fonts = Fonts::system_recommended();
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(name);
         let e = Editor::open(&std::fs::read(path).expect("fixture"), &fonts).expect("opens");
         (e, fonts)
