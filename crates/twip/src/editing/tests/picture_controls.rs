@@ -238,6 +238,25 @@ fn floating_picture_control_reads_once() {
     assert_eq!(tag_of(&r.e).as_deref(), Some("Placeholder:Secure.Y"), "{:?}", r.e.selection());
 }
 
+/// Protected, in design mode, Delete takes a floating picture control with its box, so the text it wrapped
+/// comes back; one undo step puts both back.
+#[test]
+fn a_protected_floating_picture_control_goes_with_its_box() {
+    let mut r = design(FX, "float-protected-delete");
+    r.e.execute(
+        Command::SetProtectedPictureControls(crate::api::command::ProtectedPictureControls { tag_prefixes: vec!["Placeholder:".into()] }),
+        fonts(),
+    );
+    let floats = body_floats(&r.e).len();
+    let has = |e: &Editor| e.document().controls.values().any(|k| k.props.tag.as_deref() == Some("Placeholder:Secure.Y"));
+    r.step(&json!({ "click": { "float": 0 } }));
+    assert_eq!(tag_of(&r.e).as_deref(), Some("Placeholder:Secure.Y"), "{:?}", r.e.selection());
+    r.step(&json!({ "key": "Delete" }));
+    assert_eq!((body_floats(&r.e).len(), has(&r.e)), (floats - 1, false), "the box goes with the control");
+    r.e.execute(Command::Undo, fonts());
+    assert_eq!((body_floats(&r.e).len(), has(&r.e)), (floats, true), "one undo step");
+}
+
 /// `insertControl` with `float` makes a floating picture control: saved as a bare borderless text box with no VML,
 /// reopened as one, dragged and resized as a float (its picture keeping the box's size) and filled where it is.
 #[test]
