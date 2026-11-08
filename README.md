@@ -226,7 +226,7 @@ of every SDK. Run it locally with `pnpm moon run docs:dev`.
 | `docs` | The docs site, its examples and the API references |
 
 Building, testing and contributing are covered in [CONTRIBUTING](.github/CONTRIBUTING.md). The road to 1.0 is in
-[the roadmap](docs/docs/roadmap.md).
+[the roadmap](docs/docs/roadmap.mdx).
 
 ---
 
