@@ -9,6 +9,7 @@ You need:
 - **Rust**: `rustup` installed. The repo pins the toolchain in `rust-toolchain.toml`; rustup picks it up on first build.
 - **Node 24+** and **pnpm** (`corepack enable`).
 - **.NET 10 SDK**: for the .NET SDK and the docs' C# examples.
+- **Xcode 26** (Swift 6.2), on macOS: for the Swift SDK and the docs' Swift examples.
 - **The wasm-bindgen CLI** at the locked version, for the WebAssembly module, which `web:test` and everything else
   in `bindings/web` needs: `cargo install wasm-bindgen-cli --version 0.2.129 --locked`.
 
@@ -38,6 +39,7 @@ message that isn't a conventional commit is rejected locally instead of in CI.
 | `crates/twip-tools` | Developer tools: golden comparisons, dumps, round trips, renders (`cargo run -p twip-tools`). |
 | `bindings/web` | `@twip/web`, the TypeScript SDK, written by hand over the wasm module. |
 | `bindings/dotnet` | `Twip.Core` and `Twip.WinForms`, the .NET SDK, written by hand over the C ABI. |
+| `bindings/swift` | `Twip` and `TwipUI`, the Swift SDK, written by hand over the C ABI (macOS). |
 | `tests/contract` | The contract scripts every SDK runs (see its README). |
 | `packages/*` | Framework integrations (Angular, React). These version separately from the engine. |
 | `docs` | The docs site: the guides, their examples (`docs/examples`) and the API references. |
@@ -48,12 +50,12 @@ message that isn't a conventional commit is rejected locally instead of in CI.
 not generated: each is written by hand in its language, and each follows the contract. Three things hold them to it:
 
 - **Wire fixtures.** The api types serialize to the JSON the SDKs exchange with the engine. `crates/twip/tests/wire`
-  holds one fixture per type; both SDKs round-trip every one through their own types, and `twip:test` fails when
+  holds one fixture per type; every SDK round-trips every one through its own types, and `twip:test` fails when
   they differ from the api types. After changing an api type, run
   `TWIP_WRITE_WIRE=1 cargo test -p twip --lib fixtures_are_current` and commit the fixtures.
 - **Contract scripts.** `tests/contract/*.json` are scripted scenarios (ordering, state, transactions, errors,
   services, review, cleanup) that run against the Rust API, `@twip/web` headless and in a worker, and `Twip.Core`
-  unattached and attached; every runner must give the same results. A script in `tests/contract/pending.txt` waits
+  and the Swift `Twip` unattached and attached; every runner must give the same results. A script in `tests/contract/pending.txt` waits
   for its feature: runners fail when it passes, so remove it from the list in the change that makes it pass.
   `python3 -I tests/contract/check.py` checks the scripts themselves: their steps, fixtures and command ids.
 - **Surface snapshots.** A change to an SDK's public surface must show in its snapshot:
@@ -62,7 +64,7 @@ not generated: each is written by hand in its language, and each follows the con
   on any difference.
 
 So a new command, for example, is a `Command` variant with its catalog entry and engine code, its wire fixture, a
-hand-written method in each SDK (`commands.ts`, `EditorCommands`), the two snapshots, and a contract script step.
+hand-written method in each SDK (`commands.ts`, `EditorCommands`, a Swift `Command` case), the two snapshots, and a contract script step.
 
 Every public member is documented, and the build enforces it: `twip::api` denies missing docs, the .NET packages
 fail on CS1591, and API Extractor fails on an undocumented export. The guides' examples live in `docs/examples` and
@@ -89,7 +91,8 @@ The tasks: `root:hygiene` (planning ids, the CI plan), `root:format`, `root:lint
 `twip:test` (the unit tests, including the wire fixture check, and the rust contract runner), `twip:example` (the
 Rust API end to end), `twip-graphics:test` (the renderer's unit and golden image tests), `twip-capi:test`; `web:test` (builds the wasm module, then the unit, wire, contract and API report checks),
 `web:browser-test`, `web:latency` (the latency budgets, on a quiet machine with a GPU; not in CI); `dotnet:build`, `dotnet:test` (builds twip-capi, then the wire, contract and Native AOT smoke
-tests); `docs:build` and `docs:examples` (the guides' TypeScript and C# examples). `cargo fmt --all` fixes what
+tests); `swift:test` (macOS: builds twip-capi, then the wire, contract, session and hosting tests); `docs:build`,
+`docs:examples` (the guides' TypeScript and C# examples) and `docs:swift-examples` (macOS: the Swift ones). `cargo fmt --all` fixes what
 `root:format` reports.
 
 ### Profiling
@@ -157,7 +160,7 @@ The code is the documentation. A comment in the engine names a part of the code 
   | `feat!` / `fix!` or a `BREAKING CHANGE:` footer | Breaking API or behaviour change | minor | major |
   | `refactor`, `docs`, `test`, `build`, `ci`, `chore`, `revert` | Everything else | none | none |
 
-  Scopes are optional: `layout`, `editing`, `drawing`, `render`, `pdf`, `ffi`, `dotnet`, `web`, `angular`, `react`, `harness`, `docs`,
+  Scopes are optional: `layout`, `editing`, `drawing`, `render`, `pdf`, `ffi`, `dotnet`, `swift`, `web`, `angular`, `react`, `harness`, `docs`,
   `release`, `deps`. The list lives in the `commitlint` key of `package.json`.
   A change to layout output that alters where text lands on the page is a behaviour change. Mark it `fix(layout)` and
   say what moves. `crates/twip/tests/layout` holds every fixture's layout in twips (pages; each drawn line's start,

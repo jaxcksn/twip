@@ -10,6 +10,8 @@ must all give the same results:
 | `web-worker` | `bindings/web/browser/worker-contract.spec.ts` | `@twip/web` mounted in Chromium, engine in a worker |
 | `dotnet-unattached` | `bindings/dotnet/Twip.Tests/ContractTests.cs` | an `EditorSession` with no host |
 | `dotnet-attached` | the same | an `EditorSession` attached to a headless test host |
+| `swift-unattached` | `bindings/swift/Tests/TwipTests/ContractTests.swift` | an `EditorSession` with no view |
+| `swift-attached` | the same | an `EditorSession` presented by a headless test host |
 
 A failure names the runner, the script and the step index. Every runner also checks that each `documentChanged`
 arrives with the state already at its revision.

@@ -21,7 +21,7 @@
       "scope-enum": [
         2,
         "always",
-        ["layout", "editing", "drawing", "render", "pdf", "ffi", "dotnet", "web", "angular", "react", "harness", "docs", "release", "deps"]
+        ["layout", "editing", "drawing", "render", "pdf", "ffi", "dotnet", "swift", "web", "angular", "react", "harness", "docs", "release", "deps"]
       ],
       "subject-case": [0],
       "header-max-length": [2, "always", 100]

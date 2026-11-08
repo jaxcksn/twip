@@ -10,6 +10,7 @@ Every public member of each SDK is documented, generated from the source each ti
 - [`@twip/web`](pathname:///api/web/): `Editor`, `HeadlessEditor`, the commands, state, events and services.
 - [`Twip.Core` and `Twip.WinForms`](pathname:///api/dotnet/): `EditorSession`, `DocumentEditor`, the hosting
   contract and every model type.
+- `Twip` and `TwipUI` (Swift): every public member is documented in the source, and Xcode shows it in Quick Help.
 - [`twip::api`](https://docs.rs/twip/latest/twip/api/): the Rust contract the SDKs follow.
 
 In an editor, the same documentation shows in IntelliSense and in the TypeScript declarations.

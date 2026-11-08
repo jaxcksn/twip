@@ -29,6 +29,20 @@ On Linux the engine uses the system's FreeType and Fontconfig libraries. Desktop
 slim container image install them (`libfreetype6 libfontconfig1` on Debian and Ubuntu), and see [Fonts](guides/fonts)
 for the fonts documents expect.
 
+## Swift
+
+Add the package to your app's `Package.swift` (or with Xcode's File > Add Package Dependencies), then depend on
+`Twip` for the session and `TwipUI` for the SwiftUI and AppKit editor:
+
+```swift title="Package.swift"
+.package(path: "path/to/twip/bindings/swift"),
+// ...
+.target(name: "MyApp", dependencies: [.product(name: "Twip", package: "swift"), .product(name: "TwipUI", package: "swift")])
+```
+
+It needs macOS 15 and Swift 6.2 (Xcode 26). Until the package ships a prebuilt framework, build the native engine in
+the Twip checkout first: `node crates/twip-capi/build-native.mjs`. The library it builds draws with Metal.
+
 ## Rust
 
 ```toml title="Cargo.toml"

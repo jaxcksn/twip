@@ -18,6 +18,13 @@ tasks:
     script: pnpm exec tsc -p examples && dotnet build examples/dotnet -warnaserror
     deps: [web:build]
     inputs: ['examples/**/*', '/bindings/web/src/**/*', '/bindings/dotnet/Twip.Core/**/*', '/bindings/dotnet/Twip.WinForms/**/*']
+  # Builds the guides' Swift examples against Twip and TwipUI, warnings as errors. macOS only.
+  swift-examples:
+    command: swift build --package-path examples/swift-examples
+    deps: [twip-capi:build]
+    inputs: ['examples/swift-examples/**/*', '/bindings/swift/Package.swift', '/bindings/swift/Sources/**/*']
+    options:
+      os: macos
   # The TypeScript API reference (TypeDoc), into static/api/web so the site publishes it. The .NET one is DocFX
   # (dotnet-api/docfx.json, a .NET tool), run by the docs workflow.
   api:

@@ -82,3 +82,22 @@ jobs:
           name: layout-diff-${{ matrix.shard.job == 2 && 'wasm' || matrix.os }}
           path: target/layout-diff
           if-no-files-found: ignore
+
+  # The Swift SDK and its guide examples (.moon/ci-plan.json's last job): macOS only, on the native library with Metal.
+  swift:
+    name: 'Tasks: Swift (macos-26)'
+    runs-on: macos-26
+    env:
+      FULL: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # moon compares with the base revision
+          filter: 'blob:none'
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ env.FULL == 'true' }}
+      - run: moon ci --plan .moon/ci-plan.json --job 3 ${{ env.FULL == 'true' && '--force' || '' }}

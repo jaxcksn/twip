@@ -1,0 +1,15 @@
+$schema: '../../.moon/cache/schemas/project.json'
+id: swift
+tags: [sdk]
+
+dependsOn: [twip-capi]
+
+tasks:
+  # The wire round trips, the contract scripts (unattached and attached), the session, PDF and hosting tests. macOS
+  # only: the package links the native library twip-capi:build makes there.
+  test:
+    command: swift test
+    deps: [twip-capi:build]
+    inputs: ['Package.swift', 'Sources/**/*', 'Tests/**/*', '/crates/twip-capi/include/**/*', '/tests/contract/**/*', '/crates/twip/tests/wire/**/*']
+    options:
+      os: macos
