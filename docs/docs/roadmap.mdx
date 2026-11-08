@@ -97,12 +97,10 @@ in those scripts, and under the `layout-change` label.
 
 </Chunk>
 
-<Chunk id="1.5" title="Text box layout" deps={['1.3']}>
+<Chunk id="1.5" title="Text box autofit and columns" deps={['1.3']}>
 
-**Goal:** text inside shapes lays out as it does in Word.
+**Goal:** the text box settings that are read today but not laid out.
 
-- VML text boxes, VML group shapes and drawing canvases.
-- Rotated text boxes, and text direction inside text boxes.
 - Shrink text on overflow (`a:normAutofit` font scale and line spacing reduction).
 - Text box columns (`bodyPr@numCol`, `spcCol`).
 
@@ -165,7 +163,7 @@ in those scripts, and under the `layout-change` label.
 
 </Chunk>
 
-<Chunk id="1.11" title="Vertical text" deps={['1.5']}>
+<Chunk id="1.11" title="Vertical text" deps={['1.1']}>
 
 **Goal:** vertical pages, paragraphs and cells lay out as Word lays them out.
 
@@ -207,7 +205,8 @@ and save, and has a command to create, change and remove it. Where a construct h
 
 - An opaque inline and block node that carries the raw XML of every element the engine doesn't model: equations,
   charts, OLE objects, ink, subdocuments, `altChunk`, and w14 and w15 elements.
-- Bookmarks and editing permission ranges (`permStart`, `permEnd`) as model nodes, with writers.
+- A model writer for bookmarks. The model holds them, but a paragraph written from the model loses them today.
+- Editing permission ranges (`permStart`, `permEnd`) as model nodes, with writers.
 - Hidden (`vanish`) runs in the model.
 - `mc:AlternateContent` honours `Requires`, and takes the fallback when a choice can't be drawn.
 - An `UnsupportedElement` warning for each opaque element, so the host knows what isn't drawn.
@@ -236,7 +235,8 @@ and save, and has a command to create, change and remove it. Where a construct h
 - Character scale, kerning, ligatures, contextual alternates, number forms, number spacing and stylistic sets.
 - Language per run.
 - Do not check spelling (`noProof`), and spell checking skips those runs.
-- Underline style and colour; emboss, engrave, outline and shadow; w14 text effects.
+- Underline colour: read it, and apply the Font dialog's colour field, which is offered but not applied yet.
+- Emboss, engrave, outline and shadow; w14 text effects.
 - `w:effect`, `webHidden` and `specVanish` are kept on save.
 
 </Chunk>
@@ -583,7 +583,8 @@ The workflows on top of a complete model, the framework packages, and the API fr
 
 **Goal:** first-class framework bindings.
 
-- `@twip/angular` and `@twip/react`, with the toolbar examples from the guides as their samples.
+- `@twip/angular` and `@twip/react`, which are empty placeholders in the repository today.
+- The toolbar examples from the guides as their samples.
 
 </Chunk>
 
