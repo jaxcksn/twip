@@ -7,7 +7,7 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RootNamespace>Twip.WinForms</RootNamespace>
     <PackageId>Twip.WinForms</PackageId>
-    <Version>0.1.0-alpha.1</Version> <!-- x-release-please-version -->
+    <Version>0.1.0</Version> <!-- x-release-please-version -->
     <Description>A WinForms DocumentEditor control over Twip.Core.</Description>
     <Authors>Jackson Casey</Authors>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
