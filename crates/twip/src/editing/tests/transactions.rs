@@ -12,10 +12,8 @@ use super::scenarios::{Run, sample_files, scenario_files};
 use super::{fonts, open, texts};
 use crate::api::record::Origin;
 
-/// What a save would write over the source package: the rewritten parts and the files dropped, without zipping them.
-fn saved(e: &Editor) -> (Vec<(String, Vec<u8>)>, Vec<String>) {
-    use crate::docx::write::{edited_parts, removed_data_files};
-    (edited_parts(e.document()).unwrap_or_default(), removed_data_files(e.document()))
+fn saved(e: &Editor) -> Vec<u8> {
+    crate::docx::write::save(e.document()).unwrap_or_default()
 }
 
 fn check(path: &Path) {
