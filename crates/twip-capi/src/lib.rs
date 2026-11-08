@@ -876,8 +876,8 @@ pub unsafe extern "C" fn twip_frame_webgl(engine: *mut TwipEngine, session: u32,
     }
 }
 
-/// Windows and macOS: draws the session's frames into `window` with the GPU (Graphite on Dawn): an `HWND` on Windows,
-/// a `CAMetalLayer` on macOS. Returns the backend, 1 D3D12, 2 D3D11, 3 Vulkan or 4 Metal; fails `unavailable` with no
+/// Windows and macOS: draws the session's frames into `window` with the GPU (Graphite, on Dawn on Windows and on Metal
+/// on macOS): an `HWND` on Windows, a `CAMetalLayer` on macOS. Returns the backend, 1 D3D12, 2 D3D11, 3 Vulkan or 4 Metal; fails `unavailable` with no
 /// usable GPU, or in a build without one: draw with twip_frame_rgba then.
 ///
 /// # Safety

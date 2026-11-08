@@ -18,9 +18,15 @@ doctest = false
 [target.'cfg(not(target_os = "emscripten"))'.dependencies]
 roxmltree = "0.21.1"
 twip = { path = "../twip" }
+serde_json = "1.0.154"
+
+# The engine's Skia features (crates/twip/Cargo.toml), so the two share one Skia; `render --vulkan` off macOS.
+[target.'cfg(not(any(target_os = "emscripten", target_os = "macos")))'.dependencies]
 skia-safe = { version = "0.153.3", features = ["graphite", "vulkan"] }
 ash = "0.38"
-serde_json = "1.0.154"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+skia-safe = { version = "0.153.3", features = ["graphite", "metal"] }
 
 # As the engine's: the golden comparison indexes pages and rows of two layouts in step.
 [lints.clippy]
