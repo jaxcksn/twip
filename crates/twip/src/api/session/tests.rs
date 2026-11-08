@@ -776,7 +776,7 @@ fn retained_pages_record_once_and_again_only_where_layout_changed() {
     let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/big.docx");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-PAGES.docx");
     s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
     while s.host().idle() {}
     // Tall enough for two pages at 50%.
