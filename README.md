@@ -8,12 +8,14 @@
   <br><br>
 
   <p>
-    <a href="https://github.com/jaxcksn/twip/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jaxcksn/twip/ci.yml?branch=main&style=flat-square&label=ci&logo=github&logoColor=white&color=8c8c8c" alt="CI"></a>
     <a href="https://crates.io/crates/twip"><img src="https://img.shields.io/crates/v/twip?style=flat-square&label=crates.io&logo=rust&logoColor=white&color=8c8c8c" alt="crates.io"></a>
-    <a href="https://www.nuget.org/packages/Twip.Core"><img src="https://img.shields.io/nuget/v/Twip.Core?style=flat-square&label=nuget&logo=nuget&logoColor=white&color=8c8c8c" alt="NuGet"></a>
+    <a href="https://www.nuget.org/packages/Twip.Core"><img src="https://img.shields.io/nuget/v/Twip.Core?style=flat-square&label=nuget&logo=nuget&logoColor=white&color=8c8c8c" alt="NuGet </a>
     <a href="https://www.npmjs.com/package/@twip/web"><img src="https://img.shields.io/npm/v/%40twip%2Fweb?style=flat-square&label=npm&logo=npm&logoColor=white&color=8c8c8c" alt="npm"></a>
+    <br />
+    <a href="https://github.com/jaxcksn/twip/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jaxcksn/twip/ci.yml?branch=main&style=flat-square&label=ci&logo=github&logoColor=white&color=8c8c8c" alt="CI"></a>
     <a href="https://jaxcksn.github.io/twip/"><img src="https://img.shields.io/badge/docs-jaxcksn.github.io-8c8c8c?style=flat-square&logo=readthedocs&logoColor=white" alt="Docs"></a>
     <a href="LICENSE"><img src="https://img.shields.io/github/license/jaxcksn/twip?style=flat-square&color=8c8c8c" alt="License"></a>
+    <img src="https://flat.badgen.net/https/sonarqube-badge-generation.vercel.app/api/sonarqube/quality_gate" alt="Quality Gate">
   </p>
 
   <p>A DOCX engine focused on performance and fidelity, ready to integrate on native and web.</p>
