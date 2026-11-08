@@ -71,7 +71,10 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
             each(int(attr(c, "numId")), &nums, &mut seen_nums, c.range());
         }
     }
-    let close = xml.rfind("</").ok_or("a numbering part without its end tag")?;
+    // A self-closing root (`<w:numbering …/>`, a numbering part with no lists) is opened only when something goes in.
+    let (open, end) = (root.range().start, root.range().end);
+    let empty = xml[open..end].ends_with("/>");
+    let close = if empty { end } else { xml.rfind("</").ok_or("a numbering part without its end tag")? };
     let new = |now: &BTreeMap<i64, &str>, seen: &HashSet<i64>| -> String { now.iter().filter(|(k, _)| !seen.contains(k)).map(|(_, r)| *r).collect() };
     let (new_pics, new_abstracts, new_nums) = (new(&pics, &seen_pics), new(&abstracts, &seen_abstracts), new(&nums, &seen_nums));
     let abstracts_at = first_abstract.or(first_num).unwrap_or(close);
@@ -84,6 +87,13 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
     }
     if !new_nums.is_empty() {
         splices.push((close..close, new_nums));
+    }
+    // Its `/>` becomes `>`, and its end tag follows what is added (sorted after the additions at the same place).
+    if empty && !splices.is_empty() {
+        let tag = &xml[open + 1..end];
+        let tag = &tag[..tag.find(|c: char| c.is_whitespace() || c == '/').unwrap_or(tag.len())];
+        splices.push((end - 2..end, ">".to_string()));
+        splices.push((end..end, format!("</{tag}>")));
     }
     if splices.is_empty() {
         return Ok(());
