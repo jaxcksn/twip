@@ -1,0 +1,655 @@
+---
+title: Roadmap
+sidebar_position: 5
+description: The plan from 0.1.0 to 1.0.0, phase by phase and pull request by pull request.
+---
+
+import { Phases, Chunk } from '@site/src/components/Roadmap';
+
+# Roadmap to 1.0.0
+
+0.1.0 is Twip's first public release. 1.0.0 is when the layout, the document model and the API stop changing under
+you. The work between them runs in four phases, in this order:
+
+1. **Layout** comes first, so that nothing later moves a line or a page in a document that already lays out.
+2. **DOCX fidelity**: every OOXML construct is read, kept on save, and can be set through the API.
+3. **Rendering fidelity**: everything the model holds is drawn, on screen and in PDF.
+4. **Editor and platform**: everything else.
+
+<Phases
+  items={[
+    { n: '01', title: 'Layout', href: '#layout', range: '1.1 – 1.11', blurb: 'Every line and page breaks where it should, and stays there.' },
+    { n: '02', title: 'DOCX fidelity', href: '#docx', range: '2.1 – 2.14', blurb: 'Everything in the file is read, kept and settable.' },
+    { n: '03', title: 'Rendering', href: '#rendering', range: '3.1 – 3.11', blurb: 'Everything in the model is drawn.' },
+    { n: '04', title: 'Editor and platform', href: '#editor', range: '4.1 – 4.12', blurb: 'The workflows, packages and API freeze.' },
+  ]}
+/>
+
+Each card below is one chunk, and one chunk is one feature pull request. Chunks run in the order shown unless their
+dependencies allow otherwise. A **gate** chunk opens each of the first three phases: it adds the check that keeps that
+phase's work from regressing once it lands.
+
+Charts and equations (OMML) are not part of 1.0.0. Their XML is kept on save, and the engine reports them as
+unsupported content, but it doesn't draw or edit them. See [Not in 1.0.0](#later).
+
+## 1. Layout {#layout}
+
+The layout engine follows Word's line, page, table and float rules. This phase finishes that work and adds every
+OOXML property that changes where text or objects go, for Latin-script documents. Right-to-left and East Asian
+layout come after 1.0, with IME (see [Not in 1.0.0](#later)); when they land, they change layout only for documents
+in those scripts, and under the `layout-change` label.
+
+:::info Done when
+
+- Every layout-affecting construct in the document format is laid out, or listed under [Not in 1.0.0](#later).
+- The layout gate (1.1) passes on Windows, Linux and WebAssembly.
+- From here on, any pull request that changes a layout snapshot is labelled `layout-change` and listed under
+  **Layout changes** in the changelog.
+
+:::
+
+<Chunk id="1.1" title="Layout regression gate" gate>
+
+**Goal:** a layout change can't land unnoticed.
+
+- A fixture corpus written for Twip, with one document per layout feature, kept in the repository.
+- Layout snapshots in CI: line breaks, page breaks and the position of every line, float and table cell, in twips.
+- The same snapshots from native Windows, native Linux and WebAssembly builds.
+- An equivalence check: after a scripted series of edits, incremental relayout matches a full layout.
+- The `layout-change` label and its changelog section.
+
+</Chunk>
+
+<Chunk id="1.2" title="Paragraph and table geometry" deps={['1.1']}>
+
+**Goal:** paragraph and table edges land on the same twip as Word's.
+
+- Paragraph top and bottom borders add their space and width; bordered paragraphs group and split as Word groups them.
+- Border `w:space` offsets for paragraph and page border lines.
+- Table horizontal geometry in integer twips: grid columns, cell margins, table indents and border widths.
+- HTML divisions (`divId`, with margins and borders from `webSettings`).
+- Decimal tabs align on the document's `decimalSymbol` rather than always `.`.
+
+</Chunk>
+
+<Chunk id="1.3" title="Float positioning" deps={['1.1']}>
+
+**Goal:** every floating object is positioned by one model, with both compatibility modes complete.
+
+- One float input for every source: DrawingML pictures, shapes, text boxes, groups, canvases, chart frames and VML.
+- Float rectangles in integer twips.
+- The remaining rules for documents in Word 2010 and Word 2013+ compatibility modes: positions relative to margin
+  areas, column containment, and moving the anchor line.
+- Obstacle registries per page area, so floats in headers, footers and the body wrap each other correctly.
+- Header and footer floats that wrap body text.
+
+</Chunk>
+
+<Chunk id="1.4" title="Float sizing and wrapping" deps={['1.3']}>
+
+**Goal:** text wraps around floats exactly as authored.
+
+- Relative size and position: `wp14:sizeRelH`, `wp14:sizeRelV`, `wp14:pctPosHOffset`, `wp14:pctPosVOffset` and
+  VML percentages.
+- Tight and through wrapping around the real `wrapPolygon` contour, not its bounding box.
+- Text-wrapping breaks (`w:br` with `clear`), which move past floats.
+- `framePr@suppressOverlap` and `textboxTightWrap`.
+
+</Chunk>
+
+<Chunk id="1.5" title="Text box layout" deps={['1.3']}>
+
+**Goal:** text inside shapes lays out as it does in Word.
+
+- VML text boxes, VML group shapes and drawing canvases.
+- Rotated text boxes, and text direction inside text boxes.
+- Shrink text on overflow (`a:normAutofit` font scale and line spacing reduction).
+- Text box columns (`bodyPr@numCol`, `spcCol`).
+
+</Chunk>
+
+<Chunk id="1.6" title="Table rows and exceptions" deps={['1.2']}>
+
+**Goal:** rows from merged or pasted tables keep their own geometry.
+
+- Table property exceptions (`w:tblPrEx`): borders, shading, cell margins and alignment per row.
+- Hidden rows (`trPr/w:hidden`).
+- Empty cells marked `hideMark` collapse to their content height.
+
+</Chunk>
+
+<Chunk id="1.7" title="Notes, sections and page numbers" deps={['1.1']}>
+
+**Goal:** section-level settings that move content between pages.
+
+- Footnote and endnote properties in sections and settings: position (page bottom or beneath text, section end or
+  document end), number format, start and restart.
+- `noEndnote` sections.
+- Mirror indents (`mirrorIndents`) on facing pages.
+- Book fold printing.
+- Chapter page numbers (`pgNumType@chapStyle`, `chapSep`) and the `w:pgNum` run element.
+
+</Chunk>
+
+<Chunk id="1.8" title="Missing line content" deps={['1.1']}>
+
+**Goal:** no text that Word shows is missing from the page.
+
+- Ruby base text, which is dropped today. Ruby annotations come with East Asian layout.
+- `w:legacy` list levels (pre-97 list indents).
+- `w:fitText`: fit text to a given width.
+- `specVanish`, the hidden paragraph mark used by style separators.
+- The run date and time elements (`dayShort` through `yearLong`).
+- OpenType number forms, number spacing and stylistic sets (`w14:numForm`, `w14:numSpacing`, `w14:stylisticSets`),
+  which change glyph widths.
+
+</Chunk>
+
+<Chunk id="1.9" title="Compatibility options" deps={['1.3']}>
+
+**Goal:** every layout switch in `w:compat` is accounted for.
+
+- Every `w:compat` option and `w:compatSetting` that changes layout is implemented, or documented as read and kept.
+- Documents in Word 2003, 2007, 2010 and 2013+ compatibility modes each have fixtures in the gate.
+
+</Chunk>
+
+<Chunk id="1.10" title="Automatic hyphenation" deps={['1.1']}>
+
+**Goal:** documents with automatic hyphenation break lines as Word does.
+
+- A hyphenator, with `autoHyphenation`, `hyphenationZone`, `consecutiveHyphenLimit` and `doNotHyphenateCaps`.
+- Per-paragraph `suppressAutoHyphens` (Don't hyphenate).
+- Hyphenation settings through the API.
+- Hyphenation patterns, supplied by the host as spelling dictionaries are, or bundled where the licence allows.
+
+</Chunk>
+
+<Chunk id="1.11" title="Vertical text" deps={['1.5']}>
+
+**Goal:** vertical pages, paragraphs and cells lay out as Word lays them out.
+
+- Vertical text direction in sections and paragraphs (`textDirection` in `sectPr` and `pPr`: `tbRl`, `btLr`, `lrTbV`,
+  `tbRlV`, `tbLrV`).
+- Lines flow across the page, with margins, columns, headers and footers turned to match.
+- Glyph orientation: Latin text turned, East Asian characters upright.
+- One vertical line model shared by sections, paragraphs, table cells and text boxes.
+
+</Chunk>
+
+## 2. DOCX fidelity {#docx}
+
+This phase makes the document model complete. Every construct is read into the model, survives every kind of edit
+and save, and has a command to create, change and remove it. Where a construct has no drawing yet, phase 3 adds it.
+
+:::info Done when
+
+- Every construct in the document format, apart from charts and equations, is in the model and has an API.
+- The round-trip gate (2.1) passes: no edit loses content the engine read.
+
+:::
+
+<Chunk id="2.1" title="Round-trip gate" gate deps={['1.1']}>
+
+**Goal:** no edit can lose content without failing CI.
+
+- For each construct in the fixture corpus, a scripted series of edits: type inside it and next to it, format it,
+  fill a control around it, comment on it, cut and paste it, and delete its neighbours. After each, the saved XML
+  must still hold the construct.
+- Every part Twip writes validates against the OOXML schemas.
+- Parts that weren't edited are byte-identical to the source.
+
+</Chunk>
+
+<Chunk id="2.2" title="Document model refinement" deps={['2.1']}>
+
+**Goal:** the model holds everything the reader sees, even what the engine doesn't understand.
+
+- An opaque inline and block node that carries the raw XML of every element the engine doesn't model: equations,
+  charts, OLE objects, ink, subdocuments, `altChunk`, and w14 and w15 elements.
+- Bookmarks and editing permission ranges (`permStart`, `permEnd`) as model nodes, with writers.
+- Hidden (`vanish`) runs in the model.
+- `mc:AlternateContent` honours `Requires`, and takes the fallback when a choice can't be drawn.
+- An `UnsupportedElement` warning for each opaque element, so the host knows what isn't drawn.
+
+</Chunk>
+
+<Chunk id="2.3" title="Lossless moves and table edits" deps={['2.2']}>
+
+**Goal:** moved content and restructured tables keep everything they held.
+
+- Cut, copy, paste and drag keep the source XML of the content they move.
+- Merging, splitting and adding or removing columns patch each cell's `tcPr` and the table grid, rather than
+  rebuilding them, and keep non-paragraph cell content.
+- Custom-mark footnote references, `w:sym` with its font, and floats in their place within the paragraph.
+- Resized VML pictures, column settings, and properties that use a namespace prefix declared below the root.
+- An edited shape writes a fresh fallback picture instead of dropping it.
+
+</Chunk>
+
+<Chunk id="2.4" title="Character formatting" deps={['2.2']}>
+
+**Goal:** everything in Word's Font dialog can be set.
+
+- Apply a character style, and the character half of a linked style. Setting a paragraph style checks the style's
+  type.
+- Character scale, kerning, ligatures, contextual alternates, number forms, number spacing and stylistic sets.
+- Language per run.
+- Do not check spelling (`noProof`), and spell checking skips those runs.
+- Underline style and colour; emboss, engrave, outline and shadow; w14 text effects.
+- `w:effect`, `webHidden` and `specVanish` are kept on save.
+
+</Chunk>
+
+<Chunk id="2.5" title="Paragraph formatting" deps={['2.2']}>
+
+**Goal:** everything in Word's Paragraph dialog can be set.
+
+- Contextual spacing and outline level as commands.
+- Mirror indents.
+- Paragraph text direction.
+- Create a drop cap (today the Frame dialog only keeps an existing one).
+
+</Chunk>
+
+<Chunk id="2.6" title="Sections, headers and footers" deps={['2.2']}>
+
+**Goal:** the page setup that legal and report templates need.
+
+- Format Page Numbers: format, chapter numbers and start at.
+- Link to Previous, and removing a header or footer.
+- Vertical page alignment; line numbering, and suppressing it per paragraph.
+- Change an existing break's section type; apply settings from this point forward.
+- Column presets and unequal widths; mirror margins; book fold.
+- Section text direction.
+- `paperSrc` and printer settings are kept.
+
+</Chunk>
+
+<Chunk id="2.7" title="Footnotes and endnotes" deps={['2.6']}>
+
+**Goal:** note settings and conversions.
+
+- Note position, number format, custom mark, start at and restart, per section and for the document.
+- Convert footnotes to endnotes and back.
+
+</Chunk>
+
+<Chunk id="2.8" title="Bookmarks" deps={['2.2']}>
+
+**Goal:** templates can hold working bookmarks.
+
+- Insert, delete and list bookmarks, including hidden ones (`_Toc`, `_Ref`); Go To a bookmark.
+- A bookmark picker in the Hyperlink dialog model.
+- Show bookmarks as a view option.
+
+</Chunk>
+
+<Chunk id="2.9" title="Tables" deps={['2.3']}>
+
+**Goal:** every table property can be set.
+
+- Row exceptions and hidden rows through the API.
+- Cell text direction, preferred width in percent, fit text and no wrap.
+- Table alt text (`tblCaption`, `tblDescription`) in Table Properties.
+- Header cells (`tcPr/headers`), and `cnfStyle` kept.
+- New tables take the document's `defaultTableStyle`.
+
+</Chunk>
+
+<Chunk id="2.10" title="Pictures and drawings" deps={['2.2']}>
+
+**Goal:** Word's picture tools, as commands.
+
+- Crop, with handles.
+- Change Picture in place, outside picture controls too.
+- Align and distribute objects.
+- Linked pictures (`r:link`), fetched through a host service.
+- Relative size and position, text box autofit and text box columns.
+- Set Transparent Colour (`a:clrChange`).
+
+</Chunk>
+
+<Chunk id="2.11" title="Fields and document properties" deps={['2.2']}>
+
+**Goal:** the engine computes every field that depends only on the document.
+
+- Core, app and custom document properties: read, set through the API, and updated on save.
+- DOCPROPERTY, AUTHOR, TITLE, SUBJECT, KEYWORDS, FILENAME, SAVEDATE, PRINTDATE, NOTEREF, LISTNUM and AUTONUM.
+- DATE and TIME in the host's time zone and locale.
+- `=` formulas, with table references, `decimalSymbol` and `listSeparator`.
+- `webSettings` is read and kept.
+
+</Chunk>
+
+<Chunk id="2.12" title="Legacy form fields" deps={['2.2']}>
+
+**Goal:** pre-2007 forms, common in court and government work, open, fill and save.
+
+- Form field data (`w:ffData`) in the model and on save.
+- FORMTEXT, FORMCHECKBOX and FORMDROPDOWN: draw them (the check box is missing today), fill them, insert them and set
+  their properties.
+- Form field shading and `doNotShadeFormData`.
+
+</Chunk>
+
+<Chunk id="2.13" title="Content controls" deps={['2.2']}>
+
+**Goal:** content controls match Word's feature set.
+
+- Check box checked and unchecked symbols.
+- Use a style to format contents.
+- Show As (bounding box, tags, none) and colour (w15 `appearance` and `color`).
+- Temporary controls, which remove themselves when edited.
+- Data binding (`w:dataBinding`) to custom XML parts, in both directions.
+
+</Chunk>
+
+<Chunk id="2.14" title="Document protection" deps={['2.2', '2.12']}>
+
+**Goal:** a protected document behaves as it does in Word.
+
+- Enforce read-only, comments-only and filling-in-forms protection, and per-section form protection (`formProt`).
+- Editable ranges (`permStart`, `permEnd`) for everyone or named editors.
+- The Restrict Editing model: start and stop enforcement, with a password.
+
+</Chunk>
+
+## 3. Rendering fidelity {#rendering}
+
+Everything in the model is drawn, on screen and in PDF, and looks as it does in Word.
+
+:::info Done when
+
+- Every construct in the model has a drawing, on screen and in PDF.
+- The render gate (3.1) passes on every platform and graphics backend.
+
+:::
+
+<Chunk id="3.1" title="Render regression gate" gate deps={['1.1']}>
+
+**Goal:** a drawing change can't land unnoticed.
+
+- Pixel snapshots of the fixture corpus on the CPU raster path, compared within a tolerance, on Windows, Linux and
+  WebAssembly.
+- GPU backends compared against the CPU raster.
+- PDF snapshots: text, structure and drawing commands.
+
+</Chunk>
+
+<Chunk id="3.2" title="Metafiles: WMF and EMF" deps={['3.1']}>
+
+**Goal:** Office's default format for pasted charts, logos and signatures draws.
+
+- WMF and EMF decoded into vector drawing, not a raster, on screen and in PDF.
+- OLE object previews, which are usually EMF.
+
+</Chunk>
+
+<Chunk id="3.3" title="Metafiles: EMF+ and JPEG XR" deps={['3.2']}>
+
+**Goal:** the newer metafile records and the HD Photo format.
+
+- EMF+ records, including dual EMF+ and EMF files.
+- JPEG XR (WDP) pictures.
+
+</Chunk>
+
+<Chunk id="3.4" title="Underlines and character effects" deps={['3.1', '2.4']}>
+
+**Goal:** every text decoration draws as Word draws it.
+
+- Every underline style: words only, double, thick, dotted, dashed, long dash, dot-dash, dot-dot-dash and wavy, each
+  in its heavy and double forms, in the underline's own colour.
+- Emboss, engrave, outline and shadow.
+
+</Chunk>
+
+<Chunk id="3.5" title="Text effects" deps={['3.4']}>
+
+**Goal:** Word 2010 text effects.
+
+- w14 glow, shadow and reflection.
+- Text fill (solid, gradient, none) and text outline.
+- 3-D text drawn flat, as a fallback.
+
+</Chunk>
+
+<Chunk id="3.6" title="Shading and borders" deps={['3.1']}>
+
+**Goal:** every shading pattern and border line draws.
+
+- Every shading pattern (stripes, crosses and percentages) on runs, paragraphs, cells and tables; the shading
+  commands accept them.
+- Table shading layered as Word layers it: cell over row exception over table, with table style regions.
+- Shadowed borders, and the wave, double wave and dash-dot-stroked line patterns.
+
+</Chunk>
+
+<Chunk id="3.7" title="Watermarks and page colour" deps={['3.1']}>
+
+**Goal:** DRAFT and CONFIDENTIAL watermarks and page colours appear, and can be set.
+
+- VML text watermarks (`v:textpath`), and picture watermarks with washout (`gain`, `blacklevel`).
+- Page colour with theme tint and shade, gradient, pattern and picture fills (`v:background`), and
+  `displayBackgroundShape`.
+- PDF output treats the page background as Word's export does.
+- Insert, change and remove a watermark or page colour.
+
+</Chunk>
+
+<Chunk id="3.8" title="Picture effects" deps={['3.1', '2.10']}>
+
+**Goal:** the remaining picture adjustments draw.
+
+- Set Transparent Colour (`a:clrChange`).
+- VML picture brightness and contrast (`gain`, `blacklevel`) everywhere, not only in watermarks.
+- `a:reflection`.
+- Linked pictures.
+
+</Chunk>
+
+<Chunk id="3.9" title="WordArt and 3-D" deps={['3.5']}>
+
+**Goal:** shaped and 3-D text and shapes look right.
+
+- WordArt warps (`a:prstTxWarp`), every preset.
+- 3-D rotation, bevel and extrusion (`scene3d`, `sp3d`, VML extrusion), drawn as Word draws them.
+
+</Chunk>
+
+<Chunk id="3.10" title="Glyph quality" deps={['3.1']}>
+
+**Goal:** sharper text, with layout unchanged.
+
+- Glyph hinting when drawing. Layout keeps unhinted advances, so no line moves.
+- The same anti-aliasing and gamma on native and web, on every graphics backend.
+
+</Chunk>
+
+<Chunk id="3.11" title="Accessible, linked PDF" deps={['2.9']}>
+
+**Goal:** PDF output that's clickable and passes accessibility checks.
+
+- Link annotations for hyperlinks and cross-references; a PDF outline from headings.
+- Alt text for figures, and Note tags for footnotes and endnotes.
+- Table header cells and table alt text in the structure tree.
+- PDF/UA conformance in CI.
+
+</Chunk>
+
+## 4. Editor and platform {#editor}
+
+The workflows on top of a complete model, the framework packages, and the API freeze.
+
+<Chunk id="4.1" title="Table of contents, captions and cross-references" deps={['2.8']}>
+
+**Goal:** templates can hold a table of contents that builds and updates.
+
+- Generate and update a table of contents from outline levels and styles, with `\h` links, page numbers and style
+  separators.
+- Table of figures.
+- Insert Caption: labels, numbering and chapter numbers.
+- The cross-reference dialog model.
+
+</Chunk>
+
+<Chunk id="4.2" title="Find, replace and Go To">
+
+**Goal:** Word's search.
+
+- Find and replace with formatting, wildcards, special characters (`^p`, `^t`, `^m`) and within the selection.
+- Go To a section, bookmark, comment, field, table, footnote or line.
+
+</Chunk>
+
+<Chunk id="4.3" title="Review workflow">
+
+**Goal:** the review tools around track changes and comments.
+
+- Show Markup filters by kind and reviewer.
+- Balloons or inline revisions.
+- Delete All Comments.
+
+</Chunk>
+
+<Chunk id="4.4" title="Outline and navigation">
+
+**Goal:** working with long documents.
+
+- Outline view: promote, demote, collapse.
+- Reorder headings, with their content, in the navigation pane.
+
+</Chunk>
+
+<Chunk id="4.5" title="Object layout dialogs" deps={['2.10']}>
+
+**Goal:** the float and picture layout API, as dialogs.
+
+- The Layout dialog: Position, Text Wrapping and Size.
+- The Format Shape pane.
+
+</Chunk>
+
+<Chunk id="4.6" title="Document dialogs" deps={['2.6', '2.7', '2.13', '2.14']}>
+
+**Goal:** dialog models over phase 2's commands.
+
+- Insert Field, Content Control Properties, Footnote and Endnote, Columns, Drop Cap and Format Page Numbers.
+- The Restrict Editing pane.
+
+</Chunk>
+
+<Chunk id="4.7" title="Table tools" deps={['2.9']}>
+
+**Goal:** the remaining table commands.
+
+- Convert text to a table and back.
+- Sort.
+
+</Chunk>
+
+<Chunk id="4.8" title="Image paste">
+
+**Goal:** paste a picture from the clipboard.
+
+- Clipboard data carries images; pasting one inserts an inline picture.
+
+</Chunk>
+
+<Chunk id="4.9" title="Editor performance" deps={['1.1']}>
+
+**Goal:** typing, reflow and drags stay inside their frame budgets on long documents.
+
+- Paragraph content shared copy-on-write, with content hashes for the layout caches.
+- Cached lines placed by offset, and header and footer measurements cached, so reflow redoes less.
+- Drags laid out provisionally and committed on release.
+- First page and start-up times within budget.
+- The layout gate's equivalence check stays green throughout.
+
+</Chunk>
+
+<Chunk id="4.10" title="Accessibility">
+
+**Goal:** full WCAG 2.1 AA compliance.
+
+- An audit of the editor surface and its models against WCAG 2.1 AA.
+- Screen reader testing with NVDA, JAWS, Narrator and VoiceOver.
+- High contrast and forced colours.
+
+</Chunk>
+
+<Chunk id="4.11" title="Angular and React packages">
+
+**Goal:** first-class framework bindings.
+
+- `@twip/angular` and `@twip/react`, with the toolbar examples from the guides as their samples.
+
+</Chunk>
+
+<Chunk id="4.12" title="1.0 API freeze" deps={['4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.8', '4.9', '4.10', '4.11']}>
+
+**Goal:** an API we can keep for the 1.x line.
+
+- An API review across Rust, web and .NET; deprecated items removed.
+- The shared contract suite covers every command.
+- Docs for every public item.
+- The semantic versioning policy, published.
+
+</Chunk>
+
+## Not in 1.0.0 {#later}
+
+### Deferred to a later release
+
+- IME
+- Format Painter
+- HTML and RTF paste, and drawing `altChunk` content, which needs the same importer
+- An extensions surface for custom Skia drawing (comment bubbles, custom rulers)
+- Equations (OMML)
+- Charts
+- Right-to-left and East Asian layout and editing, with IME (below)
+
+### Right-to-left and East Asian
+
+Planned for the release after 1.0, together with IME, so these documents can be both laid out and typed in. Each
+item below is read and kept on save in 1.0 (2.2); it isn't laid out or settable yet.
+
+- **Complex scripts and right-to-left:** complex-script run properties (`szCs`, `bCs`, `iCs`, `cs`, `rtl`); the
+  bidirectional algorithm per line; font slots from `lang@bidi`; theme script fonts and `themeFontLang`; section
+  `bidi` and `rtlGutter`; Hebrew and Arabic number formats; paragraph, run and table direction commands.
+- **East Asian line breaking and the grid:** `kinsoku`, `wordWrap`, `overflowPunct`, `topLinePunct`,
+  `noLineBreaksBefore` and `After`; `autoSpaceDE`, `autoSpaceDN`, `adjustRightInd`; the character grid
+  (`docGrid@charSpace`, `linesAndChars`, run `snapToGrid`); character-unit indents and line-unit spacing;
+  `eastAsianLayout`; CJK, enclosed and `chicago` number formats; font slots from `lang@eastAsia`.
+- **Ruby:** ruby annotations over their base text.
+- **Editing:** the Asian layout tools, inserting ruby, emphasis marks and character grid settings.
+
+### Backlog
+
+Pulled forward when a customer document needs one.
+
+- Index and citations; Compare and Combine; Lock Tracking.
+- A grammar check hook; AutoFormat beyond lists; AutoText and Quick Parts.
+- Draft, Web Layout and Read Mode views; multiple pages side by side; split window.
+- Picture styles and artistic effects; drawing tools for connectors and freeform shapes.
+- Style sets, themes and the Organizer.
+- SmartArt editing, inserting WordArt, editing OLE objects.
+- Drawing subdocuments and ink natively (ink draws from its fallback picture after 2.2).
+
+### Not planned
+
+- Embedded fonts and font substitution. The host supplies fonts.
+
+## Shipped in 0.1.0 {#shipped}
+
+- Word-compatible line, page, table and float layout.
+- Track changes and comments, in the model and the API.
+- Application-controlled fonts.
+- One API contract across Rust, web and .NET.
+- Bookmarks and cross-references resolve (REF, PAGEREF, `#` links). Inserting bookmarks is 2.8.
+- Cross-platform Dawn: Metal on Arm64, D3D12, D3D11 and Vulkan on Windows, and WebGPU.
+- Shapes, from DrawingML and VML.
+- Styles, lists, borders, shading and frames, with their dialog models.
+- Picture controls, sub-templates and PDF conversion.
+- Saving keeps the source markup of filled controls, edited links and comments.

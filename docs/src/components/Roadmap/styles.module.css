@@ -1,0 +1,137 @@
+/* Same rules as the rest of the site: black on white, hierarchy from type and rules. */
+
+.track {
+  list-style: none;
+  padding: 0;
+  margin: 2rem 0 2.5rem;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0 1.25rem;
+}
+.stop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--ifm-font-color-base);
+  margin: 0;
+}
+.stop:first-child {
+  border-top-width: 4px;
+  padding-top: calc(0.75rem - 3px);
+}
+.finish {
+  border-top-style: dashed;
+}
+.stopLink {
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  text-decoration: none;
+}
+.stopLink:hover {
+  color: inherit;
+  text-decoration: none;
+}
+.stopLink:hover .stopTitle {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.numeral {
+  font-size: 2.6rem;
+  font-weight: 250;
+  font-variation-settings: 'opsz' 60;
+  line-height: 1;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.stopTitle {
+  font-weight: 600;
+  margin-top: 0.35rem;
+}
+.range {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+.blurb {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  font-style: italic;
+}
+
+@media (max-width: 996px) {
+  .track {
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem 1.25rem;
+  }
+}
+
+.chunk {
+  border: 1px solid var(--ifm-toc-border-color);
+  margin: 0 0 1rem;
+  scroll-margin-top: calc(var(--ifm-navbar-height) + 1rem);
+}
+.chunk:target {
+  border-color: var(--ifm-font-color-base);
+}
+.gate {
+  border-left: 4px solid var(--ifm-font-color-base);
+}
+.head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  padding: 0.7rem 1rem 0.55rem;
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+}
+.id {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.05rem 0.45rem;
+  background: var(--ifm-font-color-base);
+  color: var(--ifm-background-color);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+.id:hover {
+  color: var(--ifm-background-color);
+  text-decoration: none;
+}
+.title {
+  font-weight: 600;
+  font-size: 1.08rem;
+  flex: 1 1 auto;
+}
+.flag {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid var(--ifm-font-color-base);
+  padding: 0 0.35rem;
+}
+.body {
+  padding: 0.75rem 1rem 0.1rem;
+  font-size: 0.95rem;
+}
+.body ul {
+  padding-left: 1.2rem;
+}
+.body li + li {
+  margin-top: 0.15rem;
+}
+.deps {
+  padding: 0.45rem 1rem;
+  border-top: 1px dotted var(--ifm-toc-border-color);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+.deps a {
+  font-style: normal;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.78rem;
+}
