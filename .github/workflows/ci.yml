@@ -37,6 +37,10 @@ jobs:
       # The runners' GPU is software: its WebGPU paints blank, and its frames are too slow for a refresh. WebGPU and GPU
       # frame times are tested on a machine with a GPU.
       TWIP_SOFTWARE_GPU: '1'
+      # The release builds the .NET and web tests load skip the shipped profile's whole-program LTO and single codegen
+      # unit, which make them the slowest builds here; build.yml builds the packages with the shipped profile.
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
       # Runs by hand and the weekly run check every task.
       FULL: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     steps:
