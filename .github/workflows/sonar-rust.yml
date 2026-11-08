@@ -2,10 +2,13 @@
 # workflows; this one reads only .rs files, so the C++ shims, JS glue and bindings stay out of it.
 name: Sonar (Rust)
 
+# Rust changes only; a docs or SDK change has nothing here to analyze.
 on:
   pull_request:
+    paths: [crates/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, .github/workflows/sonar-rust.yml]
   push:
     branches: [main]
+    paths: [crates/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, .github/workflows/sonar-rust.yml]
   workflow_dispatch:
 
 concurrency:
