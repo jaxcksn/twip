@@ -7,6 +7,21 @@ name: Canary
 on:
   push:
     branches: [main]
+    # What the packages are built from; docs and planning changes publish nothing.
+    paths:
+      - crates/**
+      - bindings/**
+      - licenses/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .cargo/**
+      - package.json
+      - pnpm-lock.yaml
+      - .github/actions/build-web/**
+      - .github/stamp-canary.sh
+      - .github/workflows/build.yml
+      - .github/workflows/canary.yml
 
 permissions: {}
 
@@ -16,6 +31,8 @@ concurrency:
 
 jobs:
   build:
+    # A merged release PR is published by release.yml, which builds the same packages.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release)') }}
     uses: ./.github/workflows/build.yml
     permissions:
       contents: read

@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Weekly, every task, which also refreshes the Rust caches (see rust-cache below).
+  schedule:
+    - cron: '0 6 * * 1'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -25,11 +28,17 @@ jobs:
           - { job: 0, name: Engine }
           - { job: 1, name: .NET }
           - { job: 2, name: Web and docs }
+        # The npm package and docs are built on Linux; the Windows wasm build is checked locally.
+        exclude:
+          - os: windows-latest
+            shard: { job: 2, name: Web and docs }
     runs-on: ${{ matrix.os }}
     env:
       # The runners' GPU is software: its WebGPU paints blank, and its frames are too slow for a refresh. WebGPU and GPU
       # frame times are tested on a machine with a GPU.
       TWIP_SOFTWARE_GPU: '1'
+      # Runs by hand and the weekly run check every task.
+      FULL: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,8 +47,12 @@ jobs:
       - uses: moonrepo/setup-toolchain@v0
       - run: moon setup
       - run: pnpm install --frozen-lockfile
+      # One cache per shard: each builds different dependencies (debug tests, clippy and release, wasm). Only full
+      # runs save it; a run moon trims to a few tasks would save a near-empty cache that sticks until Cargo.lock changes.
       - uses: Swatinem/rust-cache@v2
         with:
+          key: shard-${{ matrix.shard.job }}
+          save-if: ${{ env.FULL == 'true' }}
           cache-directories: |
             .web-deps
             .native-deps
@@ -54,8 +67,7 @@ jobs:
         with:
           version: '6.0.8'
           actions-cache-folder: emsdk-cache
-      # A run by hand checks every task.
-      - run: moon ci --plan .moon/ci-plan.json --job ${{ matrix.shard.job }} ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
+      - run: moon ci --plan .moon/ci-plan.json --job ${{ matrix.shard.job }} ${{ env.FULL == 'true' && '--force' || '' }}
       - uses: moonrepo/run-report-action@v1
         if: success() || failure()
         with:
