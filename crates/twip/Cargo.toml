@@ -1,0 +1,69 @@
+[package]
+name = "twip"
+description = "DOCX layout, editing and rendering engine."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# Prebuilt Skia is downloaded for the native feature set (graphite + vulkan + default pdf); the web set (graphite on
+# Dawn + ganesh/gl) is prebuilt by github.com/jaxcksn/twip-skia-dawn, so changing the emscripten line below needs a
+# new release there.
+[target.'cfg(not(target_os = "emscripten"))'.dependencies]
+skia-safe = { version = "0.153.3", features = ["graphite", "vulkan"] }
+
+# Linux draws with Skia's own FreeType (no HarfBuzz in it), not the system's: the system FreeType 2.14 (Ubuntu 26.04)
+# loads the system HarfBuzz globally when it starts, which takes over the HarfBuzz calls of a host's other libraries
+# (HarfBuzzSharp). No prebuilt Skia for this set: build-native.mjs downloads twip-skia-dawn's.
+[target.'cfg(target_os = "linux")'.dependencies]
+skia-safe = { version = "0.153.3", features = ["embed-freetype"] }
+
+[target.'cfg(target_os = "emscripten")'.dependencies]
+skia-safe = { version = "0.153.3", features = ["graphite", "ganesh", "gl"] }
+
+[build-dependencies]
+cc = "1"
+
+[dependencies]
+harfrust = "0.15.0"
+roxmltree = "0.21.1"
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
+# PNG fallbacks for SVG pictures (render::svg): zip's deflate, already built.
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+# Spell checking with Hunspell dictionaries (pure Rust), for the editor's squiggles and suggestions.
+spellbook = "0.4.2"
+# Grapheme, word and sentence boundaries (UAX #29) for caret movement, deletion and selection (editing::text).
+unicode-segmentation = "1.12"
+serde_json = "1.0.154"
+# The public API's types cross the SDK wire as JSON (api::wire).
+serde = { version = "1", features = ["derive", "rc"] }
+# WOFF and WOFF2 fonts (what web font services serve) decoded to TrueType/OpenType: Brotli and glyf reconstruction.
+wuff = "0.2.9"
+# PDF open passwords (pdf::encrypt): the AES block cipher, SHA-256/384/512 for the password hash, and random keys and
+# salts from the operating system.
+aes = "0.8.4"
+sha2 = { version = "0.10.9", default-features = false }
+getrandom = "0.4.3"
+
+[features]
+# Test inspection surface: the editor's semantic state as JSON. Never in production builds.
+inspect = []
+# Stage timers and the reuse report (`prof.rs`) for diagnostic benchmark runs. Never in production builds.
+prof = []
+
+# Style lints the codebase doesn't follow on purpose: index loops over parallel arrays, long parameter lists in the
+# layout passes (each step's state stays explicit), and nested tuple types in caches.
+[lints.clippy]
+needless_range_loop = "allow"
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+[dev-dependencies]
+# The benchmarks (benches/engine): `cargo bench -p twip`.
+divan = "0.1.21"
+
+# One benchmark binary, so `cargo bench` links Skia once.
+[[bench]]
+name = "engine"
+harness = false

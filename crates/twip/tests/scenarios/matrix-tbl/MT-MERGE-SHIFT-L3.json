@@ -1,0 +1,34 @@
+{
+  "id": "MT-MERGE-SHIFT-L3",
+  "title": "Merged cells: Shift+Down into a merged cell selects a cell block (nesting level 3)",
+  "fixture": "FX-TBL-MERGED-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-SHIFT-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 2
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

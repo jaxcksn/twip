@@ -1,0 +1,56 @@
+{
+  "id": "MT-PTBL-TAB-L3",
+  "title": "Table edge: Shift+Tab in the first cell does nothing; Tab selects the next cell's text (nesting level 3)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 2,
+          "depth": 3
+        },
+        "selection": {
+          "kind": "caret"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 20,
+            "offset": 0
+          },
+          "focus": {
+            "para": 20,
+            "offset": 2
+          }
+        }
+      }
+    }
+  ]
+}

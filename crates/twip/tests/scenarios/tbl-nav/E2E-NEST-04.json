@@ -1,0 +1,40 @@
+{
+  "id": "E2E-NEST-04",
+  "title": "At the guaranteed depth: a click in the innermost cell reports all six levels, and typing goes there",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 6,
+        "offset": 5
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "offset": 5,
+          "depth": 6
+        }
+      }
+    },
+    {
+      "type": "abc"
+    },
+    {
+      "expect": {
+        "text": {
+          "6": "Levelabc 6, before"
+        },
+        "caret": {
+          "depth": 6
+        }
+      }
+    }
+  ]
+}

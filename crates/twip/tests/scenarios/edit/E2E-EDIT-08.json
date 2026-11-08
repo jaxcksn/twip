@@ -1,0 +1,35 @@
+{
+  "id": "E2E-EDIT-08",
+  "title": "Backspace at a paragraph start joins it to the previous one",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX-TEXTShort paragraph."
+        },
+        "caret": {
+          "para": 0,
+          "offset": 7
+        }
+      }
+    }
+  ]
+}

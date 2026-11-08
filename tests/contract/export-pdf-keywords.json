@@ -1,0 +1,14 @@
+{
+  "name": "export-pdf-keywords",
+  "fixture": "text-basics.docx",
+  "steps": [
+    { "op": "open" },
+    {
+      "op": "export",
+      "format": "pdf",
+      "pdf": { "keywords": ["2026-CV-1042", "notice"] },
+      "match": { "head": "%PDF" },
+      "contains": ["/Keywords", "<pdf:Keywords>2026-CV-1042, notice</pdf:Keywords>"]
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "id": "REV-RESOLVE-ROW-INSERTED",
+  "title": "An inserted row: accepting keeps it, rejecting removes it.",
+  "fixture": "review/FX-REVIEW-TABLES.docx",
+  "steps": [
+    {
+      "expect": {
+        "revisions": [
+          "Insert Author A",
+          "TableProperty Author C",
+          "Delete Author B",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "rows": 5
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "acceptRevision",
+        "value": "r3"
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "The meeting forecast hereby."
+        },
+        "revisions": [
+          "TableProperty Author C",
+          "Delete Author B",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "rows": 5
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [
+          "Insert Author A",
+          "TableProperty Author C",
+          "Delete Author B",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "rows": 5
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "rejectRevision",
+        "value": "r3"
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "The meeting forecast hereby."
+        },
+        "revisions": [
+          "TableProperty Author C",
+          "Delete Author B",
+          "TableProperty Author C"
+        ],
+        "tables": [
+          {
+            "rows": 4
+          }
+        ],
+        "undo_depth": 1
+      }
+    }
+  ]
+}

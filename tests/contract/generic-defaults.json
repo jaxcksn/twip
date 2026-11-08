@@ -1,0 +1,41 @@
+{
+  "name": "generic-defaults",
+  "fixture": "editor/FX-FONT-TABLE.docx",
+  "fonts": "empty",
+  "steps": [
+    { "op": "font", "file": "editor/fonts/stand-in-sans.ttf" },
+    { "op": "font", "file": "editor/fonts/stand-in-serif.ttf" },
+    { "op": "font", "file": "editor/fonts/stand-in-mono.ttf" },
+    { "op": "open" },
+    { "op": "expectState", "match": { "fonts": { "missing": [{ "family": "Consolas", "by": "lastResort" }, { "family": "Garamond", "by": "lastResort" }] } } },
+
+    { "op": "call", "method": "fonts.setFallback", "args": ["Stand-in Sans"] },
+    { "op": "call", "method": "fonts.setGenericDefaults", "args": [{ "serif": "Stand-in Serif", "monospace": "Stand-in Mono" }] },
+    {
+      "op": "expectState",
+      "match": {
+        "fonts": {
+          "missing": {
+            "$exact": [
+              { "family": "Consolas", "bold": false, "italic": false, "tried": [], "category": "monospace", "drawnWith": "Stand-in Mono", "by": "generic" },
+              { "family": "Garamond", "bold": false, "italic": false, "tried": [], "category": "serif", "drawnWith": "Stand-in Serif", "by": "generic" },
+              { "family": "Garamond", "bold": true, "italic": false, "tried": [], "category": "serif", "drawnWith": "Stand-in Serif", "by": "generic" },
+              { "family": "Mystery Sans", "bold": false, "italic": false, "tried": [], "category": "sansSerif", "drawnWith": "Stand-in Sans", "by": "fallback" },
+              { "family": "Zzyzx Unknown", "bold": false, "italic": false, "tried": [], "drawnWith": "Stand-in Sans", "by": "fallback" }
+            ]
+          }
+        }
+      }
+    },
+
+    { "op": "call", "method": "fonts.setClassification", "args": [{ "fromDocument": false }] },
+    { "op": "expectState", "match": { "fonts": { "missing": [{ "family": "Consolas", "by": "fallback", "category": null }, { "family": "Garamond", "by": "fallback" }] } } },
+    { "op": "call", "method": "fonts.setAliases", "args": [[{ "from": "Garamond", "to": { "category": "serif" } }]] },
+    { "op": "expectState", "match": { "fonts": { "missing": [{ "family": "Consolas", "by": "fallback" }, { "family": "Garamond", "by": "generic", "drawnWith": "Stand-in Serif" }] } } },
+
+    { "op": "call", "method": "fonts.setGenericDefaults", "args": [{}] },
+    { "op": "call", "method": "fonts.setClassification", "args": [{ "fromDocument": true }] },
+    { "op": "call", "method": "fonts.setAliases", "args": [[]] },
+    { "op": "expectState", "match": { "fonts": { "missing": [{ "family": "Consolas", "by": "fallback" }, { "family": "Garamond", "by": "fallback" }] } } }
+  ]
+}

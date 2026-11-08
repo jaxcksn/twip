@@ -1,0 +1,152 @@
+# Builds the packages release.yml, canary.yml and the previews publish, without publishing them: the NuGet packages (artifact nupkg)
+# and the npm package (artifact npm, a pnpm pack tarball). Publishing stays in the calling workflow, so the registries'
+# trusted publishing only ever trusts release.yml.
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit, branch or tag to build. Empty for the caller's commit
+        type: string
+        default: ''
+      canary:
+        description: Version it 0.0.0-canary-<short SHA> (stamp-canary.sh)
+        type: boolean
+        default: false
+      nuget:
+        type: boolean
+        default: false
+      npm:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    # One native library per runtime identifier, packed together into the NuGet package. No win-arm64 yet:
+    # skia-safe has no prebuilt Skia for it with these features, and building Skia there fails. The musl (Alpine)
+    # libraries build in an Alpine container started on the runner: GitHub runs no JavaScript actions inside Alpine
+    # containers on arm64, so checkout and upload stay outside it.
+    if: inputs.nuget
+    strategy:
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64, lib: twip.dll }
+          - { os: ubuntu-latest, rid: linux-x64, lib: libtwip.so }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64, lib: libtwip.so }
+          - { os: ubuntu-latest, rid: linux-musl-x64, lib: libtwip.so, alpine: true }
+          - { os: ubuntu-24.04-arm, rid: linux-musl-arm64, lib: libtwip.so, alpine: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      # Skia links FreeType and Fontconfig.
+      - if: runner.os == 'Linux' && !matrix.alpine
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+      # On Windows with the prebuilt Skia that draws on the GPU (Graphite on Dawn).
+      - if: ${{ !matrix.alpine }}
+        run: node crates/twip-capi/build-native.mjs
+      # In Alpine, rustup installs the toolchain rust-toolchain.toml pins for the container's musl host.
+      - if: ${{ matrix.alpine }}
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w alpine:3.24 sh -ec "
+            apk add --no-cache bash build-base clang clang-dev curl fontconfig-dev freetype-dev git nodejs pkgconf python3
+            curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            . \$HOME/.cargo/env
+            node crates/twip-capi/build-native.mjs"
+          sudo chown -R "$(id -u):$(id -g)" target
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.rid }}
+          path: target/release/${{ matrix.lib }}
+
+  nuget:
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0 # moon compares with the base branch
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: node licenses/notices.mjs THIRD-PARTY-NOTICES.md
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: artifacts
+      - name: Lay out runtimes/<rid>/native
+        run: |
+          for d in artifacts/native-*; do
+            rid=${d#artifacts/native-}
+            mkdir -p bindings/dotnet/runtimes/$rid/native && mv $d/* bindings/dotnet/runtimes/$rid/native/
+          done
+      - if: inputs.canary
+        run: sh .github/stamp-canary.sh
+      # Twip.Core carries the native libraries; Twip.WinForms depends on it.
+      - run: |
+          dotnet pack bindings/dotnet/Twip.Core -c Release -o out
+          dotnet pack bindings/dotnet/Twip.WinForms -c Release -o out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nupkg
+          path: out/*.nupkg
+
+  # The musl libraries in Alpine, as a service image would run them: the Native AOT smoke app (which converts
+  # hello.docx headlessly) with the documented packages, and without Fontconfig, where loading must name what's missing.
+  alpine-smoke:
+    needs: native
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest, rid: linux-musl-x64 }
+          - { os: ubuntu-24.04-arm, rid: linux-musl-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: native-${{ matrix.rid }}
+          path: target/release
+      - run: |
+          docker run --rm -v "$PWD:/w" -w /w mcr.microsoft.com/dotnet/sdk:10.0-alpine sh -ec "
+            apk add --no-cache clang build-base zlib-dev fontconfig freetype libstdc++ font-liberation qpdf
+            dotnet publish bindings/dotnet/smoke -c Release -r ${{ matrix.rid }} -o out/smoke
+            cd out/smoke && ./smoke && qpdf --check out.pdf"
+      - run: |
+          docker run --rm -v "$PWD/out/smoke:/app" -w /app alpine:3.24 sh -c "
+            apk add --no-cache libstdc++ icu-libs >/dev/null
+            ./smoke > log.txt 2>&1; status=\$?
+            cat log.txt
+            [ \$status -ne 0 ] && grep -q 'apk add fontconfig freetype libstdc++' log.txt"
+
+  npm:
+    if: inputs.npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0 # moon compares with the base branch
+      - uses: ./.github/actions/build-web
+        with:
+          canary: ${{ inputs.canary }}
+      - run: pnpm pack --pack-destination "$RUNNER_TEMP/npm"
+        working-directory: bindings/web
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm
+          path: ${{ runner.temp }}/npm/*.tgz

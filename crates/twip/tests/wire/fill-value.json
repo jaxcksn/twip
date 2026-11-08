@@ -1,0 +1,66 @@
+[
+  {
+    "type": "none"
+  },
+  {
+    "colour": {
+      "theme": "accent1",
+      "transforms": [
+        {
+          "kind": "lumMod",
+          "value": 0.75
+        }
+      ]
+    },
+    "type": "solid"
+  },
+  {
+    "angle": 90.5,
+    "kind": "linear",
+    "stops": [
+      {
+        "colour": {
+          "theme": "accent1",
+          "transforms": [
+            {
+              "kind": "lumMod",
+              "value": 0.75
+            }
+          ]
+        },
+        "position": 0.0
+      },
+      {
+        "colour": {
+          "rgb": "#FFFFFF"
+        },
+        "position": 1.0
+      }
+    ],
+    "type": "gradient"
+  },
+  {
+    "background": {
+      "rgb": "#FFFFFF"
+    },
+    "foreground": {
+      "theme": "accent1",
+      "transforms": [
+        {
+          "kind": "lumMod",
+          "value": 0.75
+        }
+      ]
+    },
+    "preset": "dkDnDiag",
+    "type": "pattern"
+  },
+  {
+    "image": "iVBORw==",
+    "tile": true,
+    "type": "picture"
+  },
+  {
+    "type": "fromStyle"
+  }
+]

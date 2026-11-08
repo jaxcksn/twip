@@ -1,0 +1,17 @@
+{
+  "name": "borders-shading",
+  "fixture": "editor/FX-STYLES.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "save": "borders", "result": {"kind": "bordersShading", "values": {"setting": "none", "top": null, "applyTo": "paragraph", "fill": "none"}}},
+    {"op": "call", "method": "@borders.update", "args": [{"setting": "box", "style": "double"}], "save": "borders", "result": {"values": {"setting": "box", "top": {"style": "double"}, "between": null}}},
+    {"op": "call", "method": "@borders.update", "args": [{"top": null}], "save": "borders", "result": {"values": {"setting": "custom", "top": null}}},
+    {"op": "call", "method": "@borders.apply"},
+    {"op": "command", "command": {"type": "setParagraphBorderLines", "bottom": null, "between": {"style": "wave", "width": 0.75, "color": "auto"}}},
+    {"op": "command", "command": {"type": "setShading", "target": "text", "fill": "#FFF2CC", "pattern": "pct20"}},
+    {"op": "command", "command": {"type": "setShading", "target": "paragraph", "fill": "none"}},
+    {"op": "command", "command": {"type": "setTextBorder", "border": {"style": "double", "width": 0.75, "color": "#C00000"}, "shadow": true}},
+    {"op": "command", "command": {"type": "setPageBorders", "top": {"style": "wave", "width": 0.75, "color": "auto"}, "bottom": null, "offsetFrom": "text", "display": "firstPage", "applyTo": "wholeDocument"}},
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "result": {"values": {"pageSetting": "custom", "pageOffsetFrom": "text", "pageDisplay": "firstPage", "pageTop": {"style": "wave"}}}}
+  ]
+}

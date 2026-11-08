@@ -1,0 +1,63 @@
+{
+  "name": "review",
+  "fixture": "editor/FX-mixed-format.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "setAuthor", "args": [{ "name": "Ada" }] },
+    { "op": "expectState", "match": { "review": { "tracking": false, "trackingLocked": false, "revisions": 0, "comments": 0, "activeComment": null } } },
+    { "op": "command", "command": { "type": "setTrackChanges", "value": true } },
+    { "op": "expectState", "match": { "review": { "tracking": true }, "commands": { "setTrackChanges": { "enabled": true } } } },
+
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "forward" } },
+    { "op": "command", "command": { "type": "insertText", "value": " Added." } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Plain" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "delete", "direction": "forward" } },
+    { "op": "expectEvents", "match": [
+      { "type": "documentChanged", "revision": 2 }, { "type": "revisionsChanged" },
+      { "type": "documentChanged", "revision": 3 }, { "type": "revisionsChanged" }
+    ] },
+    { "op": "expectState", "match": { "revision": 3, "review": { "revisions": 2 } } },
+    { "op": "call", "method": "review.revisions", "save": "revisions", "result": { "$has": [
+      { "id": { "$type": "string" }, "kind": "insertion", "text": " Added.", "author": { "name": "Ada" }, "time": { "$type": "string" }, "page": 1, "story": "body" },
+      { "id": { "$type": "string" }, "kind": "deletion", "text": "Plain", "author": { "name": "Ada" }, "time": { "$type": "string" }, "page": 1, "story": "body" }
+    ] } },
+
+    { "op": "command", "command": { "type": "acceptRevision", "value": { "$saved": "revisions", "path": [{ "kind": "insertion" }, "id"] } } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 4 }, { "type": "revisionsChanged" }] },
+    { "op": "expectState", "match": { "revision": 4, "review": { "revisions": 1 } } },
+    { "op": "call", "method": "review.revisions", "result": [{ "kind": "deletion", "text": "Plain" }] },
+    { "op": "command", "command": { "type": "rejectAllRevisions", "author": "Ada" } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 5 }, { "type": "revisionsChanged" }] },
+    { "op": "expectState", "match": { "revision": 5, "review": { "revisions": 0 } } },
+    { "op": "call", "method": "review.revisions", "result": { "$exact": [] } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Plain words" }], "result": { "found": true } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Added." }], "result": { "found": true } },
+
+    { "op": "command", "command": { "type": "setTrackChanges", "value": false } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "bold words" }], "result": { "found": true } },
+    { "op": "call", "method": "commands.addComment", "args": ["Check this."], "save": "comment", "result": { "id": { "$type": "string" } } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 6 }, { "type": "commentsChanged" }] },
+    { "op": "expectState", "match": { "revision": 6, "review": { "comments": 1 } } },
+    { "op": "call", "method": "commands.replyToComment", "args": [{ "to": { "$saved": "comment", "path": ["id"] }, "body": "Agreed." }], "save": "reply" },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 7 }, { "type": "commentsChanged" }] },
+    { "op": "call", "method": "review.comments", "result": [{
+      "id": { "$saved": "comment", "path": ["id"] }, "done": false, "anchorText": "bold words", "page": 1,
+      "comments": [
+        { "id": { "$saved": "comment", "path": ["id"] }, "author": { "name": "Ada" }, "plainText": "Check this." },
+        { "id": { "$saved": "reply", "path": ["id"] }, "author": { "name": "Ada" }, "plainText": "Agreed." }
+      ]
+    }] },
+    { "op": "command", "command": { "type": "resolveComment", "id": { "$saved": "comment", "path": ["id"] }, "done": true } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 8 }, { "type": "commentsChanged" }] },
+    { "op": "call", "method": "review.comments", "result": [{ "done": true }] },
+    { "op": "command", "command": { "type": "resolveComment", "id": { "$saved": "comment", "path": ["id"] }, "done": false } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 9 }, { "type": "commentsChanged" }] },
+    { "op": "call", "method": "review.comments", "result": [{ "done": false }] },
+    { "op": "command", "command": { "type": "setActiveComment", "value": { "$saved": "comment", "path": ["id"] } } },
+    { "op": "expectState", "match": { "revision": 9, "review": { "activeComment": { "$saved": "comment", "path": ["id"] } } } },
+    { "op": "command", "command": { "type": "deleteComment", "value": { "$saved": "comment", "path": ["id"] } } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 10 }, { "type": "commentsChanged" }] },
+    { "op": "expectState", "match": { "revision": 10, "review": { "comments": 0, "activeComment": null } } },
+    { "op": "call", "method": "review.comments", "result": { "$exact": [] } }
+  ]
+}

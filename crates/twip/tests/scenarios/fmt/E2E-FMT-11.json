@@ -1,0 +1,227 @@
+{
+  "id": "E2E-FMT-11",
+  "title": "Font size, grow and shrink, colour, line spacing, indent and keep with next from the command bar and their keys",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      },
+      "clicks": 2
+    },
+    {
+      "command": {
+        "type": "setFontSize",
+        "value": 20
+      }
+    },
+    {
+      "expect": {
+        "sizes": {
+          "1": [
+            [
+              6,
+              20
+            ],
+            [
+              10,
+              11
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "key": "Period",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "sizes": {
+          "1": [
+            [
+              6,
+              22
+            ],
+            [
+              10,
+              11
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "command": {
+        "type": "shrinkFont"
+      }
+    },
+    {
+      "command": {
+        "type": "shrinkFont"
+      }
+    },
+    {
+      "expect": {
+        "sizes": {
+          "1": [
+            [
+              6,
+              18
+            ],
+            [
+              10,
+              11
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "command": {
+        "type": "setFontColor",
+        "value": "#C00000"
+      }
+    },
+    {
+      "expect": {
+        "colors": {
+          "1": [
+            [
+              6,
+              "C00000"
+            ],
+            [
+              10,
+              "auto"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "key": "Space",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "colors": {
+          "1": [
+            [
+              16,
+              "auto"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "command": {
+        "type": "setLineSpacing",
+        "rule": "multiple",
+        "lines": 2
+      }
+    },
+    {
+      "expect": {
+        "para": {
+          "1": {
+            "line": 2.0
+          }
+        }
+      }
+    },
+    {
+      "key": "Digit1",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "para": {
+          "1": {
+            "line": 1.0
+          }
+        }
+      }
+    },
+    {
+      "command": {
+        "type": "increaseIndent"
+      }
+    },
+    {
+      "command": {
+        "type": "increaseIndent"
+      }
+    },
+    {
+      "expect": {
+        "para": {
+          "1": {
+            "ind_left": 72
+          }
+        }
+      }
+    },
+    {
+      "key": "KeyM",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "para": {
+          "1": {
+            "ind_left": 36
+          }
+        }
+      }
+    },
+    {
+      "command": {
+        "type": "setParagraphFlow",
+        "keepWithNext": true
+      }
+    },
+    {
+      "expect": {
+        "para": {
+          "1": {
+            "keep_next": true
+          }
+        }
+      }
+    },
+    {
+      "key": "Digit0",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "para": {
+          "1": {
+            "before": 12
+          }
+        }
+      }
+    }
+  ]
+}

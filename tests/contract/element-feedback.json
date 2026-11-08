@@ -1,0 +1,13 @@
+{
+  "name": "element-feedback",
+  "fixture": "editor/FX-SHADING.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "command", "command": {"type": "setViewOptions", "cursorOverrides": [{"on": {"action": "toggle"}, "cursor": "pointer"}, {"on": {"kind": "dropDown"}, "cursor": "default"}]}},
+    {"op": "expectState", "match": {"revision": 1, "view": {"cursorOverrides": [{"on": {"action": "toggle"}, "cursor": "pointer"}, {"on": {"kind": "dropDown"}, "cursor": "default"}]}, "history": {"undoLabel": null}}},
+    {"op": "command", "command": {"type": "setViewOptions", "cursorOverrides": []}},
+    {"op": "expectState", "match": {"revision": 1, "view": {"fieldShading": "whenSelected"}}},
+    {"op": "call", "method": "elements.boxes", "args": ["f999999"]},
+    {"op": "expectError", "code": "unavailable"}
+  ]
+}

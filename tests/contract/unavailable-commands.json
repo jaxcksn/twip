@@ -1,0 +1,18 @@
+{
+  "name": "unavailable-commands",
+  "fixture": "editor/FX-services.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "revision": 1, "selection": { "table": null }, "commands": { "mergeCells": { "enabled": false }, "undo": { "enabled": false } } } },
+    { "op": "command", "command": { "type": "mergeCells" } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "expectState", "match": { "revision": 1, "commands": { "setBold": { "enabled": true } } } },
+    { "op": "call", "method": "setReadOnly", "args": [true] },
+    { "op": "expectState", "match": { "readOnly": true, "commands": { "setBold": { "enabled": false } } } },
+    { "op": "command", "command": { "type": "setBold", "value": true } },
+    { "op": "expectError", "code": "read-only" },
+    { "op": "expectState", "match": { "revision": 1 } }
+  ]
+}

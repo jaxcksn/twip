@@ -1,0 +1,66 @@
+{
+  "id": "E2E-SEL-04",
+  "title": "A triple-click selects the paragraph with its mark; Delete removes the paragraph",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 3
+      },
+      "clicks": 3
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 2,
+            "offset": 0
+          }
+        }
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": {
+            "starts": "Inventory relevant"
+          }
+        },
+        "caret": {
+          "para": 1,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph.",
+          "2": {
+            "starts": "Inventory relevant"
+          }
+        }
+      }
+    }
+  ]
+}

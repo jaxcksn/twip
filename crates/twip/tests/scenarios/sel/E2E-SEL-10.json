@@ -1,0 +1,60 @@
+{
+  "id": "E2E-SEL-10",
+  "title": "A backward drag: Shift+Right shrinks the selection from its left end, the anchor unchanged",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 10
+        },
+        "to": {
+          "para": 1,
+          "offset": 7
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 10
+          },
+          "focus": {
+            "para": 1,
+            "offset": 7
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 10
+          },
+          "focus": {
+            "para": 1,
+            "offset": 8
+          }
+        }
+      }
+    }
+  ]
+}

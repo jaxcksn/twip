@@ -1,0 +1,97 @@
+{
+  "id": "E2E-FMT-02",
+  "title": "Ctrl+E, Ctrl+J and Ctrl+L set the paragraph alignment; Ctrl+E again goes back to left",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 3
+      }
+    },
+    {
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "jc": {
+          "1": "center"
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "jc": {
+          "1": "left"
+        }
+      }
+    },
+    {
+      "key": "KeyJ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "jc": {
+          "1": "both"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "jc": {
+          "1": "left"
+        }
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 2
+        },
+        "to": {
+          "para": 2,
+          "offset": 4
+        }
+      }
+    },
+    {
+      "key": "KeyR",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "jc": {
+          "1": "right",
+          "2": "right",
+          "3": "left"
+        }
+      }
+    }
+  ]
+}

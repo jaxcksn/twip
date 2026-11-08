@@ -1,0 +1,17 @@
+[
+  "default",
+  "text",
+  "pointer",
+  "move",
+  "resizeHorizontal",
+  "resizeVertical",
+  "resizeNorthWestSouthEast",
+  "resizeNorthEastSouthWest",
+  "crosshair",
+  "notAllowed",
+  "copy",
+  "cellSelect",
+  "columnSelect",
+  "rowSelect",
+  "rotate"
+]

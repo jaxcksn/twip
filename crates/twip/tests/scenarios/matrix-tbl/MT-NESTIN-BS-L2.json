@@ -1,0 +1,54 @@
+{
+  "id": "MT-NESTIN-BS-L2",
+  "title": "Containing-cell text to inner table: Backspace at the start of the text after the inner table, and at the inner first cell's start, does nothing (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 23,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "23": "Level 2, after",
+          "22": "x"
+        },
+        "undo_depth": 0,
+        "caret": {
+          "para": 23,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "Level 2, before",
+          "3": "Level 3, before"
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

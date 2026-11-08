@@ -1,0 +1,269 @@
+{
+  "description": "A paragraph mark deleted between a centred Heading 1 paragraph and a left-aligned Normal paragraph: the paragraphs each view presents (text, style, alignment), the rendered lines with and without markup, and the paragraph after accepting.",
+  "setup": "paragraph 1 \"Heading text\" (Heading 1, centred), paragraph 2 \"Second paragraph text.\" (Normal, left); tracking on, author \"Author B\"; delete paragraph 1's mark",
+  "initial": {
+    "body": [
+      {
+        "text": "Heading text",
+        "runs": [
+          {
+            "text": "Heading text",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [
+          "jc:val=center",
+          "pStyle:val=Heading1"
+        ],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      },
+      {
+        "text": "Second paragraph text.",
+        "runs": [
+          {
+            "text": "Second paragraph text.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "after_delete": {
+    "stories": {
+      "body": [
+        {
+          "text": "Heading text",
+          "runs": [
+            {
+              "text": "Heading text",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": "Author B",
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [
+            "jc:val=center",
+            "pStyle:val=Heading1"
+          ],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Second paragraph text.",
+          "runs": [
+            {
+              "text": "Second paragraph text.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": "Author B",
+          "ppr": [
+            "jc:val=center",
+            "pStyle:val=Heading1"
+          ],
+          "pwas": [],
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [
+      {
+        "type": "wdRevisionDelete",
+        "author": "Author B",
+        "text": "\r"
+      },
+      {
+        "type": "wdRevisionParagraphProperty",
+        "author": "Author B",
+        "text": "Second paragraph text.\r"
+      }
+    ]
+  },
+  "views": {
+    "all-markup": [
+      {
+        "text": "Heading text",
+        "style": "Heading 1",
+        "alignment": 1
+      },
+      {
+        "text": "Second paragraph text.",
+        "style": "Heading 1",
+        "alignment": 1
+      }
+    ],
+    "simple-markup": [
+      {
+        "text": "Heading textSecond paragraph text.",
+        "style": "Heading 1",
+        "alignment": 1
+      }
+    ],
+    "no-markup": [
+      {
+        "text": "Heading textSecond paragraph text.",
+        "style": "Heading 1",
+        "alignment": 1
+      }
+    ],
+    "original": [
+      {
+        "text": "Heading text",
+        "style": "Heading 1",
+        "alignment": 1
+      },
+      {
+        "text": "Second paragraph text.",
+        "style": "Heading 1",
+        "alignment": 0
+      }
+    ]
+  },
+  "rendered": {
+    "with-markup": [
+      {
+        "y": 707.9,
+        "x0": 282.07,
+        "text": "Heading text"
+      },
+      {
+        "y": 672.1,
+        "x0": 249.41,
+        "text": "Second paragraph text."
+      },
+      {
+        "y": 677.28,
+        "x0": 529.99,
+        "text": "Formatted: Heading 1, Centered"
+      }
+    ],
+    "without-markup": [
+      {
+        "y": 683.26,
+        "x0": 162.98,
+        "text": "Heading textSecond paragraph text."
+      }
+    ]
+  },
+  "after_accept_all": {
+    "result": {
+      "stories": {
+        "body": [
+          {
+            "text": "Heading textSecond paragraph text.",
+            "runs": [
+              {
+                "text": "Heading textSecond paragraph text.",
+                "ins": null,
+                "del": null,
+                "move": null,
+                "fmt": null,
+                "rpr": [],
+                "was": null
+              }
+            ],
+            "mark": {
+              "ins": null,
+              "del": null,
+              "move": null
+            },
+            "pchange": null,
+            "ppr": [
+              "jc:val=center",
+              "pStyle:val=Heading1"
+            ],
+            "pwas": null,
+            "num": null,
+            "numchange": null
+          }
+        ]
+      },
+      "sections": [
+        {
+          "change": null,
+          "props": [
+            "cols:space=720",
+            "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+            "pgSz:h=15840,w=12240"
+          ],
+          "was": null
+        }
+      ],
+      "revisions": []
+    },
+    "paragraphs": [
+      {
+        "text": "Heading textSecond paragraph text.",
+        "style": "Heading 1",
+        "alignment": 1
+      }
+    ],
+    "rendered": [
+      {
+        "y": 683.26,
+        "x0": 162.98,
+        "text": "Heading textSecond paragraph text."
+      }
+    ]
+  }
+}

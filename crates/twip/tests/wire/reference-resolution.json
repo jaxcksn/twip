@@ -1,0 +1,9 @@
+[
+  "resolved",
+  "missing",
+  "nearMatch",
+  "cycle",
+  "tooDeep",
+  "notAlone",
+  "notInBody"
+]

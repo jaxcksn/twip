@@ -1,0 +1,49 @@
+{
+  "id": "MX-EMPTY-02-L3",
+  "title": "Empty cell: typing fills it; Backspace in it does nothing; Tab into it lands with nothing to select (nesting level 3)",
+  "fixture": "FX-TBL-BASIC-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from matrix/MX-EMPTY-02.json",
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "undo_depth": 0
+      }
+    },
+    {
+      "type": "b1"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "b1"
+        }
+      }
+    }
+  ]
+}

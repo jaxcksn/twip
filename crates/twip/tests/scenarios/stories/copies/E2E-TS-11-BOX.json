@@ -1,0 +1,103 @@
+{
+  "id": "E2E-TS-11-BOX",
+  "title": "Shift+Alt+End and Shift+Alt+Page Down select from the current cell to the row's end and the column's bottom (in a text box)",
+  "fixture": "FX-TBL-BASIC-BOX.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-11.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "key": "End",
+      "mods": {
+        "shift": true,
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            0,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "key": "PageDown",
+      "mods": {
+        "shift": true,
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            2,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Home",
+      "mods": {
+        "shift": true,
+        "alt": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

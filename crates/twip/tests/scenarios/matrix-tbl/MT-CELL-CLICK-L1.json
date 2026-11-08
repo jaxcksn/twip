@@ -1,0 +1,46 @@
+{
+  "id": "MT-CELL-CLICK-L1",
+  "title": "Cell to cell: a click just left of the border between two cells goes to the left cell's end; just right of it, past the cell zone, into the right cell (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "table": 0,
+        "row": 1,
+        "border": 1,
+        "dx": -4
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 29,
+          "offset": 14,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "table": 0,
+        "row": 1,
+        "border": 1,
+        "dx": 12
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 30,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,406 @@
+{
+  "name": "shapes",
+  "steps": [
+    {
+      "op": "command",
+      "command": {
+        "type": "insertText",
+        "value": "Shapes"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertShape",
+        "preset": "star5"
+      }
+    },
+    {
+      "op": "expectEvents",
+      "match": [
+        {
+          "type": "documentChanged",
+          "origin": "api",
+          "label": "Insert Shape"
+        }
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "kind": "shape",
+            "width": 72,
+            "height": 72,
+            "rotation": 0,
+            "count": 1,
+            "shape": {
+              "preset": "star5",
+              "fill": {
+                "fromStyle": {
+                  "type": "solid",
+                  "colour": {
+                    "theme": "accent1"
+                  }
+                }
+              },
+              "line": {
+                "fromStyle": {
+                  "fill": {
+                    "type": "solid",
+                    "colour": {
+                      "theme": "accent1"
+                    }
+                  }
+                }
+              },
+              "text": {
+                "anchor": "middle"
+              }
+            }
+          }
+        },
+        "commands": {
+          "setShapeFill": {
+            "enabled": true
+          },
+          "setShapePreset": {
+            "enabled": true
+          },
+          "groupObjects": {
+            "enabled": false
+          },
+          "ungroupObjects": {
+            "enabled": false
+          },
+          "setPictureAdjust": {
+            "enabled": false
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setShapeFill",
+        "value": {
+          "type": "solid",
+          "colour": {
+            "rgb": "#FF0000"
+          }
+        }
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "shape": {
+              "fill": {
+                "explicit": {
+                  "type": "solid",
+                  "colour": {
+                    "rgb": "#FF0000"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "history": {
+          "undoLabel": "Shape Fill"
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setShapeFill",
+        "value": {
+          "type": "solid",
+          "colour": {
+            "theme": "accent2",
+            "transforms": [
+              {
+                "kind": "lumMod",
+                "value": 0.75
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "shape": {
+              "fill": {
+                "explicit": {
+                  "colour": {
+                    "theme": "accent2",
+                    "transforms": [
+                      {
+                        "kind": "lumMod",
+                        "value": 0.75
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setShapePreset",
+        "value": "ellipse"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "shape": {
+              "preset": "ellipse",
+              "fill": {
+                "explicit": {
+                  "colour": {
+                    "theme": "accent2"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setShapeLine",
+        "width": 2,
+        "dash": "dash"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "shape": {
+              "line": {
+                "explicit": {
+                  "width": 2,
+                  "dash": "dash"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setShapeEffects",
+        "glow": {
+          "colour": {
+            "rgb": "#00FF00"
+          },
+          "radius": 5
+        }
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "shape": {
+              "effects": {
+                "glow": {
+                  "colour": {
+                    "rgb": "#00FF00"
+                  },
+                  "radius": 5
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setShapeText",
+        "anchor": "bottom",
+        "wrapText": false
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "shape": {
+              "text": {
+                "anchor": "bottom",
+                "wrapText": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setObjectRotation",
+        "value": 45
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "flipObject",
+        "value": "horizontal"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "rotation": 45,
+            "flipH": true,
+            "flipV": false
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "arrangeObject",
+        "value": "behindText"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "wrap": "behindText"
+          }
+        },
+        "history": {
+          "undoLabel": "Arrange"
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "wrap": "inFrontOfText",
+            "flipH": true
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setObjectRotation",
+        "value": 400
+      }
+    },
+    {
+      "op": "expectError",
+      "code": "invalid-argument"
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setShapeFill",
+        "value": {
+          "type": "solid",
+          "colour": {
+            "theme": "accent1",
+            "rgb": "#000000"
+          }
+        }
+      }
+    },
+    {
+      "op": "expectError",
+      "code": "invalid-argument"
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setShapeAdjust",
+        "index": 9,
+        "value": 1
+      }
+    },
+    {
+      "op": "expectError",
+      "code": "invalid-argument"
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertShape",
+        "preset": "straightConnector1"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "object": {
+            "kind": "line",
+            "width": 72,
+            "height": 0
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "groupObjects"
+      }
+    },
+    {
+      "op": "expectError",
+      "code": "unavailable"
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "themeColours": [
+          "#000000",
+          "#FFFFFF"
+        ]
+      }
+    }
+  ]
+}

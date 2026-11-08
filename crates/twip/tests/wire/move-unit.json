@@ -1,0 +1,12 @@
+[
+  "character",
+  "word",
+  "line",
+  "paragraph",
+  "lineEdge",
+  "document",
+  "screen",
+  "page",
+  "rowEdge",
+  "columnEdge"
+]

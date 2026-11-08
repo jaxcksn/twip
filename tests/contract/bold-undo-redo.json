@@ -1,0 +1,36 @@
+{
+  "name": "bold-undo-redo",
+  "steps": [
+    { "op": "command", "command": { "type": "insertText", "value": "Hello world" } },
+    { "op": "expectEvents", "match": [ { "type": "documentChanged", "origin": "api", "revision": 2 } ] },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "expectState", "match": { "revision": 2, "selection": { "kind": "text", "empty": false }, "formatting": { "bold": false } } },
+    { "op": "command", "command": { "type": "setBold", "value": true } },
+    { "op": "expectEvents", "match": [ { "type": "documentChanged", "origin": "api", "revision": 3, "label": "Bold" } ] },
+    {
+      "op": "expectState",
+      "match": {
+        "revision": 3,
+        "formatting": { "bold": true },
+        "history": { "canUndo": true, "canRedo": false, "undoLabel": "Bold" },
+        "commands": { "setBold": { "enabled": true, "value": true }, "undo": { "enabled": true, "value": "Bold" } }
+      }
+    },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectEvents", "match": [ { "type": "documentChanged", "origin": "undo", "revision": 4, "label": "Bold" } ] },
+    {
+      "op": "expectState",
+      "match": {
+        "revision": 4,
+        "formatting": { "bold": false },
+        "history": { "canRedo": true, "redoLabel": "Bold", "undoLabel": "Typing" },
+        "commands": { "redo": { "enabled": true, "value": "Bold" } }
+      }
+    },
+    { "op": "command", "command": { "type": "redo" } },
+    { "op": "expectEvents", "match": [ { "type": "documentChanged", "origin": "redo", "revision": 5, "label": "Bold" } ] },
+    { "op": "expectState", "match": { "revision": 5, "formatting": { "bold": true }, "history": { "canRedo": false, "undoLabel": "Bold" } } },
+    { "op": "command", "command": { "type": "redo" } },
+    { "op": "expectError", "code": "unavailable" }
+  ]
+}

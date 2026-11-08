@@ -1,0 +1,14 @@
+[
+  {
+    "id": "setBold",
+    "kind": "command"
+  },
+  {
+    "id": "insertSignature",
+    "kind": "shortcut"
+  },
+  {
+    "command": "print",
+    "kind": "host"
+  }
+]

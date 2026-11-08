@@ -1,0 +1,12 @@
+[
+  {
+    "bold": true,
+    "from": "Times New Roman",
+    "italic": false,
+    "to": "Tinos"
+  },
+  {
+    "from": "Arial",
+    "to": "Arimo"
+  }
+]

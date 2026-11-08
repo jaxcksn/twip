@@ -1,0 +1,118 @@
+{
+  "description": "Enter in the middle of an untracked paragraph.",
+  "setup": "one paragraph \"Alpha beta gamma.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "Alpha beta gamma.",
+        "runs": [
+          {
+            "text": "Alpha beta gamma.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "press Enter after \"beta\"",
+      "author": "Author A",
+      "op": {
+        "op": "enter",
+        "at": 10
+      },
+      "selection": {
+        "start": 11,
+        "end": 11
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta",
+              "runs": [
+                {
+                  "text": "Alpha beta",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": "Author A",
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": " gamma.",
+              "runs": [
+                {
+                  "text": " gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "\r"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "id": "MT-BOUND-HE-L3",
+  "title": "Inner table at a cell's end: Home and End on the closing paragraph stay there (nesting level 3)",
+  "fixture": "FX-NEST-2-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-BOUND-HE-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 10,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

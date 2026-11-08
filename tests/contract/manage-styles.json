@@ -1,0 +1,15 @@
+{
+  "name": "manage-styles",
+  "fixture": "editor/FX-STYLES.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "call", "method": "dialogs.open", "args": ["manageStyles"], "save": "manage", "result": {"kind": "manageStyles", "values": {"tab": "edit", "sort": "asRecommended", "description": {"$type": "string"}}}},
+    {"op": "call", "method": "@manage.update", "args": [{"sort": "alphabetical"}], "save": "manage", "result": {"values": {"sort": "alphabetical"}}},
+    {"op": "call", "method": "@manage.apply"},
+    {"op": "command", "command": {"type": "deleteStyle", "value": "Heading1"}},
+    {"op": "expectError", "code": "not-allowed"},
+    {"op": "command", "command": {"type": "setStyleMeta", "id": "Draft", "visibility": "show", "priority": 3}},
+    {"op": "call", "method": "styles.list", "args": [{}], "result": {"$has": [{"id": "Draft", "visibility": "show", "priority": 3}]}},
+    {"op": "command", "command": {"type": "deleteStyle", "value": "Callout"}}
+  ]
+}

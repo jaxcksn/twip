@@ -1,0 +1,63 @@
+{
+  "id": "MT-BOUND-UD-L3",
+  "title": "Inner table at a cell's end: Down from the inner last row goes to the closing paragraph, then the outer cell below; Up mirrors it (nesting level 3)",
+  "fixture": "FX-NEST-2-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-BOUND-UD-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 9,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 9,
+          "depth": 4
+        }
+      }
+    }
+  ]
+}

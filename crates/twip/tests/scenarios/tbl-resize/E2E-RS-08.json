@@ -1,0 +1,95 @@
+{
+  "id": "E2E-RS-08",
+  "title": "Dragging the table resize handle at its lower right corner scales its columns with the width and its rows with the height",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 2,
+          "border": "handle"
+        },
+        "to": {
+          "table": 1,
+          "row": 2,
+          "border": "handle",
+          "dx": -46.8
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              140.4,
+              140.4,
+              140.4
+            ],
+            "heights": [
+              null,
+              null,
+              null
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 2,
+          "border": "handle"
+        },
+        "to": {
+          "table": 1,
+          "row": 2,
+          "border": "handle",
+          "dy": 34.5
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              156,
+              156,
+              156
+            ],
+            "heights": [
+              [
+                34.5,
+                "atLeast"
+              ],
+              [
+                34.5,
+                "atLeast"
+              ],
+              [
+                34.5,
+                "atLeast"
+              ]
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

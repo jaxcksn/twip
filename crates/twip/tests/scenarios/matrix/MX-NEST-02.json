@@ -1,0 +1,62 @@
+{
+  "id": "MX-NEST-02",
+  "title": "Out of an inner table: Right at its last cell's end goes to the inner end-of-row mark, then to the text after it",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 5,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret",
+          "focus": {
+            "row_end": {
+              "table": 1,
+              "row": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret",
+          "focus": {
+            "row_end": {
+              "table": 1,
+              "row": 1
+            }
+          }
+        }
+      }
+    }
+  ]
+}

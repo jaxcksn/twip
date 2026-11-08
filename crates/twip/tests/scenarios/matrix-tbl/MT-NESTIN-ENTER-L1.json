@@ -1,0 +1,63 @@
+{
+  "id": "MT-NESTIN-ENTER-L1",
+  "title": "Containing-cell text to inner table: Enter at the inner first cell's start (text precedes the inner table) adds a paragraph in the inner cell; at the text after, a paragraph in the containing cell (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "",
+          "3": "Level 2, before"
+        },
+        "caret": {
+          "para": 3,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 27,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "27": "",
+          "28": "Level 1, after"
+        },
+        "caret": {
+          "para": 28,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

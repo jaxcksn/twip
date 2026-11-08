@@ -1,0 +1,126 @@
+{
+  "id": "MX-OBJ-01",
+  "title": "Inline picture: one unit for Right, Shift+Right, Delete and Backspace; text typed with it selected goes before it",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 1,
+            "offset": 1
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": " Inline picture at the start of the line. Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff newsletter review matter presenter advisor account. Served savings pilot receipt corporate requirement."
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": " Inline picture at the start of the line. Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff newsletter review matter presenter advisor account. Served savings pilot receipt corporate requirement."
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "type": "A"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "A￼ Inline picture at the start of the line. Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff newsletter review matter presenter advisor account. Served savings pilot receipt corporate requirement."
+        }
+      }
+    }
+  ]
+}

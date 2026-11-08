@@ -1,0 +1,125 @@
+# release-please keeps a release PR open on main for the next stable version.
+# Merging it tags the release; the jobs below then publish what was released. Run by hand with a tag, they re-publish
+# it. Canaries are canary.yml. Only this workflow publishes to crates.io, nuget.org and npm (trusted publishing names
+# this file and the release environment); build.yml builds the packages it publishes.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to re-publish (v0.1.0)
+        required: true
+      publish:
+        description: Registries to publish to (any of crate nuget npm)
+        default: crate nuget npm
+
+permissions: {}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      engine: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - id: rp
+        if: github.event_name == 'push'
+        uses: googleapis/release-please-action@v5
+        with:
+          target-branch: ${{ github.ref_name }}
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
+
+  crate:
+    needs: release-please
+    if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'crate')
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+      # Skia links FreeType and Fontconfig (publish builds the package to verify it).
+      - run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+      # Trusted publishing (OIDC): a short-lived token for this run.
+      - id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - run: cargo publish -p twip
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.engine == 'true' || inputs.tag
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ inputs.tag }}
+      nuget: ${{ needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'nuget') }}
+      npm: ${{ needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'npm') }}
+
+  nuget:
+    needs: [release-please, build]
+    if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'nuget')
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://www.nuget.org/packages/Twip.Core
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: nupkg
+      # Trusted publishing (OIDC): a key valid for an hour, so it's requested just before the push.
+      - id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }} # the nuget.org profile name, not an email
+      - run: dotnet nuget push '*.nupkg' --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+
+  npm:
+    needs: [release-please, build]
+    if: needs.release-please.outputs.engine == 'true' || contains(inputs.publish, 'npm')
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://www.npmjs.com/package/@twip/web
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # The toolchain, for the pinned pnpm.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm
+          path: ${{ runner.temp }}/npm
+      # Trusted publishing (OIDC); the dist-tag follows the version (0.1.0-alpha.2 -> alpha). npm only accepts
+      # provenance from public repositories. Published from the unpacked tarball, as it was published from bindings/web.
+      - name: Publish
+        env:
+          PROVENANCE: ${{ !github.event.repository.private && '--provenance' || '' }}
+        # node and pnpm run from the checkout, where proto finds their versions.
+        run: |
+          tar xzf "$RUNNER_TEMP"/npm/*.tgz -C "$RUNNER_TEMP/npm"
+          pkg=$RUNNER_TEMP/npm/package
+          version=$(node -p "require('$pkg/package.json').version")
+          tag=$(echo "$version" | sed -nE 's/^[0-9.]+-([a-z]+).*/\1/p'); tag=${tag:-latest}
+          pnpm publish "$pkg" --access public $PROVENANCE --no-git-checks --tag "$tag"

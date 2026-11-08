@@ -1,0 +1,565 @@
+[
+  {
+    "name": "no cards",
+    "anchors": [],
+    "heights": [],
+    "gap": 8,
+    "tops": []
+  },
+  {
+    "name": "one card, level with its line",
+    "anchors": [
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 112
+        },
+        "lineBottom": 116,
+        "lineTop": 100,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 112
+        },
+        "thread": "c1"
+      }
+    ],
+    "heights": [
+      40
+    ],
+    "gap": 8,
+    "tops": [
+      100
+    ]
+  },
+  {
+    "name": "cards apart stay level",
+    "anchors": [
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 22
+        },
+        "lineBottom": 26,
+        "lineTop": 10,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 22
+        },
+        "thread": "c1"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 212
+        },
+        "lineBottom": 216,
+        "lineTop": 200,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 212
+        },
+        "thread": "c2"
+      }
+    ],
+    "heights": [
+      50,
+      30
+    ],
+    "gap": 8,
+    "tops": [
+      10,
+      200
+    ]
+  },
+  {
+    "name": "a crowded card moves below the one before",
+    "anchors": [
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 22
+        },
+        "lineBottom": 26,
+        "lineTop": 10,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 22
+        },
+        "thread": "c1"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 32
+        },
+        "lineBottom": 36,
+        "lineTop": 20,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 32
+        },
+        "thread": "c2"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 212
+        },
+        "lineBottom": 216,
+        "lineTop": 200,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 212
+        },
+        "thread": "c3"
+      }
+    ],
+    "heights": [
+      50,
+      30,
+      10
+    ],
+    "gap": 4,
+    "tops": [
+      10,
+      64,
+      200
+    ]
+  },
+  {
+    "name": "a chain pushes down",
+    "anchors": [
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 112
+        },
+        "lineBottom": 116,
+        "lineTop": 100,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 112
+        },
+        "thread": "c1"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 112
+        },
+        "lineBottom": 116,
+        "lineTop": 100,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 112
+        },
+        "thread": "c2"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 112
+        },
+        "lineBottom": 116,
+        "lineTop": 100,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 112
+        },
+        "thread": "c3"
+      }
+    ],
+    "heights": [
+      40,
+      40,
+      40
+    ],
+    "gap": 8,
+    "tops": [
+      100,
+      148,
+      196
+    ]
+  },
+  {
+    "name": "the active card first stacks down",
+    "anchors": [
+      {
+        "active": true,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 112
+        },
+        "lineBottom": 116,
+        "lineTop": 100,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 112
+        },
+        "thread": "c1"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 122
+        },
+        "lineBottom": 126,
+        "lineTop": 110,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 122
+        },
+        "thread": "c2"
+      }
+    ],
+    "heights": [
+      40,
+      40
+    ],
+    "gap": 8,
+    "tops": [
+      100,
+      148
+    ]
+  },
+  {
+    "name": "the active card last: the others rise",
+    "anchors": [
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 112
+        },
+        "lineBottom": 116,
+        "lineTop": 100,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 112
+        },
+        "thread": "c1"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 122
+        },
+        "lineBottom": 126,
+        "lineTop": 110,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 122
+        },
+        "thread": "c2"
+      },
+      {
+        "active": true,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 132
+        },
+        "lineBottom": 136,
+        "lineTop": 120,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 132
+        },
+        "thread": "c3"
+      }
+    ],
+    "heights": [
+      40,
+      40,
+      40
+    ],
+    "gap": 8,
+    "tops": [
+      24,
+      72,
+      120
+    ]
+  },
+  {
+    "name": "the active card in the middle",
+    "anchors": [
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 112
+        },
+        "lineBottom": 116,
+        "lineTop": 100,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 112
+        },
+        "thread": "c1"
+      },
+      {
+        "active": true,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 122
+        },
+        "lineBottom": 126,
+        "lineTop": 110,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 122
+        },
+        "thread": "c2"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 132
+        },
+        "lineBottom": 136,
+        "lineTop": 120,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 132
+        },
+        "thread": "c3"
+      }
+    ],
+    "heights": [
+      40,
+      40,
+      40
+    ],
+    "gap": 8,
+    "tops": [
+      62,
+      110,
+      158
+    ]
+  },
+  {
+    "name": "cards rise only as far as they must",
+    "anchors": [
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 22
+        },
+        "lineBottom": 26,
+        "lineTop": 10,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 22
+        },
+        "thread": "c1"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 312
+        },
+        "lineBottom": 316,
+        "lineTop": 300,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 312
+        },
+        "thread": "c2"
+      },
+      {
+        "active": true,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 322
+        },
+        "lineBottom": 326,
+        "lineTop": 310,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 322
+        },
+        "thread": "c3"
+      }
+    ],
+    "heights": [
+      40,
+      40,
+      40
+    ],
+    "gap": 8,
+    "tops": [
+      10,
+      262,
+      310
+    ]
+  },
+  {
+    "name": "no room above: the active card is pushed down",
+    "anchors": [
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 22
+        },
+        "lineBottom": 26,
+        "lineTop": 10,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 22
+        },
+        "thread": "c1"
+      },
+      {
+        "active": true,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 32
+        },
+        "lineBottom": 36,
+        "lineTop": 20,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 32
+        },
+        "thread": "c2"
+      }
+    ],
+    "heights": [
+      50,
+      30
+    ],
+    "gap": 4,
+    "tops": [
+      0,
+      54
+    ]
+  },
+  {
+    "name": "fractional heights",
+    "anchors": [
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 12.5
+        },
+        "lineBottom": 16.5,
+        "lineTop": 0.5,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 12.5
+        },
+        "thread": "c1"
+      },
+      {
+        "active": false,
+        "done": false,
+        "end": {
+          "x": 240.5,
+          "y": 22.25
+        },
+        "lineBottom": 26.25,
+        "lineTop": 10.25,
+        "page": 1,
+        "pageEdge": 856.5,
+        "start": {
+          "x": 120.5,
+          "y": 22.25
+        },
+        "thread": "c2"
+      }
+    ],
+    "heights": [
+      20.5,
+      8
+    ],
+    "gap": 2,
+    "tops": [
+      0.5,
+      23.0
+    ]
+  }
+]

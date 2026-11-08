@@ -1,0 +1,24 @@
+{
+  "name": "author",
+  "fixture": "editor/FX-mixed-format.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "setAuthor", "args": [{ "name": "Ada", "identity": { "provider": "AD", "userId": "ada" } }] },
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "forward" } },
+    { "op": "command", "command": { "type": "insertText", "value": " Untracked." } },
+    { "op": "expectEvents", "match": [{
+      "type": "documentChanged", "origin": "api", "revision": 2,
+      "author": { "name": "Ada", "identity": { "provider": "AD", "userId": "ada" } },
+      "time": { "$type": "string" }
+    }] },
+    { "op": "command", "command": { "type": "setTrackChanges", "value": true } },
+    { "op": "expectState", "match": { "review": { "tracking": true, "revisions": 0 } } },
+    { "op": "command", "command": { "type": "insertText", "value": " Tracked." } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "author": { "name": "Ada" } }] },
+    { "op": "expectState", "match": { "review": { "revisions": 1 } } },
+    { "op": "call", "method": "review.revisions", "result": [{
+      "kind": "insertion", "text": " Tracked.", "time": { "$type": "string" },
+      "author": { "name": "Ada", "identity": { "provider": "AD", "userId": "ada" } }
+    }] }
+  ]
+}

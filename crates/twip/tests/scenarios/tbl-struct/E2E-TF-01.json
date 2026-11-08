@@ -1,0 +1,100 @@
+{
+  "id": "E2E-TF-01",
+  "title": "Cell alignment and shading apply to the selected cells; Repeat Header Rows marks the rows from the first through the selection's last",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "C",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 17,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "command": {
+        "type": "setCellAlignment",
+        "value": "center"
+      }
+    },
+    {
+      "command": {
+        "type": "setCellShading",
+        "value": "#FFF2CC"
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "cell_fmt": [
+              [
+                "center:FFF2CC",
+                "center:FFF2CC",
+                "top:-"
+              ],
+              [
+                "center:FFF2CC",
+                "center:FFF2CC",
+                "top:-"
+              ],
+              [
+                "top:-",
+                "top:-",
+                "top:-"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 1
+      }
+    },
+    {
+      "command": {
+        "type": "setHeaderRow",
+        "value": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "header_rows": 2
+          }
+        ]
+      }
+    },
+    {
+      "command": {
+        "type": "setHeaderRow",
+        "value": false
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "header_rows": 0
+          }
+        ]
+      }
+    }
+  ]
+}

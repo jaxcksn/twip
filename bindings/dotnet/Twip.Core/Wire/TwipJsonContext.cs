@@ -1,0 +1,636 @@
+// The wire types the engine and this SDK exchange. Keep the lists in step with the public and internal records.
+using System.Drawing;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Twip.Hosting;
+
+namespace Twip.Wire;
+
+/// <summary>The source-generated System.Text.Json metadata for every wire shape: no reflection at run time.</summary>
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    AllowOutOfOrderMetadataProperties = true,
+    Converters = [
+        typeof(CamelEnum<AccessibleMark>),
+        typeof(CamelEnum<AccessibleRole>),
+        typeof(CamelEnum<AnnouncementKind>),
+        typeof(CamelEnum<AutoFitBehavior>),
+        typeof(CamelEnum<BorderEdges>),
+        typeof(CamelEnum<CaseChange>),
+        typeof(CamelEnum<CellAlignment>),
+        typeof(CamelEnum<CellShift>),
+        typeof(CamelEnum<ColumnPosition>),
+        typeof(CamelEnum<CommandGroup>),
+        typeof(CamelEnum<CommandId>),
+        typeof(CamelEnum<CompositionPhase>),
+        typeof(CamelEnum<ControlKind>),
+        typeof(CamelEnum<ControlLock>),
+        typeof(CamelEnum<DeleteUnit>),
+        typeof(CamelEnum<DialogKind>),
+        typeof(CamelEnum<DocumentAppearance>),
+        typeof(CamelEnum<MeasureDetail>),
+        typeof(CamelEnum<ObjectGrid>),
+        typeof(CamelEnum<FieldShading>),
+        typeof(CamelEnum<PressAction>),
+        typeof(CamelEnum<StyleDialogType>),
+        typeof(CamelEnum<ManageStylesTab>),
+        typeof(CamelEnum<BordersTab>),
+        typeof(CamelEnum<PageBorderOffset>),
+        typeof(CamelEnum<PageBorderDisplay>),
+        typeof(CamelEnum<PageBorderScope>),
+        typeof(CamelEnum<TableStylePart>),
+        typeof(CamelEnum<NumberFormat>),
+        typeof(CamelEnum<LevelAlignment>),
+        typeof(CamelEnum<FollowNumber>),
+        typeof(CamelEnum<ListApplyTo>),
+        typeof(CamelEnum<NumberingMode>),
+        typeof(CamelEnum<ListGalleryKind>),
+        typeof(CamelEnum<ListGallerySectionKind>),
+        typeof(CamelEnum<BorderSetting>),
+        typeof(CamelEnum<ShadingTarget>),
+        typeof(CamelEnum<ShadingPattern>),
+        typeof(CamelEnum<FrameWrap>),
+        typeof(CamelEnum<FrameWidthRule>),
+        typeof(CamelEnum<FrameHeightRule>),
+        typeof(CamelEnum<FrameHorizontalAlign>),
+        typeof(CamelEnum<FrameVerticalAlign>),
+        typeof(CamelEnum<FrameHorizontalRelative>),
+        typeof(CamelEnum<FrameVerticalRelative>),
+        typeof(CamelEnum<StyleSort>),
+        typeof(CamelEnum<StyleVisibility>),
+        typeof(CamelEnum<Direction>),
+        typeof(CamelEnum<EditorCursor>),
+        typeof(CamelEnum<EditorMode>),
+        typeof(CamelEnum<ElementCategory>),
+        typeof(CamelEnum<ElementKind>),
+        typeof(CamelEnum<ElementTextField>),
+        typeof(CamelEnum<FieldKind>),
+        typeof(CamelEnum<FontStyleChoice>),
+        typeof(CamelEnum<GenericFamily>),
+        typeof(CamelEnum<FontClass>),
+        typeof(CamelEnum<FontPitch>),
+        typeof(CamelEnum<StandIn>),
+        typeof(CamelEnum<ReplaceScope>),
+        typeof(CamelEnum<GestureArea>),
+        typeof(CamelEnum<GestureId>),
+        typeof(CamelEnum<HeaderFooterKind>),
+        typeof(CamelEnum<HeaderFooterType>),
+        typeof(CamelEnum<HighlightColor>),
+        typeof(CamelEnum<HostCommand>),
+        typeof(CamelEnum<LevelChange>),
+        typeof(CamelEnum<LineSpacingRule>),
+        typeof(CamelEnum<LineStyle>),
+        typeof(CamelEnum<LinkActivation>),
+        typeof(CamelEnum<ListKind>),
+        typeof(CamelEnum<LoadStatus>),
+        typeof(CamelEnum<MarkSeverity>),
+        typeof(CamelEnum<MarkupView>),
+        typeof(CamelEnum<MenuInvocation>),
+        typeof(CamelEnum<MoveUnit>),
+        typeof(CamelEnum<NavigationDirection>),
+        typeof(CamelEnum<ObjectKind>),
+        typeof(CamelEnum<ObjectWrap>),
+        typeof(CamelEnum<HorizontalReference>),
+        typeof(CamelEnum<VerticalReference>),
+        typeof(CamelEnum<ObjectHorizontalAlignment>),
+        typeof(CamelEnum<ObjectVerticalAlignment>),
+        typeof(CamelEnum<WrapSide>),
+        typeof(CamelEnum<Origin>),
+        typeof(CamelEnum<PageNumberAlignment>),
+        typeof(CamelEnum<PageNumberFormat>),
+        typeof(CamelEnum<PageNumberPlacement>),
+        typeof(CamelEnum<PageOrientation>),
+        typeof(CamelEnum<PageSetupScope>),
+        typeof(CamelEnum<ParagraphAlignment>),
+        typeof(CamelEnum<ParagraphBorders>),
+        typeof(CamelEnum<PasteMode>),
+        typeof(CamelEnum<PointerKind>),
+        typeof(CamelEnum<PointerButton>),
+        typeof(CamelEnum<RevisionKind>),
+        typeof(CamelEnum<RowHeightRule>),
+        typeof(CamelEnum<RowPosition>),
+        typeof(CamelEnum<RulerUnit>),
+        typeof(CamelEnum<SectionBreakKind>),
+        typeof(CamelEnum<SelectionKind>),
+        typeof(CamelEnum<SelectionUnit>),
+        typeof(CamelEnum<ShortcutKind>),
+        typeof(CamelEnum<SpecialIndent>),
+        typeof(CamelEnum<Story>),
+        typeof(CamelEnum<ReferenceResolution>),
+        typeof(CamelEnum<RefusalKind>),
+        typeof(CamelEnum<EditingTargetKind>),
+        typeof(CamelEnum<StyleType>),
+        typeof(CamelEnum<TabAlignment>),
+        typeof(CamelEnum<TabLeader>),
+        typeof(CamelEnum<TabSelector>),
+        typeof(CamelEnum<TableAlignment>),
+        typeof(CamelEnum<TableWidthKind>),
+        typeof(CamelEnum<TabsDialogAction>),
+        typeof(CamelEnum<TextSelectionMode>),
+        typeof(CamelEnum<TooltipKind>),
+        typeof(CamelEnum<UnderlineStyle>),
+        typeof(CamelEnum<UndoGrouping>),
+        typeof(CamelEnum<VerticalDirection>),
+        typeof(CamelEnum<VerticalMerge>),
+        typeof(CamelEnum<ArrowKind>),
+        typeof(CamelEnum<ArrowSize>),
+        typeof(CamelEnum<Arrange>),
+        typeof(CamelEnum<ColorTransformKind>),
+        typeof(CamelEnum<FlipAxis>),
+        typeof(CamelEnum<GradientShape>),
+        typeof(CamelEnum<LineCap>),
+        typeof(CamelEnum<LineCompound>),
+        typeof(CamelEnum<LineJoin>),
+        typeof(CamelEnum<TextAnchor>),
+        typeof(CamelEnum<TextAutofit>),
+        typeof(CamelEnum<TextDirection>),
+        typeof(CamelEnum<ThemeColor>),
+        typeof(EffectChangeConverter<Shadow>),
+        typeof(EffectChangeConverter<Glow>),
+        typeof(EffectChangeConverter<Length>),
+        typeof(FormatValueConverter<bool>),
+        typeof(FormatValueConverter<string>),
+        typeof(FormatValueConverter<Length>),
+        typeof(FormatValueConverter<UnderlineStyle>),
+        typeof(FormatValueConverter<ColorValue>),
+        typeof(FormatValueConverter<HighlightColor>),
+        typeof(FormatValueConverter<StyleId>),
+        typeof(FormatValueConverter<ParagraphAlignment>),
+        typeof(FormatValueConverter<LineSpacing>),
+        typeof(FormatValueConverter<SpacingValue>),
+        typeof(FormatValueConverter<ListKind>),
+        typeof(FormatValueConverter<int>),
+        typeof(FormatValueConverter<ParagraphBorders>),
+        typeof(FormatValueConverter<CellAlignment>),
+        typeof(FormatValueConverter<RowHeight>),
+        typeof(FormatValueConverter<FontStyleChoice>),
+        typeof(FormatValueConverter<OutlineLevel>),
+        typeof(FormatValueConverter<SpecialIndent>),
+        typeof(JsonStringEnumConverter<EditorKey>),
+        typeof(KeyModifiersConverter),
+        typeof(WirePointConverter),
+        typeof(WireRectConverter),
+        typeof(UtcTimeConverter),
+        typeof(ScalarConverter),
+    ])]
+[JsonSerializable(typeof(AccessibilityDialogValues))]
+[JsonSerializable(typeof(AccessibilityIssue))]
+[JsonSerializable(typeof(AccessibleMark))]
+[JsonSerializable(typeof(AccessibleNode))]
+[JsonSerializable(typeof(AccessibleRole))]
+[JsonSerializable(typeof(A11yUpdate))]
+[JsonSerializable(typeof(CaretWindow))]
+[JsonSerializable(typeof(WindowPoint))]
+[JsonSerializable(typeof(AnnouncementKind))]
+[JsonSerializable(typeof(IReadOnlyList<AnnouncementKind>))]
+[JsonSerializable(typeof(CellPlace))]
+[JsonSerializable(typeof(ListPosition))]
+[JsonSerializable(typeof(AltTextDialogValues))]
+[JsonSerializable(typeof(AnnouncementPayload))]
+[JsonSerializable(typeof(Author))]
+[JsonSerializable(typeof(AutoFitBehavior))]
+[JsonSerializable(typeof(BalloonPlacement))]
+[JsonSerializable(typeof(BalloonsLaidOutPayload))]
+[JsonSerializable(typeof(BatchRequest))]
+[JsonSerializable(typeof(Block))]
+[JsonSerializable(typeof(Block.Paragraph), TypeInfoPropertyName = "Block_Paragraph")]
+[JsonSerializable(typeof(Block.Table), TypeInfoPropertyName = "Block_Table")]
+[JsonSerializable(typeof(Block.TableCell), TypeInfoPropertyName = "Block_TableCell")]
+[JsonSerializable(typeof(Block.TableRow), TypeInfoPropertyName = "Block_TableRow")]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(BorderEdges))]
+[JsonSerializable(typeof(CaseChange))]
+[JsonSerializable(typeof(CellAlignment))]
+[JsonSerializable(typeof(CellBorder))]
+[JsonSerializable(typeof(CellMarginOptions))]
+[JsonSerializable(typeof(CellMargins))]
+[JsonSerializable(typeof(CellShift))]
+[JsonSerializable(typeof(ChangeSummary))]
+[JsonSerializable(typeof(CharacterFormatting))]
+[JsonSerializable(typeof(ClientPoint))]
+[JsonSerializable(typeof(ClipboardContent))]
+[JsonSerializable(typeof(ColorValue))]
+[JsonSerializable(typeof(ColumnPosition))]
+[JsonSerializable(typeof(CommandGroup))]
+[JsonSerializable(typeof(CommandId))]
+[JsonSerializable(typeof(CommandInfo))]
+[JsonSerializable(typeof(CommandItem))]
+[JsonSerializable(typeof(CommandResult))]
+[JsonSerializable(typeof(CommandState))]
+[JsonSerializable(typeof(Comment))]
+[JsonSerializable(typeof(CommentAnchor))]
+[JsonSerializable(typeof(CommentAnchorsPayload))]
+[JsonSerializable(typeof(CommentId))]
+[JsonSerializable(typeof(CommentThread))]
+[JsonSerializable(typeof(Commit))]
+[JsonSerializable(typeof(CompositionPhase))]
+[JsonSerializable(typeof(ContextMenu))]
+[JsonSerializable(typeof(ContextMenuPayload))]
+[JsonSerializable(typeof(ControlChanges))]
+[JsonSerializable(typeof(ControlContent))]
+[JsonSerializable(typeof(ControlKind))]
+[JsonSerializable(typeof(ControlListItem))]
+[JsonSerializable(typeof(ControlLock))]
+[JsonSerializable(typeof(ControlOptions))]
+[JsonSerializable(typeof(PlaceholderImage))]
+[JsonSerializable(typeof(ControlFloat))]
+[JsonSerializable(typeof(DataBinding))]
+[JsonSerializable(typeof(DataPart))]
+[JsonSerializable(typeof(DataPartInfo))]
+[JsonSerializable(typeof(DataPartsRequest))]
+[JsonSerializable(typeof(DateTimeOffset))]
+[JsonSerializable(typeof(DeleteUnit))]
+[JsonSerializable(typeof(DialogKind))]
+[JsonSerializable(typeof(DialogModel))]
+[JsonSerializable(typeof(DialogRequestedPayload))]
+[JsonSerializable(typeof(DialogUpdateRequest))]
+[JsonSerializable(typeof(DialogValues))]
+[JsonSerializable(typeof(Dictionary))]
+[JsonSerializable(typeof(Direction))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(EditorCursor))]
+[JsonSerializable(typeof(EditorErrorCode))]
+[JsonSerializable(typeof(EditorKey))]
+[JsonSerializable(typeof(EditorMode))]
+[JsonSerializable(typeof(EditorOperation))]
+[JsonSerializable(typeof(EditorState))]
+[JsonSerializable(typeof(ElementActivatedPayload))]
+[JsonSerializable(typeof(ElementCategory))]
+[JsonSerializable(typeof(ElementContext))]
+[JsonSerializable(typeof(ElementDetail))]
+[JsonSerializable(typeof(ElementFilter))]
+[JsonSerializable(typeof(ElementId))]
+[JsonSerializable(typeof(ElementInfo))]
+[JsonSerializable(typeof(ElementKind))]
+[JsonSerializable(typeof(ElementMark))]
+[JsonSerializable(typeof(ElementMatch))]
+[JsonSerializable(typeof(ElementsChangedPayload))]
+[JsonSerializable(typeof(ElementTextField))]
+[JsonSerializable(typeof(EditRefusedPayload))]
+[JsonSerializable(typeof(EmptyPayload))]
+[JsonSerializable(typeof(EngineOptionsWire))]
+[JsonSerializable(typeof(ErrorBody))]
+[JsonSerializable(typeof(ErrorPayload))]
+[JsonSerializable(typeof(ExportMeta))]
+[JsonSerializable(typeof(ExportOptionsWire))]
+[JsonSerializable(typeof(PdfFontSetWire))]
+[JsonSerializable(typeof(PdfOptionsWire))]
+[JsonSerializable(typeof(PdfConvertMeta))]
+[JsonSerializable(typeof(FaceInfo))]
+[JsonSerializable(typeof(FieldInfo))]
+[JsonSerializable(typeof(FieldKind))]
+[JsonSerializable(typeof(FieldOption))]
+[JsonSerializable(typeof(FieldOptions))]
+[JsonSerializable(typeof(FieldResult))]
+[JsonSerializable(typeof(FieldsUpdateRequestedPayload))]
+[JsonSerializable(typeof(FieldUpdateRequest))]
+[JsonSerializable(typeof(FindMatch))]
+[JsonSerializable(typeof(FindQuery))]
+[JsonSerializable(typeof(FindRequest))]
+[JsonSerializable(typeof(FindResult))]
+[JsonSerializable(typeof(FontDialogValues))]
+[JsonSerializable(typeof(FontRequest))]
+[JsonSerializable(typeof(FontsChangedPayload))]
+[JsonSerializable(typeof(FontStatus))]
+[JsonSerializable(typeof(MissingFont))]
+[JsonSerializable(typeof(FontDescription))]
+[JsonSerializable(typeof(FontAnswerWire))]
+[JsonSerializable(typeof(FontAnswerPayload))]
+[JsonSerializable(typeof(FontClass))]
+[JsonSerializable(typeof(FontPitch))]
+[JsonSerializable(typeof(Alias))]
+[JsonSerializable(typeof(IReadOnlyList<Alias>))]
+[JsonSerializable(typeof(GenericDefaults))]
+[JsonSerializable(typeof(MissingCharacters))]
+[JsonSerializable(typeof(FontsReport))]
+[JsonSerializable(typeof(StandIn))]
+[JsonSerializable(typeof(ReplaceScope))]
+[JsonSerializable(typeof(GenericFamily))]
+[JsonSerializable(typeof(FontStyleChoice))]
+[JsonSerializable(typeof(FormatValue<bool>))]
+[JsonSerializable(typeof(FrameInfo))]
+[JsonSerializable(typeof(GestureAction))]
+[JsonSerializable(typeof(GestureArea))]
+[JsonSerializable(typeof(GestureBinding))]
+[JsonSerializable(typeof(GestureEvent))]
+[JsonSerializable(typeof(GestureId))]
+[JsonSerializable(typeof(GestureSetRequest))]
+[JsonSerializable(typeof(GestureTarget))]
+[JsonSerializable(typeof(HeaderFooterInfo))]
+[JsonSerializable(typeof(HeaderFooterKind))]
+[JsonSerializable(typeof(HeaderFooterType))]
+[JsonSerializable(typeof(Heading))]
+[JsonSerializable(typeof(HeadingId))]
+[JsonSerializable(typeof(HighlightColor))]
+[JsonSerializable(typeof(HistoryState))]
+[JsonSerializable(typeof(HitResult))]
+[JsonSerializable(typeof(HorizontalRulerModel))]
+[JsonSerializable(typeof(HostCommand))]
+[JsonSerializable(typeof(HostCommandPayload))]
+[JsonSerializable(typeof(HostRequest))]
+[JsonSerializable(typeof(HyperlinkDialogValues))]
+[JsonSerializable(typeof(Identity))]
+[JsonSerializable(typeof(ImportResult))]
+[JsonSerializable(typeof(IndentOptions))]
+[JsonSerializable(typeof(InsertControlOptions))]
+[JsonSerializable(typeof(InsertTableDialogValues))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, FieldInfo>))]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, string>))]
+[JsonSerializable(typeof(IReadOnlyList<Block>))]
+[JsonSerializable(typeof(IReadOnlyList<CommandInfo>))]
+[JsonSerializable(typeof(IReadOnlyList<CommentAnchor>))]
+[JsonSerializable(typeof(IReadOnlyList<CommentThread>))]
+[JsonSerializable(typeof(IReadOnlyList<DataPart>))]
+[JsonSerializable(typeof(IReadOnlyList<DataPartInfo>))]
+[JsonSerializable(typeof(IReadOnlyList<ElementId>))]
+[JsonSerializable(typeof(IReadOnlyList<ElementInfo>))]
+[JsonSerializable(typeof(IReadOnlyList<ElementMark>))]
+[JsonSerializable(typeof(IReadOnlyList<FaceInfo>))]
+[JsonSerializable(typeof(IReadOnlyList<FieldResult>))]
+[JsonSerializable(typeof(IReadOnlyList<FindMatch>))]
+[JsonSerializable(typeof(IReadOnlyList<GestureBinding>))]
+[JsonSerializable(typeof(IReadOnlyList<Heading>))]
+[JsonSerializable(typeof(IReadOnlyList<Person>))]
+[JsonSerializable(typeof(IReadOnlyList<RevisionInfo>))]
+[JsonSerializable(typeof(IReadOnlyList<string>))]
+[JsonSerializable(typeof(IReadOnlyList<StyleInfo>))]
+[JsonSerializable(typeof(IReadOnlyList<FontRule>))]
+[JsonSerializable(typeof(IReadOnlyList<Warning>))]
+[JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(System.Text.Json.Nodes.JsonObject))]
+[JsonSerializable(typeof(KeyModifiers))]
+[JsonSerializable(typeof(KeyOutcome))]
+[JsonSerializable(typeof(Length))]
+[JsonSerializable(typeof(LevelChange))]
+[JsonSerializable(typeof(LineSpacing))]
+[JsonSerializable(typeof(LineSpacingRule))]
+[JsonSerializable(typeof(LineStyle))]
+[JsonSerializable(typeof(LinkActivatedPayload))]
+[JsonSerializable(typeof(LinkActivation))]
+[JsonSerializable(typeof(LinkInfo))]
+[JsonSerializable(typeof(ListKind))]
+[JsonSerializable(typeof(LoadStatus))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(MarginOptions))]
+[JsonSerializable(typeof(MarkSeverity))]
+[JsonSerializable(typeof(MarkupView))]
+[JsonSerializable(typeof(AutoCorrectChange))]
+[JsonSerializable(typeof(AutoCorrectEntry))]
+[JsonSerializable(typeof(AutoCorrectOptions))]
+[JsonSerializable(typeof(ChromeTheme))]
+[JsonSerializable(typeof(ThemeColors))]
+[JsonSerializable(typeof(ChromeColors))]
+[JsonSerializable(typeof(HighContrastColors))]
+[JsonSerializable(typeof(DocumentAppearance))]
+[JsonSerializable(typeof(MeasureDetail))]
+[JsonSerializable(typeof(ObjectGrid))]
+[JsonSerializable(typeof(FieldShading))]
+[JsonSerializable(typeof(PressAction))]
+[JsonSerializable(typeof(StyleDialogValues))]
+[JsonSerializable(typeof(ManageStylesDialogValues))]
+[JsonSerializable(typeof(BordersShadingDialogValues))]
+[JsonSerializable(typeof(FrameDialogValues))]
+[JsonSerializable(typeof(BandingDialogValues))]
+[JsonSerializable(typeof(TextBorderOptions))]
+[JsonSerializable(typeof(PageBordersOptions))]
+[JsonSerializable(typeof(DefineBulletDialogValues))]
+[JsonSerializable(typeof(DefineNumberFormatDialogValues))]
+[JsonSerializable(typeof(DefineMultilevelDialogValues))]
+[JsonSerializable(typeof(SetNumberingValueDialogValues))]
+[JsonSerializable(typeof(AdjustListIndentsDialogValues))]
+[JsonSerializable(typeof(BulletsNumberingDialogValues))]
+[JsonSerializable(typeof(ListLevel))]
+[JsonSerializable(typeof(ListDefinition))]
+[JsonSerializable(typeof(NumberingValueOptions))]
+[JsonSerializable(typeof(ListIndentOptions))]
+[JsonSerializable(typeof(IReadOnlyList<ListGallerySection>))]
+[JsonSerializable(typeof(IReadOnlyList<CharRange>))]
+[JsonSerializable(typeof(ListEntryPreviewRequest))]
+[JsonSerializable(typeof(CharacterPictureRequest))]
+[JsonSerializable(typeof(ParagraphBorderLines))]
+[JsonSerializable(typeof(ShadingOptions))]
+[JsonSerializable(typeof(FrameProperties))]
+[JsonSerializable(typeof(ManagedStyle))]
+[JsonSerializable(typeof(DocumentDefaults))]
+[JsonSerializable(typeof(StyleMetaOptions))]
+[JsonSerializable(typeof(StyleOpen))]
+[JsonSerializable(typeof(StyleDialogType))]
+[JsonSerializable(typeof(DialogOnStyleRequest))]
+[JsonSerializable(typeof(StyleTileRequest))]
+[JsonSerializable(typeof(DialogPreviewRequest))]
+[JsonSerializable(typeof(PreviewPicture))]
+[JsonSerializable(typeof(PreviewSize))]
+[JsonSerializable(typeof(StyleVisibility))]
+[JsonSerializable(typeof(ElementHover))]
+[JsonSerializable(typeof(ElementClick))]
+[JsonSerializable(typeof(ElementSelection))]
+[JsonSerializable(typeof(ElementHoverPayload))]
+[JsonSerializable(typeof(ElementSelectPayload))]
+[JsonSerializable(typeof(CursorOverride))]
+[JsonSerializable(typeof(CursorTarget))]
+[JsonSerializable(typeof(IReadOnlyList<CursorOverride>))]
+[JsonSerializable(typeof(IReadOnlyList<RectangleF>))]
+[JsonSerializable(typeof(Popover))]
+[JsonSerializable(typeof(Popover.TabType), TypeInfoPropertyName = "Popover_TabType")]
+[JsonSerializable(typeof(Popover.TabStop), TypeInfoPropertyName = "Popover_TabStop")]
+[JsonSerializable(typeof(Popover.AutoCorrect), TypeInfoPropertyName = "Popover_AutoCorrect")]
+[JsonSerializable(typeof(TabTypeChoice))]
+[JsonSerializable(typeof(MatchId))]
+[JsonSerializable(typeof(MenuAction))]
+[JsonSerializable(typeof(MenuInvocation))]
+[JsonSerializable(typeof(MenuItem))]
+[JsonSerializable(typeof(MenuTarget))]
+[JsonSerializable(typeof(MenuTarget.Comment), TypeInfoPropertyName = "MenuTarget_Comment")]
+[JsonSerializable(typeof(MenuTarget.Element), TypeInfoPropertyName = "MenuTarget_Element")]
+[JsonSerializable(typeof(MenuTarget.HeaderFooter), TypeInfoPropertyName = "MenuTarget_HeaderFooter")]
+[JsonSerializable(typeof(MenuTarget.Link), TypeInfoPropertyName = "MenuTarget_Link")]
+[JsonSerializable(typeof(MenuTarget.Misspelling), TypeInfoPropertyName = "MenuTarget_Misspelling")]
+[JsonSerializable(typeof(MenuTarget.Picture), TypeInfoPropertyName = "MenuTarget_Picture")]
+[JsonSerializable(typeof(MenuTarget.Revision), TypeInfoPropertyName = "MenuTarget_Revision")]
+[JsonSerializable(typeof(MenuTarget.Table), TypeInfoPropertyName = "MenuTarget_Table")]
+[JsonSerializable(typeof(MenuTarget.Text), TypeInfoPropertyName = "MenuTarget_Text")]
+[JsonSerializable(typeof(MenuTarget.TextBox), TypeInfoPropertyName = "MenuTarget_TextBox")]
+[JsonSerializable(typeof(Misspelling))]
+[JsonSerializable(typeof(MoveUnit))]
+[JsonSerializable(typeof(NavigationDirection))]
+[JsonSerializable(typeof(object))]
+[JsonSerializable(typeof(ObjectKind))]
+[JsonSerializable(typeof(ObjectSelection))]
+[JsonSerializable(typeof(ObjectWrap))]
+[JsonSerializable(typeof(ObjectPlacement))]
+[JsonSerializable(typeof(TextDistance))]
+[JsonSerializable(typeof(HorizontalPosition))]
+[JsonSerializable(typeof(VerticalPosition))]
+[JsonSerializable(typeof(HorizontalReference))]
+[JsonSerializable(typeof(VerticalReference))]
+[JsonSerializable(typeof(ObjectHorizontalAlignment))]
+[JsonSerializable(typeof(ObjectVerticalAlignment))]
+[JsonSerializable(typeof(WrapSide))]
+[JsonSerializable(typeof(Origin))]
+[JsonSerializable(typeof(OutlineLevel))]
+[JsonSerializable(typeof(PageColumns))]
+[JsonSerializable(typeof(PageCounts))]
+[JsonSerializable(typeof(PageFormatting))]
+[JsonSerializable(typeof(PageMargins))]
+[JsonSerializable(typeof(PageNumberAlignment))]
+[JsonSerializable(typeof(PageNumberFormat))]
+[JsonSerializable(typeof(PageNumberPlacement))]
+[JsonSerializable(typeof(PageOrientation))]
+[JsonSerializable(typeof(PageRect))]
+[JsonSerializable(typeof(FrameStats))]
+[JsonSerializable(typeof(CaretBlinkWire))]
+[JsonSerializable(typeof(OverlayPaletteWire))]
+[JsonSerializable(typeof(PaintBudget))]
+[JsonSerializable(typeof(PageSetupDialogValues))]
+[JsonSerializable(typeof(PageSetupScope))]
+[JsonSerializable(typeof(PageSize))]
+[JsonSerializable(typeof(ParagraphAlignment))]
+[JsonSerializable(typeof(ParagraphBorders))]
+[JsonSerializable(typeof(ParagraphDialogValues))]
+[JsonSerializable(typeof(ParagraphFlow))]
+[JsonSerializable(typeof(ParagraphFlowOptions))]
+[JsonSerializable(typeof(ParagraphFormatting))]
+[JsonSerializable(typeof(ParagraphIndents))]
+[JsonSerializable(typeof(PasteMode))]
+[JsonSerializable(typeof(Person))]
+[JsonSerializable(typeof(PictureSizeDialogValues))]
+[JsonSerializable(typeof(PictureControlActivation))]
+[JsonSerializable(typeof(PointerKind))]
+[JsonSerializable(typeof(PointerButton))]
+[JsonSerializable(typeof(PointF))]
+[JsonSerializable(typeof(ReadOnlyMemory<byte>))]
+[JsonSerializable(typeof(RectangleF))]
+[JsonSerializable(typeof(ReplaceAllResult))]
+[JsonSerializable(typeof(ReplaceRequest))]
+[JsonSerializable(typeof(ReviewState))]
+[JsonSerializable(typeof(RevisionId))]
+[JsonSerializable(typeof(RevisionInfo))]
+[JsonSerializable(typeof(RevisionKind))]
+[JsonSerializable(typeof(RichParagraph))]
+[JsonSerializable(typeof(RichRun))]
+[JsonSerializable(typeof(RichText))]
+[JsonSerializable(typeof(RichTextShape))]
+[JsonSerializable(typeof(RowHeight))]
+[JsonSerializable(typeof(RowHeightRule))]
+[JsonSerializable(typeof(RowPosition))]
+[JsonSerializable(typeof(RulerAxis))]
+[JsonSerializable(typeof(RulerIndents))]
+[JsonSerializable(typeof(RulerModel))]
+[JsonSerializable(typeof(RulerSpan))]
+[JsonSerializable(typeof(RulerUnit))]
+[JsonSerializable(typeof(RulerView))]
+[JsonSerializable(typeof(RulerVisibility))]
+[JsonSerializable(typeof(SaveResult))]
+[JsonSerializable(typeof(SectionBreakKind))]
+[JsonSerializable(typeof(SelectElementRequest))]
+[JsonSerializable(typeof(SelectionKind))]
+[JsonSerializable(typeof(SelectionSummary))]
+[JsonSerializable(typeof(SelectionUnit))]
+[JsonSerializable(typeof(SeparatorItem))]
+[JsonSerializable(typeof(SessionOptionsWire))]
+[JsonSerializable(typeof(Shortcut))]
+[JsonSerializable(typeof(ShortcutBinding))]
+[JsonSerializable(typeof(ShortcutKeys))]
+[JsonSerializable(typeof(ShortcutKind))]
+[JsonSerializable(typeof(ShortcutPayload))]
+[JsonSerializable(typeof(Shortcuts))]
+[JsonSerializable(typeof(SpacingValue))]
+[JsonSerializable(typeof(SpecialIndent))]
+[JsonSerializable(typeof(SpellingState))]
+[JsonSerializable(typeof(Story))]
+[JsonSerializable(typeof(ReferenceResolution))]
+[JsonSerializable(typeof(ReferenceRule))]
+[JsonSerializable(typeof(IReadOnlyList<ReferenceRule>))]
+[JsonSerializable(typeof(SubTemplateReference))]
+[JsonSerializable(typeof(SubTemplateInfo))]
+[JsonSerializable(typeof(IReadOnlyList<SubTemplateInfo>))]
+[JsonSerializable(typeof(EditingTarget))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(StructureRequest))]
+[JsonSerializable(typeof(StyleId))]
+[JsonSerializable(typeof(StyleInfo))]
+[JsonSerializable(typeof(StylePreview))]
+[JsonSerializable(typeof(StyleType))]
+[JsonSerializable(typeof(SubmenuItem))]
+[JsonSerializable(typeof(FontRule))]
+[JsonSerializable(typeof(SuggestionItem))]
+[JsonSerializable(typeof(SuggestionsRequest))]
+[JsonSerializable(typeof(TabAlignment))]
+[JsonSerializable(typeof(TabLeader))]
+[JsonSerializable(typeof(TableAlignment))]
+[JsonSerializable(typeof(TablePropertiesDialogValues))]
+[JsonSerializable(typeof(TableSelection))]
+[JsonSerializable(typeof(TableStyleOptions))]
+[JsonSerializable(typeof(TableStyleOptionsUpdate))]
+[JsonSerializable(typeof(TablePosition))]
+[JsonSerializable(typeof(TableWidth))]
+[JsonSerializable(typeof(TableWidthKind))]
+[JsonSerializable(typeof(TabsDialogAction))]
+[JsonSerializable(typeof(TabsDialogValues))]
+[JsonSerializable(typeof(TabSelector))]
+[JsonSerializable(typeof(TabStop))]
+[JsonSerializable(typeof(TextSelectionMode))]
+[JsonSerializable(typeof(TimerRequest))]
+[JsonSerializable(typeof(TooltipInfo))]
+[JsonSerializable(typeof(TooltipKind))]
+[JsonSerializable(typeof(TooltipPayload))]
+[JsonSerializable(typeof(TooltipWire))]
+[JsonSerializable(typeof(TransactionRecord))]
+[JsonSerializable(typeof(uint))]
+[JsonSerializable(typeof(UnderlineStyle))]
+[JsonSerializable(typeof(UndoGrouping))]
+[JsonSerializable(typeof(UserWordsRequest))]
+[JsonSerializable(typeof(VerticalDirection))]
+[JsonSerializable(typeof(VerticalMerge))]
+[JsonSerializable(typeof(VerticalRulerModel))]
+[JsonSerializable(typeof(ViewState))]
+[JsonSerializable(typeof(Warning))]
+[JsonSerializable(typeof(WarningCode))]
+[JsonSerializable(typeof(WarningLocation))]
+[JsonSerializable(typeof(WordAddedPayload))]
+[JsonSerializable(typeof(WordCount))]
+[JsonSerializable(typeof(ZoomLevel))]
+[JsonSerializable(typeof(ArrowKind))]
+[JsonSerializable(typeof(ArrowSize))]
+[JsonSerializable(typeof(Arrange))]
+[JsonSerializable(typeof(ColorTransformKind))]
+[JsonSerializable(typeof(FlipAxis))]
+[JsonSerializable(typeof(GradientShape))]
+[JsonSerializable(typeof(LineCap))]
+[JsonSerializable(typeof(LineCompound))]
+[JsonSerializable(typeof(LineJoin))]
+[JsonSerializable(typeof(TextAnchor))]
+[JsonSerializable(typeof(TextAutofit))]
+[JsonSerializable(typeof(TextDirection))]
+[JsonSerializable(typeof(ThemeColor))]
+[JsonSerializable(typeof(Arrowhead))]
+[JsonSerializable(typeof(ColorTransform))]
+[JsonSerializable(typeof(EffectsChange))]
+[JsonSerializable(typeof(EffectsValue))]
+[JsonSerializable(typeof(FillState))]
+[JsonSerializable(typeof(FillValue))]
+[JsonSerializable(typeof(GradientStop))]
+[JsonSerializable(typeof(Glow))]
+[JsonSerializable(typeof(LineChange))]
+[JsonSerializable(typeof(LineEnds))]
+[JsonSerializable(typeof(LineState))]
+[JsonSerializable(typeof(LineValue))]
+[JsonSerializable(typeof(PictureAdjustChange))]
+[JsonSerializable(typeof(Shadow))]
+[JsonSerializable(typeof(ShapeAdjust))]
+[JsonSerializable(typeof(ShapeColor))]
+[JsonSerializable(typeof(ShapeGalleryGroup))]
+[JsonSerializable(typeof(ShapeInsert))]
+[JsonSerializable(typeof(ShapePreset))]
+[JsonSerializable(typeof(ShapeState))]
+[JsonSerializable(typeof(ShapeTextChange))]
+[JsonSerializable(typeof(ShapeTextState))]
+[JsonSerializable(typeof(IReadOnlyList<ShapeGalleryGroup>))]
+[JsonSerializable(typeof(FillValue.None), TypeInfoPropertyName = "FillValue_None")]
+[JsonSerializable(typeof(FillValue.Solid), TypeInfoPropertyName = "FillValue_Solid")]
+[JsonSerializable(typeof(FillValue.Gradient), TypeInfoPropertyName = "FillValue_Gradient")]
+[JsonSerializable(typeof(FillValue.Pattern), TypeInfoPropertyName = "FillValue_Pattern")]
+[JsonSerializable(typeof(FillValue.Picture), TypeInfoPropertyName = "FillValue_Picture")]
+[JsonSerializable(typeof(FillValue.FromStyle), TypeInfoPropertyName = "FillValue_FromStyle")]
+internal sealed partial class TwipJsonContext : JsonSerializerContext;

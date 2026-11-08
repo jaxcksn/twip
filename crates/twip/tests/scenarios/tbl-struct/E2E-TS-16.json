@@ -1,0 +1,68 @@
+{
+  "id": "E2E-TS-16",
+  "title": "A drag from a cell's zone extends a cell block cell by cell; the move handle selects the table; a block over part of a merged cell widens to all of it",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": 0,
+          "dx": 3
+        },
+        "to": {
+          "table": 1,
+          "row": 1,
+          "border": 2,
+          "dx": -40
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            1,
+            1
+          ],
+          "shape": "rect"
+        }
+      }
+    },
+    {
+      "click": {
+        "table": 1,
+        "row": 0,
+        "border": 0,
+        "dx": -6,
+        "dy": -16
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            2,
+            2
+          ],
+          "shape": "table"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "id": "E2E-RS-10",
+  "title": "Widening a nested table past its containing cell in a fixed-width outer table keeps the outer columns; the nested table is wider than its cell",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": 2
+        },
+        "to": {
+          "table": 1,
+          "row": 0,
+          "border": 2,
+          "dx": 40
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "grid": [
+              234,
+              234
+            ]
+          },
+          {
+            "grid": [
+              111.6,
+              151.6
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "grid": [
+              234,
+              234
+            ]
+          },
+          {
+            "grid": [
+              111.6,
+              111.6
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

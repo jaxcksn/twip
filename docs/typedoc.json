@@ -1,0 +1,9 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "@twip/web",
+  "entryPoints": ["../bindings/web/src/index.ts"],
+  "tsconfig": "../bindings/web/tsconfig.json",
+  "out": "static/api/web",
+  "readme": "none",
+  "treatWarningsAsErrors": true
+}

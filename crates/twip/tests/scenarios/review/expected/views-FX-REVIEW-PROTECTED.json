@@ -1,0 +1,105 @@
+{
+  "description": "Pages and lines per paragraph of FX-REVIEW-PROTECTED.docx in each markup view, as far as they can be observed (see each view's source), plus the layouts of the tracked document, of every revision accepted and of every revision rejected.",
+  "fixture": "FX-REVIEW-PROTECTED.docx",
+  "views": {
+    "all-markup": {
+      "source": "fixed-format export with markup; lines mapped to the paragraphs of the tracked document (table cells not mapped)",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "lines": 2
+        }
+      ],
+      "unmatched_lines": null
+    },
+    "simple-markup": {
+      "source": "not observable: neither the export nor the layout queries follow the view setting",
+      "pages": null,
+      "paragraphs": null
+    },
+    "no-markup": {
+      "source": "fixed-format export without markup; lines mapped to the paragraphs of the document with every revision accepted (table cells not mapped)",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "lines": 2
+        }
+      ],
+      "unmatched_lines": null
+    },
+    "original": {
+      "source": "layout of the document with every revision rejected",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        }
+      ]
+    }
+  },
+  "layouts": {
+    "tracked": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        }
+      ]
+    },
+    "accepted": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        }
+      ]
+    },
+    "rejected": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "The meeting forecast hereby vendors prac",
+          "in_table": false,
+          "lines": 2
+        },
+        {
+          "text": "Regional maintenance accessibility tax f",
+          "in_table": false,
+          "lines": 2
+        }
+      ]
+    }
+  },
+  "error": "accept all: This command is not available. reject all: This command is not available."
+}

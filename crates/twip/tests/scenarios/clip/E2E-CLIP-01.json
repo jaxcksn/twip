@@ -1,0 +1,73 @@
+{
+  "id": "E2E-CLIP-01",
+  "title": "Copy and paste within a paragraph keeps the copied text's formatting; smart paste adds the space before the next word",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 2
+      },
+      "shift": true
+    },
+    {
+      "clipboard": "copy"
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "clipboard": "paste"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "FX Short paragraph."
+        },
+        "runs": {
+          "1": [
+            [
+              3,
+              "b"
+            ],
+            [
+              16,
+              ""
+            ]
+          ]
+        },
+        "caret": {
+          "para": 1,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph."
+        }
+      }
+    }
+  ]
+}

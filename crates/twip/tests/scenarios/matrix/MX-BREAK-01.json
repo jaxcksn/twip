@@ -1,0 +1,61 @@
+{
+  "id": "MX-BREAK-01",
+  "title": "Line break: Right steps over the break onto the next line; Left steps back; End stops before the break",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 8
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 9
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 8
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11
+        }
+      }
+    }
+  ]
+}

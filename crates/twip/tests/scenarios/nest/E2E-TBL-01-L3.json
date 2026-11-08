@@ -1,0 +1,46 @@
+{
+  "id": "E2E-TBL-01-L3",
+  "title": "Tab selects the next cell; Tab in the last cell of a table adds a row (nesting level 3)",
+  "fixture": "FX-TBL-BASIC-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from tbl-nav/E2E-TBL-01.json",
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "caret": {
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 0,
+            "offset": 0
+          }
+        }
+      }
+    }
+  ]
+}

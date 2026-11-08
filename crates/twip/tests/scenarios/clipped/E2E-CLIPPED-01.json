@@ -1,0 +1,126 @@
+{
+  "id": "E2E-CLIPPED-01",
+  "title": "Text an exact row height clips is reached by Down and Up, typed into without being drawn; clicks stay in the drawn line",
+  "fixture": "FX-EXACT-ROW.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 5,
+        "offset": 3
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "offset": 3,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "offset": 0,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "6": "Zsecond"
+        },
+        "caret": {
+          "para": 6,
+          "offset": 1,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 0,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 10,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 0,
+          "hidden": "clipped"
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "hidden": null
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 5,
+        "offset": 3
+      },
+      "dy": 6
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "hidden": null
+        }
+      }
+    }
+  ]
+}

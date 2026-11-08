@@ -1,0 +1,36 @@
+{
+  "id": "REV-RESOLVE-PROTECTED",
+  "title": "With tracked-changes protection, accepting and rejecting are refused as unavailable.",
+  "fixture": "review/FX-REVIEW-PROTECTED.docx",
+  "steps": [
+    {
+      "command": {
+        "type": "acceptAllRevisions"
+      },
+      "expect": {
+        "answer": {
+          "error": "unavailable"
+        },
+        "revisions": [
+          "Insert Author A"
+        ],
+        "undo_depth": 0
+      }
+    },
+    {
+      "command": {
+        "type": "rejectRevision",
+        "value": "r1"
+      },
+      "expect": {
+        "answer": {
+          "error": "unavailable"
+        },
+        "revisions": [
+          "Insert Author A"
+        ],
+        "undo_depth": 0
+      }
+    }
+  ]
+}

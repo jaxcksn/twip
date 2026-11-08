@@ -1,0 +1,45 @@
+{
+  "id": "E2E-RS-09",
+  "title": "A nested table's last row border is dragged from just inside that row (up to 3 px above it)",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 1,
+          "border": "bottom",
+          "dy": -1.5,
+          "dx": -40
+        },
+        "to": {
+          "table": 1,
+          "row": 1,
+          "border": "bottom",
+          "dy": 13.5,
+          "dx": -40
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "heights": [
+              null,
+              [
+                38.0,
+                "atLeast"
+              ]
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

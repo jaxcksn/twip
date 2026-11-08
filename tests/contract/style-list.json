@@ -1,0 +1,11 @@
+{
+  "name": "style-list",
+  "fixture": "editor/FX-STYLES.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "call", "method": "dialogs.openStyle", "args": ["create"], "save": "new"},
+    {"op": "call", "method": "@new.update", "args": [{"shortForm": false, "type": "list", "name": "Outline Steps"}], "save": "new", "result": {"values": {"type": "list", "listLevels": {"$type": "array"}, "listLevel": 0}, "fields": {"listLevels": {"enabled": true}, "tablePart": {"enabled": false}}}},
+    {"op": "call", "method": "@new.apply"},
+    {"op": "call", "method": "styles.list", "args": [{}], "result": {"$has": [{"id": "OutlineSteps", "type": "list"}]}}
+  ]
+}

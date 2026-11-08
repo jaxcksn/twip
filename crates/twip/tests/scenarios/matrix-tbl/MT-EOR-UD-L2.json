@@ -1,0 +1,52 @@
+{
+  "id": "MT-EOR-UD-L2",
+  "title": "End-of-row mark: Down from a row's last cell goes to the cell below, and from the last row out of the table; Up comes back (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 24,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 27,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

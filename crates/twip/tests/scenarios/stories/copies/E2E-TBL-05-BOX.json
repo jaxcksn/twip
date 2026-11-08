@@ -1,0 +1,61 @@
+{
+  "id": "E2E-TBL-05-BOX",
+  "title": "Shift+Tab in a table's first cell does nothing, outer or nested (in a text box)",
+  "fixture": "FX-NEST-2-BOX.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-nav/E2E-TBL-05.json",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 4,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 4,
+          "offset": 2
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 5,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

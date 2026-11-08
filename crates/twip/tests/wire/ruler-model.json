@@ -1,0 +1,50 @@
+[
+  {
+    "horizontal": {
+      "columns": [
+        {
+          "end": 288.5,
+          "start": 72.5
+        },
+        {
+          "end": 540.5,
+          "start": 324.5
+        }
+      ],
+      "defaultTabStop": 36.5,
+      "indents": {
+        "firstLine": -18.5,
+        "left": 36.5,
+        "right": 0.5
+      },
+      "pageWidth": 612.5,
+      "tableColumns": [
+        72.5,
+        200.5
+      ],
+      "tabs": [
+        {
+          "alignment": "right",
+          "inherited": true,
+          "leader": "dots",
+          "position": 72.5
+        }
+      ],
+      "text": {
+        "end": 540.5,
+        "start": 72.5
+      }
+    },
+    "mixed": true,
+    "vertical": {
+      "pageHeight": 792.5,
+      "tableRows": [
+        100.5
+      ],
+      "text": {
+        "end": 720.5,
+        "start": 72.5
+      }
+    }
+  }
+]

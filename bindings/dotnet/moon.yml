@@ -1,0 +1,24 @@
+$schema: '../../.moon/cache/schemas/project.json'
+id: dotnet
+language: csharp
+tags: [sdk]
+
+dependsOn: [twip-capi]
+
+tasks:
+  build:
+    command: dotnet build Twip.slnx -c Release -warnaserror
+    inputs: ['Twip.Core/**/*', 'Twip.WinForms/**/*', 'Twip.Tests/**/*', 'smoke/**/*', 'Twip.slnx']
+  # The wire round trips, the contract scripts (unattached and attached), then a Native AOT publish of a console app
+  # that drives the engine: it proves the SDK is trim and AOT safe.
+  test:
+    script: dotnet test Twip.Tests -c Release && dotnet publish smoke -c Release -o ../../target/smoke && ../../target/smoke/smoke
+    deps: [twip-capi:build]
+    inputs: ['Twip.Core/**/*', 'Twip.Tests/**/*', 'smoke/**/*', '/tests/contract/**/*', '/crates/twip/tests/wire/**/*']
+  contract:
+    command: dotnet test Twip.Tests -c Release --filter FullyQualifiedName~ContractTests
+    deps: [twip-capi:build]
+    inputs: ['Twip.Core/**/*', 'Twip.Tests/**/*', '/tests/contract/**/*']
+    # Part of test; for running the contract runners alone.
+    options:
+      runInCI: false

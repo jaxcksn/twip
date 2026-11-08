@@ -1,0 +1,133 @@
+{
+  "fixture": "FX-MERGE-DATA.docx",
+  "id": "FUZZ-FX-MERGE-DATA-3",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "é"
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "click": {
+        "offset": 3,
+        "para": 0
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": "hello "
+    },
+    {
+      "expect": {},
+      "type": " "
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "click": {
+        "offset": 34,
+        "para": 0
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(93373))] not closed in paragraph 93372\" }, Statement { invariant: \"C1 controls resolve\", detail: \"control ControlId(93373) is used but not in the document's controls\" }] (Caret(Position { story: Body, place: Text { para: ParaId(93372), offset: Unit(3), affinity: Downstream } }) in Some(\"👍🏽a\"))"
+}

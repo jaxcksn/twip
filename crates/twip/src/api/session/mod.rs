@@ -1,0 +1,229 @@
+//! A session: one document being edited, with its selection, history, pipeline, services and presentation. Each
+//! submodule holds one area's methods.
+#![warn(missing_docs)]
+
+mod blink;
+mod commands;
+pub(crate) mod documents;
+mod edit;
+mod elements;
+mod fonts;
+mod host;
+mod input;
+mod review;
+mod services;
+
+use std::rc::Rc;
+
+pub use documents::{Export, ExportFormat, ExportOptions, OpenToken, PdfOptions};
+pub use edit::Commit;
+pub(crate) use fonts::unopened_document_fonts;
+pub use host::{CaretBlink, Cursor, FrameInfo, FrameStats, HostRequest, HostSurface, OverlayPalette, PaintBudget};
+pub use input::{Gestures, Shortcuts};
+pub use services::Spelling;
+
+use super::engine::{SessionId, SessionOptions, Shared};
+use super::event::Event;
+use super::fonts::FontLibrary;
+use super::record::Author;
+use super::state::{Mode, State};
+use crate::editing::Editor;
+
+/// One document being edited. Every change runs as a transaction; after each one the state is rebuilt, then the
+/// engine's listener hears about it.
+pub struct Session {
+    id: SessionId,
+    editor: Editor,
+    fonts: FontLibrary,
+    shared: Rc<Shared>,
+    state: State,
+    author: Author,
+    read_only: bool,
+    mode: Mode,
+    language: String,
+    track_changes: bool,
+    /// The last transaction record's id.
+    records: u64,
+    /// Table gridlines show where cells have no borders.
+    gridlines: bool,
+    /// Formatting marks (paragraph ends, spaces, tabs, breaks, hidden text) show.
+    formatting_marks: bool,
+    /// The text areas' and cells' boundaries show.
+    text_boundaries: bool,
+    /// When fields are shaded.
+    field_shading: crate::api::services::FieldShading,
+    /// Pointer shapes over elements instead of the editor's own.
+    cursor_overrides: Vec<crate::api::services::CursorOverride>,
+    /// The modifier keys of the last pointer input.
+    pointer_mods: crate::editing::keymap::Mods,
+    /// The element the primary button went down on, for the click that ends the press.
+    pressed: Option<crate::docx::ElementId>,
+    presentation: host::Presentation,
+    watch: fonts::Watch,
+    services: crate::services::Services,
+    /// Gesture bindings and application shortcuts.
+    bindings: input::Bindings,
+    /// What typing corrects.
+    autocorrect: crate::editing::autocorrect::AutoCorrect,
+}
+
+impl Session {
+    pub(crate) fn new(id: SessionId, options: SessionOptions, fonts: FontLibrary, shared: Rc<Shared>) -> Session {
+        let editor = documents::blank(&fonts);
+        let mut s = Session {
+            id,
+            editor,
+            fonts,
+            shared,
+            state: State::default(),
+            author: options.author,
+            read_only: options.read_only,
+            mode: options.mode,
+            language: options.language,
+            track_changes: options.track_changes,
+            records: 0,
+            gridlines: false,
+            formatting_marks: false,
+            text_boundaries: false,
+            field_shading: Default::default(),
+            cursor_overrides: Vec::new(),
+            pointer_mods: Default::default(),
+            pressed: None,
+            presentation: host::Presentation::default(),
+            watch: fonts::Watch::default(),
+            services: crate::services::Services::default(),
+            bindings: input::Bindings::default(),
+            autocorrect: Default::default(),
+        };
+        for d in &options.dictionaries {
+            // shortcut: a dictionary that doesn't parse is left out silently; report it as a warning event if hosts
+            // need to know at creation.
+            let _ = s.services.spelling.add_dictionary(&d.language, &d.aff.0, &d.dic.0);
+        }
+        s.configure();
+        s.fonts_opened();
+        s.state = s.build_state();
+        s
+    }
+
+    /// Runs `f` on the editor, then rebuilds the state as after a change: for the crate's tests to read and set up
+    /// what the API doesn't reach.
+    #[cfg(test)]
+    pub(crate) fn with_editor<R>(&mut self, f: impl FnOnce(&mut Editor) -> R) -> R {
+        let out = f(&mut self.editor);
+        self.changed(Vec::new());
+        out
+    }
+
+    /// This session's id in its engine.
+    pub fn id(&self) -> SessionId {
+        self.id
+    }
+
+    /// The state at the last change.
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+
+    /// Makes the editor follow the session's settings (after creating it, and after each open).
+    fn configure(&mut self) {
+        let mode = self.editor_mode();
+        self.editor.set_mode(mode);
+        self.services.document_replaced(self.editor.document());
+        self.editor.set_author(&self.author.name, self.author.identity.clone());
+        if self.track_changes {
+            self.editor.set_tracking(true);
+            // Turning tracking on for the session isn't an edit of the document just opened.
+            self.editor.mark_saved();
+        }
+    }
+
+    /// The editor's mode for the session's settings: read only wins over the mode.
+    fn editor_mode(&self) -> crate::editing::Mode {
+        match (self.read_only, self.mode) {
+            (true, _) => crate::editing::Mode::ReadOnly,
+            (false, Mode::Editing) => crate::editing::Mode::Editing,
+            (false, Mode::Design) => crate::editing::Mode::Design,
+        }
+    }
+
+    /// Rebuilds the state after an observable change and tells the listener, the state first.
+    fn changed(&mut self, events: Vec<Event>) {
+        let revisions = self.state.review.revisions;
+        let selection = std::mem::take(&mut self.state.selection);
+        let editing = std::mem::take(&mut self.state.editing);
+        self.state = crate::prof::time("session:state", || self.build_state());
+        self.emit(Event::StateChanged(self.state.clone()));
+        for e in events {
+            let review = match &e {
+                Event::DocumentChanged(record) => self.review_events(record, revisions),
+                _ => Vec::new(),
+            };
+            self.emit(e);
+            review.into_iter().for_each(|r| self.emit(r));
+        }
+        self.popover_follow();
+        let mut said = std::mem::take(&mut self.services.said);
+        said.extend(self.services.announcer.next(&mut self.editor, &self.services.spelling, &self.language, self.read_only));
+        if self.state.editing != editing {
+            self.emit(Event::EditingTargetChanged(self.state.editing.clone()));
+            // Screen readers hear where the editor went, first.
+            let text = match &self.state.editing {
+                crate::api::state::EditingTarget::SubTemplate { name, .. } => format!("Editing sub-template {name}"),
+                crate::api::state::EditingTarget::Template => "Back to the template".into(),
+            };
+            said.insert(0, (crate::api::services::AnnouncementKind::Mode, text));
+        }
+        self.announce(said);
+        if self.state.selection != selection {
+            self.emit(Event::SelectionChanged(self.state.selection.clone()));
+        }
+        self.blink_follow();
+        self.deliver_requests();
+    }
+
+    /// Says what a change calls for, as one announcement: the kinds the application turned off are left out, and the
+    /// announcement's kind is what its first part is about.
+    fn announce(&self, said: Vec<(crate::api::services::AnnouncementKind, String)>) {
+        let said: Vec<_> = said.into_iter().filter(|s| !self.services.silenced.contains(&s.0)).collect();
+        if let Some(&(kind, _)) = said.first() {
+            let text = said.into_iter().map(|s| s.1).collect::<Vec<_>>().join(", ");
+            self.emit(Event::Announcement { text, kind });
+        }
+    }
+
+    fn emit(&self, event: Event) {
+        self.shared.emit(self.id, &event);
+    }
+
+    /// Lays out the rest of the document: for the answers that give pages.
+    fn complete_layout(&mut self) {
+        let fonts = self.fonts.fonts();
+        self.editor.complete(&fonts);
+    }
+
+    /// The state now, one sequence after the last.
+    fn build_state(&mut self) -> State {
+        let fonts = self.fonts.fonts();
+        let flags = super::state::Flags {
+            sequence: self.state.sequence + 1,
+            mode: self.mode,
+            read_only: self.read_only,
+            language: &self.language,
+            zoom: self.presentation.zoom(),
+            gridlines: self.gridlines,
+            fonts: &fonts,
+        };
+        let mut state = super::state::build(&mut self.editor, flags);
+        drop(fonts);
+        state.fonts = self.watch.state.clone();
+        state.theme_colours = self.editor.theme_colours();
+        services::fill_state(self, &mut state);
+        review::fill_state(self, &mut state);
+        host::fill_state(self, &mut state);
+        state
+    }
+}
+
+#[cfg(test)]
+mod tests;

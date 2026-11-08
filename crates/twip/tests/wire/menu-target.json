@@ -1,0 +1,38 @@
+[
+  {
+    "kind": "text"
+  },
+  {
+    "kind": "misspelling",
+    "language": "en-US",
+    "word": "teh"
+  },
+  {
+    "address": "https://example.com",
+    "kind": "link"
+  },
+  {
+    "kind": "table"
+  },
+  {
+    "kind": "picture"
+  },
+  {
+    "kind": "textBox"
+  },
+  {
+    "id": "field-1",
+    "kind": "element"
+  },
+  {
+    "id": "r7",
+    "kind": "revision"
+  },
+  {
+    "id": "c4",
+    "kind": "comment"
+  },
+  {
+    "kind": "headerFooter"
+  }
+]

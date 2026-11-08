@@ -1,0 +1,56 @@
+{
+  "id": "E2E-CC-01",
+  "title": "A click on a checkbox content control toggles it and leaves the caret after it, nothing selected; Space toggles it back; undo restores it",
+  "fixture": "FX-REPEAT-REGION.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 7,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☒ done",
+          "10": "☒ done"
+        },
+        "selection": {
+          "kind": "caret"
+        },
+        "caret": {
+          "para": 7,
+          "offset": 1
+        }
+      }
+    },
+    {
+      "type": " "
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☐ done"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "☒ done"
+        }
+      }
+    }
+  ]
+}

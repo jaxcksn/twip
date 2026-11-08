@@ -1,0 +1,39 @@
+{
+  "id": "E2E-TS-18",
+  "title": "A drag from one inner cell into the next selects a cell block of the inner table, not the containing cell",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 2,
+          "offset": 2
+        },
+        "to": {
+          "para": 3,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 1,
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            0,
+            1
+          ]
+        }
+      }
+    }
+  ]
+}

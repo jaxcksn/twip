@@ -1,0 +1,54 @@
+{
+  "id": "MT-PTBL-BS-L1",
+  "title": "Paragraph to table: Backspace at the start of the paragraph after the table and at the first cell's start does nothing (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 31,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 31,
+          "offset": 0,
+          "depth": 0
+        },
+        "text": {
+          "31": "Paragraph after the outer table.",
+          "30": "x"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX-NEST-DEEP, nesting depth 6",
+          "1": "Level 1, before"
+        },
+        "undo_depth": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "fixture": "FX-MERGE-DATA.docx",
+  "id": "FUZZ-FX-MERGE-DATA-8",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 16,
+        "para": 1
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": false,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"F1 one field\", detail: \"[Control(ControlId(188587))] not closed in paragraph 188588\" }] (Caret(Position { story: Body, place: Text { para: ParaId(188588), offset: Unit(12), affinity: Downstream } }) in Some(\"e\\u{301}e\\u{301}Store: x\"))"
+}

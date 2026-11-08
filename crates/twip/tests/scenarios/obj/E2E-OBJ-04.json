@@ -1,0 +1,53 @@
+{
+  "id": "E2E-OBJ-04",
+  "title": "A click on a text box's border selects the box; inside it, the text",
+  "fixture": "FX-STORIES.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "float": 0,
+        "at": "top"
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object",
+          "float": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "float": 0,
+        "at": "bottom-right"
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object",
+          "float": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 33,
+        "offset": 3
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 33,
+          "offset": 3
+        }
+      }
+    }
+  ]
+}

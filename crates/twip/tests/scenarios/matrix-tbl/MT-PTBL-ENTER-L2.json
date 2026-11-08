@@ -1,0 +1,64 @@
+{
+  "id": "MT-PTBL-ENTER-L2",
+  "title": "Paragraph to table: Enter at the first cell's start (a paragraph precedes the table) adds a paragraph in the cell; Enter at the paragraph's end adds one outside (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "",
+          "3": "Level 2, before"
+        },
+        "caret": {
+          "para": 3,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Level 1, before",
+          "2": "",
+          "3": "Level 2, before"
+        },
+        "caret": {
+          "para": 2,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

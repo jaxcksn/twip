@@ -1,0 +1,17 @@
+{
+  "name": "style-dialog",
+  "fixture": "editor/FX-STYLES.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "call", "method": "dialogs.openStyle", "args": [{"modify": "Heading1"}], "save": "style", "result": {"kind": "style", "values": {"name": "Heading 1", "size": 16, "bold": true, "basedOn": "Normal", "next": "Normal", "quick": true}}},
+    {"op": "call", "method": "@style.update", "args": [{"size": 20}], "save": "style", "result": {"values": {"size": 20, "description": {"$type": "string"}}}},
+    {"op": "call", "method": "@style.apply"},
+    {"op": "call", "method": "dialogs.openStyle", "args": [{"modify": "Heading1"}], "result": {"values": {"size": 20}}},
+    {"op": "command", "command": {"type": "undo"}},
+    {"op": "call", "method": "dialogs.openStyle", "args": [{"modify": "Heading1"}], "result": {"values": {"size": 16}}},
+    {"op": "call", "method": "dialogs.openStyle", "args": ["create"], "save": "new", "result": {"values": {"name": "Style1", "shortForm": true}}},
+    {"op": "call", "method": "@new.update", "args": [{"name": "callout"}], "save": "new"},
+    {"op": "call", "method": "@new.apply"},
+    {"op": "expectError", "code": "invalid-argument"}
+  ]
+}

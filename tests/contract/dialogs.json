@@ -1,0 +1,95 @@
+{
+  "name": "dialogs",
+  "fixture": "editor/FX-services.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Apple" }], "result": { "found": true } },
+    { "op": "expectState", "match": {
+      "selection": { "text": "Apple" },
+      "dialogs": { "font": true, "paragraph": true, "tableProperties": false, "pictureSize": false, "altText": false, "hyperlink": true }
+    } },
+    { "op": "call", "method": "dialogs.open", "args": ["tableProperties"] },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "select", "value": "paragraph" } },
+
+    { "op": "call", "method": "dialogs.open", "args": ["font"], "save": "font", "result": {
+      "kind": "font",
+      "values": { "style": "mixed", "size": 11, "subscript": false, "superscript": false },
+      "fields": { "size": { "label": { "$type": "string" }, "enabled": true }, "style": { "kind": "choice" } }
+    } },
+    { "op": "call", "method": "@font.update", "args": [{ "size": 14 }], "save": "font", "result": { "values": { "size": 14, "style": "mixed" } } },
+    { "op": "call", "method": "@font.update", "args": [{ "subscript": true }], "save": "font", "result": { "values": { "subscript": true, "superscript": false } } },
+    { "op": "call", "method": "@font.update", "args": [{ "superscript": true }], "save": "font", "result": { "values": { "superscript": true, "subscript": false } } },
+    { "op": "call", "method": "@font.update", "args": [{ "superscript": false }], "save": "font", "result": { "values": { "superscript": false, "subscript": false } } },
+    { "op": "expectState", "match": { "revision": 1, "formatting": { "size": 11 } } },
+    { "op": "call", "method": "@font.apply" },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 2 }] },
+    { "op": "expectState", "match": { "revision": 2, "formatting": { "size": 14, "superscript": false }, "history": { "canUndo": true } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "revision": 3, "formatting": { "size": 11 }, "history": { "canUndo": false } } },
+    { "op": "call", "method": "dialogs.open", "args": ["font"], "save": "font2" },
+    { "op": "call", "method": "@font2.update", "args": [{ "size": 20 }], "save": "font2" },
+    { "op": "call", "method": "@font2.cancel" },
+    { "op": "expectState", "match": { "revision": 3, "formatting": { "size": 11 } } },
+
+    { "op": "call", "method": "find.next", "args": [{ "text": "Teh" }], "result": { "found": true } },
+    { "op": "call", "method": "dialogs.open", "args": ["paragraph"], "save": "para", "result": { "kind": "paragraph", "values": { "alignment": "left" } } },
+    { "op": "call", "method": "@para.update", "args": [{ "alignment": "center" }], "save": "para", "result": { "values": { "alignment": "center" } } },
+    { "op": "call", "method": "@para.apply" },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 4 }] },
+    { "op": "expectState", "match": { "revision": 4, "paragraph": { "alignment": "center" } } },
+
+    { "op": "call", "method": "dialogs.open", "args": ["pageSetup"], "save": "page", "result": { "values": { "orientation": "portrait", "width": 612, "height": 792 } } },
+    { "op": "call", "method": "@page.update", "args": [{ "orientation": "landscape" }], "save": "page", "result": { "values": { "orientation": "landscape", "width": 792, "height": 612 } } },
+    { "op": "call", "method": "@page.apply" },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 5 }] },
+    { "op": "expectState", "match": { "revision": 5, "page": { "orientation": "landscape", "size": { "width": 792, "height": 612 } } } },
+
+    { "op": "call", "method": "find.next", "args": [{ "text": "End." }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "moveSelection", "by": "lineEdge", "direction": "forward" } },
+    { "op": "call", "method": "dialogs.open", "args": ["insertTable"], "save": "insert", "result": { "kind": "insertTable", "values": { "rows": { "$type": "number" } } } },
+    { "op": "call", "method": "@insert.update", "args": [{ "rows": 3, "columns": 4 }], "save": "insert", "result": { "values": { "rows": 3, "columns": 4 } } },
+    { "op": "call", "method": "@insert.apply" },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 6 }] },
+    { "op": "expectState", "match": { "revision": 6, "selection": { "table": { "rows": 3, "columns": 4 } } } },
+
+    { "op": "call", "method": "find.next", "args": [{ "text": "Cell one" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "dialogs": { "tableProperties": true, "pictureSize": false } } },
+    { "op": "call", "method": "dialogs.open", "args": ["tableProperties"], "save": "table", "result": { "values": { "alignment": "left" } } },
+    { "op": "call", "method": "@table.update", "args": [{ "alignment": "center" }], "save": "table", "result": { "values": { "alignment": "center" } } },
+    { "op": "call", "method": "@table.apply" },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 7 }] },
+    { "op": "expectState", "match": { "revision": 7, "selection": { "table": { "alignment": "center", "rows": 2 } } } },
+
+    { "op": "call", "method": "dialogs.open", "args": ["accessibility"], "save": "check", "result": {
+      "kind": "accessibility", "values": { "issues": [{ "id": { "$type": "string" }, "text": { "$type": "string" } }] }
+    } },
+    { "op": "call", "method": "@check.apply" },
+    { "op": "expectState", "match": { "revision": 7 } },
+
+    { "op": "command", "command": { "type": "selectNextObject", "value": "next" } },
+    { "op": "expectState", "match": {
+      "selection": { "kind": "object", "object": { "kind": "picture", "width": 72, "height": 54 } },
+      "dialogs": { "pictureSize": true, "altText": true }
+    } },
+    { "op": "call", "method": "dialogs.open", "args": ["pictureSize"], "save": "size", "result": { "values": { "width": 72, "height": 54 } } },
+    { "op": "call", "method": "@size.update", "args": [{ "lockAspect": true, "width": 144 }], "save": "size", "result": { "values": { "width": 144, "height": 108 } } },
+    { "op": "call", "method": "@size.apply" },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 8 }] },
+    { "op": "expectState", "match": { "revision": 8, "selection": { "object": { "width": 144, "height": 108 } } } },
+
+    { "op": "call", "method": "dialogs.open", "args": ["altText"], "save": "alt", "result": { "values": { "text": "", "decorative": false } } },
+    { "op": "call", "method": "@alt.update", "args": [{ "text": "A blue rectangle" }], "save": "alt" },
+    { "op": "call", "method": "@alt.apply" },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 9 }] },
+    { "op": "expectState", "match": { "revision": 9, "selection": { "object": { "altText": "A blue rectangle" } } } },
+
+    { "op": "call", "method": "find.next", "args": [{ "text": "the example site" }], "result": { "found": true } },
+    { "op": "call", "method": "dialogs.open", "args": ["hyperlink"], "save": "link", "result": { "values": { "text": "the example site", "address": "https://example.com/" } } },
+    { "op": "call", "method": "@link.update", "args": [{ "address": "https://example.org/" }], "save": "link" },
+    { "op": "call", "method": "@link.apply" },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 10 }] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "the example site" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "revision": 10, "selection": { "link": { "address": "https://example.org/" } } } }
+  ]
+}

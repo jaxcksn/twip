@@ -1,0 +1,82 @@
+{
+  "id": "E2E-OBJ-10",
+  "title": "With Ctrl, a side handle resizes a picture about its centre: the opposite side moves by the same amount",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "float": 1
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "float": 1,
+          "at": "right"
+        },
+        "to": {
+          "float": 1,
+          "at": "right",
+          "dx": 18
+        }
+      },
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 306.0,
+            "y": 7.2,
+            "w": 136.8,
+            "h": 72.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "selection": {
+          "kind": "object",
+          "float": 1
+        },
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 324.0,
+            "w": 100.8,
+            "h": 72.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  ]
+}

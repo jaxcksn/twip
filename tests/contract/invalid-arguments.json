@@ -1,0 +1,17 @@
+{
+  "name": "invalid-arguments",
+  "fixture": "editor/FX-mixed-format.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "expectEvents", "match": [] },
+    { "op": "command", "command": { "type": "setFontSize", "value": -3 } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "insertTable", "rows": 0, "columns": 2 } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "expectState", "match": { "revision": 1, "modified": false, "formatting": { "size": 11 }, "history": { "canUndo": false } } },
+    { "op": "command", "command": { "type": "setFontSize", "value": 12 } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged", "origin": "api", "revision": 2 }] },
+    { "op": "expectState", "match": { "revision": 2, "formatting": { "size": 12 } } }
+  ]
+}

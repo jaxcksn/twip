@@ -1,0 +1,320 @@
+{
+  "description": "Author colours in a fixed-format export with markup: one insertion per author, each in its own paragraph after plain text, made in the order given by inserted_in_turn; and one deletion by the author who inserted first. Each case runs in a fresh application session; same-session-two-documents makes two documents in one session (B and C first, then A, B and C); reopened-in-a-new-session makes the document in one session, saves it and exports it from another session that has made no revisions. Colours are #RRGGBB as exported; plain text is #000000. Option values: -1 means \"by author\".",
+  "options": {
+    "InsertedTextColor": -1,
+    "DeletedTextColor": -1,
+    "RevisedPropertiesColor": -1,
+    "MoveFromTextColor": 11,
+    "MoveToTextColor": 11,
+    "RevisedLinesColor": 6,
+    "CommentsColor": -1
+  },
+  "cases": {
+    "twelve-authors-made-in-document-order": {
+      "paragraphs": [
+        {
+          "paragraph": 1,
+          "author": "Author A",
+          "inserted_in_turn": 1,
+          "text_colour": "#D13438",
+          "underline_colour": "#D13438"
+        },
+        {
+          "paragraph": 2,
+          "author": "Author B",
+          "inserted_in_turn": 2,
+          "text_colour": "#0078D4",
+          "underline_colour": "#0078D4"
+        },
+        {
+          "paragraph": 3,
+          "author": "Author C",
+          "inserted_in_turn": 3,
+          "text_colour": "#5C2E91",
+          "underline_colour": "#5C2E91"
+        },
+        {
+          "paragraph": 4,
+          "author": "Author D",
+          "inserted_in_turn": 4,
+          "text_colour": "#498205",
+          "underline_colour": "#498205"
+        },
+        {
+          "paragraph": 5,
+          "author": "Author E",
+          "inserted_in_turn": 5,
+          "text_colour": "#CC3595",
+          "underline_colour": "#CC3595"
+        },
+        {
+          "paragraph": 6,
+          "author": "Author F",
+          "inserted_in_turn": 6,
+          "text_colour": "#7160E8",
+          "underline_colour": "#7160E8"
+        },
+        {
+          "paragraph": 7,
+          "author": "Author G",
+          "inserted_in_turn": 7,
+          "text_colour": "#038387",
+          "underline_colour": "#038387"
+        },
+        {
+          "paragraph": 8,
+          "author": "Author H",
+          "inserted_in_turn": 8,
+          "text_colour": "#6D5700",
+          "underline_colour": "#6D5700"
+        },
+        {
+          "paragraph": 9,
+          "author": "Author I",
+          "inserted_in_turn": 9,
+          "text_colour": "#CF0F1F",
+          "underline_colour": "#CF0F1F"
+        },
+        {
+          "paragraph": 10,
+          "author": "Author J",
+          "inserted_in_turn": 10,
+          "text_colour": "#4E6AED",
+          "underline_colour": "#4E6AED"
+        },
+        {
+          "paragraph": 11,
+          "author": "Author K",
+          "inserted_in_turn": 11,
+          "text_colour": "#B146C2",
+          "underline_colour": "#B146C2"
+        },
+        {
+          "paragraph": 12,
+          "author": "Author L",
+          "inserted_in_turn": 12,
+          "text_colour": "#394146",
+          "underline_colour": "#394146"
+        }
+      ],
+      "deletion": {
+        "author": "Author A",
+        "text_colour": [
+          "#D13438"
+        ],
+        "strike_colour": [
+          "#D13438"
+        ]
+      },
+      "revision_authors": [
+        "Author A",
+        "Author B",
+        "Author C",
+        "Author D",
+        "Author E",
+        "Author F",
+        "Author G",
+        "Author H",
+        "Author I",
+        "Author J",
+        "Author K",
+        "Author L",
+        "Author A"
+      ]
+    },
+    "three-authors-made-in-reverse-document-order": {
+      "paragraphs": [
+        {
+          "paragraph": 1,
+          "author": "Author A",
+          "inserted_in_turn": 3,
+          "text_colour": "#5C2E91",
+          "underline_colour": "#5C2E91"
+        },
+        {
+          "paragraph": 2,
+          "author": "Author B",
+          "inserted_in_turn": 2,
+          "text_colour": "#0078D4",
+          "underline_colour": "#0078D4"
+        },
+        {
+          "paragraph": 3,
+          "author": "Author C",
+          "inserted_in_turn": 1,
+          "text_colour": "#D13438",
+          "underline_colour": "#D13438"
+        }
+      ],
+      "deletion": {
+        "author": "Author C",
+        "text_colour": [
+          "#D13438"
+        ],
+        "strike_colour": [
+          "#D13438"
+        ]
+      },
+      "revision_authors": [
+        "Author A",
+        "Author B",
+        "Author C",
+        "Author C"
+      ]
+    },
+    "three-authors-made-in-mixed-order": {
+      "paragraphs": [
+        {
+          "paragraph": 1,
+          "author": "Author C",
+          "inserted_in_turn": 3,
+          "text_colour": "#5C2E91",
+          "underline_colour": "#5C2E91"
+        },
+        {
+          "paragraph": 2,
+          "author": "Author A",
+          "inserted_in_turn": 1,
+          "text_colour": "#D13438",
+          "underline_colour": "#D13438"
+        },
+        {
+          "paragraph": 3,
+          "author": "Author B",
+          "inserted_in_turn": 2,
+          "text_colour": "#0078D4",
+          "underline_colour": "#0078D4"
+        }
+      ],
+      "deletion": {
+        "author": "Author A",
+        "text_colour": [
+          "#D13438"
+        ],
+        "strike_colour": [
+          "#D13438"
+        ]
+      },
+      "revision_authors": [
+        "Author C",
+        "Author A",
+        "Author B",
+        "Author A"
+      ]
+    },
+    "same-session-two-documents": {
+      "first": {
+        "paragraphs": [
+          {
+            "paragraph": 1,
+            "author": "Author B",
+            "inserted_in_turn": 2,
+            "text_colour": "#0078D4",
+            "underline_colour": "#0078D4"
+          },
+          {
+            "paragraph": 2,
+            "author": "Author C",
+            "inserted_in_turn": 1,
+            "text_colour": "#D13438",
+            "underline_colour": "#D13438"
+          }
+        ],
+        "deletion": {
+          "author": "Author C",
+          "text_colour": [
+            "#D13438"
+          ],
+          "strike_colour": [
+            "#D13438"
+          ]
+        },
+        "revision_authors": [
+          "Author B",
+          "Author C",
+          "Author C"
+        ]
+      },
+      "second": {
+        "paragraphs": [
+          {
+            "paragraph": 1,
+            "author": "Author A",
+            "inserted_in_turn": 1,
+            "text_colour": "#5C2E91",
+            "underline_colour": "#5C2E91"
+          },
+          {
+            "paragraph": 2,
+            "author": "Author B",
+            "inserted_in_turn": 2,
+            "text_colour": "#0078D4",
+            "underline_colour": "#0078D4"
+          },
+          {
+            "paragraph": 3,
+            "author": "Author C",
+            "inserted_in_turn": 3,
+            "text_colour": "#D13438",
+            "underline_colour": "#D13438"
+          }
+        ],
+        "deletion": {
+          "author": "Author A",
+          "text_colour": [
+            "#5C2E91"
+          ],
+          "strike_colour": [
+            "#5C2E91"
+          ]
+        },
+        "revision_authors": [
+          "Author A",
+          "Author B",
+          "Author C",
+          "Author A"
+        ]
+      }
+    },
+    "reopened-in-a-new-session": {
+      "paragraphs": [
+        {
+          "paragraph": 1,
+          "author": "Author C",
+          "inserted_in_turn": 3,
+          "text_colour": "#D13438",
+          "underline_colour": "#D13438"
+        },
+        {
+          "paragraph": 2,
+          "author": "Author A",
+          "inserted_in_turn": 1,
+          "text_colour": "#0078D4",
+          "underline_colour": "#0078D4"
+        },
+        {
+          "paragraph": 3,
+          "author": "Author B",
+          "inserted_in_turn": 2,
+          "text_colour": "#5C2E91",
+          "underline_colour": "#5C2E91"
+        }
+      ],
+      "deletion": {
+        "author": "Author A",
+        "text_colour": [
+          "#0078D4"
+        ],
+        "strike_colour": [
+          "#0078D4"
+        ]
+      },
+      "revision_authors": [
+        "Author C",
+        "Author A",
+        "Author B",
+        "Author A"
+      ]
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "id": "MT-MERGE-LR-L3",
+  "title": "Merged cells: Right at a horizontally merged cell's end goes to the next cell's start, Left back; a vertical merge's end goes to its row's next cell (nesting level 3)",
+  "fixture": "FX-TBL-MERGED-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-LR-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 7,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 8,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 6,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 12,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

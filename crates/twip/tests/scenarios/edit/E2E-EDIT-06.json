@@ -1,0 +1,53 @@
+{
+  "id": "E2E-EDIT-06",
+  "title": "Typing replaces the selection",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 0
+        },
+        "to": {
+          "para": 1,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 1,
+            "offset": 5
+          }
+        }
+      }
+    },
+    {
+      "type": "Long"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Long paragraph."
+        },
+        "caret": {
+          "para": 1,
+          "offset": 4
+        }
+      }
+    }
+  ]
+}

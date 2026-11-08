@@ -1,0 +1,44 @@
+{
+  "id": "MX-PTBL-03",
+  "title": "Table to paragraph: Left from the paragraph after a table goes to its last row's end-of-row mark",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret",
+          "focus": {
+            "row_end": {
+              "table": 0,
+              "row": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "id": "MT-NESTIN-SHIFT-L3",
+  "title": "Containing-cell text to inner table: Shift+Right into the inner table and Shift+Left into it from the text after make text selections (nesting level 3)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 3,
+            "offset": 15
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowLeft",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 19,
+            "offset": 0
+          }
+        }
+      }
+    }
+  ]
+}

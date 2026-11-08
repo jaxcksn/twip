@@ -1,0 +1,33 @@
+{
+  "id": "E2E-ADV-05",
+  "title": "A double-click on a column border fits the column to its content; the other columns keep their widths",
+  "fixture": "FX-TBL-NOBORDER.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "table": 0,
+        "row": 1,
+        "border": 2
+      },
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3,
+            "grid": [
+              156,
+              36.3,
+              156
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

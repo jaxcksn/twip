@@ -1,0 +1,70 @@
+{
+  "id": "MT-NESTIN-UD-L2",
+  "title": "Containing-cell text to inner table: Down from the text before enters the inner first row; Down from the inner last row goes to the text after; Up mirrors (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 21,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 23,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 21,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

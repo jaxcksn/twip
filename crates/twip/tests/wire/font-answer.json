@@ -1,0 +1,20 @@
+[
+  {
+    "kind": "font"
+  },
+  {
+    "family": "Arimo",
+    "kind": "family"
+  },
+  {
+    "category": "serif",
+    "kind": "category"
+  },
+  {
+    "kind": "missing"
+  },
+  {
+    "kind": "failed",
+    "message": "offline"
+  }
+]

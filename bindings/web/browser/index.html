@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Twip browser test</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 16px; background: #eee; }
+  #editor { width: 640px; height: 480px; outline: 1px solid #bbb; }
+</style>
+<div id="editor"></div>
+<script type="module">
+  import { Editor, FontLibrary } from '/web/dist/index.js';
+
+  const bytes = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+  await FontLibrary.default().add('/font.ttf');
+  window.editor = await Editor.mount(document.getElementById('editor'), { document: await bytes('/hello.docx') });
+</script>

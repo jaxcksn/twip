@@ -1,0 +1,69 @@
+{
+  "id": "E2E-EDIT-09",
+  "title": "Backspace after a table does nothing; Delete before a table moves the paragraph into the first cell",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 12,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "12": "Paragraph between the first and second tables."
+        },
+        "caret": {
+          "para": 12,
+          "offset": 0,
+          "depth": 0
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "12": "Paragraph between the first and second tables.T2 R1 C1"
+        },
+        "caret": {
+          "para": 12,
+          "offset": 46,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "12": "Paragraph between the first and second tables.",
+          "13": "T2 R1 C1"
+        }
+      }
+    }
+  ]
+}

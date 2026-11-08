@@ -1,0 +1,8 @@
+{
+  "name": "@twip/angular",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Angular (21+) integration for the twip engine. Not started; versions independently of the engine.",
+  "license": "Apache-2.0",
+  "peerDependencies": { "@twip/web": "workspace:^" }
+}

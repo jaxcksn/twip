@@ -1,0 +1,103 @@
+{
+  "id": "E2E-TS-09-BOX",
+  "title": "Ctrl+Shift+Enter splits the table above the caret's row with an empty paragraph between, holding the caret; in the first row it adds a paragraph above (in a text box)",
+  "fixture": "FX-TBL-BASIC-BOX.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-09.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Enter",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 1
+          },
+          {
+            "rows": 2
+          }
+        ],
+        "text": {
+          "19": "",
+          "20": "T2 R2 C1"
+        },
+        "caret": {
+          "para": 19,
+          "offset": 0,
+          "depth": 0
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 3
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 2
+      }
+    },
+    {
+      "key": "Enter",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "16": "",
+          "17": "T2 R1 C1"
+        }
+      }
+    }
+  ]
+}

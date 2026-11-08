@@ -1,0 +1,238 @@
+{
+  "description": "reject all revisions of FX-REVIEW-STORIES.docx, in every story.",
+  "fixture": "FX-REVIEW-STORIES.docx",
+  "scope": "all",
+  "op": "reject",
+  "error": null,
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "The meeting forecast hereby vendors practical schedule state entry estimate.￼ ￼",
+          "runs": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "￼",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [
+                "rStyle:val=FootnoteReference"
+              ],
+              "was": null
+            },
+            {
+              "text": " ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "￼",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [
+                "rStyle:val=EndnoteReference"
+              ],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "￼Regional maintenance accessibility tax finds record proposal denied contract onboarding support network. Scheduled trend suggestions board order update granted agreement.",
+          "runs": [
+            {
+              "text": "￼Regional maintenance accessibility tax finds record proposal denied contract onboarding support network. Scheduled trend suggestions board order update granted agreement.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ],
+      "header-default": [
+        {
+          "text": "Header  commented",
+          "runs": [
+            {
+              "text": "Header  commented",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ],
+      "footer-default": [
+        {
+          "text": "Footer deleted",
+          "runs": [
+            {
+              "text": "Footer deleted",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ],
+      "footnotes": [
+        {
+          "text": " note  commented",
+          "runs": [
+            {
+              "text": " note  commented",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [
+            "pStyle:val=FootnoteText"
+          ],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ],
+      "endnotes": [
+        {
+          "text": " end  deleted in a note",
+          "runs": [
+            {
+              "text": " end  deleted in a note",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [
+            "pStyle:val=EndnoteText"
+          ],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ],
+      "textboxes": [
+        {
+          "text": "Box  commented",
+          "runs": [
+            {
+              "text": "Box  commented",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": []
+  }
+}

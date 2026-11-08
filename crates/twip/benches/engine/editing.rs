@@ -1,0 +1,437 @@
+//! The editor's inputs, each timed whole (editor and layout through the caret's page) at a seeded random place;
+//! background layout is drained between them, untimed. Typing is the top performance priority (the constitution's
+//! Engine Constraints).
+
+use std::cell::RefCell;
+
+use divan::Bencher;
+use twip::internal::editing::Editor;
+use twip::internal::editing::commands::{self, Command, Dir, MoveBy};
+use twip::internal::editing::position::{Position, StoryId};
+use twip::internal::editing::selection::Selection;
+use twip::internal::font::Fonts;
+use twip::internal::layout::{ParaId, Unit};
+
+use super::Rng;
+
+/// An editor on a fixture, opened with its whole layout.
+fn open(name: &str, fonts: &Fonts) -> Editor {
+    let mut e = Editor::open(&super::fixture(name), fonts).expect("the fixture opens");
+    e.complete(fonts);
+    e
+}
+
+fn caret(e: &mut Editor, para: ParaId, unit: u32) {
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para, Unit(unit))));
+}
+
+/// The body paragraphs with text: (paragraph, length in units).
+fn text_paras(e: &Editor) -> Vec<(ParaId, u32)> {
+    let mut paras = Vec::new();
+    e.document().sections.iter().for_each(|s| super::paragraphs(&s.blocks, 0, &mut paras));
+    paras.into_iter().filter(|p| p.1 > 0).map(|p| (p.0, p.1)).collect()
+}
+
+/// `input`'s inputs.
+#[derive(Clone, Copy, Debug)]
+enum Input {
+    Typing,
+    Backspace,
+    Enter,
+    Down,
+    Right,
+    Undo,
+}
+
+impl Input {
+    fn command(self) -> Command {
+        match self {
+            Input::Typing => Command::InsertText("x".into()),
+            Input::Backspace => commands::deleting(Dir::Back, false),
+            Input::Enter => Command::InsertParagraph,
+            Input::Down => commands::moving(MoveBy::Line, Dir::Forward, false),
+            Input::Right => commands::moving(MoveBy::Char, Dir::Forward, false),
+            Input::Undo => Command::Undo,
+        }
+    }
+}
+
+/// One input at a random place in a text paragraph of `big.docx`, with tracked changes on or off.
+fn at_random_places(bencher: Bencher, input: Input, tracking: bool) {
+    let fonts = Fonts::system();
+    let mut e = open("big.docx", &fonts);
+    assert!(e.set_tracking(tracking), "tracking can be switched in big.docx");
+    let paras = text_paras(&e);
+    let (e, prof) = (RefCell::new(e), RefCell::new(super::Prof::default()));
+    let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+    bencher
+        .with_inputs(|| {
+            let mut e = e.borrow_mut();
+            let (para, len) = paras[rng.below(paras.len())];
+            caret(&mut e, para, rng.below(len as usize + 1) as u32);
+            if let Input::Undo = input {
+                e.execute(Command::InsertText("x".into()), &fonts);
+            }
+            while e.idle(&fonts) {}
+            super::Prof::skip();
+            input.command()
+        })
+        .bench_local_values(|command| {
+            let out = e.borrow_mut().execute(command, &fonts);
+            prof.borrow_mut().add();
+            out
+        });
+    prof.borrow_mut().print(&format!("input {input:?} tracking {tracking}"));
+}
+
+#[divan::bench(args = [Input::Typing, Input::Backspace, Input::Enter, Input::Down, Input::Right, Input::Undo], sample_size = 1)]
+fn input(bencher: Bencher, input: Input) {
+    at_random_places(bencher, input, false);
+}
+
+/// Typing with tracked changes on, beside `input(Typing)`. Budget: within 10% of it.
+#[divan::bench(sample_size = 1)]
+fn typing_tracked(bencher: Bencher) {
+    at_random_places(bencher, Input::Typing, true);
+}
+
+/// Typing at the end of a top-level paragraph and of the most deeply nested cell's (depth 7), the last keystroke
+/// undone between samples so the paragraph keeps its length: what differs is depth. Budget: depth 7 at most 1.5
+/// times depth 1.
+#[divan::bench(args = ["shallowest", "deepest"], sample_size = 1)]
+fn typing_nested(bencher: Bencher, which: &str) {
+    let fonts = Fonts::system();
+    let e = open("editor/FX-NEST-DEEP7.docx", &fonts);
+    let mut paras = Vec::new();
+    e.document().sections.iter().for_each(|s| super::paragraphs(&s.blocks, 0, &mut paras));
+    let depth = if which == "deepest" { paras.iter().map(|p| p.2).max().unwrap_or(0) } else { 1 };
+    let &(para, len, _) = paras.iter().find(|p| p.2 == depth).expect("a paragraph at that depth");
+    let (e, mut typed) = (RefCell::new(e), false);
+    bencher
+        .with_inputs(|| {
+            let mut e = e.borrow_mut();
+            if std::mem::replace(&mut typed, true) {
+                e.execute(Command::Undo, &fonts);
+            }
+            caret(&mut e, para, len);
+            while e.idle(&fonts) {}
+        })
+        .bench_local_values(|()| e.borrow_mut().execute(Command::InsertText("x".into()), &fonts));
+}
+
+/// Body paragraphs with text where `place` says: `body` (mid-document, top level), `cell` (in a table), `float` (one
+/// anchoring a floating object, which its text wraps around) or `columns` (in a section with several columns).
+fn places(doc: &twip::internal::docx::Document, place: &str) -> Vec<(ParaId, u32)> {
+    use twip::internal::docx::{Block, Inline};
+    fn walk(blocks: &[Block], depth: usize, columns: bool, place: &str, out: &mut Vec<(ParaId, u32)>) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => {
+                    let len: u32 = p.inlines.iter().map(|i| i.units() as u32).sum();
+                    let float = p.inlines.iter().any(|i| matches!(i, Inline::Float(..)));
+                    let wanted = match place {
+                        "body" => depth == 0,
+                        "cell" => depth > 0,
+                        "float" => float,
+                        _ => columns,
+                    };
+                    if wanted && len > 0 {
+                        out.push((ParaId(p.id), len));
+                    }
+                }
+                Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, depth + 1, columns, place, out)),
+            }
+        }
+    }
+    let mut out = Vec::new();
+    doc.sections.iter().for_each(|s| walk(&s.blocks, 0, s.columns.num > 1, place, &mut out));
+    out
+}
+
+/// Typing at the end of a paragraph where the fidelity rules do the most work (`places`): the middle one of its kind,
+/// the keystroke undone between samples so the paragraph keeps its length. Budget: p95 at most 1 ms, max at most
+/// 3 ms.
+#[divan::bench(
+    args = ["showcase/body", "showcase/cell", "showcase/float", "showcase/columns", "FX-OBJ/float", "FX-LONG-50/body", "FX-LONG-50/cell"],
+    sample_size = 1
+)]
+fn typing_in(bencher: Bencher, at: &str) {
+    let (name, place) = at.split_once('/').expect("document/place");
+    let file = match name {
+        "showcase" => "docx-feature-showcase.docx".to_string(),
+        n => format!("editor/{n}.docx"),
+    };
+    let fonts = Fonts::system();
+    let e = open(&file, &fonts);
+    let found = places(e.document(), place);
+    let &(para, len) = found.get(found.len() / 2).unwrap_or_else(|| panic!("{at}: no such paragraph"));
+    let (e, mut typed, prof) = (RefCell::new(e), false, RefCell::new(super::Prof::default()));
+    bencher
+        .with_inputs(|| {
+            let mut e = e.borrow_mut();
+            if std::mem::replace(&mut typed, true) {
+                e.execute(Command::Undo, &fonts);
+            }
+            caret(&mut e, para, len);
+            while e.idle(&fonts) {}
+            super::Prof::skip();
+        })
+        .bench_local_values(|()| {
+            let out = e.borrow_mut().execute(Command::InsertText("x".into()), &fonts);
+            prof.borrow_mut().add();
+            out
+        });
+    prof.borrow_mut().print(&format!("typing_in {at}"));
+}
+
+/// Typing through `api::Session` as the SDKs drive it (the state rebuilt and every event encoded as JSON, as the C
+/// ABI sends them), a line further down each keystroke. Budget: under 1 ms over `input(Typing)`.
+#[divan::bench(sample_size = 1)]
+fn typing_api(bencher: Bencher) {
+    use twip::api::engine::{Engine, SessionOptions};
+    use twip::api::event::Event;
+    use twip::api::fonts::FontLibrary;
+    let mut engine = Engine::new(FontLibrary::system());
+    engine.set_listener(|_, event| {
+        let json = match event {
+            Event::StateChanged(state) => serde_json::to_vec(state),
+            e => serde_json::to_vec(e),
+        };
+        divan::black_box(json.ok());
+    });
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("the session was just created");
+    s.open(&super::fixture("big.docx")).expect("the fixture opens");
+    let s = RefCell::new(s);
+    bencher
+        .with_inputs(|| {
+            let _ = s.borrow_mut().run(commands::moving(MoveBy::Line, Dir::Forward, false));
+        })
+        .bench_local_values(|()| s.borrow_mut().text("x"));
+}
+
+/// Typing in the first paragraph of a page with 100 theme-styled shapes (`shapes_doc`: mixed presets, some with
+/// text, shadows and glows, some wrapping). Budget: within the spread of `typing_api`.
+#[divan::bench(sample_size = 1)]
+fn typing_shapes(bencher: Bencher) {
+    let fonts = Fonts::system();
+    let mut e = Editor::open(&super::shapes_doc(), &fonts).expect("the document opens");
+    e.complete(&fonts);
+    let (para, len) = text_paras(&e)[0];
+    caret(&mut e, para, len / 2);
+    let e = RefCell::new(e);
+    bencher
+        .with_inputs(|| while e.borrow_mut().idle(&fonts) {})
+        .bench_local_values(|()| e.borrow_mut().execute(Command::InsertText("x".into()), &fonts));
+}
+
+/// Mail merge on `FX-MERGE-LARGE.docx` (2,000 elements, 500 references in one group).
+mod merge {
+    use std::cell::RefCell;
+
+    use divan::Bencher;
+    use twip::internal::editing::commands::Command;
+    use twip::internal::editing::elements::{self, Filter};
+    use twip::internal::font::Fonts;
+
+    use super::{Rng, caret, open, text_paras};
+
+    const DOC: &str = "editor/FX-MERGE-LARGE.docx";
+
+    fn command(v: serde_json::Value) -> Command {
+        serde_json::from_value(v).expect("a command")
+    }
+
+    /// The element list. Budget: under 200 ms.
+    #[divan::bench(sample_count = 20)]
+    fn elements(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let e = open(DOC, &fonts);
+        bencher.bench_local(|| elements::enumerate(e.document(), e.index(), &Filter::default()));
+    }
+
+    /// A frame's field shading, every field shaded, over the first two pages. Budget: under 1 ms.
+    #[divan::bench(sample_count = 20)]
+    fn field_shading(bencher: Bencher) {
+        use twip::api::services::FieldShading;
+        let fonts = Fonts::system();
+        let e = RefCell::new(open(DOC, &fonts));
+        bencher.bench_local(|| e.borrow_mut().field_shading(0..2, FieldShading::Always));
+    }
+
+    /// A rename over every reference in the largest `MERGEFIELD Group.`, undone between samples. Budget: under
+    /// 500 ms, one undo step.
+    #[divan::bench(sample_count = 20, sample_size = 1)]
+    fn rename(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let e = open(DOC, &fonts);
+        let fields = elements::enumerate(e.document(), e.index(), &Filter { kind: Some("field".into()), ..Filter::default() });
+        let mut groups = std::collections::BTreeMap::<String, usize>::new();
+        for f in &fields {
+            if let Some((g, _)) = f.code.as_deref().unwrap_or("").trim().strip_prefix("MERGEFIELD ").and_then(|c| c.split_once('.')) {
+                *groups.entry(g.to_string()).or_default() += 1;
+            }
+        }
+        let group = groups.into_iter().max_by_key(|(_, n)| *n).expect("MERGEFIELD codes").0;
+        let rename = serde_json::json!({
+            "type": "replaceInElements", "find": format!("{group}."), "replace": format!("{group}Renamed."), "in": "code"
+        });
+        let (e, mut renamed) = (RefCell::new(e), false);
+        bencher
+            .with_inputs(|| {
+                let mut e = e.borrow_mut();
+                if std::mem::replace(&mut renamed, true) {
+                    e.execute(Command::Undo, &fonts);
+                }
+                while e.idle(&fonts) {}
+                command(rename.clone())
+            })
+            .bench_local_values(|rename| e.borrow_mut().execute(rename, &fonts));
+    }
+
+    /// A field inserted at a random place. Budget: under 100 ms.
+    #[divan::bench(sample_size = 1)]
+    fn insert_field(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let e = open(DOC, &fonts);
+        let paras = text_paras(&e);
+        let (e, mut rng) = (RefCell::new(e), Rng(0x2545_f491_4f6c_dd1d));
+        let field = serde_json::json!({ "type": "insertField", "code": "MERGEFIELD Timing.F" });
+        bencher
+            .with_inputs(|| {
+                let mut e = e.borrow_mut();
+                let (para, len) = paras[rng.below(paras.len())];
+                caret(&mut e, para, rng.below(len as usize + 1) as u32);
+                while e.idle(&fonts) {}
+                command(field.clone())
+            })
+            .bench_local_values(|insert| e.borrow_mut().execute(insert, &fonts));
+    }
+}
+
+mod sub_templates {
+    use divan::Bencher;
+    use twip::api::command::{Command as Api, InsertField, ReferenceRule, SubTemplateName, SubTemplateRules};
+    use twip::internal::editing::commands::Command;
+    use twip::internal::font::Fonts;
+    use twip::internal::layout::{ParaId, Unit};
+
+    use super::open;
+
+    /// The sub-template fixture with Violation referenced 20 times from the template: its 4 and 16 more, one per
+    /// paragraph at the end.
+    fn twenty(fonts: &Fonts) -> twip::internal::editing::Editor {
+        let mut e = open("editor/FX-SUBTEMPLATES.docx", fonts);
+        let rules = SubTemplateRules {
+            rules: vec![ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None }],
+        };
+        e.execute(Api::SetSubTemplateRules(rules), fonts);
+        let last = e.document().sections.last().and_then(|s| s.blocks.last()).map(|b| match b {
+            twip::internal::docx::Block::Para(p) => ParaId(p.id),
+            twip::internal::docx::Block::Table(t) => ParaId(t.id),
+        });
+        if let Some(p) = last {
+            e.select_range(p, Unit(1000), Unit(1000), fonts);
+        }
+        for _ in 0..16 {
+            e.execute(Command::InsertParagraph, fonts);
+            e.execute(Api::InsertField(InsertField { code: "SUBTEMPLATE Violation".into(), display: None, show_code: None }), fonts);
+        }
+        e.complete(fonts);
+        e
+    }
+
+    fn violation() -> Api {
+        Api::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: None })
+    }
+
+    /// Into Violation, one keystroke there, and back to the template, its 20 references laid out again. Budget: under
+    /// 100 ms each way on this machine.
+    #[divan::bench(sample_count = 20, sample_size = 1)]
+    fn switch(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let mut e = twenty(&fonts);
+        bencher.bench_local(|| {
+            e.execute(violation(), &fonts);
+            e.execute(Command::InsertText("x".into()), &fonts);
+            e.execute(Api::CloseSubTemplate, &fonts);
+            e.ensure_current(&fonts);
+        });
+    }
+
+    /// Typing in Violation's body while it is referenced 20 times. Budget: within `typing_*`'s, since the template
+    /// lays its references out again only when it shows.
+    #[divan::bench(sample_size = 1)]
+    fn type_in_body_20_refs(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let mut e = twenty(&fonts);
+        e.execute(violation(), &fonts);
+        e.complete(&fonts);
+        bencher.bench_local(|| {
+            e.execute(Command::InsertText("x".into()), &fonts);
+            e.ensure_current(&fonts);
+        });
+    }
+}
+
+/// What screen readers get after a keystroke, on `FX-A11Y-REVIEW.docx` (about 100 pages, review marks, misspellings).
+mod a11y {
+    use std::cell::RefCell;
+
+    use divan::Bencher;
+    use twip::internal::editing::commands::Command;
+    use twip::internal::font::Fonts;
+    use twip::internal::services::a11y;
+    use twip::internal::services::spelling::Spellers;
+
+    use super::{caret, open, text_paras};
+
+    const DOC: &str = "editor/FX-A11Y-REVIEW.docx";
+
+    fn spellers() -> Spellers {
+        let dir = format!("{}/tests/fixtures/dictionaries", env!("CARGO_MANIFEST_DIR"));
+        let mut s = Spellers::default();
+        if let (Ok(aff), Ok(dic)) = (std::fs::read(format!("{dir}/en_US.aff")), std::fs::read(format!("{dir}/en_US.dic"))) {
+            s.add_dictionary("en-US", &aff, &dic).expect("the dictionary loads");
+        }
+        s
+    }
+
+    /// The caret window at a paragraph in the middle of the document. Budget: under 0.2 ms.
+    #[divan::bench(sample_size = 1)]
+    fn caret_window(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let mut e = open(DOC, &fonts);
+        let paras = text_paras(&e);
+        caret(&mut e, paras[paras.len() / 2].0, 3);
+        let spelling = spellers();
+        bencher.bench_local(|| a11y::window(&mut e, &spelling, "en-US", false));
+    }
+
+    /// After a keystroke, the tree built (reusing the paragraphs that didn't change) and compared with the one sent
+    /// before it: what the throttled update does.
+    /// Budget: under 5 ms.
+    #[divan::bench(sample_size = 1)]
+    fn tree_patch(bencher: Bencher) {
+        let fonts = Fonts::system();
+        let mut e = open(DOC, &fonts);
+        let paras = text_paras(&e);
+        caret(&mut e, paras[paras.len() / 2].0, 3);
+        let spelling = spellers();
+        let mut cache = a11y::TreeCache::default();
+        let sent = a11y::tree_with(&e, &spelling, "en-US", &mut cache);
+        let (e, sent, cache) = (RefCell::new(e), RefCell::new(sent), RefCell::new(cache));
+        bencher
+            .with_inputs(|| {
+                let mut e = e.borrow_mut();
+                e.execute(Command::InsertText("x".into()), &fonts);
+                while e.idle(&fonts) {}
+            })
+            .bench_local_values(|()| {
+                let now = a11y::tree_with(&e.borrow(), &spelling, "en-US", &mut cache.borrow_mut());
+                let update = a11y::diff(&sent.borrow(), &now);
+                *sent.borrow_mut() = now;
+                update
+            });
+    }
+}

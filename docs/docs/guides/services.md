@@ -1,0 +1,173 @@
+---
+title: Services
+sidebar_position: 5
+---
+
+# Services
+
+The engine computes the models behind a word processor's chrome, and your application draws them: a context menu,
+a dialog's fields, find results, spelling suggestions, a navigation pane. Each service is a property of the editor
+(`editor.menus`, `editor.find`, ...) or the session (`session.Menus`, `session.Find`, ...). The examples here are
+TypeScript; the .NET names are the same in PascalCase with `Async`.
+
+```ts file=../../examples/web/services.ts
+```
+
+## Context menu
+
+`contextMenu` (`ContextMenuRequested`) carries the menu for what was clicked and where to show it, in client pixels.
+Items are commands (with their label, state and shortcut), spelling suggestions, submenus and separators. Pass an
+item's `action` back to `menus.invoke` to run it as one transaction. `menus.contextMenu()` builds the menu without a
+click, as the context-menu key would. You can also build your own menu from `menu.target` and the catalog.
+
+In the browser, while a `contextMenu` listener is registered, the browser's own menu never opens over the document.
+With no listener, it does.
+
+## Dialogs
+
+`dialogs.open(kind)` returns a dialog session: the selection's current `values` (`'mixed'` where they differ), and
+for each field its label, kind, range and options. `update(patch)` recomputes dependent values; `apply()` validates
+and commits everything as one undo step; `cancel()` changes nothing. The dialogs are `font`, `paragraph`,
+`pageSetup`, `insertTable`, `tableProperties`, `pictureSize`, `altText`, `hyperlink`, `tabs`, `accessibility`,
+`bordersShading` and `frame`; the style dialogs are in [Styles](styles.md).
+
+### Borders and Shading
+
+`bordersShading` (.NET: `Dialogs.OpenBordersShadingAsync`) opens on the selection's paragraph: its edges (`top`,
+`bottom`, `left`, `right`, `between`, each a line or `null`) and its shading as written (`fill`, `pattern`,
+`patternColor`). A `setting` of `none`, `box` or `shadow` sets the edges with the line in `style`, `color` and `width`;
+setting an edge yourself (to that line, or `null`) makes the setting `custom`. `applyTo` is `paragraph`, or `text` when
+the selection is within one paragraph. Text has one border, a box (`none`, `box` or `shadow`). Changing `applyTo` shows
+that target's borders and shading.
+
+The Page Border tab (`pageSetting`, `pageTop`, `pageBottom`, `pageLeft`, `pageRight`) works the same way for the
+section's pages. `pageOffsetFrom` measures them from the page's edge or the text, `pageDisplay` picks the pages they
+show on, and `pageApplyTo` the section or the whole document.
+
+`apply` runs what changed: `setParagraphBorderLines`, `setTextBorder`, `setShading` and `setPageBorders`. Every border
+style draws, on paragraphs, text, cells and pages. Art page borders are kept but not drawn.
+
+### Frame
+
+`frame` (.NET: `Dialogs.OpenFrameAsync`) opens on the frame the selection is in, and is `unavailable` elsewhere. Its
+values are `setFrame`'s: text wrapping, width and height with their rules, the horizontal and vertical position (an
+alignment, or a distance when the alignment is `null`) with what each is relative to, the distance from text, and
+Lock anchor. **Move with text** (`moveWithText`) is the vertical position relative to the paragraph: turning it off
+makes it relative to the margin. Setting `remove` (its Remove Frame button) makes `apply` run `removeFrame`, which puts
+the frame's paragraphs back in the text before the paragraph it was anchored to.
+
+## Find and replace
+
+`find.next` and `find.previous` select and reveal the next match; `find.all` lists every match with its context and
+page, for a results pane; `replace` replaces the current match and finds the next; `replaceAll` is one
+transaction. Matching uses the text of the current markup view.
+
+## Spelling
+
+Add a Hunspell dictionary (`.aff` and `.dic` bytes) per language with `spelling.addDictionary`, or pass them in the
+session options. `next()` selects the next misspelling with its suggestions, `ignore` ignores a word for the
+session, and `add` adds it to the user's dictionary and emits `wordAdded` so you can save it. Give saved words back
+with `loadUserWords`.
+
+## The clipboard
+
+A mounted editor (or a `DocumentEditor`) owns the clipboard: Ctrl+C, Ctrl+X and Ctrl+V work with no code, with the
+document's formatting kept between Twip editors and plain text and HTML for other applications. Buttons and menus
+call the commands:
+
+```ts file=../../examples/web/clipboard.ts
+```
+
+- `copy` copies the selection, also when the editor is read only. `cut` copies and deletes it.
+- `paste` reads the system clipboard; `{ as: 'text' }` (Ctrl+Shift+V) drops the formatting. In the browser,
+  reading the clipboard from a button needs the page's clipboard permission, and fails with `'not-allowed'` when the
+  browser refuses. Keyboard paste always works.
+- `pasteText(text)` inserts text you supply, at the selection, as one undo step.
+- `copyFormatting` and `pasteFormatting` are the format painter; `formatPainter` in state says formatting is held.
+
+A custom .NET host supplies the system clipboard through `IEditorHostAdapter.SetClipboard` and
+`GetClipboardAsync` (see [hosting](dotnet#hosting-a-session-in-another-ui-framework)).
+
+## Picture controls
+
+A picture content control with no picture shows its placeholder picture (`w:showingPlcHdr`): the editor, the saved
+DOCX and the PDF all show that picture. `insertControl({ kind: 'picture', placeholderImage })` sets it (PNG, JPEG,
+GIF, BMP or SVG), and `setControl` replaces it while the control still shows it. `elements.list()` reports each
+control's tag, size and `showingPlaceholder`, so the application finds the unfilled ones and decides what each tag
+means; `fillControl({ id, image })` fills one, fitted to its box.
+
+In design mode a picture control resizes from its handles (a corner keeps the aspect, a side stretches) and drags to
+another place in the text, its control going with it. Outside design mode, or when its control is locked, it can't
+be moved or resized.
+
+`setProtectedPictureControls({ tagPrefixes })` protects the pictures of the controls whose tag starts with one of the
+prefixes (compared without case), as a content lock does: editing can't delete, paste over or replace them, only
+`fillControl` and `setControl` change them, and in design mode deleting one removes its whole control. The setting
+belongs to the session and isn't saved.
+
+A picture control floats with `insertControl({ kind: 'picture', float: { wrap, horizontal, vertical } })`, or with
+`setObjectWrap` on a selected one; `setObjectWrap('inline')` puts it back in line. A floating picture control drags,
+resizes and takes the wrap and position commands as any floating object does. It is saved as a floating text box with
+no line, no fill and no insets holding the inline picture control at the box's size, with no VML copy, and a text box
+of that shape reads back as one.
+
+A click selects a picture control. Activation, which asks the application to act on it, is separate:
+
+| Mode | `pictureControlActivated` comes from |
+|---|---|
+| editing, read only | a click on an unfilled picture control (the `pictureControlClick` gesture), a double-click on one (`pictureControlDoubleClick`), Enter while one is selected, `activatePictureControl` |
+| design | `activatePictureControl` only; a double-click or Enter emits `elementActivated` for the control |
+
+Binding `pictureControlClick` to `'none'` with `gestures.set` makes a click select only; the double-click and Enter
+still activate. A double-click activates once, even when its first click already did.
+
+```ts file=../../examples/web/picture-controls.ts
+```
+
+```csharp file=../../examples/dotnet/PictureControls.cs#picture-controls
+```
+
+## Navigation and styles
+
+`navigation.headings()` lists the document's headings with their level and page, for a navigation pane, and
+`navigation.select(id)` goes to one. `styles.list()` lists the styles with what a style gallery needs: name, type,
+whether it's quick, priority and a preview of its formatting.
+
+## Elements and data parts
+
+For merge designers: `elements.list()` lists fields and content controls in document order, `get(id)` gives one
+in full (lock, placeholder, data binding, options, children), `structure()` gives the body as blocks, and
+`select(id)` selects one, entering a header or footer when needed. Mounted, `hitTest`, `dragOver`, `dragLeave` and
+`drop` let a field list beside the editor drag fields in. `data.list()` and `data.get()` read the custom XML parts;
+the `writeDataPart` and `removeDataPart` commands change them.
+
+## Rulers
+
+Set `rulers: true` when mounting (`ShowHorizontalRuler` and `ShowVerticalRuler` on `DocumentEditor`) and the engine
+draws the rulers and handles them: dragging indents, margins, tab stops and table boundaries, clicking to add a tab,
+dragging a tab off to delete it, and double-clicking for the Tabs dialog. `ruler.setUnit` and `ruler.setTabSelector`
+change the unit and what a click adds.
+
+To draw your own ruler, leave them off, read `ruler.view()` (the model with its mapping to the viewport) and the
+`rulerChanged` event, and call the tab, indent, margin and boundary commands. `ruler.model()` and `state.ruler`
+give the model in points, also headless.
+
+## View and gestures
+
+Mounted, `view.revealSelection()` scrolls the selection into view, `view.setBackground(color)` sets the colour
+around the pages for a dark theme (the paper stays white), and `view.visiblePages()` gives the pages on screen. The
+zoom and formatting marks are the `setZoom` and `setViewOptions` commands.
+
+The engine recognises every pointer gesture (double-click in a header, a triple-click, dragging a table border).
+`gestures.bindings()` lists them, and `gestures.set(id, action)` changes one: `'default'`, `'emit'` (emits
+`gesture` for you to handle), `'none'`, or an op to run instead.
+
+## Shortcuts and accessibility
+
+`shortcuts.register` claims a key for your application, and pressing it emits `shortcut`. A key a command or another
+registration already uses fails with `'unavailable'`, naming the binding. `shortcuts.lookup(keys)` says what a key
+does now. The mounted editor keeps its own accessibility DOM for screen readers; `accessibility.tree()` gives the
+document's reading structure, `accessibility.go(id)` puts the caret at a node, `accessibility.setAnnouncements` picks
+what it announces, and `announcement` events say what it announced. [Accessibility](accessibility) says what screen
+reader users get and what your application does. `wordCount()` counts words,
+characters, paragraphs, lines and pages on request.

@@ -1,0 +1,86 @@
+[
+  {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [],
+            "id": 11,
+            "role": "text",
+            "text": "Terms"
+          }
+        ],
+        "id": 1,
+        "level": 1,
+        "role": "heading"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "author": "Ada",
+                "children": [],
+                "details": 4503599627370501,
+                "id": 21,
+                "lang": "fr-FR",
+                "marks": [
+                  "insertion",
+                  "misspelling"
+                ],
+                "role": "text",
+                "text": "Payment"
+              },
+              {
+                "children": [],
+                "id": 22,
+                "name": "Footnote 1",
+                "role": "noteRef",
+                "target": 4503599627370503
+              }
+            ],
+            "id": 2,
+            "label": "1.",
+            "level": 1,
+            "position": {
+              "count": 2,
+              "index": 1
+            },
+            "role": "listItem"
+          }
+        ],
+        "id": 3,
+        "role": "list"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "cell": {
+                  "col": 1,
+                  "colSpan": 2,
+                  "row": 1,
+                  "rowSpan": 1
+                },
+                "children": [],
+                "id": 6,
+                "role": "columnHeader"
+              }
+            ],
+            "id": 5,
+            "role": "row"
+          }
+        ],
+        "id": 4,
+        "level": 1,
+        "name": "Table",
+        "role": "table"
+      }
+    ],
+    "id": 0,
+    "lang": "en-US",
+    "name": "Contract",
+    "role": "document"
+  }
+]

@@ -1,0 +1,57 @@
+{
+  "id": "MX-NEST-04-L3",
+  "title": "A cell holding only an inner table: past the inner table is the cell's closing paragraph, then the next cell (nesting level 3)",
+  "fixture": "FX-NEST-2-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from matrix/MX-NEST-04.json",
+  "steps": [
+    {
+      "click": {
+        "para": 10,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret",
+          "focus": {
+            "row_end": {
+              "table": 4,
+              "row": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "11": "Z"
+        }
+      }
+    }
+  ]
+}

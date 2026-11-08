@@ -1,0 +1,7 @@
+[
+  {
+    "action": "emit",
+    "gesture": "headerAreaDoubleClick",
+    "label": "Double-click the header area"
+  }
+]

@@ -1,0 +1,75 @@
+{
+  "id": "MT-PTBL-LR-L3",
+  "title": "Paragraph to table: Right at the paragraph's end enters the first cell, Left leaves; Left from the paragraph after goes to the last end-of-row mark (nesting level 3)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 15,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 23,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "row_end": {
+            "table": 2,
+            "row": 1
+          },
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 23,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "colour": {
+      "theme": "accent1",
+      "transforms": [
+        {
+          "kind": "lumMod",
+          "value": 0.75
+        }
+      ]
+    },
+    "radius": 5.5
+  }
+]

@@ -1,0 +1,66 @@
+{
+  "id": "E2E-TS-19",
+  "title": "A drag from an inner table out into the containing cell's text selects text at the containing cell's level; back into the inner table it is an inner cell block again",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "press": {
+        "para": 2,
+        "offset": 2
+      }
+    },
+    {
+      "move_to": {
+        "para": 6,
+        "offset": 4
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 0
+          },
+          "focus": {
+            "para": 6,
+            "offset": 4
+          }
+        }
+      }
+    },
+    {
+      "move_to": {
+        "para": 5,
+        "offset": 2
+      }
+    },
+    {
+      "release": {
+        "para": 5,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 1,
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            1,
+            1
+          ]
+        }
+      }
+    }
+  ]
+}

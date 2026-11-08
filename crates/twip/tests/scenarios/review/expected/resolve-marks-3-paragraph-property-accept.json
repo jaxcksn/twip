@@ -1,0 +1,274 @@
+{
+  "description": "accept one revision of FX-REVIEW-MARKS.docx: number 3 in document order, a paragraph-property by Author C.",
+  "fixture": "FX-REVIEW-MARKS.docx",
+  "scope": "one",
+  "revision": {
+    "index": 3,
+    "type": "wdRevisionParagraphProperty",
+    "author": "Author C",
+    "text": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate requirement standard fact that products distribution filed logistics. Chapter plan regional maintenance accessibility tax.\r"
+  },
+  "op": "accept",
+  "error": null,
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group relief results region ledger.",
+          "runs": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group relief results region ledger.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility.",
+          "runs": [
+            {
+              "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": "Author B",
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [
+            "jc:val=center"
+          ],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility.",
+          "runs": [
+            {
+              "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group relief results region ledger.",
+          "runs": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group relief results region ledger.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Trend suggestions board order update granted agreement marketing promotion division date profitable.",
+          "runs": [
+            {
+              "text": "Trend suggestions board order update granted agreement marketing promotion division date profitable.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": "Author A",
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility tax finds.",
+          "runs": [
+            {
+              "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility tax finds.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [
+            "jc:val=center"
+          ],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate requirement standard fact that products distribution filed logistics. Chapter plan regional maintenance accessibility tax.",
+          "runs": [
+            {
+              "text": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate requirement standard fact that products distribution filed logistics. Chapter plan regional maintenance accessibility tax.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [
+            "ind:left=1440",
+            "jc:val=right"
+          ],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff newsletter review matter presenter advisor account. Served savings pilot receipt corporate requirement.",
+          "runs": [
+            {
+              "text": "Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff newsletter review matter presenter advisor account. Served savings pilot receipt corporate requirement.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": "Author A",
+          "ppr": [
+            "spacing:after=480"
+          ],
+          "pwas": [
+            "spacing:after=0"
+          ],
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group relief results region ledger.",
+          "runs": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group relief results region ledger.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [
+      {
+        "type": "wdRevisionDelete",
+        "author": "Author B",
+        "text": "\r"
+      },
+      {
+        "type": "wdRevisionInsert",
+        "author": "Author A",
+        "text": "\r"
+      },
+      {
+        "type": "wdRevisionParagraphProperty",
+        "author": "Author A",
+        "text": "Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff newsletter review matter presenter advisor account. Served savings pilot receipt corporate requirement.\r"
+      }
+    ]
+  }
+}

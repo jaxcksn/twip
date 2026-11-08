@@ -1,0 +1,86 @@
+{
+  "id": "MRG-US4-04",
+  "title": "Locks: typing in a content-locked control is refused; a control that can't be deleted survives a delete over it; its content can still be typed in",
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "methods": [
+    "K",
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 20
+      }
+    },
+    {
+      "type": "X",
+      "expect": {
+        "answer": {
+          "error": "locked"
+        },
+        "text": {
+          "15": "Locked content: cannot edit"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 15
+      }
+    },
+    {
+      "key": "Backspace",
+      "expect": {
+        "answer": {
+          "error": "locked"
+        },
+        "text": {
+          "16": "Locked both: neither"
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "key": "Delete",
+      "expect": {
+        "answer": {
+          "error": "locked"
+        },
+        "text": {
+          "14": "Locked control: cannot delete"
+        },
+        "undo_depth": 0
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 20
+      }
+    },
+    {
+      "type": "Z",
+      "expect": {
+        "text": {
+          "14": "Locked control: cannZot delete"
+        },
+        "undo_depth": 1
+      }
+    }
+  ]
+}

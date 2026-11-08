@@ -1,0 +1,88 @@
+{
+  "id": "MRG-US7-03",
+  "title": "Ctrl+F9 at a caret makes an empty field showing its code, the caret inside; over a selection the text becomes the code and the caret stays before it",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "ctrl": true
+      },
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 2
+        },
+        "elements": {
+          "added": [
+            {
+              "kind": "field",
+              "code": "  "
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "MERGEFIELD Shipment.Number"
+    },
+    {
+      "key": "F9",
+      "expect": {
+        "events": [
+          {
+            "type": "field_update",
+            "fields": [
+              {
+                "code": " MERGEFIELD Shipment.Number "
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "click": {
+        "para": 5,
+        "offset": 0
+      }
+    },
+    {
+      "click": {
+        "para": 5,
+        "offset": 6
+      },
+      "shift": true
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "ctrl": true
+      },
+      "expect": {
+        "caret": {
+          "para": 5,
+          "offset": 0
+        },
+        "elements": {
+          "added": [
+            {
+              "kind": "field",
+              "code": "Locked"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

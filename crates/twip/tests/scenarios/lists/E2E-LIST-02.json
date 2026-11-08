@@ -1,0 +1,73 @@
+{
+  "id": "E2E-LIST-02",
+  "title": "Backspace at a list item's start removes its number first, then steps its indent back, without joining",
+  "fixture": "FX-LISTS.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 5,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "label": {
+          "4": "2.1.",
+          "5": null,
+          "6": "2.1.1.",
+          "8": "2.2."
+        },
+        "text": {
+          "5": "Sub-item b"
+        },
+        "caret": {
+          "para": 5,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "4": "Sub-item a",
+          "5": "Sub-item b"
+        },
+        "label": {
+          "5": null
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "label": {
+          "5": "2.2.",
+          "6": "2.2.1.",
+          "8": "2.3."
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "abort",
+  "fixture": "big.docx",
+  "steps": [
+    { "op": "command", "command": { "type": "insertText", "value": "Kept before the large open." } },
+    { "op": "abort" },
+    { "op": "open" },
+    { "op": "expectError", "code": "aborted" },
+    { "op": "expectState", "match": { "load": "ready", "pages": { "count": 1 } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Kept before the large open." }], "result": { "found": true } },
+
+    { "op": "abort" },
+    { "op": "export", "format": "docx" },
+    { "op": "expectError", "code": "aborted" },
+    { "op": "abort" },
+    { "op": "export", "format": "pdf" },
+    { "op": "expectError", "code": "aborted" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Kept before the large open." }], "result": { "found": true } },
+
+    { "op": "abort", "late": true },
+    { "op": "open" },
+    { "op": "expectState", "match": { "load": "ready", "modified": false } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Kept before the large open." }], "result": { "found": false } },
+    { "op": "abort", "late": true },
+    { "op": "export", "format": "docx", "match": { "head": "PK\u0003\u0004" } }
+  ]
+}

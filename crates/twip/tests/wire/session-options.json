@@ -1,0 +1,33 @@
+[
+  {
+    "author": {
+      "identity": {
+        "provider": "AD",
+        "userId": "S-1-5-21"
+      },
+      "initials": "AL",
+      "name": "Ada Lovelace"
+    },
+    "dictionaries": [
+      {
+        "aff": "U0VUIFVURi04",
+        "dic": "MQpjb2xvdXI=",
+        "language": "en-GB"
+      }
+    ],
+    "language": "en-GB",
+    "mode": "design",
+    "readOnly": true,
+    "trackChanges": true
+  },
+  {
+    "author": {
+      "name": "Author"
+    },
+    "dictionaries": [],
+    "language": "en-US",
+    "mode": "editing",
+    "readOnly": false,
+    "trackChanges": false
+  }
+]

@@ -1,0 +1,83 @@
+{
+  "id": "MX-EMPTY-01",
+  "title": "Empty paragraphs: arrows step through them; Backspace in one joins it to the one before; typing fills it",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 8,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 9,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 10,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 0
+      }
+    },
+    {
+      "type": "y"
+    },
+    {
+      "expect": {
+        "text": {
+          "9": "y"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "8": "",
+          "9": "The two paragraphs above are empty."
+        },
+        "caret": {
+          "para": 8,
+          "offset": 0
+        }
+      }
+    }
+  ]
+}

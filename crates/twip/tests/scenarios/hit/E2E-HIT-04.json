@@ -1,0 +1,32 @@
+{
+  "id": "E2E-HIT-04",
+  "title": "A click in the blank page area below the last line goes to the last line at that x",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    0.5,
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 21,
+        "offset": 5
+      },
+      "dy": 100
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 21,
+          "offset": 5
+        }
+      }
+    }
+  ]
+}

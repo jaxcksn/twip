@@ -1,0 +1,68 @@
+# Every push to main publishes a canary, 0.0.0-canary-<short SHA>: @twip/web on npm under the canary dist-tag
+# (npm install @twip/web@canary), and Twip.Core and Twip.WinForms to GitHub Packages (nuget.pkg.github.com), so
+# nuget.org isn't left with a version per commit. npm trusts this file through its own trusted publisher, tied to the
+# canary environment, which deploys only from main.
+name: Canary
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+# One at a time, never cancelled mid-publish; a newer push replaces a queued one.
+concurrency:
+  group: canary
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+    with:
+      canary: true
+      nuget: true
+      npm: true
+
+  nuget:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: canary
+      url: https://github.com/${{ github.repository }}/pkgs/nuget/Twip.Core
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: nupkg
+      - run: dotnet nuget push '*.nupkg' --source "https://nuget.pkg.github.com/$GITHUB_REPOSITORY_OWNER/index.json" --api-key "$GH_TOKEN"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  npm:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: canary
+      url: https://www.npmjs.com/package/@twip/web?activeTab=versions
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # The toolchain, for the pinned pnpm.
+      - uses: actions/checkout@v7
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm
+          path: ${{ runner.temp }}/npm
+      # Trusted publishing (OIDC), published from the unpacked tarball as release.yml does.
+      - name: Publish
+        env:
+          PROVENANCE: ${{ !github.event.repository.private && '--provenance' || '' }}
+        # pnpm runs from the checkout, where proto finds its version (package.json's packageManager).
+        run: |
+          tar xzf "$RUNNER_TEMP"/npm/*.tgz -C "$RUNNER_TEMP/npm"
+          pnpm publish "$RUNNER_TEMP/npm/package" --access public $PROVENANCE --no-git-checks --tag canary

@@ -1,0 +1,40 @@
+{
+  "id": "MRG-US3-05",
+  "title": "The structure query on a labels-shaped region: one table, one row, three cells, content only in the first",
+  "fixture": "FX-MERGE-REGIONS.docx",
+  "methods": [
+    "S"
+  ],
+  "steps": [
+    {
+      "query": {
+        "q": "structure",
+        "id": "$tag:Labels.Address",
+        "depth": 0
+      },
+      "expect": {
+        "answer": [
+          {
+            "table": {
+              "rows": [
+                {
+                  "cells": [
+                    {
+                      "has_content": true
+                    },
+                    {
+                      "has_content": false
+                    },
+                    {
+                      "has_content": false
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

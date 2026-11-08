@@ -1,0 +1,80 @@
+{
+  "id": "E2E-NEST-02-HDR",
+  "title": "Tab into a cell that starts with a nested table selects that table; the next Tab its first cell (in a header)",
+  "fixture": "FX-NEST-2-HDR.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-nav/E2E-NEST-02.json",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells"
+        }
+      }
+    },
+    {
+      "type": "Q"
+    },
+    {
+      "expect": {
+        "text": {
+          "10": "Q",
+          "11": "Only content R1 C2"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 10,
+            "offset": 0
+          },
+          "focus": {
+            "para": 10,
+            "offset": 18
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "id": "E2E-HIT-01",
+  "title": "A click past a line end puts the caret at the end of the line",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    0.5,
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      },
+      "dx": 60
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 16
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+# Publishes docs/ to GitHub Pages (https://jaxcksn.github.io/twip/) whenever it or the SDKs' sources change on main,
+# with the API references beside the guides: TypeDoc for @twip/web at /api/web/, DocFX for Twip.Core and
+# Twip.WinForms at /api/dotnet/.
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - bindings/web/src/**
+      - bindings/dotnet/Twip.Core/**
+      - bindings/dotnet/Twip.WinForms/**
+      - crates/twip/examples/**
+      - .github/workflows/docs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # moon compares with the base branch
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/configure-pages@v6
+      # Both references go into docs/static/api/, which the site build copies.
+      # docs:api is runInCI: false (kept out of moon ci), so moon won't run it here; call TypeDoc directly.
+      - name: TypeScript reference
+        run: pnpm exec typedoc
+        working-directory: docs
+      - name: .NET reference
+        run: |
+          dotnet tool install --global docfx --version 2.81.0
+          dotnet restore bindings/dotnet/Twip.WinForms # and Twip.Core: DocFX reads the restored projects
+          docfx docs/dotnet-api/docfx.json
+      - run: moon run docs:build
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

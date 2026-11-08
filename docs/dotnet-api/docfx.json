@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../../bindings/dotnet",
+          "files": [
+            "Twip.Core/Twip.Core.csproj",
+            "Twip.WinForms/Twip.WinForms.csproj"
+          ]
+        }
+      ],
+      "dest": "api"
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": [
+          "index.md",
+          "toc.yml",
+          "api/**.yml"
+        ]
+      }
+    ],
+    "template": [
+      "default",
+      "modern"
+    ],
+    "output": "../static/api/dotnet",
+    "globalMetadata": {
+      "_appTitle": "Twip .NET API",
+      "_appName": "Twip",
+      "_enableSearch": true
+    }
+  }
+}

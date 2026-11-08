@@ -1,0 +1,61 @@
+{
+  "id": "E2E-RS-01",
+  "title": "A plain drag of an interior column border changes the two columns beside it; one undo step restores them",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": 1
+        },
+        "to": {
+          "table": 1,
+          "row": 0,
+          "border": 1,
+          "dx": 30
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              186,
+              126,
+              156
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              156,
+              156,
+              156
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

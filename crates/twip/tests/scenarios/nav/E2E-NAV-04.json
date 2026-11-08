@@ -1,0 +1,40 @@
+{
+  "id": "E2E-NAV-04",
+  "title": "Home and End go to the visual line edges",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 7
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 16
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "description": "Deleting an untracked paragraph mark.",
+  "setup": "two paragraphs \"First para.\" / \"Second para.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "First para.",
+        "runs": [
+          {
+            "text": "First para.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      },
+      {
+        "text": "Second para.",
+        "runs": [
+          {
+            "text": "Second para.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "delete the first paragraph's mark",
+      "author": "Author A",
+      "op": {
+        "op": "delete",
+        "start": 11,
+        "end": 12
+      },
+      "selection": {
+        "start": 12,
+        "end": 12
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "First para.",
+              "runs": [
+                {
+                  "text": "First para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": "Author A",
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Second para.",
+              "runs": [
+                {
+                  "text": "Second para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "\r"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "id": "MX-PAGE-01",
+  "title": "Page boundary: Right and Down cross to the next page; Up and Left come back; Backspace joins across the page",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 14,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "offset": 18
+        }
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 14
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "13": "Name\tCentred\tRight\tStarts with a tab\t\tafter two tabs"
+        }
+      }
+    }
+  ]
+}

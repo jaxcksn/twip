@@ -1,0 +1,77 @@
+{
+  "id": "E2E-ADV-06",
+  "title": "Shift+F5 returns to the last edit, the one before it, then where the caret was",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      }
+    },
+    {
+      "type": "!"
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "type": "> "
+    },
+    {
+      "click": {
+        "para": 5,
+        "offset": 4
+      }
+    },
+    {
+      "key": "F5",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "key": "F5",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 17
+        }
+      }
+    },
+    {
+      "key": "F5",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "offset": 4
+        }
+      }
+    }
+  ]
+}

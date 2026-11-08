@@ -1,0 +1,73 @@
+{
+  "id": "E2E-TS-14",
+  "title": "Deleting a range across a whole table keeps the two ends apart; typing over the same range joins them",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 0,
+        "offset": 2
+      }
+    },
+    {
+      "click": {
+        "para": 21,
+        "offset": 4
+      },
+      "shift": true
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX",
+          "1": "graph after the outer table."
+        },
+        "caret": {
+          "para": 0,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": 2
+      }
+    },
+    {
+      "click": {
+        "para": 21,
+        "offset": 4
+      },
+      "shift": true
+    },
+    {
+      "type": "x"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FXxgraph after the outer table."
+        },
+        "caret": {
+          "para": 0,
+          "offset": 3
+        }
+      }
+    }
+  ]
+}

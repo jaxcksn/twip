@@ -1,0 +1,13 @@
+[
+  "field",
+  "richText",
+  "plainText",
+  "picture",
+  "checkbox",
+  "date",
+  "dropDown",
+  "comboBox",
+  "group",
+  "repeatingSection",
+  "repeatingItem"
+]

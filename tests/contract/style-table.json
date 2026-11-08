@@ -1,0 +1,13 @@
+{
+  "name": "style-table",
+  "fixture": "editor/FX-STYLES.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "call", "method": "dialogs.openStyle", "args": [{"modify": "GridAccent"}], "save": "style", "result": {"values": {"type": "table", "tablePart": "wholeTable", "rowBand": 1}}},
+    {"op": "call", "method": "@style.update", "args": [{"tablePart": "headerRow"}], "save": "style", "result": {"values": {"tablePart": "headerRow", "bold": true, "fill": "#2E75B6"}, "fields": {"tablePart": {"enabled": true}, "next": {"enabled": false}}}},
+    {"op": "call", "method": "@style.update", "args": [{"fill": "#C00000", "cellAlignment": "center"}], "save": "style", "result": {"values": {"fill": "#C00000", "cellAlignment": "center"}}},
+    {"op": "call", "method": "@style.apply"},
+    {"op": "call", "method": "dialogs.openStyle", "args": [{"modify": "GridAccent"}], "save": "again"},
+    {"op": "call", "method": "@again.update", "args": [{"tablePart": "headerRow"}], "result": {"values": {"fill": "#C00000"}}}
+  ]
+}

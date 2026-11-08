@@ -1,0 +1,48 @@
+{
+  "id": "MT-MERGE-BS-L2",
+  "title": "Merged cells: Backspace at a merged cell's start does nothing (nesting level 2)",
+  "fixture": "FX-TBL-MERGED-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-BS-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 8,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "undo_depth": 0,
+        "text": {
+          "7": "Span 2",
+          "8": "Span 2"
+        },
+        "tables": [
+          {},
+          {
+            "cells": [
+              6,
+              4,
+              4,
+              5,
+              4,
+              4,
+              3,
+              3,
+              2,
+              1
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "id": "E2E-SEL-06",
+  "title": "The selection bar: a click selects the line, a double-click the paragraph, a triple-click the document",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      },
+      "dx": -24
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 0
+          },
+          "focus": {
+            "para": 2,
+            "affinity": "upstream"
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      },
+      "dx": -24,
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 0
+          },
+          "focus": {
+            "para": 3,
+            "offset": 0
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      },
+      "dx": -24,
+      "clicks": 3
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 0,
+            "offset": 0
+          }
+        }
+      }
+    }
+  ]
+}

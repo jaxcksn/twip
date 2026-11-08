@@ -1,0 +1,47 @@
+{
+  "id": "E2E-STORY-05",
+  "title": "A click on a text box's text edits it; Esc selects the box; Esc again puts the caret at its anchor paragraph's start",
+  "fixture": "FX-STORIES.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 33,
+        "offset": 3
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 33,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 0
+        }
+      }
+    }
+  ]
+}

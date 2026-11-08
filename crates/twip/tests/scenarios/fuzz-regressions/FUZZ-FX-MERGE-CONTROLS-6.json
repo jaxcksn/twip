@@ -1,0 +1,49 @@
+{
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "id": "FUZZ-FX-MERGE-CONTROLS-6",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 1,
+        "para": 5
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 11,
+        "para": 6
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "👍🏽"
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C2 controls nest\", detail: \"end of ControlId(77674) out of place (paragraph 77654)\" }, Statement { invariant: \"C2 controls nest\", detail: \"end of ControlId(77680) out of place (paragraph 77654)\" }] (Caret(Position { story: Body, place: Text { para: ParaId(77654), offset: Unit(18), affinity: Downstream } }) in Some(\"👍🏽word.Ünï👍🏽word.\\t Store\"))"
+}

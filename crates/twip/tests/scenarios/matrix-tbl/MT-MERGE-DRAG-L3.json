@@ -1,0 +1,33 @@
+{
+  "id": "MT-MERGE-DRAG-L3",
+  "title": "Merged cells: a drag from a horizontally merged cell across the next cells is a cell block (nesting level 3)",
+  "fixture": "FX-TBL-MERGED-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-DRAG-L1",
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 7,
+          "offset": 0
+        },
+        "to": {
+          "para": 9,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 2
+        }
+      }
+    }
+  ]
+}

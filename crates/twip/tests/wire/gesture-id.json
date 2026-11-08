@@ -1,0 +1,23 @@
+[
+  "headerAreaDoubleClick",
+  "footerAreaDoubleClick",
+  "bodyDoubleClickInHeaderFooter",
+  "textDoubleClick",
+  "textTripleClick",
+  "textCtrlClick",
+  "linkActivate",
+  "marginClick",
+  "marginDoubleClick",
+  "tableBorderDoubleClick",
+  "tableBorderDrag",
+  "objectDrag",
+  "textDrag",
+  "elementDoubleClick",
+  "pictureControlClick",
+  "pictureControlDoubleClick",
+  "rulerClick",
+  "rulerDrag",
+  "rulerDragOff",
+  "rulerDoubleClick",
+  "contextClick"
+]

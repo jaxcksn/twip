@@ -1,0 +1,511 @@
+//! Line breaking
+
+use crate::docx::blank::blank_docx;
+use crate::docx::write::repackage;
+use crate::layout::fragment::Item;
+use crate::layout::layout;
+use crate::layout::traverse::paint;
+
+use super::fonts;
+
+const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+fn lines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64)>> {
+    Some(baselines(settings, rpr, body)?.into_iter().map(|(x, t, last, _)| (x, t, last)).collect())
+}
+
+fn baselines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64, f64)>> {
+    let fonts = fonts();
+    fonts.face("Arial", None, false, false)?;
+    let compat = if settings.contains("compatibilityMode") {
+        ""
+    } else {
+        r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#
+    };
+    let parts = [
+        (
+            "word/document.xml",
+            format!(
+                r#"<w:document xmlns:w="{W}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+            ),
+        ),
+        ("word/styles.xml", format!(r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{rpr}</w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults></w:styles>"#)),
+        ("word/settings.xml", format!(r#"<w:settings xmlns:w="{W}">{settings}<w:characterSpacingControl w:val="compressPunctuation"/>{compat}</w:settings>"#)),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#.to_string(),
+        ),
+    ];
+    let parts: Vec<(String, Vec<u8>)> = parts.into_iter().map(|(n, x)| (n.to_string(), x.into_bytes())).collect();
+    let doc = crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads");
+    let snap = layout(&doc, &fonts);
+    let mut out: Vec<(u32, f64, String, f64, f64)> = Vec::new();
+    paint(&snap.pages()[0], &mut |p| {
+        if let Item::Glyphs(r) = p.absolute() {
+            let text: String = r.chars.iter().map(|c| c.0).collect();
+            match out.iter_mut().find(|l| l.0 == p.line) {
+                Some(l) => {
+                    l.1 = l.1.min(r.x);
+                    l.2.push_str(&text);
+                    l.3 = r.x;
+                }
+                None => out.push((p.line, r.x, text, r.x, r.baseline)),
+            }
+        }
+    });
+    Some(out.into_iter().map(|(_, x, t, last, y)| (x, t.trim_end().to_string(), last, y)).collect())
+}
+
+const ARIAL_12: &str = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsiaTheme="minorEastAsia"/><w:sz w:val="24"/>"#;
+
+#[test]
+fn spaces_after_a_tab_squeeze_a_word_in() {
+    let p =
+        r#"<w:p><w:r><w:tab/><w:t>You are ordered to appear at a hearing on Monday, April 4, 2025 at 10:00 am with your papers.</w:t></w:r></w:p>"#;
+    if !fonts().is_installed("Arial") {
+        return;
+    }
+    let Some(l) = lines("", ARIAL_12, p) else { return };
+    assert!(l[0].1.ends_with("am with"), "{l:?}");
+}
+
+#[test]
+fn a_line_breaks_before_and_after_an_inline_picture() {
+    let pic = r#"<w:r><w:drawing><wp:inline><wp:extent cx="1333500" cy="476250"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#;
+    let under = "_".repeat(60);
+    let after = format!(r#"<w:p>{pic}<w:r><w:t>{under}</w:t></w:r></w:p>"#);
+    let Some(l) = lines("", ARIAL_12, &after) else { return };
+    assert_eq!(l[0].1, under, "{l:?}");
+    let under = "_".repeat(55);
+    let before = format!(r#"<w:p><w:r><w:t>ab {under}</w:t></w:r>{pic}</w:p>"#);
+    let l = lines("", ARIAL_12, &before).expect("Arial");
+    assert_eq!(l[0].1, format!("ab {under}"), "{l:?}");
+}
+
+#[test]
+fn default_stops_before_a_hanging_indent_dont_count() {
+    let p = r#"<w:p><w:pPr><w:ind w:left="1440" w:hanging="569"/></w:pPr><w:r><w:t>o</w:t></w:r><w:r><w:tab/><w:t>text</w:t></w:r></w:p>"#;
+    let Some(l) = lines(r#"<w:defaultTabStop w:val="300"/>"#, ARIAL_12, p) else { return };
+    assert!(l[0].1 == "otext" && (l[0].2 - 144.0).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn the_first_line_indent_adds_to_a_floats_edge() {
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="2286000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = format!(
+        r#"<w:p><w:pPr><w:ind w:left="-540" w:firstLine="540"/></w:pPr>{float}<w:r><w:t>Some words that run on for more than one line beside the float that is on the left.</w:t></w:r></w:p>"#
+    );
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 279.0).abs() < 0.01 && (l[1].0 - 252.0).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn a_tight_float_wraps_around_its_polygon_box() {
+    let pt = r#"<wp:start x="0" y="0"/><wp:lineTo x="0" y="0"/><wp:lineTo x="0" y="0"/>"#;
+    let float = format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="0" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="2286000" cy="1270000"/><wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0">{pt}</wp:wrapPolygon></wp:wrapTight><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+    );
+    let p = format!(
+        r#"<w:p>{float}<w:r><w:t>Some words that run on for more than one line beside the point at the top of the picture, and then some more words to fill a second line.</w:t></w:r></w:p>"#
+    );
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 81.0).abs() < 0.01 && (l[1].0 - 72.0).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn compat_14_tabs_beside_a_float_count_from_the_interval() {
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="114300" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="2286000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = format!(r#"<w:p>{float}<w:r><w:tab/><w:t>x</w:t></w:r></w:p>"#);
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 297.0).abs() < 0.01, "{l:?}");
+}
+
+fn beside_float(p: &str) -> Option<Vec<(f64, String, f64, f64)>> {
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>685800</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="4572000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let body = format!(r#"<w:p><w:r><w:t>Hi</w:t></w:r>{float}</w:p>{p}<w:p><w:r><w:t>After</w:t></w:r></w:p>"#);
+    baselines("", ARIAL_12, &body)
+}
+
+fn inline_pic(w: u32, h: u32) -> String {
+    format!(
+        r#"<w:r><w:drawing><wp:inline><wp:extent cx="{}" cy="{}"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#,
+        w * 12700,
+        h * 12700
+    )
+}
+
+#[test]
+fn a_line_that_fits_no_gap_retries_lower_in_steps_of_its_height() {
+    let Some(l) = beside_float(r#"<w:p><w:r><w:t>Supercalifragilisticexpialidocious</w:t></w:r></w:p>"#) else { return };
+    let pitch = l[2].3 - l[1].3;
+    assert!(((l[1].3 - l[0].3) / pitch - 8.0).abs() < 1e-6, "{l:?}");
+}
+
+#[test]
+fn tabs_alone_before_a_picture_that_fits_no_gap_retry_with_it() {
+    let Some(l) = beside_float(&format!(r#"<w:p><w:r><w:tab/></w:r>{}</w:p>"#, inline_pic(64, 30))) else { return };
+    let step = (l[1].3 - l[0].3 - 30.0) / 13.7988;
+    assert!((step - step.round()).abs() < 1e-3 && l[1].3 - 30.0 > 72.0 + 100.0, "{l:?}");
+}
+
+#[test]
+fn a_paragraph_of_one_too_wide_picture_stays_in_the_gap() {
+    let Some(l) = beside_float(&format!("<w:p>{}</w:p>", inline_pic(64, 20))) else { return };
+    assert!((l[1].3 - l[0].3 - 13.7988 - 20.0).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn a_last_line_of_only_a_short_picture_is_the_marks_height() {
+    let body = format!(r#"<w:p><w:r><w:t>Hi</w:t></w:r></w:p><w:p>{}</w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#, inline_pic(64, 4));
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    assert!((l[1].3 - l[0].3 - 2.0 * 13.7988).abs() < 0.01, "{l:?}");
+}
+
+fn cell(w: u32, ind: i32, inner: &str) -> String {
+    format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="{w}" w:type="dxa"/><w:tblInd w:w="{ind}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{inner}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+    )
+}
+
+#[test]
+fn a_nested_tables_negative_indent_counts_as_0() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    for settings in ["", c15] {
+        let at = |ind: i32| {
+            let body = cell(6000, 0, &cell(5000, ind, r#"<w:p><w:r><w:t>inner</w:t></w:r></w:p>"#));
+            lines(settings, ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _)| t == "inner").expect("drawn").0)
+        };
+        let Some(zero) = at(0) else { return };
+        assert_eq!(at(-720), Some(zero), "{settings}");
+    }
+}
+
+#[test]
+fn a_nested_table_wider_than_its_cell_is_drawn_in_full() {
+    let body = cell(3000, 0, &cell(9000, 0, &format!(r#"<w:p><w:r><w:t>{}</w:t></w:r></w:p>"#, "M".repeat(40))));
+    let Some(l) = lines("", ARIAL_12, &body) else { return };
+    let ms = l.iter().find(|(_, t, _)| t.starts_with('M')).expect("drawn");
+    assert_eq!(ms.1.len(), 40, "{l:?}");
+}
+
+#[test]
+fn a_rows_own_indent_moves_it_in_an_autofit_table_only() {
+    let table = |layout: &str| {
+        let row = |ex: &str, t: &str| {
+            format!(r#"<w:tr>{ex}<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#)
+        };
+        let ex = r#"<w:tblPrEx><w:tblInd w:w="0" w:type="dxa"/></w:tblPrEx>"#;
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblInd w:w="720" w:type="dxa"/><w:tblLayout w:type="{layout}"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}{}</w:tbl><w:p/>"#,
+            row("", "first"),
+            row(ex, "second")
+        )
+    };
+    let x = |layout: &str, t: &str| lines("", ARIAL_12, &table(layout)).map(|l| l.iter().find(|(_, s, _)| s == t).expect("drawn").0);
+    let Some(first) = x("autofit", "first") else { return };
+    assert!((first - x("autofit", "second").unwrap() - 36.0).abs() < 0.01);
+    assert!((x("fixed", "first").unwrap() - x("fixed", "second").unwrap()).abs() < 0.01);
+}
+
+#[test]
+fn a_compat_15_section_break_after_a_table_takes_a_line_in_balanced_columns() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let row = r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let body = format!(
+        r#"<w:p><w:r><w:t>One</w:t></w:r></w:p>{row}<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr></w:p>"#
+    );
+    let after = |settings: &str| baselines(settings, ARIAL_12, &body).and_then(|l| l.into_iter().find(|l| l.1 == "After")).map(|l| l.3);
+    let (Some(a12), Some(a15)) = (after(""), after(c15)) else { return };
+    assert!((a15 - a12 - 13.8).abs() < 0.05, "{a12} {a15}");
+}
+
+#[test]
+fn a_compat_14_exact_row_is_capped_to_the_column() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let lines_in = (0..60).map(|i| format!("<w:p><w:r><w:t>Line {i}</w:t></w:r></w:p>")).collect::<String>();
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="20000" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>{lines_in}</w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let count = |settings: &str| lines(settings, ARIAL_12, &body).map(|l| l.iter().filter(|(_, t, _)| t.starts_with("Line")).count());
+    let (Some(c12), Some(c15)) = (count(""), count(c15)) else { return };
+    assert!(c12 < 50 && c15 > c12 + 4, "{c12} {c15}");
+}
+
+#[test]
+fn a_float_whose_anchor_its_wrap_pushes_off_the_page_leaves_the_page() {
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>1270000</wp:posOffset></wp:positionV><wp:extent cx="5588000" cy="762000"/><wp:wrapTopAndBottom/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body: String = (0..44).map(|i| p(&format!("L{i:02}"))).collect::<String>()
+        + &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>{float}<w:r><w:t>ANCHOR</w:t></w:r></w:p>"#)
+        + &p("AFTER");
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    let l02 = l.iter().find(|x| x.1 == "L02").map(|x| x.3);
+    assert!(l02.is_some_and(|y| y < 120.0) && !l.iter().any(|x| x.1.ends_with("ANCHOR")), "{l:?}");
+}
+
+#[test]
+fn no_column_balance_leaves_a_continuous_sections_columns_unbalanced() {
+    let sect = |cols: &str| {
+        format!(
+            r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>{cols}</w:sectPr>"#
+        )
+    };
+    let paras: String = (1..=6).map(|k| format!("<w:p><w:r><w:t>p{k}</w:t></w:r></w:p>")).collect();
+    let body = format!(
+        r#"{paras}<w:p><w:pPr>{}</w:pPr></w:p><w:p><w:pPr>{}</w:pPr><w:r><w:t>Tail</w:t></w:r></w:p>"#,
+        sect(r#"<w:cols w:num="2" w:space="720"/>"#),
+        sect("")
+    );
+    let right = |settings: &str| lines(settings, ARIAL_12, &body).map(|l| l.iter().filter(|(x, s, _)| s.starts_with('p') && *x > 200.0).count());
+    let Some(balanced) = right("") else { return };
+    assert_eq!((balanced, right("<w:compat><w:noColumnBalance/></w:compat>").unwrap()), (3, 0));
+}
+
+#[test]
+fn a_line_break_beside_a_float_ends_only_its_interval() {
+    let Some(l) = beside_float(r#"<w:p><w:r><w:t>aa</w:t><w:br/><w:t>bb</w:t></w:r></w:p>"#) else { return };
+    let (aa, bb) = (l.iter().find(|x| x.1 == "aa").expect("aa"), l.iter().find(|x| x.1 == "bb").expect("bb"));
+    assert!((aa.3 - bb.3).abs() < 0.01 && bb.0 > 400.0, "{l:?}");
+}
+
+#[test]
+fn a_compat_14_column_aligned_float_counts_from_the_paragraph_indent() {
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:align>left</wp:align></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="508000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = format!(r#"<w:p><w:pPr><w:ind w:left="720"/></w:pPr>{float}<w:r><w:t>Beside the float.</w:t></w:r></w:p>"#);
+    let Some(l) = lines("", ARIAL_12, &p) else { return };
+    assert!((l[0].0 - 148.0).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn a_compat_14_line_goes_to_a_floats_bottom_when_another_starts_inside_it() {
+    let table = |x: u32, rows: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="{x}" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl>"#
+        )
+    };
+    let row = |t: &str| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#);
+    let text = "Some words that run on for more than one line beside the two tables, and then some more words to fill the lines.";
+    let body = format!(
+        r#"<w:p><w:r><w:t>Top</w:t></w:r></w:p>{}<w:p/>{}<w:p><w:r><w:t>{text}</w:t></w:r></w:p>"#,
+        table(1000, &format!("{}{}", row("A1"), row("A2"))),
+        table(1500, &row("B1"))
+    );
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    let y: Vec<f64> = l.iter().filter(|(x, t, _, _)| *x < 73.0 && t.len() > 2 && text.contains(t.as_str())).map(|l| l.3).collect();
+    assert!(y.len() >= 2 && y[1] - y[0] > 13.8 + 0.5, "{l:?}");
+}
+
+#[test]
+fn a_floating_tables_obstacle_sits_on_device_pixels() {
+    let body = r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="1000" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Left words beside the table on the right side.</w:t></w:r></w:p>"#;
+    let Some(l) = lines("", ARIAL_12, body) else { return };
+    let right = l.iter().find(|(x, t, _)| *x > 200.0 && t != "cell").expect("text right of the table");
+    assert!((right.0 - 272.2).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn a_right_aligned_floating_tables_frame_counts_a_missing_border_whole() {
+    let at = |borders: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="page" w:tblpXSpec="right" w:tblpY="2000"/><w:tblW w:w="6000" w:type="dxa"/><w:tblBorders>{borders}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+        lines(c15, ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _)| t == "cell").expect("drawn").0)
+    };
+    let Some(missing) = at("") else { return };
+    assert!((missing - 244.65).abs() < 0.01, "{missing}");
+    let none = at(r#"<w:right w:val="none" w:sz="0" w:space="0" w:color="000000"/>"#).unwrap();
+    assert!((none - 245.4).abs() < 0.01, "{none}");
+}
+
+#[test]
+fn compat_14_wp_justification_lets_a_justified_line_run_past_its_edge() {
+    let p = format!(r#"<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#, "ab ".repeat(80));
+    let c14 = r#"<w:compat>{}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let first = |opt: &str| lines(&c14.replace("{}", opt), ARIAL_12, &p).map(|l| (l[0].1.matches("ab").count(), l[0].2));
+    let Some(plain) = first("") else { return };
+    let (wide, last_x) = first("<w:wpJustification/>").unwrap();
+    assert_eq!(wide, plain.0 + 1, "{plain:?}");
+    assert!(last_x < 540.0, "{last_x}");
+}
+
+#[test]
+fn compat_14_word97_line_breaks_size_a_named_east_asian_runs_glyphs_at_a_1000_unit_em() {
+    if !fonts().is_installed("Courier New") {
+        return;
+    }
+    let p = format!("<w:p><w:r><w:t>{}</w:t></w:r></w:p>", "xxxxx ".repeat(30));
+    let c14 = r#"<w:compat>{}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let words = |opt: &str, ea: &str| {
+        let rpr = format!(r#"<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:eastAsia="{ea}"/><w:sz w:val="24"/>"#);
+        lines(&c14.replace("{}", opt), &rpr, &p).map(|l| l[0].1.matches("xxxxx").count())
+    };
+    let Some(plain) = words("", "Arial") else { return };
+    let opt = "<w:useWord97LineBreakRules/>";
+    assert_eq!((plain, words(opt, "Arial").unwrap(), words(opt, "Times New Roman").unwrap()), (10, 11, 10));
+}
+
+#[test]
+fn a_compat_14_float_past_the_column_bottom_stays_with_its_anchor() {
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="762000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body = (0..44).map(|i| p(&format!("L{i:02}"))).collect::<String>()
+        + &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>{float}<w:r><w:t>ANCHOR</w:t></w:r></w:p>"#);
+    let c14 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let Some(l) = lines(c14, ARIAL_12, &body) else { return };
+    assert!(l.iter().any(|x| x.1 == "ANCHOR" && (x.0 - 172.0).abs() < 0.01), "{l:?}");
+}
+
+#[test]
+fn a_paragraph_anchoring_a_float_keeps_its_top_border() {
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>4572000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>2540000</wp:posOffset></wp:positionV><wp:extent cx="635000" cy="635000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = |f: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="24" w:space="4" w:color="000000"/></w:pBdr></w:pPr>{f}<w:r><w:t>Boxed</w:t></w:r></w:p>"#
+        )
+    };
+    let y = |f: &str| baselines("", ARIAL_12, &p(f)).map(|l| l[0].3);
+    let Some(plain) = y("") else { return };
+    assert!((y(float).unwrap() - plain).abs() < 0.01, "{plain}");
+}
+
+#[test]
+fn a_nested_groups_text_boxes_each_draw_in_their_own_box() {
+    let emu = |pt: u32| pt * 12700;
+    let xfrm = |x: u32, w: u32, cw: u32| {
+        format!(
+            r#"<a:xfrm><a:off x="{}" y="0"/><a:ext cx="{}" cy="{}"/><a:chOff x="0" y="0"/><a:chExt cx="{}" cy="{}"/></a:xfrm>"#,
+            emu(x),
+            emu(w),
+            emu(50),
+            emu(cw),
+            emu(50)
+        )
+    };
+    let wsp = |x: u32, t: &str| {
+        format!(
+            r#"<wps:wsp><wps:spPr><a:xfrm><a:off x="{}" y="0"/><a:ext cx="{}" cy="{}"/></a:xfrm></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp>"#,
+            emu(x),
+            emu(80),
+            emu(50)
+        )
+    };
+    let group = format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapNone/><a:graphic><a:graphicData><wpg:wgp xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wpg:grpSpPr>{}</wpg:grpSpPr>{}<wpg:grpSp><wpg:grpSpPr>{}</wpg:grpSpPr>{}</wpg:grpSp></wpg:wgp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        emu(100),
+        emu(400),
+        emu(100),
+        emu(25),
+        xfrm(0, 100, 200),
+        wsp(0, "Outer"),
+        xfrm(100, 100, 100),
+        wsp(50, "Inner")
+    );
+    let Some(l) = lines("", ARIAL_12, &format!("<w:p>{group}<w:r><w:t>Body</w:t></w:r></w:p>")) else { return };
+    let x = |t: &str| l.iter().find(|x| x.1 == t).map(|x| x.0);
+    assert_eq!((x("Outer"), x("Inner")), (Some(100.0), Some(175.0)), "{l:?}");
+}
+
+#[test]
+fn an_empty_section_break_paragraph_after_a_paragraph_takes_no_line() {
+    let sect = r#"<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p>"#;
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body = format!("{}{}{}{sect}", p("A"), sect.replace(r#"<w:type w:val="continuous"/>"#, ""), p("B"));
+    for mode in [14, 15] {
+        let c = format!(
+            r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#
+        );
+        let Some(l) = baselines(&c, ARIAL_12, &body) else { return };
+        assert!((l[1].3 - l[0].3 - 13.8).abs() < 0.01, "{l:?}");
+    }
+}
+
+#[test]
+fn a_page_break_in_a_table_cell_is_nothing() {
+    let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Before</w:t><w:br w:type="page"/><w:t>After</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let Some(l) = lines("", ARIAL_12, body) else { return };
+    assert_eq!(l[0].1, "BeforeAfter", "{l:?}");
+}
+
+#[test]
+fn spaces_next_to_a_no_break_space_dont_break() {
+    let fill = "word ".repeat(14);
+    let p = |gap: &str| format!("<w:p><w:r><w:t xml:space=\"preserve\">{fill}carbon.{gap}Risks and more words after them</w:t></w:r></w:p>");
+    let first = |gap: &str| lines("", ARIAL_12, &p(gap)).map(|l| l[0].1.clone());
+    let Some(plain) = first(" ") else { return };
+    assert!(plain.ends_with("carbon."), "{plain}");
+    assert!(!first("\u{a0} ").unwrap().ends_with("carbon.\u{a0}"));
+}
+
+#[test]
+fn a_runs_rpr_after_its_first_text_formats_the_text_after_it() {
+    let width = |run: &str| lines("", ARIAL_12, &format!("<w:p>{run}<w:r><w:t>|</w:t></w:r></w:p>")).map(|l| l[0].2);
+    let Some(plain) = width("<w:r><w:t>aaaa</w:t><w:t>aaaa</w:t></w:r>") else { return };
+    let bold = width("<w:r><w:t>aaaa</w:t><w:rPr><w:b/></w:rPr><w:t>aaaa</w:t></w:r>").unwrap();
+    let trailing = width("<w:r><w:t>aaaa</w:t><w:t>aaaa</w:t><w:rPr><w:b/></w:rPr></w:r>").unwrap();
+    assert!(bold > plain + 0.1 && (trailing - plain).abs() < 1e-9, "{plain} {bold} {trailing}");
+}
+
+#[test]
+fn an_inline_pictures_box_takes_its_effect_extents_and_run_position() {
+    let pic = |extra: &str| {
+        format!(
+            r#"<w:p><w:r><w:rPr><w:position w:val="-6"/></w:rPr><w:drawing><wp:inline><wp:extent cx="254000" cy="254000"/>{extra}<a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p><w:p><w:r><w:t>Next</w:t></w:r></w:p>"#
+        )
+    };
+    let y = |extra: &str| baselines("", ARIAL_12, &pic(extra)).map(|l| l.iter().find(|x| x.1 == "Next").unwrap().3);
+    let Some(plain) = y("") else { return };
+    let grown = y(r#"<wp:effectExtent l="0" t="25400" r="0" b="25400"/>"#).unwrap();
+    assert!((grown - plain - 4.0).abs() < 0.01, "{plain} {grown}");
+}
+
+#[test]
+fn a_hidden_empty_paragraph_before_a_table_takes_no_line() {
+    let tbl = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let body = |hidden: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>A</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:after="0"/>{hidden}</w:pPr></w:p>{tbl}"#
+        )
+    };
+    let gap = |hidden: &str| baselines("", ARIAL_12, &body(hidden)).map(|l| l.iter().find(|x| x.1 == "Cell").unwrap().3 - l[0].3);
+    let Some(shown) = gap("") else { return };
+    let hidden = gap("<w:rPr><w:vanish/></w:rPr>").unwrap();
+    assert!((shown - hidden - 13.8).abs() < 0.01, "{shown} {hidden}");
+}
+
+#[test]
+fn a_missing_paragraph_default_is_words_own() {
+    let p = |t: &str| format!("<w:p><w:r><w:t>{t}</w:t></w:r></w:p>");
+    let body = p("A") + &p("B");
+    let gap = |styles: &str| {
+        let parts = [
+            (
+                "word/document.xml",
+                format!(
+                    r#"<w:document xmlns:w="{W}"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+                ),
+            ),
+            (
+                "word/styles.xml",
+                format!(
+                    r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{ARIAL_12}</w:rPr></w:rPrDefault>{styles}</w:docDefaults></w:styles>"#
+                ),
+            ),
+        ];
+        let parts: Vec<(String, Vec<u8>)> = parts.into_iter().map(|(n, x)| (n.to_string(), x.into_bytes())).collect();
+        let doc = crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads");
+        let snap = layout(&doc, &fonts());
+        let mut ys = Vec::new();
+        paint(&snap.pages()[0], &mut |q| {
+            if let Item::Glyphs(r) = q.absolute() {
+                ys.push(r.baseline);
+            }
+        });
+        ys[1] - ys[0]
+    };
+    if fonts().face("Arial", None, false, false).is_none() {
+        return;
+    }
+    assert!((gap("<w:pPrDefault/>") - 13.8).abs() < 0.01);
+    assert!(gap("") > 13.8 + 8.0);
+}

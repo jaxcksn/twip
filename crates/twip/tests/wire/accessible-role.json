@@ -1,0 +1,22 @@
+[
+  "document",
+  "paragraph",
+  "heading",
+  "list",
+  "listItem",
+  "table",
+  "row",
+  "cell",
+  "columnHeader",
+  "rowHeader",
+  "image",
+  "link",
+  "textBox",
+  "note",
+  "noteRef",
+  "comment",
+  "header",
+  "footer",
+  "region",
+  "text"
+]

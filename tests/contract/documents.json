@@ -1,0 +1,34 @@
+{
+  "name": "documents",
+  "fixture": "editor/FX-mixed-format.docx",
+  "steps": [
+    { "op": "font", "file": "editor/fonts/stand-in-serif.ttf" },
+    { "op": "open" },
+    { "op": "expectState", "match": { "revision": 1, "modified": false, "load": "ready" } },
+
+    { "op": "openBytes", "base64": "UEsDBG5vdCBhIHppcA==" },
+    { "op": "expectError", "code": "import-failed" },
+    { "op": "expectState", "match": { "revision": 1, "modified": false } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Plain words" }], "result": { "found": true } },
+
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "command", "command": { "type": "setBold", "value": true } },
+    { "op": "expectState", "match": { "revision": 2, "modified": true } },
+    { "op": "export", "format": "docx", "match": { "revision": 2, "head": "PK\u0003\u0004" } },
+    { "op": "expectState", "match": { "revision": 2, "modified": false } },
+
+    { "op": "command", "command": { "type": "setItalic", "value": true } },
+    { "op": "expectState", "match": { "revision": 3, "modified": true } },
+    { "op": "export", "format": "pdf", "match": { "revision": 3, "head": "%PDF" } },
+    { "op": "expectState", "match": { "revision": 3, "modified": true } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "revision": 4, "modified": false, "formatting": { "italic": false } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "single" } },
+    { "op": "expectState", "match": { "revision": 5, "modified": true, "formatting": { "underline": "single" } } },
+
+    { "op": "reopen" },
+    { "op": "expectState", "match": { "modified": false } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "expectState", "match": { "formatting": { "bold": true, "italic": false, "underline": "none" } } }
+  ]
+}

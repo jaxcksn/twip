@@ -1,0 +1,41 @@
+{
+  "id": "E2E-STORY-04",
+  "title": "A double-click on a footnote reference goes to the note before its mark; on the note's mark, back before the reference",
+  "fixture": "FX-STORIES.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 807
+      },
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 24,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 807
+        }
+      }
+    }
+  ]
+}

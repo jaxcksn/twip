@@ -1,0 +1,19 @@
+[
+  {
+    "bold": false,
+    "family": "Calibri",
+    "italic": true
+  },
+  {
+    "bold": true,
+    "description": {
+      "charset": 0,
+      "class": "roman",
+      "panose": "02020404030301010803",
+      "pitch": "variable"
+    },
+    "family": "Garamond",
+    "italic": false,
+    "proposed": "serif"
+  }
+]

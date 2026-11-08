@@ -1,0 +1,72 @@
+{
+  "id": "MX-DOC-01",
+  "title": "Document edges: Left and Backspace at the start, Right and Delete at the end change nothing",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "key": "Home",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "ArrowLeft"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 0,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "undo_depth": 0
+      }
+    },
+    {
+      "key": "End",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 21,
+          "offset": 15
+        }
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "undo_depth": 0
+      }
+    },
+    {
+      "type": "!"
+    },
+    {
+      "expect": {
+        "text": {
+          "21": "Last paragraph.!"
+        }
+      }
+    }
+  ]
+}

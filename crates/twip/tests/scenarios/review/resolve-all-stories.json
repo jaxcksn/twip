@@ -1,0 +1,34 @@
+{
+  "id": "REV-RESOLVE-ALL-STORIES",
+  "title": "Accept all and reject all cover every story: headers, footers, notes and text boxes.",
+  "fixture": "review/FX-REVIEW-STORIES.docx",
+  "steps": [
+    {
+      "command": {
+        "type": "acceptAllRevisions"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [],
+        "undo_depth": 1
+      }
+    },
+    {
+      "command": {
+        "type": "undo"
+      }
+    },
+    {
+      "command": {
+        "type": "rejectAllRevisions"
+      }
+    },
+    {
+      "expect": {
+        "revisions": [],
+        "undo_depth": 1
+      }
+    }
+  ]
+}

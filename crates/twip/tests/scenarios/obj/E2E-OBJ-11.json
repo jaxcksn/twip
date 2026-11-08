@@ -1,0 +1,54 @@
+{
+  "id": "E2E-OBJ-11",
+  "title": "A picture whose aspect ratio isn't locked (FX-OBJ's have no noChangeAspect) resizes freely from a corner handle",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "float": 1
+      }
+    },
+    {
+      "drag": {
+        "from": {
+          "float": 1,
+          "at": "bottom-right"
+        },
+        "to": {
+          "float": 1,
+          "at": "bottom-right",
+          "dx": 50.4,
+          "dy": 10
+        }
+      }
+    },
+    {
+      "expect": {
+        "floats": [
+          {},
+          {
+            "x": 324.0,
+            "y": 7.2,
+            "w": 151.2,
+            "h": 82.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "selection": {
+          "kind": "object",
+          "float": 1
+        }
+      }
+    }
+  ]
+}

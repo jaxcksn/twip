@@ -1,0 +1,126 @@
+{
+  "id": "E2E-HIT-03",
+  "title": "Table zones: inside a cell's left edge selects the cell (a double-click its row); left of the table the row; at the first row's top the column",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    0.5,
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "table": 1,
+        "row": 0,
+        "border": 1,
+        "dx_px": 4
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            0,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "table": 1,
+        "row": 0,
+        "border": 1,
+        "dx_px": 4
+      },
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            0,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 0
+      },
+      "dx": -20
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            1,
+            0
+          ],
+          "focus": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "table": 1,
+        "row": 0,
+        "border": "top",
+        "col": 1
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            1
+          ],
+          "focus": [
+            2,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 3
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret"
+        },
+        "caret": {
+          "para": 14,
+          "offset": 3
+        }
+      }
+    }
+  ]
+}

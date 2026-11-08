@@ -1,0 +1,58 @@
+{
+  "id": "LTB-32",
+  "title": "The table's right border dragged and released outside the canvas ends at the release point, clamped: the last column at its minimum width, one step; the next click places the caret",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "press": {
+        "table": 1,
+        "row": 0,
+        "border": 3
+      }
+    },
+    {
+      "move_to": {
+        "table": 1,
+        "row": 0,
+        "border": 3,
+        "dx": -30
+      }
+    },
+    {
+      "release": "outside"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "grid": [
+              156,
+              156,
+              15.3
+            ]
+          }
+        ],
+        "undo_depth": 1
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 14,
+          "offset": 2
+        }
+      }
+    }
+  ]
+}

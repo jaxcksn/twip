@@ -1,0 +1,51 @@
+{
+  "id": "E2E-HIT-06",
+  "title": "After an edit grows an inner table, a click on a moved line resolves against the new layout",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "zooms": [
+    0.5,
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "grown"
+    },
+    {
+      "click": {
+        "para": 8,
+        "offset": 3
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 8,
+          "offset": 3,
+          "depth": 1
+        },
+        "text": {
+          "8": "Text after the inner table."
+        }
+      }
+    }
+  ]
+}

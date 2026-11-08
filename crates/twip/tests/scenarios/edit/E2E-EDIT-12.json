@@ -1,0 +1,55 @@
+{
+  "id": "E2E-EDIT-12",
+  "title": "Ctrl+Shift+Enter in text starts a new paragraph with a column break; right after a break it adds only another break",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 5
+      }
+    },
+    {
+      "key": "Enter",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short",
+          "2": "\f paragraph."
+        },
+        "caret": {
+          "para": 2,
+          "offset": 1
+        }
+      }
+    },
+    {
+      "key": "Enter",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short",
+          "2": "\f\f paragraph."
+        },
+        "caret": {
+          "para": 2,
+          "offset": 2
+        }
+      }
+    }
+  ]
+}

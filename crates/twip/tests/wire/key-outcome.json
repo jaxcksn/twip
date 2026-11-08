@@ -1,0 +1,16 @@
+[
+  {
+    "type": "handled"
+  },
+  {
+    "type": "hostCommand",
+    "value": "save"
+  },
+  {
+    "type": "shortcut",
+    "value": "insertSignature"
+  },
+  {
+    "type": "unhandled"
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "name": "font-fallback",
+  "fixture": "editor/FX-FONT-TABLE.docx",
+  "fonts": "empty",
+  "steps": [
+    { "op": "font", "file": "editor/fonts/stand-in-sans.ttf" },
+    { "op": "font", "file": "editor/fonts/stand-in-cjk.ttf" },
+    { "op": "open" },
+    { "op": "expectState", "match": { "fonts": { "characters": { "$has": [{ "family": "Stand-in Sans" }] }, "missing": [{ "family": "Consolas", "drawnWith": "Stand-in Sans", "by": "lastResort" }] } } },
+
+    { "op": "call", "method": "fonts.setCharacterFallback", "args": [["Stand-in CJK"]] },
+    { "op": "expectState", "match": { "fonts": { "characters": { "$exact": [{ "family": "Stand-in Sans", "characters": "§“”", "truncated": false }] } } } },
+
+    { "op": "call", "method": "fonts.setFallback", "args": ["Stand-in CJK"] },
+    { "op": "expectState", "match": { "fonts": { "missing": [{ "family": "Consolas", "drawnWith": "Stand-in CJK", "by": "fallback" }] } } },
+    { "op": "call", "method": "fonts.setCharacterFallback", "args": [[]] },
+    { "op": "expectState", "match": { "fonts": { "characters": { "$exact": [{ "family": "Stand-in Sans", "characters": "§“”漢", "truncated": false }] } } } },
+    { "op": "call", "method": "fonts.setSymbolFallback", "args": ["off"] },
+    { "op": "expectState", "match": { "fonts": { "characters": { "$exact": [{ "family": "Stand-in Sans", "characters": "§°“”→漢", "truncated": false }] } } } },
+    { "op": "call", "method": "fonts.setSymbolFallback", "args": ["bundled"] },
+    { "op": "call", "method": "fonts.setFallback", "args": [null] },
+    { "op": "expectState", "match": { "fonts": { "missing": [{ "family": "Consolas", "drawnWith": "Stand-in Sans", "by": "lastResort" }] } } }
+  ]
+}

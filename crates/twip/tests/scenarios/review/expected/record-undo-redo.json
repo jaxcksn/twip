@@ -1,0 +1,425 @@
+{
+  "description": "Undo of a tracked edit, then redo with tracking off; and undo of a tracked deletion with tracking off.",
+  "setup": "one paragraph \"Alpha beta gamma.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "Alpha beta gamma.",
+        "runs": [
+          {
+            "text": "Alpha beta gamma.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "type \"new \" before \"beta\"",
+      "author": "Author A",
+      "op": {
+        "op": "type",
+        "at": 6,
+        "text": "new "
+      },
+      "selection": {
+        "start": 10,
+        "end": 10
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha new beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "new ",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "new "
+          }
+        ]
+      }
+    },
+    {
+      "do": "undo",
+      "author": "Author A",
+      "op": {
+        "op": "undo"
+      },
+      "selection": {
+        "start": 6,
+        "end": 6
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": []
+      }
+    },
+    {
+      "do": "turn tracking off, then redo",
+      "author": "Author A",
+      "op": {
+        "op": "redo",
+        "tracking": false
+      },
+      "selection": {
+        "start": 10,
+        "end": 10
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha new beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "new ",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "new "
+          }
+        ]
+      }
+    },
+    {
+      "do": "turn tracking on, delete \"gamma\"",
+      "author": "Author A",
+      "op": {
+        "op": "delete",
+        "start": 15,
+        "end": 20,
+        "tracking": true
+      },
+      "selection": {
+        "start": 10,
+        "end": 10
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha new beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "new ",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": " gamma",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": ".",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "new "
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": " gamma"
+          }
+        ]
+      }
+    },
+    {
+      "do": "turn tracking off, then undo",
+      "author": "Author A",
+      "op": {
+        "op": "undo",
+        "tracking": false
+      },
+      "selection": {
+        "start": 10,
+        "end": 10
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha new beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "new ",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "new "
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "E2E-IME-03",
+  "title": "A committed composition in a nested table's cell goes into that cell",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "ime": "テスト"
+    },
+    {
+      "expect": {
+        "text": {
+          "3": "テストInner A R1 C2",
+          "2": "Inner A R1 C1"
+        },
+        "caret": {
+          "para": 3,
+          "offset": 3,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

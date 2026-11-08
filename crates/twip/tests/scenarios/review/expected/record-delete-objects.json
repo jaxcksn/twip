@@ -1,0 +1,1238 @@
+{
+  "description": "Deleting an untracked field, content control, picture, text box and footnote reference.",
+  "setup": "one paragraph \"Alpha beta gamma.\" with, untracked: a field { = 1 + 1 } before \"beta\", a content control \"cc\" at the start, an inline picture before \".\", a text box \"Box\" anchored to the paragraph, a footnote \"Note.\" after \"Alpha\"",
+  "initial": {
+    "body": [
+      {
+        "text": "￼ccAlpha￼ 2beta gamma￼.",
+        "runs": [
+          {
+            "text": "￼ccAlpha",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          },
+          {
+            "text": "￼",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [
+              "rStyle:val=FootnoteReference"
+            ],
+            "was": null
+          },
+          {
+            "text": " 2beta gamma￼.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ],
+    "footnotes": [
+      {
+        "text": " Note.",
+        "runs": [
+          {
+            "text": " Note.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [
+          "pStyle:val=FootnoteText"
+        ],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ],
+    "textboxes": [
+      {
+        "text": "Box",
+        "runs": [
+          {
+            "text": "Box",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "delete the field",
+      "author": "Author A",
+      "op": {
+        "op": "delete-field",
+        "field": 1
+      },
+      "selection": {
+        "start": 2,
+        "end": 2
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "￼ccAlpha￼ 2beta gamma￼.",
+              "runs": [
+                {
+                  "text": "￼ccAlpha",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [
+                    "rStyle:val=FootnoteReference"
+                  ],
+                  "was": null
+                },
+                {
+                  "text": " ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma￼.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footnotes": [
+            {
+              "text": " Note.",
+              "runs": [
+                {
+                  "text": " Note.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=FootnoteText"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "textboxes": [
+            {
+              "text": "Box",
+              "runs": [
+                {
+                  "text": "Box",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "2"
+          }
+        ]
+      }
+    },
+    {
+      "do": "delete the content control with its contents",
+      "author": "Author A",
+      "op": {
+        "op": "delete-control",
+        "control": 1
+      },
+      "selection": {
+        "start": 2,
+        "end": 2
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "￼ccAlpha￼ 2beta gamma￼.",
+              "runs": [
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "cc",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Alpha",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [
+                    "rStyle:val=FootnoteReference"
+                  ],
+                  "was": null
+                },
+                {
+                  "text": " ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma￼.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footnotes": [
+            {
+              "text": " Note.",
+              "runs": [
+                {
+                  "text": " Note.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=FootnoteText"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "textboxes": [
+            {
+              "text": "Box",
+              "runs": [
+                {
+                  "text": "Box",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "cc"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "2"
+          }
+        ]
+      }
+    },
+    {
+      "do": "delete the picture",
+      "author": "Author A",
+      "op": {
+        "op": "delete-picture",
+        "picture": 1
+      },
+      "selection": {
+        "start": 2,
+        "end": 2
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "￼ccAlpha￼ 2beta gamma￼.",
+              "runs": [
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "cc",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Alpha",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [
+                    "rStyle:val=FootnoteReference"
+                  ],
+                  "was": null
+                },
+                {
+                  "text": " ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": ".",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footnotes": [
+            {
+              "text": " Note.",
+              "runs": [
+                {
+                  "text": " Note.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=FootnoteText"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "textboxes": [
+            {
+              "text": "Box",
+              "runs": [
+                {
+                  "text": "Box",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "cc"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "2"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "/"
+          }
+        ]
+      }
+    },
+    {
+      "do": "delete the text box",
+      "author": "Author A",
+      "op": {
+        "op": "delete-textbox",
+        "shape": 1
+      },
+      "selection": {
+        "start": 2,
+        "end": 2
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "￼ccAlpha￼ 2beta gamma￼.",
+              "runs": [
+                {
+                  "text": "￼cc",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Alpha",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [
+                    "rStyle:val=FootnoteReference"
+                  ],
+                  "was": null
+                },
+                {
+                  "text": " ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": ".",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-default": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-default": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footnotes": [
+            {
+              "text": " Note.",
+              "runs": [
+                {
+                  "text": " Note.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=FootnoteText"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "textboxes": [
+            {
+              "text": "Box",
+              "runs": [
+                {
+                  "text": "Box",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "cc"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "2"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "/"
+          }
+        ]
+      }
+    },
+    {
+      "do": "delete the footnote reference",
+      "author": "Author A",
+      "op": {
+        "op": "delete-footnote",
+        "footnote": 1
+      },
+      "selection": {
+        "start": 2,
+        "end": 2
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "￼ccAlpha￼ 2beta gamma￼.",
+              "runs": [
+                {
+                  "text": "￼cc",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "Alpha",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [
+                    "rStyle:val=FootnoteReference"
+                  ],
+                  "was": null
+                },
+                {
+                  "text": " ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "2",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta gamma",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "￼",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": ".",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-default": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "header-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Header"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-even": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-default": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footer-first": [
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=Footer"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "footnotes": [
+            {
+              "text": " Note.",
+              "runs": [
+                {
+                  "text": " Note.",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": "Author A",
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [
+                "pStyle:val=FootnoteText"
+              ],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ],
+          "textboxes": [
+            {
+              "text": "Box",
+              "runs": [
+                {
+                  "text": "Box",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "cc"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "\u0002"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "2"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "/"
+          },
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "\u0002 Note.\r",
+            "story": "footnotes"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "id": "E2E-OBJ-03",
+  "title": "Esc with a float selected puts the caret at its anchor paragraph's start",
+  "fixture": "FX-OBJ.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 5
+      }
+    },
+    {
+      "click": {
+        "float": 1
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "object",
+          "float": 1
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "offset": 0
+        }
+      }
+    }
+  ]
+}

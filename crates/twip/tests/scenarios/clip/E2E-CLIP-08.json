@@ -1,0 +1,56 @@
+{
+  "id": "E2E-CLIP-08",
+  "title": "A copied 2\u00d72 cell block pasted outside a table becomes a 2\u00d72 table there",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 13,
+          "offset": 2
+        },
+        "to": {
+          "para": 17,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "clipboard": "copy"
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": "end"
+      }
+    },
+    {
+      "clipboard": "paste"
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "rows": 2,
+            "cells": [
+              2,
+              2
+            ]
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "13": "T2 R1 C1",
+          "16": "T2 R2 C2"
+        }
+      }
+    }
+  ]
+}

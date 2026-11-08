@@ -1,0 +1,60 @@
+{
+  "id": "MT-PTBL-CLICK-L2",
+  "title": "Paragraph to table: clicks past the ends of the paragraphs before and after stay in them; a click on the first cell's text goes into the table (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": "end"
+      },
+      "dx": 30
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 15,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 27,
+        "offset": "end"
+      },
+      "dx": 30
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 27,
+          "offset": 14,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

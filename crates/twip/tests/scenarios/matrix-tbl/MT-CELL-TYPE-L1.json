@@ -1,0 +1,35 @@
+{
+  "id": "MT-CELL-TYPE-L1",
+  "title": "Cell to cell: typing at a cell's start goes into that cell (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 30,
+        "offset": 0
+      }
+    },
+    {
+      "type": "Q"
+    },
+    {
+      "expect": {
+        "text": {
+          "29": "Level 1, row 2",
+          "30": "Qx"
+        },
+        "caret": {
+          "para": 30,
+          "offset": 1,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

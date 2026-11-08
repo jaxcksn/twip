@@ -1,0 +1,530 @@
+{
+  "id": "LTB-06",
+  "title": "A click in every cell of every table of FX-NEST-3 puts the caret in that cell at its own nesting level (a click on a closing paragraph below an inner table waits for layout: that paragraph is drawn 0 pt high, Word ~7.5 pt); not at 50%: at 50% a character stop is about 1.5 CSS px, under a real mouse's precision",
+  "fixture": "FX-NEST-3.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "zooms": [
+    1,
+    1.75,
+    2
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 2,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 4,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 4,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 5,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 5,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 6,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 6,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 7,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 7,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 8,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 8,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 9,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 9,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 10,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 10,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 2,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 12,
+          "offset": 2,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 13,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 14,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 14,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 15,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 15,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 16,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 16,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 17,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 17,
+          "offset": 2,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 18,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 18,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 19,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 20,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 20,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 21,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 21,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "table": 4,
+        "row": 1,
+        "border": "bottom",
+        "dy": 4.5
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 22,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 23,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 23,
+          "offset": 2,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 24,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 24,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 25,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 25,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 26,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 27,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 27,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 28,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 28,
+          "offset": 2,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 29,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 29,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 30,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 30,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 31,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 31,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 32,
+        "offset": 2
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 32,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 8,
+        "offset": 3
+      },
+      "dy": 25
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 8,
+          "offset": 3,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 30,
+        "offset": 3
+      },
+      "dy": 25
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 30,
+          "offset": 3,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

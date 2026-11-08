@@ -1,0 +1,41 @@
+{
+  "id": "E2E-EDIT-01",
+  "title": "End on a soft-wrapped line shows the caret at its end; Right moves one character",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "affinity": "upstream",
+          "depth": 0
+        }
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "affinity": "downstream"
+        }
+      }
+    }
+  ]
+}

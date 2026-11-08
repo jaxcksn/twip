@@ -1,0 +1,88 @@
+{
+  "id": "MX-BREAK-02",
+  "title": "Line break: Delete before it and Backspace after it remove the break; Enter after it splits the paragraph",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "text": {
+          "11": "Line oneLine two, after a line break  Line four, after an empty line"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "text": {
+          "11": "Line oneLine two, after a line break  Line four, after an empty line"
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "click": {
+        "para": 11,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "11": "Line one ",
+          "12": "Line two, after a line break  Line four, after an empty line"
+        }
+      }
+    }
+  ]
+}

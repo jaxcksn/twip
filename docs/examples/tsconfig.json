@@ -1,0 +1,19 @@
+{
+  // Type-checks every TypeScript example the guides show against the built package (bindings/web/dist).
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": [],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "experimentalDecorators": true,
+    "paths": { "@twip/web": ["../../bindings/web/dist/index.d.ts"] }
+  },
+  "include": ["web"]
+}

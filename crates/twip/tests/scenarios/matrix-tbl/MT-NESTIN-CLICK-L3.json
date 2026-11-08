@@ -1,0 +1,60 @@
+{
+  "id": "MT-NESTIN-CLICK-L3",
+  "title": "Containing-cell text to inner table: a click past the text before stays in it; a click just below the inner table lands in the text after; a click on the inner text goes in (nesting level 3)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": "end"
+      },
+      "dx": 30
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "offset": 15,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "table": 3,
+        "row": 1,
+        "border": "bottom",
+        "dy": 3.75
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 19,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 4,
+        "offset": 0
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 4,
+          "offset": 0,
+          "depth": 4
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "id": "E2E-CLIP-02",
+  "title": "Cut and paste across paragraphs moves them; pasting outside text inserts plain text with its paragraphs and tabs",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 6
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "clipboard": "cut"
+    },
+    {
+      "expect": {
+        "text": {
+          "1": {
+            "starts": "Short Plain, bold"
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 0,
+        "offset": "end"
+      }
+    },
+    {
+      "clipboard": "paste"
+    },
+    {
+      "expect": {
+        "text": {
+          "0": "FX-TEXTparagraph.",
+          "1": {
+            "starts": "Inventory relevant"
+          },
+          "2": "",
+          "3": {
+            "starts": "Short Plain, bold"
+          }
+        },
+        "caret": {
+          "para": 2,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "paste_text": "one\ttwo\nthree"
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "one\ttwo",
+          "3": "three",
+          "4": {
+            "starts": "Short Plain, bold"
+          }
+        }
+      }
+    }
+  ]
+}

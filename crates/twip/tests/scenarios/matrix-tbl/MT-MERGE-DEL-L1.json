@@ -1,0 +1,47 @@
+{
+  "id": "MT-MERGE-DEL-L1",
+  "title": "Merged cells: Delete at a vertical merge's text end does nothing (nesting level 1)",
+  "fixture": "FX-TBL-MERGED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 11,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "undo_depth": 0,
+        "text": {
+          "11": "Vertical merge over 3 rows",
+          "12": "1"
+        },
+        "tables": [
+          {
+            "cells": [
+              6,
+              4,
+              4,
+              5,
+              4,
+              4,
+              3,
+              3,
+              2,
+              1
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

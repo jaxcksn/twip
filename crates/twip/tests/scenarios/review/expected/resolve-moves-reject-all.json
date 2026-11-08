@@ -1,0 +1,150 @@
+{
+  "description": "reject all revisions of FX-REVIEW-MOVES.docx, in every story.",
+  "fixture": "FX-REVIEW-MOVES.docx",
+  "scope": "all",
+  "op": "reject",
+  "error": null,
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group.",
+          "runs": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional.",
+          "runs": [
+            {
+              "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate.",
+          "runs": [
+            {
+              "text": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Notice claim team export staff.. The meeting forecast hereby vendors practical schedule state entry estimate management action. ",
+          "runs": [
+            {
+              "text": "Notice claim team export staff.. The meeting forecast hereby vendors practical schedule state entry estimate management action. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Numbered item",
+          "runs": [
+            {
+              "text": "Numbered item",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [
+            "pStyle:val=ListParagraph"
+          ],
+          "pwas": null,
+          "num": [
+            "ilvl:val=0",
+            "numId:val=1"
+          ],
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": []
+  }
+}

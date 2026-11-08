@@ -1,0 +1,33 @@
+{
+  "fixture": "FX-OBJ.docx",
+  "id": "FUZZ-FX-OBJ-11",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 2,
+        "para": 0
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 49,
+        "para": 9
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "x"
+    }
+  ],
+  "title": "Fuzz regression FUZZ-FX-OBJ-11 (fixed 2026-10-24; first failure: assertion `left == right` failed: undo-all restores the original document)"
+}

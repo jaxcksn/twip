@@ -1,0 +1,12 @@
+{
+  "name": "list-galleries",
+  "fixture": "editor/FX-CUSTOM-LISTS.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "call", "method": "lists.galleries", "args": ["multilevel"], "result": {"$has": [{"kind": "library"}, {"kind": "recentlyUsed"}, {"kind": "document"}, {"kind": "listStyles"}]}},
+    {"op": "command", "command": {"type": "applyListEntry", "value": "library:numbering:3"}},
+    {"op": "call", "method": "lists.galleries", "args": ["numbering"], "result": {"$has": [{"kind": "recentlyUsed", "entries": {"$has": [{"id": "recent:0", "label": "I."}]}}]}},
+    {"op": "command", "command": {"type": "applyListEntry", "value": "library:bullet:99"}},
+    {"op": "expectError", "code": "invalid-argument"}
+  ]
+}

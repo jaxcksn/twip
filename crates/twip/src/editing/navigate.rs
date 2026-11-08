@@ -1,0 +1,403 @@
+//! Caret movement
+
+use std::rc::Rc;
+
+use crate::docx::{Block, Document, Table};
+use crate::layout::{ParaId, TableId, Unit};
+
+use super::geometry::{PageGeometry, Pages};
+use super::index::{Container, DocIndex};
+use super::position::{Affinity, Place, Position, StoryId};
+use super::step::para_len;
+use super::table::Grid;
+use super::text::UnitText;
+
+pub struct Nav<'a> {
+    pub doc: &'a Document,
+    pub idx: &'a DocIndex,
+    pub pages: &'a mut Pages,
+    pub near: usize,
+}
+
+pub struct LineAt {
+    pub page: usize,
+    pub line: usize,
+    pub geo: Rc<PageGeometry>,
+}
+
+impl Nav<'_> {
+    fn text(&self, para: ParaId) -> Option<UnitText> {
+        self.idx.para(self.doc, para).map(UnitText::of)
+    }
+
+    fn story_of_container(&self, c: Container) -> StoryId {
+        self.idx.story(c)
+    }
+
+    // First and last places
+
+    fn block_start(&self, story: StoryId, b: &Block) -> Option<Position> {
+        match b {
+            Block::Para(p) => Some(Position::text(story, ParaId(p.id), Unit(0))),
+            Block::Table(t) => self.cell_first(story, t, 0, self.first_cell(t, 0)?),
+        }
+    }
+
+    fn block_end(&self, story: StoryId, b: &Block) -> Option<Position> {
+        match b {
+            Block::Para(p) => Some(Position::text(story, ParaId(p.id), para_len(p))),
+            Block::Table(t) => Some(Position::row_end(story, TableId(t.id), t.rows.len().checked_sub(1)?)),
+        }
+    }
+
+    fn first_cell(&self, t: &Table, row: usize) -> Option<usize> {
+        let g = Grid::of(t);
+        (0..t.rows.get(row)?.cells.len()).find(|&c| !g.continues(row, c))
+    }
+
+    fn cell_first(&self, story: StoryId, t: &Table, row: usize, cell: usize) -> Option<Position> {
+        t.rows.get(row)?.cells.get(cell)?.blocks.first().and_then(|b| self.block_start(story, b))
+    }
+
+    fn cell_last(&self, story: StoryId, t: &Table, row: usize, cell: usize) -> Option<Position> {
+        t.rows.get(row)?.cells.get(cell)?.blocks.last().and_then(|b| self.block_end(story, b))
+    }
+
+    fn section_beside(&self, c: Container, forward: bool) -> Option<Container> {
+        let Container::Section(i) = c else { return None };
+        let has_blocks = |&j: &usize| !self.doc.sections[j].blocks.is_empty();
+        let j = if forward { (i + 1..self.doc.sections.len()).find(has_blocks) } else { (0..i).rev().find(has_blocks) };
+        j.map(Container::Section)
+    }
+
+    fn after(&self, container: Container, block: usize) -> Option<Position> {
+        let story = self.story_of_container(container);
+        let blocks = self.idx.blocks(self.doc, container)?;
+        if let Some(b) = blocks.get(block + 1) {
+            return self.block_start(story, b);
+        }
+        let Container::Cell { table, row, cell } = container else {
+            let next = self.section_beside(container, true)?;
+            return self.idx.blocks(self.doc, next)?.first().and_then(|b| self.block_start(story, b));
+        };
+        let t = self.idx.table(self.doc, table)?;
+        let g = Grid::of(t);
+        match (cell + 1..t.rows[row].cells.len()).find(|&c| !g.continues(row, c)) {
+            Some(c) => self.cell_first(story, t, row, c),
+            None => Some(Position::row_end(story, table, row)),
+        }
+    }
+
+    fn after_row(&self, story: StoryId, table: TableId, row: usize) -> Option<Position> {
+        let t = self.idx.table(self.doc, table)?;
+        if row + 1 < t.rows.len() {
+            return match self.first_cell(t, row + 1) {
+                Some(c) => self.cell_first(story, t, row + 1, c),
+                None => Some(Position::row_end(story, table, row + 1)),
+            };
+        }
+        let s = self.idx.table_slot(table)?;
+        self.after(s.container, s.block)
+    }
+
+    fn before(&self, container: Container, block: usize) -> Option<Position> {
+        let story = self.story_of_container(container);
+        let blocks = self.idx.blocks(self.doc, container)?;
+        if block > 0 {
+            return self.block_end(story, &blocks[block - 1]);
+        }
+        let Container::Cell { table, row, cell } = container else {
+            let prev = self.section_beside(container, false)?;
+            return self.idx.blocks(self.doc, prev)?.last().and_then(|b| self.block_end(story, b));
+        };
+        let t = self.idx.table(self.doc, table)?;
+        let g = Grid::of(t);
+        match (0..cell).rev().find(|&c| !g.continues(row, c)) {
+            Some(c) => self.cell_last(story, t, row, c),
+            None if row > 0 => Some(Position::row_end(story, table, row - 1)),
+            None => {
+                let s = self.idx.table_slot(table)?;
+                self.before(s.container, s.block)
+            }
+        }
+    }
+
+    fn before_row_end(&self, story: StoryId, table: TableId, row: usize) -> Option<Position> {
+        let t = self.idx.table(self.doc, table)?;
+        let g = Grid::of(t);
+        let c = (0..t.rows.get(row)?.cells.len()).rev().find(|&c| !g.continues(row, c))?;
+        self.cell_last(story, t, row, c)
+    }
+
+    // Logical movement
+
+    pub fn right(&self, pos: Position, word: bool) -> Position {
+        match pos.place {
+            Place::Text { para, offset, .. } => {
+                let Some(t) = self.text(para) else { return pos };
+                if offset < t.len() {
+                    let u = if word { t.next_word(offset) } else { t.next_grapheme(offset) };
+                    return Position::text(pos.story, para, u);
+                }
+                let Some(s) = self.idx.para_slot(para) else { return pos };
+                self.after(s.container, s.block).unwrap_or(pos)
+            }
+            Place::RowEnd { table, row } => self.after_row(pos.story, table, row).unwrap_or(pos),
+        }
+    }
+
+    pub fn left(&self, pos: Position, word: bool) -> Position {
+        match pos.place {
+            Place::Text { para, offset, .. } => {
+                let Some(t) = self.text(para) else { return pos };
+                if offset > Unit(0) {
+                    let u = if word { t.prev_word(offset) } else { t.prev_grapheme(offset) };
+                    return Position::text(pos.story, para, u);
+                }
+                let Some(s) = self.idx.para_slot(para) else { return pos };
+                self.before(s.container, s.block).unwrap_or(pos)
+            }
+            Place::RowEnd { table, row } => self.before_row_end(pos.story, table, row).unwrap_or(pos),
+        }
+    }
+
+    pub fn next_para(&self, pos: Position) -> Position {
+        self.right(self.para_end(pos), false)
+    }
+
+    pub fn prev_para(&self, pos: Position) -> Position {
+        match pos.place {
+            Place::Text { para, offset, .. } if offset > Unit(0) => Position::text(pos.story, para, Unit(0)),
+            _ => {
+                let p = self.left(pos, false);
+                match p.place {
+                    Place::Text { para, .. } => Position::text(p.story, para, Unit(0)),
+                    Place::RowEnd { .. } => p,
+                }
+            }
+        }
+    }
+
+    fn para_end(&self, pos: Position) -> Position {
+        match pos.place {
+            Place::Text { para, .. } => match self.idx.para(self.doc, para) {
+                Some(p) => Position::text(pos.story, para, para_len(p)),
+                None => pos,
+            },
+            Place::RowEnd { .. } => pos,
+        }
+    }
+
+    pub fn story_edge(&self, story: StoryId, end: bool) -> Option<Position> {
+        let roots: Vec<Container> = match story {
+            StoryId::Body => (0..self.doc.sections.len()).map(Container::Section).collect(),
+            s => vec![Container::Story(s)],
+        };
+        let pick = |c: &Container| -> Option<Position> {
+            let blocks = self.idx.blocks(self.doc, *c)?;
+            if end { blocks.last().and_then(|b| self.block_end(story, b)) } else { blocks.first().and_then(|b| self.block_start(story, b)) }
+        };
+        if end { roots.iter().rev().find_map(pick) } else { roots.iter().find_map(pick) }
+    }
+
+    pub fn table_edge(&self, pos: Position, row_wise: bool, end: bool) -> Option<Position> {
+        let level = *self.idx.chain_of(&pos).last()?;
+        let t = self.idx.table(self.doc, level.table)?;
+        let g = Grid::of(t);
+        let (r, c) = if row_wise {
+            let mut cells = (0..t.rows.get(level.row)?.cells.len()).filter(|&c| !g.continues(level.row, c));
+            (level.row, if end { cells.next_back()? } else { cells.min()? })
+        } else {
+            let cell = level.cell.min(t.rows.get(level.row)?.cells.len().checked_sub(1)?);
+            let col = g.col_of(level.row, cell)?;
+            let mut rows = (0..t.rows.len()).filter_map(|r| g.cell_at(r, col).map(|c| g.merge_start(r, c)));
+            if end { rows.next_back()? } else { rows.min()? }
+        };
+        self.cell_first(pos.story, t, r, c)
+    }
+
+    // Geometry
+
+    pub fn line_of(&mut self, pos: Position) -> Option<LineAt> {
+        let (para, unit, affinity) = match pos.place {
+            Place::Text { para, offset, affinity } => (para, offset, affinity),
+            Place::RowEnd { .. } => return None,
+        };
+        let (page, geo, line) = self.pages.line_showing(para, unit, affinity, self.near, self.idx)?;
+        Some(LineAt { page, line, geo })
+    }
+
+    pub fn line_edge(&mut self, pos: Position, end: bool) -> Option<Position> {
+        let at = self.line_of(pos)?;
+        let l = &at.geo.lines[at.line];
+        let stop = if end { l.stops.last()? } else { l.stops.first()? };
+        let wraps = end && at.geo.lines.iter().any(|m| m.first_of(stop.para) == Some(stop.unit) && m.top > l.top);
+        Some(Position {
+            story: pos.story,
+            place: Place::Text { para: stop.para, offset: stop.unit, affinity: if wraps { Affinity::Upstream } else { Affinity::Downstream } },
+        })
+    }
+
+    pub fn caret_x(&mut self, pos: Position) -> Option<f64> {
+        let at = self.line_of(pos)?;
+        let (para, unit) = pos.para_offset()?;
+        at.geo.lines[at.line].x_of(para, unit)
+    }
+
+    fn on_line(&mut self, story: StoryId, para: ParaId, x: f64, last: bool) -> Option<Position> {
+        let pages = self.pages.pages_of(para, self.near, self.idx);
+        let page = if last { *pages.last()? } else { *pages.first()? };
+        let geo = self.pages.page(page, self.idx)?;
+        let line = if last { geo.lines_of(para).last() } else { geo.lines_of(para).next() };
+        let Some((_, line)) = line else {
+            return geo.cells.iter().any(|c| c.closing.is_some_and(|(p, _)| p == para)).then(|| Position::text(story, para, Unit(0)));
+        };
+        let stop = line.nearest(x)?;
+        let wraps = stop.end && geo.lines.iter().any(|m| m.first_of(stop.para) == Some(stop.unit) && m.top > line.top);
+        Some(Position {
+            story,
+            place: Place::Text { para: stop.para, offset: stop.unit, affinity: if wraps { Affinity::Upstream } else { Affinity::Downstream } },
+        })
+    }
+
+    pub fn vertical(&mut self, pos: Position, x: f64, down: bool) -> Option<Position> {
+        let mut from = pos.para_offset().map(|(p, _)| p);
+        if let Some(at) = self.line_of(pos) {
+            let l = &at.geo.lines[at.line];
+            let para = if down { l.paras.last() } else { l.paras.first() }.copied().or(from)?;
+            from = Some(para);
+            let same: Vec<usize> = at.geo.lines_of(para).map(|(i, _)| i).collect();
+            let k = same.iter().position(|&i| i == at.line)?;
+            let next = if down { same.get(k + 1) } else { k.checked_sub(1).and_then(|j| same.get(j)) };
+            if let Some(&i) = next {
+                let stop = at.geo.lines[i].nearest(x)?;
+                return Some(Position::text(pos.story, stop.para, stop.unit));
+            }
+            let page = if down { Some(at.page + 1) } else { at.page.checked_sub(1) };
+            if let Some(g) = page.and_then(|page| self.pages.page(page, self.idx)) {
+                let lines: Vec<usize> = g.lines_of(para).map(|(i, _)| i).collect();
+                if let Some(&i) = if down { lines.first() } else { lines.last() } {
+                    let stop = g.lines[i].nearest(x)?;
+                    return Some(Position::text(pos.story, stop.para, stop.unit));
+                }
+            }
+        }
+        let target = match pos.place {
+            Place::Text { .. } => {
+                let para = from?;
+                let s = self.idx.para_slot(para)?;
+                if down { self.below(s.container, s.block, x)? } else { self.above(s.container, s.block, x)? }
+            }
+            Place::RowEnd { table, row } => {
+                let s = self.idx.table_slot(table)?;
+                let t = self.idx.table(self.doc, table)?;
+                if down {
+                    if row + 1 < t.rows.len() { self.enter_row(pos.story, t, row + 1, x, true)? } else { self.below(s.container, s.block, x)? }
+                } else if row > 0 {
+                    self.enter_row(pos.story, t, row - 1, x, false)?
+                } else {
+                    self.above(s.container, s.block, x)?
+                }
+            }
+        };
+        Some(target)
+    }
+
+    fn below(&mut self, container: Container, block: usize, x: f64) -> Option<Position> {
+        let story = self.story_of_container(container);
+        let blocks = self.idx.blocks(self.doc, container)?;
+        if let Some(b) = blocks.get(block + 1) {
+            return self.enter(story, b, x, true);
+        }
+        let Container::Cell { table, row, cell } = container else {
+            let next = self.section_beside(container, true)?;
+            let b = self.idx.blocks(self.doc, next)?.first()?;
+            return self.enter(story, b, x, true);
+        };
+        let t = self.idx.table(self.doc, table)?;
+        let g = Grid::of(t);
+        let col = self.column_at(t, row, cell, x, &g);
+        match g.below(row, col) {
+            Some((r, _)) => self.enter_row(story, t, r, x, true),
+            None => {
+                let s = self.idx.table_slot(table)?;
+                self.below(s.container, s.block, x)
+            }
+        }
+    }
+
+    fn above(&mut self, container: Container, block: usize, x: f64) -> Option<Position> {
+        let story = self.story_of_container(container);
+        let blocks = self.idx.blocks(self.doc, container)?;
+        if block > 0 {
+            return self.enter(story, &blocks[block - 1], x, false);
+        }
+        let Container::Cell { table, row, cell } = container else {
+            let prev = self.section_beside(container, false)?;
+            let b = self.idx.blocks(self.doc, prev)?.last()?;
+            return self.enter(story, b, x, false);
+        };
+        let t = self.idx.table(self.doc, table)?;
+        let g = Grid::of(t);
+        let col = self.column_at(t, row, cell, x, &g);
+        match g.above(row, col) {
+            Some((r, _)) => self.enter_row(story, t, r, x, false),
+            None => {
+                let s = self.idx.table_slot(table)?;
+                self.above(s.container, s.block, x)
+            }
+        }
+    }
+
+    fn column_at(&mut self, t: &Table, row: usize, cell: usize, x: f64, g: &Grid) -> usize {
+        let own = g.col_of(row, cell).unwrap_or(0);
+        let Some(c) = self.cell_rect_cell(TableId(t.id), row, x) else { return own };
+        g.col_of(row, c).unwrap_or(own)
+    }
+
+    fn cell_rect_cell(&mut self, table: TableId, row: usize, x: f64) -> Option<usize> {
+        for i in 0..self.pages.len() {
+            let page = (self.near + i) % self.pages.len().max(1);
+            let Some(geo) = self.pages.page(page, self.idx) else { continue };
+            if !geo.shows_table(table) {
+                continue;
+            }
+            let cells: Vec<(usize, [f64; 4])> = geo
+                .cells
+                .iter()
+                .filter(|c| c.chain.last().is_some_and(|k| k.0 == table && k.1 == row))
+                .map(|c| (c.chain.last().map_or(0, |k| k.2), c.rect))
+                .collect();
+            if cells.is_empty() {
+                continue;
+            }
+            return cells
+                .iter()
+                .find(|(_, r)| x >= r[0] && x < r[2])
+                .or_else(|| {
+                    cells.iter().min_by(|a, b| (a.1[0] - x).abs().min((a.1[2] - x).abs()).total_cmp(&(b.1[0] - x).abs().min((b.1[2] - x).abs())))
+                })
+                .map(|c| c.0);
+        }
+        None
+    }
+
+    fn enter(&mut self, story: StoryId, b: &Block, x: f64, down: bool) -> Option<Position> {
+        match b {
+            Block::Para(p) => self.on_line(story, ParaId(p.id), x, !down),
+            Block::Table(t) => {
+                let row = if down { 0 } else { t.rows.len().checked_sub(1)? };
+                self.enter_row(story, t, row, x, down)
+            }
+        }
+    }
+
+    fn enter_row(&mut self, story: StoryId, t: &Table, row: usize, x: f64, down: bool) -> Option<Position> {
+        let g = Grid::of(t);
+        let cell = self.cell_rect_cell(TableId(t.id), row, x).or_else(|| self.first_cell(t, row))?;
+        let (r, c) = g.merge_start(row, cell);
+        let blocks = &t.rows.get(r)?.cells.get(c)?.blocks;
+        let b = if down { blocks.first()? } else { blocks.last()? };
+        self.enter(story, b, x, down)
+    }
+}

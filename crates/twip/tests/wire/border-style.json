@@ -1,0 +1,19 @@
+[
+  "single",
+  "double",
+  "dotted",
+  "dashed",
+  "thick",
+  "dotDash",
+  "dotDotDash",
+  "triple",
+  "thinThickSmallGap",
+  "thickThinSmallGap",
+  "thinThickThinSmallGap",
+  "wave",
+  "doubleWave",
+  "threeDEmboss",
+  "threeDEngrave",
+  "outset",
+  "inset"
+]

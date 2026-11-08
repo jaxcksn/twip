@@ -1,0 +1,405 @@
+{
+  "description": "reject all revisions of Author A in FX-REVIEW-RUNS.docx (only that reviewer shown, then accept or reject all shown).",
+  "fixture": "FX-REVIEW-RUNS.docx",
+  "scope": "author",
+  "author": "Author A",
+  "op": "reject",
+  "error": null,
+  "result": {
+    "stories": {
+      "body": [
+        {
+          "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group relief results. Notice claim team export staff newsletter. Pilot receipt corporate requirement standard fact that products distribution filed logistics. Trend suggestions board order update granted agreement. The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+          "runs": [
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory relevant group relief results. Notice claim team export staff newsletter. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics. ",
+              "ins": null,
+              "del": "Author B",
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Trend suggestions board order update granted agreement. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": "Author C",
+              "rpr": [
+                "b"
+              ],
+              "was": []
+            },
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff. Inventory relevant group relief results region. Trend suggestions board order update granted agreement marketing promotion division date. Pilot receipt corporate requirement standard fact that. The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+          "runs": [
+            {
+              "text": "Inventory relevant group relief results region ledger brief usage cause colleague partner. Section notice claim team export staff. Inventory relevant group relief results region. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Trend suggestions board order update granted agreement marketing promotion division date. ",
+              "ins": null,
+              "del": "Author B",
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Pilot receipt corporate requirement standard fact that. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": "Author C",
+              "rpr": [
+                "b"
+              ],
+              "was": []
+            },
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate requirement standard. The meeting forecast hereby vendors practical. Inventory relevant group relief results region ledger brief usage cause colleague. Inventory relevant group relief results region ledger. The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+          "runs": [
+            {
+              "text": "Notice claim team export staff newsletter review matter presenter advisor account served. Savings pilot receipt corporate requirement standard. The meeting forecast hereby vendors practical. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Inventory relevant group relief results region ledger brief usage cause colleague. ",
+              "ins": null,
+              "del": "Author B",
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Inventory relevant group relief results region ledger. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": "Author C",
+              "rpr": [
+                "b"
+              ],
+              "was": []
+            },
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility tax finds. Trend suggestions board order update granted. Pilot receipt corporate requirement standard fact that products distribution filed logistics. Trend suggestions board order update granted agreement. The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+          "runs": [
+            {
+              "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics chapter. Plan regional maintenance accessibility tax finds. Trend suggestions board order update granted. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics. ",
+              "ins": null,
+              "del": "Author B",
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Trend suggestions board order update granted agreement. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": "Author C",
+              "rpr": [
+                "b"
+              ],
+              "was": []
+            },
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Regional maintenance accessibility tax finds record proposal denied contract onboarding support network. Scheduled trend suggestions board order update. Regional maintenance accessibility tax finds record. Trend suggestions board order update granted agreement marketing promotion division date. Pilot receipt corporate requirement standard fact that. The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+          "runs": [
+            {
+              "text": "Regional maintenance accessibility tax finds record proposal denied contract onboarding support network. Scheduled trend suggestions board order update. Regional maintenance accessibility tax finds record. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Trend suggestions board order update granted agreement marketing promotion division date. ",
+              "ins": null,
+              "del": "Author B",
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Pilot receipt corporate requirement standard fact that. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": "Author C",
+              "rpr": [
+                "b"
+              ],
+              "was": []
+            },
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        },
+        {
+          "text": "Trend suggestions board order update granted agreement marketing promotion division date profitable. Insights the meeting forecast hereby vendors. Pilot receipt corporate requirement standard fact. Inventory relevant group relief results region ledger brief usage cause colleague. Inventory relevant group relief results region ledger. The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+          "runs": [
+            {
+              "text": "Trend suggestions board order update granted agreement marketing promotion division date profitable. Insights the meeting forecast hereby vendors. Pilot receipt corporate requirement standard fact. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Inventory relevant group relief results region ledger brief usage cause colleague. ",
+              "ins": null,
+              "del": "Author B",
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            },
+            {
+              "text": "Inventory relevant group relief results region ledger. ",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": "Author C",
+              "rpr": [
+                "b"
+              ],
+              "was": []
+            },
+            {
+              "text": "The meeting forecast hereby vendors practical schedule state entry estimate management action. Budget inventory.",
+              "ins": null,
+              "del": null,
+              "move": null,
+              "fmt": null,
+              "rpr": [],
+              "was": null
+            }
+          ],
+          "mark": {
+            "ins": null,
+            "del": null,
+            "move": null
+          },
+          "pchange": null,
+          "ppr": [],
+          "pwas": null,
+          "num": null,
+          "numchange": null
+        }
+      ]
+    },
+    "sections": [
+      {
+        "change": null,
+        "props": [
+          "cols:space=720",
+          "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+          "pgSz:h=15840,w=12240"
+        ],
+        "was": null
+      }
+    ],
+    "revisions": [
+      {
+        "type": "wdRevisionDelete",
+        "author": "Author B",
+        "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics. "
+      },
+      {
+        "type": "wdRevisionProperty",
+        "author": "Author C",
+        "text": "Trend suggestions board order update granted agreement. "
+      },
+      {
+        "type": "wdRevisionDelete",
+        "author": "Author B",
+        "text": "Trend suggestions board order update granted agreement marketing promotion division date. "
+      },
+      {
+        "type": "wdRevisionProperty",
+        "author": "Author C",
+        "text": "Pilot receipt corporate requirement standard fact that. "
+      },
+      {
+        "type": "wdRevisionDelete",
+        "author": "Author B",
+        "text": "Inventory relevant group relief results region ledger brief usage cause colleague. "
+      },
+      {
+        "type": "wdRevisionProperty",
+        "author": "Author C",
+        "text": "Inventory relevant group relief results region ledger. "
+      },
+      {
+        "type": "wdRevisionDelete",
+        "author": "Author B",
+        "text": "Pilot receipt corporate requirement standard fact that products distribution filed logistics. "
+      },
+      {
+        "type": "wdRevisionProperty",
+        "author": "Author C",
+        "text": "Trend suggestions board order update granted agreement. "
+      },
+      {
+        "type": "wdRevisionDelete",
+        "author": "Author B",
+        "text": "Trend suggestions board order update granted agreement marketing promotion division date. "
+      },
+      {
+        "type": "wdRevisionProperty",
+        "author": "Author C",
+        "text": "Pilot receipt corporate requirement standard fact that. "
+      },
+      {
+        "type": "wdRevisionDelete",
+        "author": "Author B",
+        "text": "Inventory relevant group relief results region ledger brief usage cause colleague. "
+      },
+      {
+        "type": "wdRevisionProperty",
+        "author": "Author C",
+        "text": "Inventory relevant group relief results region ledger. "
+      }
+    ]
+  }
+}

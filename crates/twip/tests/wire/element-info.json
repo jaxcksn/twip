@@ -1,0 +1,33 @@
+[
+  {
+    "display": "Ada",
+    "id": "control-3",
+    "kind": "plainText",
+    "locked": false,
+    "parent": "control-1",
+    "showingPlaceholder": true,
+    "size": {
+      "height": 54.0,
+      "width": 216.0
+    },
+    "story": "body",
+    "tag": "name",
+    "title": "Name"
+  },
+  {
+    "code": "SUBTEMPLATE Violation",
+    "display": "",
+    "id": "field-7",
+    "kind": "field",
+    "locked": false,
+    "parent": null,
+    "reference": {
+      "expanded": true,
+      "name": "violation",
+      "nearMatch": "Violation",
+      "resolution": "nearMatch"
+    },
+    "story": "subTemplate",
+    "subTemplate": "Notice"
+  }
+]

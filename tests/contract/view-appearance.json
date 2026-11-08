@@ -1,0 +1,39 @@
+{
+  "name": "view-appearance",
+  "fixture": "editor/FX-tabs.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "expectState", "match": {"revision": 1, "view": {"theme": "light", "accent": "#0A74E4", "accentOn": "#FFFFFF", "appearance": "light", "detail": "standard", "objectGrid": "whileDragging", "tabSelector": "left"}, "commands": {"setRulerTabType": {"enabled": true, "value": "left"}}}},
+    {"op": "command", "command": {"type": "setViewOptions", "theme": "dark", "appearance": "dark", "detail": "full", "objectGrid": "always"}},
+    {"op": "expectState", "match": {"revision": 1, "view": {"theme": "dark", "appearance": "dark", "detail": "full", "objectGrid": "always", "accent": {"$type": "string"}, "accentOn": {"$type": "string"}}, "history": {"undoLabel": null}}},
+    {"op": "command", "command": {"type": "setViewOptions", "themeColors": {"dark": {"desk": "#0D1117", "text": "#E6EDF3"}}}},
+    {"op": "expectState", "match": {"view": {"background": "#0D1117", "themeColors": {"dark": {"desk": "#0D1117", "text": "#E6EDF3"}}}}},
+    {"op": "command", "command": {"type": "setViewOptions", "themeColors": {"dark": {}}}},
+    {"op": "expectState", "match": {"view": {"background": "#111214", "themeColors": {"dark": {}}}}},
+    {"op": "command", "command": {"type": "setViewOptions", "theme": {"highContrast": {"canvas": "#000000", "canvasText": "#FFFFFF", "highlight": "#1AEBFF", "highlightText": "#000000", "grayText": "#3FF23F"}}, "appearance": "light"}},
+    {"op": "expectState", "match": {"view": {"theme": {"highContrast": {"canvas": "#000000", "highlight": "#1AEBFF"}}, "accent": "#1AEBFF", "accentOn": "#000000", "appearance": "light"}}},
+    {"op": "command", "command": {"type": "setViewOptions", "theme": "light", "accent": "#7A3EE0", "detail": "quiet", "objectGrid": "off"}},
+    {"op": "expectState", "match": {"revision": 1, "view": {"theme": "light", "accent": "#7A3EE0", "detail": "quiet", "objectGrid": "off"}}},
+    {"op": "command", "command": {"type": "setRulerTabType", "value": "decimal"}},
+    {"op": "expectState", "match": {"revision": 1, "view": {"tabSelector": "decimal"}, "commands": {"setRulerTabType": {"value": "decimal"}}}},
+    {"op": "command", "command": {"type": "showTabTypes"}},
+    {"op": "expectEvents", "match": [{"type": "popoverRequested", "kind": "tabType", "current": "decimal", "anchor": {"width": {"$type": "number"}}, "choices": {"$has": [
+      {"value": "left", "name": "Left", "description": "Text starts at the stop"},
+      {"value": "decimal", "name": "Decimal", "description": "Numbers line up on the decimal point"},
+      {"value": "hangingIndent"}
+    ]}}]},
+    {"op": "command", "command": {"type": "setRulerTabType", "value": "left"}},
+    {"op": "expectEvents", "match": [{"type": "popoverClosed"}]},
+    {"op": "call", "method": "find.next", "args": [{"text": "Name"}], "result": {"found": true}},
+    {"op": "expectState", "match": {"commands": {"showTabStop": {"enabled": true}}}},
+    {"op": "command", "command": {"type": "showTabStop"}},
+    {"op": "expectEvents", "match": [{"type": "popoverRequested", "kind": "tabStop", "position": {"$type": "number"}, "alignment": {"$type": "string"}, "leader": "none"}]},
+    {"op": "command", "command": {"type": "showTabTypes"}},
+    {"op": "expectEvents", "match": [{"type": "popoverClosed"}, {"type": "popoverRequested", "kind": "tabType", "current": "left"}]},
+    {"op": "command", "command": {"type": "closePopover"}},
+    {"op": "expectEvents", "match": [{"type": "popoverClosed"}]},
+    {"op": "command", "command": {"type": "closePopover"}},
+    {"op": "expectState", "match": {"commands": {"closePopover": {"enabled": true}}}},
+    {"op": "expectState", "match": {"revision": 1}}
+  ]
+}

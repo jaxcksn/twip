@@ -1,0 +1,50 @@
+{
+  "id": "E2E-NEST-03",
+  "title": "Typing that grows an inner cell keeps the caret in it; the outer table and what follows move down",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "second line"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "type": "third line"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 4,
+          "offset": 10,
+          "depth": 2
+        },
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 2
+          }
+        ],
+        "text": {
+          "3": "second line",
+          "4": "third line"
+        }
+      }
+    }
+  ]
+}

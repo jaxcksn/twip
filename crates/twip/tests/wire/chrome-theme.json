@@ -1,0 +1,13 @@
+[
+  "light",
+  "dark",
+  {
+    "highContrast": {
+      "canvas": "#000000",
+      "canvasText": "#FFFFFF",
+      "grayText": "#3FF23F",
+      "highlight": "#1AEBFF",
+      "highlightText": "#000000"
+    }
+  }
+]

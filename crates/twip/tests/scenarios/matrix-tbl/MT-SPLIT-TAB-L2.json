@@ -1,0 +1,58 @@
+{
+  "id": "MT-SPLIT-TAB-L2",
+  "title": "Table across pages: Tab from a row ending a page selects the next row's first cell on the next page; Shift+Tab comes back (nesting level 2)",
+  "fixture": "FX-TBL-PAGES-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 46,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 47,
+            "offset": 0
+          },
+          "focus": {
+            "para": 47,
+            "offset": 2
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 46,
+            "offset": 0
+          },
+          "focus": {
+            "para": 46,
+            "offset": 21
+          }
+        }
+      }
+    }
+  ]
+}

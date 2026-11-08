@@ -1,0 +1,39 @@
+[
+  {
+    "record": {
+      "author": {
+        "identity": {
+          "provider": "AD",
+          "userId": "S-1-5-21"
+        },
+        "initials": "AL",
+        "name": "Ada Lovelace"
+      },
+      "id": 12,
+      "label": "Bold",
+      "origin": "api",
+      "revision": 7,
+      "summary": {
+        "comments": [
+          "c4"
+        ],
+        "elements": [
+          "field-1"
+        ],
+        "paragraphs": 2,
+        "revisions": [
+          "r7"
+        ],
+        "tables": 1
+      },
+      "time": "2026-10-14T17:46:40Z"
+    },
+    "value": {
+      "id": "field-1"
+    }
+  },
+  {
+    "record": null,
+    "value": null
+  }
+]

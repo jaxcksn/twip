@@ -1,0 +1,16 @@
+{
+  "name": "lists-numbering-value",
+  "fixture": "editor/FX-CUSTOM-LISTS.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "call", "method": "dialogs.open", "args": ["setNumberingValue"]},
+    {"op": "expectError", "code": "unavailable"},
+    {"op": "command", "command": {"type": "selectAll"}},
+    {"op": "call", "method": "dialogs.open", "args": ["setNumberingValue"], "save": "value", "result": {"kind": "setNumberingValue", "values": {"mode": "startNew", "value": 1, "advance": false}}},
+    {"op": "call", "method": "@value.update", "args": [{"mode": "continue"}], "save": "value", "result": {"fields": {"advance": {"enabled": true}, "value": {"enabled": false}}}},
+    {"op": "command", "command": {"type": "setNumberingValue", "mode": "startNew", "value": 4}},
+    {"op": "command", "command": {"type": "restartNumbering"}},
+    {"op": "command", "command": {"type": "continueNumbering"}},
+    {"op": "expectError", "code": "unavailable"}
+  ]
+}

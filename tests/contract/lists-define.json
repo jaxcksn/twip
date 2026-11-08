@@ -1,0 +1,17 @@
+{
+  "name": "lists-define",
+  "fixture": "editor/FX-CUSTOM-LISTS.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "command", "command": {"type": "setListDefinition", "levels": [{"format": "upperLetter", "text": "%1)", "start": 1, "alignment": "left", "follow": "tab", "numberPosition": 18, "textIndent": 36, "legal": false}]}},
+    {"op": "call", "method": "dialogs.open", "args": ["defineNumberFormat"], "save": "format", "result": {"kind": "defineNumberFormat", "values": {"format": "upperLetter", "text": "%1)"}}},
+    {"op": "call", "method": "@format.update", "args": [{"text": "Item %1:"}], "save": "format", "result": {"values": {"text": "Item %1:"}}},
+    {"op": "call", "method": "@format.apply"},
+    {"op": "call", "method": "dialogs.open", "args": ["defineMultilevelList"], "save": "multi", "result": {"values": {"levels": {"$type": "array"}, "applyTo": "wholeList"}}},
+    {"op": "call", "method": "@multi.update", "args": [{"listName": "Items"}], "save": "multi", "result": {"values": {"listName": "Items"}}},
+    {"op": "call", "method": "@multi.apply"},
+    {"op": "call", "method": "dialogs.open", "args": ["adjustListIndents"], "save": "indents", "result": {"values": {"follow": "tab"}}},
+    {"op": "call", "method": "@indents.update", "args": [{"follow": "space"}], "save": "indents", "result": {"fields": {"tab": {"enabled": false}}}},
+    {"op": "call", "method": "@indents.apply"}
+  ]
+}

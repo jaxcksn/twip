@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Builds every C# example the guides show against Twip.Core and Twip.WinForms. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../bindings/dotnet/Twip.Core/Twip.Core.csproj" />
+    <ProjectReference Include="../../../bindings/dotnet/Twip.WinForms/Twip.WinForms.csproj" />
+  </ItemGroup>
+</Project>

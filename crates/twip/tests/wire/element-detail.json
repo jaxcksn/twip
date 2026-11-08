@@ -1,0 +1,26 @@
+[
+  {
+    "binding": {
+      "prefixMappings": "xmlns:i='urn:invoice'",
+      "storeItemId": "{6A9C}",
+      "xpath": "/invoice/total"
+    },
+    "children": [
+      "field-9"
+    ],
+    "code": "DATE",
+    "display": "2026-10-27",
+    "id": "control-3",
+    "kind": "date",
+    "lock": "both",
+    "locked": true,
+    "options": {
+      "format": "yyyy-MM-dd"
+    },
+    "parent": null,
+    "placeholder": "Pick a date",
+    "story": "footer",
+    "tag": "due",
+    "title": "Due"
+  }
+]

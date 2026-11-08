@@ -1,0 +1,114 @@
+{
+  "id": "E2E-TS-13-HDR",
+  "title": "Deleting a range into a table removes the rows it touches whole; the text left before the table joins the remaining first cell (in a header)",
+  "fixture": "FX-TBL-BASIC-HDR.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-13.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 15,
+          "offset": 3
+        },
+        "to": {
+          "para": 20,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 1
+          }
+        ],
+        "text": {
+          "15": "ParT2 R3 C1",
+          "16": "T2 R3 C2"
+        },
+        "caret": {
+          "para": 15,
+          "offset": 3,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 3
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "15": "Paragraph between the first and second tables.",
+          "16": "T2 R1 C1"
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 12,
+        "offset": 1
+      }
+    },
+    {
+      "click": {
+        "para": 15,
+        "offset": 9
+      },
+      "shift": true
+    },
+    {
+      "key": "Backspace"
+    },
+    {
+      "expect": {
+        "tables": [
+          {
+            "rows": 2
+          },
+          {
+            "rows": 3
+          }
+        ],
+        "text": {
+          "12": " between the first and second tables."
+        },
+        "caret": {
+          "para": 12,
+          "offset": 0,
+          "depth": 0
+        }
+      }
+    }
+  ]
+}

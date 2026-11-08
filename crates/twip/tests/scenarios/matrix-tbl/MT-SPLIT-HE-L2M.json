@@ -1,0 +1,45 @@
+{
+  "id": "MT-SPLIT-HE-L2M",
+  "title": "Table across pages: End and Home in a cell at a page's top stay in it (nesting level 2)",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "offset": 24,
+          "page": 1,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "offset": 0,
+          "page": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

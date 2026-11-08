@@ -1,0 +1,13 @@
+[
+  {
+    "at": {
+      "clientX": 310.5,
+      "clientY": 220.5
+    },
+    "gesture": "rulerDoubleClick",
+    "page": 1,
+    "target": {
+      "kind": "ruler"
+    }
+  }
+]

@@ -1,0 +1,11 @@
+[
+  "default",
+  "emit",
+  "none",
+  {
+    "op": {
+      "type": "select",
+      "value": "paragraph"
+    }
+  }
+]

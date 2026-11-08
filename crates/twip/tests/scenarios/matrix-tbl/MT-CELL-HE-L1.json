@@ -1,0 +1,43 @@
+{
+  "id": "MT-CELL-HE-L1",
+  "title": "Cell to cell: End and Home stay in the cell (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 29,
+        "offset": 3
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 29,
+          "offset": 14,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 29,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

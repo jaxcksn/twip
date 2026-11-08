@@ -1,0 +1,70 @@
+{
+  "id": "MT-PTBL-UD-L3",
+  "title": "Paragraph to table: Down from the paragraph before enters the first row, Up returns; Down from the last row goes to the paragraph after, Up back at the goal x (nesting level 3)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 3,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 22,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 23,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 22,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

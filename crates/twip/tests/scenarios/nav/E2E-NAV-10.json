@@ -1,0 +1,45 @@
+{
+  "id": "E2E-NAV-10",
+  "title": "Ctrl+Page Down from page 2 goes to the top of page 3; Ctrl+Page Up back to page 2's top",
+  "fixture": "FX-PAGES.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 6,
+        "offset": 0
+      }
+    },
+    {
+      "key": "PageDown",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "page": 2,
+          "para": 10
+        }
+      }
+    },
+    {
+      "key": "PageUp",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "page": 1
+        }
+      }
+    }
+  ]
+}

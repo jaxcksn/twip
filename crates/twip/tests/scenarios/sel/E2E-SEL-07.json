@@ -1,0 +1,39 @@
+{
+  "id": "E2E-SEL-07",
+  "title": "A drag in the selection bar selects whole lines",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 0
+        },
+        "to": {
+          "para": 2,
+          "offset": 0
+        }
+      },
+      "dx": -24
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 2,
+            "affinity": "upstream"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+# cargo deny check: licenses and advisories of every crate the engine and the SDK libraries depend on.
+
+[graph]
+all-features = true
+
+[licenses]
+# Licenses compatible with shipping the engine under Apache-2.0. MPL-2.0 is file-level copyleft (spellbook): its
+# files stay under MPL and their source stays available; nothing here modifies them.
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+[advisories]
+yanked = "deny"
+
+[bans]
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

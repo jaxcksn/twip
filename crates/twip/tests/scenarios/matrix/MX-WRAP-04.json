@@ -1,0 +1,39 @@
+{
+  "id": "MX-WRAP-04",
+  "title": "Soft wrap: Down from the first line lands on the second; Up returns to the first line",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 3
+      }
+    },
+    {
+      "key": "ArrowDown"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2
+        }
+      }
+    },
+    {
+      "key": "ArrowUp"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 3
+        }
+      }
+    }
+  ]
+}

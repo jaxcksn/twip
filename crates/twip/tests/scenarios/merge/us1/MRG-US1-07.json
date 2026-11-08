@@ -1,0 +1,72 @@
+{
+  "id": "MRG-US1-07",
+  "title": "Result view: a field is one caret unit, and Delete over a selection holding it removes the whole field",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 2,
+        "offset": 8
+      },
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 8
+        }
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 9
+        }
+      }
+    },
+    {
+      "key": "ArrowRight",
+      "expect": {
+        "caret": {
+          "para": 2,
+          "offset": 90
+        }
+      }
+    },
+    {
+      "key": "ArrowLeft",
+      "mods": {
+        "shift": true
+      },
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 2,
+            "offset": 90
+          },
+          "focus": {
+            "para": 2,
+            "offset": 9
+          }
+        }
+      }
+    },
+    {
+      "key": "Delete",
+      "expect": {
+        "text": {
+          "2": "Shipment  issued."
+        },
+        "elements": {
+          "removed": 1
+        }
+      }
+    }
+  ]
+}

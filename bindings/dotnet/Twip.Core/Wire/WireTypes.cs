@@ -1,0 +1,283 @@
+using System.Drawing;
+using Twip.Hosting;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace Twip.Wire;
+
+// Shapes that exist only on the wire: requests, results, and the payloads of engine events.
+
+internal sealed record RulerVisibility(bool Horizontal, bool Vertical);
+
+internal sealed record SessionOptionsWire(
+    Author Author, bool ReadOnly, EditorMode Mode, string Language, bool TrackChanges,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<Dictionary>? Dictionaries = null);
+
+internal sealed record EngineOptionsWire(string Fonts);
+
+internal sealed record ExportOptionsWire(
+    string Format,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? OpenPassword = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords = null);
+
+internal sealed record PdfFontSetWire(
+    bool IncludeSystemFonts, IReadOnlyList<string> FontFiles, IReadOnlyList<FontRule> Replacements, IReadOnlyList<Alias> Aliases,
+    GenericDefaults GenericDefaults, [property: JsonPropertyName("classification")] bool ClassifyFromDocument,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Fallback, IReadOnlyList<string> CharacterFallback,
+    System.Text.Json.Nodes.JsonNode SymbolFallback);
+
+internal sealed record PdfOptionsWire(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? OpenPassword,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords);
+
+internal sealed record PdfConvertMeta(IReadOnlyList<Warning> Warnings, FontsReport Fonts);
+
+/// <summary>An export's metadata; the C ABI returns the bytes apart, so <see cref="Bytes"/> is unset there.</summary>
+internal sealed record ExportMeta(
+    long Revision, IReadOnlyList<Warning> Warnings,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReadOnlyMemory<byte>? Bytes = null);
+
+internal sealed record BatchRequest(IReadOnlyList<EditorOperation> Commands, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Label);
+
+internal sealed record TimerRequest(uint Timer, double Ms);
+
+/// <summary><c>insertShape</c>'s fields.</summary>
+internal sealed record ShapeInsert(
+    ShapePreset Preset,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Width = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Height = null);
+
+/// <summary><c>setShapeAdjust</c>'s fields.</summary>
+internal sealed record ShapeAdjust(int Index, long Value);
+
+internal sealed record ErrorBody(
+    EditorErrorCode Code, string Message, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? Details);
+
+internal sealed record LinkActivatedPayload(string Address, LinkActivation Via);
+
+internal sealed record ContextMenuPayload(ContextMenu Menu, [property: JsonConverter(typeof(ClientPointConverter))] PointF At, MenuInvocation Via);
+
+internal sealed record DialogRequestedPayload(DialogKind Kind);
+
+internal sealed record HostCommandPayload(HostCommand Command);
+
+internal sealed record ShortcutPayload(string Id);
+
+internal sealed record WordAddedPayload(string Word, string Language);
+
+internal sealed record FontsChangedPayload(IReadOnlyList<MissingFont> Pending, IReadOnlyList<MissingFont> Missing, IReadOnlyList<MissingCharacters> Characters);
+
+internal sealed record ElementActivatedPayload(ElementId Id);
+
+internal sealed record PictureControlActivation(ElementId Element);
+
+internal sealed record EditRefusedPayload(RefusalReason Reason, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementId? Element);
+
+internal sealed record ElementsChangedPayload(IReadOnlyList<ElementInfo> Added, IReadOnlyList<ElementId> Removed, IReadOnlyList<ElementInfo> Changed);
+
+internal sealed record FieldsUpdateRequestedPayload(long Token, IReadOnlyList<FieldUpdateRequest> Fields);
+
+internal sealed record CommentAnchorsPayload([property: JsonPropertyName("value")] IReadOnlyList<CommentAnchor> Anchors);
+
+internal sealed record BalloonsLaidOutPayload([property: JsonPropertyName("value")] IReadOnlyList<BalloonPlacement> Placements);
+
+/// <summary>Where the SDK placed an attached comment card, and its leader line.</summary>
+internal sealed record BalloonPlacement(CommentId Thread, double Top, double Left, IReadOnlyList<PointF> Leader);
+
+/// <summary>The caret blink settings on the wire (<c>EditorHost.CaretBlink</c> sends them).</summary>
+internal sealed record CaretBlinkWire(int? IntervalMs, int? StopAfterMs);
+
+/// <summary>The overlay colours on the wire, as <c>#RRGGBB</c> (<c>EditorHost.OverlayColors</c> sends them).</summary>
+internal sealed record OverlayPaletteWire(string Selection, string Object, string Drop, string Marks, string Leaders);
+
+internal sealed record TooltipPayload([property: JsonPropertyName("value")] TooltipWire? Tooltip);
+
+internal sealed record ElementHoverPayload([property: JsonPropertyName("value")] ElementHover? Hover);
+
+internal sealed record ElementSelectPayload([property: JsonPropertyName("value")] ElementSelection? Selection);
+
+internal sealed record TooltipWire(
+    TooltipKind Kind, string Text,
+    [property: JsonConverter(typeof(ClientPointConverter))] PointF At, RectangleF Rect);
+
+internal sealed record AnnouncementPayload(string Text, AnnouncementKind Kind);
+
+internal sealed record ErrorPayload(
+    EditorErrorCode Code, string Message, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? Details, bool Fatal);
+
+internal sealed record EmptyPayload;
+
+/// <summary>Something only the view showing a session can do: the host request callback, tagged by <c>type</c>. Positions
+/// are content pixels. A type this SDK doesn't know reads as the base record.</summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "type", IgnoreUnrecognizedTypeDiscriminators = true)]
+[JsonDerivedType(typeof(CursorRequest), "cursor")]
+[JsonDerivedType(typeof(CaptureRequest), "capture")]
+[JsonDerivedType(typeof(ReleaseRequest), "release")]
+[JsonDerivedType(typeof(ClipboardRequest), "clipboard")]
+[JsonDerivedType(typeof(CaretRequest), "caret")]
+[JsonDerivedType(typeof(ScrollRequest), "scroll")]
+[JsonDerivedType(typeof(ScrollToRequest), "scroll_to")]
+[JsonDerivedType(typeof(A11yRequest), "a11y")]
+[JsonDerivedType(typeof(CaretTextRequest), "caret_text")]
+internal record HostRequest;
+
+/// <summary>Show this pointer shape.</summary>
+internal sealed record CursorRequest(EditorCursor Cursor) : HostRequest;
+
+/// <summary>Send every pointer event to the view until <see cref="ReleaseRequest"/>.</summary>
+internal sealed record CaptureRequest : HostRequest;
+
+/// <summary>End the pointer capture.</summary>
+internal sealed record ReleaseRequest : HostRequest;
+
+/// <summary>A cut or copy from the keyboard, for the system clipboard.</summary>
+internal sealed record ClipboardRequest(ClipboardContent Data) : HostRequest;
+
+/// <summary>The caret moved: for the IME window and the system caret.</summary>
+internal sealed record CaretRequest(double X, double Y, double Height, bool Visible) : HostRequest;
+
+/// <summary>Scroll the view's top-left to this point (a zoom), once the next frame has sized the content.</summary>
+internal sealed record ScrollRequest(double X, double Y) : HostRequest;
+
+/// <summary>Scroll so this rectangle shows.</summary>
+internal sealed record ScrollToRequest(double X, double Y, double Width, double Height) : HostRequest;
+
+/// <summary>The text around the caret changed: for a focused editing element. WinForms has none yet (no UI Automation
+/// text provider), so the host takes it and does nothing with it.</summary>
+internal sealed record CaretTextRequest(CaretWindow Window) : HostRequest;
+
+/// <summary>The text around the caret: the caret's paragraph and its neighbours, in laid-out lines, and the selection.</summary>
+internal sealed record CaretWindow(IReadOnlyList<WindowParagraph> Paragraphs, WindowPoint Anchor, WindowPoint Focus, bool All, string Lang, bool ReadOnly);
+
+/// <summary>A paragraph of a caret window.</summary>
+internal sealed record WindowParagraph(
+    long Id,
+    AccessibleRole Role,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Level,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Label,
+    IReadOnlyList<WindowLine> Lines);
+
+/// <summary>A line of a caret window's paragraph.</summary>
+internal sealed record WindowLine(IReadOnlyList<WindowSegment> Segments);
+
+/// <summary>Text of a line with the same marks, author and language.</summary>
+internal sealed record WindowSegment(
+    string Text,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AccessibleMark>? Marks,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Author,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Lang);
+
+/// <summary>A place in a caret window: a paragraph's index and an offset in its text.</summary>
+internal sealed record WindowPoint(int Paragraph, int Offset);
+
+/// <summary>The accessibility tree changed: the whole tree, or the changes since the last one.</summary>
+internal sealed record A11yRequest(A11yUpdate Update) : HostRequest;
+
+/// <summary>The accessibility tree (<c>full</c>), or what changed in it (<c>patch</c>), applied in order.</summary>
+internal sealed record A11yUpdate(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccessibleNode? Full,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<A11yChange>? Patch);
+
+/// <summary>A change to the accessibility tree.</summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
+[JsonDerivedType(typeof(A11yReplace), "replace")]
+[JsonDerivedType(typeof(A11yChildren), "children")]
+internal abstract record A11yChange;
+
+/// <summary>The node with this node's id, and its subtree, are replaced.</summary>
+internal sealed record A11yReplace(AccessibleNode Node) : A11yChange;
+
+/// <summary>A node's children are now these, in this order: ids it didn't have are nodes replaced in the same update.</summary>
+internal sealed record A11yChildren(long Parent, IReadOnlyList<long> Ids) : A11yChange;
+
+/// <summary>A point in the control, in client pixels: <c>{ clientX, clientY }</c>.</summary>
+internal sealed record ClientPoint(double ClientX, double ClientY);
+
+/// <summary>A gesture bound to emit: the <c>gesture</c> event.</summary>
+internal sealed record GestureEvent(GestureId Gesture, [property: JsonConverter(typeof(ClientPointConverter))] PointF At, int Page, GestureTarget Target);
+
+/// <summary>What a key press did: <c>handled</c>, <c>unhandled</c>, or a host command or shortcut id in <c>value</c>.</summary>
+internal sealed record KeyOutcome(string Type, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Value = null);
+
+/// <summary>The drawn frame's document size and caret, for scrollbars and the IME.</summary>
+internal sealed record FrameInfo(
+    double ContentWidth, double ContentHeight, double CaretX, double CaretY, double CaretHeight, bool CaretVisible, int Pages);
+
+/// <summary>What a command made: an element or comment <c>id</c>, a data part's <c>itemId</c>, or a <c>changed</c> count (and a <c>skipped</c> one).</summary>
+internal sealed record CommandResult(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Id = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ItemId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Changed = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Skipped = null);
+
+/// <summary>A command's commit: its record, and what it made.</summary>
+internal sealed record Commit(TransactionRecord? Record, CommandResult? Value);
+
+/// <summary>An application shortcut to register.</summary>
+internal sealed record Shortcut(string Id, ShortcutKeys Keys);
+
+/// <summary>Keys on every platform (<see cref="Mac"/> null), or one per platform.</summary>
+[JsonConverter(typeof(ShortcutKeysConverter))]
+internal sealed record ShortcutKeys(string Windows, string? Mac = null);
+
+/// <summary>An open dialog: its values, and each field's state by the values' camelCase keys.</summary>
+internal sealed record DialogModel(
+    DialogKind Kind, DialogValues Values, IReadOnlyDictionary<string, FieldInfo> Fields,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StyleDialogValues? OnStyle = null);
+
+internal sealed record DialogOnStyleRequest(DialogKind Kind, StyleDialogValues Style);
+
+internal sealed record StyleTileRequest(StyleId Id, PreviewSize Size);
+
+internal sealed record ListEntryPreviewRequest(string Id, PreviewSize Size);
+
+internal sealed record CharacterPictureRequest(string Family, string Character, PreviewSize Size);
+
+internal sealed record DialogPreviewRequest(DialogModel Model, PreviewSize Size);
+
+/// <summary>A dialog's values record (<see cref="FontDialogValues"/>, ...), tagged on the wire with its kind.</summary>
+[JsonConverter(typeof(DialogValuesConverter))]
+internal sealed record DialogValues(DialogKind Kind, object Values);
+
+internal sealed record AccessibilityDialogValues(IReadOnlyList<AccessibilityIssue> Issues);
+
+// Service requests and results.
+
+internal sealed record FindRequest(FindQuery Query, NavigationDirection Direction);
+
+internal sealed record SubTemplateExportRequest(string Name, string? Category);
+
+internal sealed record ReplaceRequest(FindQuery Query, string With);
+
+internal sealed record ReplaceAllResult(int Count);
+
+internal sealed record UserWordsRequest(string Language, IReadOnlyList<string> Words);
+
+internal sealed record SuggestionsRequest(string Word, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Language);
+
+internal sealed record StructureRequest(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementId? Root,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Depth);
+
+internal sealed record SelectElementRequest(ElementId Id, bool Reveal);
+
+internal sealed record DataPartsRequest(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Namespace,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ItemId);
+
+internal sealed record GestureSetRequest(GestureId Gesture, GestureAction Action);
+
+/// <summary>A dialog update: the model, and a patch of its <c>kind</c> and the changed fields.</summary>
+internal sealed record DialogUpdateRequest(DialogModel Model, System.Text.Json.Nodes.JsonObject Patch);
+
+/// <summary>A resolver's answer as the engine takes it: <c>{ kind, family?, category?, message? }</c>.</summary>
+internal sealed record FontAnswerWire(
+    string Kind,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Family = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GenericFamily? Category = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Message = null)
+{
+    public static FontAnswerWire Missing { get; } = new("missing");
+}
+
+internal sealed record FontAnswerPayload(FontRequest Request, FontAnswerWire Answer);

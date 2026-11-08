@@ -1,0 +1,21 @@
+[
+  {
+    "command": {
+      "type": "cut"
+    },
+    "type": "command"
+  },
+  {
+    "type": "replaceWord",
+    "with": "the"
+  },
+  {
+    "type": "ignoreWord",
+    "word": "teh"
+  },
+  {
+    "language": "en-US",
+    "type": "addWord",
+    "word": "Twip"
+  }
+]

@@ -1,0 +1,59 @@
+{
+  "id": "MRG-US7-04",
+  "title": "Ctrl+F9 inside a shown code nests a new field there, the caret inside it",
+  "fixture": "FX-MERGE-FIELDS.docx",
+  "methods": [
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "key": "F9",
+      "mods": {
+        "alt": true
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 19
+      }
+    },
+    {
+      "key": "F9",
+      "mods": {
+        "ctrl": true
+      },
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 21
+        },
+        "elements": {
+          "added": [
+            {
+              "kind": "field",
+              "code": "  "
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": {
+        "q": "elements",
+        "match": {
+          "in": "code",
+          "text": "Statement.Cost_Amount"
+        }
+      },
+      "expect": {
+        "answer": [
+          {
+            "code": " MERGEFIELD Statement.Cost_Amount \\# \"$,0.00\" "
+          }
+        ]
+      }
+    }
+  ]
+}

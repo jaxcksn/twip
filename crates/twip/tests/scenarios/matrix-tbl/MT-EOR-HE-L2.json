@@ -1,0 +1,49 @@
+{
+  "id": "MT-EOR-HE-L2",
+  "title": "End-of-row mark: End in a row's last cell stops at the cell's text end, not at the mark (nesting level 2)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 24,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 24,
+          "offset": 2,
+          "depth": 2
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 26,
+        "offset": 0
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 26,
+          "offset": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

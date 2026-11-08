@@ -1,0 +1,32 @@
+# Checks for pull requests only, so main's runs don't list them as skipped.
+name: PR
+
+on:
+  pull_request:
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    # Squash merges use the PR title as the commit message, so it gets the same commitlint rules as local commits.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # moon compares with the base branch
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - run: pnpm install --frozen-lockfile
+      - name: Conventional commit title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$TITLE" | pnpm exec commitlint
+
+  deny:
+    # Dependency licenses, advisories and sources (.cargo/deny.toml).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2

@@ -1,0 +1,12 @@
+$schema: '../../.moon/cache/schemas/project.json'
+language: rust
+tags: [engine]
+
+tasks:
+  # A protected PDF with keywords opened by qpdf and poppler (pdf-readers.sh). Linux only: CI installs both there.
+  pdf-readers:
+    command: sh crates/twip-tools/pdf-readers.sh
+    inputs: ['/crates/twip/src/pdf/**/*', '/crates/twip-tools/src/cli/pdf.rs', '/crates/twip-tools/pdf-readers.sh']
+    options:
+      runFromWorkspaceRoot: true
+      os: linux

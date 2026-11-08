@@ -1,0 +1,38 @@
+{
+  "id": "MT-SPLIT-TYPE-L2M",
+  "title": "Table across pages: text typed at the end-of-row mark of a row ending a page goes to the next row's first cell, on the next page (nesting level 2)",
+  "fixture": "FX-NEST-MIXED.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 25,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "26": "ZLong nested table, row 5"
+        },
+        "caret": {
+          "para": 26,
+          "offset": 1,
+          "page": 1,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

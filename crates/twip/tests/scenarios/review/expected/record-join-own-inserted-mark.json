@@ -1,0 +1,173 @@
+{
+  "description": "Deleting a paragraph mark the session author inserted.",
+  "setup": "one paragraph \"Alpha beta gamma.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "Alpha beta gamma.",
+        "runs": [
+          {
+            "text": "Alpha beta gamma.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "press Enter after \"Alpha\"",
+      "author": "Author A",
+      "op": {
+        "op": "enter",
+        "at": 5
+      },
+      "selection": {
+        "start": 6,
+        "end": 6
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha",
+              "runs": [
+                {
+                  "text": "Alpha",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": "Author A",
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": " beta gamma.",
+              "runs": [
+                {
+                  "text": " beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "\r"
+          }
+        ]
+      }
+    },
+    {
+      "do": "delete the inserted paragraph mark",
+      "author": "Author A",
+      "op": {
+        "op": "delete",
+        "start": 5,
+        "end": 6
+      },
+      "selection": {
+        "start": 5,
+        "end": 5
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma.",
+              "runs": [
+                {
+                  "text": "Alpha beta gamma.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": []
+      }
+    }
+  ]
+}

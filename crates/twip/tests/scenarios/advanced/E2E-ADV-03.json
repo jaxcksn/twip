@@ -1,0 +1,67 @@
+{
+  "id": "E2E-ADV-03",
+  "title": "A Ctrl+drag of a selection copies it; a click inside a selection puts the caret there",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 2
+      },
+      "clicks": 2
+    },
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 3
+        },
+        "to": {
+          "para": 6,
+          "offset": 0
+        }
+      },
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "1": "Short paragraph.",
+          "6": {
+            "starts": "Short Multiple"
+          }
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 8
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 9
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret"
+        },
+        "caret": {
+          "para": 1,
+          "offset": 9
+        }
+      }
+    }
+  ]
+}

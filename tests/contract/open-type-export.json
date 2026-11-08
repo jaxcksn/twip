@@ -1,0 +1,17 @@
+{
+  "name": "open-type-export",
+  "fixture": "text-basics.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "revision": 1, "modified": false, "history": { "canUndo": false } } },
+    { "op": "command", "command": { "type": "insertText", "value": "Hello " } },
+    { "op": "expectEvents", "match": [ { "type": "documentChanged", "origin": "api", "revision": 2, "label": "Typing" } ] },
+    { "op": "expectState", "match": { "revision": 2, "modified": true, "history": { "canUndo": true, "undoLabel": "Typing" } } },
+    { "op": "export", "format": "docx" },
+    { "op": "expectState", "match": { "revision": 2, "modified": false } },
+    { "op": "command", "command": { "type": "insertText", "value": "again" } },
+    { "op": "expectEvents", "match": [ { "type": "documentChanged", "origin": "api", "revision": 3 } ] },
+    { "op": "export", "format": "docx" },
+    { "op": "expectState", "match": { "revision": 3, "modified": false } }
+  ]
+}

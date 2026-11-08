@@ -1,0 +1,93 @@
+{
+  "id": "E2E-LIST-03",
+  "title": "Tab and Shift+Tab at a list item's start change its level; inside the text both insert a tab",
+  "fixture": "FX-LISTS.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": 0
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "label": {
+          "2": "1.",
+          "3": "1.1."
+        },
+        "text": {
+          "3": {
+            "starts": "Second item"
+          }
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "label": {
+          "3": "2."
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "label": {
+          "3": "2."
+        },
+        "undo_depth": 2
+      }
+    },
+    {
+      "click": {
+        "para": 2,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Tab"
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "Fir\tst item"
+        },
+        "label": {
+          "2": "1."
+        }
+      }
+    },
+    {
+      "key": "Tab",
+      "mods": {
+        "shift": true
+      }
+    },
+    {
+      "expect": {
+        "text": {
+          "2": "Fir\t\tst item"
+        }
+      }
+    }
+  ]
+}

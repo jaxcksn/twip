@@ -1,0 +1,137 @@
+{
+  "description": "Moving part of a paragraph by cut and paste.",
+  "setup": "one paragraph \"Alpha beta gamma.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "Alpha beta gamma.",
+        "runs": [
+          {
+            "text": "Alpha beta gamma.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "cut \"beta \" and paste it before \".\"",
+      "author": "Author A",
+      "op": {
+        "op": "cut-paste",
+        "start": 6,
+        "end": 11,
+        "at": "before \".\""
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "Alpha beta gamma beta.",
+              "runs": [
+                {
+                  "text": "Alpha ",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "beta ",
+                  "ins": null,
+                  "del": "Author A",
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": "gamma",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": " beta",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                },
+                {
+                  "text": ".",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionDelete",
+            "author": "Author A",
+            "text": "beta "
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": " beta"
+          }
+        ]
+      }
+    }
+  ]
+}

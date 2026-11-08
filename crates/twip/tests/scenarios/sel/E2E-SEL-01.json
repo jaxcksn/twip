@@ -1,0 +1,38 @@
+{
+  "id": "E2E-SEL-01",
+  "title": "A backward drag out of the start word selects whole words (automatic word selection)",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 1,
+          "offset": 10
+        },
+        "to": {
+          "para": 1,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 15
+          },
+          "focus": {
+            "para": 1,
+            "offset": 0
+          }
+        }
+      }
+    }
+  ]
+}

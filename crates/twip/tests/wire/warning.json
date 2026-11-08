@@ -1,0 +1,15 @@
+[
+  {
+    "code": "unsupported-element",
+    "count": 3,
+    "location": {
+      "part": "word/document.xml"
+    },
+    "message": "w:customXml is not kept"
+  },
+  {
+    "code": "unsupported-element",
+    "count": 3,
+    "message": "w:customXml is not kept"
+  }
+]

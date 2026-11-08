@@ -1,0 +1,39 @@
+{
+  "id": "E2E-SEL-02",
+  "title": "Shift+click extends from the anchor, which snaps to its word start once the click is outside that word",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 3
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 10
+      },
+      "shift": true
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "text",
+          "anchor": {
+            "para": 1,
+            "offset": 0
+          },
+          "focus": {
+            "para": 1,
+            "offset": 10
+          }
+        }
+      }
+    }
+  ]
+}

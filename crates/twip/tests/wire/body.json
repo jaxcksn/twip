@@ -1,0 +1,22 @@
+[
+  "Check this",
+  {
+    "paragraphs": [
+      {
+        "runs": [
+          {
+            "text": "See "
+          },
+          {
+            "bold": true,
+            "italic": false,
+            "link": "https://example.com/terms",
+            "strikethrough": false,
+            "text": "clause 4",
+            "underline": true
+          }
+        ]
+      }
+    ]
+  }
+]

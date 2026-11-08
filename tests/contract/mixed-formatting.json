@@ -1,0 +1,13 @@
+{
+  "name": "mixed-formatting",
+  "fixture": "editor/FX-mixed-format.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "expectState", "match": { "formatting": { "bold": "mixed", "font": "mixed" }, "commands": { "setBold": { "enabled": true } } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "bold words" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "selection": { "kind": "text", "empty": false }, "formatting": { "bold": true, "font": "Calibri" } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Arial words" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "bold": false, "font": "Arial" } } }
+  ]
+}

@@ -1,0 +1,544 @@
+{
+  "description": "Pages and lines per paragraph of FX-REVIEW-CELLS.docx in each markup view, as far as they can be observed (see each view's source), plus the layouts of the tracked document, of every revision accepted and of every revision rejected.",
+  "fixture": "FX-REVIEW-CELLS.docx",
+  "views": {
+    "all-markup": {
+      "source": "fixed-format export with markup; lines mapped to the paragraphs of the tracked document (table cells not mapped)",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Cells",
+          "lines": 1
+        },
+        {
+          "text": "a1",
+          "lines": null
+        },
+        {
+          "text": "b1",
+          "lines": null
+        },
+        {
+          "text": "c1",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "a2",
+          "lines": null
+        },
+        {
+          "text": "b2",
+          "lines": null
+        },
+        {
+          "text": "c2",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "a3",
+          "lines": null
+        },
+        {
+          "text": "b3",
+          "lines": null
+        },
+        {
+          "text": "c3",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "b4",
+          "lines": null
+        },
+        {
+          "text": "c4",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": 0
+        }
+      ],
+      "unmatched_lines": [
+        "a1 b1 c1 ",
+        "a2 b2 c2 ",
+        "a3 b3 c3 ",
+        "Inserted Cells",
+        "Deleted Cells"
+      ]
+    },
+    "simple-markup": {
+      "source": "not observable: neither the export nor the layout queries follow the view setting",
+      "pages": null,
+      "paragraphs": null
+    },
+    "no-markup": {
+      "source": "fixed-format export without markup; lines mapped to the paragraphs of the document with every revision accepted (table cells not mapped)",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Cells",
+          "lines": 1
+        },
+        {
+          "text": "a1",
+          "lines": null
+        },
+        {
+          "text": "b1",
+          "lines": null
+        },
+        {
+          "text": "c1",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "a2",
+          "lines": null
+        },
+        {
+          "text": "c2",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "a3",
+          "lines": null
+        },
+        {
+          "text": "b3",
+          "lines": null
+        },
+        {
+          "text": "c3",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "b4",
+          "lines": null
+        },
+        {
+          "text": "c4",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": null
+        },
+        {
+          "text": "",
+          "lines": 0
+        }
+      ],
+      "unmatched_lines": [
+        "a1 b1 c1 ",
+        "a2 b2 c2 ",
+        "a3 b3 c3 "
+      ]
+    },
+    "original": {
+      "source": "layout of the document with every revision rejected",
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Cells",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "a1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "a2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "a3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b4",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "c4",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": false,
+          "lines": 1
+        }
+      ]
+    }
+  },
+  "layouts": {
+    "tracked": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Cells",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "a1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "a2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "a3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b4",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c4",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": false,
+          "lines": 1
+        }
+      ]
+    },
+    "accepted": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Cells",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "a1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "a2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "a3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b4",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c4",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": false,
+          "lines": 1
+        }
+      ]
+    },
+    "rejected": {
+      "pages": 1,
+      "paragraphs": [
+        {
+          "text": "Cells",
+          "in_table": false,
+          "lines": 1
+        },
+        {
+          "text": "a1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c1",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "a2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c2",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "a3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "c3",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "b4",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "c4",
+          "in_table": true,
+          "lines": 2
+        },
+        {
+          "text": "",
+          "in_table": true,
+          "lines": 1
+        },
+        {
+          "text": "",
+          "in_table": false,
+          "lines": 1
+        }
+      ]
+    }
+  },
+  "error": null
+}

@@ -1,0 +1,41 @@
+{
+  "id": "MT-CELL-DRAG-L3",
+  "title": "Cell to cell: a drag from one cell into the next selects both as a cell block (nesting level 3)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "para": 21,
+          "offset": 0
+        },
+        "to": {
+          "para": 22,
+          "offset": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "table": 2,
+          "anchor": [
+            1,
+            0
+          ],
+          "focus": [
+            1,
+            1
+          ]
+        }
+      }
+    }
+  ]
+}

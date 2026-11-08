@@ -1,0 +1,124 @@
+{
+  "fixture": "FX-LISTS.docx",
+  "id": "FUZZ-FX-LISTS-29",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "key": "KeyA",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "command": {
+        "type": "wrapInRepeatingSection",
+        "tag": "Fuzz/R1"
+      },
+      "expect": {}
+    },
+    {
+      "command": {
+        "type": "setControl",
+        "id": "$tag:Fuzz/R1",
+        "tag": "Fuzz/T2",
+        "lock": "content"
+      },
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Home",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      },
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 3
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "command": {
+        "type": "splitCells",
+        "columns": 2
+      },
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "End",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 2,
+        "para": 5
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "command": {
+        "type": "removeControl",
+        "id": "$tag:Fuzz/T2",
+        "keepContent": false
+      },
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"8 final paragraph\", detail: \"the body ends with table 78500\" }] (Caret(Position { story: Body, place: Text { para: ParaId(78496), offset: Unit(0), affinity: Downstream } }) in Some(\"  \"))"
+}

@@ -1,0 +1,30 @@
+{
+  "id": "MT-BOUND-CLICK-L3",
+  "title": "Inner table at a cell's end: a click just below the inner table lands on the closing paragraph (nesting level 3)",
+  "fixture": "FX-NEST-2-L3.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-BOUND-CLICK-L1",
+  "steps": [
+    {
+      "click": {
+        "table": 4,
+        "row": 1,
+        "border": "bottom",
+        "dy": 3.75
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

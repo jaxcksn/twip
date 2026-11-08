@@ -1,0 +1,25 @@
+[
+  {
+    "aliases": [
+      "H1"
+    ],
+    "basedOn": "Normal",
+    "builtIn": true,
+    "hidden": false,
+    "id": "Heading1",
+    "link": "Heading1Char",
+    "locked": false,
+    "name": "heading 1",
+    "preview": {
+      "bold": false,
+      "color": "#2F5496",
+      "font": "Calibri Light",
+      "italic": false,
+      "size": 16.5
+    },
+    "priority": 9,
+    "quick": true,
+    "type": "paragraph",
+    "visibility": "hideUntilUsed"
+  }
+]

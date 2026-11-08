@@ -1,0 +1,33 @@
+{
+  "id": "LTB-05",
+  "title": "A cell's closing paragraph after a nested table is a visible caret stop, reached by Right",
+  "fixture": "FX-NEST-2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 10,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 11,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

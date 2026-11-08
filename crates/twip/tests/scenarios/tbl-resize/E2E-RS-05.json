@@ -1,0 +1,43 @@
+{
+  "id": "E2E-RS-05",
+  "title": "Dragging a row's bottom border makes its height \"at least\" the dragged height",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 1,
+          "border": "bottom"
+        },
+        "to": {
+          "table": 1,
+          "row": 1,
+          "border": "bottom",
+          "dy": 20
+        }
+      }
+    },
+    {
+      "expect": {
+        "tables": [
+          {},
+          {
+            "heights": [
+              null,
+              [
+                43.0,
+                "atLeast"
+              ],
+              null
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

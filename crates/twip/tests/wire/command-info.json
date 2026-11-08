@@ -1,0 +1,18 @@
+[
+  {
+    "group": "character",
+    "id": "setBold",
+    "label": "Bold",
+    "mutates": true,
+    "shortcuts": {
+      "mac": [
+        "⌘B"
+      ],
+      "windows": [
+        "Ctrl+B"
+      ]
+    },
+    "takesArguments": true,
+    "undo": "step"
+  }
+]

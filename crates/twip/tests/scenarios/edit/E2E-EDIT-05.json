@@ -1,0 +1,26 @@
+{
+  "id": "E2E-EDIT-05",
+  "title": "A click on an empty paragraph puts the caret at its only position",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 8,
+        "offset": 0
+      },
+      "dx": 120
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 8,
+          "offset": 0
+        }
+      }
+    }
+  ]
+}

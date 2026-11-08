@@ -1,0 +1,50 @@
+{
+  "id": "E2E-STORY-02",
+  "title": "While a header is edited, a click in the body does nothing and a double-click there returns to the body with the caret at the click",
+  "fixture": "FX-STORIES.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 22,
+        "offset": 3
+      },
+      "clicks": 2
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 4
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 22,
+          "offset": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 3,
+        "offset": 4
+      },
+      "clicks": 2
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret",
+          "focus": {
+            "para": 3,
+            "offset": 4
+          }
+        }
+      }
+    }
+  ]
+}

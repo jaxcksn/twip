@@ -1,0 +1,14 @@
+[
+  {
+    "intervalMs": 530,
+    "stopAfterMs": null
+  },
+  {
+    "intervalMs": null,
+    "stopAfterMs": null
+  },
+  {
+    "intervalMs": 600,
+    "stopAfterMs": 5000
+  }
+]

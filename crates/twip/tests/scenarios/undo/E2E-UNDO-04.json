@@ -1,0 +1,47 @@
+{
+  "id": "E2E-UNDO-04",
+  "title": "After an undo, typing makes the undone step unavailable to redo",
+  "fixture": "FX-TEXT.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "type": "ab"
+    },
+    {
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "redo_depth": 1,
+        "text": {
+          "1": "Short paragraph."
+        }
+      }
+    },
+    {
+      "type": "c"
+    },
+    {
+      "expect": {
+        "redo_depth": 0,
+        "undo_depth": 1,
+        "text": {
+          "1": "cShort paragraph."
+        }
+      }
+    }
+  ]
+}

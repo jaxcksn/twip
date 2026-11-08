@@ -1,0 +1,53 @@
+{
+  "id": "MT-MERGE-ENTER-L2",
+  "title": "Merged cells: Enter in a horizontally merged cell adds a paragraph in it; the grid is unchanged (nesting level 2)",
+  "fixture": "FX-TBL-MERGED-L2.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py from MT-MERGE-ENTER-L1",
+  "steps": [
+    {
+      "click": {
+        "para": 7,
+        "offset": "end"
+      }
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "text": {
+          "7": "Span 2",
+          "8": "",
+          "9": "Span 2"
+        },
+        "tables": [
+          {},
+          {
+            "cells": [
+              6,
+              4,
+              4,
+              5,
+              4,
+              4,
+              3,
+              3,
+              2,
+              1
+            ]
+          }
+        ],
+        "caret": {
+          "para": 8,
+          "offset": 0,
+          "depth": 2
+        }
+      }
+    }
+  ]
+}

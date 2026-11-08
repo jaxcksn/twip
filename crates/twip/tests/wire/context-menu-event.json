@@ -1,0 +1,57 @@
+[
+  {
+    "at": {
+      "clientX": 310.5,
+      "clientY": 220.5
+    },
+    "menu": {
+      "items": [
+        {
+          "action": {
+            "command": {
+              "type": "cut"
+            },
+            "type": "command"
+          },
+          "checked": false,
+          "command": "cut",
+          "enabled": true,
+          "kind": "command",
+          "label": "Cut",
+          "shortcut": "Ctrl+X"
+        },
+        {
+          "action": {
+            "type": "replaceWord",
+            "with": "the"
+          },
+          "kind": "suggestion",
+          "label": "the"
+        },
+        {
+          "items": [
+            {
+              "action": {
+                "type": "ignoreWord",
+                "word": "teh"
+              },
+              "kind": "suggestion",
+              "label": "Ignore"
+            }
+          ],
+          "kind": "submenu",
+          "label": "Paste Options"
+        },
+        {
+          "kind": "separator"
+        }
+      ],
+      "target": {
+        "kind": "misspelling",
+        "language": "en-US",
+        "word": "teh"
+      }
+    },
+    "via": "keyboard"
+  }
+]

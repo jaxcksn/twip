@@ -1,0 +1,13 @@
+{
+  "name": "frame",
+  "fixture": "editor/FX-STYLES.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "call", "method": "dialogs.open", "args": ["frame"]},
+    {"op": "expectError", "code": "unavailable"},
+    {"op": "command", "command": {"type": "removeFrame"}},
+    {"op": "expectError", "code": "unavailable"},
+    {"op": "command", "command": {"type": "setFrame", "wrap": "around", "widthRule": "auto", "width": 0, "heightRule": "auto", "height": 0, "horizontalAlign": null, "horizontal": 0, "horizontalRelative": "column", "horizontalDistance": 9, "verticalAlign": null, "vertical": 0, "verticalRelative": "paragraph", "verticalDistance": 0, "lockAnchor": false}},
+    {"op": "expectError", "code": "unavailable"}
+  ]
+}

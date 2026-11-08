@@ -1,0 +1,134 @@
+{
+  "id": "E2E-NAV-05",
+  "title": "Ctrl+Down and Ctrl+Up in a table go by paragraphs in document order, stopping at the end-of-row mark",
+  "fixture": "FX-TBL-BASIC.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "steps": [
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 14,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 15,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret",
+          "focus": {
+            "row_end": {
+              "table": 1,
+              "row": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 16,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "caret",
+          "focus": {
+            "row_end": {
+              "table": 1,
+              "row": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 15,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 13,
+        "offset": 2
+      }
+    },
+    {
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true
+      }
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 12,
+          "offset": 0,
+          "depth": 0
+        }
+      }
+    }
+  ]
+}

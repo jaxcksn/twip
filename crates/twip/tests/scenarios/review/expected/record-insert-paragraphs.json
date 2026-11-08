@@ -1,0 +1,367 @@
+{
+  "description": "Inserting whole paragraphs (text with paragraph marks) before a paragraph.",
+  "setup": "two paragraphs \"First para.\" / \"Second para.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "First para.",
+        "runs": [
+          {
+            "text": "First para.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      },
+      {
+        "text": "Second para.",
+        "runs": [
+          {
+            "text": "Second para.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "insert \"New one\" + mark + \"New two\" + mark at the start of the second paragraph",
+      "author": "Author A",
+      "op": {
+        "op": "insert",
+        "at": 12,
+        "text": "New one\rNew two\r"
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "First para.",
+              "runs": [
+                {
+                  "text": "First para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "New one",
+              "runs": [
+                {
+                  "text": "New one",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": "Author A",
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "New two",
+              "runs": [
+                {
+                  "text": "New two",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": "Author A",
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Second para.",
+              "runs": [
+                {
+                  "text": "Second para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "New one\rNew two\r"
+          }
+        ]
+      }
+    },
+    {
+      "do": "add a paragraph at the end (a paragraph mark after the last one), then paste a copy of the first paragraph (with its mark) into it",
+      "author": "Author A",
+      "op": {
+        "op": "paste",
+        "at": "end",
+        "from": "paragraph 1"
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "First para.",
+              "runs": [
+                {
+                  "text": "First para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "New one",
+              "runs": [
+                {
+                  "text": "New one",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": "Author A",
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "New two",
+              "runs": [
+                {
+                  "text": "New two",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": "Author A",
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "Second para.",
+              "runs": [
+                {
+                  "text": "Second para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": "Author A",
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "First para.",
+              "runs": [
+                {
+                  "text": "First para.",
+                  "ins": "Author A",
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": "Author A",
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "text": "",
+              "runs": [],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "New one\rNew two\r"
+          },
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "\rFirst para.\r"
+          }
+        ]
+      }
+    }
+  ]
+}

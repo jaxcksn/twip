@@ -1,0 +1,339 @@
+{
+  "description": "Inserting a table.",
+  "setup": "two paragraphs \"First para.\" / \"Second para.\"",
+  "initial": {
+    "body": [
+      {
+        "text": "First para.",
+        "runs": [
+          {
+            "text": "First para.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      },
+      {
+        "text": "Second para.",
+        "runs": [
+          {
+            "text": "Second para.",
+            "ins": null,
+            "del": null,
+            "move": null,
+            "fmt": null,
+            "rpr": [],
+            "was": null
+          }
+        ],
+        "mark": {
+          "ins": null,
+          "del": null,
+          "move": null
+        },
+        "pchange": null,
+        "ppr": [],
+        "pwas": null,
+        "num": null,
+        "numchange": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "do": "insert a 2x2 table at the start of the second paragraph and type \"a\"..\"d\" in its cells",
+      "author": "Author A",
+      "op": {
+        "op": "insert-table",
+        "at": 12,
+        "rows": 2,
+        "columns": 2,
+        "cells": [
+          "a",
+          "b",
+          "c",
+          "d"
+        ]
+      },
+      "selection": {
+        "start": 0,
+        "end": 0
+      },
+      "result": {
+        "stories": {
+          "body": [
+            {
+              "text": "First para.",
+              "runs": [
+                {
+                  "text": "First para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            },
+            {
+              "table": {
+                "change": "Author A",
+                "tblpr": [
+                  "tblBorders[bottom:color=auto,space=0,sz=4,val=single;insideH:color=auto,space=0,sz=4,val=single;insideV:color=auto,space=0,sz=4,val=single;left:color=auto,space=0,sz=4,val=single;right:color=auto,space=0,sz=4,val=single;top:color=auto,space=0,sz=4,val=single]",
+                  "tblLayout:type=fixed",
+                  "tblLook:firstColumn=0,firstRow=0,lastColumn=0,lastRow=0,noHBand=0,noVBand=0,val=0000",
+                  "tblW:type=auto,w=0"
+                ],
+                "grid": [
+                  4680,
+                  4680
+                ],
+                "grid_change": "",
+                "rows": [
+                  {
+                    "ins": "Author A",
+                    "del": null,
+                    "change": "Author A",
+                    "ex_change": "Author A",
+                    "trpr": [],
+                    "cells": [
+                      {
+                        "ins": null,
+                        "del": null,
+                        "merge": null,
+                        "change": "Author A",
+                        "vmerge": null,
+                        "span": 1,
+                        "tcpr": [
+                          "tcW:type=dxa,w=4680"
+                        ],
+                        "blocks": [
+                          {
+                            "text": "a",
+                            "runs": [
+                              {
+                                "text": "a",
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null,
+                                "fmt": null,
+                                "rpr": [],
+                                "was": null
+                              }
+                            ],
+                            "mark": {
+                              "ins": "Author A",
+                              "del": null,
+                              "move": null
+                            },
+                            "pchange": null,
+                            "ppr": [],
+                            "pwas": null,
+                            "num": null,
+                            "numchange": null
+                          }
+                        ]
+                      },
+                      {
+                        "ins": null,
+                        "del": null,
+                        "merge": null,
+                        "change": "Author A",
+                        "vmerge": null,
+                        "span": 1,
+                        "tcpr": [
+                          "tcW:type=dxa,w=4680"
+                        ],
+                        "blocks": [
+                          {
+                            "text": "b",
+                            "runs": [
+                              {
+                                "text": "b",
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null,
+                                "fmt": null,
+                                "rpr": [],
+                                "was": null
+                              }
+                            ],
+                            "mark": {
+                              "ins": "Author A",
+                              "del": null,
+                              "move": null
+                            },
+                            "pchange": null,
+                            "ppr": [],
+                            "pwas": null,
+                            "num": null,
+                            "numchange": null
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "ins": "Author A",
+                    "del": null,
+                    "change": "Author A",
+                    "ex_change": "Author A",
+                    "trpr": [],
+                    "cells": [
+                      {
+                        "ins": null,
+                        "del": null,
+                        "merge": null,
+                        "change": "Author A",
+                        "vmerge": null,
+                        "span": 1,
+                        "tcpr": [
+                          "tcW:type=dxa,w=4680"
+                        ],
+                        "blocks": [
+                          {
+                            "text": "c",
+                            "runs": [
+                              {
+                                "text": "c",
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null,
+                                "fmt": null,
+                                "rpr": [],
+                                "was": null
+                              }
+                            ],
+                            "mark": {
+                              "ins": "Author A",
+                              "del": null,
+                              "move": null
+                            },
+                            "pchange": null,
+                            "ppr": [],
+                            "pwas": null,
+                            "num": null,
+                            "numchange": null
+                          }
+                        ]
+                      },
+                      {
+                        "ins": null,
+                        "del": null,
+                        "merge": null,
+                        "change": "Author A",
+                        "vmerge": null,
+                        "span": 1,
+                        "tcpr": [
+                          "tcW:type=dxa,w=4680"
+                        ],
+                        "blocks": [
+                          {
+                            "text": "d",
+                            "runs": [
+                              {
+                                "text": "d",
+                                "ins": "Author A",
+                                "del": null,
+                                "move": null,
+                                "fmt": null,
+                                "rpr": [],
+                                "was": null
+                              }
+                            ],
+                            "mark": {
+                              "ins": "Author A",
+                              "del": null,
+                              "move": null
+                            },
+                            "pchange": null,
+                            "ppr": [],
+                            "pwas": null,
+                            "num": null,
+                            "numchange": null
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "text": "Second para.",
+              "runs": [
+                {
+                  "text": "Second para.",
+                  "ins": null,
+                  "del": null,
+                  "move": null,
+                  "fmt": null,
+                  "rpr": [],
+                  "was": null
+                }
+              ],
+              "mark": {
+                "ins": null,
+                "del": null,
+                "move": null
+              },
+              "pchange": null,
+              "ppr": [],
+              "pwas": null,
+              "num": null,
+              "numchange": null
+            }
+          ]
+        },
+        "sections": [
+          {
+            "change": null,
+            "props": [
+              "cols:space=720",
+              "pgMar:bottom=1440,footer=720,gutter=0,header=720,left=1440,right=1440,top=1440",
+              "pgSz:h=15840,w=12240"
+            ],
+            "was": null
+          }
+        ],
+        "revisions": [
+          {
+            "type": "wdRevisionInsert",
+            "author": "Author A",
+            "text": "a\r\u0007b\r\u0007\r\u0007c\r\u0007d\r\u0007\r\u0007"
+          },
+          {
+            "type": "wdRevisionTableProperty",
+            "author": "Author A",
+            "text": "a\r\u0007b\r\u0007\r\u0007c\r\u0007d\r\u0007\r\u0007"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "id": "MT-NESTIN-HE-L1",
+  "title": "Containing-cell text to inner table: End in the text before and Home in the text after stay in the containing cell (nesting level 1)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 1,
+        "offset": 3
+      }
+    },
+    {
+      "key": "End"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 15,
+          "depth": 1
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 27,
+        "offset": 3
+      }
+    },
+    {
+      "key": "Home"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 27,
+          "offset": 0,
+          "depth": 1
+        }
+      }
+    }
+  ]
+}

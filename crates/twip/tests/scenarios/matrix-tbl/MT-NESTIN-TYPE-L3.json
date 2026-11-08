@@ -1,0 +1,56 @@
+{
+  "id": "MT-NESTIN-TYPE-L3",
+  "title": "Containing-cell text to inner table: text typed beside the inner table stays in the containing cell (nesting level 3)",
+  "fixture": "FX-NEST-DEEP.docx",
+  "methods": [
+    "M",
+    "K",
+    "S"
+  ],
+  "generated": "tests/scenarios/matrix-tbl/generate.py",
+  "steps": [
+    {
+      "click": {
+        "para": 3,
+        "offset": "end"
+      }
+    },
+    {
+      "type": "Z"
+    },
+    {
+      "expect": {
+        "text": {
+          "3": "Level 3, beforeZ",
+          "4": "Level 4, before"
+        },
+        "caret": {
+          "para": 3,
+          "offset": 16,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 19,
+        "offset": 0
+      }
+    },
+    {
+      "type": "Y"
+    },
+    {
+      "expect": {
+        "text": {
+          "19": "YLevel 3, after"
+        },
+        "caret": {
+          "para": 19,
+          "offset": 1,
+          "depth": 3
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+[
+  {
+    "address": "https://example.com",
+    "kind": "link"
+  },
+  {
+    "kind": "headerArea"
+  }
+]

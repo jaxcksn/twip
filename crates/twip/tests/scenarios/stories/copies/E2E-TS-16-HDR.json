@@ -1,0 +1,76 @@
+{
+  "id": "E2E-TS-16-HDR",
+  "title": "A drag from a cell's zone extends a cell block cell by cell; the move handle selects the table; a block over part of a merged cell widens to all of it (in a header)",
+  "fixture": "FX-TBL-BASIC-HDR.docx",
+  "methods": [
+    "M",
+    "S"
+  ],
+  "generated": "tests/scenarios/stories/generate.py from tbl-struct/E2E-TS-16.json",
+  "steps": [
+    {
+      "click": {
+        "para": 15,
+        "offset": 0
+      },
+      "clicks": 2
+    },
+    {
+      "drag": {
+        "from": {
+          "table": 1,
+          "row": 0,
+          "border": 0,
+          "dx": 3
+        },
+        "to": {
+          "table": 1,
+          "row": 1,
+          "border": 2,
+          "dx": -40
+        }
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            1,
+            1
+          ],
+          "shape": "rect"
+        }
+      }
+    },
+    {
+      "click": {
+        "table": 1,
+        "row": 0,
+        "border": 0,
+        "dx": -6,
+        "dy": -16
+      }
+    },
+    {
+      "expect": {
+        "selection": {
+          "kind": "cells",
+          "anchor": [
+            0,
+            0
+          ],
+          "focus": [
+            2,
+            2
+          ],
+          "shape": "table"
+        }
+      }
+    }
+  ]
+}

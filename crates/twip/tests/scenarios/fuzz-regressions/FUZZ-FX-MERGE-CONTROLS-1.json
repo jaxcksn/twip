@@ -1,0 +1,41 @@
+{
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "id": "FUZZ-FX-MERGE-CONTROLS-1",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "click": {
+        "offset": 4,
+        "para": 3
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "type": " "
+    },
+    {
+      "click": {
+        "offset": 2,
+        "para": 7
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "key": "Tab",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Statement { invariant: \"C2 contiguous\", detail: \"control ControlId(73923) wraps blocks [3, 4, 6] of section 0\" }] (Caret(Position { story: Body, place: Text { para: ParaId(73957), offset: Unit(0), affinity: Downstream } }) in Some(\"\"))"
+}

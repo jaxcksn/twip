@@ -1,0 +1,14 @@
+{
+  "name": "field-shading",
+  "fixture": "editor/FX-SHADING.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "expectState", "match": {"revision": 1, "view": {"fieldShading": "whenSelected"}}},
+    {"op": "command", "command": {"type": "setViewOptions", "fieldShading": "always"}},
+    {"op": "expectState", "match": {"revision": 1, "view": {"fieldShading": "always"}, "history": {"undoLabel": null}}},
+    {"op": "command", "command": {"type": "setViewOptions", "fieldShading": "never"}},
+    {"op": "expectState", "match": {"revision": 1, "view": {"fieldShading": "never"}}},
+    {"op": "command", "command": {"type": "setViewOptions", "fieldShading": "whenSelected"}},
+    {"op": "expectState", "match": {"revision": 1, "view": {"fieldShading": "whenSelected"}}}
+  ]
+}
