@@ -1,142 +1,140 @@
 <div align="center">
-  <br><br>
+  <br />
+  <br />
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/Twip-dark.png">
     <source media="(prefers-color-scheme: light)" srcset=".github/Twip.png">
     <img src=".github/Twip.png" alt="Twip" width="240">
   </picture>
-  <br><br>
+  <br />
+  <br />
 
-  <p>
-    <a href="https://crates.io/crates/twip"><img src="https://img.shields.io/crates/v/twip?style=flat-square&label=crates.io&logo=rust&logoColor=white&color=8c8c8c" alt="crates.io"></a>
-    <a href="https://www.nuget.org/packages/Twip.Core"><img src="https://img.shields.io/nuget/v/Twip.Core?style=flat-square&label=nuget&logo=nuget&logoColor=white&color=8c8c8c" alt="NuGet </a>
-    <a href="https://www.npmjs.com/package/@twip/web"><img src="https://img.shields.io/npm/v/%40twip%2Fweb?style=flat-square&label=npm&logo=npm&logoColor=white&color=8c8c8c" alt="npm"></a>
-    <br />
-    <a href="https://github.com/jaxcksn/twip/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jaxcksn/twip/ci.yml?branch=main&style=flat-square&label=ci&logo=github&logoColor=white&color=8c8c8c" alt="CI"></a>
-    <a href="https://jaxcksn.github.io/twip/"><img src="https://img.shields.io/badge/docs-jaxcksn.github.io-8c8c8c?style=flat-square&logo=readthedocs&logoColor=white" alt="Docs"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/jaxcksn/twip?style=flat-square&color=8c8c8c" alt="License"></a>
-    <img src="https://flat.badgen.net/https/sonarqube-badge-generation.vercel.app/api/sonarqube/quality_gate" alt="Quality Gate">
-  </p>
+  A high-fidelity DOCX layout, editing, and rendering engine.  
+  Written in Rust. Built for the browser, desktop, and server.
 
-  <p>A DOCX engine focused on performance and fidelity, ready to integrate on native and web.</p>
-  
-  ---
-  <br>
+  <a href="https://github.com/jaxcksn/twip/actions/workflows/ci.yml"><img src="https://flat.badgen.net/github/checks/jaxcksn/twip/main?label=build&icon=github" alt="Build"></a>
+  <img src="https://flat.badgen.net/https/sonarqube-badge-generation.vercel.app/api/sonarqube/quality_gate?cache=301&icon=sonar" alt="Quality gate">
+  <a href="LICENSE"><img src="https://flat.badgen.net/github/license/jaxcksn/twip" alt="License"></a>
+  <br />
+  <a href="https://crates.io/crates/twip"><img src="https://flat.badgen.net/crates/v/twip?label=crates.io&icon=rust&color=ea7233" alt="Rust crate"></a>
+  <a href="https://www.nuget.org/packages/Twip.Core"><img src="https://flat.badgen.net/nuget/v/Twip.Core?label=nuget&icon=nuget&color=004880" alt="NuGet package"></a>
+  <a href="https://www.npmjs.com/package/@twip/web"><img src="https://flat.badgen.net/npm/v/@twip/web?label=npm&icon=npm&color=cb3837" alt="npm package"></a>
+
+  <br />
+
+  [**Get started**](#get-started) · [**Explore the engine**](#under-the-hood) · [**Documentation**](#documentation) · [**Roadmap**](jaxcksn.github.io/twip/roadmap)
 </div>
 
-Twip is a DOCX layout, editing and rendering engine written in Rust. It reads a document, lays it out line for line and
-page for page, draws it with Skia, and edits it in place, with undo, track changes and a complete command set. The
-same engine runs natively on Windows and Linux and in the browser through WebAssembly, with SDKs for the web, .NET and
-Rust.
+<br />
 
-Twip is the engine under an editor, not the whole application. It owns the document, the layout, the caret and the
-selection, every editing command, input on the page and the drawing of the page. It also computes the models behind
-your chrome (toolbar state, context menus, dialogs, find, spelling, rulers and review), so your application draws its
-own toolbar, menus and panes around a page the engine already handles.
+---
 
-## Why Twip
+### Twip is an engine, not an application.
 
-- **Faithful layout.** Pagination, line breaking, justification, tab stops, tables, floating objects, columns, notes,
-  headers and footers are laid out from the document's own settings, so text, lines and pages fall where the
-  document's author put them.
-- **Fast by design.** Layout is incremental: an edit lays out again only what it changed and reuses every page it
-  didn't touch. Long documents paginate in the background, a few milliseconds at a time, while the first pages are
-  already editable. Typing has a latency budget: on a machine with a GPU, a keystroke's frame paints within one
-  display refresh (16.7 ms).
-- **GPU rendering everywhere.** Skia Graphite on Dawn draws with Direct3D 12, Direct3D 11 or Vulkan natively and with
-  WebGPU in the browser, falling back to WebGL 2 and then the CPU. A lost GPU device is replaced and drawing carries on.
-- **One engine, every platform.** A single Rust core serves the browser, Node, Windows and Linux desktops and
-  services, with the same layout everywhere. The .NET SDK is Native AOT compatible, and the web SDK runs in a worker
-  or headless in Node.
-- **One contract, three SDKs.** The web, .NET and Rust SDKs are written by hand for their languages, and all of them
-  follow `twip::api`: the same commands, state, events and errors. A shared suite of contract scripts runs against
-  every SDK, so they behave the same.
-- **Headless or mounted.** Run a session with no UI to generate, fill and convert documents on a server, or mount
-  the full editor in a page or a WinForms form.
+>[!WARNING] 
+>Twip is in early development, and it's API surface is likely to change as I continue to make it less and less opinionated. The eventual goal is to remove any API surface that suggests how you should build your application chrome, including dialogs (I may leave them as helpers).
 
-## Features
+Twip gives you the difficult parts of a Word-like experience—document structure, precise pagination, text shaping, selection, editing, and rendering—without prescribing the application around them. It takes a minimal-as-possible approach to the editor chrome, and it lets the integrating application handle everything from the context menu to the tooltips.
 
-### Text and paragraphs
+Build your own ribbon, inspector, or command palette. Twip handles what happens **on the page** and exposes the state your interface needs.
 
-- Fonts from the system, from files (TrueType, OpenType, collections, WOFF and WOFF2) or from a resolver you supply,
-  with named instances of variable fonts as faces of their own. Your application decides every font choice: aliases,
-  replacements, generic defaults, fallbacks, and reports of what's missing
-- Styles, with paragraph, character, table and numbering styles and the document defaults
-- Line breaking, justification, tab stops with leaders, line and paragraph spacing, borders, shading and the document
-  grid
-- Lists and multi-level numbering, line numbers, and keep-with-next, keep-lines-together and widow control
+<br />
 
-### Pages and sections
+<table>
+<tr>
+<td width="33%" valign="top">
 
-- Sections with their own page size, orientation, margins, columns and page numbering
-- Columns with balancing and separators, page and column breaks
-- Headers and footers (first page, odd and even), footnotes and endnotes, and change bars
-- Text frames, and vertical alignment of a section's pages
+**01 / Fidelity first**
 
-### Tables
+Layout that respects the document: line breaks, tables, floating objects, columns, sections, and page geometry.
 
-- Autofit and fixed column widths, preferred widths, cell spacing and margins
-- Merged cells, nested tables, repeated header rows and rows that split across pages
-- Floating tables with text wrapped around them
-- Hover handles to move and resize a table, "+" buttons to insert rows and columns, and live column widths while a
-  border is dragged
+</td>
+<td width="33%" valign="top">
 
-### Pictures and shapes
+**02 / Performant by design**
 
-- Inline and floating pictures, with square and top-and-bottom wrapping or placed behind or in front of the text
-- DrawingML shapes: all 187 preset geometries of ECMA-376 and custom geometry, with fills, outlines, theme styles,
-  shadows, glow, soft edges, blur and text inside
-- VML shapes from older documents, read into the same model
-- Text boxes, linked text boxes, groups, and handles to move, resize and rotate objects, with snapping to margins,
-  the page centre, other objects and an optional grid
+Recompute what changed, reuse what didn't. Pages can become editable while the rest of a long document continues to paginate. Written in Rust for saftey.
 
-### Editing
+</td>
+<td width="33%" valign="top">
 
-- A complete command set: typing, formatting, paragraphs, lists, tables, pages, objects and navigation, each one a
-  transaction with undo and redo; batches apply several commands atomically as one undo step
-- A command catalog with labels, groups and shortcuts, for menus, command palettes and shortcut sheets
-- Rulers with draggable indents, margins, tab stops and table columns
-- Clipboard with rich text, find and replace, spelling with your dictionaries, and AutoCorrect with shipped English
-  lists
-- Bookmarks, hyperlinks and cross-references
+**03 / Powered by Skia**
 
-### Review
+Hardware accelerated rendering across native graphics backends and the web, with graceful fallbacks and [prebuilt-bindings for Skia](https://github.com/jaxcksn/twip-skia-dawn/).
 
-- Tracked insertions, deletions, formatting and moves, with accept and reject
-- Comments with replies, resolution and rich text, and balloons placed beside their threads by the SDK or by you
+</td>
+</tr>
+</table>
 
-### Templates and data
+## One core. Three ways to build.
 
-- Fields, including merge fields, page numbers and cross-references, shown as codes or results
-- Content controls: plain and rich text, check boxes, dates, drop-downs, pictures, groups and repeating sections,
-  with data bound to custom XML parts
-- A merge designer surface: list, select and drag fields and content controls, and read and write the custom XML parts
-- Sub-templates: building blocks kept once and referenced from a template, shown inline and edited in place
+| | **Web** | **.NET** | **Rust** |
+| :-- | :-- | :-- | :-- |
+| **Package** | [`@twip/web`](https://www.npmjs.com/package/@twip/web) | [`Twip.Core`](https://www.nuget.org/packages/Twip.Core) | [`twip`](https://crates.io/crates/twip) |
+| **Runtime** | Browser / Node.js | Windows / Linux | Native |
+| **Integration** | WebAssembly; framework-agnostic | Native AOT-compatible; WinForms control available | Direct engine API |
 
-### Appearance and accessibility
+The SDKs share the same underlying Rust engine and a common API contract. React and Angular adapters are available separately; the web SDK does not depend on either framework.
 
-- Light and dark chrome themes with an accent colour, dark mode for the page, and high contrast from the platform
-- Formatting marks, zoom and markup pane, all drawn by the engine on the GPU
-- An accessibility tree for screen readers, kept by the mounted editor in the browser
+## Built for real documents.
 
-### Import and export
+<table>
+<tr>
+<td width="50%" valign="top">
 
-- Opens DOCX and saves DOCX
-- Exports PDF, laid out completely first
+**Layout & typography**
 
-## SDKs
+Paragraph and character styles, complex numbering, tab stops, justification, font fallback, page and section breaks, columns, headers, footers, and notes.
 
-| SDK | Package | For |
-|---|---|---|
-| Web | `@twip/web` on npm | Browsers and Node, through WebAssembly |
-| .NET | `Twip.Core` and `Twip.WinForms` on NuGet | Windows and Linux apps and services (`win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`), Native AOT compatible |
-| Rust | `twip` on crates.io | Rust applications and services |
+</td>
+<td width="50%" valign="top">
 
-React and Angular adapters live in `packages/`; `@twip/web` itself depends on no framework.
+**Tables & objects**
 
-## Quick start
+Nested and split tables, floating content, inline images, DrawingML and VML shapes, text boxes, wrapping, and on-canvas manipulation.
 
-### Web
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Editing & review**
+
+Commands, selection, caret navigation, undo/redo, find and replace, comments, tracked changes, spelling, and AutoCorrect.
+
+</td>
+<td valign="top">
+
+**Templates & automation**
+
+Merge fields, content controls, XML data binding, reusable building blocks, and headless document generation.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Rendering & export**
+
+Skia rendering with WebGPU, WebGL 2, and native graphics backends; DOCX save and PDF export.
+
+</td>
+<td valign="top">
+
+**Your UI, your rules**
+
+Toolbar state, rulers, context menus, dialogs, and review models exposed for your own frontend, plus an accessibility tree for web editors.
+
+</td>
+</tr>
+</table>
+
+## Get started
+
+<details open>
+<summary><strong>Web · TypeScript</strong></summary>
+
+<br />
 
 ```bash
 pnpm add @twip/web
@@ -145,37 +143,39 @@ pnpm add @twip/web
 ```ts
 import { Editor } from '@twip/web';
 
-const container = document.querySelector<HTMLElement>('#editor')!;
 const response = await fetch('/report.docx');
 
-const editor = await Editor.mount(container, {
+const editor = await Editor.mount(document.querySelector('#editor')!, {
   document: new Uint8Array(await response.arrayBuffer()),
   author: { name: 'Ada Lovelace', initials: 'AL' },
-  rulers: true,
   zoom: 'pageWidth',
 });
-editor.focus();
 
+editor.focus();
 await editor.commands.selectAll();
 await editor.commands.setBold(true);
-console.log(editor.getState().formatting.bold); // true
 
 const { bytes } = await editor.export({ format: 'docx' });
 ```
 
-### .NET
+</details>
+
+<details>
+<summary><strong>.NET · C#</strong></summary>
+
+<br />
 
 ```bash
-dotnet add package Twip.Core       # the session: headless, any .NET app
-dotnet add package Twip.WinForms   # the DocumentEditor control
+dotnet add package Twip.Core
 ```
 
 ```csharp
 using Twip;
 
-await using var session = new EditorSession(new EditorSessionOptions(Author: new Author("Report bot")));
-await session.OpenAsync("template.docx");
+await using var session = new EditorSession(
+    new EditorSessionOptions(Author: new Author("Report bot")));
 
+await session.OpenAsync("template.docx");
 await session.Commands.MoveSelectionAsync(MoveUnit.Document, Direction.Forward);
 await session.Commands.InsertTextAsync("Generated by Twip.");
 
@@ -183,7 +183,14 @@ await session.SaveAsync("report.docx");
 await session.ExportPdfAsync("report.pdf");
 ```
 
-### Rust
+For a mounted WinForms editor, install `Twip.WinForms`.
+
+</details>
+
+<details>
+<summary><strong>Rust</strong></summary>
+
+<br />
 
 ```toml
 [dependencies]
@@ -198,44 +205,82 @@ use twip::api::session::{ExportFormat, ExportOptions};
 
 let mut engine = Engine::new(FontLibrary::system());
 let id = engine.create_session(SessionOptions::default());
-let session = engine.session(id).expect("the session was just created");
+let session = engine.session(id).expect("session exists");
 
 session.open(&std::fs::read("report.docx")?)?;
-for command in [Command::SelectAll, Command::SetBold(true)] {
-    session.run(command)?;
-}
-let export = session.export(&ExportOptions { format: ExportFormat::Docx })?;
+session.run(Command::SelectAll)?;
+session.run(Command::SetBold(true))?;
+
+let export = session.export(&ExportOptions {
+    format: ExportFormat::Docx,
+})?;
 ```
 
-The full examples are in `docs/examples` and `crates/twip/examples`, and are compiled in CI.
+</details>
+
+More complete examples live in [`docs/examples`](docs/examples) and [`crates/twip/examples`](crates/twip/examples).
+
+## Under the hood
+
+Twip reads a DOCX into a document model, lays it out into pages and draws those pages with Skia. Editing commands change the model, and the layout follows.
+
+
+```mermaid
+flowchart LR
+    classDef io fill:#1e293b,stroke:#64748b,color:#e2e8f0
+    classDef step fill:#0f766e,stroke:#2dd4bf,color:#f0fdfa
+    classDef out fill:#b45309,stroke:#fbbf24,color:#fffbeb
+
+    docx["DOCX"]:::io --> model["Document model"]:::step
+    cmd["Editing commands<br/>undo · track changes"]:::io --> model
+    model --> layout["Layout<br/>shape → break lines → fill pages"]:::step
+    layout --> frags["Page fragments<br/>immutable, shared"]:::out
+    frags --> skia["Skia<br/>GPU or CPU"]:::io
+    frags --> ui["Caret, hit tests, state<br/>for your UI"]:::io
+```
+
+Twip's layout architecture is inspired by Chromium's LayoutNG. The layout is a tree of immutable fragments: pages, boxes, paragraphs and lines. A fragment stores no position of its own. Its parent places it, so a line that moves down the page is the same shared fragment, drawn at a new place.
+
+Each page starts from a break token, the point in the document where the page before it ended. The same token in the same page area gives the same page. After an edit, Twip lays out again from the page before the change and stops when a page's start token matches the old layout. From that page on it reuses the old pages as they are.
+
+```mermaid
+flowchart LR
+    classDef kept fill:#0f766e,stroke:#2dd4bf,color:#f0fdfa
+    classDef laid fill:#b45309,stroke:#fbbf24,color:#fffbeb
+
+    p1["Page 1<br/>kept"]:::kept -- token --> p2["Page 2<br/>kept"]:::kept
+    p2 -- token --> p3["Page 3<br/>edited, laid out"]:::laid
+    p3 -- "token moved" --> p4["Page 4<br/>laid out"]:::laid
+    p4 -- "token matches<br/>old page 5" --> p5["Pages 5 … n<br/>reused as is"]:::kept
+```
+
+Paragraphs the edit didn't touch keep their shaped text and line breaks from the layout caches, so even the pages that are laid out again mostly reuse lines. The renderer records each page once and records again only the pages whose drawing changed.
+
+<details>
+<summary><strong>Repository map</strong></summary>
+
+| Path | Purpose |
+| :-- | :-- |
+| `crates/twip` | Core engine and `twip::api` |
+| `crates/twip-capi` | Native C ABI |
+| `crates/twip-wasm` | WebAssembly build |
+| `crates/twip-tools` | Developer tooling and fidelity comparisons |
+| `bindings/web` | TypeScript SDK |
+| `bindings/dotnet` | .NET SDK |
+| `packages/*` | Framework adapters |
+| `tests/contract` | Cross-SDK contract tests |
+| `docs` | Guides, examples, and API references |
+
+</details>
 
 ## Documentation
 
-The docs site covers installation, a getting-started guide for each SDK, and guides for editing on the canvas,
-events, services, fonts, shapes, review, sub-templates, rendering, appearance and AutoCorrect, with the API reference
-of every SDK. Run it locally with `pnpm moon run docs:dev`.
+Find SDK setup, editing commands, events, rendering, fonts, shape support, review, templates, and API references at the [doc site](https://jaxcksn.github.io/twip). Run the documentation locally with `pnpm moon run docs:dev`.
 
-## Repository
-
-| Path | What |
-|---|---|
-| `crates/twip` | The engine: document model, layout, editing, rendering and PDF. `twip::api` is the contract every SDK follows. |
-| `crates/twip-capi` | The C ABI over `twip::api`, the native library the .NET SDK loads |
-| `crates/twip-wasm` | The C ABI built as a WebAssembly module for the web |
-| `crates/twip-tools` | Developer tools: dumps, round trips, renders and comparisons |
-| `bindings/web` | `@twip/web`, the TypeScript SDK |
-| `bindings/dotnet` | `Twip.Core` and `Twip.WinForms`, the .NET SDK |
-| `packages/*` | React and Angular adapters |
-| `tests/contract` | The contract scripts every SDK runs |
-| `docs` | The docs site, its examples and the API references |
-
-Building, testing and contributing are covered in [CONTRIBUTING](.github/CONTRIBUTING.md). The road to 1.0 is in
-[the roadmap](docs/docs/roadmap.mdx).
+Want to contribute? See [CONTRIBUTING](.github/CONTRIBUTING.md). Curious what's next? Follow the [roadmap](https://jaxcksn.github.io/twip/roadmap).
 
 ---
 
-<p align="center">
-<sub>
-Copyright 2026 Jackson Casey<br >This product is licensed under the Apache License, Version 2.0. See the LICENSE file distributed with this work for the full license text.
-</sub>
-</p>
+<div align="center">
+  <sub>Built with Rust, rendered with Skia, and released under the <a href="LICENSE">Apache License 2.0</a>.<br />© 2026 Jackson Casey</sub>
+</div>
