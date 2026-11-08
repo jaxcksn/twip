@@ -19,11 +19,6 @@
   ---
   <br>
 </div>
-<div align="center">
-
-**Twip is getting ready for open source and a beta release.** The API may change between 0.x versions until 1.0.
-
-</div>
 
 Twip is a DOCX layout, editing and rendering engine written in Rust. It reads a document, lays it out line for line and
 page for page, draws it with Skia, and edits it in place, with undo, track changes and a complete command set. The
