@@ -288,3 +288,44 @@ fn an_undecodable_picture_bullet_warns() {
     let doc = crate::docx::read_editable(&bytes).expect("reads");
     assert_eq!(doc.diagnostics.count(crate::api::warning::WarningCode::PictureBulletUndecodable), 1);
 }
+
+#[test]
+fn a_self_closing_numbering_root_opens_for_a_new_list() {
+    use crate::api::command::Command;
+    use crate::api::services::ListEntryId;
+    use std::io::{Read, Write};
+    const EMPTY: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
+        <w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" />";
+    let part = |bytes: &[u8]| {
+        let mut s = String::new();
+        zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap().by_name("word/numbering.xml").unwrap().read_to_string(&mut s).unwrap();
+        s
+    };
+    // FX-SUBTEMPLATES.docx has no lists; its numbering part becomes a self-closing root.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(std::fs::read(path).expect("fixture"))).expect("a package");
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..z.len() {
+        let mut f = z.by_index(i).unwrap();
+        let name = f.name().map(|n| n.to_string()).unwrap();
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).unwrap();
+        if name == "word/numbering.xml" {
+            data = EMPTY.as_bytes().to_vec();
+        }
+        out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        out.write_all(&data).unwrap();
+    }
+    let bytes = out.finish().unwrap().into_inner();
+    let mut e = crate::editing::Editor::open(&bytes, super::fonts()).expect("reads");
+    // Nothing to add: the part is kept as it is.
+    assert_eq!(part(&crate::docx::write::save(e.document()).expect("saves")), EMPTY);
+    caret_in(&mut e, 0);
+    e.execute(Command::ApplyListEntry(ListEntryId("library:bullet:1".into())), super::fonts());
+    let saved = crate::docx::write::save(e.document()).expect("saves with a new list");
+    let xml = part(&saved);
+    assert!(xml.contains("<w:abstractNum ") && xml.contains("<w:num ") && xml.ends_with("</w:numbering>"), "{xml}");
+    roxmltree::Document::parse(&xml).expect("the numbering part parses");
+    let again = crate::editing::Editor::open(&saved, super::fonts()).expect("reads again");
+    assert_eq!(labels(&again)[0].1, "\u{F0B7}");
+}
