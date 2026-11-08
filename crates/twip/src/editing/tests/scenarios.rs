@@ -781,10 +781,9 @@ fn run(path: &Path) {
     }
 }
 
-#[test]
-fn scenarios() {
-    let files = scenario_files();
-    assert!(!files.is_empty(), "no scenarios found in tests/scenarios");
+/// Runs every scenario in `files`, failing with all that failed.
+fn run_all(files: Vec<PathBuf>) {
+    assert!(!files.is_empty(), "no scenarios found");
     let only = std::env::var("SCENARIO").ok();
     let files: Vec<_> = files.into_iter().filter(|f| only.as_ref().is_none_or(|o| f.to_string_lossy().contains(o.as_str()))).collect();
     let failed: Vec<String> = super::par_map(&files, |f| {
@@ -806,6 +805,62 @@ fn scenarios() {
 "
         )
     );
+}
+
+/// One test per scenario folder (`_` in the name for `-` in the folder's), so each runs in its own test.
+macro_rules! folders {
+    ($($name:ident),* $(,)?) => {
+        const FOLDERS: &[&str] = &[$(stringify!($name)),*];
+        mod folder {
+            $(
+                #[test]
+                fn $name() {
+                    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios").join(stringify!($name).replace('_', "-"));
+                    super::run_all(super::scenario_files().into_iter().filter(|f| f.starts_with(&dir)).collect());
+                }
+            )*
+        }
+    };
+}
+
+folders!(
+    advanced,
+    clip,
+    clipped,
+    controls,
+    edit,
+    fmt,
+    fuzz_regressions,
+    hit,
+    ime_interim,
+    lists,
+    ltb,
+    matrix,
+    matrix_tbl,
+    merge,
+    nav,
+    nest,
+    obj,
+    review,
+    sel,
+    stories,
+    tbl_nav,
+    tbl_resize,
+    tbl_struct,
+    undo
+);
+
+#[test]
+fn every_scenario_folder_has_a_test() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios");
+    let mut dirs: Vec<String> = std::fs::read_dir(&root)
+        .expect("the scenarios folder")
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().replace('-', "_"))
+        .collect();
+    dirs.sort();
+    assert_eq!(dirs, FOLDERS, "add the folder to `folders!`");
 }
 
 #[test]
