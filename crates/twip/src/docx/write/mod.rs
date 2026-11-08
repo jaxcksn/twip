@@ -247,7 +247,7 @@ fn with_track_revisions(xml: &str, on: bool) -> Result<String, String> {
 }
 
 /// The files of the data parts removed since reading: each item, its properties and its relationships.
-fn removed_data_files(doc: &Document) -> Vec<String> {
+pub(crate) fn removed_data_files(doc: &Document) -> Vec<String> {
     let Some(src) = doc.source.as_ref() else { return Vec::new() };
     let mut out = Vec::new();
     for item in &doc.removed_data {
