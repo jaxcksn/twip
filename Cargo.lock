@@ -860,7 +860,7 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "twip"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes",
  "cc",
@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "twip-capi"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -901,7 +901,7 @@ dependencies = [
 
 [[package]]
 name = "twip-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "twip-capi",
 ]
