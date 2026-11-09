@@ -1,0 +1,360 @@
+page 0 612.0 792.0
+  72.0 92.8 Tables Fixture
+  72.0 116.4 A. Simple grid (Table Grid)
+  77.7 133.3 Region
+  194.5 133.3 Q1
+  311.3 133.3 Q2
+  428.2 133.3 Q3
+  77.7 145.7 North
+  194.5 145.7 1,200
+  311.3 145.7 1,350
+  428.2 145.7 1,410
+  77.7 158.1 South
+  194.5 158.1 980
+  311.3 158.1 1,020
+  428.2 158.1 1,105
+  72.0 191.9 B. Built-in table style (Grid Table 4 - Accent 1), header row and banded rows
+  77.7 208.8 Product
+  194.5 208.8 Units
+  311.3 208.8 Price
+  428.2 208.8 Total
+  77.7 221.2 Notebook
+  282.4 221.2 120
+  393.2 221.2 2.50
+  498.0 221.2 300.00
+  77.7 233.6 Pen
+  282.4 233.6 480
+  393.2 233.6 0.75
+  498.0 233.6 360.00
+  77.7 246.0 Stapler
+  288.4 246.0 35
+  393.2 246.0 8.90
+  498.0 246.0 311.50
+  77.7 258.3 Folder
+  282.4 258.3 260
+  393.2 258.3 1.20
+  498.0 258.3 312.00
+  77.7 270.7 Tape
+  288.4 270.7 90
+  393.2 270.7 3.10
+  498.0 270.7 279.00
+  72.0 304.5 C. Merged cells, shading, custom borders, vertical alignment, fixed widths,
+  72.0 318.6 nested table
+  213.9 337.2 Merged header across four columns
+  78.5 408.4 Tall
+  150.5 349.6 Top-left aligned (default)
+  312.5 367.7 Centered
+  312.5 379.6 vertically
+  429.5 397.7 Bottom vertically
+  165.9 410.1 Right-aligned paragraph
+  312.8 410.1 Centered paragraph
+  435.2 410.6 n3
+  488.0 410.6 n4
+  429.5 431.0 Nested table:
+  150.5 455.2 Shaded cell
+  312.5 455.2 Shaded, white bold
+  312.5 467.1 text
+  429.5 455.2 Plain
+  78.5 479.5 Notes
+  150.5 479.5 Cell with two paragraphs.
+  150.5 491.3 Second paragraph in the
+  150.5 503.2 same cell.
+  312.5 479.5 Merged horizontally across two columns
+  72.0 538.8 D. Long table with repeating header row and rows that split across pages
+  72.0 555.2 The table below has 60 data rows; row 1 repeats at the top of each page, and some rows
+  72.0 567.1 hold long multi-line text.
+  77.7 587.5 #
+  113.7 587.5 Item
+  221.7 587.5 Description
+  473.6 587.5 Amount
+  77.7 599.8 1
+  113.7 599.8 Line item 1
+  221.7 599.8 Standard entry for item number 1.
+  504.6 599.8 17.25
+  77.7 612.2 2
+  113.7 612.2 Line item 2
+  221.7 612.2 Standard entry for item number 2.
+  504.6 612.2 34.50
+  77.7 624.6 3
+  113.7 624.6 Line item 3
+  221.7 624.6 Standard entry for item number 3.
+  504.6 624.6 51.75
+  77.7 637.0 4
+  113.7 637.0 Line item 4
+  221.7 637.0 Standard entry for item number 4.
+  504.6 637.0 69.00
+  77.7 649.3 5
+  113.7 649.3 Line item 5
+  221.7 649.3 Standard entry for item number 5.
+  504.6 649.3 86.25
+  77.7 661.7 6
+  113.7 661.7 Line item 6
+  221.7 661.7 Standard entry for item number 6.
+  498.5 661.7 103.50
+  77.7 674.1 7
+  113.7 674.1 Line item 7
+  221.7 674.1 Standard entry for item number 7.
+  498.5 674.1 120.75
+  77.7 686.4 8
+  113.7 686.4 Line item 8
+  221.7 686.4 Standard entry for item number 8.
+  498.5 686.4 138.00
+  77.7 698.8 9
+  113.7 698.8 Line item 9
+  221.7 698.8 Standard entry for item number 9.
+  498.5 698.8 155.25
+  77.7 711.2 10
+  113.7 711.2 Line item 10
+  221.7 711.2 Standard entry for item number 10.
+  498.5 711.2 172.50
+page 1 612.0 792.0
+  77.7 81.3 #
+  113.7 81.3 Item
+  221.7 81.3 Description
+  473.6 81.3 Amount
+  77.7 93.7 11
+  113.7 93.7 Line item 11
+  221.7 93.7 Maintenance of the older buildings remains
+  221.7 105.5 the largest unplanned cost, and a phased
+  221.7 117.4 renovation schedule is now under
+  221.7 129.3 discussion. A detailed audit of travel
+  221.7 141.2 expenses revealed modest savings, mostly
+  221.7 153.0 from booking flights earlier and
+  221.7 164.9 consolidating hotel contracts. Shipping
+  221.7 176.8 delays in the spring were traced to a single
+  221.7 188.6 warehouse whose inventory system had not
+  221.7 200.5 been updated in several years. Shipping
+  221.7 212.4 delays in the spring were traced to a single
+  221.7 224.3 warehouse whose inventory system had not
+  221.7 236.1 been updated in several years.
+  498.5 93.7 189.75
+  77.7 248.5 12
+  113.7 248.5 Line item 12
+  221.7 248.5 Standard entry for item number 12.
+  498.5 248.5 207.00
+  77.7 260.9 13
+  113.7 260.9 Line item 13
+  221.7 260.9 Standard entry for item number 13.
+  498.5 260.9 224.25
+  77.7 273.2 14
+  113.7 273.2 Line item 14
+  221.7 273.2 Standard entry for item number 14.
+  498.5 273.2 241.50
+  77.7 285.6 15
+  113.7 285.6 Line item 15
+  221.7 285.6 Standard entry for item number 15.
+  498.5 285.6 258.75
+  77.7 298.0 16
+  113.7 298.0 Line item 16
+  221.7 298.0 Standard entry for item number 16.
+  498.5 298.0 276.00
+  77.7 310.3 17
+  113.7 310.3 Line item 17
+  221.7 310.3 Standard entry for item number 17.
+  498.5 310.3 293.25
+  77.7 322.7 18
+  113.7 322.7 Line item 18
+  221.7 322.7 Standard entry for item number 18.
+  498.5 322.7 310.50
+  77.7 335.1 19
+  113.7 335.1 Line item 19
+  221.7 335.1 Standard entry for item number 19.
+  498.5 335.1 327.75
+  77.7 347.5 20
+  113.7 347.5 Line item 20
+  221.7 347.5 Standard entry for item number 20.
+  498.5 347.5 345.00
+  77.7 359.8 21
+  113.7 359.8 Line item 21
+  221.7 359.8 Standard entry for item number 21.
+  498.5 359.8 362.25
+  77.7 372.2 22
+  113.7 372.2 Line item 22
+  221.7 372.2 Standard entry for item number 22.
+  498.5 372.2 379.50
+  77.7 384.6 23
+  113.7 384.6 Line item 23
+  221.7 384.6 Standard entry for item number 23.
+  498.5 384.6 396.75
+  77.7 396.9 24
+  113.7 396.9 Line item 24
+  221.7 396.9 Standard entry for item number 24.
+  498.5 396.9 414.00
+  77.7 409.3 25
+  113.7 409.3 Line item 25
+  221.7 409.3 Standard entry for item number 25.
+  498.5 409.3 431.25
+  77.7 421.7 26
+  113.7 421.7 Line item 26
+  221.7 421.7 Standard entry for item number 26.
+  498.5 421.7 448.50
+  77.7 434.1 27
+  113.7 434.1 Line item 27
+  221.7 434.1 Standard entry for item number 27.
+  498.5 434.1 465.75
+  77.7 446.4 28
+  113.7 446.4 Line item 28
+  221.7 446.4 Standard entry for item number 28.
+  498.5 446.4 483.00
+  77.7 458.8 29
+  113.7 458.8 Line item 29
+  221.7 458.8 Standard entry for item number 29.
+  498.5 458.8 500.25
+  77.7 471.2 30
+  113.7 471.2 Line item 30
+  221.7 471.2 Standard entry for item number 30.
+  498.5 471.2 517.50
+  77.7 483.5 31
+  113.7 483.5 Line item 31
+  221.7 483.5 Standard entry for item number 31.
+  498.5 483.5 534.75
+  77.7 495.9 32
+  113.7 495.9 Line item 32
+  221.7 495.9 Maintenance of the older buildings remains
+  221.7 507.8 the largest unplanned cost, and a phased
+  221.7 519.7 renovation schedule is now under
+  221.7 531.5 discussion. The pilot program in three
+  221.7 543.4 schools showed that students who used the
+  221.7 555.3 reading tool practiced more often and with
+  221.7 567.1 greater confidence. The board approved a
+  221.7 579.0 revised budget that shifts funding from
+  221.7 590.9 print advertising toward community
+  221.7 602.7 outreach and training programs. Customer
+  221.7 614.6 feedback consistently praised the new
+  221.7 626.5 onboarding guide, although several readers
+  221.7 638.4 asked for more worked examples. Customer
+  221.7 650.2 feedback consistently praised the new
+  221.7 662.1 onboarding guide, although several readers
+  221.7 674.0 asked for more worked examples. Our
+  221.7 685.8 partners in the northern district
+  221.7 697.7 requested clearer documentation of the
+  221.7 709.6 warranty process and faster replacement of
+  498.5 495.9 552.00
+page 2 612.0 792.0
+  77.7 81.3 #
+  113.7 81.3 Item
+  221.7 81.3 Description
+  473.6 81.3 Amount
+  221.7 93.7 parts. Every department submitted its
+  221.7 105.5 annual plan on time, which allowed the
+  221.7 117.4 finance office to publish the consolidated
+  221.7 129.3 forecast early. Maintenance of the older
+  221.7 141.2 buildings remains the largest unplanned
+  221.7 153.0 cost, and a phased renovation schedule is
+  221.7 164.9 now under discussion. Every department
+  221.7 176.8 submitted its annual plan on time, which
+  221.7 188.6 allowed the finance office to publish the
+  221.7 200.5 consolidated forecast early.
+  77.7 212.9 33
+  113.7 212.9 Line item 33
+  221.7 212.9 Standard entry for item number 33.
+  498.5 212.9 569.25
+  77.7 225.3 34
+  113.7 225.3 Line item 34
+  221.7 225.3 Standard entry for item number 34.
+  498.5 225.3 586.50
+  77.7 237.6 35
+  113.7 237.6 Line item 35
+  221.7 237.6 Standard entry for item number 35.
+  498.5 237.6 603.75
+  77.7 250.0 36
+  113.7 250.0 Line item 36
+  221.7 250.0 Standard entry for item number 36.
+  498.5 250.0 621.00
+  77.7 262.4 37
+  113.7 262.4 Line item 37
+  221.7 262.4 Standard entry for item number 37.
+  498.5 262.4 638.25
+  77.7 274.7 38
+  113.7 274.7 Line item 38
+  221.7 274.7 Standard entry for item number 38.
+  498.5 274.7 655.50
+  77.7 287.1 39
+  113.7 287.1 Line item 39
+  221.7 287.1 Standard entry for item number 39.
+  498.5 287.1 672.75
+  77.7 299.5 40
+  113.7 299.5 Line item 40
+  221.7 299.5 Standard entry for item number 40.
+  498.5 299.5 690.00
+  77.7 311.8 41
+  113.7 311.8 Line item 41
+  221.7 311.8 Standard entry for item number 41.
+  498.5 311.8 707.25
+  77.7 324.2 42
+  113.7 324.2 Line item 42
+  221.7 324.2 Standard entry for item number 42.
+  498.5 324.2 724.50
+  77.7 336.6 43
+  113.7 336.6 Line item 43
+  221.7 336.6 Standard entry for item number 43.
+  498.5 336.6 741.75
+  77.7 349.0 44
+  113.7 349.0 Line item 44
+  221.7 349.0 Standard entry for item number 44.
+  498.5 349.0 759.00
+  77.7 361.3 45
+  113.7 361.3 Line item 45
+  221.7 361.3 Standard entry for item number 45.
+  498.5 361.3 776.25
+  77.7 373.7 46
+  113.7 373.7 Line item 46
+  221.7 373.7 Standard entry for item number 46.
+  498.5 373.7 793.50
+  77.7 386.1 47
+  113.7 386.1 Line item 47
+  221.7 386.1 Standard entry for item number 47.
+  498.5 386.1 810.75
+  77.7 398.4 48
+  113.7 398.4 Line item 48
+  221.7 398.4 Standard entry for item number 48.
+  498.5 398.4 828.00
+  77.7 410.8 49
+  113.7 410.8 Line item 49
+  221.7 410.8 Standard entry for item number 49.
+  498.5 410.8 845.25
+  77.7 423.2 50
+  113.7 423.2 Line item 50
+  221.7 423.2 Standard entry for item number 50.
+  498.5 423.2 862.50
+  77.7 435.6 51
+  113.7 435.6 Line item 51
+  221.7 435.6 Standard entry for item number 51.
+  498.5 435.6 879.75
+  77.7 447.9 52
+  113.7 447.9 Line item 52
+  221.7 447.9 Standard entry for item number 52.
+  498.5 447.9 897.00
+  77.7 460.3 53
+  113.7 460.3 Line item 53
+  221.7 460.3 Standard entry for item number 53.
+  498.5 460.3 914.25
+  77.7 472.7 54
+  113.7 472.7 Line item 54
+  221.7 472.7 Standard entry for item number 54.
+  498.5 472.7 931.50
+  77.7 485.0 55
+  113.7 485.0 Line item 55
+  221.7 485.0 Standard entry for item number 55.
+  498.5 485.0 948.75
+  77.7 497.4 56
+  113.7 497.4 Line item 56
+  221.7 497.4 Standard entry for item number 56.
+  498.5 497.4 966.00
+  77.7 509.8 57
+  113.7 509.8 Line item 57
+  221.7 509.8 Standard entry for item number 57.
+  498.5 509.8 983.25
+  77.7 522.2 58
+  113.7 522.2 Line item 58
+  221.7 522.2 Standard entry for item number 58.
+  486.4 522.2 1,000.50
+  77.7 534.5 59
+  113.7 534.5 Line item 59
+  221.7 534.5 Standard entry for item number 59.
+  486.4 534.5 1,017.75
+  77.7 546.9 60
+  113.7 546.9 Line item 60
+  221.7 546.9 Standard entry for item number 60.
+  486.4 546.9 1,035.00
+  72.0 559.3 End of tables fixture.

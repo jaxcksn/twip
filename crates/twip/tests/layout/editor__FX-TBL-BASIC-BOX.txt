@@ -1,0 +1,30 @@
+page 0 612.0 792.0
+  72.0 80.8 Body paragraph 1.
+  72.0 100.7 Body paragraph 2.
+  72.0 120.5 Body paragraph 3.
+  85.1 85.2 A1, the document starts
+  85.1 97.0 with this table
+  397.1 85.2 C1
+  241.1 117.4 First paragraph of the
+  241.1 129.3 cell.
+  241.1 149.1 Second paragraph.
+  241.1 188.9 Fourth paragraph, after
+  241.1 200.7 an empty one.
+  85.1 221.1 A3
+  241.1 221.1 B3
+  79.5 241.5 Paragraph between the first and second tables.
+  85.1 261.9 T2 R1 C1
+  241.1 261.9 T2 R1 C2
+  397.1 261.9 T2 R1 C3
+  85.1 282.2 T2 R2 C1
+  241.1 282.2 T2 R2 C2
+  397.1 282.2 T2 R2 C3
+  85.1 302.6 T2 R3 C1
+  241.1 302.6 T2 R3 C2
+  397.1 302.6 T2 R3 C3
+  85.1 323.0 T3 R1 C1
+  235.1 323.0 T3 R1 C2
+  85.1 343.3 T3 R2 C1
+  235.1 343.3 T3 R2 C2
+  79.5 363.7 The second and third tables above are adjacent in the XML, with no paragraph
+  79.5 375.6 between them (Word joins them into one table).

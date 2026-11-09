@@ -1,0 +1,3 @@
+page 0 612.0 792.0
+  72.0 96.8 1.9 Field picker
+  72.0 110.1 Name: «Last_Name», «First_Name»

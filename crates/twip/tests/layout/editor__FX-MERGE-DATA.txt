@@ -1,0 +1,5 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-MERGE-DATA
+  72.0 110.1 Store: Corporate Store.
+  72.0 129.9 Cost plus fee: «Cost_Plus_Fee».
+  72.0 149.8 The definition part holds calculated fields, filters and output-director settings.

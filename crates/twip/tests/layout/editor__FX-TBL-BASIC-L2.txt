@@ -1,0 +1,51 @@
+page 0 612.0 792.0
+  83.3 81.8 A1, the document starts
+  83.3 93.7 with this table
+  388.1 81.8 C1
+  235.7 114.0 First paragraph of the
+  235.7 125.9 cell.
+  235.7 145.8 Second paragraph.
+  235.7 185.5 Fourth paragraph, after
+  235.7 197.4 an empty one.
+  83.3 217.8 A3
+  235.7 217.8 B3
+  77.7 238.1 Paragraph between the first and second tables.
+  83.3 258.5 T2 R1 C1
+  235.7 258.5 T2 R1 C2
+  388.1 258.5 T2 R1 C3
+  83.3 278.9 T2 R2 C1
+  235.7 278.9 T2 R2 C2
+  388.1 278.9 T2 R2 C3
+  83.3 299.3 T2 R3 C1
+  235.7 299.3 T2 R3 C2
+  388.1 299.3 T2 R3 C3
+  83.3 320.1 T3 R1 C1
+  233.3 320.1 T3 R1 C2
+  83.3 340.5 T3 R2 C1
+  233.3 340.5 T3 R2 C2
+  77.7 360.9 The second and third tables above are adjacent in the XML, with no paragraph
+  77.7 372.7 between them (Word joins them into one table).
+  83.3 393.1 T4 R1 C1
+  235.7 393.1 T4 R1 C2
+  388.1 393.1 T4 R1 C3
+  83.3 413.5 T4 R2 C1
+  235.7 413.5 T4 R2 C2
+  388.1 413.5 T4 R2 C3
+  83.3 454.2 T5 R1 C1
+  235.7 454.2 T5 R1 C2
+  388.1 454.2 T5 R1 C3
+  83.3 474.6 T5 R2 C1
+  235.7 474.6 T5 R2 C2
+  388.1 474.6 T5 R2 C3
+  77.7 495.0 The fourth and fifth tables above are separated only by an empty paragraph.
+  77.7 514.8 Paragraph before the last table.
+  83.3 535.2 End R1 C1
+  235.7 535.2 End R1 C2
+  388.1 535.2 End R1 C3
+  83.3 555.6 End R2 C1
+  235.7 555.6 End R2 C2
+  388.1 555.6 End R2 C3
+  83.3 575.9 End R3 C1
+  235.7 575.9 End R3 C2
+  388.1 575.9 End R3 C3
+  72.0 596.8 Paragraph after the wrapper table.

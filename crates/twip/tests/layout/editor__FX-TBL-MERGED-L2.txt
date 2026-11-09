@@ -1,0 +1,49 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-TBL-MERGED
+  83.3 111.1 Col 1
+  159.5 111.1 Col 2
+  235.7 111.1 Col 3
+  311.9 111.1 Col 4
+  388.1 111.1 Col 5
+  464.3 111.1 Col 6
+  83.3 131.4 Span 2
+  235.7 131.4 Span 2
+  388.1 131.4 1
+  464.3 131.4 1
+  83.3 151.8 Vertical
+  83.3 163.7 merge over
+  83.3 175.6 3 rows
+  159.5 151.8 1
+  235.7 151.8 Span 3
+  464.3 151.8 1
+  159.5 172.2 Span 2 + vertical merge
+  159.5 184.1 over 2 rows
+  311.9 172.2 1
+  388.1 172.2 1
+  464.3 172.2 1
+  311.9 192.6 1
+  388.1 192.6 Span 2
+  159.5 212.9 gridBefore
+  159.5 224.8 1 /
+  159.5 236.7 gridAfter 1
+  235.7 212.9 1
+  311.9 212.9 1
+  388.1 212.9 1
+  235.7 257.0 gridBefore 2
+  388.1 257.0 1
+  464.3 257.0 1
+  83.3 277.4 gridAfter 3
+  159.5 277.4 1
+  235.7 277.4 1
+  83.3 297.8 Span 3, taller: Notice claim team
+  83.3 309.6 export staff newsletter review matter
+  83.3 321.5 presenter advisor account served.
+  83.3 333.4 Savings pilot receipt corporate
+  83.3 345.3 requirement standard fact that
+  83.3 357.1 products distribution filed
+  83.3 369.0 logistics. Chapter plan regional
+  83.3 380.9 maintenance accessibility tax.
+  311.9 297.8 Span 3
+  83.3 401.2 Span 6
+  77.7 421.6 Paragraph after the table.
+  72.0 442.0 Paragraph after the wrapper table.

@@ -1,0 +1,5 @@
+page 0 612.0 792.0
+  72.0 96.8 Images and links
+  72.0 155.3 A broken picture:
+  72.0 175.1 Visit the example site for more.
+  72.0 195.0 Type here.

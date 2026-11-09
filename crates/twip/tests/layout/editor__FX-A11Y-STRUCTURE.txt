@@ -1,0 +1,53 @@
+page 0 612.0 792.0
+  72.0 96.8 Introduction
+  72.0 110.1 Inventory relevant group relief results region ledger brief usage cause colleague
+  72.0 121.9 partner. Section notice claim team export staff newsletter review matter presenter
+  72.0 133.8 advisor account. Served savings pilot receipt corporate requirement standard fact
+  72.0 145.7 that products distribution filed. Logistics chapter plan regional maintenance
+  72.0 157.6 accessibility tax finds record proposal denied contract. Onboarding support
+  72.0 169.4 network scheduled trend suggestions board order update granted agreement
+  72.0 181.3 marketing. 1
+  72.0 204.8 Lists
+  90.0 217.2 1.First item
+  90.0 229.1 2.Second item
+  126.0 240.9 –Nested bullet one
+  126.0 252.8 –Nested bullet two
+  90.0 264.7 3.Third item
+  72.0 288.1 Tables
+  77.7 301.1 Name
+  233.7 301.1 Role
+  389.6 301.1 Office
+  77.7 321.4 Ada
+  233.7 321.4 Chair
+  389.6 321.4 North
+  77.7 341.8 Grace
+  233.7 341.8 Clerk
+  77.7 362.2 Both offices share one budget
+  389.6 362.2 Inner table:
+  395.3 382.6 Inner one
+  467.9 382.6 Inner two
+  395.3 402.9 Inner
+  395.3 414.8 three
+  467.9 402.9 Inner four
+  72.0 447.3 Links and pictures
+  72.0 459.7 Read the agenda and the minutes.
+  144.0 524.8  The board seal, then a divider:
+  72.0 544.6 This paragraph anchors a text box. Regional maintenance
+  72.0 556.5 accessibility tax finds record proposal denied contract
+  72.0 568.4 onboarding support network. Scheduled trend
+  72.0 580.3 suggestions board order update granted agreement.
+  72.0 602.9 Notes and comments
+  72.0 615.1 A second note2 and an endnotei.
+  72.0 634.9 The meeting is on the first Monday of the month.
+  72.0 705.1 1 The first footnote.
+  72.0 715.1 2 The second footnote.
+  403.4 548.5 Text box paragraph.
+  72.0 44.8 Board minutes, first page
+page 1 612.0 792.0
+  72.0 81.6 Languages
+  72.0 93.8 Bonjour à tous, la séance est ouverte.
+  487.8 113.6 שלום לכולם
+  72.0 133.5 Last paragraph.
+  72.0 169.4 i The endnote.
+  72.0 44.8 Board minutes
+  72.0 753.8 Confidential

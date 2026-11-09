@@ -14,6 +14,7 @@ mod excluded;
 mod hf_frames;
 mod imports;
 mod notes;
+mod output;
 mod pending;
 mod random_edits;
 mod rebreak;
