@@ -842,13 +842,17 @@ impl<'a> Builder<'a> {
                     }
                     self.atom(p, "\u{FFFC}");
                 }
-                // A ruby: one object as wide as the wider of its base and annotation.
+                // A ruby: one object as wide as the wider of its base and annotation, as tall as the base or the
+                // annotation raised over it, as deep as the base.
                 (Inline::Ruby(r, _), Some(run)) => {
                     let (base, text) = (self.sub(&r.base, view)?, self.sub(&r.text, view)?);
                     let wo = [&base, &text].map(|s| s.pieces.iter().map(|q| q.width).sum::<f64>()).into_iter().fold(0.0, f64::max);
                     let face = self.face(&run.ascii, run);
                     let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
                     p.width = wo;
+                    let top = |s: &ShapedPara, f: fn(&Piece) -> f64| s.pieces.iter().map(f).fold(0.0, f64::max);
+                    p.ascent = top(&base, |q| q.ascent).max(r.raise + top(&text, |q| q.ascent));
+                    p.descent = top(&base, |q| q.descent);
                     let (base_x, text_x) = (ruby_x(&base, wo, r.align), ruby_x(&text, wo, r.align));
                     p.object = Some(Object::Ruby(Rc::new(RubyShape { base, text, base_x, text_x, raise: r.raise })));
                     self.atom(p, "\u{FFFC}");

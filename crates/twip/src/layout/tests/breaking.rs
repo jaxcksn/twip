@@ -952,3 +952,12 @@ fn a_ruby_is_as_wide_as_the_wider_of_its_base_and_annotation() {
     // 721.7 tw of annotation against the 366.6 tw base.
     assert!((wide - narrow - 17.755).abs() < 0.05, "{wide} {narrow}");
 }
+
+#[test]
+fn a_rubys_raised_annotation_adds_its_ascent_to_the_line() {
+    let base = |raise: u32| baselines("", ARIAL_11, &ruby("center", raise, "annotation text", "MM")).map(|l| l[0].3);
+    let (Some(flat), Some(raised), Some(low)) = (base(0), base(40), base(10)) else { return };
+    // 20pt raise + the 5.5pt annotation's ascent over the 11pt base's.
+    assert!((raised - flat - 14.8411).abs() < 0.01, "{flat} {raised}");
+    assert!((low - flat).abs() < 1e-9, "a raise the base's ascent covers changes nothing");
+}
