@@ -9,7 +9,7 @@
   <br />
   <br />
 
-  A high-fidelity DOCX layout, editing, and rendering engine.  
+  A high-fidelity document layout, editing, and rendering engine.  
   Written in Rust. Built for the browser, desktop, and server.
 
   <a href="https://github.com/jaxcksn/twip/actions/workflows/ci.yml"><img src="https://flat.badgen.net/github/checks/jaxcksn/twip/main?label=build&icon=github" alt="Build"></a>
@@ -38,7 +38,7 @@ Twip handles the difficult parts of a sophisticated paginated document editor—
 > [!WARNING]
 > Twip is in early development. Its API surface is evolving toward a smaller, more extensible, and less opinionated foundation. Application-level concerns such as dialogs, context menus, and tooltips are intentionally being reworked to be less prescriptive. Some of the helpers may remain, but they won't define how your application should behave.
 
-Twip's document model originated from OOXML and its rich set of document capabilities. Over time, the model will evolve toward a format-independent representation informed by both OOXML and ODF. The goal isn't to reproduce every feature of Word or LibreOffice. It's to provide a flexible, extensible document foundation capable of supporting complex, specialized use cases without inheriting the constraints of any particular word processor.
+Twip's document model is tied heavily to OOXML and its rich set of document capabilities and compatibility layers. Over time, the model will evolve toward a format-independent representation informed by both OOXML and ODF. The goal isn't to reproduce every feature of Word or LibreOffice. It's to provide a flexible, extensible document foundation capable of supporting complex, specialized use cases without inheriting the constraints of any particular word processor.
 
 <br />
 
