@@ -30,6 +30,8 @@ pub struct PassInfo {
 }
 
 pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64) {
+    // A vertical section's gutter is on the right (the left on a mirrored even page).
+    let vertical = super::vertical::of_section(s.text_flow).is_some();
     let s = s.section_in(ctx.env.text.review.view);
     let (mut left, mut right, mut top) = (s.left, s.right, s.top);
     let odd = page_number % 2 == 1;
@@ -46,13 +48,13 @@ pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64
         top += s.gutter;
     } else if ctx.env.mirror_margins {
         if odd {
-            left += s.gutter;
+            *(if vertical { &mut right } else { &mut left }) += s.gutter;
         } else {
             std::mem::swap(&mut left, &mut right);
-            right += s.gutter;
+            *(if vertical { &mut left } else { &mut right }) += s.gutter;
         }
     } else {
-        left += s.gutter;
+        *(if vertical { &mut right } else { &mut left }) += s.gutter;
     }
     (left, right, top)
 }
@@ -433,6 +435,28 @@ impl<'d> Paginator<'d, '_> {
         if s.bottom < 0.0 {
             body_bottom = s.page_h + s.bottom;
         }
+        if let Some(v) = super::vertical::of_section(sec.text_flow) {
+            // On the page turned a quarter: lines from the top margin to the bottom one, stacked from the right
+            // margin (the left one for lines stacked left to right).
+            let (first, last) = if v.flow == super::vertical::Flow::DownEast { (left, s.page_w - right) } else { (right, s.page_w - left) };
+            let area = BodyArea { left: top, width: s.page_h - top - s.bottom, top: Lu::round_half_up(first), bottom: Lu::round_half_up(last) };
+            return Ok(BodySpace {
+                section: si,
+                page_w: s.page_h,
+                page_h: s.page_w,
+                margins: (top, s.bottom, first),
+                area,
+                columns: columns(&s.columns, &area, start.unwrap_or(area.top.to_pt())),
+                mid_page: start.is_some(),
+                balance,
+                next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
+                hf_floats: Vec::new(),
+                odd: self.run.page_number % 2 == 1,
+                note_width: None,
+                mirror: self.mirrors_indents(),
+                hf,
+            });
+        }
         let area = BodyArea { left, width, top: Lu::round_half_up(body_top), bottom: Lu::round_half_up(body_bottom) };
         let hf_floats = self.hf_obstacles(si, &hf, memos)?;
         Ok(BodySpace {
@@ -444,7 +468,7 @@ impl<'d> Paginator<'d, '_> {
             columns: columns(&s.columns, &area, start.unwrap_or(area.top.to_pt())),
             mid_page: start.is_some(),
             balance,
-            next_continuous: self.sections.get(si + 1).is_some_and(|n| n.break_kind == SectionBreak::Continuous),
+            next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
             hf_floats,
             odd: self.run.page_number % 2 == 1,
             mirror: self.mirrors_indents(),
@@ -471,7 +495,11 @@ impl<'d> Paginator<'d, '_> {
             _ => None,
         };
         let page = self.run.pages.last_mut().expect("a page was started");
-        page.body_area = page.body_area.or(Some((space.area.top.to_pt(), space.area.bottom.to_pt())));
+        let band = match super::vertical::of_section(sec.section.text_flow) {
+            Some(_) => (space.area.left, space.area.left + space.area.width),
+            None => (space.area.top.to_pt(), space.area.bottom.to_pt()),
+        };
+        page.body_area = page.body_area.or(Some(band));
         page.effects.merge(&b.effects);
         let last = sec.blocks.chain_end(b.end.flow.block, self.ctx.env.text.review.view).min(sec.blocks.len().saturating_sub(1));
         let shown = sec.blocks.blocks.get(token.flow.block..=last).unwrap_or(&[]);
@@ -761,12 +789,14 @@ pub fn layout_body(
     let shared = cols.len() > 1 && env.ctx.env.text.compat == Compat::Generic;
     let mut reserve = 0.0;
     let grid_env;
-    let ctx = match s.line_grid {
-        Some(g) => {
-            grid_env = super::LayoutEnv { text: super::env::TextEnv { line_grid: Some(g), ..env.ctx.env.text.clone() }, ..env.ctx.env.clone() };
+    let vertical = super::vertical::of_section(s.text_flow);
+    let ctx = match (s.line_grid, vertical) {
+        (None, None) => env.ctx,
+        (g, vertical) => {
+            let text = super::env::TextEnv { line_grid: g.or(env.ctx.env.text.line_grid), vertical, ..env.ctx.env.text.clone() };
+            grid_env = super::LayoutEnv { text, ..env.ctx.env.clone() };
             LayoutCtx { env: &grid_env, ..env.ctx }
         }
-        None => env.ctx,
     };
     let mut fill = PageFill {
         ctx,
@@ -911,13 +941,11 @@ pub fn layout_body(
             carry.keep_top = false;
         }
     }
-    let fragment = Rc::new(BoxFragment {
-        kind: BoxKind::Body,
-        id: Some(FragmentId::next()),
-        offset: (0.0, 0.0),
-        size: (space.page_w, space.page_h),
-        children: body.into(),
-    });
+    let (size, children) = match vertical {
+        Some(v) => ((space.page_h, space.page_w), super::vertical::turn_body(&body, v.flow, [space.page_h, space.page_w]).into()),
+        None => ((space.page_w, space.page_h), body.into()),
+    };
+    let fragment = Rc::new(BoxFragment { kind: BoxKind::Body, id: Some(FragmentId::next()), offset: (0.0, 0.0), size, children });
     Ok(PageBody { fragment, end: PageToken { section: space.section, flow: pos, state: carry }, section_end, effects })
 }
 

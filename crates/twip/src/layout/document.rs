@@ -314,7 +314,7 @@ pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
     (!off
         && doc.sections[si].section_in(doc.review.view).columns.num > 1
         && si + 1 < nsec
-        && doc.sections[si + 1].break_kind == SectionBreak::Continuous)
+        && super::vertical::same_page(&doc.sections[si], &doc.sections[si + 1]))
         || endnote_split(cx, si).is_some_and(|e| token.flow.block < e)
 }
 
@@ -329,7 +329,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             }
             let sec = &doc.sections[si];
             let mut p = cx.paginator(run);
-            let continuous = si > 0 && sec.break_kind == SectionBreak::Continuous;
+            let continuous = si > 0 && super::vertical::same_page(&doc.sections[si - 1], sec);
             let mut top = y;
             if !continuous || p.run.pages.is_empty() {
                 if si > 0 {
@@ -803,6 +803,10 @@ fn verify(doc: &Document, records: &[PageRecord]) -> Vec<usize> {
     let mut bad = Vec::new();
     for (i, pg) in records.iter().enumerate() {
         let (Some((top, bottom)), Some(s)) = (pg.body_area, doc.sections.get(pg.section).map(|s| s.section_in(doc.review.view))) else { continue };
+        // A vertical body doesn't give way to its header and footer.
+        if super::vertical::of_section(doc.sections[pg.section].text_flow).is_some() {
+            continue;
+        }
         let header = pg.hf[0].as_ref().is_some_and(|h| s.top >= 0.0 && s.header + h.height > top + EPS);
         let footer = pg.hf[1].as_ref().is_some_and(|f| s.bottom >= 0.0 && s.page_h - s.footer - f.height < bottom - EPS);
         #[cfg(test)]

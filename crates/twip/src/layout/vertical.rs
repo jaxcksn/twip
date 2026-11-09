@@ -87,7 +87,7 @@ pub fn turned(units: &[StoryUnit], flow: Flow, rect: [f64; 4], across: f64, bott
         Flow::DownEast => units
             .iter()
             .map(|u| {
-                let s = x0 + 2.0 * (u.top + across) + u.height;
+                let s = x0 + 2.0 * (u.top + across) + u.height - u.below;
                 turn([(s - y0) / 2.0, (s + y0) / 2.0], 90.0, unit_items(u))
             })
             .collect(),
@@ -124,4 +124,98 @@ pub fn runs(t: &Turned) -> Vec<(&GlyphRun, [f64; 2], [f64; 2])> {
     let mut out = Vec::new();
     walk(t, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], &mut out);
     out
+}
+
+/// Two sections share a page across a continuous break only when their text flows the same way.
+pub fn same_page(prev: &crate::docx::Section, next: &crate::docx::Section) -> bool {
+    next.break_kind == crate::docx::SectionBreak::Continuous
+        && of_section(prev.text_flow).map(|v| v.flow) == of_section(next.text_flow).map(|v| v.flow)
+}
+
+/// A vertical section's page body, laid out with its lines along x and stacked down y on the page turned a quarter
+/// (`page` = the page's width and height as printed), turned into place. Its structure stays: each line's items,
+/// each table's backgrounds and borders are turned where they are.
+pub fn turn_body(children: &[Child], flow: Flow, page: [f64; 2]) -> Vec<Child> {
+    children.iter().map(|c| turn_child(c, flow, page, 0.0, 0.0)).collect()
+}
+
+fn turn_child(c: &Child, flow: Flow, page: [f64; 2], ox: f64, oy: f64) -> Child {
+    use super::fragment::{BoxFragment, CellFragment, ParaFragment, RowFragment, TableFragment};
+    let kids =
+        |children: &[Child], dx: f64, dy: f64| -> Vec<Child> { children.iter().map(|c| turn_child(c, flow, page, ox + dx, oy + dy)).collect() };
+    match c {
+        Child::Box(b) => Child::Box(BoxFragment { children: kids(&b.children, b.offset.0, b.offset.1).into(), ..b.clone() }),
+        Child::Group { offset, children } => Child::Group { offset: *offset, children: kids(children, offset.0, offset.1).into() },
+        Child::Para(p) => Child::Para(ParaFragment {
+            para: p.para,
+            lines: p.lines.iter().map(|l| turn_line(l, flow, page, ox, oy)).collect(),
+            line_numbers: p.line_numbers.iter().map(|items| turn_items(items, flow, page, [ox, oy], None)).collect(),
+        }),
+        Child::Line { para, placed } => Child::Line { para: *para, placed: turn_line(placed, flow, page, ox, oy) },
+        Child::Items(items) => Child::Items(turn_items(items, flow, page, [ox, oy], None)),
+        Child::Table(t) => Child::Table(TableFragment {
+            table: t.table,
+            rows: t
+                .rows
+                .iter()
+                .map(|r| RowFragment {
+                    background: turn_items(&r.background, flow, page, [ox, oy], None),
+                    cells: r.cells.iter().map(|c| CellFragment { content: kids(&c.content, 0.0, 0.0).into(), ..c.clone() }).collect(),
+                    borders: turn_items(&r.borders, flow, page, [ox, oy], None),
+                    ..r.clone()
+                })
+                .collect(),
+        }),
+    }
+}
+
+fn turn_line(l: &super::fragment::PlacedLine, flow: Flow, page: [f64; 2], ox: f64, oy: f64) -> super::fragment::PlacedLine {
+    let (x, y) = (ox + l.x, oy + l.y);
+    let f = &l.line;
+    let line = super::fragment::LineFragment {
+        items: turn_items(&f.items, flow, page, [x, y], Some((y, f.pitch - f.below))),
+        pitch: f.pitch,
+        baseline: f.baseline,
+        below: f.below,
+        atoms: f.atoms.clone(),
+        changed: f.changed,
+        mark: f.mark,
+        texts: f.texts.clone(),
+        expansions: f.expansions.clone(),
+    };
+    super::fragment::PlacedLine { x: l.x, y: l.y, line: Rc::new(line) }
+}
+
+/// `items` at `origin` turned: about the page's turning point, or, for lines stacked left to right, each line
+/// (`band` = its top and pitch on the turned page) or other item about its own band so that it keeps its place.
+fn turn_items(items: &[Item], flow: Flow, page: [f64; 2], origin: [f64; 2], band: Option<(f64, f64)>) -> Box<[Item]> {
+    if items.is_empty() {
+        return Box::new([]);
+    }
+    let turn = |centre: [f64; 2], deg: f64, items: Vec<Item>| {
+        Item::Turned(Rc::new(Turned { centre: [centre[0] - origin[0], centre[1] - origin[1]], deg, items }))
+    };
+    let [w, h] = page;
+    match (flow, band) {
+        (Flow::Down, _) => Box::new([turn([w / 2.0, w / 2.0], 90.0, items.to_vec())]),
+        (Flow::Up, _) => Box::new([turn([h / 2.0, h / 2.0], 270.0, items.to_vec())]),
+        (Flow::DownEast, Some((top, pitch))) => {
+            let s = 2.0 * top + pitch;
+            Box::new([turn([s / 2.0, s / 2.0], 90.0, items.to_vec())])
+        }
+        (Flow::DownEast, None) => items
+            .iter()
+            .map(|it| {
+                let (t, b) = match it {
+                    Item::Rect { rect, .. } | Item::Image { rect, .. } => (rect[1], rect[3]),
+                    Item::Gridline { line } => (line[1], line[3]),
+                    Item::Shape(s) => (s.rect[1], s.rect[3]),
+                    Item::Glyphs(r) => (r.baseline - 0.8 * r.size, r.baseline + 0.2 * r.size),
+                    Item::Turned(t) => (t.centre[1], t.centre[1]),
+                };
+                let s = 2.0 * origin[1] + t + b;
+                turn([s / 2.0, s / 2.0], 90.0, vec![it.clone()])
+            })
+            .collect(),
+    }
 }

@@ -2137,6 +2137,7 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
                 items: items.into_boxed_slice(),
                 pitch: placed.line.pitch,
                 baseline: placed.line.baseline,
+                below: placed.line.below,
                 atoms,
                 changed: placed.line.changed,
                 mark: placed.line.mark,

@@ -1751,6 +1751,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             items: out.into_boxed_slice(),
             pitch: line.pitch,
             baseline: line.baseline,
+            below: line.below,
             atoms: atoms.into_boxed_slice(),
             changed,
             mark,

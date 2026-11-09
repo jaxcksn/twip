@@ -6,9 +6,13 @@ use crate::layout::fragment::Item;
 const W: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
 
 fn doc(body: &str) -> Option<crate::docx::Document> {
-    let document = format!(
-        r#"<w:document {W}><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
-    );
+    sectioned(&format!(r#"{body}<w:sectPr>{MARGINS}</w:sectPr>"#))
+}
+
+const MARGINS: &str = r#"<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>"#;
+
+fn sectioned(body: &str) -> Option<crate::docx::Document> {
+    let document = format!(r#"<w:document {W}><w:body>{body}</w:body></w:document>"#);
     package(&[
         (
             "[Content_Types].xml",
@@ -22,11 +26,16 @@ fn doc(body: &str) -> Option<crate::docx::Document> {
     ])
 }
 
-/// The page's turned runs: text, origin and direction.
+/// The first page's turned runs: text, origin and direction.
 fn turned_runs(doc: &crate::docx::Document) -> Vec<(String, [f64; 2], [f64; 2])> {
+    turned_runs_on(doc, 0)
+}
+
+fn turned_runs_on(doc: &crate::docx::Document, page: usize) -> Vec<(String, [f64; 2], [f64; 2])> {
     let snap = crate::layout::layout(doc, &fonts());
     let mut out = Vec::new();
-    for it in crate::layout::traverse::paint_items(&snap.pages()[0]) {
+    let Some(page) = snap.pages().get(page) else { return out };
+    for it in crate::layout::traverse::paint_items(page) {
         if let Item::Turned(t) = it {
             for (r, at, dir) in crate::layout::vertical::runs(&t) {
                 out.push((r.chars.iter().map(|c| c.0).collect::<String>().trim().to_string(), at, dir));
@@ -107,4 +116,61 @@ fn a_frames_own_text_direction_turns_its_text_and_a_paragraphs_elsewhere_does_no
     assert_eq!((runs[0].0.as_str(), runs[0].2), ("framed words", [0.0, -1.0]));
     // From the frame's bottom (3000 + 2500 twips) up.
     assert!((runs[0].1[1] - 275.0).abs() < 0.3, "{runs:?}");
+}
+
+/// A paragraph of Arial 11, single spaced unless `spacing` says otherwise.
+fn para(text: &str, spacing: &str) -> String {
+    let spacing = if spacing.is_empty() { r#"<w:spacing w:after="0" w:line="240" w:lineRule="auto"/>"# } else { spacing };
+    format!(
+        r#"<w:p><w:pPr>{spacing}</w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr><w:t>{text}</w:t></w:r></w:p>"#
+    )
+}
+
+fn section(direction: &str, extra: &str, body: &str) -> Option<crate::docx::Document> {
+    sectioned(&format!(
+        r#"{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1000" w:right="2000" w:bottom="3000" w:left="4000" w:header="600" w:footer="800" w:gutter="{extra}"/><w:textDirection w:val="{direction}"/></w:sectPr>"#
+    ))
+}
+
+#[test]
+fn a_tbrl_section_runs_its_lines_down_the_page_from_the_right_margin() {
+    let Some(doc) = section("tbRl", "0", &format!("{}{}", para("first line", ""), para("second", ""))) else { return };
+    let runs = turned_runs(&doc);
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    assert!(runs.iter().all(|r| r.2 == [0.0, 1.0]), "{runs:?}");
+    // The first line against the right margin (12240 - 2000 twips), its ascent in; each line from the top margin.
+    assert!((runs[0].1[0] - (512.0 - 10.49)).abs() < 0.2 && (runs[0].1[1] - 50.0).abs() < 0.01, "{runs:?}");
+    assert!(((runs[0].1[0] - runs[1].1[0]) - 12.99).abs() < 0.05, "{runs:?}");
+    // A section's btLr runs down the same way.
+    let Some(bt) = section("btLr", "0", &para("first line", "")) else { return };
+    assert_eq!(turned_runs(&bt)[0].2, [0.0, 1.0]);
+}
+
+#[test]
+fn a_tbrlv_section_stacks_its_lines_from_the_left_margin() {
+    let Some(doc) = section("tbLrV", "0", &format!("{}{}", para("first line", ""), para("second", ""))) else { return };
+    let runs = turned_runs(&doc);
+    assert!(runs.iter().all(|r| r.2 == [0.0, 1.0]), "{runs:?}");
+    // The first baseline its descent right of the left margin (4000 twips), the next line further right.
+    assert!((runs[0].1[0] - (200.0 + 2.5)).abs() < 0.2, "{runs:?}");
+    assert!(((runs[1].1[0] - runs[0].1[0]) - 12.99).abs() < 0.05, "{runs:?}");
+}
+
+#[test]
+fn a_vertical_sections_gutter_is_on_the_right() {
+    let Some(doc) = section("tbRl", "720", &para("first line", "")) else { return };
+    let runs = turned_runs(&doc);
+    assert!((runs[0].1[0] - (512.0 - 36.0 - 10.49)).abs() < 0.2 && (runs[0].1[1] - 50.0).abs() < 0.01, "{runs:?}");
+}
+
+#[test]
+fn a_continuous_break_into_a_vertical_section_starts_a_page() {
+    let body = format!(
+        r#"{}<w:p><w:pPr><w:sectPr>{MARGINS}</w:sectPr></w:pPr></w:p>{}<w:sectPr><w:type w:val="continuous"/>{MARGINS}<w:textDirection w:val="tbRl"/></w:sectPr>"#,
+        para("horizontal", ""),
+        para("vertical", "")
+    );
+    let Some(doc) = sectioned(&body) else { return };
+    assert!(turned_runs_on(&doc, 0).is_empty());
+    assert_eq!(turned_runs_on(&doc, 1).first().map(|r| r.0.as_str()), Some("vertical"));
 }
