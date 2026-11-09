@@ -138,3 +138,13 @@ fn section_end_endnotes_wait_for_a_section_with_its_own() {
     let Some(doc_end) = pages("") else { return };
     assert_eq!([on(&doc_end, "1"), on(&doc_end, "3")], [Some(2), Some(2)], "the section's pos is ignored: {doc_end:?}");
 }
+
+#[test]
+fn each_page_footnotes_count_from_their_page() {
+    let brk = r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#;
+    let pr = r#"<w:footnotePr><w:numRestart w:val="eachPage"/></w:footnotePr>"#;
+    let body = para("a", &["f1", "f2"]) + brk + &para("b", &["f3"]) + &sect(pr, true);
+    let Some(doc) = notes_doc(&body, "") else { return };
+    let pages: Vec<String> = super::page_chars(&doc).iter().map(|p| p.iter().map(|c| c.0).collect()).collect();
+    assert!(pages[0].starts_with("a12") && pages[1].starts_with("b1"), "{pages:?}");
+}

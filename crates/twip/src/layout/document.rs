@@ -107,6 +107,8 @@ pub struct JobNotes {
     /// The section each endnote follows (by `endnotes`' order).
     ends: Vec<usize>,
     separator: Vec<Block>,
+    /// The automatic footnotes numbered by page, in reference order, with their section's start and format.
+    paged: Vec<(i64, i64, String)>,
 }
 
 impl JobNotes {
@@ -117,6 +119,7 @@ impl JobNotes {
         // Automatic notes counted per kind (foot, end) since the restart origin.
         let mut count = [0, 0];
         let mut ends = Vec::new();
+        let mut paged = Vec::new();
         let nsec = doc.sections.len();
         for (si, s) in doc.sections.iter().enumerate() {
             let from = refs.len();
@@ -130,7 +133,17 @@ impl JobNotes {
                 let k = usize::from(kind == NoteKind::End);
                 let p = &s.notes[k];
                 let fmt = p.fmt.as_deref().unwrap_or(if k == 0 { "decimal" } else { "lowerRoman" });
-                numbers.insert((kind, id), crate::docx::numbering::format_number(p.start + count[k], fmt));
+                let mut number = crate::docx::numbering::format_number(p.start + count[k], fmt);
+                if p.restart == NoteRestart::EachPage && !custom {
+                    match kind {
+                        NoteKind::Foot => paged.push((id, p.start, fmt.to_string())),
+                        // ponytail: compat ≤ 14 endnotes restarting each page count on continuously; per-page needs the
+                        // reference's page (endnotes show no area there).
+                        NoteKind::End if doc.settings.compat() == crate::docx::Compat::Generic => number = "8".into(),
+                        NoteKind::End => {}
+                    }
+                }
+                numbers.insert((kind, id), number);
                 count[k] += i64::from(!custom);
                 if kind == NoteKind::End {
                     // After its section, or the next one without `w:noEndnote`; all at the end with docEnd.
@@ -151,11 +164,33 @@ impl JobNotes {
                 }
             }
         }
-        JobNotes { numbers, endnotes, ends, separator }
+        JobNotes { numbers, endnotes, ends, separator, paged }
     }
 }
 
 impl JobNotes {
+    /// The numbers of the footnotes restarting each page, counted on the pages their references landed on, where they
+    /// differ from the current ones.
+    fn renumbered(&self, pages: &[PageRecord]) -> Option<HashMap<(NoteKind, i64), String>> {
+        if self.paged.is_empty() {
+            return None;
+        }
+        // A footnote's first part is drawn on its reference's page.
+        let page_of = |id: i64| pages.iter().position(|pg| pg.effects.notes_shown.iter().any(|n| (n.0, n.1) == (NoteKind::Foot, id)));
+        let mut count: HashMap<usize, i64> = HashMap::new();
+        let mut changed = HashMap::new();
+        for (id, start, fmt) in &self.paged {
+            let Some(pi) = page_of(*id) else { continue };
+            let c = count.entry(pi).or_insert(0);
+            let n = crate::docx::numbering::format_number(start + *c, fmt);
+            *c += 1;
+            if self.numbers.get(&(NoteKind::Foot, *id)) != Some(&n) {
+                changed.insert((NoteKind::Foot, *id), n);
+            }
+        }
+        (!changed.is_empty()).then_some(changed)
+    }
+
     /// The endnotes that follow section `si`.
     fn after(&self, si: usize) -> impl Iterator<Item = i64> + '_ {
         self.endnotes.iter().zip(&self.ends).filter(move |e| *e.1 == si).map(|e| *e.0)
@@ -579,6 +614,8 @@ pub struct LayoutJob {
     pub(crate) run: PassRun,
     history: Vec<Vec<HfHeights>>,
     finished: Option<Finished>,
+    /// Note numbers the last pass found different on its pages, for the next pass.
+    renumber: Option<HashMap<(NoteKind, i64), String>>,
 }
 
 impl LayoutJob {
@@ -594,6 +631,7 @@ impl LayoutJob {
             run: PassRun::new(1, Rc::new(PassInfo::default()), Rc::new(Vec::new()), false),
             history: Vec::new(),
             finished: None,
+            renumber: None,
         }
     }
 
@@ -634,21 +672,29 @@ impl LayoutJob {
         }
         cache.begin();
         let mut meter = Meter::new(budget);
-        let notes = std::mem::replace(&mut self.notes, JobNotes::default());
-        let step_result = {
+        let mut notes = std::mem::replace(&mut self.notes, JobNotes::default());
+        let step_result = loop {
             let cx = PassCx::new(doc, *ctx, &notes);
             let mut memos = Memos { cache, job: None, meter: &mut meter };
-            loop {
+            let r = loop {
                 if let Cursor::Done = self.run.cursor {
-                    if self.end_pass(doc) {
-                        break Step::Done;
+                    if self.end_pass(doc, &notes) {
+                        break Some(Step::Done);
+                    }
+                    if self.renumber.is_some() {
+                        break None;
                     }
                     continue;
                 }
                 let r = if self.run.k == 1 { reuse.as_deref_mut() } else { None };
                 if step(&mut self.run, &cx, r, &mut memos).is_err() {
-                    break Step::Yielded;
+                    break Some(Step::Yielded);
                 }
+            };
+            drop(cx);
+            match r {
+                Some(s) => break s,
+                None => notes.numbers.extend(self.renumber.take().into_iter().flatten()),
             }
         };
         self.notes = notes;
@@ -684,12 +730,13 @@ impl LayoutJob {
         self.notes = notes;
     }
 
-    fn end_pass(&mut self, doc: &Document) -> bool {
+    fn end_pass(&mut self, doc: &Document, notes: &JobNotes) -> bool {
         let run = &self.run;
         let info = run.info.clone().unwrap_or_default();
         let composed: Vec<HfHeights> = run.pages.iter().map(|p| p.hf_full).collect();
         if run.k <= 4 {
-            let fields_agree = !self.body_fields || info == *run.known;
+            self.renumber = notes.renumbered(&run.pages);
+            let fields_agree = (!self.body_fields || info == *run.known) && self.renumber.is_none();
             let hf_agree = run.pages.iter().all(|pg| same_heights(&used(pg), &pg.hf_full));
             if fields_agree && hf_agree {
                 self.finish(LayoutStatus::Converged);
