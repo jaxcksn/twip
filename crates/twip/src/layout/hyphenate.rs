@@ -3,18 +3,18 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+const LEFT: usize = 2;
+
 /// One language's hyphenation patterns (TeX patterns, as in a `hyph_*.dic` file).
 #[derive(Clone, Debug, Default)]
 pub struct Patterns {
     map: HashMap<Box<[char]>, Box<[u8]>>,
     longest: usize,
-    left: usize,
-    right: usize,
 }
 
 impl Patterns {
     pub fn parse(text: &str) -> Patterns {
-        let mut p = Patterns { left: 2, right: 2, ..Patterns::default() };
+        let mut p = Patterns::default();
         for (k, line) in text.lines().enumerate() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('%') || line.starts_with('#') || k == 0 && !line.chars().any(|c| c.is_ascii_digit()) {
@@ -22,8 +22,7 @@ impl Patterns {
             }
             let mut words = line.split_whitespace();
             match words.next() {
-                Some("LEFTHYPHENMIN") => p.left = words.next().and_then(|v| v.parse().ok()).unwrap_or(p.left),
-                Some("RIGHTHYPHENMIN") => p.right = words.next().and_then(|v| v.parse().ok()).unwrap_or(p.right),
+                Some("LEFTHYPHENMIN" | "RIGHTHYPHENMIN") => {}
                 Some("NEXTLEVEL") => break,
                 Some(w) if w.chars().all(|c| c.is_alphabetic() || c.is_ascii_digit() || c == '.') => {
                     for w in std::iter::once(w).chain(words) {
@@ -52,11 +51,12 @@ impl Patterns {
         self.map.insert(letters.into(), values.into());
     }
 
-    /// The char offsets inside `word` after which it may break.
-    pub fn points(&self, word: &str) -> Vec<usize> {
+    /// The char offsets inside `word` after which it may break, leaving at least two letters before the break and
+    /// `right` after it.
+    pub fn points(&self, word: &str, right: usize) -> Vec<usize> {
         let chars: Vec<char> = word.chars().flat_map(char::to_lowercase).collect();
         let n = chars.len();
-        if n < self.left + self.right {
+        if n < LEFT + right {
             return Vec::new();
         }
         let w: Vec<char> = std::iter::once('.').chain(chars).chain(std::iter::once('.')).collect();
@@ -70,7 +70,7 @@ impl Patterns {
                 }
             }
         }
-        (self.left..=n - self.right).filter(|&p| levels[p + 1] % 2 == 1).collect()
+        (LEFT..=n - right).filter(|&p| levels[p + 1] % 2 == 1).collect()
     }
 }
 
@@ -106,10 +106,17 @@ mod tests {
     #[test]
     fn patterns_give_the_odd_levels_between_the_minimums() {
         let p = Patterns::parse("UTF-8\nLEFTHYPHENMIN 2\nRIGHTHYPHENMIN 3\nhy3ph\nhe2n\nhena4\nhen5at\n1na\nn2at\n1tio\n2io\no2n");
-        assert_eq!(p.points("hyphenation"), vec![2, 6]);
-        assert!(p.points("hyp").is_empty());
+        assert_eq!(p.points("hyphenation", 3), vec![2, 6]);
+        assert!(p.points("hyp", 2).is_empty());
         let h = Hyphenation::default().with("en-US", p);
         assert!(h.for_language("en-us").is_some() && h.for_language("EN").is_none());
         assert!(Hyphenation::default().with("en", Patterns::default()).for_language("en-GB").is_some());
+    }
+
+    #[test]
+    fn the_caller_sets_the_letters_after_a_break() {
+        let p = Patterns::parse("1ty");
+        assert_eq!(p.points("pity", 2), vec![2]);
+        assert!(p.points("pity", 3).is_empty());
     }
 }

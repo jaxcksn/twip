@@ -902,7 +902,7 @@ fn fit_line(
                 if soft {
                     let hy = hyphen_width(sp, &pieces[at - 1]);
                     let pen_at = xs[at - 1 - start] + if pieces[at - 1].auto_hyphen { ws[at - 1 - start] } else { 0.0 };
-                    if pen_at + hy > right + EPS || pieces[at - 1].auto_hyphen && !zoned(pieces, start, at, &xs, &ws, right, frame) {
+                    if pen_at + hy > right + EPS || pieces[at - 1].auto_hyphen && !zoned(pieces, start, at, &xs, right, frame) {
                         breaks.pop();
                         continue;
                     }
@@ -951,15 +951,13 @@ fn fit_line(
 }
 
 // Hyphenation zone
-fn zoned(pieces: &[Piece], start: usize, at: usize, xs: &[f64], ws: &[f64], right: f64, frame: &Frame) -> bool {
+fn zoned(pieces: &[Piece], start: usize, at: usize, xs: &[f64], right: f64, frame: &Frame) -> bool {
     if frame.hyphen_zone <= 0.0 {
         return true;
     }
+    // Measured from the word's first letter; a word that starts the line isn't tested.
     let word = (start..at).rev().find(|&k| pieces[k].kind != Kind::Text).map_or(start, |k| k + 1);
-    match (start..word).rev().find(|&k| pieces[k].kind != Kind::Space) {
-        Some(k) => right - (xs[k - start] + ws[k - start]) >= frame.hyphen_zone - EPS,
-        None => true,
-    }
+    word == start || right - xs[word - start] >= frame.hyphen_zone - EPS
 }
 
 // Space squeeze

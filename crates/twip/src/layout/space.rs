@@ -22,7 +22,8 @@ pub struct ShapeSpace {
     pub hide: Option<u64>,
     pub expansion: Option<std::rc::Rc<super::expansion::Expansion>>,
     /// The hyphenation patterns, and whether words in capitals are skipped.
-    pub hyphenate: Option<(super::hyphenate::Hyphenation, bool)>,
+    /// The patterns, whether capitals are left alone, and the fewest letters after a break.
+    pub hyphenate: Option<(super::hyphenate::Hyphenation, bool, usize)>,
 }
 
 pub type BorderKey = Option<std::rc::Rc<BorderGroup>>;

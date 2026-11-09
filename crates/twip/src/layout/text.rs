@@ -885,12 +885,21 @@ impl Builder<'_> {
     }
 
     // Automatic hyphenation
-    fn hyphenate(&mut self, h: &super::hyphenate::Hyphenation, caps: bool) {
+    fn hyphenate(&mut self, h: &super::hyphenate::Hyphenation, caps: bool, right: usize) {
+        // A word is letters and apostrophes; optional hyphens and zero-width joiners inside it are skipped.
+        const MAX_LETTERS: usize = 65;
         let n = self.pieces.len();
-        let letters = |b: &Builder, k: usize| {
+        fn text<'b>(b: &'b Builder, k: usize) -> &'b str {
             let p = &b.pieces[k];
-            let t = &b.text[p.text.0 as usize..p.text.1 as usize];
-            p.kind == Kind::Text && !t.is_empty() && t.chars().all(char::is_alphabetic)
+            if p.kind == Kind::Text { &b.text[p.text.0 as usize..p.text.1 as usize] } else { "" }
+        }
+        let letters = |b: &Builder, k: usize| {
+            let t = text(b, k);
+            !t.is_empty() && t.chars().all(|c| c.is_alphabetic() || c == '\'')
+        };
+        let skipped = |b: &Builder, k: usize| {
+            let t = text(b, k);
+            !t.is_empty() && t.chars().all(|c| matches!(c, '\u{ad}' | '\u{200c}' | '\u{200d}'))
         };
         let mut k = 0;
         while k < n {
@@ -902,17 +911,19 @@ impl Builder<'_> {
             let mut e = k;
             let mut word = String::new();
             let mut ends = Vec::new();
-            while e < n && letters(self, e) && self.styles[self.pieces[e].style as usize].run.lang == lang {
-                let p = &self.pieces[e];
-                word.push_str(&self.text[p.text.0 as usize..p.text.1 as usize]);
-                ends.push(word.chars().count());
+            while e < n && (letters(self, e) || skipped(self, e)) && self.styles[self.pieces[e].style as usize].run.lang == lang {
+                if letters(self, e) {
+                    word.push_str(text(self, e));
+                    ends.push((word.chars().count(), e));
+                }
                 e += 1;
             }
             let shouting = caps && !word.chars().any(char::is_lowercase);
+            let head: String = word.chars().take(MAX_LETTERS).collect();
             if let Some(patterns) = h.for_language(&lang).filter(|_| !shouting) {
-                for at in patterns.points(&word) {
-                    if let Some(j) = ends.iter().position(|&x| x == at).filter(|&j| j + 1 < ends.len()) {
-                        self.pieces[k + j].auto_hyphen = true;
+                for at in patterns.points(&head, right) {
+                    if let Some(j) = ends.iter().position(|&(x, _)| x == at).filter(|&j| j + 1 < ends.len()) {
+                        self.pieces[ends[j].1].auto_hyphen = true;
                     }
                 }
             }
@@ -1096,8 +1107,8 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
         em1000: space.em1000,
     };
     super::job::unit("shaping call", || crate::prof::time("itemize", || b.paragraph(para, space)))?;
-    if let Some((h, caps)) = &space.hyphenate {
-        b.hyphenate(h, *caps);
+    if let Some((h, caps, right)) = &space.hyphenate {
+        b.hyphenate(h, *caps, *right);
     }
     memos.meter.unit_done();
     Ok(ShapedPara { join: space.join.clone(), ..b.finish() })
@@ -1119,7 +1130,7 @@ pub fn shape_space(
             .hyphenation
             .as_ref()
             .filter(|_| !para.para_style_in(text.review.view).suppress_auto_hyphens)
-            .map(|h| (h.patterns.clone(), h.caps)),
+            .map(|h| (h.patterns.clone(), h.caps, if text.compat == crate::docx::Compat::Generic { 3 } else { 2 })),
         ..ShapeSpace::default()
     };
     let spans = crate::docx::fields::spans(&para.inlines);
