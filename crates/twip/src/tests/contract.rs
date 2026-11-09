@@ -1,4 +1,4 @@
-//! The renderer contract: every scenario runs with no frames, with the Skia
+//! The renderer contract: each scenario runs with no frames, with the Skia
 //! renderer drawing a frame after every input (as the host does), and with a recorder that lags and drops frames. The
 //! inspection state after every step is the same in all three: editing state doesn't depend on rendering.
 
@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::editing::inspect::inspect;
 use crate::editing::tests::par_map;
 use crate::editing::tests::recorder::{Recorder, canonical};
-use crate::editing::tests::scenarios::{Run, scenario_files};
+use crate::editing::tests::scenarios::{Run, sample_files, scenario_files};
 use crate::render::{Frame, Renderer};
 
 fn states(path: &Path, mode: usize) -> Vec<Value> {
@@ -45,9 +45,18 @@ fn states(path: &Path, mode: usize) -> Vec<Value> {
 
 #[test]
 fn editing_state_is_the_same_with_any_renderer_or_none() {
-    let files = scenario_files();
+    same_with_any_renderer(&sample_files());
+}
+
+#[test]
+#[ignore = "the whole scenario corpus, three times: minutes in a debug build"]
+fn editing_state_is_the_same_with_any_renderer_over_the_corpus() {
+    same_with_any_renderer(&scenario_files());
+}
+
+fn same_with_any_renderer(files: &[std::path::PathBuf]) {
     assert!(!files.is_empty());
-    let failed = par_map(&files, |f| {
+    let failed = par_map(files, |f| {
         let plain = states(f, 0);
         for (mode, what) in [(1, "drawing every frame with Skia"), (2, "a lagging, dropping recorder")] {
             let got = states(f, mode);

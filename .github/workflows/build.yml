@@ -44,6 +44,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
+      # Dependencies and the prebuilt Skia, per runtime. Not in Alpine: it builds with the container's own cargo.
+      - if: ${{ !matrix.alpine }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.rid }}
+          cache-directories: .native-deps
       # Skia links FreeType and Fontconfig.
       - if: runner.os == 'Linux' && !matrix.alpine
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev

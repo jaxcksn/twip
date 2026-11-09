@@ -40,6 +40,133 @@ pub(crate) fn scenario_files() -> Vec<PathBuf> {
     out
 }
 
+/// Scenarios that between them use every kind of input in the corpus (see `inputs`) and reach every scenario folder,
+/// picked for how fast they run. Every navigation scenario runs with them: what navigation remembers (the goal column,
+/// the page) carries from one input to the next. Checks that hold for any input run on these by default and on the
+/// whole corpus with the ignored tests.
+const SAMPLE: &[&str] = &[
+    "E2E-ADV-01",
+    "E2E-ADV-04",
+    "E2E-ADV-06",
+    "E2E-ADV-07",
+    "E2E-ADV-08",
+    "E2E-CC-01",
+    "E2E-CLIP-02",
+    "E2E-CLIP-06",
+    "E2E-CLIPPED-01",
+    "E2E-EDIT-12",
+    "E2E-FMT-01",
+    "E2E-FMT-02",
+    "E2E-FMT-10",
+    "E2E-FMT-11",
+    "E2E-HIT-05",
+    "E2E-IME-03",
+    "E2E-LIST-04",
+    "E2E-NAV-08",
+    "E2E-NAV-09",
+    "E2E-NAV-10",
+    "E2E-NAV-11",
+    "E2E-OBJ-09",
+    "E2E-OBJ-12",
+    "E2E-RS-14",
+    "E2E-SEL-05",
+    "E2E-TBL-02-L2",
+    "E2E-TBL-05",
+    "E2E-TF-01-BOX",
+    "E2E-TS-11-BOX",
+    "E2E-TS-15",
+    "E2E-TS-17",
+    "E2E-TS-19",
+    "E2E-UNDO-05",
+    "FUZZ-FX-MERGE-CONTROLS-12",
+    "FUZZ-FX-MERGE-CONTROLS-37",
+    "FUZZ-FX-MERGE-CONTROLS-5",
+    "FUZZ-FX-MERGE-DATA-11",
+    "FUZZ-FX-MERGE-DATA-12",
+    "FUZZ-FX-MERGE-DATA-7",
+    "FUZZ-FX-MERGE-DATA-8",
+    "FUZZ-FX-MERGE-FIELDS-8",
+    "FUZZ-FX-MERGE-REGIONS-29",
+    "FUZZ-FX-MERGE-REGIONS-41",
+    "FUZZ-FX-MERGE-REGIONS-7",
+    "FUZZ-FX-OBJ-1",
+    "FUZZ-LAYOUT-CACHE-CELL-WIDTHS",
+    "LTB-11",
+    "LTB-20",
+    "MRG-US1-02",
+    "MRG-US2-02",
+    "MRG-US2-03",
+    "MRG-US4-02",
+    "MRG-US5-01",
+    "MRG-US5-02",
+    "MRG-US7-01",
+    "MRG-US7-04",
+    "MRG-US7-05",
+    "MRG-US7-06",
+    "MT-PTBL-SHIFT-L1",
+    "MT-PTBL-TAB-L1",
+    "MX-NEST-01",
+    "comments-edit-and-delete",
+    "comments-in-stories",
+    "comments-reply-and-resolve",
+    "record-apply-list",
+    "record-format-paragraph",
+    "record-format-text",
+    "record-insert-objects",
+    "record-insert-paragraphs",
+    "record-replace-find",
+    "record-table-properties",
+    "record-untracked-changes",
+    "resolve-mark-inserted",
+    "resolve-navigate",
+    "resolve-protected",
+    "resolve-range",
+    "resolve-section-recorded",
+    "view-joined-empty",
+];
+
+pub(crate) fn sample_files() -> Vec<PathBuf> {
+    let named = |f: &Path| f.file_stem().is_some_and(|s| SAMPLE.contains(&s.to_string_lossy().as_ref()));
+    let files: Vec<PathBuf> =
+        scenario_files().into_iter().filter(|f| named(f) || f.components().any(|c| c.as_os_str() == "nav" || c.as_os_str() == "tbl-nav")).collect();
+    assert_eq!(files.iter().filter(|f| named(f)).count(), SAMPLE.len(), "every sampled scenario is in the corpus");
+    files
+}
+
+/// The kinds of input a scenario uses: each step type, command, key with its modifiers, and pointer gesture with its
+/// modifiers and click count; and the folder it is in.
+fn inputs(path: &Path) -> std::collections::BTreeSet<String> {
+    let s: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("readable scenario")).expect("a scenario");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios");
+    let folder = path.strip_prefix(&root).ok().and_then(|p| p.components().next()).map(|c| c.as_os_str().to_string_lossy().to_string());
+    let mut out = std::collections::BTreeSet::from([format!("folder {}", folder.unwrap_or_default())]);
+    let cmd = |c: &Value| format!("command {}", c["type"].as_str().unwrap_or("?"));
+    for step in s["steps"].as_array().into_iter().flatten() {
+        let mut mods: Vec<&str> =
+            step["mods"].as_object().into_iter().flatten().filter(|(_, v)| v == &&json!(true)).map(|(k, _)| k.as_str()).collect();
+        mods.sort_unstable();
+        let mods = mods.join("+");
+        for (k, v) in step.as_object().into_iter().flatten() {
+            let kind = match k.as_str() {
+                "expect" | "mods" | "dx" | "dy" | "clicks" | "shift" => continue,
+                "command" if v.is_object() => cmd(v),
+                "key" => format!("key {} {mods}", v.as_str().unwrap_or("")),
+                "clipboard" => format!("clipboard {}", v.as_str().unwrap_or("")),
+                "batch" => {
+                    out.extend(v["commands"].as_array().into_iter().flatten().map(cmd));
+                    "batch".into()
+                }
+                "click" | "drag" | "press" | "move_to" | "release" => {
+                    format!("{k} {mods} {} {}", step["clicks"].as_u64().unwrap_or(0), step["shift"] == json!(true))
+                }
+                _ => k.clone(),
+            };
+            out.insert(kind);
+        }
+    }
+    out
+}
+
 pub(crate) struct Run {
     pub e: Editor,
     seq: u64,
@@ -88,7 +215,8 @@ impl Run {
             dx + t["dx"].as_f64().unwrap_or(0.0) + t["dx_px"].as_f64().unwrap_or(0.0) * k,
             dy + t["dy"].as_f64().unwrap_or(0.0) + t["dy_px"].as_f64().unwrap_or(0.0) * k,
         );
-        let st = inspect(&mut self.e, "geometry,dump", true);
+        // The dump only measures a paragraph's length, for an `end` offset.
+        let st = inspect(&mut self.e, if t["offset"] == "end" { "geometry,dump" } else { "geometry" }, true);
         if let Some(tb) = t.get("table") {
             let row = st["geometry"]["rows"]
                 .as_array()
@@ -653,10 +781,9 @@ fn run(path: &Path) {
     }
 }
 
-#[test]
-fn scenarios() {
-    let files = scenario_files();
-    assert!(!files.is_empty(), "no scenarios found in tests/scenarios");
+/// Runs every scenario in `files`, failing with all that failed.
+fn run_all(files: Vec<PathBuf>) {
+    assert!(!files.is_empty(), "no scenarios found");
     let only = std::env::var("SCENARIO").ok();
     let files: Vec<_> = files.into_iter().filter(|f| only.as_ref().is_none_or(|o| f.to_string_lossy().contains(o.as_str()))).collect();
     let failed: Vec<String> = super::par_map(&files, |f| {
@@ -678,6 +805,69 @@ fn scenarios() {
 "
         )
     );
+}
+
+/// One test per scenario folder (`_` in the name for `-` in the folder's), so each runs in its own test.
+macro_rules! folders {
+    ($($name:ident),* $(,)?) => {
+        const FOLDERS: &[&str] = &[$(stringify!($name)),*];
+        mod folder {
+            $(
+                #[test]
+                fn $name() {
+                    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios").join(stringify!($name).replace('_', "-"));
+                    super::run_all(super::scenario_files().into_iter().filter(|f| f.starts_with(&dir)).collect());
+                }
+            )*
+        }
+    };
+}
+
+folders!(
+    advanced,
+    clip,
+    clipped,
+    controls,
+    edit,
+    fmt,
+    fuzz_regressions,
+    hit,
+    ime_interim,
+    lists,
+    ltb,
+    matrix,
+    matrix_tbl,
+    merge,
+    nav,
+    nest,
+    obj,
+    review,
+    sel,
+    stories,
+    tbl_nav,
+    tbl_resize,
+    tbl_struct,
+    undo
+);
+
+#[test]
+fn every_scenario_folder_has_a_test() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios");
+    let mut dirs: Vec<String> = std::fs::read_dir(&root)
+        .expect("the scenarios folder")
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().replace('-', "_"))
+        .collect();
+    dirs.sort();
+    assert_eq!(dirs, FOLDERS, "add the folder to `folders!`");
+}
+
+#[test]
+fn the_sample_uses_every_kind_of_input() {
+    let sampled: std::collections::BTreeSet<String> = sample_files().iter().flat_map(|f| inputs(f)).collect();
+    let missing: std::collections::BTreeSet<String> = scenario_files().iter().flat_map(|f| inputs(f)).filter(|k| !sampled.contains(k)).collect();
+    assert!(missing.is_empty(), "add a scenario using each of these to SAMPLE: {missing:?}");
 }
 
 #[test]

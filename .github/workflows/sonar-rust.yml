@@ -2,10 +2,13 @@
 # workflows; this one reads only .rs files, so the C++ shims, JS glue and bindings stay out of it.
 name: Sonar (Rust)
 
+# Rust changes only; a docs or SDK change has nothing here to analyze.
 on:
   pull_request:
+    paths: [crates/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, .github/workflows/sonar-rust.yml]
   push:
     branches: [main]
+    paths: [crates/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, .github/workflows/sonar-rust.yml]
   workflow_dispatch:
 
 concurrency:
@@ -21,7 +24,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Sonar blames lines to find new code
+      # Saved from main only, where every pull request can restore it.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation
       - uses: taiki-e/install-action@cargo-llvm-cov
       # The engine and C API tests, the same ones the Engine shard runs, instrumented for line coverage.

@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use super::super::Editor;
 use super::super::commands::{Command, Outcome};
-use super::scenarios::{Run, scenario_files};
+use super::scenarios::{Run, sample_files, scenario_files};
 use super::{fonts, open, texts};
 use crate::api::record::Origin;
 
@@ -41,9 +41,19 @@ fn check(path: &Path) {
 }
 
 #[test]
+fn every_change_in_the_sample_is_a_recorded_transaction() {
+    every_change_is_a_recorded_transaction(sample_files());
+}
+
+#[test]
+#[ignore = "the whole scenario corpus: minutes in a debug build"]
 fn every_change_in_the_corpus_is_a_recorded_transaction() {
+    every_change_is_a_recorded_transaction(scenario_files());
+}
+
+fn every_change_is_a_recorded_transaction(files: Vec<std::path::PathBuf>) {
     let only = std::env::var("SCENARIO").ok();
-    let files: Vec<_> = scenario_files().into_iter().filter(|f| only.as_ref().is_none_or(|o| f.to_string_lossy().contains(o.as_str()))).collect();
+    let files: Vec<_> = files.into_iter().filter(|f| only.as_ref().is_none_or(|o| f.to_string_lossy().contains(o.as_str()))).collect();
     let failed: Vec<String> = super::par_map(&files, |f| {
         std::panic::catch_unwind(|| check(f)).err().map(|e| {
             let why = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
