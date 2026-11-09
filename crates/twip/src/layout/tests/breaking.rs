@@ -899,6 +899,16 @@ fn a_text_wrapping_break_moves_its_text_below_the_floats_it_clears() {
 }
 
 #[test]
+fn compat_12_a_float_starting_in_a_band_inside_the_cut_part_doesnt_move_it() {
+    // A float right below another, in the part of the line the upper one cuts away, wraps as one tall float.
+    let text = "The quick brown fox jumps over the lazy dog near the riverbank. ".repeat(12);
+    let lines = |floats: &str| baselines("", ARIAL_12, &format!(r#"<w:p>{floats}<w:r><w:t>{text}</w:t></w:r></w:p>"#));
+    let Some(tall) = lines(&square(120, 72, 50, 201, 1)) else { return };
+    let stacked = lines(&format!("{}{}", square(120, 72, 50, 101, 1), square(120, 173, 50, 100, 2))).expect("lays out");
+    assert_eq!(stacked, tall);
+}
+
+#[test]
 fn a_text_wrapping_break_beside_a_middle_float_goes_on_when_its_side_is_clear() {
     let middle = square(222, 72, 100, 100, 1);
     for compat in [12, 15] {

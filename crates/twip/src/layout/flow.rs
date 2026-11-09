@@ -1608,17 +1608,22 @@ impl<'d> PageFill<'d, '_> {
             let mut blocked = false;
             let mut trial = None;
             let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS { &[] } else { &floats };
+            let mut uncut: Option<Vec<Placed>> = None;
             if compat == Compat::Legacy {
                 let near = || here.iter().filter(|f| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS);
-                // A float that starts inside the line moves it down to the first bottom of those over its top, if it
-                // meets what they leave of the line.
                 let over: Vec<Placed> = near().filter(|f| f.excl[1] <= yy + EPS).cloned().collect();
                 let e = over.iter().map(|f| f.excl[3]).fold(f64::INFINITY, f64::min);
-                let left = float::intervals(&over, cx0, cx1, yy, yy + h, true).unwrap_or_else(|| vec![(cx0, cx1)]);
+                // A float starting inside the band counts only where it meets what the floats over the band's top
+                // leave of the line: else it neither moves nor cuts the line.
+                let left = float::intervals(&over, cx0, cx1, yy, yy + h, true).unwrap_or_default();
                 let meets = |f: &Placed| left.iter().any(|&(a, b)| f.excl[0] < b - EPS && f.excl[2] > a + EPS);
+                let hidden = |f: &Placed| f.in_band(yy, yy + h) && f.excl[1] > yy + EPS && !meets(f);
                 if e < yy + h - EPS && near().any(|f| f.excl[1] > yy + EPS && meets(f)) {
                     yy = e;
                     continue;
+                }
+                if here.iter().any(hidden) {
+                    uncut = Some(here.iter().filter(|f| !hidden(f)).cloned().collect());
                 }
                 if style.keep_lines {
                     let top = near().filter(|f| f.wrap != Wrap::None && f.excl[1] > yy + EPS).map(|f| f.excl[1]).fold(f64::INFINITY, f64::min);
@@ -1628,8 +1633,9 @@ impl<'d> PageFill<'d, '_> {
                     }
                 }
             }
+            let cutting = uncut.as_deref().unwrap_or(here);
             for attempt in 0..2 {
-                match float::intervals(here, cx0, cx1, yy, yy + h, compat == Compat::Legacy) {
+                match float::intervals(cutting, cx0, cx1, yy, yy + h, compat == Compat::Legacy) {
                     None => {
                         blocked = true;
                         break;
