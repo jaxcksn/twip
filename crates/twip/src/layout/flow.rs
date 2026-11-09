@@ -52,6 +52,8 @@ pub struct ColumnResult {
 #[derive(Clone, Default, Debug)]
 pub struct NoteArea {
     pub parts: Vec<NotePart>,
+    /// How many of `parts` continue notes from an earlier column or page.
+    pub carried: usize,
     pub height: f64,
     pub sep: f64,
     pub cont: bool,
@@ -709,6 +711,11 @@ impl<'d> PageFill<'d, '_> {
         Ok(s)
     }
 
+    /// Adds the footnotes `refs` of a line ending at `line_bottom` to `area`, the parts that don't fit to `rest`; whether
+    /// the line fits. `defer`: the line starts its paragraph's part in the column (or may not be parted from it), so in
+    /// compat ≤ 14 a note that can't start here waits whole for the next page when a new note before it on the page
+    /// was placed whole.
+    #[allow(clippy::too_many_arguments, reason = "the line's notes, the area and column they go in, and where the line ends")]
     fn add_notes(
         &mut self,
         refs: &[(NoteKind, i64)],
@@ -716,6 +723,7 @@ impl<'d> PageFill<'d, '_> {
         col: &ColumnSpace,
         line_bottom: f64,
         rest: &mut Vec<NotePart>,
+        defer: bool,
         memos: &mut Memos,
     ) -> Result<bool, Yield> {
         if !refs.iter().any(|r| r.0 == NoteKind::Foot) {
@@ -743,27 +751,39 @@ impl<'d> PageFill<'d, '_> {
             return Ok(true);
         }
         let mut new_rest = Vec::new();
+        let mut deferred = false;
         for &(k, id) in refs {
             if k != NoteKind::Foot {
                 continue;
             }
             let u = self.note_units(k, id, col.width, memos)?;
             let (units, total) = (&u.units, u.height);
+            if deferred {
+                new_rest.push(NotePart { kind: k, id, units: units.clone() });
+                continue;
+            }
             let room = col.bottom.to_pt() - line_bottom - a.total();
             let first_para = units.iter().take_while(|x| x.block == units[0].block).count();
             let min = if units.first().is_some_and(|x| x.widow) { 2.min(first_para) } else { 1.min(first_para) };
             let min_h = units.get(min.saturating_sub(1)).map_or(0.0, |x| x.top + x.height);
-            if min_h > room + EPS || !new_rest.is_empty() {
-                return Ok(false);
+            let fit = if total <= room + EPS { units.len() } else { note_cut(units, room) };
+            if min_h > room + EPS || !new_rest.is_empty() || fit < min {
+                let waits = defer
+                    && new_rest.is_empty()
+                    && a.parts.len() > a.carried
+                    && self.ctx.env.text.compat == Compat::Legacy
+                    && col.bottom.holds(line_bottom + a.total());
+                if !waits {
+                    return Ok(false);
+                }
+                deferred = true;
+                new_rest.push(NotePart { kind: k, id, units: units.clone() });
+                continue;
             }
-            if total <= room + EPS {
+            if fit == units.len() {
                 a.parts.push(NotePart { kind: k, id, units: units.clone() });
                 a.height += total;
                 continue;
-            }
-            let fit = note_cut(units, room);
-            if fit < min {
-                return Ok(false);
             }
             let h = units[fit - 1].top + units[fit - 1].height;
             a.parts.push(NotePart { kind: k, id, units: units[..fit].to_vec() });
@@ -796,6 +816,7 @@ impl<'d> PageFill<'d, '_> {
             area.parts.push(NotePart { units: part.units[..fit].to_vec(), ..part });
         }
         carry.note_rest = rest;
+        area.carried = area.parts.len();
         Ok(())
     }
 
@@ -1250,15 +1271,31 @@ impl<'d> PageFill<'d, '_> {
         let mut yy = top;
         let mut fit = 0;
         let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
+        // After a note waits for the next page, the lines its paragraph can't be parted from there.
+        let mut more: Option<usize> = None;
+        let wc = style.widow_control;
         for (i, l) in pb.lines.iter().enumerate() {
             let room = l.pitch - l.below;
             let refs = pb.notes(i);
+            if more.is_some() && refs.iter().any(|r| r.0 == NoteKind::Foot) {
+                break;
+            }
             let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
-            if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, memos)? && !pb.leading_page_break(i) {
+            let defer = i == 0 || first_part && wc && (i == 1 || n <= 3);
+            if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, defer, memos)? && !pb.leading_page_break(i) {
                 break;
             }
             let tail = if i + 1 == n { after } else { 0.0 };
-            if a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) && !pb.leading_page_break(i) {
+            let over = |a: &NoteArea| a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) && !pb.leading_page_break(i);
+            let waits = |a: &NoteArea, rest: &[NotePart]| rest.iter().any(|r| !a.parts.iter().any(|p| (p.kind, p.id) == (r.kind, r.id)));
+            if over(&a) && defer {
+                // The notes fit only without the line's full height: in compat ≤ 14 they may wait instead.
+                let (mut a2, mut rest2) = areas.last().cloned().unwrap_or_default();
+                if self.add_notes(&refs, &mut a2, col, yy + l.pitch + tail, &mut rest2, defer, memos)? && waits(&a2, &rest2) {
+                    (a, rest) = (a2, rest2);
+                }
+            }
+            if over(&a) {
                 break;
             }
             areas.push((a, rest));
@@ -1267,8 +1304,18 @@ impl<'d> PageFill<'d, '_> {
             if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
                 break;
             }
-            if areas.last().is_some_and(|x| !x.1.is_empty()) {
-                break;
+            if let Some((a, rest)) = areas.last().filter(|x| !x.1.is_empty()) {
+                if more.is_none() && waits(a, rest) {
+                    more = Some(match (first_part && wc, n <= 3) {
+                        (true, true) => n - 1 - i,
+                        (true, false) if i == 0 || i + 2 == n => 1,
+                        _ => 0,
+                    });
+                }
+                match more {
+                    Some(m) if m > 0 => more = Some(m - 1),
+                    _ => break,
+                }
             }
         }
         let hard = pb.lines[..fit.min(n)].iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
@@ -1291,6 +1338,10 @@ impl<'d> PageFill<'d, '_> {
         self.at.starts.push((top, first_part));
         self.record(p, first_part);
         let (a, rest) = areas[take.min(areas.len() - 1)].clone();
+        // A note waiting whole for the next page is numbered on this one.
+        for r in rest.iter().filter(|r| !a.parts.iter().any(|p| (p.kind, p.id) == (r.kind, r.id))) {
+            self.at.effects.notes_shown.push((r.kind, r.id, self.note_numbers.get(&(r.kind, r.id)).cloned().unwrap_or_default()));
+        }
         *area = a;
         let notes_continue = !rest.is_empty();
         carry.note_rest.extend(rest);
@@ -1682,7 +1733,7 @@ impl<'d> PageFill<'d, '_> {
             let refs: Vec<(NoteKind, i64)> = segs.iter().flat_map(|l| (l.start..l.end).filter_map(|k| sp.note(pb.from + k))).collect();
             let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
             let lead = segs.len() == 1 && breaks_only(pieces, l) && l.end < n;
-            if !self.add_notes(&refs, &mut a, col, bt + room, &mut rest, memos)? && !lead {
+            if !self.add_notes(&refs, &mut a, col, bt + room, &mut rest, false, memos)? && !lead {
                 break;
             }
             let tail = if bi_ + 1 == nb { after } else { 0.0 };
@@ -2009,7 +2060,7 @@ impl<'d> PageFill<'d, '_> {
             let refs: Vec<(NoteKind, i64)> = parts.iter().flat_map(|cu| cu.units.iter().flat_map(|u| u.notes.iter().copied())).collect();
             let mut a = area.clone();
             let mut note_rest = Vec::new();
-            let notes_ok = self.add_notes(&refs, &mut a, col, *y + height + tb.bottom_border, &mut note_rest, memos)?;
+            let notes_ok = self.add_notes(&refs, &mut a, col, *y + height + tb.bottom_border, &mut note_rest, false, memos)?;
             if !breaks && notes_ok && col.bottom.holds(*y + height + tb.bottom_border + a.total() - a.total().min(0.0)) {
                 if !keeps {
                     keep = None;
@@ -2062,7 +2113,7 @@ impl<'d> PageFill<'d, '_> {
                         let bottom = (*y + row.top_border + m[0] + u.top + u.height + u.after + m[2] + tb.bottom_border).max(low);
                         let mut refs = kept.clone();
                         refs.extend(held.iter().flat_map(|u| u.notes.iter().copied()));
-                        if refs.is_empty() || self.add_notes(&refs, &mut area.clone(), col, bottom, &mut Vec::new(), memos)? {
+                        if refs.is_empty() || self.add_notes(&refs, &mut area.clone(), col, bottom, &mut Vec::new(), false, memos)? {
                             (kept, low) = (refs, bottom);
                             break;
                         }
@@ -2096,7 +2147,7 @@ impl<'d> PageFill<'d, '_> {
             if can_split
                 && any
                 && every
-                && (refs.is_empty() || self.add_notes(&refs, &mut a, col, *y + h + tb.bottom_border, &mut note_rest, memos)? || at_top)
+                && (refs.is_empty() || self.add_notes(&refs, &mut a, col, *y + h + tb.bottom_border, &mut note_rest, false, memos)? || at_top)
             {
                 *area = a;
                 carry.note_rest.extend(note_rest);

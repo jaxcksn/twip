@@ -148,3 +148,34 @@ fn each_page_footnotes_count_from_their_page() {
     let pages: Vec<String> = super::page_chars(&doc).iter().map(|p| p.iter().map(|c| c.0).collect()).collect();
     assert!(pages[0].starts_with("a12") && pages[1].starts_with("b1"), "{pages:?}");
 }
+
+#[test]
+fn compat_14_note_waits_for_the_next_page_behind_its_line() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let body = |with: Option<usize>| {
+        let mut b = String::new();
+        for k in 1..=80 {
+            let refs: &[&str] = if k == 1 {
+                &["f1"]
+            } else if Some(k) == with {
+                &["f2"]
+            } else {
+                &[]
+            };
+            b += &para(&format!("P{k:02}"), refs);
+        }
+        b + &sect("", true)
+    };
+    let pages = |body: &str, settings: &str| -> Option<Vec<String>> {
+        Some(super::page_chars(&notes_doc(body, settings)?).iter().map(|p| p.iter().map(|c| c.0).collect()).collect())
+    };
+    let Some(plain) = pages(&body(None), "") else { return };
+    // The last line page 1 holds with only the first note.
+    let last = (1..=80).rev().find(|k| plain[0].contains(&format!("P{k:02}"))).expect("page 1 has lines");
+    let on = |pages: &[String], s: &str| pages.iter().position(|p| p.contains(s));
+    let Some(c12) = pages(&body(Some(last)), "") else { return };
+    assert_eq!(on(&c12, &format!("P{last:02}2")), Some(0), "the line stays: {c12:?}");
+    assert_eq!(on(&c12, "Note 2"), Some(1), "its note goes whole to the next page");
+    let Some(c15) = pages(&body(Some(last)), c15) else { return };
+    assert_eq!(on(&c15, &format!("P{last:02}2")), Some(1), "compat 15 moves the line with its note");
+}
