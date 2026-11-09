@@ -255,6 +255,27 @@ fn adjacent_tables_in_a_vertical_section_are_one_table_from_the_first_ones_left_
 }
 
 #[test]
+fn a_vertical_sections_floating_table_takes_tblpx_along_the_stack_and_tblpyspec_along_the_line() {
+    let cell = |pos: &str| {
+        let table = format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr {pos}/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        );
+        let doc = section("tbRl", "0", &format!("{}{table}{}", para("before", ""), para("after", "")))?;
+        let snap = crate::layout::layout(&doc, &fonts());
+        crate::layout::traverse::paint_items(&snap.pages()[0])
+            .into_iter()
+            .find_map(|i| if let Item::Glyphs(r) = i { r.chars.iter().any(|c| c.0 == 'c').then_some((r.x, r.baseline)) } else { None })
+    };
+    let Some(text) = cell(r#"w:vertAnchor="text" w:horzAnchor="text""#) else { return };
+    // 1000 twips further from the right margin, as printed.
+    let x = cell(r#"w:vertAnchor="text" w:horzAnchor="text" w:tblpX="1000""#).unwrap();
+    assert!((text.0 - x.0 - 50.0).abs() < 0.01 && (text.1 - x.1).abs() < 0.01, "{text:?} {x:?}");
+    // At the bottom of the margins (792 − 150pt) instead of the top.
+    let bottom = cell(r#"w:vertAnchor="margin" w:tblpYSpec="bottom""#).unwrap();
+    assert!(bottom.1 > 600.0 && bottom.1 < 642.0 && (bottom.0 - text.0).abs() < 0.01, "{bottom:?}");
+}
+
+#[test]
 fn a_continuous_break_into_a_vertical_section_starts_a_page() {
     let body = format!(
         r#"{}<w:p><w:pPr><w:sectPr>{MARGINS}</w:sectPr></w:pPr></w:p>{}<w:sectPr><w:type w:val="continuous"/>{MARGINS}<w:textDirection w:val="tbRl"/></w:sectPr>"#,

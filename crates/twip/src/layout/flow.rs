@@ -2345,8 +2345,9 @@ impl<'d> PageFill<'d, '_> {
     /// below an earlier such table it meets, its own `jc` and indent ignored. It doesn't advance the stack: the lines
     /// it meets, 9pt either side across the page, wrap past it along the line. In compat 15 a table that doesn't fit
     /// across the rest of the page goes to the next one, unless the page has nothing else. A floating table keeps its
-    /// left and right distances from the text, on those sides as printed, and starts `tblpY` along the line; one
-    /// placed from the page on both axes sits at `tblpX`, `tblpY` as printed.
+    /// left and right distances from the text, on those sides as printed, and starts `tblpY` (or where `tblpYSpec`
+    /// puts it) along the line, a `tblpX` from the text further along the stack; one placed from the page on both
+    /// axes sits at `tblpX`, `tblpY` as printed.
     #[allow(clippy::too_many_arguments, reason = "as place_table")]
     fn place_upright_table(
         &mut self,
@@ -2378,6 +2379,8 @@ impl<'d> PageFill<'d, '_> {
         let y0 = match fp {
             Some(fp) if paged && down => self.page_h - (fp.x - back) - (br - bl),
             Some(fp) if paged => fp.x - back,
+            // `tblpX` from the text runs along the stack.
+            Some(fp) if fp.h_text => *y - back + fp.x,
             _ => *y - back,
         };
         // A table right after another is the same table: its rows go on below the earlier ones, the border between
@@ -2412,6 +2415,15 @@ impl<'d> PageFill<'d, '_> {
         let along = match fp {
             _ if let Some((r, under)) = joined => r[2] - under,
             Some(fp) if paged => fp.y,
+            // `tblpYSpec` from the margin or the page: along the line as printed.
+            Some(fp) if fp.v_anchor != TableAnchor::Text && fp.y_spec.is_some() => {
+                let (a0, a1) = if fp.v_anchor == TableAnchor::Page { (0.0, self.page_w) } else { (col.x, col.x + col.width) };
+                match fp.y_spec {
+                    Some(Jc::Center) => (a0 + a1 - h) / 2.0,
+                    Some(Jc::Right) => a1 - h,
+                    _ => a0,
+                }
+            }
             Some(fp) => col.x + fp.y,
             None => self
                 .at
