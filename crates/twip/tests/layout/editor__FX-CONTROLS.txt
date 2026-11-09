@@ -1,0 +1,11 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-CONTROLS
+  72.0 110.1 Before the controls.
+  72.0 129.9 Inside one
+  72.0 149.8 Inside two
+  72.0 169.7 Name: John Doe end of line.
+  77.7 190.1 R1 C1
+  311.6 190.1 In the cell control
+  77.7 210.4 R2 C1
+  311.6 210.4 R2 C2
+  72.0 230.8 After the table.

@@ -1,0 +1,12 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-BULLETS
+  90.0 111.5 •Bullet 1: Symbol F0B7
+  90.0 123.3 oBullet 2: Courier New 006F
+  90.0 136.6 ▪Bullet 3: Wingdings F0A7
+  90.0 149.9 ❖Bullet 4: Wingdings F076
+  90.0 163.2 ➢Bullet 5: Wingdings F0D8
+  90.0 176.5 ✓Bullet 6: Wingdings F0FC
+  90.0 189.8 ◆Bullet 7: Wingdings F075
+  90.0 203.0 ■Bullet 8: Wingdings F06E
+  90.0 216.3 ➔Bullet 9: Wingdings F0E8
+  72.0 237.6 Symbol bullet: • Wingdings check: ✓ end.

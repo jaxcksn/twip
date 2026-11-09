@@ -1,0 +1,17 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-REPEAT-REGION
+  72.0 110.1 Rows 2-4 are a repeating section content control.
+  77.7 130.4 Name
+  257.6 130.4 Date
+  401.6 130.4 Done
+  77.7 150.8 Item 1
+  257.6 150.8 2026-01-01
+  401.6 152.2 ☐ done
+  77.7 173.1 Item 2
+  257.6 173.1 2026-02-01
+  401.6 174.5 ☒ done
+  77.7 195.4 Item 3
+  257.6 195.4 2026-03-01
+  401.6 196.9 ☐ done
+  77.7 217.8 Picture content control:
+  72.0 281.1 Paragraph after the table.

@@ -1,0 +1,33 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-LISTS
+  72.0 110.1 Numbered, multi-level:
+  90.0 129.9 1.First item
+  90.0 141.8 2.Second item, long enough to wrap: Inventory relevant group relief results
+  108.0 153.7 region ledger brief usage cause colleague partner. Section notice claim team
+  108.0 165.6 export staff newsletter review matter presenter advisor account. Served
+  108.0 177.4 savings pilot receipt corporate requirement standard fact that products
+  108.0 189.3 distribution filed. Logistics chapter plan regional.
+  115.2 201.2 2.1.Sub-item a
+  115.2 213.0 2.2.Sub-item b
+  140.4 224.9 2.2.1.Sub-sub-item i
+  140.4 236.8 2.2.2.Sub-sub-item ii
+  115.2 248.6 2.3.Sub-item c
+  90.0 260.5 3.
+  90.0 272.4 4.Item after the empty item
+  72.0 292.3 Bulleted, multi-level:
+  90.0 313.5 •Bullet one
+  126.0 325.4 –Nested bullet
+  162.0 338.7 ▪Third-level bullet
+  126.0 350.6 –
+  126.0 362.4 –After the empty bullet
+  90.0 375.7 •Bullet two
+  72.0 395.6 A list inside a table cell:
+  95.7 416.0 1.Cell item one
+  120.9 427.8 1.1.Cell sub-item
+  95.7 439.7 2.Cell item two
+  311.6 416.0 Bullets in a cell:
+  329.6 437.2 •Cell bullet
+  365.6 449.1 –Nested cell bullet
+  77.7 469.5 Plain cell
+  311.6 469.5 Another plain cell
+  72.0 489.9 Paragraph after the table.

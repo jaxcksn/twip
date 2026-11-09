@@ -77,3 +77,10 @@ jobs:
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}
           matrix: ${{ toJSON(matrix) }}
+      # The layout snapshot check draws the pages it found changed: open index.html in the artifact.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: layout-diff-${{ matrix.os }}
+          path: target/layout-diff
+          if-no-files-found: ignore

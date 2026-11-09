@@ -1,0 +1,2 @@
+page 0 612.0 792.0
+  72.0 80.8 Plain words, bold words, and Arial words.

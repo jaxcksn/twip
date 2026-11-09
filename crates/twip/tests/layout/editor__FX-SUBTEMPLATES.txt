@@ -1,0 +1,15 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-SUBTEMPLATES
+  72.0 110.1 Error! Bookmark not defined.
+  72.0 129.9 After the violation.
+  77.7 150.3 Fee
+  311.6 150.3 Amount
+  77.7 170.7 Error! Bookmark not defined.
+  77.7 191.1 Total
+  72.0 211.4 See Error! Bookmark not defined. here.
+  72.0 231.3 Error! Bookmark not defined.
+  72.0 251.2 Error! Bookmark not defined.
+  72.0 271.0 Error! Bookmark not defined.
+page 1 792.0 612.0
+  72.0 80.8 Error! Bookmark not defined.
+  72.0 100.7 Landscape section text.

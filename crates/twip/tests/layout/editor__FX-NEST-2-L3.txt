@@ -1,0 +1,27 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-NEST-2
+  89.0 111.6 Text before the inner table.
+  94.6 131.9 Inner A R1 C1
+  200.8 131.9 Inner A R1 C2
+  94.6 152.3 Inner A R2 C1
+  200.8 152.3 Inner A R2 C2
+  89.0 172.7 Text after the inner table.
+  317.8 112.1 Only content R1
+  317.8 123.9 C1
+  424.0 112.1 Only content R1
+  424.0 123.9 C2
+  317.8 144.3 Only content R2
+  317.8 156.2 C1
+  424.0 144.3 Only content R2
+  424.0 156.2 C2
+  89.0 193.1 Plain outer cell
+  312.1 193.1 Outer text, then an inner table of 3
+  312.1 204.9 rows:
+  317.8 225.3 Inner B R1
+  424.0 225.3 x
+  317.8 245.7 Inner B R2
+  424.0 245.7 x
+  317.8 266.0 Inner B R3
+  424.0 266.0 x
+  83.3 286.9 Paragraph after the outer table.
+  72.0 307.8 Paragraph after the wrapper table.

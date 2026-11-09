@@ -1,0 +1,21 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-UNICODE
+  72.0 110.1 Combining marks: é ạ̈ ñ ố Z̵ q̣̇ café Amélie Zöe
+  72.0 129.9 Precomposed, for comparison: é ä ñ café Amélie Zoë
+  72.0 149.8 Emoji ZWJ sequences: 👨‍👩‍👧‍👦 👩🏽‍💻 🏳️‍🌈 🧑‍🤝‍🧑
+  72.0 169.7 Emoji with skin-tone modifiers and variation selectors: 👍🏻 👍🏿 ✌️ ❤️
+  72.0 189.6 Flags: 🇺🇸 🇯🇵 🇬🇧 🇩🇪
+  72.0 209.4 CJK: 日本語のテキスト。中文文本。한국어 텍스트.
+  72.0 229.3 Surrogate pairs, not emoji: 𝒜𝒷𝒸 𝔘𝔫𝔦𝔠 𠀀𠀁𠀂 𐐷
+  72.0 249.2 Soft hyphens: Notice claim team export staff newsletter review matter presenter
+  72.0 261.0 advisor account served. Savings pilot receipt corporate. extraordinarily long-
+  72.0 272.9 winded incomprehensibilities Regional maintenance accessibility tax finds record
+  72.0 284.8 proposal denied contract onboarding support network. Scheduled trend suggestions
+  72.0 296.6 board order update granted agreement.
+  72.0 316.5 Non-breaking spaces and hyphens: 10 kg, Mr. Smith, 2026 AD, section 12, 10 kg,
+  72.0 328.4 Mr. Smith, 2026 AD, section 12, 10 kg, Mr. Smith, 2026 AD, section 12, 10 kg,
+  72.0 340.3 Mr. Smith, 2026 AD, section 12, pre-pilot and non-breaking.
+  72.0 360.1 Mixed: text 👨‍👩‍👧 with é and 日本 and 🇺🇸 and 𝒜 inline, then The meeting forecast hereby
+  72.0 372.0 vendors practical schedule state entry estimate management action. Budget
+  72.0 383.9 inventory relevant group relief results region ledger brief usage cause colleague.
+  72.0 395.7 Partner section notice claim team export.

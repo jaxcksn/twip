@@ -1,0 +1,4 @@
+page 0 612.0 792.0
+  72.0 80.8 Times New Roman text in the default font.
+  72.0 100.7 Roboto Slab text.
+  72.0 120.5 Unknown family text.

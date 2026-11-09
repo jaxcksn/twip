@@ -1,0 +1,48 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-OBJ-CELL
+  135.2 145.0  inline picture at the start
+  77.7 156.8 of a cell. Inventory relevant group
+  77.7 168.7 relief results region ledger brief
+  77.7 180.6 usage cause.
+  392.6 110.6 Floating picture
+  392.6 122.4 anchored in the cell.
+  392.6 134.3 Notice claim team export
+  392.6 146.2 staff newsletter review
+  392.6 158.1 matter presenter advisor
+  311.6 169.9 account served. Savings pilot receipt
+  311.6 181.8 corporate requirement standard fact
+  311.6 193.7 that products distribution filed
+  311.6 205.5 logistics. Chapter plan regional
+  311.6 217.4 maintenance accessibility tax finds
+  311.6 229.3 record proposal denied contract
+  311.6 241.1 onboarding. Support network scheduled
+  311.6 253.0 trend.
+  77.7 273.4 Nested table with pictures:
+  83.3 293.8 Nested inline
+  126.5 329.2  picture.
+  254.3 293.8 Nested
+  254.3 305.6 float.
+  194.9 333.4 Regional
+  194.9 345.2 maintenance
+  194.9 357.1 accessibility tax
+  194.9 369.0 finds record
+  194.9 380.8 proposal denied
+  194.9 392.7 contract
+  194.9 404.6 onboarding
+  194.9 416.5 support network.
+  194.9 428.3 Scheduled trend
+  194.9 440.2 suggestions board
+  194.9 452.1 order update
+  194.9 463.9 granted agreement
+  194.9 475.8 marketing
+  194.9 487.7 promotion
+  194.9 499.6 division date.
+  194.9 511.4 Profitable.
+  83.3 531.8 Nested R2 C1
+  194.9 531.8 Nested, inline
+  194.9 543.7 alone:
+  311.6 273.4 Pilot receipt corporate requirement
+  311.6 308.9 standard fact that products.
+  311.6 320.7 Trend suggestions board order update
+  311.6 332.6 granted agreement marketing.
+  72.0 605.8 Paragraph after the table.

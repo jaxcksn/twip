@@ -1,0 +1,22 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-EXACT-ROW
+  77.7 110.6 Row
+  233.7 110.6 Content
+  389.6 110.6 Height rule
+  77.7 130.9 2
+  233.7 130.9 Three paragraphs:
+  389.6 130.9 exact 360 twips, clipped
+  77.7 148.9 3
+  233.7 148.9 Notice claim team export
+  389.6 148.9 exact 240 twips, wrapped
+  77.7 160.9 4
+  389.6 160.9 exact 600 twips, 1 in
+  389.6 172.8 picture clipped
+  77.7 190.9 5
+  233.7 190.9 Short
+  389.6 190.9 atLeast 720 twips, for
+  389.6 202.8 contrast
+  77.7 227.4 6
+  233.7 227.4 Short
+  389.6 227.4 exact 720 twips, fits
+  72.0 263.4 Paragraph after the table.

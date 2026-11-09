@@ -1,0 +1,3 @@
+page 0 612.0 792.0
+  72.0 96.8 10 Output director
+  72.0 110.1 Output-director settings are in the definition part.

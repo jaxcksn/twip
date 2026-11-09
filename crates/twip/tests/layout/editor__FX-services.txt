@@ -1,0 +1,12 @@
+page 0 612.0 792.0
+  72.0 96.8 Services
+  72.0 110.1 Teh quick brown fox saw a brwon hat, a quikc answer and a zorbly cloud.
+  72.0 129.9 Apple, apple and APPLE.
+  72.0 149.8 Visit the example site for more.
+  72.0 169.7 Keep this obsolete sentence.
+  72.0 189.6 A picture sits beside this text.
+  77.7 209.9 Cell one
+  311.6 209.9 Cell two
+  77.7 230.3 Cell three
+  311.6 230.3 Cell four
+  72.0 250.7 End.

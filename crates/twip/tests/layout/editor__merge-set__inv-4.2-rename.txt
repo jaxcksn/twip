@@ -1,0 +1,5 @@
+page 0 612.0 792.0
+  72.0 96.8 4.2, 6.5 Rename cascade
+  72.0 110.1 «Old_Name»
+  72.0 129.9 «Old_Name»
+  72.0 149.8 «Old_Name»

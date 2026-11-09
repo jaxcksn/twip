@@ -1,0 +1,4 @@
+page 0 612.0 792.0
+  72.0 96.8 8, 3.4 Photo and logo
+  72.0 137.3 Recipient photo:
+  72.0 184.3 Store logo:

@@ -1,0 +1,25 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-STYLES
+  72.0 110.1 Normal text, Inventory relevant group relief results region ledger brief usage
+  72.0 121.9 cause colleague partner. Section notice claim team export staff newsletter review.
+  72.0 143.4 Heading two
+  72.0 158.6 Heading three
+  205.3 180.8 A quoted line, centred and indented.
+  72.0 200.7 Normal text with a linked character run and an emphasised run.
+  72.0 221.3 Callout: an automatically updating style.
+  72.0 240.3 Callout with direct formatting.
+  72.0 258.4 Memo body, a style with an alias.
+  72.0 280.5 Hidden note.
+  72.0 299.6 Draft, semi-hidden until used.
+  72.0 319.4 LOCKED STYLE.
+  72.0 339.3 Loop A, based on Loop B, based on Loop A.
+  77.7 359.7 Item
+  233.7 359.7 Qty
+  389.6 359.7 Price
+  77.7 380.0 Pens
+  233.7 380.0 10
+  389.6 380.0 4.00
+  77.7 400.4 Paper
+  233.7 400.4 2
+  389.6 400.4 9.50
+  72.0 420.8 End.

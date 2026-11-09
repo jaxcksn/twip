@@ -1,0 +1,39 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-MERGE-FIELDS
+  72.0 110.1 Cost: «Cost_Amount» due «Due_Date».
+  72.0 129.9 Shipment «Shipment_Number» issued.
+  72.0 149.8 Paid: «Paid_Date» (IF with nested MERGEFIELDs).
+  72.0 169.7 Simple field: «Last_Name».
+  72.0 189.6 Locked: «Name»; dirty: «City».
+  72.0 209.4 Empty result: [] end.
+  72.0 229.3 Footnoted field1.
+  72.0 249.2 This paragraph anchors a text box holding a field.
+  72.0 261.0 Inventory relevant group relief results region ledger
+  72.0 272.9 brief usage cause colleague partner. Section notice
+  72.0 284.8 claim team export staff newsletter review matter
+  72.0 296.6 presenter advisor account. Served savings pilot receipt corporate requirement.
+  77.7 317.0 Depth 1
+  83.3 337.4 Depth 2
+  89.0 357.8 Depth 3: «Code»
+  195.2 357.8 x
+  306.5 337.4 y
+  72.0 379.1 Calc 1: «Old_Name» Calc 2: «Old_Name» Calc 3: «Old_Name» Calc 4: «Old_Name» Calc 5:
+  72.0 391.0 «Old_Name»
+  72.0 410.9 Calc 6: «Old_Name» Calc 7: «Old_Name» Calc 8: «Old_Name» Calc 9: «Old_Name» Calc 10:
+  72.0 422.7 «Old_Name»
+  72.0 442.6 Calc 11: «Old_Name» Calc 12: «Old_Name» Calc 13: «Old_Name» Calc 14: «Old_Name» Calc
+  72.0 454.5 15: «Old_Name»
+  72.0 474.4 Calc 16: «Old_Name» Calc 17: «Old_Name» Calc 18: «Old_Name» Calc 19: «Old_Name» Calc
+  72.0 486.2 20: «Old_Name»
+  72.0 506.1 Calc 21: «Old_Name» Calc 22: «Old_Name» Calc 23: «Old_Name» Calc 24: «Old_Name» Calc
+  72.0 518.0 25: «Old_Name»
+  72.0 537.8 Calc 26: «Old_Name» Calc 27: «Old_Name» Calc 28: «Old_Name» Calc 29: «Old_Name» Calc
+  72.0 549.7 30: «Old_Name»
+  72.0 569.6 Calc 31: «Old_Name» Calc 32: «Old_Name» Calc 33: «Old_Name» Calc 34: «Old_Name» Calc
+  72.0 581.5 35: «Old_Name»
+  72.0 601.3 Calc 36: «Old_Name» Calc 37: «Old_Name» Calc 38: «Old_Name» Calc 39: «Old_Name» Calc
+  72.0 613.2 40: «Old_Name»
+  72.0 715.1 1 Note with «First_Name»
+  403.4 253.0 Box: «Badge»
+  72.0 44.8 Store: «Name»
+  72.0 753.8 Page 1 of 1

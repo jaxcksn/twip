@@ -1,0 +1,36 @@
+# A pull request that changes the layout snapshots (crates/twip/tests/layout) needs the layout-change label: moving
+# text on the page is a behaviour change consumers see, so it is approved on purpose, never by accident. Required in
+# the main ruleset, so it runs on every pull request and passes when no snapshot changed.
+name: Layout label
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  pull-requests: read
+
+concurrency:
+  group: layout-label-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  layout-label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Snapshot changes carry the label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'layout-change') }}
+        run: |
+          files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
+          changed=$(printf '%s\n' "$files" | grep '^crates/twip/tests/layout/' || true)
+          if [ -z "$changed" ]; then
+            echo "No layout snapshot changed."
+          elif [ "$LABELED" = true ]; then
+            printf 'Layout snapshots changed, approved by the layout-change label:\n%s\n' "$changed"
+          else
+            printf '::error::Layout snapshots changed without the layout-change label. Add the label if the change is intended:\n%s\n' "$changed"
+            exit 1
+          fi

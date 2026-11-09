@@ -1,0 +1,28 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-MERGE-REGIONS
+  72.0 110.1 Rows of the details table repeat; the first detail's detail cell holds a table whose
+  72.0 121.9 rows repeat too.
+  77.7 142.3 Detail
+  257.6 142.3 Detail
+  401.6 142.3 Cost
+  77.7 162.7 «Description»
+  257.6 162.7 Detail 1
+  263.3 183.1 Code
+  329.9 183.1 Count
+  263.3 203.4 «Code»
+  329.9 203.4 Count 1
+  263.3 223.8 «Code»
+  329.9 223.8 Count 2
+  401.6 162.7 «Cost»
+  77.7 244.7 «Description»
+  257.6 244.7 Detail 2
+  401.6 244.7 «Cost»
+  77.7 265.0 «Description»
+  257.6 265.0 Detail 3
+  401.6 265.0 «Cost»
+  72.0 285.4 Two paragraphs repeat as one item:
+  72.0 305.3 Name: «Name»
+  72.0 325.1 Role: «Role»
+  72.0 345.0 A labels row: one row, three cells, content only in the first.
+  77.7 365.4 «Address»
+  72.0 385.8 After the regions.

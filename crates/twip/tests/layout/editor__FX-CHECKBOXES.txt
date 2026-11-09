@@ -1,0 +1,9 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-CHECKBOXES
+  72.0 111.5 ☐ Unchecked item
+  72.0 133.3 ☒ Checked item
+  77.7 154.2 Task in a cell
+  311.6 155.6 ☐ cell box
+  72.0 177.9 ☐ Locked item
+  72.0 199.8 ☐ Custom faces
+  72.0 220.2 After the checkboxes.

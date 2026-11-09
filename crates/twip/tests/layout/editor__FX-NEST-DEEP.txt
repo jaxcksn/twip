@@ -1,0 +1,33 @@
+page 0 612.0 792.0
+  72.0 96.8 FX-NEST-DEEP, nesting depth 6
+  77.7 110.6 Level 1, before
+  83.3 130.9 Level 2, before
+  89.0 151.3 Level 3, before
+  94.6 171.7 Level 4, before
+  100.3 192.1 Level 5, before
+  105.9 212.4 Level 6, before
+  105.9 232.3 Level 6, after
+  249.9 212.4 L6
+  105.9 252.7 Level 6, row 2
+  249.9 252.7 x
+  100.3 273.0 Level 5, after
+  300.1 192.1 L5
+  100.3 293.4 Level 5, row 2
+  300.1 293.4 x
+  94.6 313.8 Level 4, after
+  350.2 171.7 L4
+  94.6 334.1 Level 4, row 2
+  350.2 334.1 x
+  89.0 354.5 Level 3, after
+  400.3 151.3 L3
+  89.0 374.9 Level 3, row 2
+  400.3 374.9 x
+  83.3 395.3 Level 2, after
+  450.5 130.9 L2
+  83.3 415.6 Level 2, row 2
+  450.5 415.6 x
+  77.7 436.0 Level 1, after
+  500.6 110.6 L1
+  77.7 456.4 Level 1, row 2
+  500.6 456.4 x
+  72.0 476.7 Paragraph after the outer table.
