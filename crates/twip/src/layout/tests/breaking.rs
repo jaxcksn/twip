@@ -1132,8 +1132,8 @@ fn east_asian_breaking_rules_apply_from_compat_14_or_with_apply_breaking_rules()
     if !fonts().is_installed("MS Mincho") {
         return;
     }
-    let rpr = r#"<w:rFonts w:ascii="MS Mincho" w:hAnsi="MS Mincho" w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#;
-    let p = format!("<w:p><w:r><w:t>{}</w:t></w:r></w:p>", "日本語の文章です。句読点「かぎ括弧」、テスト（括弧）です。".repeat(3));
+    let rpr = SZ_11;
+    let p = format!("<w:p><w:r>{MINCHO_JA}<w:t>{}</w:t></w:r></w:p>", "日本語の文章です。句読点「かぎ括弧」、テスト（括弧）です。".repeat(3));
     let mode = |opt: &str, m: u32| {
         format!(
             r#"<w:compat>{opt}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{m}"/></w:compat>"#
@@ -1146,6 +1146,49 @@ fn east_asian_breaking_rules_apply_from_compat_14_or_with_apply_breaking_rules()
     assert_eq!(off, "「）。");
     assert_eq!(ends(&mode("", 14)).unwrap(), "点括。");
     assert_eq!(ends(&mode("<w:applyBreakingRules/>", 12)).unwrap(), "点括。");
+}
+
+const SZ_11: &str = r#"<w:sz w:val="22"/>"#;
+
+/// MS Mincho with Japanese as the East Asian language.
+const MINCHO_JA: &str = r#"<w:rPr><w:rFonts w:ascii="MS Mincho" w:hAnsi="MS Mincho" w:eastAsia="MS Mincho"/><w:lang w:eastAsia="ja-JP"/></w:rPr>"#;
+
+/// The line lengths, in characters without trailing spaces, of one paragraph of `runs` in a 41-character MS Mincho
+/// 11 pt column, compat 14.
+fn mincho_lines(rpr: &str, runs: &str) -> Option<Vec<usize>> {
+    if !fonts().is_installed("MS Mincho") {
+        return None;
+    }
+    let c14 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
+    let p = format!(r#"<w:p><w:pPr><w:ind w:right="340"/></w:pPr>{runs}</w:p>"#);
+    Some(lines(c14, rpr, &p)?.into_iter().map(|l| l.1.trim_end().chars().count()).collect())
+}
+
+#[test]
+fn kinsoku_classes_follow_the_runs_east_asian_language() {
+    let run = |lang: &str, text: &str| {
+        format!(
+            r#"<w:r><w:rPr><w:rFonts w:ascii="MS Mincho" w:hAnsi="MS Mincho" w:eastAsia="MS Mincho"/><w:lang w:val="en-US" w:eastAsia="{lang}"/></w:rPr><w:t xml:space="preserve">{}{text}</w:t></w:r>"#,
+            "字".repeat(40)
+        )
+    };
+    let Some(ja) = mincho_lines(SZ_11, &run("ja-JP", "$字字")) else { return };
+    // A half-width `$` doesn't end a Japanese line; in an English run it does.
+    assert_eq!(ja[0], 40);
+    assert_eq!(mincho_lines(SZ_11, &run("en-US", "$字字")).unwrap()[0], 41);
+    // Across a space: no break after it before `）`, none before the space, so between the last two 字; in English after the space.
+    assert_eq!(mincho_lines(SZ_11, &run("ja-JP", " ）字字")).unwrap()[0], 39);
+    assert_eq!(mincho_lines(SZ_11, &run("en-US", " ）字字")).unwrap()[0], 40);
+}
+
+#[test]
+fn punctuation_hangs_in_east_asian_paragraphs() {
+    let run = format!("<w:r>{MINCHO_JA}<w:t>{}、字字</w:t></w:r>", "字".repeat(41));
+    let Some(plain) = mincho_lines(SZ_11, &run) else { return };
+    // With an East Asian default font the comma that doesn't fit stays on the line past the margin; else it takes
+    // the last 字 down with it.
+    let hung = mincho_lines(r#"<w:rFonts w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#, &run).unwrap();
+    assert_eq!((plain[0], hung[0]), (40, 42));
 }
 
 #[test]

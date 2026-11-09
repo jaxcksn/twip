@@ -57,6 +57,8 @@ pub struct RunStyle {
     /// In a table of contents' result: the Hyperlink character style doesn't show ([`crate::docx::resolve::Resolver::rerun`]).
     pub toc: bool,
     pub lang: String,
+    /// The East Asian language (`w:lang w:eastAsia`).
+    pub lang_east_asia: String,
     pub style_id: Option<String>,
     /// The `w:rPr` as written (editable reads only): what saving writes back for new runs in this formatting.
     pub direct: Raw,
@@ -133,6 +135,10 @@ pub struct ParaStyle {
     pub page_break_before: bool,
     pub widow_control: bool,
     pub suppress_auto_hyphens: bool,
+    /// `w:kinsoku` off: no East Asian line-breaking classes.
+    pub no_kinsoku: bool,
+    /// `w:overflowPunct` off: no punctuation hangs past the right margin.
+    pub no_overflow_punct: bool,
     /// `w:textboxTightWrap` in a text box: 0 none, 1 all lines, 2 first and last, 3 first only, 4 last only.
     pub tight_wrap: u8,
     /// `w:suppressOverlap`: the paragraph's frame may not overlap other frames and floats.
@@ -1101,6 +1107,8 @@ pub struct Settings {
     pub gutter_at_top: bool,
     /// `w:bookFoldPrinting` / `w:bookFoldRevPrinting`: `Some(reversed)`.
     pub book_fold: Option<bool>,
+    /// `w:strictFirstAndLastChars`: the strict East Asian line-breaking level.
+    pub strict_kinsoku: bool,
     pub auto_hyphenation: bool,
     pub hyphenation_zone: f64,
     pub consecutive_hyphen_limit: i64,

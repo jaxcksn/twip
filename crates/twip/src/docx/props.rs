@@ -90,6 +90,8 @@ pub struct RunProps {
     /// `w:em`: the emphasis mark ("dot", "comma", "circle", "underDot"; "none").
     pub em: Option<String>,
     pub lang: Option<String>,
+    /// `w:lang w:eastAsia`.
+    pub lang_east_asia: Option<String>,
     pub style: Option<String>,
     pub rtl: Option<bool>,
     /// `w:fitText`: the width to fit the text to (points) and its region id.
@@ -198,7 +200,10 @@ impl RunProps {
                 "spacing" => p.spacing = twips(val(e)),
                 "w" => p.scale = num(val(e).map(|v| v.trim_end_matches('%'))),
                 "kern" => p.kern = half_points(val(e)),
-                "lang" => p.lang = val(e).map(str::to_string),
+                "lang" => {
+                    p.lang = val(e).map(str::to_string);
+                    p.lang_east_asia = attr(e, "eastAsia").map(str::to_string);
+                }
                 "rStyle" => p.style = val(e).map(str::to_string),
                 "rtl" => p.rtl = Some(on_off(e)),
                 "fitText" => p.fit_text = twips(val(e)).map(|w| (w, int(attr(e, "id")).unwrap_or(0))),
@@ -255,6 +260,7 @@ impl RunProps {
             num_spacing,
             style_sets,
             lang,
+            lang_east_asia,
             style,
             rtl,
             em,
@@ -550,6 +556,8 @@ pub struct ParaProps {
     pub page_break_before: Option<bool>,
     pub widow_control: Option<bool>,
     pub suppress_auto_hyphens: Option<bool>,
+    pub kinsoku: Option<bool>,
+    pub overflow_punct: Option<bool>,
     pub tight_wrap: Option<u8>,
     pub suppress_overlap: Option<bool>,
     pub suppress_line_numbers: Option<bool>,
@@ -616,6 +624,8 @@ impl ParaProps {
                 "pageBreakBefore" => p.page_break_before = Some(on_off(e)),
                 "widowControl" => p.widow_control = Some(on_off(e)),
                 "suppressAutoHyphens" => p.suppress_auto_hyphens = Some(on_off(e)),
+                "kinsoku" => p.kinsoku = Some(on_off(e)),
+                "overflowPunct" => p.overflow_punct = Some(on_off(e)),
                 "suppressOverlap" => p.suppress_overlap = Some(on_off(e)),
                 "textboxTightWrap" => {
                     p.tight_wrap = Some(match val(e) {
@@ -726,6 +736,8 @@ impl ParaProps {
             page_break_before,
             widow_control,
             suppress_auto_hyphens,
+            kinsoku,
+            overflow_punct,
             tight_wrap,
             suppress_overlap,
             suppress_line_numbers,

@@ -81,8 +81,10 @@ pub struct Frame {
     pub vertical: bool,
     /// Its runs are centred on the line (East Asian glyphs upright).
     pub centred: bool,
-    /// East Asian line-breaking rules: an opening bracket doesn't end a line, a closing one doesn't start it.
+    /// East Asian line-breaking rules: breaks between East Asian characters, kinsoku classes.
     pub breaking_rules: bool,
+    /// The strict kinsoku level.
+    pub strict_kinsoku: bool,
     /// The hanging indent is a tab stop: for any tab, for a list number's tab.
     pub hang_stop: bool,
     pub number_hang_stop: bool,
@@ -108,6 +110,7 @@ impl Frame {
             vertical: e.vertical.is_some(),
             centred: e.vertical.is_some_and(|v| v.upright),
             breaking_rules: e.breaking_rules,
+            strict_kinsoku: e.strict_kinsoku,
             hang_stop: !e.no_tab_hang_ind,
             number_hang_stop: !e.no_tab_hang_ind && !e.no_number_hang_stop,
         }
@@ -737,10 +740,54 @@ struct Pending {
     pen_at_tab: f64,
 }
 
-/// East Asian breaking rules: what doesn't end a line (opening brackets, leading currency signs) and what doesn't
-/// start one (closing brackets and punctuation, iteration marks).
-const NO_END: &str = "〈《「『【〔（［｛｢＄￡￥";
-const NO_START: &str = "、。々〉》」』】〕゛゜ゝゞ・ヽヾ！％），．：；？］｝｡｣､･ﾞﾟ￠";
+/// An East Asian language's kinsoku classes: what doesn't end a line, what doesn't start one (standard and strict
+/// level), and what may hang past the right margin.
+struct Kinsoku {
+    no_end: &'static str,
+    no_start: &'static str,
+    no_start_strict: &'static str,
+    hanging: &'static str,
+}
+
+const JAPANESE: Kinsoku = Kinsoku {
+    no_end: "$([\\{£¥‘“〈《「『【〔＄（［｛｢￡￥",
+    no_start: "!%),.:;?]}¢°’”‰′″℃、。々〉》」』】〕゛゜ゝゞ・ヽヾ！％），．：；？］｝｡｣､･ﾞﾟ￠",
+    no_start_strict: "!%),.:;?]}¢°’”‰′″℃、。々〉》」』】〕ぁぃぅぇぉっゃゅょゎ゛゜ゝゞァィゥェォッャュョヮヵヶ・ーヽヾ！％），．：；？］｝｡｣､･ｧｨｩｪｫｬｭｮｯｰﾞﾟ￠",
+    hanging: ",.’”、。」』】），．］｝｡､",
+};
+
+const SIMPLIFIED_CHINESE: Kinsoku = Kinsoku {
+    no_end: "$([{£¥·‘“〈《「『【〔〖〝﹙﹛﹝＄（．［｛￡￥",
+    no_start: "!%),.:;>?]}¢¨°·ˇˉ―‖’”…‰′″›℃∶、。〃〉》」』】〕〗〞︶︺︾﹀﹄﹚﹜﹞！＂％＇），．：；？］｀｜｝～￠",
+    no_start_strict: "!%),.:;>?]}¢¨°·ˇˉ―‖’”…‰′″›℃∶、。〃〉》」』】〕〗〞︶︺︾﹀﹄﹚﹜﹞！＂％＇），．：；？］｀｜｝～￠",
+    hanging: "!%),.:;>?]}¢°·ˇ’”‰′″℃∶、。〃〉》」』】〕〗〞﹚﹜﹞！＂％＇），．：；？］｝￠",
+};
+
+const TRADITIONAL_CHINESE: Kinsoku = Kinsoku {
+    no_end: "([{£¥‘“‵〈《「『【〔〝︵︷︹︻︽︿﹁﹃﹙﹛﹝（｛",
+    no_start: "!),.:;?]}¢·–—’”•‥…‧′╴、。〉》」』】〕〞︰︱︳︴︶︸︺︼︾﹀﹂﹄﹏﹐﹑﹒﹔﹕﹖﹗﹚﹜﹞！），．：；？］｜｝､",
+    no_start_strict: "!),.:;?]}¢·–—’”•‥…‧′╴、。〉》」』】〕〞︰︱︳︴︶︸︺︼︾﹀﹂﹄﹏﹐﹑﹒﹔﹕﹖﹗﹚﹜﹞！），．：；？］｜｝､",
+    hanging: "!),.:;?]}’”′、。〉》」』】〕〞﹚﹜﹞！），．：；？］｝",
+};
+
+/// The kinsoku classes of a run's East Asian language (`w:lang w:eastAsia`); none for other languages.
+fn kinsoku(lang: &str) -> Option<&'static Kinsoku> {
+    let is = |l: &str| lang.eq_ignore_ascii_case(l);
+    if is("ja-JP") {
+        Some(&JAPANESE)
+    } else if is("zh-CN") || is("ii-CN") {
+        Some(&SIMPLIFIED_CHINESE)
+    } else if is("zh-TW") {
+        Some(&TRADITIONAL_CHINESE)
+    } else {
+        None
+    }
+}
+
+/// A CJK character (not Hangul): a line may break before or after it under the East Asian breaking rules.
+fn ideographic(c: char) -> bool {
+    super::text::is_east_asian(c as u32) && !matches!(c as u32, 0x1100..=0x11FF | 0xA960..=0xA97F | 0xAC00..=0xD7FF)
+}
 
 fn text_of<'a>(sp: &'a ShapedPara, p: &Piece) -> &'a str {
     &sp.text[p.text.0 as usize..p.text.1 as usize]
@@ -828,6 +875,37 @@ fn fit_line(
     let mut leaders: Vec<(usize, Leader)> = Vec::new();
     let mut squeeze: Option<(usize, f64)> = None;
     let mut past_custom = false;
+    // East Asian paragraph layout: distributed, or the document's default East Asian font is an East Asian one.
+    let east_asian = style.jc == Jc::Distribute || sp.east_asian_default;
+    let rules = frame.breaking_rules || east_asian;
+    let classes = |k: usize| kinsoku(&sp.styles[pieces[k].style as usize].run.lang_east_asia).filter(|_| rules && !style.no_kinsoku);
+    let first_char = |k: usize| text_of(sp, &pieces[k]).chars().next();
+    let last_char = |k: usize| text_of(sp, &pieces[k]).chars().last();
+    // A break at `at` (after any spaces) is refused when the last character before it doesn't end a line or the
+    // next one doesn't start one.
+    let refused = |at: usize| {
+        let no_start = |t: &Kinsoku| if frame.strict_kinsoku { t.no_start_strict } else { t.no_start };
+        (start..at)
+            .rev()
+            .find(|&k| pieces[k].kind != Kind::Space)
+            .is_some_and(|k| classes(k).is_some_and(|t| last_char(k).is_some_and(|c| t.no_end.contains(c))))
+            || (at..n)
+                .find(|&k| pieces[k].kind != Kind::Space)
+                .is_some_and(|k| classes(k).is_some_and(|t| first_char(k).is_some_and(|c| no_start(t).contains(c))))
+    };
+    // Under the breaking rules a line may break between two characters when either is a CJK one.
+    let between = |k: usize| {
+        rules
+            && k + 1 < n
+            && pieces[k].kind == Kind::Text
+            && pieces[k + 1].kind == Kind::Text
+            && !pieces[k + 1].glued
+            && (last_char(k).is_some_and(ideographic) || first_char(k + 1).is_some_and(ideographic))
+    };
+    // Punctuation that may hang past the right margin, in East Asian paragraphs.
+    let hangs = |k: usize| {
+        east_asian && !style.no_overflow_punct && !style.in_frame && classes(k).is_some_and(|t| first_char(k).is_some_and(|c| t.hanging.contains(c)))
+    };
     let mut i = start;
     while i < n {
         if let Some(le) = limit_end
@@ -916,7 +994,7 @@ fn fit_line(
                 xs.push(pen);
                 ws.push(p.width);
                 pen += p.width;
-                if p.break_after && !pieces[start..=i].iter().all(|q| q.kind == Kind::Anchor) {
+                if p.break_after && !pieces[start..=i].iter().all(|q| q.kind == Kind::Anchor) && !refused(i + 1) {
                     breaks.push((i + 1, false));
                 }
                 i += 1;
@@ -941,7 +1019,7 @@ fn fit_line(
             _ if past_custom => f64::INFINITY,
             _ => right,
         };
-        let over = right_edge > limit + EPS && !forced && p.kind != Kind::ListNumber;
+        let over = right_edge > limit + EPS && !forced && p.kind != Kind::ListNumber && !(pen <= limit + EPS && pending.is_none() && hangs(i));
         let word = breaks.last().map_or(start, |b| b.0);
         let room: f64 = match squeeze {
             _ if !over => 0.0,
@@ -1001,11 +1079,7 @@ fn fit_line(
             }
             // Inside a fitted region the break goes before the region, unless the region starts the line.
             let mut at = (start..=i).rev().find(|&k| !pieces[k].glued).unwrap_or(start);
-            let kept = |at: usize| {
-                text_of(sp, &pieces[at - 1]).chars().last().is_some_and(|c| NO_END.contains(c))
-                    || text_of(sp, &pieces[at]).chars().next().is_some_and(|c| NO_START.contains(c))
-            };
-            while frame.breaking_rules && at > start + 1 && kept(at) {
+            while at > start + 1 && refused(at) {
                 at -= 1;
             }
             if at > start && pieces[start..at].iter().any(|q| !matches!(q.kind, Kind::ListNumber | Kind::Anchor)) {
@@ -1030,6 +1104,8 @@ fn fit_line(
             }
         {
             breaks.push((i + 1, true));
+        } else if between(i) && !refused(i + 1) {
+            breaks.push((i + 1, false));
         }
         i += 1;
     }

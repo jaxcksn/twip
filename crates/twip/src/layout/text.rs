@@ -139,6 +139,8 @@ pub struct ShapedPara {
     pub rules: MetricRules,
     /// The patterns, whether capitals are left alone, and the fewest letters after a break.
     pub hyphenate: Option<(super::hyphenate::Hyphenation, bool, usize)>,
+    /// The document's default East Asian font is an East Asian font: East Asian paragraph layout.
+    pub east_asian_default: bool,
 }
 
 impl ShapedPara {
@@ -1262,6 +1264,7 @@ impl<'a> Builder<'a> {
             em1000: self.em1000,
             rules: self.rules,
             hyphenate: None,
+            east_asian_default: false,
         }
     }
 }
@@ -1352,6 +1355,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         em,
         toc,
         lang,
+        lang_east_asia,
         style_id,
         direct: _,
         rev: _,
@@ -1389,6 +1393,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *em == b.em
             && *toc == b.toc
             && *lang == b.lang
+            && *lang_east_asia == b.lang_east_asia
             && *style_id == b.style_id
             && *categories == b.categories)
 }
@@ -1459,7 +1464,9 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
         b.hyphenate(h, *caps, *right);
     }
     memos.meter.unit_done();
-    Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), ..b.finish() })
+    let east_asian_default =
+        space.default_east_asia.as_deref().is_some_and(|f| !f.is_empty() && fonts.face(f, None, false, false).is_some_and(|f| f.east_asian));
+    Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), east_asian_default, ..b.finish() })
 }
 
 pub fn shape_space(
@@ -1471,6 +1478,7 @@ pub fn shape_space(
 ) -> ShapeSpace {
     let mut space = ShapeSpace {
         balance: text.default_east_asia.clone().filter(|_| text.balance_spaces),
+        default_east_asia: text.default_east_asia.clone(),
         compress: text.compress_punctuation,
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
         frame_breaks: text.show_breaks_in_frames,

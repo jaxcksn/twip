@@ -38,6 +38,8 @@ pub struct TextEnv {
     pub suppress_spacing_at_top: bool,
     /// East Asian line-breaking rules: `applyBreakingRules`, or compatibility mode 14 and later.
     pub breaking_rules: bool,
+    /// `strictFirstAndLastChars`.
+    pub strict_kinsoku: bool,
     pub default_style: Option<String>,
     pub grow_autofit: bool,
     pub balance_spaces: bool,
@@ -94,6 +96,7 @@ impl TextEnv {
             suppress_top_spacing: s.has("suppressTopSpacing"),
             suppress_spacing_at_top: s.compat() == Compat::Legacy && s.has("suppressSpacingAtTopOfPage"),
             breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),
+            strict_kinsoku: s.strict_kinsoku,
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
             grow_autofit: s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),

@@ -13,6 +13,8 @@ pub struct ShapeSpace {
     pub fields: Vec<Option<String>>,
     pub notes: Vec<String>,
     pub balance: Option<String>,
+    /// The document's default East Asian font.
+    pub default_east_asia: Option<String>,
     pub compress: bool,
     pub em1000: bool,
     /// The font metric options of [`super::env::TextEnv`].

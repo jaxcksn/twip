@@ -693,6 +693,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     s.gutter_at_top = flag(root, "gutterAtTop").unwrap_or(false);
     let rev = flag(root, "bookFoldRevPrinting").unwrap_or(false);
     s.book_fold = (rev || flag(root, "bookFoldPrinting").unwrap_or(false)).then_some(rev);
+    s.strict_kinsoku = flag(root, "strictFirstAndLastChars").unwrap_or(false);
     s.auto_hyphenation = flag(root, "autoHyphenation").unwrap_or(false);
     s.do_not_hyphenate_caps = flag(root, "doNotHyphenateCaps").unwrap_or(false);
     s.borders_do_not_surround_header = flag(root, "bordersDoNotSurroundHeader").unwrap_or(false);
