@@ -1246,6 +1246,30 @@ fn punctuation_hangs_in_east_asian_paragraphs() {
     assert_eq!((plain[0], hung[0]), (40, 42));
 }
 
+/// Each character's x (twips) on the first page of distributed MS Mincho paragraphs of `texts` in a 9020 tw column.
+fn distributed_xs(ppr: &str, texts: &[&str]) -> Option<Vec<(char, f64)>> {
+    if !fonts().is_installed("MS Mincho") {
+        return None;
+    }
+    let body: String = texts
+        .iter()
+        .map(|t| format!(r#"<w:p><w:pPr><w:jc w:val="distribute"/><w:ind w:right="340"/>{ppr}</w:pPr><w:r>{MINCHO_JA}<w:t xml:space="preserve">{t}</w:t></w:r></w:p>"#))
+        .collect();
+    let c = super::page_chars(&test_doc("", SZ_11, &body, "")?).swap_remove(0);
+    Some(c.into_iter().map(|(ch, x, _)| (ch, x * 20.0)).collect())
+}
+
+#[test]
+fn a_distributed_line_spreads_its_characters_and_spaces_east_asian_text_from_latin() {
+    let Some(xs) = distributed_xs("", &["字", "字ab字c字"]) else { return };
+    let near = |got: &[(char, f64)], want: &[f64]| got.len() == want.len() && got.iter().zip(want).all(|(g, w)| (g.1 - w).abs() < 0.5);
+    // Alone, centred; the last line spread to both margins, half an em more at each of the four boundaries.
+    assert!(near(&xs, &[5840.0, 1440.0, 3288.0, 4916.0, 6654.0, 8502.0, 10240.0]), "{xs:?}");
+    // Without autoSpaceDE every gap is (9020 − 990) / 5.
+    let plain = distributed_xs(r#"<w:autoSpaceDE w:val="0"/>"#, &["字ab字c字"]).expect("lays out");
+    assert!(near(&plain, &[1440.0, 3266.0, 4982.0, 6698.0, 8524.0, 10240.0]), "{plain:?}");
+}
+
 #[test]
 fn compat_12_font_metric_options() {
     let c12 = |opt: &str| {

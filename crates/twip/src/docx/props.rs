@@ -558,6 +558,8 @@ pub struct ParaProps {
     pub suppress_auto_hyphens: Option<bool>,
     pub kinsoku: Option<bool>,
     pub overflow_punct: Option<bool>,
+    pub auto_space_de: Option<bool>,
+    pub auto_space_dn: Option<bool>,
     pub tight_wrap: Option<u8>,
     pub suppress_overlap: Option<bool>,
     pub suppress_line_numbers: Option<bool>,
@@ -626,6 +628,8 @@ impl ParaProps {
                 "suppressAutoHyphens" => p.suppress_auto_hyphens = Some(on_off(e)),
                 "kinsoku" => p.kinsoku = Some(on_off(e)),
                 "overflowPunct" => p.overflow_punct = Some(on_off(e)),
+                "autoSpaceDE" => p.auto_space_de = Some(on_off(e)),
+                "autoSpaceDN" => p.auto_space_dn = Some(on_off(e)),
                 "suppressOverlap" => p.suppress_overlap = Some(on_off(e)),
                 "textboxTightWrap" => {
                     p.tight_wrap = Some(match val(e) {
@@ -738,6 +742,8 @@ impl ParaProps {
             suppress_auto_hyphens,
             kinsoku,
             overflow_punct,
+            auto_space_de,
+            auto_space_dn,
             tight_wrap,
             suppress_overlap,
             suppress_line_numbers,

@@ -160,6 +160,8 @@ impl Resolver {
             suppress_auto_hyphens: p.suppress_auto_hyphens.unwrap_or(false),
             no_kinsoku: p.kinsoku == Some(false),
             no_overflow_punct: p.overflow_punct == Some(false),
+            no_auto_space_de: p.auto_space_de == Some(false),
+            no_auto_space_dn: p.auto_space_dn == Some(false),
             tight_wrap: p.tight_wrap.unwrap_or(0),
             suppress_overlap: p.suppress_overlap.unwrap_or(false),
             suppress_line_numbers: p.suppress_line_numbers.unwrap_or(false),

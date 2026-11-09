@@ -139,6 +139,9 @@ pub struct ParaStyle {
     pub no_kinsoku: bool,
     /// `w:overflowPunct` off: no punctuation hangs past the right margin.
     pub no_overflow_punct: bool,
+    /// `w:autoSpaceDE` / `w:autoSpaceDN` off: no extra space between East Asian text and Latin letters / digits.
+    pub no_auto_space_de: bool,
+    pub no_auto_space_dn: bool,
     /// `w:textboxTightWrap` in a text box: 0 none, 1 all lines, 2 first and last, 3 first only, 4 last only.
     pub tight_wrap: u8,
     /// `w:suppressOverlap`: the paragraph's frame may not overlap other frames and floats.

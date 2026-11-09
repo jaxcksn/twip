@@ -1500,14 +1500,23 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 }
             }
         }
+        // Every line, the last too: equal gaps between the characters (spaces included), the first at the left edge
+        // and the last ending at the right; a character alone is centred. Where East Asian text meets a Latin letter
+        // or a digit the gap takes half an em more.
         Jc::Distribute => {
             let chars: Vec<usize> = (0..content_end).filter(|&k| pieces[idx(k)].kind != Kind::Tab).collect();
-            if chars.len() > 1 {
-                let extra = right - line_end_x;
+            let extra = right - line_end_x;
+            if chars.len() == 1 && extra > 0.0 {
+                for x in &mut line.xs {
+                    *x += extra / 2.0;
+                }
+            } else if chars.len() > 1 {
+                let bonus: Vec<f64> = chars.windows(2).map(|w| auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style)).collect();
+                let extra = extra - bonus.iter().sum::<f64>();
                 if extra > 0.0 {
                     let q = extra / (chars.len() - 1) as f64;
-                    for &k in &chars[..chars.len() - 1] {
-                        line.widths[k] += q;
+                    for (j, &k) in chars[..chars.len() - 1].iter().enumerate() {
+                        line.widths[k] += q + bonus[j];
                     }
                     let mut x = line.xs[0];
                     for k in 0..n {
@@ -1519,6 +1528,20 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
         }
         Jc::Left => {}
     }
+}
+
+/// The extra space between two characters of a distributed line: half the East Asian one's em where East Asian
+/// text meets a Latin letter (`w:autoSpaceDE`) or a digit (`w:autoSpaceDN`).
+fn auto_space(sp: &ShapedPara, a: &Piece, b: &Piece, style: &ParaStyle) -> f64 {
+    let (Some(ca), Some(cb)) = (text_of(sp, a).chars().last(), text_of(sp, b).chars().next()) else { return 0.0 };
+    let ea = |c: char| super::text::is_east_asian(c as u32);
+    let latin = |c: char| !ea(c) && (c.is_ascii_digit() && !style.no_auto_space_dn || c.is_alphabetic() && !style.no_auto_space_de);
+    let east = match (ea(ca), ea(cb)) {
+        (true, false) if latin(cb) => a,
+        (false, true) if latin(ca) => b,
+        _ => return 0.0,
+    };
+    sp.styles[east.style as usize].size / 2.0
 }
 
 // Line height
