@@ -21,20 +21,37 @@ use super::xml::*;
 
 struct Package {
     zip: zip::ZipArchive<Cursor<Vec<u8>>>,
+    /// Bytes the reads may still decompress, across every part: a small package can inflate to gigabytes.
+    budget: u64,
 }
 
+/// What reading a package may decompress in all.
+// ponytail: one fixed budget; make it an open option if hosts load documents bigger than this.
+const PACKAGE_BUDGET: u64 = 2 << 30;
+
 impl Package {
+    /// A part's bytes: none when it is missing, unreadable, larger than [`super::package::MAX_PART`] or past the
+    /// package's budget.
     fn read(&mut self, path: &str) -> Option<Vec<u8>> {
-        let mut f = self.zip.by_name(path.trim_start_matches('/')).ok()?;
-        let mut out = Vec::with_capacity(f.size() as usize);
-        f.read_to_end(&mut out).ok()?;
+        let f = self.zip.by_name(path.trim_start_matches('/')).ok()?;
+        let limit = super::package::MAX_PART.min(self.budget);
+        let mut out = Vec::new();
+        // One byte past the limit tells a part that is too large from one that just fits.
+        f.take(limit + 1).read_to_end(&mut out).ok()?;
+        let n = out.len() as u64;
+        if n > limit {
+            return None;
+        }
+        self.budget -= n;
         Some(out)
     }
 
+    /// A part's text, refused (none) when its elements nest deeper than [`MAX_DEPTH`].
     fn read_str(&mut self, path: &str) -> Option<String> {
         let b = self.read(path)?;
         let s = String::from_utf8(b).ok()?;
-        Some(s.trim_start_matches('\u{feff}').to_string())
+        let s = s.trim_start_matches('\u{feff}');
+        (!too_deep(s, MAX_DEPTH)).then(|| s.to_string())
     }
 
     /// Relationships of a part: id → (type suffix, absolute target).
@@ -136,7 +153,7 @@ pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
 
 fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
     let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(|e| e.to_string())?;
-    let mut pkg = Package { zip };
+    let mut pkg = Package { zip, budget: PACKAGE_BUDGET };
     let root_rels = pkg.rels("");
     let main = root_rels.values().find(|(k, _)| k == "officeDocument").map(|(_, t)| t.clone()).unwrap_or_else(|| "word/document.xml".into());
     let rels = pkg.rels(&main);
@@ -164,7 +181,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     });
     styles.compat = settings.compat();
     styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
-    let xml = pkg.read_str(&main).ok_or("no main document part")?;
+    let xml = pkg.read_str(&main).ok_or("no main document part, or one too large or nested too deeply")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
     let mut ids = IdCounter::default();

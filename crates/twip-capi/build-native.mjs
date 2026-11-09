@@ -99,4 +99,7 @@ if (process.platform === 'darwin') {
   env.SKIA_INCLUDE_DIR = join(bindings.manifest_path, '..', 'skia');
 }
 const args = process.argv.slice(2);
-execFileSync('cargo', args.length ? args : ['rustc', '-p', 'twip-capi', '--release', '--crate-type', 'cdylib'], { cwd: root, env, stdio: 'inherit' });
+// The library unwinds panics, which the release profile otherwise aborts on: its entry points catch them and report
+// an internal error, so a panic on a bad document fails the call instead of ending the host's process.
+const library = ['--config', 'profile.release.panic="unwind"', 'rustc', '-p', 'twip-capi', '--release', '--crate-type', 'cdylib'];
+execFileSync('cargo', args.length ? args : library, { cwd: root, env, stdio: 'inherit' });

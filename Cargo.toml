@@ -22,6 +22,7 @@ opt-level = "s"
 opt-level = "s"
 lto = true
 codegen-units = 1
+# The C API's library overrides this to unwind (crates/twip-capi/build-native.mjs), so its entry points catch panics.
 panic = "abort"
 
 # Benchmarks keep release's opt-level but skip its whole-program LTO and single codegen unit, which make every

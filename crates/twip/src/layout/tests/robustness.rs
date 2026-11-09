@@ -179,3 +179,41 @@ fn truncated_files_never_panic() {
     }
     assert!(failures.is_empty(), "damaged files that panicked:\n{}", failures.join("\n"));
 }
+
+/// A package of just `word/document.xml` with `body`, plus `extra` parts.
+fn hostile(body: &str, extra: &[(&str, &str)]) -> Vec<u8> {
+    let doc = format!(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}</w:body></w:document>"#);
+    let mut parts = vec![("word/document.xml", doc.as_str())];
+    parts.extend_from_slice(extra);
+    super::package_bytes(&parts).expect("a package")
+}
+
+/// Reads and lays out `bytes` on a thread with a 1 MB stack (a browser's, or a host thread's): `Err` is a refusal,
+/// and the test fails if the thread doesn't finish.
+fn read_on_small_stack(bytes: Vec<u8>) -> Result<(), String> {
+    std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(move || {
+            let d = crate::docx::read(&bytes)?;
+            try_layout(&d, &fonts())
+        })
+        .expect("a thread")
+        .join()
+        .expect("finished without overflowing its stack")
+}
+
+#[test]
+fn hostile_packages_are_refused_or_read() {
+    let tables = |n: usize| format!("{}<w:p/>{}", "<w:tbl><w:tr><w:tc>".repeat(n), "<w:p/></w:tc></w:tr></w:tbl>".repeat(n));
+    // Nested tables to the depth limit lay out; one more level is refused.
+    assert_eq!(read_on_small_stack(hostile(&tables(31), &[])), Ok(()));
+    assert!(read_on_small_stack(hostile(&tables(32), &[])).is_err());
+    let controls = format!("{}<w:p/>{}", "<w:sdt><w:sdtContent>".repeat(20_000), "</w:sdtContent></w:sdt>".repeat(20_000));
+    assert!(read_on_small_stack(hostile(&controls, &[])).is_err());
+    // A list starting at the smallest number there is.
+    let numbering = r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="-9223372036854775808"/><w:numFmt w:val="cardinalText"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>"#;
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>"#;
+    let item = r#"<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>"#;
+    let listed = hostile(&item.repeat(2), &[("word/numbering.xml", numbering), ("word/_rels/document.xml.rels", rels)]);
+    assert_eq!(read_on_small_stack(listed), Ok(()));
+}
