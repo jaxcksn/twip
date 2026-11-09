@@ -1086,6 +1086,21 @@ impl Reader {
         if let Some(p) = self.pending_hidden.take() {
             blocks.push(Block::Para(p));
         }
+        // A body that ends with a table ends with an empty paragraph after it.
+        if matches!(blocks.last(), Some(Block::Table(_))) {
+            let r = self.res.paragraph(&ParaProps::default(), None);
+            let mark = self.run_style(&self.run_props(&r.base, None));
+            let id = next_para_id();
+            blocks.push(Block::Para(Paragraph {
+                style: Rc::new(r.style),
+                mark,
+                list: None,
+                inlines: Vec::new(),
+                src: None,
+                id,
+                controls: Vec::new(),
+            }));
+        }
         sec.blocks = blocks;
         sections.push(sec);
         // Ranges pair across the body's sections.

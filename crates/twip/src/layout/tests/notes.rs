@@ -207,3 +207,18 @@ fn compat_14_continuous_break_after_a_page_bottom_note_starts_a_page() {
     let (Some(c12), Some(c15)) = (page_of_b(""), page_of_b(C15)) else { return };
     assert_eq!((c12, c15), (1, 0));
 }
+
+#[test]
+fn a_body_ending_with_a_table_ends_with_a_paragraph() {
+    let tbl = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>T</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let note_y = |body: String| {
+        let doc = notes_doc(&body, "")?;
+        assert!(matches!(doc.sections[0].blocks.last(), Some(Block::Para(p)) if p.inlines.is_empty()));
+        super::page_chars(&doc)[0].iter().find(|c| c.0 == 'N').map(|c| c.2)
+    };
+    let (Some(implicit), Some(written)) = (note_y(format!("{tbl}{}", sect(pr, true))), note_y(format!("{tbl}<w:p/>{}", sect(pr, true)))) else {
+        return;
+    };
+    assert_eq!(implicit, written, "laid out as a written empty paragraph");
+}
