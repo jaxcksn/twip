@@ -339,24 +339,33 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             let continuous = si > 0 && super::vertical::same_page(&doc.sections[si - 1], sec) && !bottom_notes;
             let mut top = y;
             if !continuous || p.run.pages.is_empty() {
-                if si > 0 {
-                    let next = p.run.page_number + 1;
-                    let want_odd = match sec.break_kind {
-                        SectionBreak::OddPage => Some(true),
-                        SectionBreak::EvenPage => Some(false),
-                        _ => None,
+                let want_odd = match sec.break_kind {
+                    SectionBreak::OddPage => Some(true),
+                    SectionBreak::EvenPage => Some(false),
+                    _ => None,
+                };
+                let wrong = |n: i64| want_odd.is_some_and(|odd| (n.rem_euclid(2) == 1) != odd);
+                let bump = |n: i64| if wrong(n) { n + 1 } else { n };
+                // Facing pages: a page whose number has the wrong parity for its place is preceded by a blank one;
+                // the section's start is tried again on the next page.
+                let facing = cx.ctx.env.mirror_margins || cx.ctx.env.even_and_odd;
+                let mut blank = false;
+                loop {
+                    // The next page's place: odd or even counted from the first page's number.
+                    let place = p.run.pages.first().map(|pg| pg.number + p.run.pages.len() as i64);
+                    let n = match (sec.pg_start, place) {
+                        (Some(s), _) => bump(s),
+                        (None, None) => bump(1),
+                        (None, Some(_)) => p.run.page_number + 1,
                     };
-                    if let Some(odd) = want_odd
-                        && (next % 2 == 1) != odd
-                        && sec.pg_start.is_none()
-                    {
-                        p.new_page(si, true);
+                    p.run.page_number = n - 1;
+                    let skip = !blank && place.is_some_and(|k| wrong(n) || facing && (k - n).rem_euclid(2) != 0);
+                    p.new_page(si, skip);
+                    blank = skip;
+                    if !skip {
+                        break;
                     }
                 }
-                if let Some(n) = sec.pg_start {
-                    p.run.page_number = n - 1;
-                }
-                p.new_page(si, false);
                 carry.keep_top = true;
                 if sec.line_numbers.as_ref().is_some_and(|l| l.restart != "continuous") {
                     carry.line_no = 0;

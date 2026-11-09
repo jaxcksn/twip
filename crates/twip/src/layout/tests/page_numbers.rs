@@ -56,3 +56,34 @@ fn page_numbers_lead_with_the_chapter() {
     let Some(doc) = chaptered(r#" w:chapSep="emDash""#) else { return };
     assert_eq!(numbers(&doc)[1], "I\u{2014}2");
 }
+
+/// Two sections of one paragraph each; S2 starts on a new page with `pg` numbering, with `settings` children.
+fn two_sections(pg: &str, settings: &str) -> Option<crate::docx::Document> {
+    let field = r#"<w:r><w:t xml:space="preserve">PG </w:t></w:r><w:r><w:pgNum/></w:r>"#;
+    let body = format!(
+        r#"<w:document {W}><w:body><w:p>{field}<w:pPr><w:sectPr/></w:pPr></w:p><w:p>{field}</w:p><w:sectPr>{pg}</w:sectPr></w:body></w:document>"#
+    );
+    let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#;
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#;
+    package(&[
+        ("[Content_Types].xml", ct),
+        (
+            "_rels/.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", rels),
+        ("word/document.xml", &body),
+        ("word/settings.xml", &format!("<w:settings {W}>{settings}</w:settings>")),
+    ])
+}
+
+#[test]
+fn facing_pages_keep_page_number_parity() {
+    let start1 = r#"<w:pgNumType w:start="1"/>"#;
+    let Some(doc) = two_sections(start1, "<w:mirrorMargins/>") else { return };
+    assert_eq!(numbers(&doc), ["1", "", "1"], "a blank page before an odd number on an even place");
+    let Some(doc) = two_sections(start1, "") else { return };
+    assert_eq!(numbers(&doc), ["1", "1"], "no blank page without facing pages");
+    let Some(doc) = two_sections(r#"<w:type w:val="oddPage"/><w:pgNumType w:start="2"/>"#, "") else { return };
+    assert_eq!(numbers(&doc), ["1", "3"], "an odd-page restart bumps the number, no blank page");
+}
