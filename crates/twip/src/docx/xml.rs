@@ -12,7 +12,7 @@ pub const MC: &str = "http://schemas.openxmlformats.org/markup-compatibility/200
 
 /// How deep a part's elements may nest. The readers, the layout and the SVG painter walk nested elements by recursion,
 /// one stack frame or more per level, so a part nested deeper than this is refused instead of overflowing the stack.
-/// Nested tables cost the most (three elements a level): about 31 levels fit, which a debug build lays out on a 1 MB
+/// Nested tables cost the most (three elements a level): 30 levels of text fit, which a debug build lays out on a 1 MB
 /// stack, where it overflowed at 45 and an optimised build at 85.
 // ponytail: a depth bound over recursive walkers; walk iteratively if real documents need deeper nesting.
 pub const MAX_DEPTH: usize = 96;
