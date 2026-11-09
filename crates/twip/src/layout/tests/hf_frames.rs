@@ -76,6 +76,39 @@ fn frame_2_a_frame_without_v_anchor_is_relative_to_the_margin() {
     assert_eq!(v, ["margin", "paragraph", "paragraph"]);
 }
 
+#[test]
+fn frame_3_an_explicit_position_is_one_twip_less_and_beats_the_alignment() {
+    use crate::docx::model::{Block, Inline};
+    let frame = |a: &str| format!(r#"<w:p><w:pPr><w:framePr w:w="1440" w:wrap="around" w:hAnchor="margin" w:vAnchor="page" {a}/></w:pPr><w:r><w:t>F</w:t></w:r></w:p>"#);
+    let frames: String = [r#"w:x="2880" w:xAlign="right" w:y="6000" w:yAlign="top""#, r#"w:x="-8" w:y="-12""#, r#"w:x="0" w:y="1""#]
+        .map(frame)
+        .concat();
+    let body = format!(r#"<w:document {W}><w:body>{frames}<w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#);
+    let Some(doc) = package(&[
+        (
+            "[Content_Types].xml",
+            r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/document.xml", &body),
+    ]) else {
+        return;
+    };
+    let got: Vec<_> = doc.sections[0]
+        .blocks
+        .iter()
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .flat_map(|p| p.inlines.iter())
+        .filter_map(|i| if let Inline::Float(f, _) = i { Some(f) } else { None })
+        .map(|f| (f.h_align.clone(), (f.h_offset * 20.0).round(), f.v_align.clone(), (f.v_offset * 20.0).round()))
+        .collect();
+    let s = |a: &str| Some(a.to_string());
+    assert_eq!(got, [(None, 2879.0, None, 5999.0), (s("right"), 0.0, s("bottom"), 0.0), (None, 0.0, None, 0.0)]);
+}
+
 fn header_float(wrap: &str) -> Option<crate::docx::Document> {
     let words = super::words(600);
     let body = format!(

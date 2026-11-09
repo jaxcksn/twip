@@ -122,11 +122,36 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: f64) {
         tb.auto_fit = fr.h_rule.as_deref() != Some("exact");
     }
     f.h_relative = if margin_cap { "leftMargin".into() } else { anchor(fr.h_anchor.as_deref(), "column", "column") };
-    f.h_align = if margin_cap { Some("right".into()) } else { fr.x_align.clone() };
-    f.h_offset = fr.x.unwrap_or(0.0);
+    // An explicit `w:x` / `w:y` beats the alignment. It holds the position plus one twip; 0 and a few negative values
+    // are alignment codes.
+    let (x_code, x_at) = fr.x.map_or((None, None), |x| match (x * 20.0).round() as i64 {
+        0 => (None, None),
+        -4 => (Some("center"), None),
+        -8 => (Some("right"), None),
+        -12 => (Some("inside"), None),
+        -16 => (Some("outside"), None),
+        _ => (None, Some(x - 0.05)),
+    });
+    let (y_code, y_at) = fr.y.map_or((None, None), |y| match (y * 20.0).round() as i64 {
+        0 => (None, Some(0.0)),
+        -4 => (Some("top"), None),
+        -8 => (Some("center"), None),
+        -12 => (Some("bottom"), None),
+        -16 => (Some("inside"), None),
+        -20 => (Some("outside"), None),
+        _ => (None, Some(y - 0.05)),
+    });
+    f.h_align = if margin_cap {
+        Some("right".into())
+    } else if fr.x.is_some() {
+        x_code.map(str::to_string)
+    } else {
+        fr.x_align.clone()
+    };
+    f.h_offset = x_at.unwrap_or(0.0);
     f.v_relative = anchor(fr.v_anchor.as_deref(), "paragraph", if drop_cap { "paragraph" } else { "margin" });
-    f.v_align = fr.y_align.clone().filter(|a| a != "inline");
-    f.v_offset = fr.y.unwrap_or(0.0);
+    f.v_align = if fr.y.is_some() { y_code.map(str::to_string) } else { fr.y_align.clone().filter(|a| a != "inline") };
+    f.v_offset = y_at.unwrap_or(0.0);
     f.wrap = match fr.wrap.as_deref() {
         Some("notBeside") => "topAndBottom",
         Some("none") => "none",
