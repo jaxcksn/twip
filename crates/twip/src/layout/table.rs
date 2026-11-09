@@ -1099,7 +1099,7 @@ fn fit_inputs<'k>(
             let (min, max, hard) = if t.fixed {
                 (cell_pad + 20, cell_pad + 20, cell_pad)
             } else {
-                let rotated = matches!(c.text_direction.as_str(), "btLr" | "tbRl" | "tbRlV" | "tbLrV");
+                let rotated = vertical_cell(c).is_some();
                 let (mut cmn, mut cmx, chard) = if continuation {
                     (0, 0, 0)
                 } else if let (true, Some(Width::Dxa(w))) = (c.fit_text, &c.width) {
@@ -1468,7 +1468,7 @@ fn layout_shown(
             for (gi, g) in cells.iter().enumerate() {
                 let c = &r.cells[g.ci];
                 closings.push(closing_para(c));
-                let rotated = matches!(c.text_direction.as_str(), "btLr" | "tbRl" | "tbRlV" | "tbLrV");
+                let rotated = vertical_cell(c).is_some();
                 let same = old_row.map(|o| &o.cells[gi]).filter(|o| o.index == g.ci && o.cw == g.cw);
                 stories.push(if measure || c.v_merge == VMerge::Continue || rotated {
                     None
@@ -1514,10 +1514,10 @@ fn layout_shown(
     if !memos.cache.store_tables {
         return Ok(match memos.cache.tables.lookup(&probe) {
             Some(tb) => tb,
-            None => Rc::new(assemble(t, text_w, env, cols, &geo, &stories, &closings, inputs.into())),
+            None => Rc::new(assemble(t, text_w, env, cols, &geo, &stories, &closings, inputs.into(), memos)?),
         });
     }
-    cached(memos, |c| &mut c.tables, probe, table_bytes, |_| Ok(assemble(t, text_w, env, cols.clone(), &geo, &stories, &closings, inputs.into())))
+    cached(memos, |c| &mut c.tables, probe, table_bytes, |m| assemble(t, text_w, env, cols.clone(), &geo, &stories, &closings, inputs.into(), m))
 }
 
 // Hidden rows
@@ -1715,7 +1715,26 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
         .collect()
 }
 
+fn vertical_cell(c: &Cell) -> Option<super::vertical::Vertical> {
+    super::vertical::of_cell(text_flow(&c.text_direction))
+}
+
+/// A vertical cell's content laid out with lines `len` long.
+fn vertical_story(
+    c: &Cell,
+    v: super::vertical::Vertical,
+    len: f64,
+    fixed: bool,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<Rc<StoryLayout>, Yield> {
+    let n = c.blocks.len() - usize::from(closing_para(c).is_some());
+    let blocks: Vec<&Block> = c.blocks[..n].iter().collect();
+    super::vertical::story(&blocks, len, v, env, Some(CellEnds { fixed, fit: c.fit_text, ..CellEnds::default() }), memos)
+}
+
 // Row assembly
+#[allow(clippy::too_many_arguments)]
 fn assemble(
     t: &Table,
     text_w: f64,
@@ -1725,7 +1744,8 @@ fn assemble(
     stories: &[Option<Rc<StoryLayout>>],
     closings: &[Option<(ParaId, f64)>],
     fit: Rc<[FitRow]>,
-) -> TableLayout {
+    memos: &mut Memos,
+) -> Result<TableLayout, Yield> {
     let total: f64 = cols.iter().sum();
     let compat = env.ctx.env.text.compat;
     let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| (space_h(candidate(Some(&c.left), &row_borders(t, 0)[1])), c.margins[1]));
@@ -1890,6 +1910,16 @@ fn assemble(
             top_border += gap_top;
             cell_bottom = cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max) + gap(s, ri + 1 == t.rows.len());
         }
+        // A row of vertical cells only is one vertical line high.
+        let vertical: Vec<Option<super::vertical::Vertical>> = cells_geo.iter().map(|g| vertical_cell(&r.cells[g.ci])).collect();
+        if vertical.iter().all(Option::is_some) {
+            for ((c, g), v) in cells.iter_mut().zip(cells_geo).zip(&vertical) {
+                if c.v_merge == VMerge::None {
+                    let story = vertical_story(&r.cells[g.ci], v.unwrap(), g.cw, t.fixed, env, memos)?;
+                    c.content_h = story.units.first().map_or(0.0, |u| u.height);
+                }
+            }
+        }
         let below = cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
         let content = cells.iter().filter(|c| c.v_merge == VMerge::None).map(|c| c.margins[0] + c.content_h).fold(f64::NEG_INFINITY, f64::max);
         let content = if content.is_finite() { content + below + cell_bottom } else { 0.0 };
@@ -1901,6 +1931,39 @@ fn assemble(
             Some((h, rule)) if rule != "auto" => (top_border + content.max(*h + min_margins), false, top_border + *h + min_margins),
             _ => (top_border + content, false, 0.0),
         };
+        // Vertical cells: lines as long as the row's content is high, stacked across the cell.
+        for ((c, g), v) in cells.iter_mut().zip(cells_geo).zip(vertical) {
+            let Some(v) = v.filter(|_| c.v_merge != VMerge::Continue) else { continue };
+            let len = height - top_border - c.margins[0] - c.margins[2];
+            let story = vertical_story(&r.cells[g.ci], v, len, t.fixed, env, memos)?;
+            let across = match c.v_align.as_str() {
+                "center" => ((g.cw - story.height) / 2.0).max(0.0),
+                "bottom" => (g.cw - story.height).max(0.0),
+                _ => 0.0,
+            };
+            use super::vertical::Flow;
+            let bottom = match v.flow {
+                Flow::Down => g.cw + g.cx,
+                Flow::Up => g.w - g.cx,
+                Flow::DownEast => f64::INFINITY,
+            };
+            let items = super::vertical::turned(&story.units, v.flow, [0.0, 0.0, g.cw, len], across, bottom);
+            let unit = StoryUnit {
+                top: 0.0,
+                height: 0.0,
+                below: 0.0,
+                after: 0.0,
+                content: Rc::from([Child::Items(items.into())]),
+                block: 0,
+                widow: false,
+                keep_next: false,
+                keep_lines: false,
+                notes: story.units.iter().flat_map(|u| u.notes.iter().copied()).collect(),
+                row: None,
+            };
+            c.units = Rc::new(StoryLayout { units: vec![unit], height: 0.0, float_bottom: 0.0 });
+            c.v_align = "top".into();
+        }
         let first = match r.cells.first().and_then(|c| c.blocks.first()) {
             Some(Block::Para(p)) => Some(p.para_style_in(env.ctx.env.text.review.view)),
             _ => None,
@@ -1957,7 +2020,7 @@ fn assemble(
     let (l, r) = if rtl { (3, 1) } else { (1, 3) };
     let (tb0, tbn) = (row_borders(t, 0), row_borders(t, t.rows.len().saturating_sub(1)));
     let outer = [tb0[0].clone(), tb0[l].clone(), tbn[2].clone(), tb0[r].clone()];
-    TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit, rtl }
+    Ok(TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit, rtl })
 }
 
 fn tint(review: &ReviewView, r: &Row, c: &Cell) -> Option<u32> {

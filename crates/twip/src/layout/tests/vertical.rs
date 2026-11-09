@@ -37,6 +37,64 @@ fn turned_runs(doc: &crate::docx::Document) -> Vec<(String, [f64; 2], [f64; 2])>
     out
 }
 
+fn table(direction: &str, row: &str, text: &str) -> String {
+    let border = r#"w:val="single" w:sz="4" w:space="0" w:color="000000""#;
+    format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4500" w:type="dxa"/><w:tblBorders><w:top {border}/><w:left {border}/><w:bottom {border}/><w:right {border}/><w:insideH {border}/><w:insideV {border}/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{row}<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/><w:textDirection w:val="{direction}"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr><w:t>{text}</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr><w:t>side cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+    )
+}
+
+const WORDS: &str = "vc amber1 garden2 quietly3 holds4 seven5 bright6 copper7 lanterns8 over9";
+
+#[test]
+fn a_tbrl_cell_runs_down_with_its_lines_stacked_from_the_right() {
+    let Some(doc) = doc(&table("tbRl", r#"<w:trPr><w:trHeight w:val="2000" w:hRule="exact"/></w:trPr>"#, WORDS)) else { return };
+    let runs = turned_runs(&doc);
+    assert!(runs.len() >= 3, "{runs:?}");
+    assert!(runs.iter().all(|r| r.2 == [0.0, 1.0]), "the text runs down: {runs:?}");
+    // The first line against the content's right (1440 + 1500 - 108 twips), its ascent in.
+    let first = runs[0].1;
+    assert!((first[0] - (146.0 - 10.49)).abs() < 0.3, "{first:?}");
+    // Lines are a vertical line apart: Arial 11 with an em/64 more ascent and descent, 259.85 twips.
+    assert!(((runs[0].1[0] - runs[1].1[0]) - 12.99).abs() < 0.05, "{runs:?}");
+    // Each line starts at the row's content top and is no longer than the row's content is high.
+    assert!(runs.iter().all(|r| (r.1[1] - runs[0].1[1]).abs() < 0.01), "{runs:?}");
+}
+
+#[test]
+fn a_btlr_cell_runs_up_from_the_content_bottom_with_its_lines_stacked_from_the_left() {
+    let Some(doc) = doc(&table("btLr", r#"<w:trPr><w:trHeight w:val="2000" w:hRule="exact"/></w:trPr>"#, WORDS)) else { return };
+    let runs = turned_runs(&doc);
+    assert!(runs.len() >= 3 && runs.iter().all(|r| r.2 == [0.0, -1.0]), "{runs:?}");
+    assert!(runs[1].1[0] > runs[0].1[0], "lines stack to the right: {runs:?}");
+    // The first baseline its ascent right of the content's left (1440 + 108 twips).
+    assert!((runs[0].1[0] - (72.0 + 10.49)).abs() < 0.3, "{runs:?}");
+}
+
+#[test]
+fn a_vertical_cell_adds_nothing_to_an_auto_row() {
+    let (Some(v), Some(h)) = (doc(&table("tbRl", "", WORDS)), doc(&table("lrTb", "", "x"))) else { return };
+    let rows = |d: &crate::docx::Document| {
+        let snap = crate::layout::layout(d, &fonts());
+        crate::layout::traverse::paint_items(&snap.pages()[0])
+            .into_iter()
+            .filter_map(|i| if let Item::Rect { rect, .. } = i { Some(rect[3]) } else { None })
+            .fold(0.0, f64::max)
+    };
+    assert!((rows(&v) - rows(&h)).abs() < 0.01, "{} vs {}", rows(&v), rows(&h));
+    // The row is one horizontal line high (253 twips), so words break inside to fit the vertical lines.
+    let runs: Vec<String> = turned_runs(&v).into_iter().map(|r| r.0).collect();
+    assert_eq!(runs[..5], ["vc", "a", "m", "be", "r1"], "{runs:?}");
+}
+
+#[test]
+fn strict_spellings_and_unknown_values_read() {
+    let Some(d) = doc(&table("lr", r#"<w:trPr><w:trHeight w:val="2000" w:hRule="exact"/></w:trPr>"#, WORDS)) else { return };
+    assert!(turned_runs(&d).iter().all(|r| r.2 == [0.0, -1.0]));
+    let Some(doc) = doc(&table("tbLr", "", "x")) else { panic!("an unknown direction still opens") };
+    assert!(turned_runs(&doc).is_empty(), "it lays out horizontally");
+}
+
 #[test]
 fn a_frames_own_text_direction_turns_its_text_and_a_paragraphs_elsewhere_does_not() {
     let frame = r#"<w:framePr w:w="1500" w:h="2500" w:hRule="exact" w:wrap="around" w:vAnchor="page" w:hAnchor="page" w:x="1500" w:y="3000"/>"#;
