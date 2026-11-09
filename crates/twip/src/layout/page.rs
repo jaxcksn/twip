@@ -535,7 +535,7 @@ impl<'d> Paginator<'d, '_> {
                     return Ok((None, stats));
                 }
                 if s == Stop::Done || at_mark {
-                    return Ok((Some((pos, carry, children, end, fill.at.effects.clone())), stats));
+                    return Ok((Some((pos, carry, children, end.max(fill.at.notes_bottom), fill.at.effects.clone())), stats));
                 }
                 if k + 1 < cols.len() {
                     carry.keep_top = s == Stop::Column && carry.keep_top || s == Stop::Full && mid;
@@ -607,12 +607,21 @@ impl<'d> Paginator<'d, '_> {
         Ok(Some((end, children, p, c, eff)))
     }
 
-    fn draw_stream(fill: &mut PageFill, area: &NoteArea, cols: &[ColumnSpace], out: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
+    fn draw_stream(
+        fill: &mut PageFill,
+        area: &NoteArea,
+        cols: &[ColumnSpace],
+        text: f64,
+        out: &mut Vec<Child>,
+        memos: &mut Memos,
+    ) -> Result<(), Yield> {
         if area.parts.is_empty() {
             return Ok(());
         }
         fill.at.notes_drawn = true;
-        let top = cols[0].bottom.to_pt() - area.sep - area.height + 0.15;
+        let last = cols[cols.len() - 1];
+        let span = ColumnSpace { width: last.x + last.width - cols[0].x, ..cols[0] };
+        let top = fill.note_top(area.sep + area.height, &span, text) + 0.15;
         if let Some(w) = area.width {
             out.push(fill.notes_box(area, &[(cols[0].x, &area.parts)], w, top, memos)?);
             return Ok(());
@@ -806,7 +815,8 @@ pub fn layout_body(
         .map(|c| Child::Box(BoxFragment { kind: BoxKind::Column, id: None, offset: (0.0, 0.0), size: (0.0, 0.0), children: c.into() }))
         .collect();
     if let Some(a) = &stream {
-        Paginator::draw_stream(&mut fill, a, cols, &mut body, memos)?;
+        let text = bottoms.iter().copied().fold(page_top, f64::max) + if pos.at.at_start() { carry.prev_after } else { 0.0 };
+        Paginator::draw_stream(&mut fill, a, cols, text, &mut body, memos)?;
     }
     let next_shares = stop == Stop::Done && space.next_continuous;
     let floats = crate::prof::time("layout:floats", || Paginator::draw_floats(&fill, &placed, memos))?;
@@ -837,10 +847,10 @@ pub fn layout_body(
             }
             body.extend(floats.iter().cloned());
             if let Some(a) = &stream {
-                Paginator::draw_stream(&mut fill, a, cols, &mut body, memos)?;
+                Paginator::draw_stream(&mut fill, a, cols, e, &mut body, memos)?;
             }
         }
-        section_end = Some(e);
+        section_end = Some(e.max(fill.at.notes_bottom));
     } else if pos.block >= nblocks {
         section_end = Some(bottoms.iter().copied().fold(page_top, f64::max));
     }

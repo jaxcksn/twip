@@ -105,3 +105,17 @@ fn note_numbers_come_from_the_referencing_section() {
     let Some(doc) = notes_doc(&body, r#"<w:endnotePr><w:numFmt w:val="upperRoman"/></w:endnotePr>"#) else { return };
     assert_eq!(numbers(&doc, NoteKind::End, &[1, 2]), ["4", "5"]);
 }
+
+#[test]
+fn beneath_text_footnotes_follow_the_text() {
+    let note_y = |pos: &str, settings: &str| {
+        let pr = format!(r#"<w:footnotePr><w:pos w:val="{pos}"/></w:footnotePr>"#);
+        let body = para("Body", &["f1"]) + &sect(&pr, true);
+        let doc = notes_doc(&body, settings)?;
+        super::page_chars(&doc)[0].iter().find(|c| c.0 == 'N').map(|c| c.2)
+    };
+    let settings = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let (Some(beneath), Some(bottom)) = (note_y("beneathText", ""), note_y("pageBottom", settings)) else { return };
+    assert!(beneath < 150.0, "under the one body line: {beneath}");
+    assert!(bottom > 650.0, "settings' position is ignored: {bottom}");
+}

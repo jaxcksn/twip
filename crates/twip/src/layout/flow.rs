@@ -119,6 +119,8 @@ pub struct AttemptState {
     pub forced: bool,
     pub starts: Vec<(f64, bool)>,
     pub notes_drawn: bool,
+    /// The bottom of the column footnote areas drawn under their text (`beneathText`).
+    pub notes_bottom: f64,
     pub effects: PageEffects,
     pub keep_cap: Option<(usize, usize)>,
     pub end: Option<FlowToken>,
@@ -795,12 +797,39 @@ impl<'d> PageFill<'d, '_> {
         Ok(Child::Box(BoxFragment { kind: BoxKind::Notes, id: None, offset: (0.0, 0.0), size: (width, area.total()), children: children.into() }))
     }
 
-    fn draw_notes(&mut self, area: &NoteArea, col: &ColumnSpace, out: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
+    /// The top of a footnote area of height `h` in `col`: at the column bottom; with `beneathText`, at `text` (the
+    /// bottom of the column's text), below the floats it would overlap in compat 15, and at the bottom when it
+    /// doesn't fit there.
+    pub fn note_top(&self, h: f64, col: &ColumnSpace, text: f64) -> f64 {
+        let bottom = col.bottom.to_pt() - h;
+        if !self.sec.section.notes[0].beneath {
+            return bottom;
+        }
+        let mut top = text.max(col.top.to_pt());
+        if self.ctx.env.text.compat == Compat::Generic {
+            let (x0, x1) = (col.x, col.x + col.width);
+            while let Some(f) = self
+                .at
+                .found
+                .iter()
+                .chain(&self.fixed)
+                .find(|f| f.wrap != Wrap::None && f.rect[1] < top + h - EPS && f.rect[3] > top + EPS && f.rect[0] < x1 && f.rect[2] > x0)
+            {
+                top = f.rect[3];
+            }
+        }
+        if top > bottom + EPS { bottom } else { top }
+    }
+
+    fn draw_notes(&mut self, area: &NoteArea, col: &ColumnSpace, text: f64, out: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
         if area.parts.is_empty() {
             return Ok(());
         }
         self.at.notes_drawn = true;
-        let y = col.bottom.to_pt() - area.total() + 0.15;
+        let y = self.note_top(area.total(), col, text) + 0.15;
+        if self.sec.section.notes[0].beneath {
+            self.at.notes_bottom = self.at.notes_bottom.max(y - 0.15 + area.total());
+        }
         let parts = area.parts.clone();
         out.push(self.notes_box(area, &[(col.x, &parts)], col.width, y, memos)?);
         Ok(())
@@ -827,7 +856,8 @@ impl<'d> PageFill<'d, '_> {
             let mut area = NoteArea::default();
             self.continue_notes(&mut carry, &col, &mut area, memos)?;
             let r = self.fill_body(&mut pos, &mut carry, col, page_empty, &mut area, &mut out, memos)?;
-            self.draw_notes(&area, &col, &mut out, memos)?;
+            let text = r.1 + if pos.at.at_start() { carry.prev_after } else { 0.0 };
+            self.draw_notes(&area, &col, text, &mut out, memos)?;
             r
         };
         Ok(ColumnResult { children: out, stop, bottom, token: pos, state: carry })
