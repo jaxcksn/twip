@@ -124,6 +124,8 @@ pub struct AttemptState {
     pub notes_drawn: bool,
     /// The bottom of the column footnote areas drawn under their text (`beneathText`).
     pub notes_bottom: f64,
+    /// The footnote position of the page's area when an earlier section on the page started it.
+    pub beneath: Option<bool>,
     pub effects: PageEffects,
     pub keep_cap: Option<(usize, usize)>,
     pub end: Option<FlowToken>,
@@ -144,6 +146,8 @@ pub struct PageFill<'d, 'p> {
     pub odd: bool,
     /// Paragraphs with `w:mirrorIndents` mirror on this page.
     pub mirror: bool,
+    /// The section's footnote area passes to the next section on the page when the section ends.
+    pub hold_notes: bool,
 }
 
 pub fn para_space(
@@ -852,12 +856,17 @@ impl<'d> PageFill<'d, '_> {
         Ok(Child::Box(BoxFragment { kind: BoxKind::Notes, id: None, offset: (0.0, 0.0), size: (width, area.total()), children: children.into() }))
     }
 
+    /// Whether the page's footnote area goes beneath the text.
+    fn beneath(&self) -> bool {
+        self.at.beneath.unwrap_or(self.sec.section.notes[0].beneath)
+    }
+
     /// The top of a footnote area of height `h` in `col`: at the column bottom; with `beneathText`, at `text` (the
     /// bottom of the column's text), below the floats it would overlap in compat 15, and at the bottom when it
     /// doesn't fit there.
     pub fn note_top(&self, h: f64, col: &ColumnSpace, text: f64) -> f64 {
         let bottom = col.bottom.to_pt() - h;
-        if !self.sec.section.notes[0].beneath {
+        if !self.beneath() {
             return bottom;
         }
         let mut top = text.max(col.top.to_pt());
@@ -882,7 +891,7 @@ impl<'d> PageFill<'d, '_> {
         }
         self.at.notes_drawn = true;
         let y = self.note_top(area.total(), col, text) + 0.15;
-        if self.sec.section.notes[0].beneath {
+        if self.beneath() {
             self.at.notes_bottom = self.at.notes_bottom.max(y - 0.15 + area.total());
         }
         let parts = area.parts.clone();
@@ -909,10 +918,18 @@ impl<'d> PageFill<'d, '_> {
             r?
         } else {
             let mut area = NoteArea::default();
+            if let Some((held, beneath)) = carry.page_notes.take() {
+                area = held;
+                self.at.beneath = Some(beneath);
+            }
             self.continue_notes(&mut carry, &col, &mut area, memos)?;
             let r = self.fill_body(&mut pos, &mut carry, col, page_empty, &mut area, &mut out, memos)?;
             let text = r.1 + if pos.at.at_start() { carry.prev_after } else { 0.0 };
-            self.draw_notes(&area, &col, text, &mut out, memos)?;
+            if r.0 == Stop::Done && self.hold_notes && !area.parts.is_empty() {
+                carry.page_notes = Some((area, self.beneath()));
+            } else {
+                self.draw_notes(&area, &col, text, &mut out, memos)?;
+            }
             r
         };
         Ok(ColumnResult { children: out, stop, bottom, token: pos, state: carry })

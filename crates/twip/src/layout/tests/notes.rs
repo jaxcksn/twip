@@ -179,3 +179,31 @@ fn compat_14_note_waits_for_the_next_page_behind_its_line() {
     let Some(c15) = pages(&body(Some(last)), c15) else { return };
     assert_eq!(on(&c15, &format!("P{last:02}2")), Some(1), "compat 15 moves the line with its note");
 }
+
+const C15: &str = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+
+#[test]
+fn compat_15_footnote_area_follows_the_page_text() {
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let body = para("A", &["f1"]) + &sect(pr, false) + &para("B", &[]) + &sect(&format!(r#"<w:type w:val="continuous"/>{pr}"#), true);
+    let ys = |settings: &str| {
+        let doc = notes_doc(&body, settings)?;
+        let p = &super::page_chars(&doc)[0];
+        let y = |ch: char| p.iter().find(|c| c.0 == ch).map(|c| c.2);
+        Some((y('B')?, y('N')?))
+    };
+    let (Some((b12, n12)), Some((b15, n15))) = (ys(""), ys(C15)) else { return };
+    assert!(n12 < b12, "compat 12: under S1, S2 below it: note {n12}, S2 {b12}");
+    assert!(n15 > b15 && b15 < b12, "compat 15: S2 right after S1, the area after S2: note {n15}, S2 {b15}");
+}
+
+#[test]
+fn compat_14_continuous_break_after_a_page_bottom_note_starts_a_page() {
+    let body = para("A", &["f1"]) + &sect("", false) + &para("B", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true);
+    let page_of_b = |settings: &str| {
+        let doc = notes_doc(&body, settings)?;
+        super::page_chars(&doc).iter().position(|p| p.iter().any(|c| c.0 == 'B'))
+    };
+    let (Some(c12), Some(c15)) = (page_of_b(""), page_of_b(C15)) else { return };
+    assert_eq!((c12, c15), (1, 0));
+}

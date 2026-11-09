@@ -450,6 +450,7 @@ impl<'d> Paginator<'d, '_> {
                 mid_page: start.is_some(),
                 balance,
                 next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
+                hold_notes: false,
                 hf_floats: Vec::new(),
                 odd: self.run.page_number % 2 == 1,
                 note_width: None,
@@ -469,6 +470,14 @@ impl<'d> Paginator<'d, '_> {
             mid_page: start.is_some(),
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
+            hold_notes: self.ctx.env.text.compat == Compat::Generic
+                && [Some(sec), self.sections.get(si + 1)].iter().all(|x| {
+                    x.is_some_and(|x| {
+                        let c = &x.section_in(self.ctx.env.text.review.view).columns;
+                        c.num <= 1 && c.cols.len() <= 1
+                    })
+                })
+                && self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
             hf_floats,
             odd: self.run.page_number % 2 == 1,
             mirror: self.mirrors_indents(),
@@ -812,6 +821,7 @@ pub fn layout_body(
         fixed: space.hf_floats.clone(),
         odd: space.odd,
         mirror: space.mirror,
+        hold_notes: space.hold_notes,
     };
     let mut col_children: Vec<Vec<Child>> = Vec::new();
     let mut end: Option<FlowToken> = None;

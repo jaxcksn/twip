@@ -329,7 +329,14 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             }
             let sec = &doc.sections[si];
             let mut p = cx.paginator(run);
-            let continuous = si > 0 && super::vertical::same_page(&doc.sections[si - 1], sec);
+            // Compat ≤ 14: a continuous break starts a new page after a footnote in the page-bottom area.
+            let bottom_notes = doc.settings.compat() == crate::docx::Compat::Legacy
+                && p.run.pages.last().is_some_and(|pg| {
+                    pg.bodies
+                        .iter()
+                        .any(|b| !doc.sections[b.space.section].notes[0].beneath && b.effects.notes_shown.iter().any(|n| n.0 == NoteKind::Foot))
+                });
+            let continuous = si > 0 && super::vertical::same_page(&doc.sections[si - 1], sec) && !bottom_notes;
             let mut top = y;
             if !continuous || p.run.pages.is_empty() {
                 if si > 0 {

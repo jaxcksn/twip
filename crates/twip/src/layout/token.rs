@@ -73,6 +73,9 @@ pub struct FlowState {
     pub line_no: i64,
     pub break_before: f64,
     pub balanced_after: f64,
+    /// Compat 15: the footnote area of the earlier sections on the page, drawn after the page's last text, and
+    /// whether it goes beneath the text.
+    pub page_notes: Option<(super::flow::NoteArea, bool)>,
 }
 
 impl Default for FlowState {
@@ -86,6 +89,7 @@ impl Default for FlowState {
             line_no: 0,
             break_before: 0.0,
             balanced_after: 0.0,
+            page_notes: None,
         }
     }
 }
@@ -103,6 +107,8 @@ impl PartialEq for FlowState {
             && self.first_para == o.first_para
             && self.note_rest.is_empty()
             && o.note_rest.is_empty()
+            && self.page_notes.is_none()
+            && o.page_notes.is_none()
             && self.line_no == o.line_no
             && self.break_before == o.break_before
             && self.balanced_after == o.balanced_after
