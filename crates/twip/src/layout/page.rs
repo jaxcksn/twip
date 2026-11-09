@@ -33,7 +33,16 @@ pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64
     let s = s.section_in(ctx.env.text.review.view);
     let (mut left, mut right, mut top) = (s.left, s.right, s.top);
     let odd = page_number % 2 == 1;
-    if ctx.env.gutter_at_top {
+    if let Some(rev) = ctx.env.book_fold {
+        // Book fold: portrait pages drop the gutter; landscape ones mirror with it.
+        if s.page_w > s.page_h {
+            if odd != rev {
+                (left, right) = (right + s.gutter, left);
+            } else {
+                right += s.gutter;
+            }
+        }
+    } else if ctx.env.gutter_at_top {
         top += s.gutter;
     } else if ctx.env.mirror_margins {
         if odd {
@@ -380,6 +389,18 @@ impl<'d> Paginator<'d, '_> {
         Ok(out)
     }
 
+    /// Whether `w:mirrorIndents` paragraphs mirror on the current page: even pages in compat 15, odd ones in compat
+    /// ≤ 14, counted from the first page (which has its number's parity) whatever later sections restart.
+    fn mirrors_indents(&self) -> bool {
+        let first = &self.sections[0];
+        let mut n = first.pg_start.unwrap_or(1);
+        if matches!((first.break_kind, n.rem_euclid(2)), (SectionBreak::EvenPage, 1) | (SectionBreak::OddPage, 0)) {
+            n += 1;
+        }
+        let odd = (n + self.run.pages.len() as i64 - 1).rem_euclid(2) == 1;
+        odd == (self.ctx.env.text.compat == Compat::Legacy)
+    }
+
     pub(crate) fn body_space(&self, si: usize, start: Option<f64>, balance: bool, memos: &mut Memos) -> Result<BodySpace, Yield> {
         let sec = &self.sections[si];
         let (left, right, top) = margins(sec, &self.ctx, self.run.page_number);
@@ -422,6 +443,7 @@ impl<'d> Paginator<'d, '_> {
             next_continuous: self.sections.get(si + 1).is_some_and(|n| n.break_kind == SectionBreak::Continuous),
             hf_floats,
             odd: self.run.page_number % 2 == 1,
+            mirror: self.mirrors_indents(),
             note_width: start.and_then(|_| {
                 let ts = self.run.pages.last()?.section;
                 let top = self.sections.get(ts)?;
@@ -753,6 +775,7 @@ pub fn layout_body(
         at: AttemptState::default(),
         fixed: space.hf_floats.clone(),
         odd: space.odd,
+        mirror: space.mirror,
     };
     let mut col_children: Vec<Vec<Child>> = Vec::new();
     let mut end: Option<FlowToken> = None;

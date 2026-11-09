@@ -92,6 +92,8 @@ pub struct BodySpace {
     /// The wrapping floats of the page's header and footer.
     pub hf_floats: Vec<super::float::Placed>,
     pub odd: bool,
+    /// Paragraphs with `w:mirrorIndents` mirror on the page.
+    pub mirror: bool,
 }
 
 pub type HfHeights = [Option<f64>; 2];

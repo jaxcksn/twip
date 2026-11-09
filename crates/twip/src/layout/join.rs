@@ -97,6 +97,8 @@ impl Joined {
 pub enum LaidPara<'a> {
     One(&'a Paragraph),
     Joined(Rc<Joined>),
+    /// A paragraph laid out with other paragraph properties than its own.
+    Restyled(Rc<Paragraph>),
 }
 
 impl LaidPara<'_> {
@@ -104,6 +106,15 @@ impl LaidPara<'_> {
         match self {
             LaidPara::One(p) => p,
             LaidPara::Joined(j) => &j.para,
+            LaidPara::Restyled(p) => p,
+        }
+    }
+
+    /// The same paragraph (or chain) with `style` as its properties.
+    pub fn restyled(&self, style: Rc<crate::docx::ParaStyle>) -> LaidPara<'static> {
+        match self {
+            LaidPara::Joined(j) => LaidPara::Joined(Rc::new(Joined { para: Paragraph { style, ..j.para.clone() }, map: j.map.clone() })),
+            _ => LaidPara::Restyled(Rc::new(Paragraph { style, ..self.para().clone() })),
         }
     }
 

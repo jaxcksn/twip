@@ -133,6 +133,8 @@ pub struct ParaStyle {
     /// `w:suppressOverlap`: the paragraph's frame may not overlap other frames and floats.
     pub suppress_overlap: bool,
     pub suppress_line_numbers: bool,
+    /// `w:mirrorIndents`: on mirrored pages the indents swap sides.
+    pub mirror_indents: bool,
     /// The HTML division the paragraph is in (`w:divId`).
     pub div: Option<i64>,
     /// The bordered divisions around the paragraph, outermost first.
@@ -1037,6 +1039,8 @@ pub struct Settings {
     pub even_and_odd: bool,
     pub mirror_margins: bool,
     pub gutter_at_top: bool,
+    /// `w:bookFoldPrinting` / `w:bookFoldRevPrinting`: `Some(reversed)`.
+    pub book_fold: Option<bool>,
     pub auto_hyphenation: bool,
     pub hyphenation_zone: f64,
     pub consecutive_hyphen_limit: i64,

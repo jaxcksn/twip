@@ -502,6 +502,7 @@ pub struct ParaProps {
     pub tight_wrap: Option<u8>,
     pub suppress_overlap: Option<bool>,
     pub suppress_line_numbers: Option<bool>,
+    pub mirror_indents: Option<bool>,
     pub bidi: Option<bool>,
     /// `w:divId`: the HTML division (`webSettings.xml`) the paragraph is in.
     pub div_id: Option<i64>,
@@ -575,6 +576,7 @@ impl ParaProps {
                 }
                 "divId" => p.div_id = int(val(e)),
                 "suppressLineNumbers" => p.suppress_line_numbers = Some(on_off(e)),
+                "mirrorIndents" => p.mirror_indents = Some(on_off(e)),
                 "bidi" => p.bidi = Some(on_off(e)),
                 "tabs" => {
                     for t in children(e, "tab") {
@@ -674,6 +676,7 @@ impl ParaProps {
             tight_wrap,
             suppress_overlap,
             suppress_line_numbers,
+            mirror_indents,
             bidi,
             div_id,
             num_id,

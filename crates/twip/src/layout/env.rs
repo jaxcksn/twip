@@ -94,6 +94,7 @@ pub struct LayoutEnv {
     pub even_and_odd: bool,
     pub mirror_margins: bool,
     pub gutter_at_top: bool,
+    pub book_fold: Option<bool>,
     pub line_number_run: Option<Run>,
     pub chains: Rc<[Chain]>,
 }
@@ -157,6 +158,7 @@ impl LayoutEnv {
             even_and_odd: s.even_and_odd,
             mirror_margins: s.mirror_margins,
             gutter_at_top: s.gutter_at_top,
+            book_fold: s.book_fold,
             line_number_run: doc.line_number_run.clone(),
             chains: chains(doc),
         }

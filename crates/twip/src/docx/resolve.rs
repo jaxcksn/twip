@@ -157,6 +157,7 @@ impl Resolver {
             tight_wrap: p.tight_wrap.unwrap_or(0),
             suppress_overlap: p.suppress_overlap.unwrap_or(false),
             suppress_line_numbers: p.suppress_line_numbers.unwrap_or(false),
+            mirror_indents: p.mirror_indents.unwrap_or(false),
             div: p.div_id,
             div_boxes: Rc::from([]),
             tabs: p.resolved_tabs(),

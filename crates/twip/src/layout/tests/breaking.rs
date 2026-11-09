@@ -891,3 +891,48 @@ fn a_text_wrapping_break_beside_a_middle_float_goes_on_when_its_side_is_clear() 
         assert!(below > 172.0, "compat {compat}: {below}");
     }
 }
+
+#[test]
+fn mirrored_indents_swap_on_mirrored_pages() {
+    use crate::docx::Block;
+    let Some(mut doc) = super::plain_doc(&["Aplain".into(), "Bmirror".into(), "Cplain".into(), "Dmirror".into()]) else { return };
+    for (i, b) in doc.sections[0].blocks.iter_mut().enumerate() {
+        let Block::Para(p) = b else { unreachable!() };
+        let s = std::rc::Rc::make_mut(&mut p.style);
+        s.page_break_before = i == 2;
+        if i % 2 == 1 {
+            (s.ind_left, s.ind_right, s.ind_first, s.mirror_indents) = (72.0, 36.0, 18.0, true);
+        }
+    }
+    let pages = super::page_chars(&doc);
+    let indent = |page: usize, plain: char, mirrored: char| {
+        let x = |c: char| pages[page].iter().find(|g| g.0 == c).map(|g| g.1).expect("on the page");
+        x(mirrored) - x(plain)
+    };
+    let (p1, p2) = (indent(0, 'A', 'B'), indent(1, 'C', 'D'));
+    // Mirrored, the first line starts at the right indent plus the first-line indent.
+    let even_mirrors = doc.settings.compat() == crate::docx::Compat::Generic;
+    let (want1, want2) = if even_mirrors { (90.0, 54.0) } else { (54.0, 90.0) };
+    assert!((p1 - want1).abs() < 0.01 && (p2 - want2).abs() < 0.01, "{p1} {p2}");
+}
+
+#[test]
+fn book_fold_drops_or_mirrors_the_gutter() {
+    use crate::docx::Block;
+    let Some(mut doc) = super::plain_doc(&["Afirst".into(), "Bsecond".into()]) else { return };
+    let Block::Para(p) = &mut doc.sections[0].blocks[1] else { unreachable!() };
+    std::rc::Rc::make_mut(&mut p.style).page_break_before = true;
+    let s = &mut doc.sections[0];
+    (s.left, s.right, s.gutter) = (108.0, 72.0, 18.0);
+    doc.settings.book_fold = Some(false);
+    let starts = |doc: &crate::docx::Document| {
+        let pages = super::page_chars(doc);
+        [pages[0][0].1, pages[1][0].1]
+    };
+    assert_eq!(starts(&doc), [108.0, 108.0], "portrait: no gutter");
+    let s = &mut doc.sections[0];
+    (s.page_w, s.page_h) = (s.page_h, s.page_w);
+    assert_eq!(starts(&doc), [90.0, 108.0], "landscape: odd pages mirrored, with the gutter");
+    doc.settings.book_fold = Some(true);
+    assert_eq!(starts(&doc), [108.0, 90.0], "reversed");
+}

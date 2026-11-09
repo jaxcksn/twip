@@ -75,6 +75,7 @@ pub struct PassMemo {
     tables: HashMap<(usize, u64), Rc<TableLayout>>,
     varies: HashMap<usize, bool>,
     joined: HashMap<(usize, usize), Rc<Joined>>,
+    mirrored: HashMap<(usize, usize), LaidPara<'static>>,
     pub(crate) held: Held,
 }
 
@@ -139,6 +140,8 @@ pub struct PageFill<'d, 'p> {
     pub at: AttemptState,
     pub fixed: Vec<Placed>,
     pub odd: bool,
+    /// Paragraphs with `w:mirrorIndents` mirror on this page.
+    pub mirror: bool,
 }
 
 pub fn para_space(
@@ -562,6 +565,27 @@ fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<
 
 impl<'d> PageFill<'d, '_> {
     fn laid(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
+        let (laid, end) = self.laid_own(bi)?;
+        let view = self.ctx.env.text.review.view;
+        let style = laid.para().para_style_in(view);
+        if !self.mirror || !style.mirror_indents || style.frame.is_some() {
+            return Some((laid, end));
+        }
+        let key = (std::ptr::from_ref(laid.para()) as usize, end - bi);
+        if let Some(m) = self.pass.mirrored.get(&key) {
+            return Some((m.clone(), end));
+        }
+        // A mirrored page: the right indent takes the first line's start, the left the right indent (plus a hanging
+        // indent); the first-line indent stays.
+        let mut s = (**style).clone();
+        (s.ind_left, s.ind_right) = (style.ind_right + (-style.ind_first).max(0.0), style.ind_left + style.ind_first);
+        s.change = None;
+        let m = laid.restyled(Rc::new(s));
+        self.pass.mirrored.insert(key, m.clone());
+        Some((m, end))
+    }
+
+    fn laid_own(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
         let Some(Block::Para(p)) = self.sec.blocks.get(bi) else { return None };
         let end = self.sec.blocks.chain_end(bi, self.ctx.env.text.review.view);
         if end == bi {
