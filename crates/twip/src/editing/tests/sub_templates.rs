@@ -185,6 +185,34 @@ fn a_resolved_reference_shows_its_body_in_place() {
     assert!(cycle.size.1 > 20.0);
 }
 
+#[test]
+fn new_labels_redraw_the_shown_bodies() {
+    use std::io::Read;
+    // The fixture's sub-template fields, with their results emptied so that design mode labels them.
+    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx")).unwrap();
+    let mut xml = String::new();
+    zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap().by_name("word/glossary/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+    for r in ["«Fee»", "«Name»", "«Amount»"] {
+        xml = xml.replace(&format!(">{r}</w:t>"), "></w:t>");
+    }
+    let bytes =
+        crate::docx::write::repackage(&bytes, &[("word/glossary/document.xml".into(), xml.into_bytes())], zip::CompressionMethod::Deflated).unwrap();
+    let mut e = Editor::open(&bytes, fonts()).unwrap();
+    e.set_mode(super::super::Mode::Design);
+    e.execute(super::super::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
+    let drawn = |e: &mut Editor| {
+        e.complete(fonts());
+        crate::layout::dump::page_text(&e.snapshot(), e.document())
+    };
+    let first = drawn(&mut e);
+    assert!(first.contains("«Fee»") && first.contains("«Fee.Name»"), "the first labels");
+    let labels = [("MERGEFIELD Fee", "Fee label"), ("MERGEFIELD Fee.Name", "Name label")].map(|(c, l)| (c.to_string(), l.to_string()));
+    e.execute(Command::SetFieldLabels(crate::api::command::FieldLabels { labels: labels.into_iter().collect(), merge: None }), fonts());
+    let text = drawn(&mut e);
+    assert!(text.contains("Fee label"), "in a shown paragraph body");
+    assert!(text.contains("Name label"), "in a shown row");
+}
+
 fn click_line(e: &mut Editor, para: ParaId, clicks: u8) {
     use super::super::input::PointerKind;
     use super::super::keymap::Mods;

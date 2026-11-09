@@ -1322,6 +1322,10 @@ impl Editor {
                     *label = new;
                 }
             }
+            // A sub-template's paragraph is also drawn in the body, laid out apart from it.
+            if self.index.para_slot(para).is_some_and(|s| matches!(self.index.story(s.container), StoryId::BuildingBlock(_))) {
+                self.expansions_stale = true;
+            }
             hints.push(super::step::para_hint(&self.index, para, 0));
         }
         if !hints.is_empty() {

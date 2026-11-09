@@ -337,6 +337,44 @@ fn design_mode_labels_empty_fields() {
 }
 
 #[test]
+fn a_label_wraps_in_an_autofit_cell_rather_than_widen_the_table() {
+    let cell = |w: u32, r: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p>{r}</w:p></w:tc>"#);
+    let field = r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText>MERGEFIELD Violation.Restitution_Balance_Amount_Long_Name</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#;
+    let row: String = (0..5).map(|_| cell(1800, field)).collect();
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>{}</w:tblGrid><w:tr>{row}</w:tr></w:tbl><w:p/>"#,
+        r#"<w:gridCol w:w="1800"/>"#.repeat(5)
+    );
+    let xml = format!(
+        r#"<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+    );
+    let settings = r#"<?xml version="1.0"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat><w:growAutofit/></w:compat></w:settings>"#;
+    let rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#;
+    let bytes = crate::docx::write::repackage(
+        &crate::docx::blank::blank_docx(),
+        &[
+            ("word/document.xml".into(), xml.into_bytes()),
+            ("word/settings.xml".into(), settings.as_bytes().to_vec()),
+            ("word/_rels/document.xml.rels".into(), rels.as_bytes().to_vec()),
+        ],
+        zip::CompressionMethod::Deflated,
+    )
+    .expect("repackages");
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    let mut seq = 0;
+    send(&mut e, &mut seq, json!({"type": "mode", "mode": "design"}));
+    e.complete(fonts());
+    let text = crate::layout::dump::page_text(&e.snapshot(), e.document());
+    assert!(text.contains("Violation.Restituti"), "the labels are drawn, wrapped");
+    let xs = text
+        .lines()
+        .filter_map(|l| l.split_once(" cx ["))
+        .flat_map(|(_, r)| r.split(']').next().unwrap_or("").split_whitespace().map(|x| x.parse::<f64>().unwrap()).collect::<Vec<_>>());
+    let right = xs.fold(0.0, f64::max);
+    assert!(right < 540.0, "the labels wrap inside the margin ({right})");
+}
+
+#[test]
 fn regions_save_and_read_back() {
     let mut e = open("FX-TBL-BASIC.docx");
     let mut seq = 0;
