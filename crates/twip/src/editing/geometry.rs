@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::docx::VMerge;
-use crate::layout::fragment::{Item, PageFragment};
+use crate::layout::fragment::{Item, LineFragment, PageFragment};
 use crate::layout::traverse::{CellNode, LineNode, SpatialNode, StoryRef, spatial_tree};
 use crate::layout::{FloatId, ParaId, TableId, Unit};
 
@@ -25,11 +25,11 @@ pub struct Stop {
 pub struct GLine {
     pub story: usize,
     pub chain: Rc<[CellKey]>,
-    pub paras: Vec<ParaId>,
+    pub paras: Rc<[ParaId]>,
     pub top: f64,
     pub bottom: f64,
     pub pictures: Vec<(ParaId, Unit, [f64; 4])>,
-    pub stops: Vec<Stop>,
+    pub stops: Rc<[Stop]>,
     pub repeat: bool,
 }
 
@@ -155,7 +155,7 @@ pub struct CaretRect {
 }
 
 impl PageGeometry {
-    pub fn build(page: &PageFragment, idx: &DocIndex, shows: Option<u32>) -> Option<PageGeometry> {
+    pub fn build(page: &PageFragment, idx: &DocIndex, shows: Option<u32>, memo: &mut LineMemo) -> Option<PageGeometry> {
         let tree = spatial_tree(page, false)?;
         let mut g = PageGeometry { w: page.w, h: page.h, body_area: page.body_area, ..PageGeometry::default() };
         for s in &tree.stories {
@@ -173,7 +173,7 @@ impl PageGeometry {
             };
             let si = g.stories.len();
             g.stories.push(GStory { story, host: idx.host(story), float, rect: s.rect });
-            g.nodes(&s.nodes, si, &Rc::from([]), false);
+            g.nodes(&s.nodes, si, &Rc::from([]), false, memo);
         }
         let viewed = |s: StoryId| matches!(s, StoryId::BuildingBlock(k) if Some(k) != shows);
         let table_viewed = |t: TableId| idx.table_slot(t).is_some_and(|s| viewed(idx.story(s.container)));
@@ -236,10 +236,10 @@ impl PageGeometry {
         }
     }
 
-    fn nodes(&mut self, nodes: &[SpatialNode], story: usize, chain: &Rc<[CellKey]>, repeat: bool) {
+    fn nodes(&mut self, nodes: &[SpatialNode], story: usize, chain: &Rc<[CellKey]>, repeat: bool, memo: &mut LineMemo) {
         for n in nodes {
             match n {
-                SpatialNode::Line(l) => self.line(l, story, chain, repeat),
+                SpatialNode::Line(l) => self.line(l, story, chain, repeat, memo),
                 SpatialNode::Table(t) => {
                     self.tables.insert(t.table);
                     for r in &t.rows {
@@ -254,7 +254,7 @@ impl PageGeometry {
                             edges: r.edges.clone(),
                         });
                         for c in &r.cells {
-                            self.cell(c, story, chain, t.table, r.row, repeat || r.repeat);
+                            self.cell(c, story, chain, t.table, r.row, repeat || r.repeat, memo);
                         }
                     }
                 }
@@ -262,7 +262,7 @@ impl PageGeometry {
         }
     }
 
-    fn cell(&mut self, c: &CellNode, story: usize, outer: &Rc<[CellKey]>, table: TableId, row: usize, repeat: bool) {
+    fn cell(&mut self, c: &CellNode, story: usize, outer: &Rc<[CellKey]>, table: TableId, row: usize, repeat: bool, memo: &mut LineMemo) {
         let chain: Rc<[CellKey]> = outer.iter().copied().chain(std::iter::once((table, row, c.place.index))).collect();
         if let Some((p, _)) = c.closing {
             self.paras.insert(p);
@@ -278,11 +278,49 @@ impl PageGeometry {
             hidden: c.place.hidden.to_vec(),
             closing: c.closing,
         });
-        self.nodes(&c.nodes, story, &chain, repeat);
+        self.nodes(&c.nodes, story, &chain, repeat, memo);
     }
 
-    fn line(&mut self, l: &LineNode, story: usize, chain: &Rc<[CellKey]>, repeat: bool) {
+    fn line(&mut self, l: &LineNode, story: usize, chain: &Rc<[CellKey]>, repeat: bool, memo: &mut LineMemo) {
         let Some(own) = l.para else { return };
+        let key = (Rc::as_ptr(l.line), l.x.to_bits(), own);
+        let (paras, stops) = match memo.0.get(&key) {
+            Some(m) => {
+                self.after_break.extend(m.breaks.iter().copied());
+                (m.paras.clone(), m.stops.clone())
+            }
+            None => {
+                let Some((paras, stops, breaks, pure)) = self.stops_of(l, own) else { return };
+                let (paras, stops): (Rc<[ParaId]>, Rc<[Stop]>) = (paras.into(), stops.into());
+                if pure {
+                    memo.0.insert(key, Memo { pinned: l.line.clone(), paras: paras.clone(), stops: stops.clone(), breaks });
+                }
+                (paras, stops)
+            }
+        };
+        if !repeat {
+            self.paras.extend(paras.iter().copied());
+        }
+        let pictures = l
+            .line
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Image { rect, .. } => Some(*rect),
+                Item::Shape(s) => Some(s.rect),
+                _ => None,
+            })
+            .filter_map(|r| {
+                let a = l.line.atoms.iter().find(|a| !a.brk && (a.x0 - r[0]).abs() < 0.01)?;
+                Some((a.para, a.unit, [l.x + r[0], l.y + r[1], l.x + r[2], l.y + r[3]]))
+            })
+            .collect();
+        self.lines.push(GLine { story, chain: chain.clone(), paras, top: l.y, bottom: l.y + l.line.pitch, pictures, stops, repeat });
+    }
+
+    /// The line's paragraphs and stops, the paragraph ends its breaks leave, and whether all of it depends on the
+    /// line alone (no end taken from the lines before it).
+    fn stops_of(&mut self, l: &LineNode, own: ParaId) -> Option<(Vec<ParaId>, Vec<Stop>, Box<[(ParaId, Unit)]>, bool)> {
         let mut parts: Vec<Part> = Vec::new();
         fn part(parts: &mut Vec<Part>, para: ParaId) -> &mut Part {
             let k = match parts.iter().position(|p| p.para == para) {
@@ -320,6 +358,7 @@ impl PageGeometry {
             if r.chars.iter().all(|c| c.2.is_none()) {
                 *label_end = Some(label_end.map_or(l.x + end_x, |e: f64| e.max(l.x + end_x)));
             }
+            stops.reserve(r.chars.len());
             for (k, c) in r.chars.iter().enumerate() {
                 if let Some(u) = c.2 {
                     stops.push(Stop { x: l.x + xs[k], para, unit: u, end: false });
@@ -336,9 +375,8 @@ impl PageGeometry {
                 None => breaks.push((a.para, a.unit)),
             }
         }
-        for (p, u) in breaks {
-            self.after_break.insert(p, Unit(u.0 + 1));
-        }
+        let breaks: Box<[(ParaId, Unit)]> = breaks.into_iter().map(|(p, u)| (p, Unit(u.0 + 1))).collect();
+        self.after_break.extend(breaks.iter().copied());
         for a in l.line.atoms.iter() {
             let Part { stops, end, .. } = part(&mut parts, a.para);
             let after = if a.brk { a.unit } else { Unit(a.unit.0 + 1) };
@@ -350,6 +388,7 @@ impl PageGeometry {
             }
         }
         let mut done: Vec<(ParaId, Vec<Stop>)> = Vec::new();
+        let mut pure = true;
         for p in parts {
             let mut own = p.stops;
             if let Some((_, eu)) = p.end {
@@ -359,12 +398,13 @@ impl PageGeometry {
                 Some((x, u)) => own.push(Stop { x, para: p.para, unit: u, end: true }),
                 None => match p.empty_at.or(p.label_end) {
                     Some(x) => {
-                        let unit = l
-                            .line
-                            .mark
-                            .filter(|_| Some(p.para) == l.para)
-                            .or_else(|| self.after_break.get(&p.para).copied())
-                            .unwrap_or_else(|| self.lines.iter().filter_map(|m| m.last_of(p.para)).max().unwrap_or(Unit(0)));
+                        let unit = l.line.mark.filter(|_| Some(p.para) == l.para).unwrap_or_else(|| {
+                            pure = false;
+                            self.after_break
+                                .get(&p.para)
+                                .copied()
+                                .unwrap_or_else(|| self.lines.iter().filter_map(|m| m.last_of(p.para)).max().unwrap_or(Unit(0)))
+                        });
                         own.push(Stop { x, para: p.para, unit, end: true })
                     }
                     None => continue,
@@ -373,33 +413,23 @@ impl PageGeometry {
             done.push((p.para, own));
         }
         if done.is_empty() {
-            return;
+            return None;
         }
         let left = |s: &[Stop]| s.iter().map(|s| s.x).fold(f64::INFINITY, f64::min);
         done.sort_by(|a, b| left(&a.1).total_cmp(&left(&b.1)));
         let paras: Vec<ParaId> = done.iter().map(|d| d.0).collect();
-        let mut stops: Vec<Stop> = done.into_iter().flat_map(|d| d.1).collect();
+        let mut stops: Vec<Stop> = done
+            .into_iter()
+            .map(|d| d.1)
+            .reduce(|mut a, b| {
+                a.extend(b);
+                a
+            })
+            .unwrap_or_default();
         let order = |q: ParaId| paras.iter().position(|&p| p == q);
         stops.sort_by(|a, b| a.x.total_cmp(&b.x).then(order(a.para).cmp(&order(b.para))).then(a.unit.cmp(&b.unit)));
         stops.dedup_by(|b, a| a.para == b.para && a.unit == b.unit && !b.end);
-        if !repeat {
-            self.paras.extend(paras.iter().copied());
-        }
-        let pictures = l
-            .line
-            .items
-            .iter()
-            .filter_map(|it| match it {
-                Item::Image { rect, .. } => Some(*rect),
-                Item::Shape(s) => Some(s.rect),
-                _ => None,
-            })
-            .filter_map(|r| {
-                let a = l.line.atoms.iter().find(|a| !a.brk && (a.x0 - r[0]).abs() < 0.01)?;
-                Some((a.para, a.unit, [l.x + r[0], l.y + r[1], l.x + r[2], l.y + r[3]]))
-            })
-            .collect();
-        self.lines.push(GLine { story, chain: chain.clone(), paras, top: l.y, bottom: l.y + l.line.pitch, pictures, stops, repeat });
+        Some((paras, stops, breaks, pure))
     }
 
     pub fn shows_para(&self, p: ParaId) -> bool {
@@ -645,6 +675,18 @@ pub struct Pages {
     pub shows: Option<u32>,
     by_page: Vec<Option<Rc<PageGeometry>>>,
     cache: std::collections::HashMap<crate::layout::FragmentId, Rc<PageGeometry>>,
+    lines: LineMemo,
+}
+
+// Line memo
+#[derive(Default)]
+pub struct LineMemo(std::collections::HashMap<(*const LineFragment, u64, ParaId), Memo>);
+
+struct Memo {
+    pinned: Rc<LineFragment>,
+    paras: Rc<[ParaId]>,
+    stops: Rc<[Stop]>,
+    breaks: Box<[(ParaId, Unit)]>,
 }
 
 impl Pages {
@@ -656,6 +698,18 @@ impl Pages {
         self.cache.retain(|id, _| ids.contains(id));
         self.by_page = vec![None; snapshot.pages().len()];
         self.snapshot = Some(snapshot.clone());
+        self.lines.0.retain(|_, m| Rc::strong_count(&m.pinned) > 1);
+    }
+
+    #[cfg(test)]
+    pub fn assert_memo_fresh(&mut self, idx: &DocIndex) {
+        let Some(snapshot) = self.snapshot.clone() else { return };
+        for i in (0..self.by_page.len()).filter(|&i| self.by_page[i].is_some()) {
+            let Some((frag, _)) = snapshot.page(i) else { continue };
+            let warm = PageGeometry::build(frag, idx, self.shows, &mut self.lines).map(|g| format!("{:?}", g.lines));
+            let cold = PageGeometry::build(frag, idx, self.shows, &mut LineMemo::default()).map(|g| format!("{:?}", g.lines));
+            assert_eq!(warm, cold, "page {i}: the line memo differs from a fresh build");
+        }
     }
 
     pub fn snapshot(&self) -> Option<&Rc<crate::layout::Snapshot>> {
@@ -682,7 +736,7 @@ impl Pages {
         let g = match self.cache.get(&frag.id) {
             Some(g) => g.clone(),
             None => {
-                let g = Rc::new(PageGeometry::build(frag, idx, self.shows)?);
+                let g = Rc::new(PageGeometry::build(frag, idx, self.shows, &mut self.lines)?);
                 self.cache.insert(frag.id, g.clone());
                 g
             }

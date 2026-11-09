@@ -351,7 +351,7 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                         pictures.push(json!({ "page": page, "para": o.paras.get(&para), "offset": w[0].unit.0, "rect": [x0, y0, x1, y1] }));
                     }
                 }
-                for &para in &l.paras {
+                for &para in l.paras.iter() {
                     let stops: Vec<_> = l.stops.iter().filter(|s| s.para == para).collect();
                     let (Some(first), Some(last)) = (stops.first(), stops.last()) else { continue };
                     let (x0, y0) = to(first.x, l.top);

@@ -44,7 +44,7 @@ impl Editor {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
             for l in &geo.lines {
                 let story = geo.stories[l.story].story;
-                for &para in &l.paras {
+                for &para in l.paras.iter() {
                     let ranges = fields
                         .entry(para)
                         .or_insert_with(|| self.index.para(&self.doc, para).map(|p| outermost_fields(&p.inlines)).unwrap_or_default());

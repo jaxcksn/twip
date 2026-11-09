@@ -950,6 +950,8 @@ impl Editor {
             self.ensure(&p, fonts);
             self.scroll_to_caret(fonts);
         }
+        #[cfg(test)]
+        self.pages.assert_memo_fresh(&self.index);
     }
 
     fn undo(&mut self, undo: bool, fonts: &Fonts) -> Outcome {
@@ -2767,7 +2769,7 @@ impl Editor {
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
             for line in &geo.lines {
-                for &para in &line.paras {
+                for &para in line.paras.iter() {
                     let text = match texts.entry(para) {
                         std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
                         std::collections::hash_map::Entry::Vacant(e) => {

@@ -26,7 +26,9 @@ panic = "abort"
 
 # Benchmarks keep release's opt-level but skip its whole-program LTO and single codegen unit, which make every
 # `cargo bench` rebuild take minutes; compare benchmark numbers with each other, not with the shipped library's.
+# Line tables let a sampling profiler attribute benchmark time to source lines (CONTRIBUTING.md, Profiling).
 [profile.bench]
+debug = "line-tables-only"
 lto = false
 codegen-units = 16
 incremental = true

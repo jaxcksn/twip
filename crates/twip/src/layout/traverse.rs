@@ -449,7 +449,7 @@ pub struct LineNode<'a> {
     pub para: Option<ParaId>,
     pub x: f64,
     pub y: f64,
-    pub line: &'a LineFragment,
+    pub line: &'a std::rc::Rc<LineFragment>,
 }
 
 pub struct TableNode<'a> {

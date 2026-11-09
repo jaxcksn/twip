@@ -164,7 +164,7 @@ impl Editor {
         let mut lines: std::collections::HashMap<crate::layout::ParaId, f64> = std::collections::HashMap::new();
         for (_, geo) in self.page_geometries() {
             for l in geo.lines.iter().filter(|l| !l.repeat) {
-                for &p in &l.paras {
+                for &p in l.paras.iter() {
                     let (x0, x1) = l.span_of(p).unwrap_or_default();
                     *lines.entry(p).or_default() += (x1 - x0).max(0.0);
                 }
