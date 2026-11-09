@@ -681,6 +681,8 @@ impl<'a> Builder<'a> {
             } else {
                 cluster_glyphs.iter().map(|g| g.advance).sum::<f64>() * scale
             } + run.spacing * n_chars as f64;
+            // Condensed spacing never takes a character below no width.
+            p.width = p.width.max(0.0);
             p.break_after = kind == Kind::Space || first == '-' || first == '\u{2010}' || first == '\u{2013}';
             if first == '\u{AD}' {
                 p.soft_hyphen = true;
@@ -1165,7 +1167,7 @@ impl<'a> Builder<'a> {
         for (j, (k, pw)) in (a..e).zip(widths).enumerate() {
             let cs = chars(self, k);
             let spacing = if j + 1 == e - a { (cs - 1.0) * lu(sp) + lu(last) } else { cs * lu(sp) };
-            self.pieces[k].width = (pw + spacing) / 4096.0;
+            self.pieces[k].width = (pw + spacing).max(0.0) / 4096.0;
         }
     }
 

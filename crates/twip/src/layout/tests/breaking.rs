@@ -1068,12 +1068,22 @@ fn fitted_text_corrections_spread_again_and_meet_the_scale_limit() {
     // A correction over 40 tw spreads again: 1 tw on all 15 characters, not 0 and 15 on the last.
     let Some(w) = width(1348, "a.b.c.d.e.f.g.h") else { return };
     assert!((w - 1348.1 / 20.0).abs() < 0.03, "{w}");
-    // 15 %, then the overshoot off the last character.
+    // 15 %, then the overshoot off the last character: more than the `j` is wide, so the region ends where the `j`
+    // starts, whatever the target.
     let w = width(50, "abcdefghij").expect("lays out");
-    assert!((w - 50.7 / 20.0).abs() < 0.03, "{w}");
+    assert!((w - 141.5 / 20.0).abs() < 0.1, "{w}");
+    assert_eq!(width(100, "abcdefghij"), Some(w));
     // Two characters: 409 tw, then 1 on the last.
     let w = width(654, "ab").expect("lays out");
     assert!((w - 654.7 / 20.0).abs() < 0.03, "{w}");
+}
+
+#[test]
+fn condensed_spacing_takes_a_character_to_no_width_at_most() {
+    let body = r#"<w:p><w:r><w:t>|</w:t></w:r><w:r><w:rPr><w:spacing w:val="-300"/></w:rPr><w:t>WWWW</w:t></w:r><w:r><w:t>|end</w:t></w:r></w:p>"#;
+    let Some(c) = glyph_xs("", body) else { return };
+    let bars: Vec<f64> = c.iter().filter(|g| g.0 == '|').map(|g| g.1).collect();
+    assert!((bars[1] - c[1].1).abs() < 1e-9, "{c:?}");
 }
 
 #[test]
