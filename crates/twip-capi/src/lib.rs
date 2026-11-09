@@ -9,9 +9,10 @@
 //!   after each entry point's work, the state before any event of the same change, never re-entrantly. Natively the
 //!   callback is the function pointer given to [`twip_engine_new`]; in the browser it is `twip-host.js`'s `twip_emit`.
 //! - Every entry point runs under `catch_unwind`: a panic becomes an `internal` error and a fatal `error` event, and
-//!   every later call fails `internal`, except the frees. That needs `panic = "unwind"`: under `abort` (the release
-//!   profile) a panic ends the process, or the module instance in the browser. An allocation failure aborts in
-//!   either profile; `twip_alloc` alone answers it, with null.
+//!   every later call fails `internal`, except the frees. That needs `panic = "unwind"`, which `build-native.mjs`
+//!   builds the native library with; the browser module keeps the release profile's `abort`, where a panic ends the
+//!   module instance. A stack overflow or an allocation failure aborts either way; `twip_alloc` alone answers the
+//!   latter, with null.
 //!
 //! Every call is made on the engine's thread. Pointers are checked for null; their validity is the caller's promise.
 

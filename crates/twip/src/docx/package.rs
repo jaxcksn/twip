@@ -2,15 +2,21 @@
 
 use std::io::{Cursor, Read};
 
+/// The most a package part may decompress to. The size a zip entry declares is the file's say, so it isn't trusted.
+pub const MAX_PART: u64 = 256 << 20;
+
 /// A part's text: as made by this save (`parts`), else as `package` has it; `None` when neither has it.
 pub fn read(package: &[u8], parts: &[(String, Vec<u8>)], name: &str) -> Result<Option<String>, String> {
     if let Some((_, b)) = parts.iter().find(|(n, _)| n == name) {
         return std::str::from_utf8(b).map(|s| Some(s.to_string())).map_err(|e| e.to_string());
     }
     let mut zin = zip::ZipArchive::new(Cursor::new(package)).map_err(|e| e.to_string())?;
-    let Ok(mut f) = zin.by_name(name) else { return Ok(None) };
+    let Ok(f) = zin.by_name(name) else { return Ok(None) };
     let mut s = String::new();
-    f.read_to_string(&mut s).map_err(|e| e.to_string())?;
+    f.take(MAX_PART + 1).read_to_string(&mut s).map_err(|e| e.to_string())?;
+    if s.len() as u64 > MAX_PART {
+        return Err(format!("{name} is larger than {MAX_PART} bytes"));
+    }
     Ok(Some(s))
 }
 
