@@ -942,7 +942,8 @@ pub fn layout_body(
         }
     }
     let (size, children) = match vertical {
-        Some(v) => ((space.page_h, space.page_w), super::vertical::turn_body(&body, v.flow, [space.page_h, space.page_w]).into()),
+        Some(v) => ((space.page_h, space.page_w), super::vertical::turn_body(&body, v, [space.page_h, space.page_w]).into()),
+        None if s.text_flow == 4 => ((space.page_w, space.page_h), super::vertical::turn_east_asian(&body).into()),
         None => ((space.page_w, space.page_h), body.into()),
     };
     let fragment = Rc::new(BoxFragment { kind: BoxKind::Body, id: Some(FragmentId::next()), offset: (0.0, 0.0), size, children });

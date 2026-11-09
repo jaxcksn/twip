@@ -86,18 +86,29 @@ pub fn centred_drop(face: &crate::font::Face, size: f64) -> f64 {
     super::units::Lu::from_font((a + e - (a + d + 2 * e) / 2) as f64, size, face.upem).to_pt()
 }
 
+/// How far above a centred run's glyph baseline its middle is (points): the drop plus half its centred ascent
+/// less its centred descent.
+fn centred_middle(face: &crate::font::Face, size: f64) -> f64 {
+    let (a, d) = ((face.ascent - face.ea_extra).round() as i64, (face.descent - face.ea_extra).round() as i64);
+    let e = (face.upem / 64.0).round() as i64;
+    let h = a + d + 2 * e;
+    let gap = if face.east_asian { 0 } else { face.leading.round() as i64 };
+    let (up, down) = (h / 2 + gap, h - h / 2);
+    centred_drop(face, size) + super::units::Lu::from_font((up - down) as f64 / 2.0, size, face.upem).to_pt()
+}
+
 /// `units`, laid out with their lines along x and stacked down y, turned into `rect` = `[x0, y0, x1, y1]`: each
 /// line starts at the flow's start edge (top, or bottom for `Up`), the first line against the flow's first side,
 /// `across` further in. Glyphs whose ink lies `bottom` or more across from the first side are not drawn.
-pub fn turned(units: &[StoryUnit], flow: Flow, rect: [f64; 4], across: f64, bottom: f64) -> Vec<Item> {
+pub fn turned(units: &[StoryUnit], v: Vertical, rect: [f64; 4], across: f64, bottom: f64) -> Vec<Item> {
     let [x0, y0, x1, y1] = rect;
     let unit_items = |u: &StoryUnit| {
         let top = u.top + across;
         let children = super::table::clip_x(&u.content, f64::NEG_INFINITY, f64::INFINITY, bottom - top).unwrap_or_else(|| u.content.clone());
-        super::traverse::items_of(&[Child::Group { offset: (0.0, top), children }])
+        upright(&super::traverse::items_of(&[Child::Group { offset: (0.0, top), children }]), v)
     };
     let turn = |centre: [f64; 2], deg: f64, items: Vec<Item>| Item::Turned(Rc::new(Turned { centre, deg, items }));
-    match flow {
+    match v.flow {
         Flow::Down => vec![turn([(x1 - y0) / 2.0, (x1 + y0) / 2.0], 90.0, units.iter().flat_map(unit_items).collect())],
         Flow::Up => vec![turn([(x0 + y1) / 2.0, (y1 - x0) / 2.0], 270.0, units.iter().flat_map(unit_items).collect())],
         // Each line turned on its own, its top towards the next line.
@@ -152,33 +163,43 @@ pub fn same_page(prev: &crate::docx::Section, next: &crate::docx::Section) -> bo
 /// A vertical section's page body, laid out with its lines along x and stacked down y on the page turned a quarter
 /// (`page` = the page's width and height as printed), turned into place. Its structure stays: each line's items,
 /// each table's backgrounds and borders are turned where they are.
-pub fn turn_body(children: &[Child], flow: Flow, page: [f64; 2]) -> Vec<Child> {
-    children.iter().map(|c| turn_child(c, flow, page, 0.0, 0.0)).collect()
+pub fn turn_body(children: &[Child], v: Vertical, page: [f64; 2]) -> Vec<Child> {
+    let f = |items: &[Item], origin: [f64; 2], band: Option<(f64, f64)>| turn_items(&upright(items, v), v.flow, page, origin, band);
+    children.iter().map(|c| map_child(c, &f, 0.0, 0.0)).collect()
 }
 
-fn turn_child(c: &Child, flow: Flow, page: [f64; 2], ox: f64, oy: f64) -> Child {
+/// A horizontal flow's East Asian glyphs turned a quarter counter-clockwise (`lrTbV`), each about the middle of its
+/// em box.
+pub fn turn_east_asian(children: &[Child]) -> Vec<Child> {
+    let f = |items: &[Item], _: [f64; 2], _: Option<(f64, f64)>| east_asian_turned(items, false).into();
+    children.iter().map(|c| map_child(c, &f, 0.0, 0.0)).collect()
+}
+
+/// The item lists `c` holds rewritten by `f(items, where they are, the line's top and text height)`.
+type ItemMap<'a> = dyn Fn(&[Item], [f64; 2], Option<(f64, f64)>) -> Box<[Item]> + 'a;
+
+fn map_child(c: &Child, f: &ItemMap, ox: f64, oy: f64) -> Child {
     use super::fragment::{BoxFragment, CellFragment, ParaFragment, RowFragment, TableFragment};
-    let kids =
-        |children: &[Child], dx: f64, dy: f64| -> Vec<Child> { children.iter().map(|c| turn_child(c, flow, page, ox + dx, oy + dy)).collect() };
+    let kids = |children: &[Child], dx: f64, dy: f64| -> Vec<Child> { children.iter().map(|c| map_child(c, f, ox + dx, oy + dy)).collect() };
     match c {
         Child::Box(b) => Child::Box(BoxFragment { children: kids(&b.children, b.offset.0, b.offset.1).into(), ..b.clone() }),
         Child::Group { offset, children } => Child::Group { offset: *offset, children: kids(children, offset.0, offset.1).into() },
         Child::Para(p) => Child::Para(ParaFragment {
             para: p.para,
-            lines: p.lines.iter().map(|l| turn_line(l, flow, page, ox, oy)).collect(),
-            line_numbers: p.line_numbers.iter().map(|items| turn_items(items, flow, page, [ox, oy], None)).collect(),
+            lines: p.lines.iter().map(|l| map_line(l, f, ox, oy)).collect(),
+            line_numbers: p.line_numbers.iter().map(|items| f(items, [ox, oy], None)).collect(),
         }),
-        Child::Line { para, placed } => Child::Line { para: *para, placed: turn_line(placed, flow, page, ox, oy) },
-        Child::Items(items) => Child::Items(turn_items(items, flow, page, [ox, oy], None)),
+        Child::Line { para, placed } => Child::Line { para: *para, placed: map_line(placed, f, ox, oy) },
+        Child::Items(items) => Child::Items(f(items, [ox, oy], None)),
         Child::Table(t) => Child::Table(TableFragment {
             table: t.table,
             rows: t
                 .rows
                 .iter()
                 .map(|r| RowFragment {
-                    background: turn_items(&r.background, flow, page, [ox, oy], None),
+                    background: f(&r.background, [ox, oy], None),
                     cells: r.cells.iter().map(|c| CellFragment { content: kids(&c.content, 0.0, 0.0).into(), ..c.clone() }).collect(),
-                    borders: turn_items(&r.borders, flow, page, [ox, oy], None),
+                    borders: f(&r.borders, [ox, oy], None),
                     ..r.clone()
                 })
                 .collect(),
@@ -186,19 +207,19 @@ fn turn_child(c: &Child, flow: Flow, page: [f64; 2], ox: f64, oy: f64) -> Child 
     }
 }
 
-fn turn_line(l: &super::fragment::PlacedLine, flow: Flow, page: [f64; 2], ox: f64, oy: f64) -> super::fragment::PlacedLine {
+fn map_line(l: &super::fragment::PlacedLine, f: &ItemMap, ox: f64, oy: f64) -> super::fragment::PlacedLine {
     let (x, y) = (ox + l.x, oy + l.y);
-    let f = &l.line;
+    let line = &l.line;
     let line = super::fragment::LineFragment {
-        items: turn_items(&f.items, flow, page, [x, y], Some((y, f.pitch - f.below))),
-        pitch: f.pitch,
-        baseline: f.baseline,
-        below: f.below,
-        atoms: f.atoms.clone(),
-        changed: f.changed,
-        mark: f.mark,
-        texts: f.texts.clone(),
-        expansions: f.expansions.clone(),
+        items: f(&line.items, [x, y], Some((y, line.pitch - line.below))),
+        pitch: line.pitch,
+        baseline: line.baseline,
+        below: line.below,
+        atoms: line.atoms.clone(),
+        changed: line.changed,
+        mark: line.mark,
+        texts: line.texts.clone(),
+        expansions: line.expansions.clone(),
     };
     super::fragment::PlacedLine { x: l.x, y: l.y, line: Rc::new(line) }
 }
@@ -235,4 +256,46 @@ fn turn_items(items: &[Item], flow: Flow, page: [f64; 2], origin: [f64; 2], band
             })
             .collect(),
     }
+}
+
+/// `items` with their East Asian glyphs set upright when the flow keeps them so: each turned back a quarter about the
+/// middle of its em box, put on the middle of its centred run.
+fn upright(items: &[Item], v: Vertical) -> Vec<Item> {
+    if v.upright { east_asian_turned(items, true) } else { items.to_vec() }
+}
+
+/// `items` with each East Asian glyph turned a quarter counter-clockwise about the middle of its em box, put on the
+/// middle of its run when the run is `centred`, else where the box is.
+fn east_asian_turned(items: &[Item], centred: bool) -> Vec<Item> {
+    let ea = |r: &GlyphRun, x: f64| r.chars.iter().any(|c| (c.1 - x).abs() < 1e-6 && super::text::is_east_asian(c.0 as u32));
+    if !items.iter().any(|i| matches!(i, Item::Glyphs(r) if r.glyphs.iter().any(|g| ea(r, g.1)))) {
+        return items.to_vec();
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for it in items {
+        let Item::Glyphs(r) = it else {
+            out.push(it.clone());
+            continue;
+        };
+        let k = r.face.scale(r.size);
+        // The em box's middle above the glyph's baseline, and where it goes.
+        let lift = (r.face.ascent - r.face.descent) / 2.0 * k;
+        let middle = r.baseline - if centred { centred_middle(&r.face, r.size) } else { lift };
+        let mut rest = Vec::new();
+        for (i, &(g, x)) in r.glyphs.iter().enumerate() {
+            if !ea(r, x) {
+                rest.push((g, x));
+                continue;
+            }
+            let advance = r.glyphs.get(i + 1).map_or(r.face.advance(g) * k, |n| n.1 - x);
+            let chars = r.chars.iter().copied().filter(|c| (c.1 - x).abs() < 1e-6).collect();
+            let glyph = GlyphRun { glyphs: Box::new([(g, x)]), chars, x, baseline: middle + lift, ..r.clone() };
+            out.push(Item::Turned(Rc::new(Turned { centre: [x + advance / 2.0, middle], deg: -90.0, items: vec![Item::Glyphs(glyph)] })));
+        }
+        if !rest.is_empty() {
+            let chars = r.chars.iter().copied().filter(|c| !super::text::is_east_asian(c.0 as u32)).collect();
+            out.push(Item::Glyphs(GlyphRun { glyphs: rest.into(), chars, ..r.clone() }));
+        }
+    }
+    out
 }

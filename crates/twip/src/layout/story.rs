@@ -838,7 +838,7 @@ fn turned_text(
         let blocks: Vec<&Block> = tb.blocks.iter().collect();
         let story = super::vertical::story(&blocks, frame[3] - frame[1], v, env, None, memos)?;
         let bottom = if v.flow == super::vertical::Flow::DownEast { f64::INFINITY } else { frame[2] - frame[0] + super::table::INK_SLACK };
-        groups.push(Child::Items(super::vertical::turned(&story.units, v.flow, frame, 0.0, bottom).into()));
+        groups.push(Child::Items(super::vertical::turned(&story.units, v, frame, 0.0, bottom).into()));
         return Ok(());
     }
     use crate::drawing::text::TextDirection as D;

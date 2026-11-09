@@ -185,3 +185,25 @@ fn an_exact_line_in_a_centred_flow_draws_its_text_lower() {
     assert!((roman - (512.0 - 24.0)).abs() < 0.2, "{roman}");
     assert!((roman - centred - 3.81).abs() < 0.05, "{roman} {centred}");
 }
+
+fn east_asian(text: &str) -> String {
+    format!(
+        r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:hAnsi="MS Gothic" w:eastAsia="MS Gothic"/><w:sz w:val="22"/></w:rPr><w:t>{text}</w:t></w:r></w:p>"#
+    )
+}
+
+#[test]
+fn east_asian_glyphs_stand_upright_where_the_flow_keeps_them_so() {
+    let Some(upright) = section("tbRl", "0", &east_asian("漢字Ab")) else { return };
+    let runs = turned_runs(&upright);
+    let dir = |runs: &[(String, [f64; 2], [f64; 2])], t: &str| runs.iter().find(|r| r.0 == t).map(|r| r.2);
+    assert_eq!(dir(&runs, "漢"), Some([1.0, 0.0]), "{runs:?}");
+    assert_eq!(dir(&runs, "Ab"), Some([0.0, 1.0]), "{runs:?}");
+    // A section's btLr turns them with the text.
+    let Some(turned) = section("btLr", "0", &east_asian("漢字Ab")) else { return };
+    assert!(turned_runs(&turned).iter().all(|r| r.2 == [0.0, 1.0]));
+    // lrTbV stays horizontal but turns them counter-clockwise.
+    let Some(across) = section("lrTbV", "0", &east_asian("漢字Ab")) else { return };
+    let runs = turned_runs(&across);
+    assert!(!runs.is_empty() && runs.iter().all(|r| r.2 == [0.0, -1.0]), "{runs:?}");
+}

@@ -280,7 +280,7 @@ pub(crate) fn family_for(c: char, run: &RunStyle) -> &str {
     if cp < 0x80 { &run.ascii } else { &run.h_ansi }
 }
 
-fn is_east_asian(cp: u32) -> bool {
+pub(super) fn is_east_asian(cp: u32) -> bool {
     matches!(cp, 0x1100..=0x11FF | 0x2E80..=0x9FFF | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFFEF | 0x20000..=0x2FFFF)
 }
 

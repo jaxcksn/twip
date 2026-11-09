@@ -1495,7 +1495,15 @@ fn layout_shown(
                         }
                         None => *env,
                     };
-                    Some(super::story::layout(&blocks, g.cw, &cell_env, Some(ends), memos)?)
+                    let story = super::story::layout(&blocks, g.cw, &cell_env, Some(ends), memos)?;
+                    // lrTbV: horizontal, with East Asian glyphs turned.
+                    Some(if text_flow(&c.text_direction) == 4 {
+                        let units =
+                            story.units.iter().map(|u| StoryUnit { content: super::vertical::turn_east_asian(&u.content).into(), ..u.clone() });
+                        Rc::new(StoryLayout { units: units.collect(), ..(*story).clone() })
+                    } else {
+                        story
+                    })
                 });
             }
         }
@@ -1947,7 +1955,7 @@ fn assemble(
                 Flow::Up => g.w - g.cx,
                 Flow::DownEast => f64::INFINITY,
             };
-            let items = super::vertical::turned(&story.units, v.flow, [0.0, 0.0, g.cw, len], across, bottom);
+            let items = super::vertical::turned(&story.units, v, [0.0, 0.0, g.cw, len], across, bottom);
             let unit = StoryUnit {
                 top: 0.0,
                 height: 0.0,
