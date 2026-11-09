@@ -58,6 +58,31 @@ fn para_2_a_page_break_after_text_drops_the_space_before() {
     assert!((page_2_top(&mid) - page_2_top(&none)).abs() < 1e-6, "text before the break: the 6pt go");
 }
 
+#[test]
+fn an_at_least_line_at_the_page_top_rises_with_the_top_spacing_options() {
+    let top = |mode: i64, option: &str| {
+        // A page break ends the first paragraph; the second starts page 2 without its space-before.
+        let mut doc = broken(0.0, 12.0)?;
+        let brk = para_mut(&mut doc, 1).inlines.remove(0);
+        para_mut(&mut doc, 0).inlines.push(brk);
+        doc.settings.compat_mode = mode;
+        if !option.is_empty() {
+            doc.settings.compat.insert(option.to_string());
+        }
+        let s = Rc::make_mut(&mut para_mut(&mut doc, 1).style);
+        (s.line_rule, s.line) = (crate::docx::props::LineRule::AtLeast, 40.0);
+        Some(page_2_top(&doc))
+    };
+    let Some(plain) = top(12, "") else { return };
+    // The 40pt line keeps 9.6pt of its height (both modes); the Mac rule drops what it has beyond its text (30.48pt).
+    for mode in [12, 15] {
+        assert!((plain - top(mode, "suppressTopSpacing").unwrap() - 30.4).abs() < 1e-6, "compat {mode}");
+    }
+    let mac = plain - top(12, "suppressSpacingAtTopOfPage").unwrap();
+    assert!((mac - 9.52).abs() < 0.01, "{mac}");
+    assert!((top(15, "suppressSpacingAtTopOfPage").unwrap() - top(15, "").unwrap()).abs() < 1e-6);
+}
+
 fn after_continuous_break(after: f64) -> Option<f64> {
     let mut doc = plain_doc(&[words(3), words(3)])?;
     Rc::make_mut(&mut para_mut(&mut doc, 0).style).space_after = after;

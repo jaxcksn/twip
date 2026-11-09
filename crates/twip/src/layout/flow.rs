@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::*;
-use crate::docx::props::{Jc, TableAnchor};
+use crate::docx::props::{Jc, LineRule, TableAnchor};
 
 use super::LayoutCtx;
 use super::float::{self, Frames, Placed, Wrap};
@@ -1267,7 +1267,8 @@ impl<'d> PageFill<'d, '_> {
                 None => self.edge_before(pos.block, style, before),
             }
         };
-        let top = *y + g;
+        let lifted = at_top && first_part && !(carry.keep_top || carry.first_para);
+        let top = *y + g - if lifted { self.top_lift(style, pb) } else { 0.0 };
         let mut yy = top;
         let mut fit = 0;
         let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
@@ -1446,6 +1447,35 @@ impl<'d> PageFill<'d, '_> {
             && matches!(self.sec.blocks.get(bi), Some(Block::Para(p)) if p.inlines.iter().all(bare))
     }
 
+    /// How far a paragraph's first line rises at a column's top that dropped its space-before: with `suppressSpacingAtTopOfPage` (compat ≤ 14) by the
+    /// line's height beyond its text; with `suppressTopSpacing`, an exact or at-least line of an unbordered,
+    /// unshaded paragraph by its line height beyond 9.6pt.
+    fn top_lift(&self, style: &ParaStyle, pb: &ParaLines) -> f64 {
+        let env = &self.ctx.env.text;
+        let Some(l) = pb.lines.first() else { return 0.0 };
+        if env.suppress_spacing_at_top {
+            return if style.line != 0.0 { (l.pitch - l.ascent - l.descent).max(0.0) } else { 0.0 };
+        }
+        let framed = [&style.border_top, &style.border_bottom, &style.border_left, &style.border_right]
+            .iter()
+            .any(|b| b.as_ref().is_some_and(|b| b.visible()))
+            || style.shading.is_some();
+        if !env.suppress_top_spacing || framed {
+            return 0.0;
+        }
+        let line = match style.line_rule {
+            LineRule::AtLeast => style.line,
+            // An exact line counts four fifths of its height less its first character's size.
+            LineRule::Exact => {
+                let size = pb.pieces()[l.start..l.end].iter().find(|q| q.kind == Kind::Text).map_or(0.0, |q| pb.shaped.styles[q.style as usize].size);
+                let twips = (style.line.abs() * 20.0).round() as i64;
+                (twips * 4 / 5 - 10 * (size * 2.0).round() as i64) as f64 / 20.0
+            }
+            LineRule::Auto => return 0.0,
+        };
+        (line - 9.6).max(0.0)
+    }
+
     fn edge_before(&self, bi: usize, style: &ParaStyle, before: f64) -> f64 {
         let after_table = bi > 0 && matches!(self.sec.blocks.get(bi - 1), Some(Block::Table(_)));
         if after_table && super::paragraph::drops_at_edge(style, Some(&self.ctx.env.text.default_style)) { 0.0 } else { before }
@@ -1504,7 +1534,8 @@ impl<'d> PageFill<'d, '_> {
         let first_part = pos.at.at_start();
         let after = space_after(&self.ctx.env.text, style);
         let at_top = *empty;
-        let top = *y + self.para_gap(p, pos, carry, *empty);
+        let lifted = at_top && first_part && !(carry.keep_top || carry.first_para);
+        let top = *y + self.para_gap(p, pos, carry, *empty) - if lifted { self.top_lift(style, pb) } else { 0.0 };
         let floats: Vec<Placed> = self.fixed.iter().chain(&self.at.known).cloned().collect();
         let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env: self.ctx.env.text.clone(), fit: false };
         let frame = Frame::new(&space);

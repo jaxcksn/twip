@@ -19,6 +19,10 @@ pub struct TextEnv {
     pub do_not_vert_align_in_txbx: bool,
     pub wp_justification: bool,
     pub word97_line_breaks: bool,
+    /// `suppressTopSpacing`.
+    pub suppress_top_spacing: bool,
+    /// `suppressSpacingAtTopOfPage`, compat ≤ 14.
+    pub suppress_spacing_at_top: bool,
     /// East Asian line-breaking rules: `applyBreakingRules`, or compatibility mode 14 and later.
     pub breaking_rules: bool,
     pub default_style: Option<String>,
@@ -67,6 +71,8 @@ impl TextEnv {
             do_not_vert_align_in_txbx: s.has("doNotVertAlignInTxbx"),
             wp_justification: s.has("wpJustification"),
             word97_line_breaks: s.has("useWord97LineBreakRules"),
+            suppress_top_spacing: s.has("suppressTopSpacing"),
+            suppress_spacing_at_top: s.compat() == Compat::Legacy && s.has("suppressSpacingAtTopOfPage"),
             breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
             grow_autofit: s.has("growAutofit"),
