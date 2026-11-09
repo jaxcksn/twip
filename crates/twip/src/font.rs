@@ -50,6 +50,8 @@ pub struct Face {
     pub strike_pos: f64,
     pub strike_thick: f64,
     pub east_asian: bool,
+    /// The height an East Asian face adds above and below its win metrics, font units.
+    pub ea_extra: f64,
     pub avg_width: f64,
     font: harfrust::Font,
     /// Memos: character → glyph, glyph → advance, and shape plans by (kern, ligatures, figures, script). Building a plan
@@ -127,6 +129,7 @@ impl Face {
             strike_pos: upem * 0.26,
             strike_thick: upem * 0.05,
             east_asian: false,
+            ea_extra: 0.0,
             avg_width: 0.0,
             font: {
                 let font = harfrust::Font::new(Arc::clone(&data) as Arc<dyn AsRef<[u8]> + Send + Sync>, e.index)?;
@@ -167,6 +170,7 @@ impl Face {
                 let (wa, wd) = (u16_at(d, o + 74) as f64, u16_at(d, o + 76) as f64);
                 let extra = (0.15 * (wa + wd) + 0.5).floor();
                 (asc, desc, gap) = (wa + extra, wd + extra, 0.0);
+                f.ea_extra = extra;
             }
         } else {
             asc = h_asc;

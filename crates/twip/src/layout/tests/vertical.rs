@@ -174,3 +174,14 @@ fn a_continuous_break_into_a_vertical_section_starts_a_page() {
     assert!(turned_runs_on(&doc, 0).is_empty());
     assert_eq!(turned_runs_on(&doc, 1).first().map(|r| r.0.as_str()), Some("vertical"));
 }
+
+#[test]
+fn an_exact_line_in_a_centred_flow_draws_its_text_lower() {
+    let exact = r#"<w:spacing w:after="0" w:line="600" w:lineRule="exact"/>"#;
+    let base = |dir: &str| section(dir, "0", &para("exact", exact)).map(|d| turned_runs(&d)[0].1[0]);
+    let (Some(roman), Some(centred)) = (base("btLr"), base("tbRl")) else { return };
+    // Both lines are 600 twips from the right margin with the reference baseline 480 in; tbRl keeps East Asian
+    // glyphs upright, so its runs are centred and Arial 11 sits 76.27 twips further.
+    assert!((roman - (512.0 - 24.0)).abs() < 0.2, "{roman}");
+    assert!((roman - centred - 3.81).abs() < 0.05, "{roman} {centred}");
+}

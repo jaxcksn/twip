@@ -76,6 +76,8 @@ pub struct Frame {
     pub hyphen_limit: i64,
     /// The line is vertical: its runs take an em/64 more ascent and descent.
     pub vertical: bool,
+    /// Its runs are centred on the line (East Asian glyphs upright).
+    pub centred: bool,
 }
 
 impl Frame {
@@ -95,6 +97,7 @@ impl Frame {
             hyphen_zone: e.hyphenation.as_ref().filter(|_| e.compat == Compat::Legacy).map_or(0.0, |h| h.zone),
             hyphen_limit: e.hyphenation.as_ref().map_or(0, |h| h.limit),
             vertical: e.vertical.is_some(),
+            centred: e.vertical.is_some_and(|v| v.upright),
         }
     }
 }
@@ -1377,14 +1380,23 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let mut has_content = false;
     let mut has_text = false;
     let mut brk: Option<(f64, f64)> = None;
+    // The largest run's drop below a centred line's reference baseline.
+    let mut drop = (0.0f64, 0.0f64);
     for p in &pieces[line.start..line.end.min(pieces.len())] {
         match p.kind {
             Kind::Text | Kind::Object => {
                 has_content = true;
                 has_text = true;
                 let st = &sp.styles[p.style as usize];
-                let e = if frame.vertical && p.kind == Kind::Text { super::vertical::extra(st.size) } else { 0.0 };
+                let e = if frame.vertical && p.kind == Kind::Text { super::vertical::extra(st.face.as_deref(), st.size) } else { 0.0 };
                 let (pa, pd) = (p.ascent + e, p.descent + e);
+                if frame.centred
+                    && p.kind == Kind::Text
+                    && st.size > drop.0
+                    && let Some(f) = &st.face
+                {
+                    drop = (st.size, super::vertical::centred_drop(f, st.size));
+                }
                 asc = asc.max(pa);
                 desc = desc.max(pd);
                 let r = st.run.position;
@@ -1424,7 +1436,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         && let Some(f) = fonts.face(&mark.ascii, None, mark.bold, mark.italic)
     {
         let (a, d, e) = sp.metrics(&f, mark, mark_size);
-        let v = if frame.vertical { super::vertical::extra(mark_size) } else { 0.0 };
+        let v = if frame.vertical { super::vertical::extra(Some(&f), mark_size) } else { 0.0 };
         let (a, d) = (a + e + v, d + v);
         asc = asc.max(a);
         desc = desc.max(d);
@@ -1474,7 +1486,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                     "top" => asc,
                     "center" => (asc - desc) / 2.0,
                     "bottom" => -desc / 2.0,
-                    _ => 0.0,
+                    // A centred vertical line draws its text below the reference baseline.
+                    _ => drop.1,
                 };
         }
     }
