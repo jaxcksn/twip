@@ -2412,7 +2412,7 @@ impl<'d> PageFill<'d, '_> {
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));
         let l = at_x + bl - if fp.x_spec.is_none() && !fp.h_text { 0.05 } else { 0.0 };
-        let shift = ((l / 0.12 + 0.5).floor() * 0.12) - (at_x + bl);
+        let shift = if legacy { (l / 0.12 + 0.5).floor() * 0.12 } else { l } - (at_x + bl);
         o.excl[0] += shift;
         o.excl[2] += shift;
         if legacy {

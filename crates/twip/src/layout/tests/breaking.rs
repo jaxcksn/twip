@@ -368,6 +368,11 @@ fn a_floating_tables_obstacle_sits_on_device_pixels() {
     let Some(l) = lines("", ARIAL_12, body) else { return };
     let right = l.iter().find(|(x, t, _)| *x > 200.0 && t != "cell").expect("text right of the table");
     assert!((right.0 - 272.2).abs() < 0.01, "{l:?}");
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let l = lines(c15, ARIAL_12, body).unwrap();
+    let right = l.iter().find(|(x, t, _)| *x > 200.0 && t != "cell").expect("text right of the table");
+    // Compat 15: one twip left of `tblpX`, not on device pixels.
+    assert!((right.0 - 272.95).abs() < 0.01, "{l:?}");
 }
 
 #[test]
