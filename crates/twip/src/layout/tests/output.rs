@@ -134,7 +134,7 @@ fn page_svg(header: &str, want: &[&str], got: &[&str]) -> String {
                 writeln!(s, "<rect x=\"{x0}\" y=\"{y0}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{colour}\"/>", x1 - x0, y1 - y0).unwrap();
             }
         } else if let [x, y, text] = v[..] {
-            let text = text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+            let text = escape(text);
             writeln!(
                 s,
                 "<text x=\"{x}\" y=\"{y}\" font-size=\"9\" font-family=\"sans-serif\" fill=\"{colour}\" xml:space=\"preserve\">{text}</text>"
@@ -151,13 +151,21 @@ fn page_svg(header: &str, want: &[&str], got: &[&str]) -> String {
     s + "</svg>\n"
 }
 
-/// The pages that differ as SVG files in `target/layout-diff/<name>/`, returning the folder.
-fn write_diff(name: &str, want: &str, got: &str) -> PathBuf {
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap();
-    let dir = workspace.join("target").join("layout-diff").join(name.trim_end_matches(".txt"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+fn escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// `target/layout-diff`, which CI uploads as an artifact when the check fails.
+fn diff_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap().join("target").join("layout-diff")
+}
+
+/// The pages that differ as SVG files in `target/layout-diff/<name>/`, returning their paths under the root.
+fn write_diff(name: &str, want: &str, got: &str) -> Vec<String> {
+    let folder = name.trim_end_matches(".txt");
+    std::fs::create_dir_all(diff_root().join(folder)).unwrap();
     let (w, g) = (pages(want), pages(got));
+    let mut written = Vec::new();
     for i in 0..w.len().max(g.len()) {
         let (wp, gp) = (w.get(i), g.get(i));
         if wp.map(|p| &p.1) == gp.map(|p| &p.1) {
@@ -165,9 +173,11 @@ fn write_diff(name: &str, want: &str, got: &str) -> PathBuf {
         }
         let header = gp.or(wp).map_or("page", |p| p.0);
         let svg = page_svg(header, wp.map_or(&[][..], |p| &p.1), gp.map_or(&[][..], |p| &p.1));
-        std::fs::write(dir.join(format!("page-{i}.svg")), svg).unwrap();
+        let file = format!("{folder}/page-{i}.svg");
+        std::fs::write(diff_root().join(&file), svg).unwrap();
+        written.push(file);
     }
-    dir
+    written
 }
 
 /// Every fixture's layout equals its committed snapshot in `tests/layout`. `TWIP_WRITE_LAYOUT=1` rewrites them.
@@ -191,14 +201,19 @@ fn layout_output_matches_snapshots() {
         }
         return;
     }
-    let mut failures = Vec::new();
+    let _ = std::fs::remove_dir_all(diff_root());
+    let (mut failures, mut index) = (Vec::new(), String::new());
     for (name, text) in &got {
         match std::fs::read_to_string(dir.join(name)) {
             Ok(want) if want.replace("\r\n", "\n") == *text => {}
             Ok(want) => {
                 let want = want.replace("\r\n", "\n");
-                let diff = write_diff(name, &want, text);
-                failures.push(format!("{name}: {}\n    pages drawn in {}", first_difference(&want, text), diff.display()));
+                let summary = first_difference(&want, text);
+                write!(index, "<h2>{name}</h2>\n<pre>{}</pre>\n", escape(&summary)).unwrap();
+                for page in write_diff(name, &want, text) {
+                    writeln!(index, "<p>{page}</p><img src=\"{page}\">").unwrap();
+                }
+                failures.push(format!("{name}: {summary}"));
             }
             Err(_) => failures.push(format!("{name}: no snapshot")),
         }
@@ -209,10 +224,17 @@ fn layout_output_matches_snapshots() {
             failures.push(format!("{name}: snapshot without a fixture"));
         }
     }
+    if !index.is_empty() {
+        let page = format!(
+            "<!doctype html>\n<meta charset=\"utf-8\">\n<title>Layout changes</title>\n<style>body{{font-family:sans-serif}}img{{border:1px solid #ccc;max-width:100%}}</style>\n<h1>Layout changes</h1>\n<p>Grey: unchanged. <span style=\"color:#d00\">Red: the snapshot.</span> <span style=\"color:#080\">Green: this layout.</span></p>\n{index}"
+        );
+        std::fs::write(diff_root().join("index.html"), page).unwrap();
+    }
     assert!(
         failures.is_empty(),
-        "layout output changed for {} fixture(s). If intended, run `TWIP_WRITE_LAYOUT=1 cargo test -p twip --lib layout_output` and commit tests/layout:\n{}",
+        "layout output changed for {} fixture(s); the changed pages are drawn in {} (in CI: the layout-diff artifact). If intended, run `TWIP_WRITE_LAYOUT=1 cargo test -p twip --lib layout_output` and commit tests/layout:\n{}",
         failures.len(),
+        diff_root().join("index.html").display(),
         failures.join("\n")
     );
 }
