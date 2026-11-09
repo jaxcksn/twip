@@ -420,6 +420,7 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
         column: (left, width),
         compat: ctx.env.text.compat,
         cell: false,
+        odd: num % 2 == 1,
     };
     let fields = hf_fields(run, cx, i);
     let parts = hf_parts(run, cx, i);

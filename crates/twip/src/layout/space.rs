@@ -86,6 +86,9 @@ pub struct BodySpace {
     pub next_continuous: bool,
     pub note_width: Option<f64>,
     pub hf: HfHeights,
+    /// The wrapping floats of the page's header and footer.
+    pub hf_floats: Vec<super::float::Placed>,
+    pub odd: bool,
 }
 
 pub type HfHeights = [Option<f64>; 2];

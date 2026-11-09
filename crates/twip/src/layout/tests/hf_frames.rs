@@ -75,3 +75,43 @@ fn frame_2_a_frame_without_v_anchor_is_relative_to_the_margin() {
         .collect();
     assert_eq!(v, ["margin", "paragraph", "paragraph"]);
 }
+
+fn header_float(wrap: &str) -> Option<crate::docx::Document> {
+    let words = super::words(600);
+    let body = format!(
+        r#"<w:document {W}><w:body><w:p><w:r><w:t>{words}</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+    );
+    let header = format!(
+        r#"<w:hdr {W} xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>3810000</wp:posOffset></wp:positionV><wp:extent cx="2540000" cy="1270000"/>{wrap}<wp:docPr id="1" name="H"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing><w:t>Head</w:t></w:r></w:p></w:hdr>"#
+    );
+    package(&[
+        (
+            "[Content_Types].xml",
+            r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+        ),
+        ("word/document.xml", &body),
+        ("word/header1.xml", &header),
+    ])
+}
+
+#[test]
+fn a_header_float_wraps_the_body_text_of_its_page() {
+    let beside = |wrap: &str| {
+        let doc = header_float(wrap)?;
+        let pages = page_chars(&doc);
+        let left = |k: usize| pages[k].iter().filter(|c| c.2 > 305.0 && c.2 < 395.0).map(|c| c.1).fold(f64::INFINITY, f64::min);
+        Some((left(0), left(1)))
+    };
+    let Some((first, second)) = beside(r#"<wp:wrapSquare wrapText="bothSides"/>"#) else { return };
+    assert!(first >= 272.0 && second >= 272.0, "beside the float on both pages: {first} {second}");
+    let (none, _) = beside("<wp:wrapNone/>").expect("lays out");
+    assert!(none < 80.0, "wrapNone doesn't wrap: {none}");
+}

@@ -30,7 +30,7 @@ pub enum Side {
     Largest,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Placed {
     pub key: (usize, usize, usize),
     pub anchor: ParaId,
@@ -44,7 +44,7 @@ pub struct Placed {
     pub contour: Option<Contour>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Contour {
     pub points: Rc<[(f64, f64)]>,
     pub through: bool,
@@ -57,6 +57,7 @@ pub struct Frames {
     pub column: (f64, f64),
     pub compat: Compat,
     pub cell: bool,
+    pub odd: bool,
 }
 
 impl Placed {
@@ -223,8 +224,15 @@ mod tests {
 
     #[test]
     fn relative_sizes_take_their_share_of_the_page_or_margins() {
-        let fr =
-            Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 36.0, 72.0, 144.0], column: (72.0, 504.0), compat: Compat::Generic, cell: false };
+        let fr = Frames {
+            page_w: 612.0,
+            page_h: 792.0,
+            margin: [72.0, 36.0, 72.0, 144.0],
+            column: (72.0, 504.0),
+            compat: Compat::Generic,
+            cell: false,
+            odd: true,
+        };
         let size = |w_from: &str, h_from: &str| {
             let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
             f.relative.size = [Some((w_from.into(), 500)), Some((h_from.into(), 500))];
@@ -248,7 +256,7 @@ mod tests {
 
     #[test]
     fn percentage_positions_count_from_their_reference_box() {
-        let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false };
+        let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false, odd: true };
         let at = |h: &str, pct: i64| {
             let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
             f.h_relative = h.into();
@@ -297,8 +305,38 @@ mod tests {
     }
 
     #[test]
+    fn inside_and_outside_follow_the_page_parity() {
+        let fr = |compat, odd| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd };
+        let x = |rel: &str, align: &str, compat, odd| {
+            let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+            f.h_relative = rel.into();
+            f.h_align = Some(align.into());
+            h_pos(&f, &fr(compat, odd))
+        };
+        assert_eq!((x("insideMargin", "left", Compat::Generic, true), x("insideMargin", "left", Compat::Generic, false)), (0.0, 540.0));
+        assert_eq!((x("insideMargin", "left", Compat::Legacy, true), x("outsideMargin", "left", Compat::Legacy, true)), (540.0, 0.0));
+        assert_eq!((x("margin", "inside", Compat::Generic, true), x("margin", "inside", Compat::Generic, false)), (72.0, 500.0));
+        let even = Frames { margin: [72.0, 36.0, 72.0, 144.0], ..fr(Compat::Generic, false) };
+        let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+        f.relative.size = [Some(("insideMargin".into(), 500)), Some(("insideMargin".into(), 500))];
+        let s = sized(&f, &even).expect("sized");
+        assert_eq!((s.w, s.h), (36.0, 72.0));
+    }
+
+    #[test]
+    fn compat_14_snaps_an_aligned_offset_to_whole_twips() {
+        let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd: true };
+        let mut f = (*fl(0.0, 40.03, Side::Both).float).clone();
+        f.h_relative = "margin".into();
+        f.h_align = Some("center".into());
+        assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 286.0);
+        assert!((h_pos(&f, &fr(Compat::Generic)) - 285.985).abs() < 1e-9);
+    }
+
+    #[test]
     fn positions() {
-        let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat, cell: false };
+        let fr =
+            |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat, cell: false, odd: true };
         let f = |h: &str, ha: Option<&str>, v: &str, va: Option<&str>| Float {
             h_relative: h.into(),
             h_align: ha.map(Into::into),

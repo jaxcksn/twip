@@ -32,10 +32,10 @@ pub fn sized(f: &Float, fr: &Frames) -> Option<Float> {
     if let Some((from, p)) = &f.relative.size[0]
         && !f.auto_w
     {
-        let base = match from.as_str() {
-            "page" => fr.page_w,
-            "leftMargin" | "outsideMargin" => ml,
-            "rightMargin" | "insideMargin" => mr,
+        let base = match (from.as_str(), fr.odd) {
+            ("page", _) => fr.page_w,
+            ("leftMargin", _) | ("outsideMargin", true) | ("insideMargin", false) => ml,
+            ("rightMargin", _) | ("insideMargin", true) | ("outsideMargin", false) => mr,
             _ => fr.page_w - ml - mr,
         };
         out.w = fit(base, *p, el, er);
@@ -47,10 +47,10 @@ pub fn sized(f: &Float, fr: &Frames) -> Option<Float> {
         && !picture
         && !f.text_box.as_ref().is_some_and(|t| t.auto_fit)
     {
-        let base = match from.as_str() {
-            "page" => fr.page_h,
-            "topMargin" | "insideMargin" | "outsideMargin" => mt,
-            "bottomMargin" => mb,
+        let base = match (from.as_str(), fr.odd) {
+            ("page", _) => fr.page_h,
+            ("topMargin", _) | ("insideMargin" | "outsideMargin", true) => mt,
+            ("bottomMargin", _) | ("insideMargin" | "outsideMargin", false) => mb,
             _ => fr.page_h - mt - mb,
         };
         out.h = fit(base, *p, et, eb);
@@ -58,10 +58,49 @@ pub fn sized(f: &Float, fr: &Frames) -> Option<Float> {
     Some(out)
 }
 
+fn snap(fr: &Frames, offset: f64) -> f64 {
+    if fr.compat == Compat::Legacy { (offset * 20.0).round() / 20.0 } else { offset }
+}
+
+// Inside and outside
+fn h_ref<'a>(f: &'a Float, fr: &Frames) -> &'a str {
+    match f.h_relative.as_str() {
+        r @ ("insideMargin" | "outsideMargin") => {
+            let inside_left = if fr.compat == Compat::Generic { fr.odd } else { !fr.odd };
+            if (r == "insideMargin") == inside_left { "leftMargin" } else { "rightMargin" }
+        }
+        r => r,
+    }
+}
+
+fn v_ref<'a>(f: &'a Float, fr: &Frames) -> &'a str {
+    match (f.v_relative.as_str(), fr.odd) {
+        ("insideMargin", true) => "topMargin",
+        ("insideMargin", false) => "bottomMargin",
+        ("outsideMargin", odd) => {
+            if odd == (fr.compat == Compat::Generic) {
+                "bottomMargin"
+            } else {
+                "topMargin"
+            }
+        }
+        (r, _) => r,
+    }
+}
+
+fn by_parity<'a>(align: Option<&'a str>, fr: &Frames, (min, max): (&'a str, &'a str)) -> Option<&'a str> {
+    match align {
+        Some("inside") => Some(if fr.odd { min } else { max }),
+        Some("outside") => Some(if fr.odd { max } else { min }),
+        a => a,
+    }
+}
+
 pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
+    let href = h_ref(f, fr);
     if let Some(p) = f.relative.pos[0] {
         let body = fr.page_w - fr.margin[0] - fr.margin[1];
-        let (s, base) = match f.h_relative.as_str() {
+        let (s, base) = match href {
             "page" => (0.0, fr.page_w),
             "margin" => (fr.margin[0], body),
             "leftMargin" => (0.0, fr.margin[0]),
@@ -70,7 +109,7 @@ pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
         };
         return s + if f.poly.is_none() { f.effect[0] } else { 0.0 } + share(base, p);
     }
-    let (x0, w) = match f.h_relative.as_str() {
+    let (x0, w) = match href {
         "page" => (0.0, fr.page_w),
         "margin" => (fr.margin[0], fr.page_w - fr.margin[0] - fr.margin[1]),
         "leftMargin" => (0.0, fr.margin[0]),
@@ -85,18 +124,22 @@ pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
         }
     }
     let [l, _, r, _] = if f.poly.is_none() { f.effect } else { [0.0; 4] };
-    match f.h_align.as_deref() {
-        Some("center") => x0 + (w - f.w) / 2.0 + (l - r) / 2.0,
-        Some("right" | "outside") => x0 + w - f.w - r,
-        Some(_) => x0 + l,
-        None => x0 + f.h_offset,
-    }
+    x0 + snap(
+        fr,
+        match by_parity(f.h_align.as_deref(), fr, ("left", "right")) {
+            Some("center") => (w - f.w) / 2.0 + (l - r) / 2.0,
+            Some("right") => w - f.w - r,
+            Some(_) => l,
+            None => f.h_offset,
+        },
+    )
 }
 
 pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f64 {
+    let vref = v_ref(f, fr);
     if let Some(p) = f.relative.pos[1].filter(|_| !fr.cell) {
         let body = fr.page_h - fr.margin[2] - fr.margin[3];
-        let (s, base) = match f.v_relative.as_str() {
+        let (s, base) = match vref {
             "page" => (0.0, fr.page_h),
             "margin" => (fr.margin[2], body),
             "topMargin" => (0.0, fr.margin[2]),
@@ -106,7 +149,7 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
         };
         return s + if f.poly.is_none() { f.effect[1] } else { 0.0 } + share(base, p);
     }
-    let (y0, ht) = match f.v_relative.as_str() {
+    let (y0, ht) = match vref {
         "page" => (0.0, fr.page_h),
         "margin" => (fr.margin[2], fr.page_h - fr.margin[2] - fr.margin[3]),
         "topMargin" => (0.0, fr.margin[2]),
@@ -114,10 +157,13 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
         "line" => (line_top, 0.0),
         _ => return para_top + if f.v_align.is_some() { 0.0 } else { f.v_offset },
     };
-    match f.v_align.as_deref() {
-        Some("center") => y0 + (ht - h) / 2.0,
-        Some("bottom" | "outside") => y0 + ht - h,
-        Some(_) => y0,
-        None => y0 + f.v_offset,
-    }
+    y0 + snap(
+        fr,
+        match by_parity(f.v_align.as_deref(), fr, ("top", "bottom")) {
+            Some("center") => (ht - h) / 2.0,
+            Some("bottom") => ht - h,
+            Some(_) => 0.0,
+            None => f.v_offset,
+        },
+    )
 }

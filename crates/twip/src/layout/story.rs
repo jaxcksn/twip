@@ -244,7 +244,8 @@ pub fn layout_with(
                 y += g;
                 let id = para_id(p);
                 let para_top = y;
-                let fr = float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width), compat: text.compat, cell: true };
+                let fr =
+                    float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width), compat: text.compat, cell: true, odd: true };
                 // Wrapping floats
                 let mut own: Vec<(usize, Placed)> = Vec::new();
                 if in_cell && !ends.fit {
@@ -913,6 +914,21 @@ pub fn hf_floats(
     memos: &mut Memos,
 ) -> Result<Vec<Child>, Yield> {
     let mut out = Vec::new();
+    for (f, rect, para) in hf_float_rects(blocks, story, fr, top, env, memos)? {
+        out.push(float_box(&f, rect, para, env, memos)?);
+    }
+    Ok(out)
+}
+
+pub fn hf_float_rects(
+    blocks: &[&Block],
+    story: &StoryLayout,
+    fr: &super::float::Frames,
+    top: f64,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<Vec<(Rc<Float>, [f64; 4], ParaId)>, Yield> {
+    let mut out = Vec::new();
     for (bi, b) in blocks.iter().enumerate() {
         let Block::Para(p) = b else { continue };
         let Some(u) = story.units.iter().find(|u| u.block == bi) else { continue };
@@ -924,7 +940,7 @@ pub fn hf_floats(
             let f = fitted.as_ref().unwrap_or(f);
             let h = float_height(f, env, memos)?;
             let (fx, fy) = (super::float::h_pos(f, fr), super::float::v_pos(f, h, fr, para_top, para_top));
-            out.push(float_box(f, [fx, fy, fx + f.w, fy + h], para_id(p), env, memos)?);
+            out.push((Rc::new(f.clone()), [fx, fy, fx + f.w, fy + h], para_id(p)));
         }
     }
     Ok(out)

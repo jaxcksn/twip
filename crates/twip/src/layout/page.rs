@@ -335,6 +335,51 @@ impl<'d> Paginator<'d, '_> {
         Ok(out)
     }
 
+    fn hf_obstacles(&self, si: usize, hf: &HfHeights, memos: &mut Memos) -> Result<Vec<super::float::Placed>, Yield> {
+        let view = self.ctx.env.text.review.view;
+        let sec = &self.sections[si];
+        if self.run.pages.last().is_some_and(|p| p.blank) {
+            return Ok(Vec::new());
+        }
+        let (left, right, top) = margins(sec, &self.ctx, self.run.page_number);
+        let s = sec.section_in(view);
+        let width = s.page_w - left - right;
+        let frames = super::float::Frames {
+            page_w: s.page_w,
+            page_h: s.page_h,
+            margin: [left, right, top, s.bottom],
+            column: (left, width),
+            compat: self.ctx.env.text.compat,
+            cell: false,
+            odd: self.run.page_number % 2 == 1,
+        };
+        let pis = self.page_in_section(si).saturating_sub(1);
+        let fields = self.fields(si);
+        let env = StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers };
+        let mut out = Vec::new();
+        for (k, footer) in [false, true].into_iter().enumerate() {
+            let Some(blocks) = story_ref_in(self.sections, view, self.ctx.env.even_and_odd, si, pis, self.run.page_number, footer)
+                .1
+                .and_then(|p| self.stories.get(p))
+            else {
+                continue;
+            };
+            let blocks: Vec<&Block> = blocks.iter().collect();
+            if !blocks.iter().any(|b| matches!(b, Block::Para(p) if !self.ctx.floats_of(p).is_empty())) {
+                continue;
+            }
+            let layout = super::story::layout(&blocks, width, &env, None, memos)?;
+            let at = if footer { s.page_h - s.footer - hf[1].unwrap_or(layout.height) } else { s.header };
+            for (i, (f, r, para)) in super::story::hf_float_rects(&blocks, &layout, &frames, at, &env, memos)?.into_iter().enumerate() {
+                let p = super::float::Placed::new((usize::MAX, k, i), para, &f, r[0], r[1], r[3] - r[1]);
+                if p.wrap != super::float::Wrap::None {
+                    out.push(p);
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub(crate) fn body_space(&self, si: usize, start: Option<f64>, balance: bool, memos: &mut Memos) -> Result<BodySpace, Yield> {
         let sec = &self.sections[si];
         let (left, right, top) = margins(sec, &self.ctx, self.run.page_number);
@@ -364,6 +409,7 @@ impl<'d> Paginator<'d, '_> {
             body_bottom = s.page_h + s.bottom;
         }
         let area = BodyArea { left, width, top: Lu::round_half_up(body_top), bottom: Lu::round_half_up(body_bottom) };
+        let hf_floats = self.hf_obstacles(si, &hf, memos)?;
         Ok(BodySpace {
             section: si,
             page_w: s.page_w,
@@ -374,6 +420,8 @@ impl<'d> Paginator<'d, '_> {
             mid_page: start.is_some(),
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| n.break_kind == SectionBreak::Continuous),
+            hf_floats,
+            odd: self.run.page_number % 2 == 1,
             note_width: start.and_then(|_| {
                 let ts = self.run.pages.last()?.section;
                 let top = self.sections.get(ts)?;
@@ -694,6 +742,8 @@ pub fn layout_body(
         margins: space.margins,
         pass: env.pass,
         at: AttemptState::default(),
+        fixed: space.hf_floats.clone(),
+        odd: space.odd,
     };
     let mut col_children: Vec<Vec<Child>> = Vec::new();
     let mut end: Option<FlowToken> = None;

@@ -135,6 +135,8 @@ pub struct PageFill<'d, 'p> {
     pub margins: (f64, f64, f64),
     pub pass: &'p mut PassMemo,
     pub at: AttemptState,
+    pub fixed: Vec<Placed>,
+    pub odd: bool,
 }
 
 pub fn para_space(
@@ -1125,7 +1127,7 @@ impl<'d> PageFill<'d, '_> {
             Compat::Generic => bottom - pb.lines.last().map_or(0.0, |l| l.below),
             Compat::Legacy => bottom + space_after(&self.ctx.env.text, p.para_style_in(self.ctx.env.text.review.view)),
         };
-        let affected = self.at.known.iter().any(|f| {
+        let affected = self.fixed.iter().chain(&self.at.known).any(|f| {
             let reach = if f.key.2 == float::TABLE_PIECE { text_bottom } else { bottom };
             f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < reach - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
         });
@@ -1372,7 +1374,7 @@ impl<'d> PageFill<'d, '_> {
         let after = space_after(&self.ctx.env.text, style);
         let at_top = *empty;
         let top = *y + self.para_gap(p, pos, carry, *empty);
-        let floats = self.at.known.clone();
+        let floats: Vec<Placed> = self.fixed.iter().chain(&self.at.known).cloned().collect();
         let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env: self.ctx.env.text.clone(), fit: false };
         let frame = Frame::new(&space);
         let sp: &ShapedPara = &pb.shaped;
@@ -1534,6 +1536,7 @@ impl<'d> PageFill<'d, '_> {
             column: (col.x, col.width),
             compat: self.ctx.env.text.compat,
             cell: false,
+            odd: self.odd,
         };
         let bi = pos.block;
         let si = self.sec.index;
@@ -1819,6 +1822,7 @@ impl<'d> PageFill<'d, '_> {
             column: (col.x, col.width),
             compat: self.ctx.env.text.compat,
             cell: false,
+            odd: self.odd,
         };
         let mut later: Vec<(f64, f64)> = Vec::new();
         let lift = match (tb.rows.first(), self.sec.blocks.get(pos.block)) {
