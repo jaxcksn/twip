@@ -99,10 +99,12 @@ in those scripts, and under the `layout-change` label.
 
 <Chunk id="1.5" title="Text box autofit and columns" deps={['1.3']}>
 
-**Goal:** the text box settings that are read today but not laid out.
+**Goal:** the text box settings that are read today but not laid out stay that way, because Word doesn't lay
+them out from a `.docx` either.
 
-- Shrink text on overflow (`a:normAutofit` font scale and line spacing reduction).
-- Text box columns (`bodyPr@numCol`, `spcCol`).
+- Shrink text on overflow (`a:normAutofit` font scale and line spacing reduction): read and kept on save, no effect
+  on layout.
+- Text box columns (`bodyPr@numCol`, `spcCol`): read and kept on save, the box's text in one column.
 
 </Chunk>
 
