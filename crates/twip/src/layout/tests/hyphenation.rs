@@ -94,3 +94,25 @@ fn the_consecutive_limit_caps_hyphenated_line_ends() {
     }
     assert_eq!(runs(1), 0);
 }
+
+#[test]
+fn a_line_inside_a_word_hyphenates_the_rest_of_it_as_a_word() {
+    // Only the whole word has points. Compat 14 hyphenates the letters from the line start, so a word breaks at a
+    // hyphen at most once; compat 15 keeps the whole word's points after a hyphen.
+    let text = "particularly";
+    if plain_doc(&[String::new()]).is_none() {
+        return;
+    }
+    let most = |compat| {
+        (0..20)
+            .filter_map(|k| {
+                doc_at(text, compat, 400.0 + 3.0 * k as f64, |d| {
+                    d.hyphenation = Some(Hyphenation::default().with("en-US", Patterns::parse(".par1tic1u1lar1ly.")));
+                })
+            })
+            .map(|d| hyphens(&d))
+            .max()
+    };
+    assert_eq!(most(14), Some(1));
+    assert!(most(15) >= Some(2));
+}

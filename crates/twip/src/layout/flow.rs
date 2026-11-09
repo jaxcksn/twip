@@ -1538,7 +1538,7 @@ impl<'d> PageFill<'d, '_> {
         let top = *y + self.para_gap(p, pos, carry, *empty) - if lifted { self.top_lift(style, pb) } else { 0.0 };
         let floats: Vec<Placed> = self.fixed.iter().chain(&self.at.known).cloned().collect();
         let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env: self.ctx.env.text.clone(), fit: false };
-        let frame = Frame::new(&space);
+        let mut frame = Frame::new(&space);
         let sp: &ShapedPara = &pb.shaped;
         let pieces = pb.pieces();
         let n = pieces.len();
@@ -1627,6 +1627,9 @@ impl<'d> PageFill<'d, '_> {
                     let ph = segs[0].pitch;
                     let hard = segs.last().is_some_and(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
                     let clear = segs.last().and_then(|l| Some((crate::layout::line::clear_of(sp, pieces, l)?, l.xs.first().copied().unwrap_or(0.0))));
+                    if segs.last().is_some_and(|l| !l.hyphen) {
+                        frame.word_from = Some(e);
+                    }
                     bands.push((yy, segs));
                     let next = yy + ph;
                     yy = match clear {

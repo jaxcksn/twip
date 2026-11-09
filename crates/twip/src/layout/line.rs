@@ -74,6 +74,9 @@ pub struct Frame {
     pub hyphen_zone: f64,
     /// The most consecutive hyphenated lines, 0 for no limit.
     pub hyphen_limit: i64,
+    /// Where the last line that ended between letters ended: compat 15 hyphenates a word the line starts inside from
+    /// there.
+    pub word_from: Option<usize>,
     /// The line is vertical: its runs take an em/64 more ascent and descent.
     pub vertical: bool,
     /// Its runs are centred on the line (East Asian glyphs upright).
@@ -101,6 +104,7 @@ impl Frame {
             hyphenate: e.hyphenation.is_some(),
             hyphen_zone: e.hyphenation.as_ref().filter(|_| e.compat == Compat::Legacy).map_or(0.0, |h| h.zone),
             hyphen_limit: e.hyphenation.as_ref().map_or(0, |h| h.limit),
+            word_from: None,
             vertical: e.vertical.is_some(),
             centred: e.vertical.is_some_and(|v| v.upright),
             breaking_rules: e.breaking_rules,
@@ -493,9 +497,10 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
     let with_tabs = justify_smart && pieces.iter().any(|p| p.kind == Kind::Tab);
     let mut first = !continued;
     let mut hyphens = 0;
+    let mut word_from = None;
     let all = *frame;
     loop {
-        let frame = &Frame { hyphenate: all.hyphenate && (all.hyphen_limit <= 0 || hyphens < all.hyphen_limit), ..all };
+        let frame = &Frame { hyphenate: all.hyphenate && (all.hyphen_limit <= 0 || hyphens < all.hyphen_limit), word_from, ..all };
         let style = line_style(style, pieces, start);
         let right = frame.width - style.ind_right;
         let wrap_right = if frame.no_wrap { f64::INFINITY } else { right + wp_extension(style, frame) };
@@ -506,6 +511,9 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         let end = fit.end.max(start + 1).min(n.max(start + 1));
         let is_last = end >= n;
         hyphens = if fit.hyphen { hyphens + 1 } else { 0 };
+        if !fit.hyphen {
+            word_from = Some(end);
+        }
         let mut line =
             Line { end: end.min(n), xs: fit.xs, widths: fit.widths, hard: fit.hard, hyphen: fit.hyphen, leaders: fit.leaders, ..Line::empty(start) };
         if !frame.no_wrap {
@@ -594,6 +602,7 @@ pub fn band(
     let mut segs: Vec<Line> = Vec::new();
     let mut s = start;
     let mut gap = None;
+    let mut word_from = frame.word_from;
     for &(a, b) in intervals {
         if s >= n && !segs.is_empty() {
             break;
@@ -605,7 +614,7 @@ pub fn band(
             continue;
         }
         gap.get_or_insert(right - left);
-        let piece_frame = Frame { tab_origin: if frame.compat == Compat::Legacy { a } else { 0.0 }, ..*frame };
+        let piece_frame = Frame { tab_origin: if frame.compat == Compat::Legacy { a } else { 0.0 }, word_from, ..*frame };
         let frame = &piece_frame;
         let planned = if matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && s < n {
             let seg_end = segment_end(pieces, s);
@@ -630,6 +639,9 @@ pub fn band(
             Line { end: fit.end.min(n), xs: fit.xs, widths: fit.widths, hard: fit.hard, hyphen: fit.hyphen, leaders: fit.leaders, ..Line::empty(s) };
         align(&mut line, sp, pieces, style, frame, left, right, fit.end >= n);
         s = fit.end;
+        if !line.hyphen {
+            word_from = Some(s);
+        }
         let hard = line.hard.is_some_and(|k| k != Kind::LineBreak);
         let cleared = match clear_of(sp, pieces, &line) {
             Some((l, r)) => {
@@ -798,10 +810,23 @@ fn fit_line(
     }
     let mut pending: Option<Pending> = None;
     let mut breaks: Vec<(usize, bool)> = Vec::new();
+    // A line that starts inside a word hyphenates the rest of it as a word: from the line start in compat ≤ 14, from
+    // where it was last broken between letters in compat 15. `pieces` ends the paragraph's pieces.
+    let n = pieces.len();
+    let (all, o) = (&sp.pieces[..], sp.pieces.len() - n);
+    let in_word = |k: usize| k > 0 && k < all.len() && all[k].kind == Kind::Text && all[k - 1].kind == Kind::Text && !all[k - 1].break_after;
+    let at = o + start;
+    let word_start = (0..=at).rev().find(|&k| !in_word(k)).unwrap_or(0);
+    // A word continued from an earlier page counts as broken at a hyphen when it was broken at a point.
+    let broke = frame.word_from.map(|w| w + o).unwrap_or(if word_start < o && !all[o - 1].auto_hyphen { o } else { 0 });
+    let from = if frame.compat == Compat::Legacy { at } else { broke.clamp(word_start, at) };
+    let part = (frame.hyphenate && from > word_start).then(|| {
+        let (e, at) = sp.points_from(all, from);
+        (e - o, at.into_iter().map(|k| k - o).collect::<Vec<_>>())
+    });
     let mut leaders: Vec<(usize, Leader)> = Vec::new();
     let mut squeeze: Option<(usize, f64)> = None;
     let mut past_custom = false;
-    let n = pieces.len();
     let mut i = start;
     while i < n {
         if let Some(le) = limit_end
@@ -928,15 +953,31 @@ fn fit_line(
         if over && right_edge <= limit + room + EPS {
             squeeze = Some((word, room));
         } else if over {
+            // In compat ≤ 14 an automatic point needs three letters of the word to fit and its last letter before the
+            // last one that fits; when its hyphen doesn't fit, the next point must end before that letter.
+            let mut exceed = i;
             while let Some(&(at, soft)) = breaks.last() {
                 if at <= start {
                     breaks.pop();
                     continue;
                 }
                 if soft {
+                    let auto = !pieces[at - 1].soft_hyphen;
                     let hy = hyphen_width(sp, &pieces[at - 1]);
-                    let pen_at = xs[at - 1 - start] + if pieces[at - 1].auto_hyphen { ws[at - 1 - start] } else { 0.0 };
-                    if pen_at + hy > right + EPS || pieces[at - 1].auto_hyphen && !zoned(pieces, start, at, &xs, right, frame) {
+                    let pen_at = xs[at - 1 - start] + if auto { ws[at - 1 - start] } else { 0.0 };
+                    let fits = pen_at + hy <= right + EPS;
+                    let legacy = auto && frame.compat == Compat::Legacy;
+                    if legacy {
+                        let word = (start..at).rev().find(|&k| pieces[k].kind != Kind::Text).map_or(start, |k| k + 1);
+                        if exceed <= word + 2 || at + 1 > exceed {
+                            breaks.pop();
+                            continue;
+                        }
+                        if !fits {
+                            exceed = at - 1;
+                        }
+                    }
+                    if !fits || auto && !zoned(pieces, start, at, &xs, right, frame) {
                         breaks.pop();
                         continue;
                     }
@@ -981,7 +1022,12 @@ fn fit_line(
         pen += p.width;
         if p.break_after {
             breaks.push((i + 1, p.soft_hyphen));
-        } else if p.auto_hyphen && frame.hyphenate {
+        } else if frame.hyphenate
+            && match &part {
+                Some((e, at)) if i < *e => !p.glued && at.contains(&i),
+                _ => p.auto_hyphen,
+            }
+        {
             breaks.push((i + 1, true));
         }
         i += 1;
@@ -1750,8 +1796,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             for (j, c) in text.chars().enumerate() {
                 r.chars.push((symbol_unicode(&face.family, c), x, first.map(|u| Unit(u.0 + j as u32))));
             }
-            if p.auto_hyphen
-                && line.hyphen
+            if line.hyphen
                 && ix + 1 == line.end
                 && let Some(g) = face.glyph('-')
             {

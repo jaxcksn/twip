@@ -25,7 +25,6 @@ pub struct ShapeSpace {
     pub float: Option<std::rc::Rc<crate::docx::Float>>,
     pub hide: Option<u64>,
     pub expansion: Option<std::rc::Rc<super::expansion::Expansion>>,
-    /// The hyphenation patterns, and whether words in capitals are skipped.
     /// The patterns, whether capitals are left alone, and the fewest letters after a break.
     pub hyphenate: Option<(super::hyphenate::Hyphenation, bool, usize)>,
 }

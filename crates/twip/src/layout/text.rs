@@ -128,9 +128,18 @@ pub struct ShapedPara {
     pub join: Option<Rc<super::join::JoinMap>>,
     pub em1000: bool,
     pub rules: MetricRules,
+    /// The patterns, whether capitals are left alone, and the fewest letters after a break.
+    pub hyphenate: Option<(super::hyphenate::Hyphenation, bool, usize)>,
 }
 
 impl ShapedPara {
+    /// The end of the word whose letters start at `pieces[from]` and the pieces it may break after, hyphenated as a
+    /// word from there.
+    pub fn points_from(&self, pieces: &[Piece], from: usize) -> (usize, Vec<usize>) {
+        let Some((h, caps, right)) = &self.hyphenate else { return (from, Vec::new()) };
+        word_points(pieces, &self.text, &self.styles, from, h, *caps, *right)
+    }
+
     pub fn metrics(&self, face: &Face, run: &RunStyle, size: f64) -> (f64, f64, f64) {
         let (a, d, e) = metrics_at(face, size, self.em1000 && run.east_asia_named);
         (a, d, if self.rules.no_leading { 0.0 } else { e })
@@ -1104,48 +1113,13 @@ impl<'a> Builder<'a> {
 
     // Automatic hyphenation
     fn hyphenate(&mut self, h: &super::hyphenate::Hyphenation, caps: bool, right: usize) {
-        // A word is letters and apostrophes; optional hyphens and zero-width joiners inside it are skipped.
-        const MAX_LETTERS: usize = 65;
-        let n = self.pieces.len();
-        fn text<'b>(b: &'b Builder, k: usize) -> &'b str {
-            let p = &b.pieces[k];
-            if p.kind == Kind::Text { &b.text[p.text.0 as usize..p.text.1 as usize] } else { "" }
-        }
-        let letters = |b: &Builder, k: usize| {
-            let t = text(b, k);
-            !t.is_empty() && t.chars().all(|c| c.is_alphabetic() || c == '\'')
-        };
-        let skipped = |b: &Builder, k: usize| {
-            let t = text(b, k);
-            !t.is_empty() && t.chars().all(|c| matches!(c, '\u{ad}' | '\u{200c}' | '\u{200d}'))
-        };
         let mut k = 0;
-        while k < n {
-            if !letters(self, k) {
-                k += 1;
-                continue;
+        while k < self.pieces.len() {
+            let (e, at) = word_points(&self.pieces, &self.text, &self.styles, k, h, caps, right);
+            for j in at {
+                self.pieces[j].auto_hyphen = true;
             }
-            let lang = self.styles[self.pieces[k].style as usize].run.lang.clone();
-            let mut e = k;
-            let mut word = String::new();
-            let mut ends = Vec::new();
-            while e < n && (letters(self, e) || skipped(self, e)) && self.styles[self.pieces[e].style as usize].run.lang == lang {
-                if letters(self, e) {
-                    word.push_str(text(self, e));
-                    ends.push((word.chars().count(), e));
-                }
-                e += 1;
-            }
-            let shouting = caps && !word.chars().any(char::is_lowercase);
-            let head: String = word.chars().take(MAX_LETTERS).collect();
-            if let Some(patterns) = h.for_language(&lang).filter(|_| !shouting) {
-                for at in patterns.points(&head, right) {
-                    if let Some(j) = ends.iter().position(|&(x, _)| x == at).filter(|&j| j + 1 < ends.len()) {
-                        self.pieces[ends[j].1].auto_hyphen = true;
-                    }
-                }
-            }
-            k = e;
+            k = e.max(k + 1);
         }
     }
 
@@ -1187,8 +1161,61 @@ impl<'a> Builder<'a> {
             join: None,
             em1000: self.em1000,
             rules: self.rules,
+            hyphenate: None,
         }
     }
+}
+
+/// The end of the word whose letters start at `pieces[k]` and the pieces it may break after. A word is letters and
+/// apostrophes in one language; optional hyphens and zero-width joiners inside it are skipped.
+fn word_points(
+    pieces: &[Piece],
+    text: &str,
+    styles: &[PieceStyle],
+    k: usize,
+    h: &super::hyphenate::Hyphenation,
+    caps: bool,
+    right: usize,
+) -> (usize, Vec<usize>) {
+    const MAX_LETTERS: usize = 65;
+    let n = pieces.len();
+    let text = |k: usize| {
+        let p = &pieces[k];
+        if p.kind == Kind::Text { &text[p.text.0 as usize..p.text.1 as usize] } else { "" }
+    };
+    let letters = |k: usize| {
+        let t = text(k);
+        !t.is_empty() && t.chars().all(|c| c.is_alphabetic() || c == '\'')
+    };
+    let skipped = |k: usize| {
+        let t = text(k);
+        !t.is_empty() && t.chars().all(|c| matches!(c, '\u{ad}' | '\u{200c}' | '\u{200d}'))
+    };
+    if k >= n || !letters(k) {
+        return (k, Vec::new());
+    }
+    let lang = &styles[pieces[k].style as usize].run.lang;
+    let mut e = k;
+    let mut word = String::new();
+    let mut ends = Vec::new();
+    while e < n && (letters(e) || skipped(e)) && styles[pieces[e].style as usize].run.lang == *lang {
+        if letters(e) {
+            word.push_str(text(e));
+            ends.push((word.chars().count(), e));
+        }
+        e += 1;
+    }
+    let shouting = caps && !word.chars().any(char::is_lowercase);
+    let head: String = word.chars().take(MAX_LETTERS).collect();
+    let mut at = Vec::new();
+    if let Some(patterns) = h.for_language(lang).filter(|_| !shouting) {
+        for x in patterns.points(&head, right) {
+            if let Some(j) = ends.iter().position(|&(c, _)| c == x).filter(|&j| j + 1 < ends.len()) {
+                at.push(ends[j].1);
+            }
+        }
+    }
+    (e, at)
 }
 
 fn shapes_alike(a: &Run, b: &Run) -> bool {
@@ -1332,7 +1359,7 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
         b.hyphenate(h, *caps, *right);
     }
     memos.meter.unit_done();
-    Ok(ShapedPara { join: space.join.clone(), ..b.finish() })
+    Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), ..b.finish() })
 }
 
 pub fn shape_space(
