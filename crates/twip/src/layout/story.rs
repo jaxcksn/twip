@@ -347,7 +347,7 @@ pub fn layout_with(
                 {
                     y -= bottom;
                 }
-                let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t) } else { 0.0 };
+                let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
                 for mut u in rows {
                     u.block = bi;
                     u.top += y;

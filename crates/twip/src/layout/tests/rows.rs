@@ -580,6 +580,31 @@ fn a_12pt_normal_gives_way_to_the_table_style_only_without_the_override_setting(
 }
 
 #[test]
+fn compat_12_single_borders_give_a_shared_edge_to_the_right_cell() {
+    use crate::layout::fragment::Item;
+    let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:tcBorders><w:right w:val="single" w:sz="36" w:space="0" w:color="FF0000"/></w:tcBorders></w:tcPr><w:p/></w:tc><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:tcBorders><w:left w:val="double" w:sz="4" w:space="0" w:color="0000FF"/></w:tcBorders></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
+    let colours = |mode: i64, single: bool| {
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        if single {
+            doc.settings.compat.insert("useSingleBorderforContiguousCells".into());
+        }
+        let snap = layout(&doc, &fonts());
+        let mut c: Vec<u32> = crate::layout::traverse::paint_items(&snap.pages()[0])
+            .into_iter()
+            .filter_map(|i| if let Item::Rect { colour, .. } = i { Some(colour) } else { None })
+            .filter(|&c| c == 0xFF0000 || c == 0x0000FF)
+            .collect();
+        c.dedup();
+        c
+    };
+    // The thick red border wins the conflict; with the option the right cell's blue double does, in compat ≤ 14.
+    assert_eq!(colours(12, false), [0xFF0000]);
+    assert_eq!(colours(12, true), [0x0000FF]);
+    assert_eq!(colours(15, true), [0xFF0000]);
+}
+
+#[test]
 fn a_rows_top_border_takes_its_width_in_whole_twips() {
     let baseline = |sz: u32| {
         let b = format!(r#"w:val="single" w:sz="{sz}" w:space="0" w:color="000000""#);

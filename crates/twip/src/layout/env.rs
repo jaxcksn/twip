@@ -40,6 +40,8 @@ pub struct TextEnv {
     pub suppress_spacing_at_top: bool,
     /// `suppressSpBfAfterPgBrk`, compat ≤ 14: the text after a paragraph's leading page break loses its space before.
     pub suppress_before_after_page_break: bool,
+    /// `useSingleBorderforContiguousCells`, compat ≤ 14: a shared cell edge takes the right or lower cell's border.
+    pub single_cell_borders: bool,
     /// East Asian line-breaking rules: `applyBreakingRules`, or compatibility mode 14 and later.
     pub breaking_rules: bool,
     /// `strictFirstAndLastChars`.
@@ -101,6 +103,7 @@ impl TextEnv {
             suppress_top_spacing: s.has("suppressTopSpacing"),
             suppress_spacing_at_top: s.compat() == Compat::Legacy && s.has("suppressSpacingAtTopOfPage"),
             suppress_before_after_page_break: s.compat() == Compat::Legacy && s.has("suppressSpBfAfterPgBrk"),
+            single_cell_borders: s.compat() == Compat::Legacy && s.has("useSingleBorderforContiguousCells"),
             breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),
             strict_kinsoku: s.strict_kinsoku,
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),

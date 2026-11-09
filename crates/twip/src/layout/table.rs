@@ -774,9 +774,9 @@ pub fn outer_box(tb: &TableLayout) -> (f64, f64) {
     })
 }
 
-pub fn nested_shift(t: &Table) -> f64 {
+pub fn nested_shift(t: &Table, single: bool) -> f64 {
     if rtl(t) {
-        let edges = cell_edges(t, grid_columns(t), &|_| None);
+        let edges = cell_edges(t, grid_columns(t), single, &|_| None);
         let res = rtl_sides(edges.first().into_iter().flatten().map(|c| &*c.edges));
         return rtl_x0(t, 0.0, 0.0, res, false) - rtl_x0(t, 0.0, 0.0, res, true);
     }
@@ -1050,7 +1050,7 @@ struct Fit {
 }
 
 fn fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, memos: &mut Memos) -> Result<Fit, Yield> {
-    let edges = cell_edges(t, grid_columns(t), &|_| None);
+    let edges = cell_edges(t, grid_columns(t), env.ctx.env.text.single_cell_borders, &|_| None);
     let inputs = fit_inputs(t, env, memos, &edges, &|_| None)?;
     Ok(resolve_fit(t, text_w, env, avail, &inputs))
 }
@@ -1443,10 +1443,11 @@ fn layout_shown(
     let kept = |ri: usize| reuse.as_ref().filter(|(_, rows)| !rows.contains(&ri)).map(|(o, _)| *o);
     let n = grid_columns(t);
     let near = |ri: usize| reuse.as_ref().is_some_and(|(_, rows)| ri + 1 >= *rows.start() && ri <= rows.end() + 1);
-    let edges = crate::prof::time("table:edges", || cell_edges(t, n, &|ri| reuse.as_ref().filter(|_| !near(ri)).map(|(o, _)| &o.rows[ri])));
+    let single = env.ctx.env.text.single_cell_borders;
+    let edges = crate::prof::time("table:edges", || cell_edges(t, n, single, &|ri| reuse.as_ref().filter(|_| !near(ri)).map(|(o, _)| &o.rows[ri])));
     let inputs = crate::prof::time("table:fit", || fit_inputs(t, env, memos, &edges, &|ri| kept(ri).map(|o| &o.fit[ri])))?;
     let Fit { cols, min_t, width, hard_t } = resolve_fit(t, text_w, env, None, &inputs);
-    let geo = if cols.len() == n { place(t, &cols, &edges) } else { cell_geometry(t, &cols) };
+    let geo = if cols.len() == n { place(t, &cols, &edges) } else { cell_geometry(t, &cols, single) };
 
     let mut stories = Vec::new();
     let mut closings = Vec::new();
@@ -1591,8 +1592,8 @@ fn holds_float(c: &Cell) -> bool {
 }
 
 // Cell geometry
-fn cell_geometry(t: &Table, cols: &[f64]) -> Vec<Vec<CellGeo>> {
-    place(t, cols, &cell_edges(t, cols.len(), &|_| None))
+fn cell_geometry(t: &Table, cols: &[f64], single: bool) -> Vec<Vec<CellGeo>> {
+    place(t, cols, &cell_edges(t, cols.len(), single, &|_| None))
 }
 
 struct CellEdges {
@@ -1602,7 +1603,9 @@ struct CellEdges {
     edges: Rc<[Option<Border>; 4]>,
 }
 
-fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k RowBox>) -> Vec<Vec<CellEdges>> {
+/// Each cell's resolved edges. A shared edge goes to the conflict winner of the two cells' borders, or with `single`
+/// to the right or lower cell's border, the left or upper one's when that is nil.
+fn cell_edges<'k>(t: &Table, ncols: usize, single: bool, kept: &dyn Fn(usize) -> Option<&'k RowBox>) -> Vec<Vec<CellEdges>> {
     let nrows = t.rows.len();
     struct Side<'a> {
         b: Option<&'a Border>,
@@ -1614,6 +1617,15 @@ fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k Ro
             None => Side { b: table.as_ref(), cell: false },
         }
     }
+    // A cell's own side against its neighbour's; `later`: the cell is the right or lower one.
+    let shared = |own: &Side, other: &Side, later: bool| {
+        if single {
+            let (first, second) = if later { (other, own) } else { (own, other) };
+            second.b.filter(|b| b.visible()).or(first.b.filter(|b| b.visible())).cloned()
+        } else {
+            conflict((own.b, own.cell), (other.b, other.cell))
+        }
+    };
     let mut grid_cells: Vec<Vec<(usize, usize)>> = Vec::new();
     for r in &t.rows {
         let mut col = r.grid_before;
@@ -1651,29 +1663,29 @@ fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k Ro
                 conflict((top.b, top.cell), (None, false))
             } else {
                 let above = neighbour(ri - 1, col);
-                let ab = above.map(|a| side(&a.bottom, &row_borders(t, ri - 1)[4]));
-                conflict((top.b, top.cell), ab.map_or((None, false), |s| (s.b, s.cell)))
+                let ab = above.map_or(Side { b: None, cell: false }, |a| side(&a.bottom, &row_borders(t, ri - 1)[4]));
+                shared(&top, &ab, true)
             };
             let bot_e = if ri + 1 == nrows || alone || framed(t, ri + 1) {
                 conflict((bottom.b, bottom.cell), (None, false))
             } else {
                 let below = neighbour(ri + 1, col);
-                let bl = below.map(|a| side(&a.top, &row_borders(t, ri + 1)[4]));
-                conflict((bottom.b, bottom.cell), bl.map_or((None, false), |s| (s.b, s.cell)))
+                let bl = below.map_or(Side { b: None, cell: false }, |a| side(&a.top, &row_borders(t, ri + 1)[4]));
+                shared(&bottom, &bl, false)
             };
             let left_e = if ci == 0 || alone {
                 conflict((left.b, left.cell), (None, false))
             } else {
                 let lc = &r.cells[ci - 1];
                 let ls = side(&lc.right, &tb[5]);
-                conflict((left.b, left.cell), (ls.b, ls.cell))
+                shared(&left, &ls, true)
             };
             let right_e = if ci + 1 == r.cells.len() || alone {
                 conflict((right.b, right.cell), (None, false))
             } else {
                 let rc = &r.cells[ci + 1];
                 let rs = side(&rc.left, &tb[5]);
-                conflict((right.b, right.cell), (rs.b, rs.cell))
+                shared(&right, &rs, false)
             };
             cells.push(CellEdges { ci, col, span, edges: Rc::new([top_e, left_e, bot_e, right_e]) });
         }
