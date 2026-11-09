@@ -78,6 +78,8 @@ pub struct Frame {
     pub vertical: bool,
     /// Its runs are centred on the line (East Asian glyphs upright).
     pub centred: bool,
+    /// East Asian line-breaking rules: an opening bracket doesn't end a line, a closing one doesn't start it.
+    pub breaking_rules: bool,
 }
 
 impl Frame {
@@ -98,6 +100,7 @@ impl Frame {
             hyphen_limit: e.hyphenation.as_ref().map_or(0, |h| h.limit),
             vertical: e.vertical.is_some(),
             centred: e.vertical.is_some_and(|v| v.upright),
+            breaking_rules: e.breaking_rules,
         }
     }
 }
@@ -715,6 +718,11 @@ struct Pending {
     pen_at_tab: f64,
 }
 
+/// East Asian breaking rules: what doesn't end a line (opening brackets, leading currency signs) and what doesn't
+/// start one (closing brackets and punctuation, iteration marks).
+const NO_END: &str = "〈《「『【〔（［｛｢＄￡￥";
+const NO_START: &str = "、。々〉》」』】〕゛゜ゝゞ・ヽヾ！％），．：；？］｝｡｣､･ﾞﾟ￠";
+
 fn text_of<'a>(sp: &'a ShapedPara, p: &Piece) -> &'a str {
     &sp.text[p.text.0 as usize..p.text.1 as usize]
 }
@@ -944,7 +952,14 @@ fn fit_line(
                 return Fit { end: start, xs: Vec::new(), widths: Vec::new(), hard: None, hyphen: false, leaders: Vec::new() };
             }
             // Inside a fitted region the break goes before the region, unless the region starts the line.
-            let at = (start..=i).rev().find(|&k| !pieces[k].glued).unwrap_or(start);
+            let mut at = (start..=i).rev().find(|&k| !pieces[k].glued).unwrap_or(start);
+            let kept = |at: usize| {
+                text_of(sp, &pieces[at - 1]).chars().last().is_some_and(|c| NO_END.contains(c))
+                    || text_of(sp, &pieces[at]).chars().next().is_some_and(|c| NO_START.contains(c))
+            };
+            while frame.breaking_rules && at > start + 1 && kept(at) {
+                at -= 1;
+            }
             if at > start && pieces[start..at].iter().any(|q| !matches!(q.kind, Kind::ListNumber | Kind::Anchor)) {
                 xs.truncate(at - start);
                 ws.truncate(at - start);

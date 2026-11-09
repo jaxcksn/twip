@@ -673,7 +673,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
                 if attr(e, "name") == Some("compatibilityMode")
                     && let Some(m) = int(attr(e, "val"))
                 {
-                    s.compat_mode = m;
+                    s.compat_mode = m.min(15);
                 } else if let Some(name @ "enableOpenTypeFeatures") = attr(e, "name")
                     && on_off_str(attr(e, "val"))
                 {

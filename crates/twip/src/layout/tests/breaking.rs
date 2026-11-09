@@ -1081,3 +1081,24 @@ fn opentype_number_features_apply_in_compat_15_or_when_enabled() {
     assert!((c12 - c14).abs() < 1e-9 && (c12 - c15 - 27.7 / 20.0).abs() < 0.02, "{c12} {c14} {c15}");
     assert!((enabled - c15).abs() < 1e-9, "{enabled}");
 }
+
+#[test]
+fn east_asian_breaking_rules_apply_from_compat_14_or_with_apply_breaking_rules() {
+    if !fonts().is_installed("MS Mincho") {
+        return;
+    }
+    let rpr = r#"<w:rFonts w:ascii="MS Mincho" w:hAnsi="MS Mincho" w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#;
+    let p = format!("<w:p><w:r><w:t>{}</w:t></w:r></w:p>", "日本語の文章です。句読点「かぎ括弧」、テスト（括弧）です。".repeat(3));
+    let mode = |opt: &str, m: u32| {
+        format!(
+            r#"<w:compat>{opt}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{m}"/></w:compat>"#
+        )
+    };
+    let ends = |settings: &str| lines(settings, rpr, &p).map(|l| l.iter().map(|x| x.1.chars().last().unwrap_or(' ')).collect::<String>());
+    let Some(off) = ends(&mode("", 12)) else { return };
+    // Off: a line may end with an opening bracket. On: it moves down, and a closing bracket takes the character
+    // before it along.
+    assert_eq!(off, "「）。");
+    assert_eq!(ends(&mode("", 14)).unwrap(), "点括。");
+    assert_eq!(ends(&mode("<w:applyBreakingRules/>", 12)).unwrap(), "点括。");
+}

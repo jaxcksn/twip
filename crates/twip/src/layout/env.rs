@@ -19,6 +19,8 @@ pub struct TextEnv {
     pub do_not_vert_align_in_txbx: bool,
     pub wp_justification: bool,
     pub word97_line_breaks: bool,
+    /// East Asian line-breaking rules: `applyBreakingRules`, or compatibility mode 14 and later.
+    pub breaking_rules: bool,
     pub default_style: Option<String>,
     pub grow_autofit: bool,
     pub balance_spaces: bool,
@@ -65,6 +67,7 @@ impl TextEnv {
             do_not_vert_align_in_txbx: s.has("doNotVertAlignInTxbx"),
             wp_justification: s.has("wpJustification"),
             word97_line_breaks: s.has("useWord97LineBreakRules"),
+            breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
             grow_autofit: s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),
