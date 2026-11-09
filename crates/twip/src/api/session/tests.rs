@@ -950,6 +950,38 @@ fn application_field_types_keep_their_results_and_show_their_labels() {
 }
 
 #[test]
+fn field_settings_in_the_options_apply_from_each_open() {
+    use crate::api::command::ReferenceRule;
+    let field = |code: &str| {
+        format!(
+            "<w:p><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> {code} </w:instrText></w:r>\
+             <w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p>"
+        )
+    };
+    let body = format!("{}{}", field("CUSTOMTEXT Customer"), field("CUSTOMVALUE Total"));
+    let options = SessionOptions {
+        mode: crate::api::state::Mode::Design,
+        field_labels: [("CUSTOMTEXT Customer".into(), "Customer name".into())].into(),
+        application_field_types: vec!["CUSTOMTEXT".into(), "CUSTOMVALUE".into()],
+        sub_template_rules: vec![ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None }],
+        ..SessionOptions::default()
+    };
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    let id = engine.create_session(options);
+    let s = engine.session(id).expect("a session");
+    for _ in 0..2 {
+        s.open(&crate::editing::tests::blank_body(&body)).expect("opens");
+        s.editor.complete(&s.fonts.fonts());
+        let drawn = crate::layout::dump::page_text(&s.editor.snapshot(), s.editor.document());
+        assert!(drawn.contains("Customer name") && drawn.contains("\u{ab}Total\u{bb}") && !drawn.contains("Error!"), "{drawn}");
+        assert!(!s.state().modified, "the settings aren't edits");
+    }
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    s.open(&std::fs::read(fixture).expect("the fixture")).expect("opens");
+    assert!(s.editor.references().by_field.values().any(|r| r.name == "Violation"), "the rules hold for the new document");
+}
+
+#[test]
 fn sub_template_bodies_shown_inline_never_reach_the_output() {
     use crate::api::command::{ReferenceRule, SubTemplateRules, SubTemplateView};
     let mut engine = Engine::new(FontLibrary::system_recommended());

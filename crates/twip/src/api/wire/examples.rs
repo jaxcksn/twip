@@ -1946,6 +1946,14 @@ fn session_options() -> SessionOptions {
         language: "en-GB".into(),
         dictionaries: vec![Dictionary { language: "en-GB".into(), aff: Bytes(b"SET UTF-8".to_vec()), dic: Bytes(b"1\ncolour".to_vec()) }],
         track_changes: true,
+        field_labels: BTreeMap::from([("MERGEFIELD Customer.Name".into(), "Customer name".into())]),
+        application_field_types: vec!["MERGECOUNT".into()],
+        sub_template_rules: vec![ReferenceRule {
+            field_type: "MERGETEMPLATE".into(),
+            argument: None,
+            category: "Merge sub-templates".into(),
+            gallery: None,
+        }],
     }
 }
 

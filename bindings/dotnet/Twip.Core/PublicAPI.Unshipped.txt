@@ -914,13 +914,17 @@ Twip.EditorSession.Warning -> System.EventHandler<Twip.WarningEventArgs!>?
 Twip.EditorSession.WordAdded -> System.EventHandler<Twip.WordAddedEventArgs!>?
 Twip.EditorSessionOptions
 Twip.EditorSessionOptions.<Clone>$() -> Twip.EditorSessionOptions!
+Twip.EditorSessionOptions.ApplicationFieldTypes.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Twip.EditorSessionOptions.ApplicationFieldTypes.init -> void
 Twip.EditorSessionOptions.Author.get -> Twip.Author?
 Twip.EditorSessionOptions.Author.init -> void
-Twip.EditorSessionOptions.Deconstruct(out Twip.Author? Author, out bool ReadOnly, out Twip.EditorMode Mode, out Twip.FontLibrary? Fonts, out string! Language, out System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>? Dictionaries, out bool TrackChanges) -> void
+Twip.EditorSessionOptions.Deconstruct(out Twip.Author? Author, out bool ReadOnly, out Twip.EditorMode Mode, out Twip.FontLibrary? Fonts, out string! Language, out System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>? Dictionaries, out bool TrackChanges, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>? FieldLabels, out System.Collections.Generic.IReadOnlyList<string!>? ApplicationFieldTypes, out System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>? SubTemplateRules) -> void
 Twip.EditorSessionOptions.Dictionaries.get -> System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>?
 Twip.EditorSessionOptions.Dictionaries.init -> void
-Twip.EditorSessionOptions.EditorSessionOptions(Twip.Author? Author = null, bool ReadOnly = false, Twip.EditorMode Mode = Twip.EditorMode.Editing, Twip.FontLibrary? Fonts = null, string! Language = "en-US", System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>? Dictionaries = null, bool TrackChanges = false) -> void
+Twip.EditorSessionOptions.EditorSessionOptions(Twip.Author? Author = null, bool ReadOnly = false, Twip.EditorMode Mode = Twip.EditorMode.Editing, Twip.FontLibrary? Fonts = null, string! Language = "en-US", System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>? Dictionaries = null, bool TrackChanges = false, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? FieldLabels = null, System.Collections.Generic.IReadOnlyList<string!>? ApplicationFieldTypes = null, System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>? SubTemplateRules = null) -> void
 Twip.EditorSessionOptions.Equals(Twip.EditorSessionOptions? other) -> bool
+Twip.EditorSessionOptions.FieldLabels.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+Twip.EditorSessionOptions.FieldLabels.init -> void
 Twip.EditorSessionOptions.Fonts.get -> Twip.FontLibrary?
 Twip.EditorSessionOptions.Fonts.init -> void
 Twip.EditorSessionOptions.Language.get -> string!
@@ -929,6 +933,8 @@ Twip.EditorSessionOptions.Mode.get -> Twip.EditorMode
 Twip.EditorSessionOptions.Mode.init -> void
 Twip.EditorSessionOptions.ReadOnly.get -> bool
 Twip.EditorSessionOptions.ReadOnly.init -> void
+Twip.EditorSessionOptions.SubTemplateRules.get -> System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>?
+Twip.EditorSessionOptions.SubTemplateRules.init -> void
 Twip.EditorSessionOptions.TrackChanges.get -> bool
 Twip.EditorSessionOptions.TrackChanges.init -> void
 Twip.EditorShortcuts

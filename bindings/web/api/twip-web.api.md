@@ -2370,12 +2370,15 @@ export interface SelectionSummary {
 
 // @public
 export interface SessionOptions {
+    applicationFieldTypes?: string[];
     author?: Author;
     dictionaries?: Dictionary[];
+    fieldLabels?: Record<string, string>;
     fonts?: FontLibrary;
     language?: string;
     mode?: 'editing' | 'design';
     readOnly?: boolean;
+    subTemplateRules?: ReferenceRule[];
     trackChanges?: boolean;
 }
 

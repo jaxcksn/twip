@@ -1,5 +1,8 @@
 [
   {
+    "applicationFieldTypes": [
+      "MERGECOUNT"
+    ],
     "author": {
       "identity": {
         "provider": "AD",
@@ -15,19 +18,31 @@
         "language": "en-GB"
       }
     ],
+    "fieldLabels": {
+      "MERGEFIELD Customer.Name": "Customer name"
+    },
     "language": "en-GB",
     "mode": "design",
     "readOnly": true,
+    "subTemplateRules": [
+      {
+        "category": "Merge sub-templates",
+        "fieldType": "MERGETEMPLATE"
+      }
+    ],
     "trackChanges": true
   },
   {
+    "applicationFieldTypes": [],
     "author": {
       "name": "Author"
     },
     "dictionaries": [],
+    "fieldLabels": {},
     "language": "en-US",
     "mode": "editing",
     "readOnly": false,
+    "subTemplateRules": [],
     "trackChanges": false
   }
 ]
