@@ -979,6 +979,18 @@ fn a_rubys_raised_annotation_adds_its_ascent_to_the_line() {
     assert!((low - flat).abs() < 1e-9, "a raise the base's ascent covers changes nothing");
 }
 
+#[test]
+fn a_right_vertical_ruby_turns_its_annotation_beside_the_base() {
+    let line = |align: &str, annotation: &str| baselines("", ARIAL_11, &ruby(align, 0, annotation, "M")).map(|l| (l[0].2, l[0].3));
+    let (Some((centre, flat)), Some((turned, short))) = (line("center", "ab"), line("rightVertical", "ab")) else { return };
+    // M 21.4 tw narrower, then the 5.5pt annotation's line height and its gap.
+    assert!((turned - centre - (6.325 + 0.1 - 1.07)).abs() < 0.02, "{centre} {turned}");
+    assert!((short - flat).abs() < 1e-9, "a short annotation leaves the line");
+    // A 20-character annotation (52pt long): the line's ascent is half of it.
+    let (_, tall) = line("rightVertical", "abcdefghijklmnopqrst").expect("lays out");
+    assert!(tall - flat > 14.0, "{flat} {tall}");
+}
+
 fn legacy_level(space: u32, indent: u32, jc: &str, suff: &str) -> String {
     format!(
         r#"<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:suff w:val="{suff}"/><w:lvlText w:val="%1."/><w:legacy w:legacy="1" w:legacySpace="{space}" w:legacyIndent="{indent}"/><w:lvlJc w:val="{jc}"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num>"#

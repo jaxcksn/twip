@@ -1717,8 +1717,15 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
             if let Some(Object::Ruby(r)) = p.object.map(|o| &sp.objects[o as usize]) {
                 flush(&mut run, &mut out);
-                ruby_glyphs(&r.base, &r.base_x, x, base, q, o.review, behind_text, &mut out);
-                ruby_glyphs(&r.text, &r.text_x, x, base - r.raise, q, o.review, behind_text, &mut out);
+                ruby_glyphs(&r.base, &r.base_x, x, base, r.narrow, q, o.review, behind_text, &mut out);
+                match r.turned {
+                    Some([dx, dy]) => {
+                        let (centre, mut items) = ([x + dx, base + dy], Vec::new());
+                        ruby_glyphs(&r.text, &r.text_x, centre[0], centre[1], 0.0, q, o.review, behind_text, &mut items);
+                        out.push(Item::Turned(Rc::new(super::fragment::Turned { centre, deg: 90.0, items })));
+                    }
+                    None => ruby_glyphs(&r.text, &r.text_x, x, base - r.raise, 0.0, q, o.review, behind_text, &mut out),
+                }
                 if let Some(unit) = first {
                     atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + line.widths[k]), para: q, unit, brk: false });
                 }
@@ -1841,9 +1848,20 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
     }
 }
 
-/// A ruby's base or annotation: its pieces at `xs` from `x`, on `base`.
+/// A ruby's base or annotation: its pieces at `xs` from `x`, on `base`, each glyph `narrow` closer to the previous one
+/// than its advance.
 #[allow(clippy::too_many_arguments, reason = "the line's place, review view and backdrop, as for the line's own glyphs")]
-fn ruby_glyphs(s: &ShapedPara, xs: &[f64], x: f64, base: f64, para: ParaId, review: &ReviewView, behind: Option<u32>, out: &mut Vec<Item>) {
+fn ruby_glyphs(
+    s: &ShapedPara,
+    xs: &[f64],
+    x: f64,
+    base: f64,
+    narrow: f64,
+    para: ParaId,
+    review: &ReviewView,
+    behind: Option<u32>,
+    out: &mut Vec<Item>,
+) {
     let mut run: Option<GlyphRunBuilder> = None;
     for (i, &px) in xs.iter().enumerate() {
         let st = s.style(i);
@@ -1859,7 +1877,7 @@ fn ruby_glyphs(s: &ShapedPara, xs: &[f64], x: f64, base: f64, para: ParaId, revi
         let mut gx = x0;
         for (id, advance, dx) in s.glyphs(i) {
             r.glyphs.push((id, gx + dx * scale));
-            gx += advance * scale;
+            gx += advance * scale - narrow;
         }
         r.chars.extend(s.text(i).chars().map(|c| (symbol_unicode(&face.family, c), x0, None)));
     }

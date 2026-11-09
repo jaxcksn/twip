@@ -74,7 +74,15 @@ pub struct RubyShape {
     pub base_x: Vec<f64>,
     pub text_x: Vec<f64>,
     pub raise: f64,
+    /// An annotation turned a quarter clockwise beside the base: its start (its baseline's x from the object's start,
+    /// its first character's y from the line's baseline).
+    pub turned: Option<[f64; 2]>,
+    /// How much narrower each base character is drawn than its advance.
+    pub narrow: f64,
 }
+
+/// How much narrower each base character of a turned-annotation ruby is than its advance (21.4 tw).
+const TURNED_NARROW: f64 = 1.07;
 
 /// Each piece's x in a ruby object `wo` wide: the narrower part spread by the ruby's alignment.
 fn ruby_x(s: &ShapedPara, wo: f64, align: u8) -> Vec<f64> {
@@ -909,7 +917,7 @@ impl<'a> Builder<'a> {
                 }
                 // A ruby: one object as wide as the wider of its base and annotation, as tall as the base or the
                 // annotation raised over it, as deep as the base.
-                (Inline::Ruby(r, _), Some(run)) => {
+                (Inline::Ruby(r, _), Some(run)) if r.align != 5 || space.vertical => {
                     let (base, text) = (self.sub(&r.base, view)?, self.sub(&r.text, view)?);
                     let wo = [&base, &text].map(|s| s.pieces.iter().map(|q| q.width).sum::<f64>()).into_iter().fold(0.0, f64::max);
                     let face = self.face(&run.ascii, run);
@@ -919,7 +927,37 @@ impl<'a> Builder<'a> {
                     p.ascent = top(&base, |q| q.ascent).max(r.raise + top(&text, |q| q.ascent));
                     p.descent = top(&base, |q| q.descent);
                     let (base_x, text_x) = (ruby_x(&base, wo, r.align), ruby_x(&text, wo, r.align));
-                    p.object = Some(Object::Ruby(Rc::new(RubyShape { base, text, base_x, text_x, raise: r.raise })));
+                    let shape = RubyShape { base, text, base_x, text_x, raise: r.raise, turned: None, narrow: 0.0 };
+                    p.object = Some(Object::Ruby(Rc::new(shape)));
+                    self.atom(p, "\u{FFFC}");
+                }
+                // `rightVertical` in horizontal text: the annotation turned a quarter clockwise after the base, centred
+                // on the base text's middle; the object is the base (each character narrower) plus the annotation's
+                // line height and a gap; the line is as tall as the annotation is long, about its middle.
+                (Inline::Ruby(r, _), Some(run)) => {
+                    let (base, text) = (self.sub(&r.base, view)?, self.sub(&r.text, view)?);
+                    let face = self.face(&run.ascii, run);
+                    let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
+                    let top = |s: &ShapedPara, f: fn(&Piece) -> f64| s.pieces.iter().map(f).fold(0.0, f64::max);
+                    let mut base_x = Vec::with_capacity(base.pieces.len());
+                    let mut x = 0.0;
+                    for (i, q) in base.pieces.iter().enumerate() {
+                        base_x.push(x);
+                        x += q.width - TURNED_NARROW * base.text(i).chars().count() as f64;
+                    }
+                    let len = text.pieces.iter().map(|q| q.width).sum::<f64>();
+                    let size = text.pieces.iter().map(|q| text.styles[q.style as usize].size).fold(0.0, f64::max);
+                    // ponytail: the gap after the annotation's line height, measured at 5.5, 11 and 16pt and
+                    // interpolated (its rule isn't known).
+                    let gap = if size <= 11.0 { 0.1 + (size - 5.5) * 0.15 / 5.5 } else { 0.25 + (size - 11.0) * 0.05 };
+                    p.width = x + top(&text, |q| q.ascent + q.descent) + gap;
+                    p.ascent = top(&base, |q| q.ascent).max(len / 2.0);
+                    p.descent = top(&base, |q| q.descent).max(len - p.ascent);
+                    let font = base.styles.first().and_then(|st| st.face.as_ref().map(|f| (f.ascent - f.descent) * f.scale(st.size)));
+                    let start = [x + top(&text, |q| q.descent) + 0.12, -(font.unwrap_or(0.0) + len) / 2.0];
+                    let text_x = ruby_x(&text, len, 3);
+                    let shape = RubyShape { base, text, base_x, text_x, raise: 0.0, turned: Some(start), narrow: TURNED_NARROW };
+                    p.object = Some(Object::Ruby(Rc::new(shape)));
                     self.atom(p, "\u{FFFC}");
                 }
                 (Inline::DateBlock(_, text, _), Some(run)) => self.text(text, run)?,
@@ -1379,6 +1417,7 @@ pub fn shape_space(
         compress: text.compress_punctuation,
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
         frame_breaks: text.show_breaks_in_frames,
+        vertical: text.vertical.is_some(),
         metric_rules: MetricRules {
             no_leading: text.no_leading,
             no_raise_lower: text.no_raise_lower,
