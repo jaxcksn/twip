@@ -62,6 +62,7 @@ impl Editor {
                 w_after: None,
                 ind: None,
                 jc: None,
+                div: None,
                 cells: texts
                     .iter()
                     .enumerate()

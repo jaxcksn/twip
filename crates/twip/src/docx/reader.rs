@@ -377,6 +377,11 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     super::fields::evaluate(&mut doc, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
+    let divs = read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
+    if !divs.is_empty() {
+        doc.sections.iter_mut().for_each(|s| fold_divs(&mut s.blocks, &divs));
+        doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()).for_each(|b| fold_divs(b, &divs));
+    }
     if editable {
         let blocks = doc.sections.iter().map(|s| s.blocks.clone()).collect();
         let stories = story_xml.into_iter().map(|(name, x)| (name.clone(), (x, doc.stories[&name].clone()))).collect();
@@ -468,6 +473,158 @@ impl Map {
     /// This map moved to start at (`x`, `y`) points.
     fn at(self, x: f64, y: f64) -> Map {
         Map { origin: (x, y), ..self }
+    }
+}
+
+// HTML divisions
+struct Div {
+    parent: Option<i64>,
+    /// Left, right, top and bottom margins.
+    margins: [f64; 4],
+    /// Top, left, bottom and right borders.
+    borders: [Option<Border>; 4],
+}
+
+fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Div> {
+    fn walk(parent: Option<i64>, n: Node, colours: &ThemeColours, out: &mut HashMap<i64, Div>) {
+        for d in children(n, "div") {
+            let Some(id) = int(attr(d, "id")) else { continue };
+            let m = |name: &str| child(d, name).and_then(|e| twips(val(e))).unwrap_or(0.0);
+            let bdr = child(d, "divBdr");
+            let b = |name: &str| bdr.and_then(|x| child(x, name)).map(|e| Border::parse(e, colours)).filter(|b| b.visible());
+            out.insert(
+                id,
+                Div {
+                    parent,
+                    margins: [m("marLeft"), m("marRight"), m("marTop"), m("marBottom")],
+                    borders: [b("top"), b("left"), b("bottom"), b("right")],
+                },
+            );
+            if let Some(c) = child(d, "divsChild") {
+                walk(Some(id), c, colours, out);
+            }
+        }
+    }
+    let mut out = HashMap::new();
+    let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return out };
+    if let Some(divs) = child(doc.root_element(), "divs") {
+        walk(None, divs, colours, &mut out);
+    }
+    out
+}
+
+/// A division and its ancestors, innermost first.
+fn div_chain(divs: &HashMap<i64, Div>, id: Option<i64>) -> Vec<i64> {
+    let mut out = Vec::new();
+    let mut at = id.filter(|i| divs.contains_key(i));
+    while let Some(i) = at.filter(|i| !out.contains(i)) {
+        out.push(i);
+        at = divs.get(&i).and_then(|d| d.parent);
+    }
+    out
+}
+
+fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Div>) {
+    let row_chain = |r: Option<&Row>| div_chain(divs, r.and_then(|r| r.div.as_ref()).map(|d| d.id));
+    let ends: Vec<(Vec<i64>, Vec<i64>)> = blocks
+        .iter()
+        .map(|b| match b {
+            Block::Para(p) => {
+                let c = div_chain(divs, p.style.div);
+                (c.clone(), c)
+            }
+            Block::Table(t) => (row_chain(t.rows.first()), row_chain(t.rows.last())),
+        })
+        .collect();
+    let mut seen: Vec<i64> = Vec::new();
+    let mut reopened: Vec<i64> = Vec::new();
+    let mut runs = |chain: &[i64], prev: &[i64]| {
+        for id in chain.iter().filter(|id| !prev.contains(id)) {
+            if seen.contains(id) {
+                reopened.push(*id);
+            } else {
+                seen.push(*id);
+                reopened.retain(|r| r != id);
+            }
+        }
+        reopened.clone()
+    };
+    let most = |ids: &mut dyn Iterator<Item = &i64>, i: usize| ids.map(|id| divs[id].margins[i]).fold(0.0, f64::max);
+    let width = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.width * if b.style == "double" { 3.0 } else { 1.0 } + b.space);
+    let boxes = |chain: &[i64], prev: &[i64], next: &[i64], again: &[i64]| -> Vec<DivBox> {
+        (0..chain.len())
+            .rev()
+            .filter(|&k| divs[&chain[k]].borders.iter().any(Option::is_some))
+            .map(|k| {
+                let id = &chain[k];
+                let outward = |i: usize| chain[k..].iter().map(|o| divs[o].margins[i]).sum::<f64>();
+                let open = !again.contains(id);
+                DivBox {
+                    borders: divs[id].borders.clone(),
+                    left: outward(0),
+                    right: outward(1),
+                    starts: open && !prev.contains(id),
+                    ends: open && !next.contains(id),
+                }
+            })
+            .collect()
+    };
+    let empty = Vec::new();
+    for k in 0..blocks.len() {
+        let (prev, next) = (k.checked_sub(1).map_or(&empty, |j| &ends[j].1), ends.get(k + 1).map_or(&empty, |e| &e.0));
+        let table_before = k.checked_sub(1).is_some_and(|j| matches!(blocks[j], Block::Table(_)));
+        let table_after = matches!(blocks.get(k + 1), Some(Block::Table(_)));
+        let para_before = k.checked_sub(1).is_some_and(|j| matches!(blocks[j], Block::Para(_)));
+        let para_after = matches!(blocks.get(k + 1), Some(Block::Para(_)));
+        match &mut blocks[k] {
+            Block::Para(p) => {
+                let chain = &ends[k].0;
+                let again = runs(chain, prev);
+                let mut before = most(&mut chain.iter().filter(|id| !prev.contains(id)), 2);
+                let mut after = most(&mut chain.iter().filter(|id| !next.contains(id)), 3);
+                if table_before {
+                    before = before.max(most(&mut prev.iter().filter(|id| !chain.contains(id)), 3));
+                }
+                if table_after {
+                    after = after.max(most(&mut next.iter().filter(|id| !chain.contains(id)), 2));
+                }
+                if chain.is_empty() && before == 0.0 && after == 0.0 {
+                    continue;
+                }
+                let boxes = boxes(chain, prev, next, &again);
+                let sum = |i: usize| chain.iter().map(|id| divs[id].margins[i]).sum::<f64>();
+                let s = Rc::make_mut(&mut p.style);
+                s.ind_left += sum(0);
+                s.ind_right += sum(1);
+                s.space_before = s.space_before.max(before);
+                s.space_after = s.space_after.max(after);
+                s.div_boxes = boxes.into();
+            }
+            Block::Table(t) => {
+                let chains: Vec<Vec<i64>> = t.rows.iter().map(|r| row_chain(Some(r))).collect();
+                let n = t.rows.len();
+                let split = t.borders[2].as_ref().filter(|b| b.visible()).map_or(0.0, |b| b.width);
+                for (ri, r) in t.rows.iter_mut().enumerate() {
+                    let chain = &chains[ri];
+                    let Some(d) = r.div.as_mut().filter(|_| !chain.is_empty()) else { continue };
+                    let row_prev = if ri == 0 { prev } else { &chains[ri - 1] };
+                    let row_next = if ri + 1 == n { next } else { &chains[ri + 1] };
+                    let again = runs(chain, row_prev);
+                    let boxes = boxes(chain, row_prev, row_next, &again);
+                    let top = if ri == 0 && para_before { 0.0 } else { most(&mut chain.iter().filter(|id| !row_prev.contains(id)), 2) };
+                    let bottom = if ri + 1 == n && para_after { 0.0 } else { most(&mut chain.iter().filter(|id| !row_next.contains(id)), 3) };
+                    let d = Rc::make_mut(d);
+                    d.shift = chain.iter().map(|id| divs[id].margins[0]).sum();
+                    let (split_above, split_below) = (ri > 0 && chains[ri - 1] != *chain, ri + 1 < n && chains[ri + 1].is_empty());
+                    d.lead =
+                        top + boxes.iter().filter(|b| b.starts).map(|b| width(&b.borders[0])).sum::<f64>() + if split_above { split } else { 0.0 };
+                    d.trail =
+                        bottom + boxes.iter().filter(|b| b.ends).map(|b| width(&b.borders[2])).sum::<f64>() + if split_below { split } else { 0.0 };
+                    d.boxes = boxes.into();
+                }
+                t.rows.iter_mut().flat_map(|r| &mut r.cells).for_each(|c| fold_divs(&mut c.blocks, divs));
+            }
+        }
     }
 }
 
@@ -2206,6 +2363,10 @@ impl Reader {
                 w_after: trp.w_after.map(|w| w.max(0.0)),
                 ind: TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours).ind,
                 jc: trp.jc,
+                div: tr_pr
+                    .and_then(|p| child(p, "divId"))
+                    .and_then(|n| int(val(n)))
+                    .map(|id| Rc::new(RowDiv { id, shift: 0.0, lead: 0.0, trail: 0.0, boxes: Rc::from([]) })),
                 cells,
                 controls: row_controls.clone(),
                 src: self.record.then(|| Rc::new(rn.range())),

@@ -3,7 +3,7 @@ page 0 612.0 792.0
   89.0 111.6 Col 1
   163.4 111.6 Col 2
   237.8 111.6 Col 3
-  312.2 111.6 Col 4
+  312.1 111.6 Col 4
   386.6 111.6 Col 5
   460.9 111.6 Col 6
   89.0 131.9 Span 2
@@ -18,16 +18,16 @@ page 0 612.0 792.0
   460.9 152.3 1
   163.4 172.7 Span 2 + vertical merge
   163.4 184.6 over 2 rows
-  312.2 172.7 1
+  312.1 172.7 1
   386.6 172.7 1
   460.9 172.7 1
-  312.2 193.1 1
+  312.1 193.1 1
   386.6 193.1 Span 2
   163.4 213.4 gridBefore
   163.4 225.3 1 /
   163.4 237.2 gridAfter 1
   237.8 213.4 1
-  312.2 213.4 1
+  312.1 213.4 1
   386.6 213.4 1
   237.8 257.5 gridBefore 2
   386.6 257.5 1
@@ -43,7 +43,7 @@ page 0 612.0 792.0
   89.0 357.6 products distribution filed
   89.0 369.5 logistics. Chapter plan regional
   89.0 381.4 maintenance accessibility tax.
-  312.2 298.3 Span 3
+  312.1 298.3 Span 3
   89.0 401.7 Span 6
   83.3 422.1 Paragraph after the table.
   72.0 443.0 Paragraph after the wrapper table.

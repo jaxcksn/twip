@@ -23,7 +23,28 @@ pub struct ShapeSpace {
     pub expansion: Option<std::rc::Rc<super::expansion::Expansion>>,
 }
 
-pub type BorderKey = Option<std::rc::Rc<[Option<Border>; 5]>>;
+pub type BorderKey = Option<std::rc::Rc<BorderGroup>>;
+
+/// A bordered paragraph's border group.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BorderGroup {
+    /// Top, left, bottom, right.
+    pub sides: [Option<Border>; 4],
+    pub between: Option<Border>,
+    /// The box's left edge and right indent.
+    pub edges: (f64, f64),
+    pub frame: Option<crate::docx::props::FramePr>,
+    /// The HTML division the paragraph is in.
+    pub div: Option<i64>,
+    /// The part of a paragraph continued from the previous page or column.
+    pub continued: bool,
+}
+
+impl BorderGroup {
+    pub fn joins(&self, o: &BorderGroup) -> bool {
+        self.sides == o.sides && self.edges == o.edges && self.frame == o.frame && self.div == o.div
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParaSpace {

@@ -558,6 +558,7 @@ impl Editor {
                     w_after: None,
                     ind: None,
                     jc: None,
+                    div: None,
                     cells: (0..ncols).map(|_| cell(w)).collect(),
                     src: None,
                     controls: Vec::new(),

@@ -13,9 +13,10 @@ use super::cache::{CacheKey, cached};
 use super::fragment::{Atom, GlyphRun, ImageKey, Item, LineFragment};
 use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
-use super::space::{BorderKey, ParaSpace};
+use super::space::{BorderGroup, BorderKey, ParaSpace};
 use super::text::{Kind, Object, Piece, ShapedPara, para_id, symbol_unicode};
 use super::units::{LU_PER_PT, Lu};
+use crate::docx::props::Border;
 
 const EPS: f64 = 1e-6;
 
@@ -215,13 +216,14 @@ pub fn break_lines_uncached(
 ) -> Result<ParaLines, Yield> {
     let from = space.start.min(shaped.pieces.len());
     let pieces = &shaped.pieces[from..];
+    let opens = from == 0 || shaped.pieces[..from].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak));
     let frame = Frame::new(space);
     let view = space.env.review.view;
     let (style, mark) = (para.para_style_in(view), para.mark_in(view));
     let mut lines =
         super::job::unit("line breaking", || crate::prof::time("break", || break_paragraph(shaped, pieces, style, mark, &frame, fonts, from > 0)));
-    let prev = if from > 0 { border_key(style) } else { space.borders.0.clone() };
-    apply_borders(&mut lines, style, prev.as_deref(), space.borders.1.as_deref(), space.width, false);
+    let prev = if opens { space.borders.0.clone() } else { continued_key(style) };
+    apply_borders(&mut lines, style, prev.as_deref(), space.borders.1.as_deref(), space.width, false, opens, true);
     memos.meter.unit_done();
     let n = lines.len();
     Ok(ParaLines {
@@ -243,48 +245,107 @@ pub fn break_lines_uncached(
 }
 
 // Paragraph borders
+pub fn border_space(b: &Border) -> f64 {
+    f64::from((b.space.max(0.0) as u32) & 31)
+}
+
+fn masked(b: &Option<Border>) -> Option<Border> {
+    b.as_ref().map(|b| Border { space: border_space(b), ..b.clone() })
+}
+
 pub fn border_key(s: &ParaStyle) -> BorderKey {
-    let k = [s.border_top.clone(), s.border_left.clone(), s.border_bottom.clone(), s.border_right.clone(), s.border_between.clone()];
-    k.iter().any(|b| b.is_some()).then(|| Rc::new(k))
+    let any = [&s.border_top, &s.border_left, &s.border_bottom, &s.border_right, &s.border_between].iter().any(|b| b.is_some());
+    any.then(|| {
+        Rc::new(BorderGroup {
+            sides: [masked(&s.border_top), masked(&s.border_left), masked(&s.border_bottom), masked(&s.border_right)],
+            between: masked(&s.border_between),
+            edges: (s.ind_left + s.ind_first.min(0.0), s.ind_right),
+            frame: s.frame.clone(),
+            div: s.div,
+            continued: false,
+        })
+    })
+}
+
+/// The key of a paragraph's part continued from the page or column before.
+pub fn continued_key(s: &ParaStyle) -> BorderKey {
+    border_key(s).map(|k| Rc::new(BorderGroup { continued: true, ..(*k).clone() }))
 }
 
 pub fn neighbour_borders(style: &ParaStyle, prev: Option<&ParaStyle>, next: Option<&ParaStyle>) -> (BorderKey, BorderKey) {
     match border_key(style) {
         None => (None, None),
-        Some(_) => (prev.and_then(border_key), next.and_then(border_key)),
+        Some(_) => (prev.filter(|_| !style.page_break_before).and_then(border_key), next.filter(|n| !n.page_break_before).and_then(border_key)),
     }
 }
 
-pub fn top_border_extra(s: &ParaStyle, prev: Option<&[Option<crate::docx::props::Border>; 5]>) -> f64 {
+fn joined(key: &BorderKey, other: Option<&BorderGroup>) -> bool {
+    matches!((key, other), (Some(k), Some(o)) if k.joins(o))
+}
+
+fn shadowed(b: &Border) -> f64 {
+    if b.shadow { super::table::thick(b) } else { 0.0 }
+}
+
+fn between_gap(prev: &BorderGroup) -> f64 {
+    if prev.continued {
+        return 0.0;
+    }
+    prev.between.as_ref().map_or(0.0, |b| super::table::thick(b) + b.space + shadowed(b))
+}
+
+pub fn top_border_extra(s: &ParaStyle, prev: Option<&BorderGroup>, first_part: bool) -> f64 {
     let key = border_key(s);
-    match &s.border_top {
-        Some(t) if !(key.is_some() && prev == key.as_deref()) => super::table::thick(t) + t.space,
+    let own = match (prev, &s.border_top) {
+        (Some(p), _) if joined(&key, Some(p)) => between_gap(p),
+        (_, Some(t)) => super::table::thick(t) + border_space(t) + shadowed(t),
         _ => 0.0,
-    }
+    };
+    own + if first_part { div_tops(s).1 } else { 0.0 }
 }
 
+fn div_tops(s: &ParaStyle) -> (Vec<f64>, f64) {
+    let mut y = 0.0;
+    let mut at = Vec::new();
+    for d in s.div_boxes.iter() {
+        at.push(y);
+        if let (true, Some(t)) = (d.starts, &d.borders[0]) {
+            y += super::table::thick(t) + border_space(t) + shadowed(t);
+        }
+    }
+    (at, y)
+}
+
+#[allow(clippy::too_many_arguments, reason = "the paragraph part's place in its border group and its division boxes")]
 pub fn apply_borders(
     lines: &mut [Line],
     s: &ParaStyle,
-    prev: Option<&[Option<crate::docx::props::Border>; 5]>,
-    next: Option<&[Option<crate::docx::props::Border>; 5]>,
+    prev: Option<&BorderGroup>,
+    next: Option<&BorderGroup>,
     width: f64,
     top_pitched: bool,
+    first_part: bool,
+    last_part: bool,
 ) {
     let key = border_key(s);
     let n = lines.len();
-    if n == 0 || (key.is_none() && s.shading.is_none()) {
+    if n == 0 || (key.is_none() && s.shading.is_none() && s.div_boxes.is_empty()) {
         return;
     }
-    let same_prev = key.is_some() && prev == key.as_deref();
-    let same_next = key.is_some() && next == key.as_deref();
+    let (div_at, div_top) = if first_part { div_tops(s) } else { (vec![0.0; s.div_boxes.len()], 0.0) };
+    let lead =
+        usize::from(first_part && n > 1 && matches!(lines[0].hard, Some(Kind::PageBreak | Kind::ColumnBreak)) && lines[0].end <= lines[0].start + 1);
+    let lines = &mut lines[lead..];
+    let n = lines.len();
+    let same_prev = joined(&key, prev);
+    let same_next = joined(&key, next);
     let thick = super::table::thick;
-    let lx = s.border_left.as_ref().map_or(0.0, |b| b.space + thick(b));
-    let rx = s.border_right.as_ref().map_or(0.0, |b| b.space + thick(b));
+    let lx = s.border_left.as_ref().map_or(0.0, |b| border_space(b) + thick(b));
+    let rx = s.border_right.as_ref().map_or(0.0, |b| border_space(b) + thick(b));
     let left = s.ind_left + s.ind_first.min(0.0);
     let (x0, x1) = (left - lx, width - s.ind_right + rx);
     // Each edge draws as a table's does: every border style, its stripes and tones.
-    let edge = |rects: &mut Vec<([f64; 4], u32)>, b: &crate::docx::props::Border, horizontal: bool, far: bool, a: f64, from: f64, to: f64| {
+    let edge = |rects: &mut Vec<([f64; 4], u32)>, b: &Border, horizontal: bool, far: bool, a: f64, from: f64, to: f64| {
         let w = thick(b);
         let r = if horizontal { [from, a, to, a + w] } else { [a, from, a + w, to] };
         let mut items = Vec::new();
@@ -295,25 +356,72 @@ pub fn apply_borders(
         }));
     };
     let (mut shade_top, mut shade_bottom) = (0.0, None);
-    if let (Some(t), false) = (&s.border_top, same_prev) {
-        let extra = thick(t) + t.space;
-        let l = &mut lines[0];
-        edge(&mut l.rects, t, true, false, 0.0, x0, x1);
-        if !top_pitched {
-            l.pitch += extra;
-            l.baseline += extra;
+    let top_extra = top_border_extra(s, prev, first_part);
+    let div_x = |d: &crate::docx::model::DivBox| {
+        let side = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| border_space(b) + thick(b));
+        (d.left - side(&d.borders[1]), width - d.right + side(&d.borders[3]))
+    };
+    for (d, &y) in s.div_boxes.iter().zip(&div_at) {
+        if let (true, true, Some(t)) = (first_part, d.starts, &d.borders[0]) {
+            let (a, b) = div_x(d);
+            edge(&mut lines[0].rects, t, true, false, y, a, b);
         }
-        shade_top = thick(t);
+    }
+    match prev {
+        Some(p) if same_prev => {
+            if let Some(b) = p.between.as_ref().filter(|_| !p.continued) {
+                let y = div_top + shadowed(b);
+                edge(&mut lines[0].rects, b, true, false, y, x0, x1);
+            }
+        }
+        _ => {
+            if let Some(t) = &s.border_top {
+                edge(&mut lines[0].rects, t, true, false, div_top + shadowed(t), x0, x1);
+                shade_top = div_top + shadowed(t) + thick(t);
+            }
+        }
+    }
+    if !top_pitched && top_extra > 0.0 {
+        let l = &mut lines[0];
+        l.pitch += top_extra;
+        l.baseline += top_extra;
     }
     if let (Some(b), false) = (&s.border_bottom, same_next) {
         let l = &mut lines[n - 1];
-        let y = l.pitch + b.space;
+        let y = l.pitch + border_space(b);
         edge(&mut l.rects, b, true, true, y, x0, x1);
         shade_bottom = Some(y);
-        l.pitch += b.space + thick(b);
+        l.pitch += border_space(b) + thick(b) + shadowed(b);
+    }
+    if let Some(b) = next.filter(|_| same_next && last_part).and_then(|k| k.between.as_ref()) {
+        lines[n - 1].pitch += border_space(b);
+    }
+    let mut div_bottom = vec![None; s.div_boxes.len()];
+    if last_part {
+        let l = &mut lines[n - 1];
+        for (k, d) in s.div_boxes.iter().enumerate().rev() {
+            if let (true, Some(b)) = (d.ends, &d.borders[2]) {
+                let y = l.pitch + border_space(b);
+                let (a, c) = div_x(d);
+                edge(&mut l.rects, b, true, true, y, a, c);
+                l.pitch = y + thick(b) + shadowed(b);
+                div_bottom[k] = Some(l.pitch);
+            }
+        }
     }
     for (i, l) in lines.iter_mut().enumerate() {
         let h = l.pitch;
+        for (k, d) in s.div_boxes.iter().enumerate() {
+            let (a, c) = div_x(d);
+            let from = if i == 0 && first_part && d.starts { div_at[k] } else { 0.0 };
+            let to = if i + 1 == n { div_bottom[k].unwrap_or(h) } else { h };
+            if let Some(b) = &d.borders[1] {
+                edge(&mut l.rects, b, false, false, a, from, to);
+            }
+            if let Some(b) = &d.borders[3] {
+                edge(&mut l.rects, b, false, true, c - thick(b), from, to);
+            }
+        }
         if let Some(b) = &s.border_left {
             edge(&mut l.rects, b, false, false, x0, 0.0, h);
         }

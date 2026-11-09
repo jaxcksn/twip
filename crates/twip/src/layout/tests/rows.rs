@@ -150,6 +150,28 @@ fn a_column_a_row_does_not_reach_keeps_its_grid_width() {
 }
 
 #[test]
+fn a_border_wider_than_its_margin_takes_the_other_sides_margin_first() {
+    let right_edge = |border: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>{border}</w:tblBorders><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="200" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        let Some(Block::Table(t)) = doc.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))) else { panic!("a table") };
+        let s = layout(&doc, &fonts());
+        let left = rows_of(&s.pages()[0], TableId(t.id))[0].edges[0].0;
+        let mut x = None;
+        crate::layout::traverse::paint(&s.pages()[0], &mut |p| {
+            if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
+                x = x.or(r.chars.iter().find(|g| g.0 == 'a').map(|g| g.1));
+            }
+        });
+        x.expect("drawn") - left
+    };
+    let (plain, bordered) = (right_edge(""), right_edge(r#"<w:left w:val="single" w:sz="16" w:space="0" w:color="000000"/>"#));
+    assert!((bordered - plain - 1.0).abs() < 0.01, "the 2pt left border's half moves the text 1pt: {plain} {bordered}");
+}
+
+#[test]
 fn a_right_to_left_paragraph_swaps_left_and_right() {
     let x = |ppr: &str| {
         let body = format!(r#"<w:p><w:pPr>{ppr}</w:pPr><w:r><w:t>a</w:t></w:r></w:p>"#);

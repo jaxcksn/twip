@@ -501,6 +501,8 @@ pub struct ParaProps {
     pub suppress_auto_hyphens: Option<bool>,
     pub suppress_line_numbers: Option<bool>,
     pub bidi: Option<bool>,
+    /// `w:divId`: the HTML division (`webSettings.xml`) the paragraph is in.
+    pub div_id: Option<i64>,
     /// Tab stops this level sets and clears, in order.
     pub tabs: Vec<Tab>,
     pub num_id: Option<i64>,
@@ -559,6 +561,7 @@ impl ParaProps {
                 "pageBreakBefore" => p.page_break_before = Some(on_off(e)),
                 "widowControl" => p.widow_control = Some(on_off(e)),
                 "suppressAutoHyphens" => p.suppress_auto_hyphens = Some(on_off(e)),
+                "divId" => p.div_id = int(val(e)),
                 "suppressLineNumbers" => p.suppress_line_numbers = Some(on_off(e)),
                 "bidi" => p.bidi = Some(on_off(e)),
                 "tabs" => {
@@ -658,6 +661,7 @@ impl ParaProps {
             suppress_auto_hyphens,
             suppress_line_numbers,
             bidi,
+            div_id,
             num_id,
             ilvl,
             border_top,

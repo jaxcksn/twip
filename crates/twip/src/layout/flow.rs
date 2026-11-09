@@ -150,7 +150,7 @@ pub fn para_space(
         None => (None, None),
         Some(_) => {
             let (p, n) = neighbour_borders(style, prev, next);
-            (if from > 0 { border_key(style) } else { p }, n)
+            (if from > 0 { super::line::continued_key(style) } else { p }, n)
         }
     };
     ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone(), fit: false }
@@ -587,10 +587,24 @@ impl<'d> PageFill<'d, '_> {
         memos: &mut Memos,
     ) -> Result<Rc<ParaLines>, Yield> {
         let p = laid.para();
-        let (prev, next) = self.sec.blocks.neighbours(bi, end, self.ctx.env.text.review.view);
+        let view = self.ctx.env.text.review.view;
+        let (prev, next) = self.sec.blocks.neighbours(bi, end, view);
+        let style = p.para_style_in(view);
+        let breaks_first = |b: Option<&Block>| {
+            let Some(Block::Para(q)) = b else { return false };
+            let mut shown = q.inlines.iter().filter(|i| !matches!(i, Inline::Bookmark(..) | Inline::Range(..)));
+            matches!(shown.next(), Some(Inline::Break(crate::docx::model::BreakKind::Page | crate::docx::model::BreakKind::Column, _)))
+        };
+        let prev = prev.filter(|_| !breaks_first(self.sec.blocks.get(bi)));
+        let next = next.filter(|_| !breaks_first(self.sec.blocks.get(end + 1)));
+        let next = next.or_else(|| self.sec.next.filter(|_| end + 1 >= self.sec.blocks.len()));
         let space = laid.shape_space(self.fields, self.note_numbers, &self.ctx);
         let shaped = shape(p, &space, self.ctx.fonts, memos)?;
-        let ps = para_space(p.para_style_in(self.ctx.env.text.review.view), prev, next, width, from, x0, &self.ctx);
+        let mut ps = para_space(style, prev, next, width, from, x0, &self.ctx);
+        if from > 0 && shaped.pieces[..from.min(shaped.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak)) {
+            ps.borders.0 = super::line::neighbour_borders(style, prev, None).0;
+        }
+
         let lines = break_lines(&shaped, p, &ps, self.ctx.fonts, memos)?;
         hold(&mut self.pass.held.lines, &lines);
         Ok(lines)
@@ -1365,7 +1379,7 @@ impl<'d> PageFill<'d, '_> {
         let pieces = pb.pieces();
         let n = pieces.len();
         let est = pb.lines.first().map_or(13.0, |l| l.pitch);
-        let top_extra = top_border_extra(style, pb.borders.0.as_deref());
+        let top_extra = top_border_extra(style, pb.borders.0.as_deref(), first_part);
         let (cx0, cx1) = (col.x, col.x + col.width);
         let compat = self.ctx.env.text.compat;
         let mut content = pieces.iter().filter(|q| q.kind != Kind::Anchor);
@@ -1478,10 +1492,10 @@ impl<'d> PageFill<'d, '_> {
         if bands.is_empty() {
             return self.place_plain(p, pb, pos, carry, col, y, empty, area, out, memos);
         }
-        if border_key(style).is_some() || style.shading.is_some() {
+        if border_key(style).is_some() || style.shading.is_some() || !style.div_boxes.is_empty() {
             let mut firsts: Vec<Line> = bands.iter().map(|(_, segs)| segs[0].clone()).collect();
             let next = if s >= n { pb.borders.1.clone() } else { border_key(style) };
-            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part);
+            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n);
             for ((_, segs), l) in bands.iter_mut().zip(firsts) {
                 segs[0] = l;
             }

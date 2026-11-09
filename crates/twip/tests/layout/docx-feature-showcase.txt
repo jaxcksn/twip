@@ -278,7 +278,7 @@ page 8 792.0 612.0
   557.5 229.9 Nested table inside a row-spanning
   557.5 240.3 cell:
   563.1 254.1 Top rep
-  668.4 254.1 Avery K.
+  668.5 254.1 Avery K.
   563.1 265.0 QoQ growth
   680.6 265.0 +8.1%
   563.1 275.8 Churn

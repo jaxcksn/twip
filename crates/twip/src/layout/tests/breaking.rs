@@ -509,3 +509,144 @@ fn a_missing_paragraph_default_is_words_own() {
     assert!((gap("<w:pPrDefault/>") - 13.8).abs() < 0.01);
     assert!(gap("") > 13.8 + 8.0);
 }
+
+fn bordered(paras: &[(&str, &str)]) -> Option<Vec<f64>> {
+    let body: String = paras.iter().map(|(ppr, t)| format!(r#"<w:p><w:pPr>{ppr}</w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#)).collect();
+    let l = baselines("", ARIAL_12, &format!(r#"<w:p><w:r><w:t>before</w:t></w:r></w:p>{body}"#))?;
+    Some(paras.iter().map(|(_, t)| l.iter().find(|x| x.1 == *t).expect("drawn").3).collect())
+}
+
+const BOX: &str = r#"<w:top w:val="single" w:sz="4" w:space="1" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="4" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="1" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="4" w:color="000000"/>"#;
+
+fn boxed(extra: &str, ind: &str) -> String {
+    format!(r#"<w:pBdr>{BOX}{extra}</w:pBdr>{ind}"#)
+}
+
+#[test]
+fn paragraphs_group_by_their_four_sides_and_box_edges() {
+    let plain = boxed("", "");
+    let Some(one) = bordered(&[(&plain, "p1"), (&plain, "p2"), (&plain, "p3")]) else { return };
+    let gap = |ys: &[f64]| ys[1] - ys[0];
+    let indented = boxed("", r#"<w:ind w:left="720"/>"#);
+    let three = bordered(&[(&plain, "p1"), (&indented, "p2"), (&plain, "p3")]).unwrap();
+    assert!((gap(&three) - gap(&one) - 3.0).abs() < 0.01, "p1's bottom and p2's top: {one:?} {three:?}");
+    let first_line = boxed("", r#"<w:ind w:firstLine="720"/>"#);
+    assert!((gap(&bordered(&[(&plain, "p1"), (&first_line, "p2"), (&plain, "p3")]).unwrap()) - gap(&one)).abs() < 0.01);
+    let hanging = boxed("", r#"<w:ind w:left="720" w:hanging="720"/>"#);
+    assert!((gap(&bordered(&[(&plain, "p1"), (&hanging, "p2"), (&plain, "p3")]).unwrap()) - gap(&one)).abs() < 0.01, "edge 0");
+    let between = boxed(r#"<w:between w:val="single" w:sz="4" w:space="1" w:color="000000"/>"#, "");
+    assert!(
+        (gap(&bordered(&[(&plain, "p1"), (&between, "p2"), (&plain, "p3")]).unwrap()) - gap(&one) - 1.0).abs() < 0.01,
+        "between isn't in the key"
+    );
+}
+
+#[test]
+fn a_page_break_before_opens_a_new_box() {
+    use crate::layout::line::neighbour_borders;
+    let border = crate::docx::props::Border { style: "single".into(), width: 0.5, space: 1.0, shadow: false, color: None };
+    let Some(doc) = super::plain_doc(&["x".into()]) else { return };
+    let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { return };
+    let a = crate::docx::ParaStyle { border_top: Some(border), ..(*p.style).clone() };
+    let b = crate::docx::ParaStyle { page_break_before: true, ..a.clone() };
+    assert!(neighbour_borders(&a, Some(&a), Some(&a)).0.is_some());
+    assert!(neighbour_borders(&b, Some(&a), None).0.is_none() && neighbour_borders(&a, None, Some(&b)).1.is_none());
+}
+
+#[test]
+fn a_between_border_adds_its_width_and_both_spaces() {
+    let x = r#"<w:between w:val="single" w:sz="16" w:space="3" w:color="0000FF"/>"#;
+    let (plain, with) = (boxed("", ""), boxed(x, ""));
+    let Some(base) = bordered(&[(&plain, "p1"), (&plain, "p2"), (&plain, "p3")]) else { return };
+    let e1 = bordered(&[(&with, "p1"), (&with, "p2"), (&with, "p3")]).unwrap();
+    assert!((e1[1] - e1[0] - (base[1] - base[0]) - 8.0).abs() < 0.01, "3 + 2 + 3 pt: {e1:?}");
+    let e2 = bordered(&[(&plain, "p1"), (&with, "p2"), (&plain, "p3")]).unwrap();
+    assert!((e2[1] - e2[0] - (base[1] - base[0]) - 3.0).abs() < 0.01, "the lower's space only: {e2:?}");
+    assert!((e2[2] - e2[1] - (base[2] - base[1]) - 5.0).abs() < 0.01, "the upper's line and space: {e2:?}");
+}
+
+#[test]
+fn a_border_space_keeps_its_low_five_bits_and_a_shadow_adds_a_width() {
+    let side = |space: u32, shadow: bool| {
+        let s = if shadow { r#" w:shadow="1""# } else { "" };
+        format!(r#"<w:pBdr><w:top w:val="single" w:sz="12" w:space="{space}" w:color="000000"{s}/></w:pBdr>"#)
+    };
+    let Some(eight) = bordered(&[(&side(8, false), "p1")]) else { return };
+    assert!((bordered(&[(&side(40, false), "p1")]).unwrap()[0] - eight[0]).abs() < 0.01);
+    assert!((bordered(&[(&side(32, false), "p1")]).unwrap()[0] - bordered(&[(&side(0, false), "p1")]).unwrap()[0]).abs() < 0.01);
+    assert!((bordered(&[(&side(8, true), "p1")]).unwrap()[0] - eight[0] - 1.5).abs() < 0.01, "a gap of one width above");
+}
+
+#[test]
+fn a_decimal_tab_ignores_the_documents_decimal_symbol() {
+    let p = r#"<w:p><w:pPr><w:tabs><w:tab w:val="decimal" w:pos="4320"/></w:tabs></w:pPr><w:r><w:tab/><w:t>1.250,00</w:t></w:r></w:p>"#;
+    let x = |symbol: &str| lines(&format!(r#"<w:decimalSymbol w:val="{symbol}"/>"#), ARIAL_12, p).map(|l| l[0].0);
+    let Some(point) = x(".") else { return };
+    assert_eq!(x(","), Some(point));
+}
+
+fn web_lines(divs: &str, body: &str) -> Option<Vec<(f64, String, f64, f64)>> {
+    let fonts = fonts();
+    fonts.face("Arial", None, false, false)?;
+    let parts = [
+        (
+            "word/document.xml",
+            format!(r#"<w:document xmlns:w="{W}"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#),
+        ),
+        ("word/styles.xml", format!(r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{ARIAL_12}</w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults></w:styles>"#)),
+        ("word/webSettings.xml", format!(r#"<w:webSettings xmlns:w="{W}"><w:divs>{divs}</w:divs></w:webSettings>"#)),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/webSettings" Target="webSettings.xml"/></Relationships>"#.to_string(),
+        ),
+    ];
+    let parts: Vec<(String, Vec<u8>)> = parts.into_iter().map(|(n, x)| (n.to_string(), x.into_bytes())).collect();
+    let doc = crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads");
+    let snap = layout(&doc, &fonts);
+    let mut out: Vec<(f64, String, f64, f64)> = Vec::new();
+    paint(&snap.pages()[0], &mut |p| {
+        if let Item::Glyphs(r) = p.absolute() {
+            out.push((r.x, r.chars.iter().map(|c| c.0).collect::<String>().trim_end().to_string(), r.x, r.baseline));
+        }
+    });
+    Some(out)
+}
+
+fn div(id: u32, inner: &str, extra: &str) -> String {
+    format!(
+        r#"<w:div w:id="{id}"><w:marLeft w:val="{}"/><w:marRight w:val="0"/><w:marTop w:val="120"/><w:marBottom w:val="0"/>{extra}{inner}</w:div>"#,
+        720 * id
+    )
+}
+
+const DIV_BOX: &str = r#"<w:divBdr><w:top w:val="single" w:sz="12" w:space="6" w:color="000000"/><w:bottom w:val="single" w:sz="12" w:space="6" w:color="000000"/></w:divBdr>"#;
+
+#[test]
+fn divisions_add_their_margins_and_nest_their_boxes() {
+    let para = |id: u32, t: &str| format!(r#"<w:p><w:pPr><w:divId w:val="{id}"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let body = format!("{}{}<w:p><w:r><w:t>after</w:t></w:r></w:p>", para(1, "outer"), para(2, "inner"));
+    let tree = |inner_box: &str| div(1, &format!("<w:divsChild>{}</w:divsChild>", div(2, "", inner_box)), DIV_BOX);
+    let Some(boxed) = web_lines(&tree(DIV_BOX), &body) else { return };
+    let plain = web_lines(&tree(""), &body).unwrap();
+    let at = |l: &[(f64, String, f64, f64)], t: &str| l.iter().find(|x| x.1 == t).map(|x| (x.0, x.3)).expect("drawn");
+    assert_eq!((at(&boxed, "outer").0, at(&boxed, "inner").0), (108.0, 180.0), "the margins of every division add");
+    let gap = |l: &[(f64, String, f64, f64)]| at(l, "inner").1 - at(l, "outer").1;
+    assert!((gap(&boxed) - gap(&plain) - 7.5).abs() < 0.01, "the inner box opens inside the outer one: {}", gap(&boxed) - gap(&plain));
+    let tail = |l: &[(f64, String, f64, f64)]| at(l, "after").1 - at(l, "inner").1;
+    assert!((tail(&boxed) - tail(&plain) - 7.5).abs() < 0.01, "and closes before it");
+}
+
+#[test]
+fn a_row_in_a_division_moves_by_its_margins() {
+    let table = |row_div: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr>{row_div}</w:trPr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>after</w:t></w:r></w:p>"#
+        )
+    };
+    let divs = div(1, "", DIV_BOX);
+    let Some(inside) = web_lines(&divs, &table(r#"<w:divId w:val="1"/>"#)) else { return };
+    let outside = web_lines(&divs, &table("")).unwrap();
+    let at = |l: &[(f64, String, f64, f64)], t: &str| l.iter().find(|x| x.1 == t).map(|x| (x.0, x.3)).expect("drawn");
+    assert!((at(&inside, "cell").0 - at(&outside, "cell").0 - 36.0).abs() < 0.01);
+    assert!((at(&inside, "cell").1 - at(&outside, "cell").1 - 13.5).abs() < 0.01, "margin, border and space above");
+}

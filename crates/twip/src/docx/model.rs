@@ -82,6 +82,29 @@ impl PartialEq for Raw {
     }
 }
 
+/// A table row's HTML division.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RowDiv {
+    pub id: i64,
+    pub shift: f64,
+    pub lead: f64,
+    pub trail: f64,
+    pub boxes: Rc<[DivBox]>,
+}
+
+/// A bordered HTML division's box, as one paragraph in it sees it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DivBox {
+    /// Top, left, bottom, right.
+    pub borders: [Option<Border>; 4],
+    /// The division's left and right edges, from the text column's.
+    pub left: f64,
+    pub right: f64,
+    /// The box opens above this paragraph, closes below it.
+    pub starts: bool,
+    pub ends: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParaStyle {
     pub style_id: Option<String>,
@@ -106,6 +129,10 @@ pub struct ParaStyle {
     pub widow_control: bool,
     pub suppress_auto_hyphens: bool,
     pub suppress_line_numbers: bool,
+    /// The HTML division the paragraph is in (`w:divId`).
+    pub div: Option<i64>,
+    /// The bordered divisions around the paragraph, outermost first.
+    pub div_boxes: Rc<[DivBox]>,
     pub tabs: Vec<Tab>,
     pub border_top: Option<Border>,
     pub border_bottom: Option<Border>,
@@ -749,6 +776,8 @@ pub struct Row {
     pub w_after: Option<f64>,
     pub ind: Option<f64>,
     pub jc: Option<Jc>,
+    /// The HTML division the row is in (`trPr/w:divId`).
+    pub div: Option<Rc<RowDiv>>,
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
     pub controls: Vec<ControlId>,

@@ -119,7 +119,7 @@ fn shell(t: &Table) -> Table {
     let rows = rows
         .iter()
         .map(|r| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, jc, cells, src: _, controls: _, rev } = r;
+            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, jc, div, cells, src: _, controls: _, rev } = r;
             let cells = cells
                 .iter()
                 .map(|c| {
@@ -173,6 +173,7 @@ fn shell(t: &Table) -> Table {
                 w_after: *w_after,
                 ind: *ind,
                 jc: *jc,
+                div: div.clone(),
                 cells,
                 src: None,
                 controls: Vec::new(),
@@ -245,7 +246,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         && *grid_change == t.grid_change
         && rows.len() == t.rows.len()
         && rows.iter().zip(&t.rows).all(|(r, q)| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, jc, cells, src: _, controls: _, rev } = r;
+            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, jc, div, cells, src: _, controls: _, rev } = r;
             *height == q.height
                 && *cant_split == q.cant_split
                 && *header == q.header
@@ -255,6 +256,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 && *w_after == q.w_after
                 && *ind == q.ind
                 && *jc == q.jc
+                && *div == q.div
                 && *rev == q.rev
                 && cells.len() == q.cells.len()
                 && cells.iter().zip(&q.cells).all(|(c, d)| {
@@ -338,6 +340,10 @@ pub struct RowBox {
     pub seams: Vec<(f64, f64, Border)>,
     pub hidden: bool,
     pub changed: bool,
+    /// The row's HTML division: room above and below it, and its boxes.
+    pub lead: f64,
+    pub trail: f64,
+    pub div_boxes: Rc<[crate::docx::model::DivBox]>,
 }
 
 impl TableLayout {
@@ -775,6 +781,11 @@ fn edge_add(compat: Compat, t: &Table) -> (f64, f64) {
     }
 }
 
+fn edge_right(t: &Table) -> f64 {
+    let last = t.rows.first().and_then(|r| if rtl(t) { r.cells.first() } else { r.cells.last() });
+    space_h(candidate(last.map(|c| &c.right), &t.borders[3]))
+}
+
 fn edge_gap(t: &Table, b: f64, mar: f64) -> f64 {
     half_border(b).max(if t.cell_spacing > 0.0 { 2.0 * t.cell_spacing + b + mar } else { mar })
 }
@@ -1204,6 +1215,9 @@ impl ViewTable {
                     seams: Vec::new(),
                     hidden: true,
                     changed: false,
+                    lead: 0.0,
+                    trail: 0.0,
+                    div_boxes: Rc::from([]),
                 };
                 rows.push(row);
                 fit.push(FitRow::default());
@@ -1422,12 +1436,13 @@ fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k Ro
 }
 
 fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>> {
-    let col_x: Vec<f64> = std::iter::once(0.0)
-        .chain(cols.iter().scan(0.0, |acc, w| {
-            *acc += w;
+    let col_x: Vec<i64> = std::iter::once(0)
+        .chain(cols.iter().scan(0, |acc, w| {
+            *acc += twips(*w);
             Some(*acc)
         }))
         .collect();
+    let pt = |v: i64| v as f64 / 20.0;
     let ncols = cols.len();
     edges
         .iter()
@@ -1442,15 +1457,16 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
                         (left_e, right_e, left_outer, right_outer) = (right_e, left_e, right_outer, left_outer);
                     }
                     let (x, w) = (col_x[col], col_x[col + span] - col_x[col]);
+                    let (ml, mr) = (twips(c.margins[1]), twips(c.margins[3]));
                     let (cx, cw) = if t.cell_spacing > 0.0 {
-                        let (gl, gr) = (gap(t.cell_spacing, left_outer), gap(t.cell_spacing, right_outer));
-                        let cx = gl + space_h(left_e) + c.margins[1];
-                        (cx, (w - cx - c.margins[3] - space_h(right_e) - gr).max(0.0))
+                        let (gl, gr) = (twips(gap(t.cell_spacing, left_outer)), twips(gap(t.cell_spacing, right_outer)));
+                        let cx = gl + twips(space_h(left_e)) + ml;
+                        (cx, (w - cx - mr - twips(space_h(right_e)) - gr).max(0))
                     } else {
-                        let cx = c.margins[1].max(box_h(left_e) / 2.0);
-                        (cx, (w - cx - c.margins[3].max(box_h(right_e) / 2.0)).max(0.0))
+                        let (bl, br) = (twips(box_h(left_e)), twips(box_h(right_e)));
+                        (ml.max(bl / 2), (w - (ml + mr).max((bl + br) / 2)).max(0))
                     };
-                    CellGeo { ci: e.ci, col, span, x, w, cx, cw, edges: e.edges.clone() }
+                    CellGeo { ci: e.ci, col, span, x: pt(x), w: pt(w), cx: pt(cx), cw: pt(cw), edges: e.edges.clone() }
                 })
                 .collect()
         })
@@ -1473,7 +1489,7 @@ fn assemble(
     let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| (space_h(candidate(Some(&c.left), &t.borders[1])), c.margins[1]));
     let (lw, lmar) = first_left.unwrap_or((space_h(&t.borders[1]), 0.0));
     let mut x0 = match compat {
-        Compat::Generic => t.ind + lw / 2.0,
+        Compat::Generic => t.ind + half_border(lw),
         Compat::Legacy if !t.ind_set => t.ind,
         Compat::Legacy => t.ind - edge_gap(t, lw, lmar),
     };
@@ -1482,9 +1498,11 @@ fn assemble(
             let (gb, ga) = t.rows.first().map_or((0, 0), |r| (r.grid_before.min(cols.len()), r.grid_after.min(cols.len())));
             let before: f64 = cols[..gb].iter().sum();
             let after: f64 = cols[cols.len() - ga.min(cols.len() - gb)..].iter().sum();
-            x0 = (text_w - (total - before - after)) / 2.0 - before;
+            let (lh, rh) = (twips(half_border(lw)), twips(edge_right(t)) / 2);
+            let free = twips(text_w) - (lh + twips(total - before - after) + rh);
+            x0 = (lh + (free + 1).div_euclid(2)) as f64 / 20.0 - before;
         }
-        Jc::Right => x0 = text_w - total - space_h(&t.borders[3]) / 2.0,
+        Jc::Right => x0 = (twips(text_w) - twips(total) - twips(edge_right(t)) / 2) as f64 / 20.0,
         _ => {}
     }
     // Floating tables
@@ -1528,7 +1546,7 @@ fn assemble(
         let shift = match r.ind {
             Some(i) if compat == Compat::Legacy && !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - t.ind,
             _ => 0.0,
-        };
+        } + r.div.as_ref().filter(|_| t.jc == Jc::Left && t.floating.is_none() && !rtl).map_or(0.0, |d| d.shift);
         // Row alignment
         let shift = shift
             + match r.jc.unwrap_or(t.jc) {
@@ -1540,7 +1558,7 @@ fn assemble(
                     let width = total - before - after;
                     let gap = r.cells.first().map_or(0.0, |c| c.margins[1])
                         + if t.cell_spacing > 0.0 { 2.0 * t.cell_spacing + space_h(&t.borders[1]) } else { 0.0 };
-                    let left = if jc == Jc::Center { (text_w - width) / 2.0 } else { text_w - width + gap };
+                    let left = if jc == Jc::Center { (twips(text_w) - twips(width)).div_euclid(2) as f64 / 20.0 } else { text_w - width + gap };
                     left - (x0 + before)
                 }
                 Jc::Left if compat == Compat::Legacy && t.floating.is_none() && !rtl && t.jc != Jc::Left => -edge_gap(t, lw, lmar) - x0,
@@ -1631,10 +1649,11 @@ fn assemble(
             Some(Block::Para(p)) => Some(p.para_style_in(env.ctx.env.text.review.view)),
             _ => None,
         };
+        let (lead, trail) = r.div.as_ref().map_or((0.0, 0.0), |d| (d.lead, d.trail));
         rows.push(RowBox {
             cells,
             top_border,
-            height,
+            height: height + lead + trail,
             cant_split: r.cant_split,
             keep_next: first.is_some_and(|s| s.keep_next),
             break_before: first.is_some_and(|s| s.page_break_before),
@@ -1645,6 +1664,9 @@ fn assemble(
             seams,
             hidden: false,
             changed,
+            lead,
+            trail,
+            div_boxes: r.div.as_ref().map_or_else(|| Rc::from([]), |d| d.boxes.clone()),
         });
     }
     for ri in 0..rows.len() {
@@ -1833,6 +1855,10 @@ fn drawn_edges<'a>(tb: &TableLayout, c: &'a CellBox) -> [&'a Option<Border>; 4] 
 
 pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, parts: Option<&[CellPart]>, last_of_table: bool) -> RowFragment {
     let row = &tb.rows[ri];
+    let whole = (height - row.height).abs() < EPS;
+    let (lead, trail) = if whole { (row.lead, row.trail) } else { (0.0, 0.0) };
+    let (outer_top, outer_bottom) = (top, top + height);
+    let (top, height) = (top + lead, height - lead - trail);
     let x0 = left + tb.x0;
     let (mut background, mut cells, mut borders) = (Vec::new(), Vec::new(), Vec::new());
     let mut edges: Vec<(f64, usize)> = Vec::new();
@@ -1980,6 +2006,46 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         }
         if last_of_table && let Some(b) = b.as_ref().filter(|b| b.visible()) {
             edge(&mut borders, [x0 - lw / 2.0, bottom, x1 + rw / 2.0, bottom + thick(b)], true, true, b);
+        }
+    }
+    // Division boxes
+    if whole && !row.div_boxes.is_empty() {
+        let side = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.space + thick(b));
+        let n = row.div_boxes.len();
+        let (mut l, mut r) = (rect[0], rect[2]);
+        let mut extents = vec![(0.0, 0.0); n];
+        for (k, d) in row.div_boxes.iter().enumerate().rev() {
+            l -= side(&d.borders[1]);
+            r += side(&d.borders[3]);
+            extents[k] = (l, r);
+        }
+        let opening: f64 = row.div_boxes.iter().filter(|d| d.starts).map(|d| side(&d.borders[0])).sum();
+        let mut y = top - opening;
+        let mut tops = vec![outer_top; n];
+        for (k, d) in row.div_boxes.iter().enumerate().filter(|(_, d)| d.starts) {
+            tops[k] = y;
+            if let Some(b) = &d.borders[0] {
+                edge(&mut borders, [extents[k].0, y, extents[k].1, y + thick(b)], true, false, b);
+            }
+            y += side(&d.borders[0]);
+        }
+        let mut y = top + height;
+        let mut bottoms = vec![outer_bottom; n];
+        for (k, d) in row.div_boxes.iter().enumerate().rev().filter(|(_, d)| d.ends) {
+            if let Some(b) = &d.borders[2] {
+                y += b.space;
+                edge(&mut borders, [extents[k].0, y, extents[k].1, y + thick(b)], true, true, b);
+                y += thick(b);
+            }
+            bottoms[k] = y;
+        }
+        for (k, d) in row.div_boxes.iter().enumerate() {
+            if let Some(b) = &d.borders[1] {
+                edge(&mut borders, [extents[k].0, tops[k], extents[k].0 + thick(b), bottoms[k]], false, false, b);
+            }
+            if let Some(b) = &d.borders[3] {
+                edge(&mut borders, [extents[k].1 - thick(b), tops[k], extents[k].1, bottoms[k]], false, true, b);
+            }
         }
     }
     RowFragment {

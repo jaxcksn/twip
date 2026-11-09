@@ -21,28 +21,28 @@ page 0 612.0 792.0
   77.7 221.2 Notebook
   282.4 221.2 120
   393.2 221.2 2.50
-  498.0 221.2 300.00
+  498.1 221.2 300.00
   77.7 233.6 Pen
   282.4 233.6 480
   393.2 233.6 0.75
-  498.0 233.6 360.00
+  498.1 233.6 360.00
   77.7 246.0 Stapler
   288.4 246.0 35
   393.2 246.0 8.90
-  498.0 246.0 311.50
+  498.1 246.0 311.50
   77.7 258.3 Folder
   282.4 258.3 260
   393.2 258.3 1.20
-  498.0 258.3 312.00
+  498.1 258.3 312.00
   77.7 270.7 Tape
   288.4 270.7 90
   393.2 270.7 3.10
-  498.0 270.7 279.00
+  498.1 270.7 279.00
   72.0 304.5 C. Merged cells, shading, custom borders, vertical alignment, fixed widths,
   72.0 318.6 nested table
   213.9 337.2 Merged header across four columns
-  78.5 408.4 Tall
-  150.5 349.6 Top-left aligned (default)
+  78.6 408.4 Tall
+  150.6 349.6 Top-left aligned (default)
   312.5 367.7 Centered
   312.5 379.6 vertically
   429.5 397.7 Bottom vertically
@@ -51,14 +51,14 @@ page 0 612.0 792.0
   435.2 410.6 n3
   488.0 410.6 n4
   429.5 431.0 Nested table:
-  150.5 455.2 Shaded cell
+  150.6 455.2 Shaded cell
   312.5 455.2 Shaded, white bold
   312.5 467.1 text
   429.5 455.2 Plain
-  78.5 479.5 Notes
-  150.5 479.5 Cell with two paragraphs.
-  150.5 491.3 Second paragraph in the
-  150.5 503.2 same cell.
+  78.6 479.5 Notes
+  150.6 479.5 Cell with two paragraphs.
+  150.6 491.3 Second paragraph in the
+  150.6 503.2 same cell.
   312.5 479.5 Merged horizontally across two columns
   72.0 538.8 D. Long table with repeating header row and rows that split across pages
   72.0 555.2 The table below has 60 data rows; row 1 repeats at the top of each page, and some rows

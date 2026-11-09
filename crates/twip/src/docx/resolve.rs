@@ -155,6 +155,8 @@ impl Resolver {
             widow_control: p.widow_control.unwrap_or(true),
             suppress_auto_hyphens: p.suppress_auto_hyphens.unwrap_or(false),
             suppress_line_numbers: p.suppress_line_numbers.unwrap_or(false),
+            div: p.div_id,
+            div_boxes: Rc::from([]),
             tabs: p.resolved_tabs(),
             border_top: bdr(&p.border_top),
             border_bottom: bdr(&p.border_bottom),
