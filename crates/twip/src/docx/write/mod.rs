@@ -3914,6 +3914,7 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
             if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() },
             if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() }
         )),
+        Inline::Ruby(r, _) => r.xml.0.as_deref().map(str::to_string),
         Inline::FieldSep { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"separate\"/>")),
         Inline::FieldEnd { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"end\"/>")),
         Inline::PTab(t, _) => {

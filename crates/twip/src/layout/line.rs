@@ -1608,6 +1608,15 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 }
                 continue;
             }
+            if let Some(Object::Ruby(r)) = p.object.map(|o| &sp.objects[o as usize]) {
+                flush(&mut run, &mut out);
+                ruby_glyphs(&r.base, &r.base_x, x, base, q, o.review, behind_text, &mut out);
+                ruby_glyphs(&r.text, &r.text_x, x, base - r.raise, q, o.review, behind_text, &mut out);
+                if let Some(unit) = first {
+                    atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + line.widths[k]), para: q, unit, brk: false });
+                }
+                continue;
+            }
             // A picture bullet is a list label that is a picture.
             if p.kind == Kind::Object || (p.kind == Kind::ListNumber && p.object.is_some()) {
                 if let Some(Object::Picture(pic)) = p.object.map(|o| &sp.objects[o as usize]) {
@@ -1719,6 +1728,31 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             expansions: expansions.into_boxed_slice(),
         }
     }
+}
+
+/// A ruby's base or annotation: its pieces at `xs` from `x`, on `base`.
+#[allow(clippy::too_many_arguments, reason = "the line's place, review view and backdrop, as for the line's own glyphs")]
+fn ruby_glyphs(s: &ShapedPara, xs: &[f64], x: f64, base: f64, para: ParaId, review: &ReviewView, behind: Option<u32>, out: &mut Vec<Item>) {
+    let mut run: Option<GlyphRunBuilder> = None;
+    for (i, &px) in xs.iter().enumerate() {
+        let st = s.style(i);
+        let Some(face) = &st.face else { continue };
+        let (y, color, x0) = (base - st.raise, ink(&st.run, review, behind), x + px);
+        if !run.as_ref().is_some_and(|r| Rc::ptr_eq(&r.face, face) && r.size == st.size && r.y == y && r.color == color) {
+            out.extend(run.take().map(|r| Item::Glyphs(r.finish())));
+            let (glyphs, chars) = (Vec::new(), Vec::new());
+            run = Some(GlyphRunBuilder { face: face.clone(), size: st.size, y, glyphs, chars, color, para: Some(para), x: x0 });
+        }
+        let Some(r) = run.as_mut() else { continue };
+        let scale = face.scale(st.size) * st.run.scale / 100.0;
+        let mut gx = x0;
+        for (id, advance, dx) in s.glyphs(i) {
+            r.glyphs.push((id, gx + dx * scale));
+            gx += advance * scale;
+        }
+        r.chars.extend(s.text(i).chars().map(|c| (symbol_unicode(&face.family, c), x0, None)));
+    }
+    out.extend(run.map(|r| Item::Glyphs(r.finish())));
 }
 
 fn caret_places(o: &LineOrigin, line: &Line) -> Vec<(Option<usize>, ParaId)> {

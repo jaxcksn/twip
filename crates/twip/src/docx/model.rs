@@ -465,6 +465,21 @@ pub enum Inline {
     /// beside the control's edge.
     ControlStart(ControlId),
     ControlEnd(ControlId),
+    /// A ruby (`w:ruby`): one unit.
+    Ruby(Rc<Ruby>, Run),
+}
+
+/// A ruby: base text with its annotation set above it, laid out as one object.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ruby {
+    pub base: Vec<(String, Run)>,
+    pub text: Vec<(String, Run)>,
+    /// `w:rubyAlign`: center, distributeLetter, distributeSpace, left, right, rightVertical (0 to 5).
+    pub align: u8,
+    /// `w:hpsRaise`: the annotation's baseline above the base's, points.
+    pub raise: f64,
+    /// The `w:ruby` element as read: what saving writes.
+    pub xml: Raw,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1230,7 +1245,8 @@ impl Inline {
             | Inline::Break(_, r)
             | Inline::Picture(_, r)
             | Inline::Float(_, r)
-            | Inline::NoteMark(_, _, r) => Some(r),
+            | Inline::NoteMark(_, _, r)
+            | Inline::Ruby(_, r) => Some(r),
             Inline::Sym { run, .. }
             | Inline::NoteRef { run, .. }
             | Inline::Separator { run, .. }

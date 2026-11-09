@@ -1692,6 +1692,10 @@ impl Reader {
                 }
                 "drawing" => self.read_drawing(c, &run, pkg, out),
                 "pict" | "object" => self.read_pict(c, &run, pkg, out),
+                "ruby" => {
+                    let ruby = self.read_ruby(c, base, pkg);
+                    out.push(Inline::Ruby(Rc::new(ruby), run.clone()));
+                }
                 "footnoteReference" | "endnoteReference" => out.push(Inline::NoteRef {
                     kind: if name == "footnoteReference" { NoteKind::Foot } else { NoteKind::End },
                     id: int(attr(c, "id")).unwrap_or(0),
@@ -1708,6 +1712,31 @@ impl Reader {
         if self.record {
             self.note_seg(out, prev);
         }
+    }
+
+    /// A ruby's base and annotation text with their runs, its alignment and raise.
+    fn read_ruby(&mut self, ruby: Node, base: &RunProps, pkg: &mut Package) -> Ruby {
+        let record = std::mem::replace(&mut self.record, false);
+        let mut text = |name: &str| {
+            let mut tmp = Vec::new();
+            if let Some(n) = child(ruby, name) {
+                self.read_inlines(n, base, pkg, &mut tmp);
+            }
+            tmp.into_iter().filter_map(|i| if let Inline::Text(t, r) = i { Some((t, r)) } else { None }).collect()
+        };
+        let (base_text, annotation) = (text("rubyBase"), text("rt"));
+        self.record = record;
+        let pr = child(ruby, "rubyPr");
+        let align = match pr.and_then(|p| child(p, "rubyAlign")).and_then(val) {
+            Some("distributeLetter") => 1,
+            Some("distributeSpace") => 2,
+            Some("left") => 3,
+            Some("right") => 4,
+            Some("rightVertical") => 5,
+            _ => 0,
+        };
+        let raise = pr.and_then(|p| child(p, "hpsRaise")).and_then(|h| half_points(val(h))).unwrap_or(0.0);
+        Ruby { base: base_text, text: annotation, align, raise, xml: Raw(Some(raw(ruby))) }
     }
 
     /// A checkbox content control (`w14:checkbox`) as one symbol: the character it

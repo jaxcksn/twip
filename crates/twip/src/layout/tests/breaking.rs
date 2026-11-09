@@ -936,3 +936,19 @@ fn book_fold_drops_or_mirrors_the_gutter() {
     doc.settings.book_fold = Some(true);
     assert_eq!(starts(&doc), [108.0, 90.0], "reversed");
 }
+
+const ARIAL_11: &str = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>"#;
+
+fn ruby(align: &str, raise: u32, annotation: &str, base: &str) -> String {
+    format!(
+        r#"<w:p><w:r><w:t>Start|</w:t></w:r><w:r><w:ruby><w:rubyPr><w:rubyAlign w:val="{align}"/><w:hps w:val="11"/><w:hpsRaise w:val="{raise}"/><w:hpsBaseText w:val="22"/><w:lid w:val="en-US"/></w:rubyPr><w:rt><w:r><w:rPr><w:sz w:val="11"/></w:rPr><w:t xml:space="preserve">{annotation}</w:t></w:r></w:rt><w:rubyBase><w:r><w:t>{base}</w:t></w:r></w:rubyBase></w:ruby></w:r><w:r><w:t>|end</w:t></w:r></w:p>"#
+    )
+}
+
+#[test]
+fn a_ruby_is_as_wide_as_the_wider_of_its_base_and_annotation() {
+    let end = |align: &str, annotation: &str| baselines("", ARIAL_11, &ruby(align, 20, annotation, "MM")).map(|l| l[0].2);
+    let (Some(wide), Some(narrow)) = (end("center", "annotation text"), end("center", "ab")) else { return };
+    // 721.7 tw of annotation against the 366.6 tw base.
+    assert!((wide - narrow - 17.755).abs() < 0.05, "{wide} {narrow}");
+}

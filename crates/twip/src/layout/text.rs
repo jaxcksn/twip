@@ -62,6 +62,39 @@ pub enum Object {
     Expansion(Rc<super::expansion::Expansion>),
     /// The floats a text-wrapping break clears: left, right.
     Clear(bool, bool),
+    Ruby(Rc<RubyShape>),
+}
+
+/// A ruby's base and annotation, shaped, each piece's x in the object, and the annotation's raise.
+#[derive(Debug, PartialEq)]
+pub struct RubyShape {
+    pub base: ShapedPara,
+    pub text: ShapedPara,
+    pub base_x: Vec<f64>,
+    pub text_x: Vec<f64>,
+    pub raise: f64,
+}
+
+/// Each piece's x in a ruby object `wo` wide: the narrower part spread by the ruby's alignment.
+fn ruby_x(s: &ShapedPara, wo: f64, align: u8) -> Vec<f64> {
+    let k = s.pieces.len();
+    let e = wo - s.pieces.iter().map(|p| p.width).sum::<f64>();
+    let (lead, gap) = match align {
+        1 if k > 1 => (0.0, e / (k - 1) as f64),
+        2 if k > 0 => (e / k as f64 / 2.0, e / k as f64),
+        3 => (0.0, 0.0),
+        4 => (e, 0.0),
+        _ => (e / 2.0, 0.0),
+    };
+    let mut x = lead;
+    s.pieces
+        .iter()
+        .map(|p| {
+            let at = x;
+            x += p.width + gap;
+            at
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -290,7 +323,31 @@ struct NewPiece {
     object: Option<Object>,
 }
 
-impl Builder<'_> {
+impl<'a> Builder<'a> {
+    fn new(fonts: &'a Fonts, em1000: bool) -> Builder<'a> {
+        Builder {
+            fonts,
+            pieces: Vec::new(),
+            styles: Vec::new(),
+            glyph_ids: Vec::new(),
+            glyph_advances: Vec::new(),
+            glyph_dx: Vec::new(),
+            text: String::new(),
+            objects: Vec::new(),
+            em1000,
+            pending_note: None,
+        }
+    }
+
+    /// Runs of text shaped on their own (a ruby's base or annotation).
+    fn sub(&self, parts: &[(String, Run)], view: crate::docx::review::MarkupView) -> Result<ShapedPara, Yield> {
+        let mut b = Builder::new(self.fonts, self.em1000);
+        for (t, r) in parts {
+            b.text(t, run_in(r, view))?;
+        }
+        Ok(b.finish())
+    }
+
     fn face(&self, family: &str, run: &RunStyle) -> Option<Rc<Face>> {
         self.fonts.face(family, run.category(family), run.bold, run.italic)
     }
@@ -785,6 +842,17 @@ impl Builder<'_> {
                     }
                     self.atom(p, "\u{FFFC}");
                 }
+                // A ruby: one object as wide as the wider of its base and annotation.
+                (Inline::Ruby(r, _), Some(run)) => {
+                    let (base, text) = (self.sub(&r.base, view)?, self.sub(&r.text, view)?);
+                    let wo = [&base, &text].map(|s| s.pieces.iter().map(|q| q.width).sum::<f64>()).into_iter().fold(0.0, f64::max);
+                    let face = self.face(&run.ascii, run);
+                    let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
+                    p.width = wo;
+                    let (base_x, text_x) = (ruby_x(&base, wo, r.align), ruby_x(&text, wo, r.align));
+                    p.object = Some(Object::Ruby(Rc::new(RubyShape { base, text, base_x, text_x, raise: r.raise })));
+                    self.atom(p, "\u{FFFC}");
+                }
                 (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) => {}
                 (Inline::Float(f, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Anchor, run, None, run.size, 0.0);
@@ -1105,18 +1173,7 @@ pub fn shape(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos: &mut Me
 }
 
 pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos: &mut Memos) -> Result<ShapedPara, Yield> {
-    let mut b = Builder {
-        fonts,
-        pieces: Vec::new(),
-        styles: Vec::new(),
-        glyph_ids: Vec::new(),
-        glyph_advances: Vec::new(),
-        glyph_dx: Vec::new(),
-        text: String::new(),
-        objects: Vec::new(),
-        em1000: space.em1000,
-        pending_note: None,
-    };
+    let mut b = Builder::new(fonts, space.em1000);
     super::job::unit("shaping call", || crate::prof::time("itemize", || b.paragraph(para, space)))?;
     if let Some((h, caps, right)) = &space.hyphenate {
         b.hyphenate(h, *caps, *right);
@@ -1211,18 +1268,7 @@ pub fn para_id(p: &Paragraph) -> ParaId {
 }
 
 pub fn shape_run(text: &str, run: &Run, fonts: &Fonts) -> ShapedPara {
-    let mut b = Builder {
-        fonts,
-        pieces: Vec::new(),
-        styles: Vec::new(),
-        glyph_ids: Vec::new(),
-        glyph_advances: Vec::new(),
-        glyph_dx: Vec::new(),
-        text: String::new(),
-        objects: Vec::new(),
-        em1000: false,
-        pending_note: None,
-    };
+    let mut b = Builder::new(fonts, false);
     let _ = b.text(text, run);
     b.finish()
 }
@@ -1234,6 +1280,23 @@ mod tests {
     use crate::layout::cache::LayoutCache;
     use crate::layout::job::Meter;
     use crate::layout::tests::{fonts, plain_doc};
+
+    #[test]
+    fn a_rubys_narrower_part_is_spread_by_its_alignment() {
+        let Some(doc) = plain_doc(&["one".into()]) else { return };
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { unreachable!() };
+        let run = p.inlines.iter().find_map(Inline::run).expect("a run").clone();
+        let s = shape_run("MWM", &run, &fonts());
+        let w: Vec<f64> = s.pieces.iter().map(|p| p.width).collect();
+        let e = 10.0;
+        let wo = w.iter().sum::<f64>() + e;
+        let near = |a: Vec<f64>, b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9);
+        assert!(near(ruby_x(&s, wo, 0), [e / 2.0, e / 2.0 + w[0], e / 2.0 + w[0] + w[1]]));
+        assert!(near(ruby_x(&s, wo, 1), [0.0, w[0] + e / 2.0, w[0] + w[1] + e]));
+        assert!(near(ruby_x(&s, wo, 2), [e / 6.0, w[0] + e / 2.0, w[0] + w[1] + e * 5.0 / 6.0]));
+        assert!(near(ruby_x(&s, wo, 3), [0.0, w[0], w[0] + w[1]]));
+        assert!(near(ruby_x(&s, wo, 4), [e, e + w[0], e + w[0] + w[1]]));
+    }
 
     #[test]
     fn revisions_dont_split_a_stretch() {
