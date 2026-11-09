@@ -2,7 +2,9 @@
 
 use super::{Contour, EPS, Placed, Side, Wrap};
 
-pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64) -> Option<Vec<(f64, f64)>> {
+/// The pieces of `[x0, x1]` the floats leave free over a band; a piece a float cuts is dropped when narrower than its
+/// [`Placed::gap`].
+pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64, legacy: bool) -> Option<Vec<(f64, f64)>> {
     let mut free = vec![(x0, x1)];
     for f in floats.iter().filter(|f| f.in_band(top, bottom)) {
         if f.excl[2] <= x0 + EPS || f.excl[0] >= x1 - EPS {
@@ -12,7 +14,7 @@ pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64) -> 
             return None;
         }
         let spans = match &f.contour {
-            Some(c) => covered(c, f.float.dist, top, bottom),
+            Some(c) => covered(c, f.dist, top, bottom),
             None => vec![(f.excl[0], f.excl[2])],
         };
         let (Some(&(l, _)), Some(&(_, r))) = (spans.first(), spans.last()) else { continue };
@@ -26,6 +28,7 @@ pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64) -> 
             }
             s => s,
         };
+        let gap = f.gap(legacy);
         let blocks = match side {
             Side::Left => vec![(l, f64::INFINITY)],
             Side::Right => vec![(f64::NEG_INFINITY, r)],
@@ -38,23 +41,18 @@ pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64) -> 
                     next.push((a, b));
                     continue;
                 }
-                if block.0 > a + EPS {
+                if block.0 > a + EPS && block.0 - a >= gap - EPS {
                     next.push((a, block.0));
                 }
-                if block.1 < b - EPS {
+                if block.1 < b - EPS && b - block.1 >= gap - EPS {
                     next.push((block.1, b));
                 }
             }
             free = next;
         }
     }
-    if free.len() != 1 || free[0] != (x0, x1) {
-        free.retain(|&(a, b)| b - a >= MIN_GAP - EPS);
-    }
     Some(free)
 }
-
-const MIN_GAP: f64 = 18.0;
 
 pub fn next_edge(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64) -> Option<f64> {
     floats

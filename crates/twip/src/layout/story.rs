@@ -414,7 +414,7 @@ fn wrap_bands(
         let (mut h, mut got, mut trial) = (est, None, None);
         for attempt in 0..2 {
             got = None;
-            let Some(iv) = float::intervals(floats, 0.0, ps.width, yy, yy + h) else { break };
+            let Some(iv) = float::intervals(floats, 0.0, ps.width, yy, yy + h, ps.env.compat == crate::docx::Compat::Legacy) else { break };
             let open = iv.len() == 1 && iv[0].0.abs() < EPS && (iv[0].1 - ps.width).abs() < EPS;
             match band(&lines.shaped, pieces, s, &iv, bands.is_empty(), style, mark, &frame, fonts, open) {
                 Ok((segs, e)) => {

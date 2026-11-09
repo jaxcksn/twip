@@ -42,6 +42,8 @@ pub struct Placed {
     pub float: Rc<Float>,
     pub settled: bool,
     pub contour: Option<Contour>,
+    /// The distances text keeps from it: top, bottom, left, right.
+    pub dist: [f64; 4],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -102,6 +104,31 @@ impl Placed {
             float: f.clone(),
             settled: true,
             contour,
+            dist: f.dist,
+        }
+    }
+
+    /// Compat ≤ 14 keeps no distance above or below a tight or through float.
+    pub fn legacy_dist(mut self) -> Placed {
+        if matches!(self.float.wrap.as_str(), "tight" | "through") {
+            let [dt, db, ..] = self.dist;
+            self.excl[1] += dt;
+            self.excl[3] -= db;
+            self.dist[0] = 0.0;
+            self.dist[1] = 0.0;
+        }
+        self
+    }
+
+    /// The narrowest piece of a line it leaves beside it: in compat ≤ 14 an inch beside a frame and half the usual
+    /// beside a tight or through float.
+    pub fn gap(&self, legacy: bool) -> f64 {
+        let frame = self.float.text_box.is_some() && self.float.shape.is_none() && self.key.2 != TABLE_PIECE;
+        match () {
+            _ if !legacy => 18.0,
+            _ if frame => 72.0,
+            _ if self.key.2 != TABLE_PIECE && matches!(self.float.wrap.as_str(), "tight" | "through") => 9.0,
+            _ => 18.0,
         }
     }
 
@@ -115,7 +142,7 @@ impl Placed {
         let up = lines.iter().rev().flat_map(|r| [(x + r[0], y + r[3]), (x + r[0], y + r[1])]);
         let points: Rc<[(f64, f64)]> = down.chain(up).collect();
         let b = points.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]);
-        let [dt, db, dl, dr] = self.float.dist;
+        let [dt, db, dl, dr] = self.dist;
         self.excl = [b[0] - dl, b[1] - dt, b[2] + dr, b[3] + db];
         self.contour = Some(Contour { points, through: false });
         self
@@ -241,21 +268,22 @@ mod tests {
             float,
             settled: true,
             contour: None,
+            dist: [0.0; 4],
         }
     }
 
     #[test]
     fn sides() {
         let f = [fl(222.0, 322.0, Side::Both)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(72.0, 222.0), (322.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![(72.0, 222.0), (322.0, 540.0)]);
         let f = [fl(222.0, 322.0, Side::Largest)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(322.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![(322.0, 540.0)]);
         let f = [fl(256.0, 356.0, Side::Largest)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(72.0, 256.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![(72.0, 256.0)]);
         let f = [fl(222.0, 322.0, Side::Both)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 100.0, 110.0).unwrap(), vec![(72.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 100.0, 110.0, false).unwrap(), vec![(72.0, 540.0)]);
         let f = [fl(89.0, 522.0, Side::Both)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(522.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![(522.0, 540.0)]);
     }
 
     #[test]
@@ -320,19 +348,19 @@ mod tests {
     #[test]
     fn a_polygon_wraps_by_its_widest_point_over_the_band() {
         let tri = [(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)];
-        let starts = |dist| intervals(&[polygon("tight", &tri, dist)], 72.0, 540.0, 72.0, 83.49).unwrap();
+        let starts = |dist| intervals(&[polygon("tight", &tri, dist)], 72.0, 540.0, 72.0, 83.49, false).unwrap();
         let free = starts([0.0; 4]);
         assert!((free[0].0 - 94.98).abs() < 1e-6 && free.len() == 1, "{free:?}");
         let free = starts([0.0, 0.0, 0.0, 18.0]);
         assert!((free[0].0 - 112.98).abs() < 1e-6, "{free:?}");
-        assert_eq!(intervals(&[polygon("tight", &tri, [0.0; 4])], 72.0, 540.0, 180.0, 190.0).unwrap(), vec![(72.0, 540.0)]);
+        assert_eq!(intervals(&[polygon("tight", &tri, [0.0; 4])], 72.0, 540.0, 180.0, 190.0, false).unwrap(), vec![(72.0, 540.0)]);
     }
 
     #[test]
     fn a_through_wrap_opens_a_notch_that_a_tight_wrap_keeps_closed() {
         let u =
             [(0.0, 0.0), (7200.0, 0.0), (7200.0, 14400.0), (14400.0, 14400.0), (14400.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
-        let band = |wrap, top: f64| intervals(&[polygon(wrap, &u, [0.0; 4])], 0.0, 540.0, top, top + 11.49).unwrap();
+        let band = |wrap, top: f64| intervals(&[polygon(wrap, &u, [0.0; 4])], 0.0, 540.0, top, top + 11.49, false).unwrap();
         let notch = (72.0 + 200.0 / 3.0, 72.0 + 400.0 / 3.0);
         let through = band("through", 80.0);
         assert!(through.iter().any(|&(a, b)| (a - notch.0).abs() < 1e-6 && (b - notch.1).abs() < 1e-6), "{through:?}");
@@ -386,5 +414,34 @@ mod tests {
         for va in ["top", "center", "bottom"] {
             assert_eq!(v_pos(&f("column", None, "paragraph", Some(va)), 40.0, &fr(Compat::Generic), 200.0, 220.0), 200.0);
         }
+    }
+
+    #[test]
+    fn a_piece_narrower_than_its_floats_gap_gets_no_text() {
+        let with = |wrap: &str, frame: bool| {
+            let mut f = (*fl(135.0, 300.0, Side::Both).float).clone();
+            f.wrap = wrap.into();
+            if frame {
+                f.text_box = Some(crate::docx::TextBox { blocks: Vec::new(), insets: [0.0; 4], outline: 0.0, auto_fit: false, v_anchor: 0, flow: 0 });
+            }
+            [Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 135.0, 0.0, 100.0)]
+        };
+        let left = |f: &[Placed], legacy| intervals(f, 72.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
+        assert_eq!(left(&with("square", false), true), (72.0, 135.0));
+        assert_eq!(left(&with("square", true), true), (300.0, 540.0), "an inch beside a compat 14 frame");
+        assert_eq!(left(&with("square", true), false), (72.0, 135.0));
+        let narrow = |wrap: &str, legacy| intervals(&with(wrap, false), 120.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
+        assert_eq!(narrow("tight", true), (120.0, 135.0), "9 pt beside a compat 14 tight float");
+        assert_eq!(narrow("tight", false), (300.0, 540.0));
+    }
+
+    #[test]
+    fn compat_14_keeps_no_distance_above_or_below_a_tight_float() {
+        let square = [(0.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
+        let p = polygon("tight", &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
+        assert_eq!(p.excl, [67.0, 72.0, 277.0, 172.0]);
+        assert!(intervals(&[p], 0.0, 540.0, 175.0, 185.0, true).unwrap() == vec![(0.0, 540.0)]);
+        let q = polygon("square", &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
+        assert_eq!(q.excl[1], 62.0);
     }
 }

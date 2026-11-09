@@ -1506,6 +1506,7 @@ impl<'d> PageFill<'d, '_> {
     fn wrapped(&self, p: Placed, memos: &mut Memos) -> Result<Placed, Yield> {
         let fields = FieldValues::default();
         let lines = super::story::tight_lines(&p.float, &StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers }, memos)?;
+        let p = if self.ctx.env.text.compat == Compat::Legacy { p.legacy_dist() } else { p };
         Ok(match lines {
             Some(l) => p.around_lines(&l),
             None => p,
@@ -1562,8 +1563,13 @@ impl<'d> PageFill<'d, '_> {
             let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS { &[] } else { &floats };
             if compat == Compat::Legacy {
                 let near = || here.iter().filter(|f| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS);
-                let e = near().filter(|f| f.excl[1] <= yy + EPS).map(|f| f.excl[3]).fold(f64::INFINITY, f64::min);
-                if e < yy + h - EPS && near().any(|f| f.excl[1] > yy + EPS) {
+                // A float that starts inside the line moves it down to the first bottom of those over its top, if it
+                // meets what they leave of the line.
+                let over: Vec<Placed> = near().filter(|f| f.excl[1] <= yy + EPS).cloned().collect();
+                let e = over.iter().map(|f| f.excl[3]).fold(f64::INFINITY, f64::min);
+                let left = float::intervals(&over, cx0, cx1, yy, yy + h, true).unwrap_or_else(|| vec![(cx0, cx1)]);
+                let meets = |f: &Placed| left.iter().any(|&(a, b)| f.excl[0] < b - EPS && f.excl[2] > a + EPS);
+                if e < yy + h - EPS && near().any(|f| f.excl[1] > yy + EPS && meets(f)) {
                     yy = e;
                     continue;
                 }
@@ -1576,7 +1582,7 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             for attempt in 0..2 {
-                match float::intervals(here, cx0, cx1, yy, yy + h) {
+                match float::intervals(here, cx0, cx1, yy, yy + h, compat == Compat::Legacy) {
                     None => {
                         blocked = true;
                         break;
@@ -1634,7 +1640,7 @@ impl<'d> PageFill<'d, '_> {
                     let next = yy + ph;
                     yy = match clear {
                         Some(((l, r), x)) if compat == Compat::Generic => {
-                            let iv = float::intervals(here, cx0, cx1, next - ph, next).unwrap_or_default();
+                            let iv = float::intervals(here, cx0, cx1, next - ph, next, false).unwrap_or_default();
                             let (a, b) = iv.iter().copied().find(|&(a, b)| cx0 + x >= a - EPS && cx0 + x <= b + EPS).unwrap_or((cx0, cx1));
                             here.iter()
                                 .filter(|f| f.in_band(next - ph, next) && ((l && f.excl[2] <= a + EPS) || (r && f.excl[0] >= b - EPS)))
@@ -1644,7 +1650,7 @@ impl<'d> PageFill<'d, '_> {
                         Some(((l, r), _)) => {
                             let mut at = next;
                             while at < col.bottom.to_pt() - EPS {
-                                let first = float::intervals(here, cx0, cx1, at, at + ph).and_then(|iv| iv.first().copied());
+                                let first = float::intervals(here, cx0, cx1, at, at + ph, true).and_then(|iv| iv.first().copied());
                                 if first.is_some_and(|(a, b)| (!l || a <= cx0 + EPS) && (!r || b >= cx1 - EPS)) {
                                     break;
                                 }
@@ -1948,13 +1954,21 @@ impl<'d> PageFill<'d, '_> {
             .max(0.0);
             let (bl, br) = super::table::outer_box(tb);
             let [dt, db, dl, dr] = fp.dist;
-            for o in self.at.found.iter().filter(|o| o.key.2 == float::TABLE_PIECE) {
+            // Compat ≤ 14 puts a table placed in the flow below an earlier table it meets.
+            let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
+            let tables: Vec<Placed> = self.at.found.iter().filter(|o| o.key.2 == float::TABLE_PIECE).cloned().collect();
+            for o in tables.iter().filter(|_| in_flow) {
                 let (x0, x1) = (at_x + bl - dl.max(0.5), at_x + br + dr.max(0.5));
-                if !legacy && fp.never_overlap && o.excl[0] < x1 - dr.max(0.5) && o.excl[2] > x0 {
-                    at_x += o.excl[2] - x0;
-                } else if legacy && o.excl[0] < x1 && o.excl[2] > x0 && o.excl[3].min(top + h + db) - o.excl[1].max(top - dt) >= 9.0 {
+                if o.excl[0] < x1 && o.excl[2] > x0 && o.excl[3].min(top + h + db) - o.excl[1].max(top - dt) >= 9.0 {
                     top = o.excl[3] + dt;
                 }
+            }
+            if let Some(Block::Table(t)) = self.sec.blocks.get(pos.block) {
+                let f = table_float(t.id, &fp, br - bl, h, in_flow);
+                let mut probe = Placed::new((self.sec.index, pos.block, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, h);
+                let body_bottom = self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom;
+                float::avoid(&mut probe, &tables, (self.margins.0, self.page_w), body_bottom, self.ctx.env.text.compat);
+                (at_x, top) = (probe.rect[0] - bl, probe.rect[1]);
             }
             *y = self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)).map_or(top, |k| k.rect[1]);
             if unsplit && !*empty && !col.bottom.holds(*y + h) {
@@ -2259,41 +2273,8 @@ impl<'d> PageFill<'d, '_> {
         }
         let legacy = self.ctx.env.text.compat == Compat::Legacy;
         let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
-        let [dt, db, dl, dr] = fp.dist;
         let (bl, br) = super::table::outer_box(tb);
-        let f = Rc::new(Float {
-            id: t.id,
-            w: br - bl,
-            auto_w: false,
-            h: bottom - top,
-            image: None,
-            alt: "".into(),
-            lock_aspect: false,
-            text_box: None,
-            h_relative: "column".into(),
-            h_align: None,
-            h_offset: 0.0,
-            v_relative: "paragraph".into(),
-            v_align: None,
-            v_offset: 0.0,
-            wrap: "square".into(),
-            wrap_text: "bothSides".into(),
-            dist: if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] },
-            effect: [0.0; 4],
-            poly: None,
-            behind: false,
-            allow_overlap: true,
-            layout_in_cell: true,
-            order: 0,
-            z: 0,
-            src: None,
-            locked: false,
-            frame_src: None,
-            parts: Vec::new(),
-            shape: None,
-            rot_swap: false,
-            relative: Default::default(),
-        });
+        let f = table_float(t.id, &fp, br - bl, bottom - top, in_flow);
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));
         let l = at_x + bl - if fp.x_spec.is_none() && !fp.h_text { 0.05 } else { 0.0 };
@@ -2306,4 +2287,43 @@ impl<'d> PageFill<'d, '_> {
         o.settled = settled;
         self.at.found.push(o);
     }
+}
+
+/// A floating table as a float: its outer box, the distances text keeps from it (none above or below one placed in
+/// the flow) and whether it may overlap others.
+fn table_float(id: u64, fp: &crate::docx::props::TablePos, w: f64, h: f64, in_flow: bool) -> Rc<Float> {
+    let [dt, db, dl, dr] = fp.dist;
+    Rc::new(Float {
+        id,
+        w,
+        auto_w: false,
+        h,
+        image: None,
+        alt: "".into(),
+        lock_aspect: false,
+        text_box: None,
+        h_relative: "column".into(),
+        h_align: None,
+        h_offset: 0.0,
+        v_relative: "paragraph".into(),
+        v_align: None,
+        v_offset: 0.0,
+        wrap: "square".into(),
+        wrap_text: "bothSides".into(),
+        dist: if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] },
+        effect: [0.0; 4],
+        poly: None,
+        behind: false,
+        allow_overlap: !fp.never_overlap,
+        layout_in_cell: true,
+        order: 0,
+        z: 0,
+        src: None,
+        locked: false,
+        frame_src: None,
+        parts: Vec::new(),
+        shape: None,
+        rot_swap: false,
+        relative: Default::default(),
+    })
 }
