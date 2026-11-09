@@ -31,6 +31,8 @@ pub struct TextEnv {
     pub theme: std::rc::Rc<crate::drawing::theme::Theme>,
     pub colour_map: crate::drawing::theme::ColourMap,
     pub backdrop: Option<u32>,
+    /// The vertical flow the text is laid out in.
+    pub vertical: Option<super::vertical::Vertical>,
     /// Automatic hyphenation.
     pub hyphenation: Option<HyphenEnv>,
 }
@@ -78,6 +80,7 @@ impl TextEnv {
             theme: doc.theme.clone(),
             colour_map: doc.colour_map,
             backdrop: None,
+            vertical: None,
             hyphenation: doc.hyphenation.clone().filter(|_| s.auto_hyphenation).map(|patterns| HyphenEnv {
                 patterns,
                 zone: s.hyphenation_zone,

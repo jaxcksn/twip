@@ -26,6 +26,7 @@ pub mod table;
 pub mod text;
 pub mod token;
 pub mod traverse;
+pub mod vertical;
 pub(crate) mod units;
 
 #[cfg(test)]

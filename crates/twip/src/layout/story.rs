@@ -613,7 +613,7 @@ fn chain_box(f: &Float) -> crate::docx::TextBox {
         let w = l.width.map_or(0, |w| w.0);
         2.0 * if l.inset == Some(true) { w } else { w / 2 } as f64 / 12700.0
     });
-    crate::docx::TextBox { blocks: Vec::new(), insets, outline, auto_fit: false, v_anchor: 0 }
+    crate::docx::TextBox { blocks: Vec::new(), insets, outline, auto_fit: false, v_anchor: 0, flow: 0 }
 }
 
 pub(super) fn text_frame_size(f: &Float) -> [f64; 2] {
@@ -831,6 +831,16 @@ fn turned_text(
     let body = shape.and_then(|s| s.sp()).map(|s| &s.body);
     let turn = (deg + body.map_or(0.0, |b| b.rot.degrees()) + if flip_v { 180.0 } else { 0.0 }).rem_euclid(360.0);
     let mut frame = layout_frame(tb, shape, rect);
+    // A frame's own text flow.
+    if body.is_none()
+        && let Some(v) = super::vertical::of_cell(tb.flow)
+    {
+        let blocks: Vec<&Block> = tb.blocks.iter().collect();
+        let story = super::vertical::story(&blocks, frame[3] - frame[1], v, env, None, memos)?;
+        let bottom = if v.flow == super::vertical::Flow::DownEast { f64::INFINITY } else { frame[2] - frame[0] + super::table::INK_SLACK };
+        groups.push(Child::Items(super::vertical::turned(&story.units, v.flow, frame, 0.0, bottom).into()));
+        return Ok(());
+    }
     use crate::drawing::text::TextDirection as D;
     let dir = body.map_or(D::Horizontal, |b| b.direction);
     if dir != D::Horizontal {

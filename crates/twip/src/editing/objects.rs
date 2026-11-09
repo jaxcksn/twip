@@ -674,6 +674,7 @@ impl Editor {
                 outline: 0.5,
                 auto_fit: false,
                 v_anchor: 0,
+                flow: 0,
             }),
             h_relative: "column".into(),
             h_align: None,
@@ -958,7 +959,14 @@ impl Editor {
             q.controls.clear();
             q.inlines = vec![Inline::ControlStart(c), Inline::Picture(pic.clone(), run.clone()), Inline::ControlEnd(c)];
             let crate::docx::Block::Para(q) = super::clipboard::fresh(&crate::docx::Block::Para(q)) else { return None };
-            Some(crate::docx::TextBox { blocks: vec![crate::docx::Block::Para(q)], insets: [0.0; 4], outline: 0.0, auto_fit: false, v_anchor: 0 })
+            Some(crate::docx::TextBox {
+                blocks: vec![crate::docx::Block::Para(q)],
+                insets: [0.0; 4],
+                outline: 0.0,
+                auto_fit: false,
+                v_anchor: 0,
+                flow: 0,
+            })
         });
         let float = crate::docx::Float {
             id,

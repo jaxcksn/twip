@@ -355,6 +355,7 @@ impl Editor {
                 crate::drawing::text::VAnchor::Bottom => 2,
                 _ => 0,
             },
+            flow: 0,
         });
         if !matches!(self.set_float(n, "Add Text", fonts), super::commands::Outcome::Changed(_)) {
             return false;

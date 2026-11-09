@@ -31,6 +31,7 @@ mod source_mapping;
 mod spacing;
 mod spatial_tree;
 mod sweeps;
+mod vertical;
 mod view_accessors;
 mod warm;
 

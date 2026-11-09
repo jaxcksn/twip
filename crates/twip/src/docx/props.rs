@@ -570,6 +570,7 @@ pub struct ParaProps {
     /// The `w:shd` as written.
     pub shd: Option<Shd>,
     pub frame: Option<FramePr>,
+    pub text_flow: Option<u8>,
     pub text_alignment: Option<String>,
     pub outline_lvl: Option<i64>,
     pub mark_size: Option<f64>,
@@ -692,6 +693,7 @@ impl ParaProps {
                     });
                 }
                 "textAlignment" => p.text_alignment = val(e).map(str::to_string),
+                "textDirection" => p.text_flow = val(e).map(super::model::text_flow),
                 "outlineLvl" => p.outline_lvl = int(val(e)),
                 "rPr" => p.mark_size = child(e, "sz").and_then(|s| half_points(val(s))),
                 _ => {}
@@ -740,6 +742,7 @@ impl ParaProps {
             shading,
             shd,
             frame,
+            text_flow,
             text_alignment,
             outline_lvl
         );

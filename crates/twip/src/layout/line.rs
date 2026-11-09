@@ -74,6 +74,8 @@ pub struct Frame {
     pub hyphen_zone: f64,
     /// The most consecutive hyphenated lines, 0 for no limit.
     pub hyphen_limit: i64,
+    /// The line is vertical: its runs take an em/64 more ascent and descent.
+    pub vertical: bool,
 }
 
 impl Frame {
@@ -92,6 +94,7 @@ impl Frame {
             hyphenate: e.hyphenation.is_some(),
             hyphen_zone: e.hyphenation.as_ref().filter(|_| e.compat == Compat::Legacy).map_or(0.0, |h| h.zone),
             hyphen_limit: e.hyphenation.as_ref().map_or(0, |h| h.limit),
+            vertical: e.vertical.is_some(),
         }
     }
 }
@@ -1379,11 +1382,13 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
             Kind::Text | Kind::Object => {
                 has_content = true;
                 has_text = true;
-                asc = asc.max(p.ascent);
-                desc = desc.max(p.descent);
                 let st = &sp.styles[p.style as usize];
+                let e = if frame.vertical && p.kind == Kind::Text { super::vertical::extra(st.size) } else { 0.0 };
+                let (pa, pd) = (p.ascent + e, p.descent + e);
+                asc = asc.max(pa);
+                desc = desc.max(pd);
                 let r = st.run.position;
-                let (a0, d0) = ((p.ascent - r).max(0.0), (p.descent + r).max(0.0));
+                let (a0, d0) = ((pa - r).max(0.0), (pd + r).max(0.0));
                 if p.kind == Kind::Text {
                     match st.run.em.as_deref() {
                         Some("underDot") => em_down = em_down.max(super::text::EM_MARK * st.size),
@@ -1419,9 +1424,11 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         && let Some(f) = fonts.face(&mark.ascii, None, mark.bold, mark.italic)
     {
         let (a, d, e) = sp.metrics(&f, mark, mark_size);
-        asc = asc.max(a + e);
+        let v = if frame.vertical { super::vertical::extra(mark_size) } else { 0.0 };
+        let (a, d) = (a + e + v, d + v);
+        asc = asc.max(a);
         desc = desc.max(d);
-        un_asc = un_asc.max(a + e);
+        un_asc = un_asc.max(a);
         un_desc = un_desc.max(d);
     }
     if last

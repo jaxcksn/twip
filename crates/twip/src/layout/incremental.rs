@@ -118,6 +118,7 @@ fn props(s: &Section) -> Section {
         line_grid,
         notes,
         no_endnote,
+        text_flow,
         blocks: _,
         change,
     } = s;
@@ -146,6 +147,7 @@ fn props(s: &Section) -> Section {
         line_grid: *line_grid,
         notes: notes.clone(),
         no_endnote: *no_endnote,
+        text_flow: *text_flow,
         blocks: Vec::new(),
         change: change.clone(),
     }

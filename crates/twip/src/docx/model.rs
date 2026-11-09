@@ -154,6 +154,8 @@ pub struct ParaStyle {
     /// The shading's pattern, pattern color and fill, as written.
     pub shd: Option<super::props::Shd>,
     pub frame: Option<FramePr>,
+    /// The `w:textDirection` text-flow code (`text_flow`): a frame's paragraphs run in it.
+    pub text_flow: u8,
     pub text_alignment: String,
     pub outline_lvl: Option<i64>,
     pub list_jc: String,
@@ -404,6 +406,8 @@ pub struct TextBox {
     pub outline: f64,
     pub auto_fit: bool,
     pub v_anchor: u8,
+    /// A frame's text-flow code (`text_flow`).
+    pub flow: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -812,6 +816,19 @@ pub enum VMerge {
     Continue,
 }
 
+/// A `w:textDirection` value (transitional or strict spelling) as its text-flow code: `lrTb` 0, `tbRl` 1, `btLr` 3,
+/// `lrTbV` 4, `tbRlV` 5, `tbLrV` 7; anything else is horizontal.
+pub fn text_flow(v: &str) -> u8 {
+    match v {
+        "tbRl" | "rl" => 1,
+        "btLr" | "lr" => 3,
+        "lrTbV" | "tbV" => 4,
+        "tbRlV" | "rlV" => 5,
+        "tbLrV" | "lrV" => 7,
+        _ => 0,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cell {
     pub width: Option<Width>,
@@ -1052,6 +1069,8 @@ pub struct Section {
     pub notes: [NoteProps; 2],
     /// `w:noEndnote`: the section's endnotes wait for the next section's.
     pub no_endnote: bool,
+    /// The `w:textDirection` text-flow code (`text_flow`; a section's `tbLrV` reads as `tbRlV`).
+    pub text_flow: u8,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,

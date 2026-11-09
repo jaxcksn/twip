@@ -172,6 +172,7 @@ impl Resolver {
             shading: p.shading.flatten(),
             shd: p.shd.clone().filter(|s| s.pattern != "nil"),
             frame: p.frame.clone(),
+            text_flow: p.text_flow.unwrap_or(0),
             text_alignment: p.text_alignment.clone().unwrap_or_else(|| "auto".into()),
             outline_lvl: p.outline_lvl,
             list_jc: "left".into(),

@@ -56,6 +56,7 @@ fn float(group: Vec<Paragraph>) -> Float {
     let end = group.last().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.last()).map(|r| r.end);
     let frame_src = start.zip(end).map(|(a, b)| a..b);
     let apart = group.iter().any(|p| p.style.suppress_overlap);
+    let flow = group[0].style.text_flow;
     let blocks = group
         .into_iter()
         .map(|mut p| {
@@ -73,7 +74,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         image: None,
         alt: "".into(),
         lock_aspect: false,
-        text_box: Some(TextBox { blocks, insets: [0.0, 0.0, lx + rx, 0.0], outline: 0.0, auto_fit: true, v_anchor: 0 }),
+        text_box: Some(TextBox { blocks, insets: [0.0, 0.0, lx + rx, 0.0], outline: 0.0, auto_fit: true, v_anchor: 0, flow }),
         h_relative: String::new(),
         h_align: None,
         h_offset: 0.0,

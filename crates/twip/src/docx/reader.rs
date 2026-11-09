@@ -1188,6 +1188,7 @@ impl Reader {
             line_grid: None,
             notes: Default::default(),
             no_endnote: false,
+            text_flow: 0,
             blocks: Vec::new(),
             change: None,
         }
@@ -1287,6 +1288,7 @@ impl Reader {
         if let Some(g) = child(s, "docGrid").filter(|g| matches!(attr(*g, "type"), Some("lines" | "linesAndChars" | "snapToChars"))) {
             sec.line_grid = Some((int(attr(g, "linePitch")).unwrap_or(0).max(1) * 2048 / 10) as i32);
         }
+        sec.text_flow = child(s, "textDirection").and_then(val).map_or(0, |v| if v == "tbLrV" { 5 } else { crate::docx::model::text_flow(v) });
         if let Some(b) = child(s, "pgBorders") {
             sec.page_borders_xml = Some(raw(b).to_string());
             let side = |n| child(b, n).map(|n| Border::parse(n, &self.res.styles.colours));
@@ -2040,7 +2042,7 @@ impl Reader {
                 .filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None)))
                 .and_then(|l| l.width)
                 .map_or(0.0, |w| w.0 as f64 / 12700.0);
-            TextBox { blocks, insets, outline, auto_fit: false, v_anchor }
+            TextBox { blocks, insets, outline, auto_fit: false, v_anchor, flow: 0 }
         });
         if !st.absolute {
             let text = text_box.map(|text_box| Box::new(InlineText { id: next_para_id(), text_box }));
@@ -2323,7 +2325,7 @@ impl Reader {
             Some("b") => 2,
             _ => 0,
         };
-        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
+        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor, flow: 0 }
     }
 
     fn group_parts(&mut self, g: Node, map: &Map, path: &mut crate::drawing::ChildPath, pkg: &mut Package, out: &mut Vec<GroupPart>) {
