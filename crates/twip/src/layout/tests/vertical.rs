@@ -218,6 +218,10 @@ fn east_asian_glyphs_stand_upright_where_the_flow_keeps_them_so() {
     let dir = |runs: &[(String, [f64; 2], [f64; 2])], t: &str| runs.iter().find(|r| r.0 == t).map(|r| r.2);
     assert_eq!(dir(&runs, "漢"), Some([1.0, 0.0]), "{runs:?}");
     assert_eq!(dir(&runs, "Ab"), Some([0.0, 1.0]), "{runs:?}");
+    // By vertical orientation: § stands upright, half-width katakana lie sideways.
+    let Some(classes) = section("tbRl", "0", &east_asian("漢§ｱ")) else { return };
+    let runs = turned_runs(&classes);
+    assert_eq!((dir(&runs, "§"), dir(&runs, "ｱ")), (Some([1.0, 0.0]), Some([0.0, 1.0])), "{runs:?}");
     // A section's btLr turns them with the text.
     let Some(turned) = section("btLr", "0", &east_asian("漢字Ab")) else { return };
     assert!(turned_runs(&turned).iter().all(|r| r.2 == [0.0, 1.0]));

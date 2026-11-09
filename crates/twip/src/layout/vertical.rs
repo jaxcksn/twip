@@ -267,10 +267,24 @@ fn upright(items: &[Item], v: Vertical) -> Vec<Item> {
     if v.upright { east_asian_turned(items, true) } else { items.to_vec() }
 }
 
-/// `items` with each East Asian glyph turned a quarter counter-clockwise about the middle of its em box, put on the
+/// A character that stands upright in a vertical line (Unicode vertical orientation `U`, `Tu` or `Tr`): CJK, kana,
+/// Hangul, full-width forms and the symbols set with them; half-width forms and other scripts lie sideways.
+fn stands_upright(c: char) -> bool {
+    matches!(c as u32,
+        0xA7 | 0xA9 | 0xAE | 0xB1 | 0xBC..=0xBE | 0xD7 | 0xF7 | 0x2EA..=0x2EB
+        | 0x1100..=0x11FF | 0x1401..=0x167F | 0x18B0..=0x18FF
+        | 0x2016 | 0x2020..=0x2021 | 0x2030..=0x2031 | 0x203B..=0x203C | 0x2042 | 0x2047..=0x2049 | 0x2051
+        | 0x20DD..=0x20E0 | 0x20E2..=0x20E4 | 0x2150..=0x2189 | 0x218C..=0x218F | 0x221E | 0x2234..=0x2235
+        | 0x2460..=0x24FF | 0x25A0..=0x2619 | 0x2620..=0x2767 | 0x2776..=0x2793
+        | 0x2B12..=0x2B2F | 0x2B50..=0x2B59 | 0x2BB8..=0x2BFF
+        | 0x2E80..=0xA4CF | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xE000..=0xFAFF | 0xFE10..=0xFE1F | 0xFE30..=0xFE6F
+        | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE7 | 0x1F000..=0x1FAFF | 0x20000..=0x3FFFD)
+}
+
+/// `items` with each upright glyph turned a quarter counter-clockwise about the middle of its em box, put on the
 /// middle of its run when the run is `centred`, else where the box is.
 fn east_asian_turned(items: &[Item], centred: bool) -> Vec<Item> {
-    let ea = |r: &GlyphRun, x: f64| r.chars.iter().any(|c| (c.1 - x).abs() < 1e-6 && super::text::is_east_asian(c.0 as u32));
+    let ea = |r: &GlyphRun, x: f64| r.chars.iter().any(|c| (c.1 - x).abs() < 1e-6 && stands_upright(c.0));
     if !items.iter().any(|i| matches!(i, Item::Glyphs(r) if r.glyphs.iter().any(|g| ea(r, g.1)))) {
         return items.to_vec();
     }
@@ -296,7 +310,7 @@ fn east_asian_turned(items: &[Item], centred: bool) -> Vec<Item> {
             out.push(Item::Turned(Rc::new(Turned { centre: [x + advance / 2.0, middle], deg: -90.0, items: vec![Item::Glyphs(glyph)] })));
         }
         if !rest.is_empty() {
-            let chars = r.chars.iter().copied().filter(|c| !super::text::is_east_asian(c.0 as u32)).collect();
+            let chars = r.chars.iter().copied().filter(|c| !stands_upright(c.0)).collect();
             out.push(Item::Glyphs(GlyphRun { glyphs: rest.into(), chars, ..r.clone() }));
         }
     }
