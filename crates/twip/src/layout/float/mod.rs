@@ -41,6 +41,13 @@ pub struct Placed {
     pub allow_overlap: bool,
     pub float: Rc<Float>,
     pub settled: bool,
+    pub contour: Option<Contour>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Contour {
+    pub points: Rc<[(f64, f64)]>,
+    pub through: bool,
 }
 
 pub struct Frames {
@@ -49,6 +56,7 @@ pub struct Frames {
     pub margin: [f64; 4],
     pub column: (f64, f64),
     pub compat: Compat,
+    pub cell: bool,
 }
 
 impl Placed {
@@ -66,10 +74,16 @@ impl Placed {
             "largest" => Side::Largest,
             _ => Side::Both,
         };
-        let wrap_box = match f.poly {
-            Some([x0, y0, x1, y1]) => {
-                let top = y + y0 * h;
-                [x + x0 * f.w, top, x + x1 * f.w, (y + y1 * h).max(top + 1.0 / LU_PER_PT)]
+        let contour = f
+            .poly
+            .as_ref()
+            .filter(|_| wrap == Wrap::Square)
+            .map(|p| Contour { points: p.iter().map(|&(px, py)| (x + px * f.w, y + py * h)).collect(), through: f.wrap == "through" });
+        let wrap_box = match &contour {
+            Some(c) => {
+                let b =
+                    c.points.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]);
+                [b[0], b[1], b[2], b[3].max(b[1] + 1.0 / LU_PER_PT)]
             }
             None => {
                 let [l, t, r, b] = f.effect;
@@ -86,6 +100,7 @@ impl Placed {
             allow_overlap: f.allow_overlap,
             float: f.clone(),
             settled: true,
+            contour,
         }
     }
 
@@ -102,6 +117,9 @@ impl Placed {
         for (k, d) in [dx, dy, dx, dy].iter().enumerate() {
             self.rect[k] += d;
             self.excl[k] += d;
+        }
+        if let Some(c) = &mut self.contour {
+            c.points = c.points.iter().map(|&(x, y)| (x + dx, y + dy)).collect();
         }
     }
 
@@ -134,8 +152,8 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], page_w: f64, body_bottom: f64) -
     false
 }
 
-pub use fit::{intervals, next_edge};
-pub use position::{h_pos, v_pos};
+pub use fit::{intervals, next_edge, steps};
+pub use position::{h_pos, sized, v_pos};
 
 #[cfg(test)]
 mod tests {
@@ -173,6 +191,7 @@ mod tests {
             parts: Vec::new(),
             shape: None,
             rot_swap: false,
+            relative: Default::default(),
         });
         Placed {
             key: (0, 0, 0),
@@ -184,6 +203,7 @@ mod tests {
             allow_overlap: true,
             float,
             settled: true,
+            contour: None,
         }
     }
 
@@ -202,8 +222,83 @@ mod tests {
     }
 
     #[test]
+    fn relative_sizes_take_their_share_of_the_page_or_margins() {
+        let fr =
+            Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 36.0, 72.0, 144.0], column: (72.0, 504.0), compat: Compat::Generic, cell: false };
+        let size = |w_from: &str, h_from: &str| {
+            let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+            f.relative.size = [Some((w_from.into(), 500)), Some((h_from.into(), 500))];
+            let s = sized(&f, &fr).expect("sized");
+            (s.w, s.h)
+        };
+        assert_eq!(size("margin", "margin"), (252.0, 288.0));
+        assert_eq!(size("page", "page"), (306.0, 396.0));
+        assert_eq!(size("leftMargin", "topMargin"), (36.0, 36.0));
+        assert_eq!(size("rightMargin", "bottomMargin"), (18.0, 72.0));
+        assert_eq!(size("insideMargin", "insideMargin"), (18.0, 36.0));
+        let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+        f.relative.size = [Some(("page".into(), 500)), None];
+        f.effect = [10.0, 0.0, 20.0, 0.0];
+        assert_eq!(sized(&f, &fr).expect("sized").w, 276.0);
+        f.relative.size = [None, Some(("page".into(), 1))];
+        assert_eq!(sized(&f, &fr).expect("sized").h, 1.0);
+        let cell = Frames { cell: true, ..fr };
+        assert!(sized(&f, &cell).is_none());
+    }
+
+    #[test]
+    fn percentage_positions_count_from_their_reference_box() {
+        let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false };
+        let at = |h: &str, pct: i64| {
+            let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+            f.h_relative = h.into();
+            f.relative.pos = [Some(pct), None];
+            h_pos(&f, &fr)
+        };
+        assert_eq!((at("margin", 250), at("page", 250), at("leftMargin", 250)), (189.0, 153.0, 18.0));
+        let two_columns = Frames { column: (72.0, 216.0), ..fr };
+        let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+        f.relative.pos = [Some(500), None];
+        assert_eq!(h_pos(&f, &two_columns), 306.0);
+        f.v_relative = "page".into();
+        f.relative.pos = [None, Some(123)];
+        assert!((v_pos(&f, 20.0, &fr, 0.0, 0.0) - 97.42).abs() < 0.05);
+    }
+
+    fn polygon(wrap: &str, pts: &[(f64, f64)], dist: [f64; 4]) -> Placed {
+        let mut f = (*fl(0.0, 200.0, Side::Both).float).clone();
+        f.wrap = wrap.into();
+        f.poly = Some(pts.iter().map(|&(x, y)| (x / 21600.0, y / 21600.0)).collect());
+        f.dist = dist;
+        Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 72.0, 72.0, 100.0)
+    }
+
+    #[test]
+    fn a_polygon_wraps_by_its_widest_point_over_the_band() {
+        let tri = [(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)];
+        let starts = |dist| intervals(&[polygon("tight", &tri, dist)], 72.0, 540.0, 72.0, 83.49).unwrap();
+        let free = starts([0.0; 4]);
+        assert!((free[0].0 - 94.98).abs() < 1e-6 && free.len() == 1, "{free:?}");
+        let free = starts([0.0, 0.0, 0.0, 18.0]);
+        assert!((free[0].0 - 112.98).abs() < 1e-6, "{free:?}");
+        assert_eq!(intervals(&[polygon("tight", &tri, [0.0; 4])], 72.0, 540.0, 180.0, 190.0).unwrap(), vec![(72.0, 540.0)]);
+    }
+
+    #[test]
+    fn a_through_wrap_opens_a_notch_that_a_tight_wrap_keeps_closed() {
+        let u =
+            [(0.0, 0.0), (7200.0, 0.0), (7200.0, 14400.0), (14400.0, 14400.0), (14400.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
+        let band = |wrap, top: f64| intervals(&[polygon(wrap, &u, [0.0; 4])], 0.0, 540.0, top, top + 11.49).unwrap();
+        let notch = (72.0 + 200.0 / 3.0, 72.0 + 400.0 / 3.0);
+        let through = band("through", 80.0);
+        assert!(through.iter().any(|&(a, b)| (a - notch.0).abs() < 1e-6 && (b - notch.1).abs() < 1e-6), "{through:?}");
+        assert!(!band("tight", 80.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0));
+        assert!(!band("through", 135.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0), "the band over the notch bottom");
+    }
+
+    #[test]
     fn positions() {
-        let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat };
+        let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat, cell: false };
         let f = |h: &str, ha: Option<&str>, v: &str, va: Option<&str>| Float {
             h_relative: h.into(),
             h_align: ha.map(Into::into),

@@ -60,6 +60,8 @@ pub enum Object {
     Note(NoteKind, i64),
     PTab(crate::docx::PTab),
     Expansion(Rc<super::expansion::Expansion>),
+    /// The floats a text-wrapping break clears: left, right.
+    Clear(bool, bool),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -742,12 +744,18 @@ impl Builder<'_> {
                 (Inline::Break(BreakKind::Page | BreakKind::Column, _), Some(_)) if space.in_cell => {}
                 (Inline::Break(k, _), Some(run)) => {
                     let kind = match k {
-                        BreakKind::Line => Kind::LineBreak,
                         BreakKind::Page => Kind::PageBreak,
                         BreakKind::Column => Kind::ColumnBreak,
+                        _ => Kind::LineBreak,
                     };
                     let f = self.face(&run.ascii, run);
-                    let p = self.new_piece(kind, run, f, run.size, 0.0);
+                    let mut p = self.new_piece(kind, run, f, run.size, 0.0);
+                    p.object = match k {
+                        BreakKind::ClearLeft => Some(Object::Clear(true, false)),
+                        BreakKind::ClearRight => Some(Object::Clear(false, true)),
+                        BreakKind::ClearAll => Some(Object::Clear(true, true)),
+                        _ => None,
+                    };
                     self.atom(p, "");
                 }
                 (Inline::Sym { ch, font, control, .. }, Some(run)) => {

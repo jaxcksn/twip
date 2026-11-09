@@ -244,7 +244,7 @@ pub fn layout_with(
                 y += g;
                 let id = para_id(p);
                 let para_top = y;
-                let fr = float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width), compat: text.compat };
+                let fr = float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width), compat: text.compat, cell: true };
                 // Wrapping floats
                 let mut own: Vec<(usize, Placed)> = Vec::new();
                 if in_cell && !ends.fit {
@@ -918,6 +918,8 @@ pub fn hf_floats(
         let Some(u) = story.units.iter().find(|u| u.block == bi) else { continue };
         let para_top = top + u.top - if bi == 0 { space_before(&env.ctx.env.text, p.para_style_in(env.ctx.env.text.review.view)) } else { 0.0 };
         for f in env.ctx.floats_of(p) {
+            let sized = super::float::sized(f, fr);
+            let f = sized.as_ref().unwrap_or(f);
             let fitted = fit_frame(f, fr.column.1, env, memos)?;
             let f = fitted.as_ref().unwrap_or(f);
             let h = float_height(f, env, memos)?;

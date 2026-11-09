@@ -95,6 +95,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         parts: Vec::new(),
         shape: None,
         rot_swap: false,
+        relative: Default::default(),
     };
     place(&mut f, &fr, lx + rx);
     f

@@ -246,3 +246,19 @@ fn effects_resolve_from_the_effect_list_and_the_style() {
     let theme = s[1].effects.outer.as_ref().expect("the theme's third effect: a shadow");
     assert_eq!((theme.blur, theme.dist), (4.5, 1.5));
 }
+
+#[test]
+fn a_relative_width_and_a_percentage_position_follow_the_page() {
+    let shape = box_wsp(100, 50, "", "<wps:bodyPr/>", "Share");
+    let pct = r#"<wp:positionH relativeFrom="margin"><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="wp14"><wp14:pctPosHOffset xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing">25000</wp14:pctPosHOffset></mc:Choice><mc:Fallback><wp:posOffset>0</wp:posOffset></mc:Fallback></mc:AlternateContent></wp:positionH>"#;
+    let rel = r#"<wp14:sizeRelH xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" relativeFrom="page"><wp14:pctWidth>50000</wp14:pctWidth></wp14:sizeRelH></wp:anchor>"#;
+    let a = anchor(72, 100, 100, 50, 1, false, 1, &shape);
+    let a = a.replacen(&format!(r#"<wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH>"#, 72 * PT), pct, 1).replacen(
+        "</wp:anchor>",
+        rel,
+        1,
+    );
+    let d = settings_doc(&format!("<w:p>{a}</w:p>"), 15).expect("the document reads");
+    let r = float_rect(&crate::layout::layout(&d, &fonts()));
+    assert!(close(r, [189.0, 100.0, 495.0, 150.0]), "{r:?}");
+}

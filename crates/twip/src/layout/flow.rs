@@ -1462,8 +1462,34 @@ impl<'d> PageFill<'d, '_> {
                 (Some((segs, e)), false) => {
                     let ph = segs[0].pitch;
                     let hard = segs.last().is_some_and(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
+                    let clear = segs.last().and_then(|l| Some((crate::layout::line::clear_of(sp, pieces, l)?, l.xs.first().copied().unwrap_or(0.0))));
                     bands.push((yy, segs));
-                    yy += ph;
+                    let next = yy + ph;
+                    yy = match clear {
+                        Some(((l, r), x)) if compat == Compat::Generic => {
+                            let iv = float::intervals(here, cx0, cx1, next - ph, next).unwrap_or_default();
+                            let (a, b) = iv.iter().copied().find(|&(a, b)| cx0 + x >= a - EPS && cx0 + x <= b + EPS).unwrap_or((cx0, cx1));
+                            here.iter()
+                                .filter(|f| f.in_band(next - ph, next) && ((l && f.excl[2] <= a + EPS) || (r && f.excl[0] >= b - EPS)))
+                                .map(|f| f.excl[3])
+                                .fold(next, f64::max)
+                        }
+                        Some(((l, r), _)) => {
+                            let mut at = next;
+                            while at < col.bottom.to_pt() - EPS {
+                                let first = float::intervals(here, cx0, cx1, at, at + ph).and_then(|iv| iv.first().copied());
+                                if first.is_some_and(|(a, b)| (!l || a <= cx0 + EPS) && (!r || b >= cx1 - EPS)) {
+                                    break;
+                                }
+                                match float::next_edge(here, cx0, cx1, at, at + ph) {
+                                    Some(e) => at = e,
+                                    None => break,
+                                }
+                            }
+                            at
+                        }
+                        None => next,
+                    };
                     s = e;
                     if hard {
                         break;
@@ -1482,7 +1508,7 @@ impl<'d> PageFill<'d, '_> {
                         yy = (yy + t).min(col.bottom.to_pt().max(yy + EPS));
                         continue;
                     }
-                    match float::next_edge(here, cx0, cx1, yy, yy + h) {
+                    match float::next_edge(here, cx0, cx1, yy, yy + h).filter(|_| !float::steps(here, yy, yy + h)) {
                         Some(b) => yy = b.min(col.bottom.to_pt().max(yy + EPS)),
                         None => yy += h,
                     }
@@ -1507,6 +1533,7 @@ impl<'d> PageFill<'d, '_> {
             margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
             column: (col.x, col.width),
             compat: self.ctx.env.text.compat,
+            cell: false,
         };
         let bi = pos.block;
         let si = self.sec.index;
@@ -1518,6 +1545,7 @@ impl<'d> PageFill<'d, '_> {
             let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, sp.object(pb.from + k)) else { continue };
             let Some(b) = band_of(k) else { continue };
             let owner = piece_para(sp, pb.from + k, anchor);
+            let f = &float::sized(f, &frames).map_or_else(|| f.clone(), Rc::new);
             let f = &self.fit_frame(f, col.width, memos)?;
             let h = self.float_height(f, memos)?;
             let line_top = bands[b].0;
@@ -1790,6 +1818,7 @@ impl<'d> PageFill<'d, '_> {
             margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
             column: (col.x, col.width),
             compat: self.ctx.env.text.compat,
+            cell: false,
         };
         let mut later: Vec<(f64, f64)> = Vec::new();
         let lift = match (tb.rows.first(), self.sec.blocks.get(pos.block)) {
@@ -2080,6 +2109,7 @@ impl<'d> PageFill<'d, '_> {
             parts: Vec::new(),
             shape: None,
             rot_swap: false,
+            relative: Default::default(),
         });
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));

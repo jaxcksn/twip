@@ -162,6 +162,28 @@ pub enum BreakKind {
     Line,
     Page,
     Column,
+    /// Text-wrapping breaks (`w:br w:clear`).
+    ClearLeft,
+    ClearRight,
+    ClearAll,
+}
+
+impl BreakKind {
+    pub fn is_line(self) -> bool {
+        matches!(self, BreakKind::Line | BreakKind::ClearLeft | BreakKind::ClearRight | BreakKind::ClearAll)
+    }
+
+    /// The break `w:br@type` and `@clear` give.
+    pub fn of(kind: Option<&str>, clear: Option<&str>) -> BreakKind {
+        match (kind, clear) {
+            (Some("page"), _) => BreakKind::Page,
+            (Some("column"), _) => BreakKind::Column,
+            (_, Some("left")) => BreakKind::ClearLeft,
+            (_, Some("right")) => BreakKind::ClearRight,
+            (_, Some("all")) => BreakKind::ClearAll,
+            _ => BreakKind::Line,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -287,7 +309,8 @@ pub struct Float {
     pub wrap_text: String,
     pub dist: [f64; 4],
     pub effect: [f64; 4],
-    pub poly: Option<[f64; 4]>,
+    /// The wrap polygon of a tight or through float, as fractions of its box.
+    pub poly: Option<Rc<[(f64, f64)]>>,
     pub behind: bool,
     pub allow_overlap: bool,
     pub layout_in_cell: bool,
@@ -295,6 +318,7 @@ pub struct Float {
     pub order: usize,
     pub z: u32,
     pub rot_swap: bool,
+    pub relative: Relative,
     /// The source `w:drawing` element's byte range in its part: saving drops it when the float is deleted.
     pub src: Option<std::ops::Range<usize>>,
     /// `wp:anchor/@locked`: the anchor stays in its paragraph when the float is moved.
@@ -304,6 +328,15 @@ pub struct Float {
     pub parts: Vec<GroupPart>,
     /// The DrawingML object (geometry, paint, transform, group tree); `None` for frames and floats made without one.
     pub shape: Option<Box<crate::drawing::Shape>>,
+}
+
+/// Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, VML `mso-width-percent`, `mso-left-percent`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Relative {
+    /// Width and height: the box they're relative to and the share in tenths of a percent.
+    pub size: [Option<(String, i64)>; 2],
+    /// Horizontal and vertical position, in tenths of a percent of the reference box.
+    pub pos: [Option<i64>; 2],
 }
 
 #[derive(Clone, Debug, PartialEq)]

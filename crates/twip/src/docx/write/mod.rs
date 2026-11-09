@@ -2034,6 +2034,9 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
         Inline::Text(s, _) => out.extend(s.chars().map(|c| (c as u64, c))),
         Inline::Tab(_) => out.push(('\t' as u64, '\t')),
         Inline::Break(BreakKind::Line, _) => out.push((0xB, '\u{b}')),
+        Inline::Break(BreakKind::ClearLeft, _) => out.push((ATOM | BreakKind::ClearLeft as u64, '\u{1}')),
+        Inline::Break(BreakKind::ClearRight, _) => out.push((ATOM | BreakKind::ClearRight as u64, '\u{2}')),
+        Inline::Break(BreakKind::ClearAll, _) => out.push((ATOM | BreakKind::ClearAll as u64, '\u{3}')),
         Inline::Break(BreakKind::Column, _) => out.push((ATOM | BreakKind::Column as u64, '\u{e}')),
         Inline::Break(k, _) => out.push((ATOM | *k as u64, '\u{c}')),
         Inline::Bookmark(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => {}
@@ -3176,6 +3179,11 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             (Some('\u{c}'), _) => {
                 self.flush_text();
                 self.pend.push_str(&format!("<{w}br {w}type=\"page\"/>"));
+            }
+            (Some(c @ '\u{1}'..='\u{3}'), _) => {
+                self.flush_text();
+                let clear = ["left", "right", "all"][c as usize - 1];
+                self.pend.push_str(&format!("<{w}br {w}clear=\"{clear}\"/>"));
             }
             (Some(c), _) => self.text.push(c),
             (None, Some(r)) => {

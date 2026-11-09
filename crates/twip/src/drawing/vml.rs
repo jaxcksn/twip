@@ -43,6 +43,10 @@ pub struct Style {
     pub v_align: Option<String>,
     pub v_relative: Option<String>,
     pub text_anchor: Option<String>,
+    /// `mso-width-relative`/`mso-width-percent` and the height's, in tenths of a percent.
+    pub size_percent: [Option<(String, i64)>; 2],
+    /// `mso-left-percent`, `mso-top-percent`.
+    pub pos_percent: [Option<i64>; 2],
 }
 
 fn is(n: Node, ns: &str, name: &str) -> bool {
@@ -130,6 +134,18 @@ pub fn style(n: Node) -> Style {
             "mso-position-vertical" => s.v_align = Some(v.to_string()),
             "mso-position-vertical-relative" => s.v_relative = Some(v.to_string()),
             "v-text-anchor" => s.text_anchor = Some(v.to_string()),
+            "mso-width-percent" | "mso-height-percent" => {
+                let k = usize::from(k == "mso-height-percent");
+                let from = s.size_percent[k].take().map_or_else(|| "margin".to_string(), |(f, _)| f);
+                s.size_percent[k] = Some((from, v.parse().unwrap_or(0)));
+            }
+            "mso-width-relative" | "mso-height-relative" => {
+                let k = usize::from(k == "mso-height-relative");
+                let pct = s.size_percent[k].take().map_or(0, |(_, p)| p);
+                s.size_percent[k] = Some((v.to_string(), pct));
+            }
+            "mso-left-percent" => s.pos_percent[0] = v.parse().ok(),
+            "mso-top-percent" => s.pos_percent[1] = v.parse().ok(),
             _ => {}
         }
     }

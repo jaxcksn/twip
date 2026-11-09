@@ -780,3 +780,49 @@ fn a_row_whose_exception_fixes_its_layout_is_a_table_of_its_own() {
     assert!((col2("dos") - 100.0).abs() < 0.01, "its own fixed grid: {}", col2("dos"));
     assert!(col2("uno") < 60.0, "the autofit row keeps its narrow grid: {}", col2("uno"));
 }
+
+fn square(x: i64, y: i64, w: i64, h: i64, id: u32) -> String {
+    let e = |v: i64| v * 12700;
+    format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{id}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="{id}" name="F{id}"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        e(x),
+        e(y),
+        e(w),
+        e(h)
+    )
+}
+
+fn after_clear(compat: u32, floats: &str, before: &str, clear: &str) -> Option<(f64, f64, f64)> {
+    let settings = format!(
+        r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#
+    );
+    let body = format!(r#"<w:p>{floats}<w:r><w:t xml:space="preserve">{before}</w:t><w:br w:clear="{clear}"/><w:t>bbb</w:t></w:r></w:p>"#);
+    let l = baselines(&settings, ARIAL_12, &body)?;
+    let a = l.iter().find(|l| l.1.starts_with('a'))?;
+    let b = l.iter().find(|l| l.1.contains("bbb"))?;
+    Some((a.3, b.3, b.0))
+}
+
+#[test]
+fn a_text_wrapping_break_moves_its_text_below_the_floats_it_clears() {
+    let sides = format!("{}{}", square(72, 72, 100, 100, 1), square(440, 72, 100, 60, 2));
+    for compat in [12, 15] {
+        let Some((_, left, _)) = after_clear(compat, &sides, "aaa", "left") else { return };
+        let (_, right, x) = after_clear(compat, &sides, "aaa", "right").expect("lays out");
+        let (_, all, _) = after_clear(compat, &sides, "aaa", "all").expect("lays out");
+        assert!(left > 172.0 && left < 186.0, "compat {compat}: left {left}");
+        assert!(right > 132.0 && right < 146.0 && x >= 172.0, "compat {compat}: right {right} at {x}");
+        assert!(all > 172.0 && all < 186.0, "compat {compat}: all {all}");
+    }
+}
+
+#[test]
+fn a_text_wrapping_break_beside_a_middle_float_goes_on_when_its_side_is_clear() {
+    let middle = square(222, 72, 100, 100, 1);
+    for compat in [12, 15] {
+        let Some((a, b, x)) = after_clear(compat, &middle, "aaa ", "left") else { return };
+        assert!((a - b).abs() < 0.01 && x >= 322.0, "compat {compat}: same line, right piece: {a} {b} {x}");
+        let (_, below, _) = after_clear(compat, &middle, "aaa ", "right").expect("lays out");
+        assert!(below > 172.0, "compat {compat}: {below}");
+    }
+}

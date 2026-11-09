@@ -1410,11 +1410,7 @@ impl Reader {
                     "r" => self.read_run(e, base, pkg, out),
                     "br" | "cr" => {
                         let run = self.direct_run(e, base, &mut RunProps::default());
-                        let kind = match attr(e, "type") {
-                            Some("page") if e.tag_name().name() == "br" => BreakKind::Page,
-                            Some("column") if e.tag_name().name() == "br" => BreakKind::Column,
-                            _ => BreakKind::Line,
-                        };
+                        let kind = if e.tag_name().name() == "br" { BreakKind::of(attr(e, "type"), attr(e, "clear")) } else { BreakKind::Line };
                         out.push(Inline::Break(kind, run));
                     }
                     "fldSimple" if !self.in_code() => {
@@ -1637,12 +1633,7 @@ impl Reader {
                     out.push(Inline::PTab(PTab { align, margin: attr(c, "relativeTo") != Some("indent"), leader }, run.clone()));
                 }
                 "br" => {
-                    let kind = match attr(c, "type") {
-                        Some("page") => BreakKind::Page,
-                        Some("column") => BreakKind::Column,
-                        _ => BreakKind::Line,
-                    };
-                    out.push(Inline::Break(kind, run.clone()));
+                    out.push(Inline::Break(BreakKind::of(attr(c, "type"), attr(c, "clear")), run.clone()));
                 }
                 "cr" => out.push(Inline::Break(BreakKind::Line, run.clone())),
                 "noBreakHyphen" => push_text(out, "\u{2011}", &run),
@@ -2028,6 +2019,24 @@ impl Reader {
                 frame_src: None,
                 parts: Vec::new(),
                 rot_swap: false,
+                relative: Relative {
+                    size: st.size_percent.clone().map(|s| {
+                        s.filter(|(_, p)| *p != 0).map(|(from, p)| {
+                            let from = match from.as_str() {
+                                "page" => "page",
+                                "left-margin-area" => "leftMargin",
+                                "right-margin-area" => "rightMargin",
+                                "top-margin-area" => "topMargin",
+                                "bottom-margin-area" => "bottomMargin",
+                                "inner-margin-area" => "insideMargin",
+                                "outer-margin-area" => "outsideMargin",
+                                _ => "margin",
+                            };
+                            (from.to_string(), p)
+                        })
+                    }),
+                    pos: st.pos_percent.map(|p| p.filter(|&p| p != 0 && p != -10001)),
+                },
                 shape: Some(Box::new(shape)),
             }),
             run.clone(),
@@ -2130,9 +2139,7 @@ impl Reader {
                         .filter(|q| q.is_element())
                         .filter_map(|q| Some((q.attribute("x")?.parse::<f64>().ok()? / 21600.0, q.attribute("y")?.parse::<f64>().ok()? / 21600.0)))
                         .collect();
-                    (pts.len() >= 2).then(|| {
-                        pts.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)])
-                    })
+                    (pts.len() >= 2).then(|| Rc::from(pts))
                 }),
                 behind: item.attribute("behindDoc").is_some_and(|v| on_off_str(Some(v))),
                 allow_overlap: item.attribute("allowOverlap").map(|v| on_off_str(Some(v))).unwrap_or(true),
@@ -2144,6 +2151,18 @@ impl Reader {
                 frame_src: None,
                 parts,
                 rot_swap: false,
+                relative: {
+                    let tenths = |n: Option<Node>| n.and_then(|n| n.text()?.trim().parse::<i64>().ok()).map(|v| v / 100).filter(|&v| v != 0);
+                    let size = |el: &str, pct: &str| {
+                        let s = item.children().find(|c| is(*c, WP14, el))?;
+                        Some((s.attribute("relativeFrom").unwrap_or("margin").to_string(), tenths(s.children().find(|c| is(*c, WP14, pct)))?))
+                    };
+                    let at = |el: &str, pct: &str| tenths(pos(el).and_then(|p| p.descendants().find(|c| is(*c, WP14, pct))));
+                    Relative {
+                        size: [size("sizeRelH", "pctWidth"), size("sizeRelV", "pctHeight")],
+                        pos: [at("positionH", "pctPosHOffset"), at("positionV", "pctPosVOffset")],
+                    }
+                },
                 shape: Some(Box::new(shape)),
             }),
             run.clone(),

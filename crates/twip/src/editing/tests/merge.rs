@@ -463,3 +463,16 @@ fn editing_a_link_or_simple_field_keeps_its_element() {
         assert!(text.contains(to), "{to}: {text}");
     }
 }
+
+#[test]
+fn an_edited_paragraph_keeps_its_text_wrapping_breaks() {
+    let bytes = super::blank_body(r#"<w:p><w:r><w:t>one</w:t><w:br w:clear="left"/><w:t>two</w:t><w:br w:clear="all"/><w:t>three</w:t></w:r></w:p>"#);
+    let mut doc = crate::docx::read_editable(&bytes).expect("reads");
+    let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first_mut() else { panic!("a paragraph") };
+    let Some(crate::docx::Inline::Text(s, _)) = p.inlines.iter_mut().find(|i| matches!(i, crate::docx::Inline::Text(s, _) if s == "two")) else {
+        panic!("the text")
+    };
+    *s = "twice".into();
+    let xml = document_xml(&crate::docx::write::save(&doc).expect("saves"));
+    assert!(xml.contains(r#"<w:br w:clear="left"/>"#) && xml.contains(r#"<w:br w:clear="all"/>"#) && xml.contains("twice"), "{xml}");
+}

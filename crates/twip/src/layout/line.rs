@@ -528,6 +528,15 @@ fn fit_text(line: &mut Line, pieces: &[Piece], fit: f64) {
     clippy::too_many_arguments,
     reason = "the measured line-breaking helpers take the shaped paragraph, its pieces, style and frame separately, as they were ported"
 )]
+/// The floats a line's closing text-wrapping break clears: left, right.
+pub fn clear_of(sp: &ShapedPara, pieces: &[Piece], line: &Line) -> Option<(bool, bool)> {
+    let last = pieces.get(line.end.checked_sub(1)?).filter(|p| p.kind == Kind::LineBreak && line.hard == Some(Kind::LineBreak))?;
+    match &sp.objects[last.object? as usize] {
+        Object::Clear(l, r) => Some((*l, *r)),
+        _ => None,
+    }
+}
+
 pub fn band(
     sp: &ShapedPara,
     pieces: &[Piece],
@@ -582,8 +591,15 @@ pub fn band(
         align(&mut line, sp, pieces, style, frame, left, right, fit.end >= n);
         s = fit.end;
         let hard = line.hard.is_some_and(|k| k != Kind::LineBreak);
+        let cleared = match clear_of(sp, pieces, &line) {
+            Some((l, r)) => {
+                let (a, b) = if frame.compat == Compat::Legacy { intervals[0] } else { (a, b) };
+                (!l || a <= EPS) && (!r || b >= frame.width - EPS)
+            }
+            None => true,
+        };
         segs.push(line);
-        if hard || s >= n {
+        if hard || !cleared || s >= n {
             break;
         }
     }

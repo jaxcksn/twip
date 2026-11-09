@@ -419,6 +419,7 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
         margin: [left, right, top, s.bottom],
         column: (left, width),
         compat: ctx.env.text.compat,
+        cell: false,
     };
     let fields = hf_fields(run, cx, i);
     let parts = hf_parts(run, cx, i);

@@ -453,6 +453,7 @@ impl Editor {
             parts: Vec::new(),
             shape: Some(Box::new(Shape::new(kind, emu(rect[2]), emu(rect[3]), name))),
             rot_swap: false,
+            relative: Default::default(),
         };
         let mut inlines = p.inlines.clone();
         inlines.insert(0, crate::docx::Inline::Float(Box::new(float), run));
@@ -877,6 +878,7 @@ impl Editor {
             parts,
             shape: Some(Box::new(group)),
             rot_swap: false,
+            relative: Default::default(),
             src: None,
             frame_src: None,
             z: members.iter().map(|(m, ..)| m.z).max().unwrap_or(first.z),
@@ -939,6 +941,7 @@ impl Editor {
                 parts,
                 shape: Some(Box::new(s)),
                 rot_swap: false,
+                relative: Default::default(),
                 src: None,
                 frame_src: None,
                 z: m.z,

@@ -697,6 +697,7 @@ impl Editor {
             parts: Vec::new(),
             shape: None,
             rot_swap: false,
+            relative: Default::default(),
         };
         let mut inlines = p.inlines.clone();
         inlines.insert(0, Inline::Float(Box::new(float), run));
@@ -990,6 +991,7 @@ impl Editor {
             parts: Vec::new(),
             shape: if boxed.is_some() { None } else { pic.shape.clone() },
             rot_swap: false,
+            relative: Default::default(),
         };
         self.begin_batch(Some("Wrap Text".into()));
         let mut tx = self.begin("Wrap Text");
