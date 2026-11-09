@@ -395,6 +395,10 @@ pub struct RowBox {
     pub exact: bool,
     pub min_h: f64,
     pub gap_top: f64,
+    /// Extra room above the row when it starts a later part of the table on a page.
+    pub part_top: f64,
+    /// A framed row's bottom band and the gap below it, held in its height.
+    pub bottom_gap: f64,
     pub seams: Vec<(f64, f64, Border)>,
     pub hidden: bool,
     pub changed: bool,
@@ -1390,6 +1394,8 @@ impl ViewTable {
                     exact: false,
                     min_h: 0.0,
                     gap_top: 0.0,
+                    part_top: 0.0,
+                    bottom_gap: 0.0,
                     seams: Vec::new(),
                     hidden: true,
                     changed: false,
@@ -1866,14 +1872,20 @@ fn assemble(
             }
         }
         let mut gap_top = 0.0;
+        let mut part_top = 0.0;
         let mut cell_bottom = 0.0;
         if let Some(s) = row_s {
             gap_top = if ri == 0 { 2.0 * s + space_h(&row_borders(t, 0)[0]) } else { s };
             // An unframed row above leaves its bottom border to this row's top.
-            if let Some(p) = ri.checked_sub(1).filter(|&p| !framed(t, p)) {
+            let under = ri.checked_sub(1).filter(|&p| !framed(t, p)).map_or(0.0, |p| {
                 let w = rows[p].cells.iter().map(|c: &CellBox| space_h(&c.edges[2])).fold(0.0, f64::max);
                 let own = top_border + s + cells.iter().map(|c| c.margins[0]).fold(0.0, f64::max);
-                gap_top += (w - own).max(0.0);
+                (w - own).max(0.0)
+            });
+            gap_top += under;
+            // At the top of a later part the table's top border takes the place of the row above.
+            if ri > 0 {
+                part_top = space_h(&row_borders(t, ri)[0]) - under;
             }
             top_border += gap_top;
             cell_bottom = cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max) + gap(s, ri + 1 == t.rows.len());
@@ -1906,6 +1918,8 @@ fn assemble(
             exact,
             min_h,
             gap_top,
+            part_top,
+            bottom_gap: cell_bottom,
             seams,
             hidden: false,
             changed,
@@ -2100,6 +2114,42 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, bottom: f64) -> Option<Child> {
 fn drawn_edges<'a>(tb: &TableLayout, c: &'a CellBox) -> [&'a Option<Border>; 4] {
     let [t, l, b, r] = &*c.edges;
     if tb.rtl { [t, r, b, l] } else { [t, l, b, r] }
+}
+
+/// The outer frame of a spaced table where a part of it starts or ends on a page: the table's top border from `open`
+/// down to the part's first row, and its bottom border under the part's last row.
+pub fn frame_part(tb: &TableLayout, frag: &mut RowFragment, left: f64, open: Option<f64>, close: bool) {
+    if !tb.rows[frag.row].spacing.is_some_and(|s| s > 0.0) {
+        return;
+    }
+    let [t, l, b, r] = &tb.outer;
+    let x0 = left + tb.x0;
+    let x1 = x0 + tb.cols.iter().sum::<f64>();
+    let (lw, rw) = (bw(l), bw(r));
+    let mut borders = std::mem::take(&mut frag.borders).into_vec();
+    let sides = |borders: &mut Vec<Item>, y0: f64, y1: f64| {
+        if let Some(l) = l.as_ref().filter(|b| b.visible()) {
+            edge(borders, [x0 - lw / 2.0, y0, x0 + lw / 2.0, y1], false, false, l);
+        }
+        if let Some(r) = r.as_ref().filter(|b| b.visible()) {
+            edge(borders, [x1 - rw / 2.0, y0, x1 + rw / 2.0, y1], false, true, r);
+        }
+    };
+    if let Some(y) = open {
+        if let Some(t) = t.as_ref().filter(|b| b.visible()) {
+            edge(&mut borders, [x0 - lw / 2.0, y, x1 + rw / 2.0, y + thick(t)], true, false, t);
+        }
+        sides(&mut borders, y, frag.rect[1]);
+    }
+    if close {
+        let y = frag.rect[3];
+        let bottom = y + tb.bottom_border - bw(b);
+        sides(&mut borders, y, bottom);
+        if let Some(b) = b.as_ref().filter(|b| b.visible()) {
+            edge(&mut borders, [x0 - lw / 2.0, bottom, x1 + rw / 2.0, bottom + thick(b)], true, true, b);
+        }
+    }
+    frag.borders = borders.into();
 }
 
 pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, parts: Option<&[CellPart]>, last_of_table: bool) -> RowFragment {
@@ -2351,6 +2401,8 @@ fn same_row(a: &RowBox, b: &RowBox) -> bool {
         && a.changed == b.changed
         && a.exact == b.exact
         && a.gap_top == b.gap_top
+        && a.part_top == b.part_top
+        && a.bottom_gap == b.bottom_gap
         && a.seams == b.seams
         && a.cells.len() == b.cells.len()
         && a.cells.iter().zip(&b.cells).all(|(x, y)| {

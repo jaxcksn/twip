@@ -10,7 +10,7 @@ use crate::docx::props::{Jc, TableAnchor};
 
 use super::LayoutCtx;
 use super::float::{self, Frames, Placed, Wrap};
-use super::fragment::{BoxFragment, BoxKind, Child, Item, ParaFragment, PlacedLine, TableFragment};
+use super::fragment::{BoxFragment, BoxKind, Child, Item, ParaFragment, PlacedLine, RowFragment, TableFragment};
 use super::ids::ParaId;
 use super::job::{Memos, Yield};
 use super::join::{Joined, LaidPara, laid_para, piece_para};
@@ -499,7 +499,7 @@ pub fn stream_height(notes: &[NotePart], ncols: usize, room: f64) -> Option<f64>
 fn part_height(row: &super::table::RowBox, parts: &[CellPart]) -> f64 {
     let end = |p: &CellPart| p.units.last().map_or(0.0, |u| u.after);
     let content = row.cells.iter().zip(parts).map(|(c, p)| c.margins[0] + p.height() + end(p) + c.margins[2]).fold(0.0, f64::max);
-    row.top_border + content
+    row.top_border + content + row.bottom_gap
 }
 
 pub fn place_units(units: &[StoryUnit], x: f64, y: f64, out: &mut Vec<Child>) {
@@ -1731,7 +1731,16 @@ impl<'d> PageFill<'d, '_> {
             return Ok(Stop::Done);
         }
         let mut rows = Vec::new();
-        let finish = |rows: Vec<_>, out: &mut Vec<Child>| {
+        // A spaced table's outer frame is closed at the top and bottom of each part.
+        let finish = |mut rows: Vec<RowFragment>, out: &mut Vec<Child>, left: f64, opened: Option<f64>, closed: bool| {
+            if let Some(y) = opened
+                && let Some(first) = rows.iter_mut().find(|r| !r.repeat)
+            {
+                super::table::frame_part(tb, first, left, Some(y), false);
+            }
+            if closed && let Some(last) = rows.last_mut() {
+                super::table::frame_part(tb, last, left, None, true);
+            }
             if !rows.is_empty() {
                 out.push(Child::Table(TableFragment { table: tb.id, rows: rows.into_boxed_slice() }));
             }
@@ -1868,12 +1877,17 @@ impl<'d> PageFill<'d, '_> {
         self.at.starts.push((*y, pos.at.at_start()));
         let below_content = pos.at.at_start() && !*empty;
         let mut keep: Option<(usize, usize, f64, NoteArea, usize)> = None;
+        let mut opened = None;
         while pos.at.index() < n {
             let ri = pos.at.index();
             let row = &tb.rows[ri];
             if row.hidden {
                 pos.at = At::Row(ri + 1);
                 continue;
+            }
+            if rows.is_empty() && ri > 0 && row.part_top != 0.0 {
+                opened = Some(*y);
+                *y += row.part_top;
             }
             let last = tb.is_last(ri);
             let rest = pos.at.rest().cloned();
@@ -2018,7 +2032,7 @@ impl<'d> PageFill<'d, '_> {
                 *y += h + tb.bottom_border;
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
-                finish(rows, out);
+                finish(rows, out, at_x, opened, false);
                 self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
                 return Ok(Stop::Full);
             }
@@ -2057,11 +2071,11 @@ impl<'d> PageFill<'d, '_> {
             if !rows.is_empty() {
                 *y += tb.bottom_border;
             }
-            finish(rows, out);
+            finish(rows, out, at_x, opened, true);
             self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
             return Ok(Stop::Full);
         }
-        finish(rows, out);
+        finish(rows, out, at_x, opened, false);
         if fp.is_some() {
             self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
             (*y, *empty) = (flow_y, was_empty);

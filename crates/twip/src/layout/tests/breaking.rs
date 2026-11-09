@@ -15,6 +15,10 @@ fn lines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64)
 }
 
 fn baselines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, f64, f64)>> {
+    page_baselines(settings, rpr, body, 0)
+}
+
+fn page_baselines(settings: &str, rpr: &str, body: &str, page: usize) -> Option<Vec<(f64, String, f64, f64)>> {
     let fonts = fonts();
     fonts.face("Arial", None, false, false)?;
     let compat = if settings.contains("compatibilityMode") {
@@ -40,7 +44,7 @@ fn baselines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, 
     let doc = crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads");
     let snap = layout(&doc, &fonts);
     let mut out: Vec<(u32, f64, String, f64, f64)> = Vec::new();
-    paint(&snap.pages()[0], &mut |p| {
+    paint(&snap.pages()[page], &mut |p| {
         if let Item::Glyphs(r) = p.absolute() {
             let text: String = r.chars.iter().map(|c| c.0).collect();
             match out.iter_mut().find(|l| l.0 == p.line) {
@@ -800,6 +804,23 @@ fn a_first_row_whose_exception_fixes_its_layout_is_a_table_of_its_own() {
     assert!(col2(&l, "dos", "two") < 60.0, "the rows after it keep their own width: {}", col2(&l, "dos", "two"));
     let one = baselines("", ARIAL_12, &table("")).unwrap();
     assert!((col2(&one, "dos", "two") - col2(&one, "uno", "one")).abs() < 0.01, "without fixed the exception's width is the table's");
+}
+
+#[test]
+fn a_spaced_row_that_starts_a_page_takes_the_tables_top_border() {
+    let border = r#"w:val="single" w:sz="4" w:space="0" w:color="000000""#;
+    let cell = |t: &str, ppr: &str| {
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:pPr>{ppr}</w:pPr><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)
+    };
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblCellSpacing w:w="60" w:type="dxa"/><w:tblBorders><w:top {border}/><w:left {border}/><w:bottom {border}/><w:right {border}/><w:insideH {border}/><w:insideV {border}/></w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{}</w:tr><w:tr>{}</w:tr></w:tbl><w:p/>"#,
+        cell("one", ""),
+        cell("two", "<w:pageBreakBefore/>")
+    );
+    let Some(first) = page_baselines("", ARIAL_12, &body, 0) else { return };
+    let second = page_baselines("", ARIAL_12, &body, 1).unwrap();
+    let dy = at(&second, "two").1 - at(&first, "one").1;
+    assert!((dy + 3.0).abs() < 0.01, "the table's top border and one spacing above the row: {dy}");
 }
 
 fn square(x: i64, y: i64, w: i64, h: i64, id: u32) -> String {
