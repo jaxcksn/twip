@@ -1102,3 +1102,39 @@ fn east_asian_breaking_rules_apply_from_compat_14_or_with_apply_breaking_rules()
     assert_eq!(ends(&mode("", 14)).unwrap(), "点括。");
     assert_eq!(ends(&mode("<w:applyBreakingRules/>", 12)).unwrap(), "点括。");
 }
+
+#[test]
+fn compat_12_font_metric_options() {
+    let c12 = |opt: &str| {
+        format!(
+            r#"<w:compat>{opt}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#
+        )
+    };
+    let arial = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>"#;
+    // noLeading: Arial's line gap (67 of 2048 units) leaves the line pitch.
+    let two = r#"<w:p><w:r><w:t>One</w:t></w:r><w:r><w:br/><w:t>Two</w:t></w:r></w:p>"#;
+    let pitch = |s: &str| baselines(s, arial, two).map(|l| l[1].3 - l[0].3);
+    let Some(plain) = pitch(&c12("")) else { return };
+    assert!((plain - pitch(&c12("<w:noLeading/>")).unwrap() - 0.36).abs() < 0.01, "{plain}");
+    // noSpaceRaiseLower: raised text doesn't move the baseline down.
+    let raised = r#"<w:p><w:r><w:t>Plain </w:t></w:r><w:r><w:rPr><w:position w:val="12"/></w:rPr><w:t>raised</w:t></w:r></w:p>"#;
+    let y = |s: &str, p: &str| baselines(s, arial, p).map(|l| l[0].3).unwrap();
+    let flat = y(&c12(""), two);
+    assert!(y(&c12(""), raised) > flat + 5.0);
+    assert!((y(&c12("<w:noSpaceRaiseLower/>"), raised) - flat).abs() < 1e-6);
+    // spacingInWholePoints: 1.3pt spacing counts 1pt; mwSmallCaps: 11pt small capitals at 10pt, not 9pt. The
+    // Courier New bar is its own glyph run, so its start is where the run before it ends.
+    let end = |s: &str, rpr: &str| {
+        let p = format!(
+            r#"<w:p><w:r><w:rPr>{rpr}</w:rPr><w:t>abcd</w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/></w:rPr><w:t>|</w:t></w:r></w:p>"#
+        );
+        baselines(s, arial, &p).map(|l| l[0].2).unwrap()
+    };
+    let sp = r#"<w:spacing w:val="26"/>"#;
+    assert!((end(&c12(""), sp) - end(&c12("<w:spacingInWholePoints/>"), sp) - 1.2).abs() < 0.01);
+    let caps = "<w:smallCaps/>";
+    assert!(end(&c12("<w:mwSmallCaps/>"), caps) > end(&c12(""), caps) + 1.0);
+    let c15 = r#"<w:compat><w:noLeading/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let p15 = |s: &str| baselines(s, arial, two).map(|l| l[1].3 - l[0].3).unwrap();
+    assert!((p15(c15) - p15(&c15.replace("<w:noLeading/>", ""))).abs() < 1e-6, "compat 15 clears the options");
+}

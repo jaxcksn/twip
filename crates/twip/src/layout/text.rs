@@ -13,7 +13,7 @@ use super::cache::{CacheKey, cached};
 use super::env::TextEnv;
 use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
-use super::space::ShapeSpace;
+use super::space::{MetricRules, ShapeSpace};
 use super::units::Lu;
 
 pub(crate) const EM_MARK: f64 = 3.4 / 11.0;
@@ -127,11 +127,13 @@ pub struct ShapedPara {
     pub objects: Box<[Object]>,
     pub join: Option<Rc<super::join::JoinMap>>,
     pub em1000: bool,
+    pub rules: MetricRules,
 }
 
 impl ShapedPara {
     pub fn metrics(&self, face: &Face, run: &RunStyle, size: f64) -> (f64, f64, f64) {
-        metrics_at(face, size, self.em1000 && run.east_asia_named)
+        let (a, d, e) = metrics_at(face, size, self.em1000 && run.east_asia_named);
+        (a, d, if self.rules.no_leading { 0.0 } else { e })
     }
 
     pub fn style(&self, i: usize) -> &PieceStyle {
@@ -222,6 +224,18 @@ fn width_at_em1000(advance: f64, upem: f64, size: f64) -> f64 {
     (w * 2.0 * size * 2048.0 / 1000.0).floor() / super::units::LU_PER_PT
 }
 
+/// The Mac small-caps size of `hps` half-points: the next smaller size of the Mac size table, or 10pt below the
+/// size rounded up to 10pt above 72pt.
+fn mac_small_caps(hps: i64) -> i64 {
+    const SIZES: [i64; 11] = [14, 18, 20, 24, 28, 36, 48, 72, 96, 120, 144];
+    if hps <= 144 {
+        let i = SIZES.iter().position(|&s| s >= hps).unwrap_or(SIZES.len());
+        SIZES[i.max(1) - 1]
+    } else {
+        (((hps + 19) / 20 * 20).min(3276) - 20).max(144)
+    }
+}
+
 pub fn hp(x: f64) -> i64 {
     (2.0 * x).round() as i64
 }
@@ -310,6 +324,7 @@ struct Builder<'a> {
     text: String,
     objects: Vec<Object>,
     em1000: bool,
+    rules: MetricRules,
     /// A custom-mark note reference: the note goes with the next piece (its mark).
     pending_note: Option<Object>,
 }
@@ -326,7 +341,7 @@ struct NewPiece {
 }
 
 impl<'a> Builder<'a> {
-    fn new(fonts: &'a Fonts, em1000: bool) -> Builder<'a> {
+    fn new(fonts: &'a Fonts, em1000: bool, rules: MetricRules) -> Builder<'a> {
         Builder {
             fonts,
             pieces: Vec::new(),
@@ -337,13 +352,14 @@ impl<'a> Builder<'a> {
             text: String::new(),
             objects: Vec::new(),
             em1000,
+            rules,
             pending_note: None,
         }
     }
 
     /// Runs of text shaped on their own (a ruby's base or annotation).
     fn sub(&self, parts: &[(String, Run)], view: crate::docx::review::MarkupView) -> Result<ShapedPara, Yield> {
-        let mut b = Builder::new(self.fonts, self.em1000);
+        let mut b = Builder::new(self.fonts, self.em1000, self.rules);
         for (t, r) in parts {
             b.text(t, run_in(r, view))?;
         }
@@ -423,11 +439,14 @@ impl<'a> Builder<'a> {
     }
 
     fn new_piece(&self, kind: Kind, run: &Run, face: Option<Rc<Face>>, size: f64, raise: f64) -> NewPiece {
-        let (metric_size, shift) = if run.vert_align == VertAlign::Baseline { (size, raise) } else { (run.size, run.position) };
+        let (metric_size, mut shift) = if run.vert_align == VertAlign::Baseline { (size, raise) } else { (run.size, run.position) };
+        if self.rules.no_raise_lower {
+            shift -= run.position;
+        }
         let (mut ascent, mut descent) = match &face {
             Some(f) => {
                 let (a, d, e) = metrics_at(f, metric_size, self.em1000 && run.east_asia_named);
-                (a + e, d)
+                (a + if self.rules.no_leading { 0.0 } else { e }, d)
             }
             None => (0.0, 0.0),
         };
@@ -482,11 +501,17 @@ impl<'a> Builder<'a> {
     }
 
     fn text(&mut self, text: &str, run: &Run) -> Result<(), Yield> {
+        if self.rules.whole_point_spacing && run.spacing.fract() != 0.0 {
+            let mut whole = (**run).clone();
+            whole.spacing = run.spacing.trunc();
+            return self.text(text, &Rc::new(whole));
+        }
         if run.small_caps && !run.caps {
             let mut small = (**run).clone();
             small.small_caps = false;
             small.caps = true;
-            small.size = ((hp(run.size) * 4 + 2) / 5).clamp(2, 3276) as f64 / 2.0;
+            small.size =
+                if self.rules.mac_small_caps { mac_small_caps(hp(run.size)) } else { ((hp(run.size) * 4 + 2) / 5).clamp(2, 3276) } as f64 / 2.0;
             let small = Rc::new(small);
             let mut plain = (**run).clone();
             plain.small_caps = false;
@@ -1160,6 +1185,7 @@ impl<'a> Builder<'a> {
             objects: self.objects.into_boxed_slice(),
             join: None,
             em1000: self.em1000,
+            rules: self.rules,
         }
     }
 }
@@ -1299,7 +1325,7 @@ pub fn shape(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos: &mut Me
 }
 
 pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos: &mut Memos) -> Result<ShapedPara, Yield> {
-    let mut b = Builder::new(fonts, space.em1000);
+    let mut b = Builder::new(fonts, space.em1000, space.metric_rules);
     super::job::unit("shaping call", || crate::prof::time("itemize", || b.paragraph(para, space)))?;
     if let Some((h, caps, right)) = &space.hyphenate {
         b.hyphenate(h, *caps, *right);
@@ -1319,6 +1345,12 @@ pub fn shape_space(
         balance: text.default_east_asia.clone().filter(|_| text.balance_spaces),
         compress: text.compress_punctuation,
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
+        metric_rules: MetricRules {
+            no_leading: text.no_leading,
+            no_raise_lower: text.no_raise_lower,
+            whole_point_spacing: text.whole_point_spacing,
+            mac_small_caps: text.mac_small_caps,
+        },
         view: text.review.view,
         hyphenate: text
             .hyphenation
@@ -1394,7 +1426,7 @@ pub fn para_id(p: &Paragraph) -> ParaId {
 }
 
 pub fn shape_run(text: &str, run: &Run, fonts: &Fonts) -> ShapedPara {
-    let mut b = Builder::new(fonts, false);
+    let mut b = Builder::new(fonts, false, MetricRules::default());
     let _ = b.text(text, run);
     b.finish()
 }

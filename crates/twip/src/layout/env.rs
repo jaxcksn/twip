@@ -19,6 +19,13 @@ pub struct TextEnv {
     pub do_not_vert_align_in_txbx: bool,
     pub wp_justification: bool,
     pub word97_line_breaks: bool,
+    /// Font metric options, compat ≤ 14: `noLeading` (no external leading), `noSpaceRaiseLower` (raised and
+    /// lowered text doesn't grow the line), `spacingInWholePoints` (character spacing truncated to whole points),
+    /// `mwSmallCaps` (the Mac small-caps sizes).
+    pub no_leading: bool,
+    pub no_raise_lower: bool,
+    pub whole_point_spacing: bool,
+    pub mac_small_caps: bool,
     /// `suppressTopSpacing`.
     pub suppress_top_spacing: bool,
     /// `suppressSpacingAtTopOfPage`, compat ≤ 14.
@@ -71,6 +78,10 @@ impl TextEnv {
             do_not_vert_align_in_txbx: s.has("doNotVertAlignInTxbx"),
             wp_justification: s.has("wpJustification"),
             word97_line_breaks: s.has("useWord97LineBreakRules"),
+            no_leading: s.compat() == Compat::Legacy && s.has("noLeading"),
+            no_raise_lower: s.compat() == Compat::Legacy && s.has("noSpaceRaiseLower"),
+            whole_point_spacing: s.compat() == Compat::Legacy && s.has("spacingInWholePoints"),
+            mac_small_caps: s.compat() == Compat::Legacy && s.has("mwSmallCaps"),
             suppress_top_spacing: s.has("suppressTopSpacing"),
             suppress_spacing_at_top: s.compat() == Compat::Legacy && s.has("suppressSpacingAtTopOfPage"),
             breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),

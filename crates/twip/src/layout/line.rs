@@ -1414,7 +1414,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 }
                 asc = asc.max(pa);
                 desc = desc.max(pd);
-                let r = st.run.position;
+                let r = if sp.rules.no_raise_lower { 0.0 } else { st.run.position };
                 let (a0, d0) = ((pa - r).max(0.0), (pd + r).max(0.0));
                 if p.kind == Kind::Text {
                     match st.run.em.as_deref() {

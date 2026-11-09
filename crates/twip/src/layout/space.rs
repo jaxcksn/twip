@@ -15,6 +15,8 @@ pub struct ShapeSpace {
     pub balance: Option<String>,
     pub compress: bool,
     pub em1000: bool,
+    /// The font metric options of [`super::env::TextEnv`].
+    pub metric_rules: MetricRules,
     pub in_cell: bool,
     pub view: MarkupView,
     pub join: Option<std::rc::Rc<super::join::JoinMap>>,
@@ -24,6 +26,14 @@ pub struct ShapeSpace {
     /// The hyphenation patterns, and whether words in capitals are skipped.
     /// The patterns, whether capitals are left alone, and the fewest letters after a break.
     pub hyphenate: Option<(super::hyphenate::Hyphenation, bool, usize)>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MetricRules {
+    pub no_leading: bool,
+    pub no_raise_lower: bool,
+    pub whole_point_spacing: bool,
+    pub mac_small_caps: bool,
 }
 
 pub type BorderKey = Option<std::rc::Rc<BorderGroup>>;
