@@ -1534,7 +1534,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     line.centred = frame.vertical && (frame.centred && matches!(ta, "auto" | "center") || ta == "center");
     for p in &pieces[line.start..line.end.min(pieces.len())] {
         match p.kind {
-            Kind::Text | Kind::Object => {
+            // A note separator's line is in its run's size.
+            Kind::Text | Kind::Object | Kind::Separator | Kind::ContSeparator | Kind::FullSeparator => {
                 has_content = true;
                 has_text = true;
                 let st = &sp.styles[p.style as usize];

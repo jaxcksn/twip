@@ -1121,6 +1121,8 @@ pub struct Settings {
     pub track_revisions: bool,
     /// `w:endnotePr/w:pos sectEnd`: endnotes follow their section rather than the document.
     pub endnotes_sect_end: bool,
+    /// The note stories `w:footnotePr` / `w:endnotePr` list, as `footnote:<id>` / `endnote:<id>`.
+    pub listed_notes: Vec<String>,
     pub protection: Option<Protection>,
     /// `w:revisionView` as written, kept for saving.
     pub revision_view_raw: Raw,

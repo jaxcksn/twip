@@ -270,6 +270,40 @@ fn endnote_continuation_separator_spans_the_column() {
 }
 
 #[test]
+fn a_separator_story_counts_only_when_the_settings_list_it() {
+    let sep = |before: u32, rpr: &str| {
+        format!(
+            r#"<w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:before="{before}" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r>{rpr}<w:separator/></w:r></w:p></w:footnote>"#
+        )
+    };
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let note_y = |settings: &str, sep: &str| {
+        let body = para("Body", &["f1"]) + &sect(pr, true);
+        let doc = notes_doc_with(&body, settings, sep)?;
+        super::page_chars(&doc)[0].iter().find(|c| c.0 == 'N').map(|c| c.2)
+    };
+    let listing = r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"#;
+    let (Some(built_in), Some(listed)) = (note_y("", &sep(400, "")), note_y(listing, &sep(400, ""))) else { return };
+    assert!((listed - built_in - 20.0).abs() < 0.01, "{built_in} {listed}");
+    // The separator's line is in its run's size.
+    let (Some(small), Some(big)) = (note_y(listing, &sep(0, "")), note_y(listing, &sep(0, r#"<w:rPr><w:sz w:val="48"/></w:rPr>"#))) else { return };
+    assert!(big - small > 8.0, "{small} {big}");
+}
+
+#[test]
+fn notes_keep_the_space_after_between_them() {
+    let note = |id: u32, after: u32| format!(r#"<w:footnote w:id="{id}"><w:p><w:pPr><w:spacing w:after="{after}"/></w:pPr><w:r><w:t>Q{id}</w:t></w:r></w:p></w:footnote>"#);
+    let gap = |after: u32| {
+        let body = para("Body", &["f11", "f12"]) + &sect("", true);
+        let doc = notes_doc_with(&body, "", &(note(11, after) + &note(12, 0)))?;
+        let y: Vec<f64> = super::page_chars(&doc)[0].iter().filter(|c| c.0 == 'Q').map(|c| c.2).collect();
+        Some(y[1] - y[0])
+    };
+    let (Some(none), Some(some)) = (gap(0), gap(200)) else { return };
+    assert!((some - none - 10.0).abs() < 0.01, "{none} {some}");
+}
+
+#[test]
 fn a_body_ending_with_a_table_ends_with_a_paragraph() {
     let tbl = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>T</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p></w:tc></w:tr></w:tbl>"#;
     let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;

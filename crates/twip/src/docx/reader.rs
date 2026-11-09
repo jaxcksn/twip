@@ -350,8 +350,11 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             let mut blocks = r.read_blocks(n, &mut pkg, None);
             r.close_ranges(&mut blocks);
             match attr(n, "type") {
+                // A separator story counts only when the settings list it: else the built-in one is used.
                 Some(t @ ("separator" | "continuationSeparator" | "continuationNotice")) => {
-                    doc.separators.insert(format!("{tag}:{t}"), blocks);
+                    if r.settings.listed_notes.contains(&format!("{tag}:{id}")) {
+                        doc.separators.insert(format!("{tag}:{t}"), blocks);
+                    }
                 }
                 _ => {
                     map.insert(id, blocks);
@@ -359,6 +362,23 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             }
         }
         r.record = false;
+    }
+    // Word's built-in separators: one line with no paragraph spacing.
+    // ponytail: in the default paragraph style's run font, not the document default's; differs only when that style
+    // sets a font or size.
+    for (tag, t) in [("footnote", "separator"), ("footnote", "continuationSeparator"), ("endnote", "separator"), ("endnote", "continuationSeparator")] {
+        let key = format!("{tag}:{t}");
+        if doc.separators.contains_key(&key) || (tag == "endnote" && doc.endnotes.is_empty()) || (tag == "footnote" && doc.footnotes.is_empty()) {
+            continue;
+        }
+        let xml = format!(
+            r#"<w:{tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/></w:pPr><w:r><w:{t}/></w:r></w:p></w:{tag}>"#
+        );
+        if let Ok(dom) = roxmltree::Document::parse(&xml) {
+            r.in_endnotes = tag == "endnote";
+            let blocks = r.read_blocks(dom.root_element(), &mut pkg, None);
+            doc.separators.insert(key, blocks);
+        }
     }
     if let (Some(path), Some(dom)) = (&comments_part, &comments_dom) {
         r.enter_part(path, &mut pkg);
@@ -704,6 +724,11 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     s.consecutive_hyphen_limit = child(root, "consecutiveHyphenLimit").and_then(|n| int(val(n))).unwrap_or(0);
     s.track_revisions = flag(root, "trackRevisions").unwrap_or(false);
     s.endnotes_sect_end = child(root, "endnotePr").and_then(|p| child(p, "pos")).and_then(val) == Some("sectEnd");
+    for tag in ["footnote", "endnote"] {
+        for n in child(root, &format!("{tag}Pr")).into_iter().flat_map(|p| children(p, tag)) {
+            s.listed_notes.push(format!("{tag}:{}", attr(n, "id").unwrap_or_default()));
+        }
+    }
     s.protection = child(root, "documentProtection").map(|n| Protection {
         edit: match attr(n, "edit") {
             Some("readOnly") => ProtectionKind::ReadOnly,

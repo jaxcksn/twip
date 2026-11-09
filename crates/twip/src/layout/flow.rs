@@ -63,6 +63,18 @@ pub struct NoteArea {
     pub below: bool,
 }
 
+/// The space shared between two notes in an area: the gap between them is the later one's space before or the
+/// earlier one's space after, whichever is larger.
+fn note_join(prev: Option<&NotePart>, next: &NotePart) -> f64 {
+    let after = prev.and_then(|p| p.units.last()).map_or(0.0, |u| u.after);
+    after.min(next.units.first().map_or(0.0, |u| u.top))
+}
+
+/// A note's height in its area, its space after included.
+fn note_extent(part: &NotePart) -> f64 {
+    part.height() + part.units.last().map_or(0.0, |u| u.after)
+}
+
 impl NoteArea {
     pub fn total(&self) -> f64 {
         if self.below {
@@ -791,13 +803,14 @@ impl<'d> PageFill<'d, '_> {
                 continue;
             }
             if fit == units.len() {
-                a.parts.push(NotePart { kind: k, id, units: units.clone() });
-                a.height += total;
+                let part = NotePart { kind: k, id, units: units.clone() };
+                a.height += note_extent(&part) - note_join(a.parts.last(), &part);
+                a.parts.push(part);
                 continue;
             }
-            let h = units[fit - 1].top + units[fit - 1].height;
-            a.parts.push(NotePart { kind: k, id, units: units[..fit].to_vec() });
-            a.height += h;
+            let part = NotePart { kind: k, id, units: units[..fit].to_vec() };
+            a.height += note_extent(&part) - note_join(a.parts.last(), &part);
+            a.parts.push(part);
             new_rest.push(NotePart { kind: k, id, units: rebase(&units[fit..]) });
         }
         *area = a;
@@ -845,7 +858,8 @@ impl<'d> PageFill<'d, '_> {
         }));
         for (x, parts) in cols {
             let mut y = top + sep.height;
-            for part in parts.iter() {
+            for (i, part) in parts.iter().enumerate() {
+                y -= note_join(i.checked_sub(1).map(|j| &parts[j]), part);
                 let mut nc = Vec::new();
                 place_units(&part.units, *x, y, &mut nc);
                 self.at.effects.notes_shown.push((part.kind, part.id, self.note_numbers.get(&(part.kind, part.id)).cloned().unwrap_or_default()));
@@ -856,7 +870,7 @@ impl<'d> PageFill<'d, '_> {
                     size: (width, part.height()),
                     children: nc.into(),
                 }));
-                y += part.height();
+                y += note_extent(part);
             }
         }
         Ok(Child::Box(BoxFragment { kind: BoxKind::Notes, id: None, offset: (0.0, 0.0), size: (width, area.total()), children: children.into() }))
