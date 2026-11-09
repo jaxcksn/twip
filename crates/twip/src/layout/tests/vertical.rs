@@ -226,3 +226,15 @@ fn east_asian_glyphs_stand_upright_where_the_flow_keeps_them_so() {
     let runs = turned_runs(&across);
     assert!(!runs.is_empty() && runs.iter().all(|r| r.2 == [0.0, -1.0]), "{runs:?}");
 }
+
+#[test]
+fn a_vertical_runs_extra_is_an_em_64th_in_whole_font_units() {
+    let mut fonts = crate::font::Fonts::default();
+    let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/fonts/stand-in-sans.ttf")).expect("the stand-in font");
+    let info = fonts.add_bytes(bytes).expect("a font");
+    let face = fonts.face(&info[0].family, None, false, false).expect("its face");
+    assert_eq!(face.upem, 1000.0);
+    // 1000 / 64 = 15.625 units round to 16, scaled to 11pt: 16 × 22 × 2048 / 1000 layout units.
+    let e = crate::layout::vertical::extra(Some(&face), 11.0);
+    assert!((e - crate::layout::units::Lu((16 * 22 * 2048 + 500) / 1000).to_pt()).abs() < 1e-9, "{e}");
+}

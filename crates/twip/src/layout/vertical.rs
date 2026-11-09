@@ -49,10 +49,13 @@ pub fn of_section(code: u8) -> Option<Vertical> {
     }
 }
 
-/// The extra ascent and descent of a run in a vertical line: an em/64 each side. An East Asian face's 15% extra
-/// grows with the height it is taken of.
+/// The extra ascent and descent of a run in a vertical line: an em/64 each side, rounded to whole font units. An East
+/// Asian face's 15% extra grows with the height it is taken of.
 pub fn extra(face: Option<&crate::font::Face>, size: f64) -> f64 {
-    let e = super::units::Lu(((size * 2.0).round() * 32.0) as i32).to_pt();
+    let e = match face {
+        Some(f) => super::units::Lu::from_font((f.upem / 64.0).round(), size, f.upem).to_pt(),
+        None => super::units::Lu(((size * 2.0).round() * 32.0) as i32).to_pt(),
+    };
     match face.filter(|f| f.east_asian) {
         Some(f) => {
             let w = f.ascent + f.descent - 2.0 * f.ea_extra + 2.0 * (f.upem / 64.0).round();
