@@ -205,6 +205,26 @@ fn an_exact_line_in_a_centred_flow_draws_its_text_lower() {
     assert!((roman - centred - 3.81).abs() < 0.05, "{roman} {centred}");
 }
 
+#[test]
+fn each_run_of_a_centred_line_sits_its_own_drop_below_the_reference_baseline() {
+    if fonts().face("Times New Roman", None, false, false).is_none_or(|f| f.family != "Times New Roman") {
+        return;
+    }
+    let mixed = |align: &str| {
+        let p = format!(
+            r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>{align}</w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="40"/></w:rPr><w:t xml:space="preserve">big </w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr><w:t>small</w:t></w:r></w:p>"#
+        );
+        let runs = turned_runs(&section("tbRl", "0", &p)?);
+        let across = |t: &str| runs.iter().find(|r| r.0 == t).map(|r| r.1[0]);
+        Some(across("small")? - across("big")?)
+    };
+    let Some(centred) = mixed("") else { return };
+    // Times New Roman 20 drops 134.96 twips, Arial 11 76.27: the small run sits 58.7 nearer the line top; aligned
+    // to the baseline both share it.
+    assert!((centred - 2.93).abs() < 0.1, "{centred}");
+    assert!(mixed(r#"<w:textAlignment w:val="baseline"/>"#).unwrap().abs() < 1e-6);
+}
+
 fn east_asian(text: &str) -> String {
     format!(
         r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:hAnsi="MS Gothic" w:eastAsia="MS Gothic"/><w:sz w:val="22"/></w:rPr><w:t>{text}</w:t></w:r></w:p>"#

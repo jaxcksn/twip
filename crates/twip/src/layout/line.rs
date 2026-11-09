@@ -35,6 +35,8 @@ pub struct Line {
     pub hyphen: bool,
     pub leaders: Vec<(usize, Leader)>,
     pub rects: Vec<([f64; 4], u32)>,
+    /// Its runs are centred: `baseline` is the reference baseline, each run's text its own centred drop below it.
+    pub centred: bool,
 }
 
 impl Line {
@@ -53,6 +55,7 @@ impl Line {
             hyphen: false,
             leaders: Vec::new(),
             rects: Vec::new(),
+            centred: false,
         }
     }
 }
@@ -1524,8 +1527,10 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let mut has_content = false;
     let mut has_text = false;
     let mut brk: Option<(f64, f64)> = None;
-    // The largest run's drop below a centred line's reference baseline.
-    let mut drop = (0.0f64, 0.0f64);
+    // Centred metrics: in flows that keep East Asian text upright unless the paragraph aligns to the baseline (or to
+    // the top or bottom), and in every vertical flow with `center`.
+    let ta = style.text_alignment.as_str();
+    line.centred = frame.vertical && (frame.centred && matches!(ta, "auto" | "center") || ta == "center");
     for p in &pieces[line.start..line.end.min(pieces.len())] {
         match p.kind {
             Kind::Text | Kind::Object => {
@@ -1533,13 +1538,13 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 has_text = true;
                 let st = &sp.styles[p.style as usize];
                 let e = if frame.vertical && p.kind == Kind::Text { super::vertical::extra(st.face.as_deref(), st.size) } else { 0.0 };
-                let (pa, pd) = (p.ascent + e, p.descent + e);
-                if frame.centred
+                let (mut pa, mut pd) = (p.ascent + e, p.descent + e);
+                if line.centred
                     && p.kind == Kind::Text
-                    && st.size > drop.0
                     && let Some(f) = &st.face
                 {
-                    drop = (st.size, super::vertical::centred_drop(f, st.size));
+                    let c = super::vertical::centred_drop(f, st.size);
+                    (pa, pd) = (pa - c, pd + c);
                 }
                 asc = asc.max(pa);
                 desc = desc.max(pd);
@@ -1627,11 +1632,11 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
             let x = Lu::round_half_up(style.line).0;
             line.baseline = Lu(x - x / 5).to_pt()
                 + match style.text_alignment.as_str() {
+                    _ if line.centred => 0.0,
                     "top" => asc,
                     "center" => (asc - desc) / 2.0,
                     "bottom" => -desc / 2.0,
-                    // A centred vertical line draws its text below the reference baseline.
-                    _ => drop.1,
+                    _ => 0.0,
                 };
         }
     }
@@ -1845,7 +1850,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             if p.soft_hyphen && !(line.hyphen && ix + 1 == line.end) {
                 continue;
             }
-            let y = base - st.raise;
+            let y = base - st.raise + if line.centred { st.face.as_ref().map_or(0.0, |f| super::vertical::centred_drop(f, st.size)) } else { 0.0 };
             let color = ink(&st.run, o.review, behind_text);
             let same = run.as_ref().is_some_and(|r| {
                 Rc::ptr_eq(&r.face, face) && (r.size - st.size).abs() < EPS && (r.y - y).abs() < EPS && r.color == color && r.para == Some(q)
