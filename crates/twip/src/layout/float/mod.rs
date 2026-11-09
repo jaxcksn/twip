@@ -144,23 +144,43 @@ impl Placed {
         (!self.allow_overlap || !o.allow_overlap) && ((self.wrap == Wrap::None) == (o.wrap == Wrap::None))
     }
 
+    /// The room a frame or a floating table keeps around it from other objects that may not overlap it; a
+    /// picture keeps none.
+    fn apart(&self) -> [f64; 4] {
+        let frame = self.float.text_box.is_some() && self.float.shape.is_none();
+        if frame || self.key.2 == TABLE_PIECE { self.float.dist } else { [0.0; 4] }
+    }
+
+    /// The two boxes, each grown by the room it keeps, overlap.
     fn overlaps(&self, o: &Placed) -> bool {
-        self.rect[0] < o.rect[2] - EPS && o.rect[0] < self.rect[2] - EPS && self.rect[1] < o.rect[3] - EPS && o.rect[1] < self.rect[3] - EPS
+        let ([st, sb, sl, sr], [ot, ob, ol, or]) = (self.apart(), o.apart());
+        self.rect[0] - sl < o.rect[2] + or - EPS
+            && o.rect[0] - ol < self.rect[2] + sr - EPS
+            && self.rect[1] - st < o.rect[3] + ob - EPS
+            && o.rect[1] - ot < self.rect[3] + sb - EPS
     }
 }
 
-pub fn avoid(f: &mut Placed, placed: &[Placed], page_w: f64, body_bottom: f64) -> bool {
+/// Moves a float that may not overlap an earlier one clear of it, the two kept apart by the room each keeps:
+/// compat 15 to the nearer side on the same line (right up to the page's edge, left down to the left margin),
+/// compat ≤ 14 to the right while it fits the page, else down.
+pub fn avoid(f: &mut Placed, placed: &[Placed], (left_margin, page_w): (f64, f64), body_bottom: f64, compat: Compat) -> bool {
     let original = (f.rect[0], f.rect[1]);
     for _ in 0..32 {
         let Some(hit) = placed.iter().find(|o| o.key != f.key && f.avoids(o) && f.overlaps(o)) else { return true };
         let (w, h) = (f.rect[2] - f.rect[0], f.rect[3] - f.rect[1]);
-        let y = f.rect[1];
-        if hit.rect[2] + w <= page_w + EPS {
-            f.moved_to(hit.rect[2], y);
-        } else if hit.rect[0] - w >= -EPS {
-            f.moved_to(hit.rect[0] - w, y);
-        } else if hit.rect[3] + h <= body_bottom + EPS {
-            f.moved_to(original.0, hit.rect[3]);
+        let ([ft, _, fl, fr], [_, hb, hl, hr]) = (f.apart(), hit.apart());
+        let (x, y) = (f.rect[0], f.rect[1]);
+        let right = Some(hit.rect[2] + hr + fl).filter(|&r| r + w <= page_w + EPS);
+        let left = Some(hit.rect[0] - hl - fr - w).filter(|&l| l >= left_margin - EPS && compat == Compat::Generic);
+        let side = match (right, left) {
+            (Some(r), Some(l)) => Some(if r - x <= x - l { r } else { l }),
+            (r, l) => r.or(l),
+        };
+        if let Some(to) = side {
+            f.moved_to(to, y);
+        } else if hit.rect[3] + hb + ft + h <= body_bottom + EPS {
+            f.moved_to(original.0, hit.rect[3] + hb + ft);
         } else {
             f.moved_to(original.0, original.1);
             return false;

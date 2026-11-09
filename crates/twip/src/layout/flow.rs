@@ -1639,7 +1639,7 @@ impl<'d> PageFill<'d, '_> {
         let placed_end = bands[take - 1].1.last().map_or(0, |l| l.end);
         for mut a in anchors {
             if a.key.2 - pb.from < placed_end.max(1) {
-                if !float::avoid(&mut a, &self.at.found, frames.page_w, col.bottom.to_pt()) {
+                if !float::avoid(&mut a, &self.at.found, (frames.margin[0], frames.page_w), col.bottom.to_pt(), compat) {
                     let b = band_of(a.key.2 - pb.from).unwrap_or(0);
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
                 }

@@ -55,6 +55,7 @@ fn float(group: Vec<Paragraph>) -> Float {
     let start = group.first().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.first()).map(|r| r.start);
     let end = group.last().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.last()).map(|r| r.end);
     let frame_src = start.zip(end).map(|(a, b)| a..b);
+    let apart = group.iter().any(|p| p.style.suppress_overlap);
     let blocks = group
         .into_iter()
         .map(|mut p| {
@@ -85,7 +86,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         effect: [0.0; 4],
         poly: None,
         behind: false,
-        allow_overlap: true,
+        allow_overlap: !apart,
         layout_in_cell: true,
         order: 0,
         z: 0,

@@ -155,6 +155,7 @@ impl Resolver {
             widow_control: p.widow_control.unwrap_or(true),
             suppress_auto_hyphens: p.suppress_auto_hyphens.unwrap_or(false),
             tight_wrap: p.tight_wrap.unwrap_or(0),
+            suppress_overlap: p.suppress_overlap.unwrap_or(false),
             suppress_line_numbers: p.suppress_line_numbers.unwrap_or(false),
             div: p.div_id,
             div_boxes: Rc::from([]),

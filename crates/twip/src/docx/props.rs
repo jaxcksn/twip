@@ -500,6 +500,7 @@ pub struct ParaProps {
     pub widow_control: Option<bool>,
     pub suppress_auto_hyphens: Option<bool>,
     pub tight_wrap: Option<u8>,
+    pub suppress_overlap: Option<bool>,
     pub suppress_line_numbers: Option<bool>,
     pub bidi: Option<bool>,
     /// `w:divId`: the HTML division (`webSettings.xml`) the paragraph is in.
@@ -562,6 +563,7 @@ impl ParaProps {
                 "pageBreakBefore" => p.page_break_before = Some(on_off(e)),
                 "widowControl" => p.widow_control = Some(on_off(e)),
                 "suppressAutoHyphens" => p.suppress_auto_hyphens = Some(on_off(e)),
+                "suppressOverlap" => p.suppress_overlap = Some(on_off(e)),
                 "textboxTightWrap" => {
                     p.tight_wrap = Some(match val(e) {
                         Some("allLines") => 1,
@@ -670,6 +672,7 @@ impl ParaProps {
             widow_control,
             suppress_auto_hyphens,
             tight_wrap,
+            suppress_overlap,
             suppress_line_numbers,
             bidi,
             div_id,
