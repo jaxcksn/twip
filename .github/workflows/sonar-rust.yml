@@ -31,16 +31,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation
       - uses: taiki-e/install-action@cargo-llvm-cov
       # The engine and C API tests, the same ones the Engine shard runs, instrumented for line coverage.
-      # Without the six corpus and random-edit tests that run over a minute each: they replay code the other tests
-      # already cover, and the Engine shard still runs them.
-      - run: >
-          rustup component add llvm-tools-preview &&
-          cargo llvm-cov -p twip -p twip-capi --lcov --output-path lcov.info --
-          --skip random_edits::
-          --skip every_change_in_the_corpus_is_a_recorded_transaction
-          --skip scenarios::scenarios
-          --skip retained_pages_record_once_and_again_only_where_layout_changed
-          --skip editing_state_is_the_same_with_any_renderer_or_none
+      - run: rustup component add llvm-tools-preview && cargo llvm-cov -p twip -p twip-capi --lcov --output-path lcov.info
       # The scanner runs clippy itself on the workspace (Cargo.toml at the root) with the quality profile's rules.
       - uses: SonarSource/sonarqube-scan-action@v8
         env:
