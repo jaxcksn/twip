@@ -121,6 +121,24 @@ Rust API end to end), `twip-capi:test`; `web:test` (builds the wasm module with 
 tests); `docs:build` and `docs:examples` (the guides' TypeScript and C# examples). `cargo fmt --all` fixes what
 `root:format` reports.
 
+### Profiling
+
+To see where a slow benchmark spends its time, start with the stage timers. `cargo bench -p twip --features prof
+[-- <filter>]` prints each benchmark's per-stage times (`prof.rs`; wrap a suspect call in `prof::time` to add a
+stage) and how many paragraphs, rows and pages layout reused, moved or laid out again.
+
+For hotspots outside the named stages, run a sampling profiler over the benchmark binary. The `bench` profile keeps
+line tables, so the profile resolves to source lines:
+
+```sh
+cargo install samply
+samply record cargo bench -p twip -- editing::typing   # opens a flame graph in the Firefox Profiler
+```
+
+On macOS, Instruments' Time Profiler works too: run `dsymutil <bench binary>` first so it finds the line tables, then
+`xcrun xctrace record --template 'Time Profiler' --launch -- <bench binary> --bench <filter>`. Run directly, the
+binary needs `--bench`; without it Divan runs each benchmark once, as a test. Linux `perf` works as well.
+
 ## Comments
 
 The code is the documentation. A comment in the engine names a part of the code (`//! Table autofit`,
