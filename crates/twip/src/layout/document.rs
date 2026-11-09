@@ -100,10 +100,12 @@ pub(crate) fn used(pg: &PageRecord) -> HfHeights {
     pg.bodies.first().map_or([None, None], |b| b.space.hf)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct JobNotes {
     pub numbers: HashMap<(NoteKind, i64), String>,
     endnotes: Vec<i64>,
+    /// The section each endnote follows (by `endnotes`' order).
+    ends: Vec<usize>,
     separator: Vec<Block>,
 }
 
@@ -114,7 +116,9 @@ impl JobNotes {
         let mut numbers = HashMap::new();
         // Automatic notes counted per kind (foot, end) since the restart origin.
         let mut count = [0, 0];
-        for s in &doc.sections {
+        let mut ends = Vec::new();
+        let nsec = doc.sections.len();
+        for (si, s) in doc.sections.iter().enumerate() {
             let from = refs.len();
             collect_refs(&s.blocks, &mut refs, &mut seen);
             for (k, p) in s.notes.iter().enumerate() {
@@ -128,6 +132,11 @@ impl JobNotes {
                 let fmt = p.fmt.as_deref().unwrap_or(if k == 0 { "decimal" } else { "lowerRoman" });
                 numbers.insert((kind, id), crate::docx::numbering::format_number(p.start + count[k], fmt));
                 count[k] += i64::from(!custom);
+                if kind == NoteKind::End {
+                    // After its section, or the next one without `w:noEndnote`; all at the end with docEnd.
+                    let end = (si..nsec).find(|&e| !doc.sections[e].no_endnote).unwrap_or(nsec - 1);
+                    ends.push(if doc.settings.endnotes_sect_end { end } else { nsec - 1 });
+                }
             }
         }
         let endnotes: Vec<i64> = refs.iter().filter(|r| r.0 == NoteKind::End).map(|r| r.1).collect();
@@ -142,7 +151,14 @@ impl JobNotes {
                 }
             }
         }
-        JobNotes { numbers, endnotes, separator }
+        JobNotes { numbers, endnotes, ends, separator }
+    }
+}
+
+impl JobNotes {
+    /// The endnotes that follow section `si`.
+    fn after(&self, si: usize) -> impl Iterator<Item = i64> + '_ {
+        self.endnotes.iter().zip(&self.ends).filter(move |e| *e.1 == si).map(|e| *e.0)
     }
 }
 
@@ -195,10 +211,10 @@ impl<'d> PassCx<'d> {
             .enumerate()
             .map(|(si, s)| {
                 let mut blocks = Blocks::of(&s.blocks);
-                if si + 1 == nsec && !notes.endnotes.is_empty() {
+                if notes.ends.contains(&si) {
                     blocks.append(notes.separator.iter());
-                    for id in &notes.endnotes {
-                        blocks.append(doc.endnotes.get(id).into_iter().flatten());
+                    for id in notes.after(si) {
+                        blocks.append(doc.endnotes.get(&id).into_iter().flatten());
                     }
                 }
                 let next = match doc.sections.get(si + 1).and_then(|n| n.blocks.first()) {
@@ -251,8 +267,7 @@ impl<'d> PassCx<'d> {
 
 pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
     let doc = cx.doc;
-    (si + 1 == doc.sections.len() && doc.sections[si].section_in(doc.review.view).columns.num > 1 && !cx.notes.endnotes.is_empty())
-        .then(|| doc.sections[si].blocks.len())
+    (doc.sections[si].section_in(doc.review.view).columns.num > 1 && cx.notes.ends.contains(&si)).then(|| doc.sections[si].blocks.len())
 }
 
 pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
@@ -557,7 +572,7 @@ impl LayoutJob {
         }
         cache.begin();
         let mut meter = Meter::new(budget);
-        let notes = std::mem::replace(&mut self.notes, JobNotes { numbers: HashMap::new(), endnotes: Vec::new(), separator: Vec::new() });
+        let notes = std::mem::replace(&mut self.notes, JobNotes::default());
         let step_result = {
             let cx = PassCx::new(doc, *ctx, &notes);
             let mut memos = Memos { cache, job: None, meter: &mut meter };
@@ -582,7 +597,7 @@ impl LayoutJob {
         if self.finished.is_some() || self.run.info.is_some() {
             return;
         }
-        let notes = std::mem::replace(&mut self.notes, JobNotes { numbers: HashMap::new(), endnotes: Vec::new(), separator: Vec::new() });
+        let notes = std::mem::replace(&mut self.notes, JobNotes::default());
         {
             let cx = PassCx::new(doc, *ctx, &notes);
             let mut meter = Meter::new(Budget::Unlimited);

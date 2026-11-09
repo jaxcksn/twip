@@ -639,15 +639,25 @@ impl<'d> PageFill<'d, '_> {
         super::story::layout(&blocks, width, &env, None, memos)
     }
 
+    /// The separator story `name` laid out at `width`, when the document has it.
+    fn separator_story(&mut self, name: &str, width: f64, memos: &mut Memos) -> Result<Option<Rc<StoryLayout>>, Yield> {
+        let Some(b) = self.notes.separators.get(name) else { return Ok(None) };
+        let blocks: Vec<&Block> = b.iter().collect();
+        let fields = FieldValues::default();
+        let env = StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers };
+        super::story::layout(&blocks, width, &env, None, memos).map(Some)
+    }
+
+    /// Whether `pos` is inside an endnote that began on an earlier page.
+    fn continues_endnote(&self, pos: &FlowToken) -> bool {
+        let s = &self.sec.blocks.stories;
+        s.len() > 1 && pos.block >= s[1] && !(pos.at.at_start() && s[1..].contains(&pos.block))
+    }
+
     fn separator(&mut self, cont: bool, width: f64, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
         let name = if cont { "footnote:continuationSeparator" } else { "footnote:separator" };
-        let s = match self.notes.separators.get(name) {
-            Some(b) => {
-                let blocks: Vec<&Block> = b.iter().collect();
-                let fields = FieldValues::default();
-                let env = StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers };
-                super::story::layout(&blocks, width, &env, None, memos)?
-            }
+        let s = match self.separator_story(name, width, memos)? {
+            Some(s) => s,
             None => Rc::new({
                 let (a, d, e) = super::text::metrics_from(SEPARATOR_METRICS, 11.0);
                 let h = a + d + e;
@@ -880,6 +890,13 @@ impl<'d> PageFill<'d, '_> {
         let nblocks = self.sec.blocks.len();
         let mut y = col.top.to_pt();
         let mut empty = true;
+        if page_empty
+            && self.continues_endnote(pos)
+            && let Some(sep) = self.separator_story("endnote:continuationSeparator", col.width, memos)?
+        {
+            place_units(&sep.units, col.x, y, out);
+            y += sep.height;
+        }
         // Keep-with-next chain
         #[derive(Clone)]
         struct Breakpoint {
@@ -1335,7 +1352,7 @@ impl<'d> PageFill<'d, '_> {
 
     pub fn break_para_after_table(&self, bi: usize) -> bool {
         self.sec.breaks
-            && bi + 1 == self.sec.blocks.len()
+            && bi + 1 == self.sec.section.blocks.len()
             && bi > 0
             && matches!(self.sec.blocks.get(bi - 1), Some(Block::Table(_)))
             && matches!(self.sec.blocks.get(bi), Some(Block::Para(p)) if p.inlines.is_empty())
@@ -1348,7 +1365,7 @@ impl<'d> PageFill<'d, '_> {
             _ => false,
         };
         self.sec.breaks
-            && bi + 1 == self.sec.blocks.len()
+            && bi + 1 == self.sec.section.blocks.len()
             && bi > 0
             && matches!(self.sec.blocks.get(bi - 1), Some(Block::Para(_)))
             && matches!(self.sec.blocks.get(bi), Some(Block::Para(p)) if p.inlines.iter().all(bare))

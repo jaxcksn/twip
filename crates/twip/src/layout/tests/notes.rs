@@ -119,3 +119,22 @@ fn beneath_text_footnotes_follow_the_text() {
     assert!(beneath < 150.0, "under the one body line: {beneath}");
     assert!(bottom > 650.0, "settings' position is ignored: {bottom}");
 }
+
+#[test]
+fn section_end_endnotes_wait_for_a_section_with_its_own() {
+    let body = para("S1", &["e1"])
+        + &sect("<w:noEndnote/>", false)
+        + &para("S2", &["e2"])
+        + &sect("", false)
+        + &para("S3", &["e3"])
+        + &sect(r#"<w:endnotePr><w:pos w:val="docEnd"/></w:endnotePr>"#, true);
+    let pages = |settings: &str| -> Option<Vec<String>> {
+        let doc = notes_doc(&body, settings)?;
+        Some(super::page_chars(&doc).iter().map(|p| p.iter().map(|c| c.0).collect()).collect())
+    };
+    let Some(sect_end) = pages(r#"<w:endnotePr><w:pos w:val="sectEnd"/></w:endnotePr>"#) else { return };
+    let on = |pages: &[String], n: &str| pages.iter().position(|p| p.contains(&format!("Note {n}")));
+    assert_eq!([on(&sect_end, "1"), on(&sect_end, "2"), on(&sect_end, "3")], [Some(1), Some(1), Some(2)], "{sect_end:?}");
+    let Some(doc_end) = pages("") else { return };
+    assert_eq!([on(&doc_end, "1"), on(&doc_end, "3")], [Some(2), Some(2)], "the section's pos is ignored: {doc_end:?}");
+}
