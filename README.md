@@ -68,13 +68,13 @@ Hardware accelerated rendering across native graphics backends and the web, with
 
 ## One core. Three ways to build.
 
-| | **Web** | **.NET** | **Rust** |
-| :-- | :-- | :-- | :-- |
-| **Package** | [`@twip/web`](https://www.npmjs.com/package/@twip/web) | [`Twip.Core`](https://www.nuget.org/packages/Twip.Core) | [`twip`](https://crates.io/crates/twip) |
-| **Runtime** | Browser / Node.js | Windows / Linux | Native |
-| **Integration** | WebAssembly; framework-agnostic | Native AOT-compatible; WinForms control available | Direct engine API |
+| | **Web** | **.NET** | **Rust** | **Swift** |
+| :-- | :-- | :-- | :-- | :-- |
+| **Package** | [`@twip/web`](https://www.npmjs.com/package/@twip/web) | [`Twip.Core`](https://www.nuget.org/packages/Twip.Core) | [`twip`](https://crates.io/crates/twip) | _Coming Soon!_ |
+| **Runtime** | Browser / Node.js | Windows / Linux | Native | MacOS |
+| **Integration** | WebAssembly; framework-agnostic | Native AOT-compatible; WinForms control available | Direct engine API | SwiftUI Integration |
 
-The SDKs share the same underlying Rust engine and a common API contract. React and Angular adapters are available separately; the web SDK does not depend on either framework.
+The SDKs share the same underlying Rust engine and a common API contract. React and Angular adapters are planned separately; the web SDK does not depend on either framework.
 
 ## Built for real documents.
 
