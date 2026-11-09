@@ -31,6 +31,7 @@ pub enum Kind {
     ListNumber,
     Separator,
     ContSeparator,
+    FullSeparator,
 }
 
 #[derive(Clone, Debug)]
@@ -948,9 +949,13 @@ impl<'a> Builder<'a> {
                     note += 1;
                     self.text(&number, run)?;
                 }
-                (Inline::Separator { continuation, .. }, Some(run)) => {
+                (Inline::Separator { continuation, full, .. }, Some(run)) => {
                     let f = self.face(&run.ascii, run);
-                    let kind = if *continuation { Kind::ContSeparator } else { Kind::Separator };
+                    let kind = match (*continuation, *full) {
+                        (_, true) => Kind::FullSeparator,
+                        (true, false) => Kind::ContSeparator,
+                        (false, false) => Kind::Separator,
+                    };
                     let p = self.new_piece(kind, run, f, run.size, 0.0);
                     self.atom(p, "");
                 }

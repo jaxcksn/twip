@@ -215,21 +215,6 @@ fn compat_14_continuous_break_after_a_page_bottom_note_starts_a_page() {
 }
 
 #[test]
-fn a_body_ending_with_a_table_ends_with_a_paragraph() {
-    let tbl = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>T</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p></w:tc></w:tr></w:tbl>"#;
-    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
-    let note_y = |body: String| {
-        let doc = notes_doc(&body, "")?;
-        assert!(matches!(doc.sections[0].blocks.last(), Some(Block::Para(p)) if p.inlines.is_empty()));
-        super::page_chars(&doc)[0].iter().find(|c| c.0 == 'N').map(|c| c.2)
-    };
-    let (Some(implicit), Some(written)) = (note_y(format!("{tbl}{}", sect(pr, true))), note_y(format!("{tbl}<w:p/>{}", sect(pr, true)))) else {
-        return;
-    };
-    assert_eq!(implicit, written, "laid out as a written empty paragraph");
-}
-
-#[test]
 fn compat_14_note_waits_when_its_paragraph_cant_keep_its_lines() {
     let body = |at: Option<usize>| {
         let mut b = para("P01", &["f1"]);
@@ -257,4 +242,44 @@ fn compat_14_note_waits_when_its_paragraph_cant_keep_its_lines() {
     assert_eq!((on(&c12, "Q3"), on(&c12, "Long")), (Some(0), Some(1)), "the lines stay, the note waits: {c12:?}");
     let Some(c15) = pages(&body(Some(last - 2)), C15) else { return };
     assert_eq!((on(&c15, "Q1"), on(&c15, "Long")), (Some(1), Some(1)), "compat 15 moves the paragraph with its note");
+}
+
+#[test]
+fn endnote_continuation_separator_spans_the_column() {
+    let seps = r#"<w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote><w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>"#;
+    let long: String = (1..=70).map(|i| format!("<w:p><w:r><w:t>E{i}</w:t></w:r></w:p>")).collect();
+    let extra = format!(r#"{seps}<w:endnote w:id="10">{long}</w:endnote>"#);
+    let body = para("A", &["e10"]) + &sect("", true);
+    let Some(doc) = notes_doc_with(&body, C15, &extra) else { return };
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let rules: Vec<Vec<f64>> = snap
+        .pages()
+        .iter()
+        .map(|pg| {
+            crate::layout::traverse::paint_items(pg)
+                .into_iter()
+                .filter_map(|i| match i {
+                    crate::layout::fragment::Item::Rect { rect, .. } if rect[3] - rect[1] < 1.0 => Some(rect[2] - rect[0]),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect();
+    assert!(rules.len() > 1 && rules[0] == [144.0], "a new endnote's separator: {rules:?}");
+    assert!(rules[1..].iter().all(|r| r.len() == 1 && r[0] > 400.0), "the continued endnote's rule spans the column: {rules:?}");
+}
+
+#[test]
+fn a_body_ending_with_a_table_ends_with_a_paragraph() {
+    let tbl = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>T</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let note_y = |body: String| {
+        let doc = notes_doc(&body, "")?;
+        assert!(matches!(doc.sections[0].blocks.last(), Some(Block::Para(p)) if p.inlines.is_empty()));
+        super::page_chars(&doc)[0].iter().find(|c| c.0 == 'N').map(|c| c.2)
+    };
+    let (Some(implicit), Some(written)) = (note_y(format!("{tbl}{}", sect(pr, true))), note_y(format!("{tbl}<w:p/>{}", sect(pr, true)))) else {
+        return;
+    };
+    assert_eq!(implicit, written, "laid out as a written empty paragraph");
 }

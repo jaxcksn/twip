@@ -206,6 +206,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         part: main.clone(),
         rels: rels.clone(),
         note_id: 0,
+        in_endnotes: false,
         record: false,
         segs: Vec::new(),
         simple: Vec::new(),
@@ -299,6 +300,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         for n in children(dom.root_element(), if tag == "footnote" { "footnote" } else { "endnote" }) {
             let id = int(attr(n, "id")).unwrap_or(0);
             r.note_id = id;
+            r.in_endnotes = tag == "endnote";
             let mut blocks = r.read_blocks(n, &mut pkg, None);
             r.close_ranges(&mut blocks);
             match attr(n, "type") {
@@ -726,6 +728,8 @@ struct Reader {
     rels: HashMap<String, (String, String)>,
     /// The note being read (for its `w:footnoteRef` mark).
     note_id: i64,
+    /// Reading the endnotes part.
+    in_endnotes: bool,
     /// Reading the main body for editing: paragraphs and tables get their sources, runs their direct formatting.
     record: bool,
     /// The paragraph being read: elements that produced units ([`ParaSrc::segs`]), and whether any can't be mapped.
@@ -1744,8 +1748,8 @@ impl Reader {
                 }),
                 "footnoteRef" => out.push(Inline::NoteMark(NoteKind::Foot, self.note_id, run.clone())),
                 "endnoteRef" => out.push(Inline::NoteMark(NoteKind::End, self.note_id, run.clone())),
-                "separator" => out.push(Inline::Separator { continuation: false, run: run.clone() }),
-                "continuationSeparator" => out.push(Inline::Separator { continuation: true, run: run.clone() }),
+                "separator" => out.push(Inline::Separator { continuation: false, full: false, run: run.clone() }),
+                "continuationSeparator" => out.push(Inline::Separator { continuation: true, full: self.in_endnotes, run: run.clone() }),
                 _ => {}
             }
         }

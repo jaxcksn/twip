@@ -1691,8 +1691,9 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 out.extend(caret(x, q));
             }
             let (q, first) = source(p);
-            if matches!(p.kind, Kind::Separator | Kind::ContSeparator) {
-                let len = if p.kind == Kind::ContSeparator && o.compat == Compat::Legacy { o.width } else { 144.0 };
+            if matches!(p.kind, Kind::Separator | Kind::ContSeparator | Kind::FullSeparator) {
+                let full = p.kind == Kind::FullSeparator || p.kind == Kind::ContSeparator && o.compat == Compat::Legacy;
+                let len = if full { o.width } else { 144.0 };
                 out.push(Item::rect([x, base - 2.7, x + len, base - 2.1], 0));
                 continue;
             }

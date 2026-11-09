@@ -439,6 +439,8 @@ pub enum Inline {
     NoteMark(NoteKind, i64, Run),
     Separator {
         continuation: bool,
+        /// Drawn across the column in every mode (an endnote continuation separator).
+        full: bool,
         run: Run,
     },
     /// A field's start (`w:fldChar begin`). The inlines up to its [`Inline::FieldSep`] (or its
