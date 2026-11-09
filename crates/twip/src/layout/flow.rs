@@ -1286,58 +1286,77 @@ impl<'d> PageFill<'d, '_> {
         };
         let lifted = at_top && first_part && !(carry.keep_top || carry.first_para);
         let top = *y + g - if lifted { self.top_lift(style, pb) } else { 0.0 };
-        let mut yy = top;
-        let mut fit = 0;
-        let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
-        // After a note waits for the next page, the lines its paragraph can't be parted from there.
-        let mut more: Option<usize> = None;
         let wc = style.widow_control;
-        for (i, l) in pb.lines.iter().enumerate() {
-            let room = l.pitch - l.below;
-            let refs = pb.notes(i);
-            if more.is_some() && refs.iter().any(|r| r.0 == NoteKind::Foot) {
-                break;
-            }
-            let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
-            let defer = i == 0 || first_part && wc && (i == 1 || n <= 3);
-            if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, defer, memos)? && !pb.leading_page_break(i) {
-                break;
-            }
-            let tail = if i + 1 == n { after } else { 0.0 };
-            let over = |a: &NoteArea| a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) && !pb.leading_page_break(i);
-            let waits = |a: &NoteArea, rest: &[NotePart]| rest.iter().any(|r| !a.parts.iter().any(|p| (p.kind, p.id) == (r.kind, r.id)));
-            if over(&a) && defer {
-                // The notes fit only without the line's full height: in compat ≤ 14 they may wait instead.
-                let (mut a2, mut rest2) = areas.last().cloned().unwrap_or_default();
-                if self.add_notes(&refs, &mut a2, col, yy + l.pitch + tail, &mut rest2, defer, memos)? && waits(&a2, &rest2) {
-                    (a, rest) = (a2, rest2);
+        // Compat ≤ 14: when the lines can't stay on the page with a line's notes after a note placed whole, those
+        // notes wait for the next page and the lines stay.
+        let mut force: Option<usize> = None;
+        let (fit, areas, mut take) = loop {
+            let mut yy = top;
+            let mut fit = 0;
+            let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
+            // After a note waits for the next page, the lines its paragraph can't be parted from there.
+            let mut more: Option<usize> = None;
+            let mut first_ref = None;
+            for (i, l) in pb.lines.iter().enumerate() {
+                let room = l.pitch - l.below;
+                let refs = pb.notes(i);
+                if more.is_some() && refs.iter().any(|r| r.0 == NoteKind::Foot) {
+                    break;
+                }
+                let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
+                let foot = refs.iter().any(|r| r.0 == NoteKind::Foot);
+                if first_ref.is_none() && foot && a.parts.len() > a.carried {
+                    first_ref = Some(i);
+                }
+                let defer = i == 0 || first_part && wc && (i == 1 || n <= 3);
+                if force == Some(i) {
+                    for &(k, id) in refs.iter().filter(|r| r.0 == NoteKind::Foot) {
+                        rest.push(NotePart { kind: k, id, units: self.note_units(k, id, col.width, memos)?.units.clone() });
+                    }
+                } else if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, defer, memos)? && !pb.leading_page_break(i) {
+                    break;
+                }
+                let tail = if i + 1 == n { after } else { 0.0 };
+                let over = |a: &NoteArea| a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) && !pb.leading_page_break(i);
+                let waits = |a: &NoteArea, rest: &[NotePart]| rest.iter().any(|r| !a.parts.iter().any(|p| (p.kind, p.id) == (r.kind, r.id)));
+                if over(&a) && defer {
+                    // The notes fit only without the line's full height: in compat ≤ 14 they may wait instead.
+                    let (mut a2, mut rest2) = areas.last().cloned().unwrap_or_default();
+                    if self.add_notes(&refs, &mut a2, col, yy + l.pitch + tail, &mut rest2, defer, memos)? && waits(&a2, &rest2) {
+                        (a, rest) = (a2, rest2);
+                    }
+                }
+                if over(&a) {
+                    break;
+                }
+                areas.push((a, rest));
+                yy += l.pitch;
+                fit += 1;
+                if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
+                    break;
+                }
+                if let Some((a, rest)) = areas.last().filter(|x| !x.1.is_empty()) {
+                    if more.is_none() && waits(a, rest) {
+                        more = Some(match (first_part && wc, n <= 3) {
+                            (true, true) => n - 1 - i,
+                            (true, false) if i == 0 || i + 2 == n => 1,
+                            _ => 0,
+                        });
+                    }
+                    match more {
+                        Some(m) if m > 0 => more = Some(m - 1),
+                        _ => break,
+                    }
                 }
             }
-            if over(&a) {
-                break;
+            let hard = pb.lines[..fit.min(n)].iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
+            let take = lines_to_take(n, fit, hard, first_part, style.keep_lines, style.widow_control);
+            if take == 0 && force.is_none() && wc && !at_top && self.ctx.env.text.compat == Compat::Legacy && first_ref.is_some() {
+                force = first_ref;
+                continue;
             }
-            areas.push((a, rest));
-            yy += l.pitch;
-            fit += 1;
-            if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
-                break;
-            }
-            if let Some((a, rest)) = areas.last().filter(|x| !x.1.is_empty()) {
-                if more.is_none() && waits(a, rest) {
-                    more = Some(match (first_part && wc, n <= 3) {
-                        (true, true) => n - 1 - i,
-                        (true, false) if i == 0 || i + 2 == n => 1,
-                        _ => 0,
-                    });
-                }
-                match more {
-                    Some(m) if m > 0 => more = Some(m - 1),
-                    _ => break,
-                }
-            }
-        }
-        let hard = pb.lines[..fit.min(n)].iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
-        let mut take = lines_to_take(n, fit, hard, first_part, style.keep_lines, style.widow_control);
+            break (fit, areas, take);
+        };
         if let Some((b, cap)) = self.at.keep_cap
             && b == pos.block
             && first_part

@@ -63,9 +63,15 @@ fn sect(extra: &str, last: bool) -> String {
 
 /// A document of `body`, with `settings` children and notes 1..=9 of each kind.
 fn notes_doc(body: &str, settings: &str) -> Option<crate::docx::Document> {
+    notes_doc_with(body, settings, "")
+}
+
+/// [`notes_doc`] with `extra` notes (footnotes and endnotes, each part reading its own).
+fn notes_doc_with(body: &str, settings: &str, extra: &str) -> Option<crate::docx::Document> {
     let note =
         |tag: &str| -> String { (1..=9).map(|i| format!(r#"<w:{tag} w:id="{i}"><w:p><w:r><w:t>Note {i}</w:t></w:r></w:p></w:{tag}>"#)).collect() };
-    let (foot, end) = (format!("<w:footnotes {W}>{}</w:footnotes>", note("footnote")), format!("<w:endnotes {W}>{}</w:endnotes>", note("endnote")));
+    let (foot, end) =
+        (format!("<w:footnotes {W}>{extra}{}</w:footnotes>", note("footnote")), format!("<w:endnotes {W}>{extra}{}</w:endnotes>", note("endnote")));
     let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#;
     let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#;
     super::package(&[
@@ -221,4 +227,34 @@ fn a_body_ending_with_a_table_ends_with_a_paragraph() {
         return;
     };
     assert_eq!(implicit, written, "laid out as a written empty paragraph");
+}
+
+#[test]
+fn compat_14_note_waits_when_its_paragraph_cant_keep_its_lines() {
+    let body = |at: Option<usize>| {
+        let mut b = para("P01", &["f1"]);
+        let mut k = 2;
+        while k <= 80 {
+            if Some(k) == at {
+                b += r#"<w:p><w:pPr><w:widowControl/></w:pPr><w:r><w:t>Q1</w:t></w:r><w:r><w:footnoteReference w:id="10"/></w:r><w:r><w:br/><w:t>Q2</w:t><w:br/><w:t>Q3</w:t></w:r></w:p>"#;
+                k += 3;
+            } else {
+                b += &para(&format!("P{k:02}"), &[]);
+                k += 1;
+            }
+        }
+        b + &sect("", true)
+    };
+    let long = r#"<w:footnote w:id="10"><w:p><w:pPr><w:widowControl/></w:pPr><w:r><w:t>Long</w:t><w:br/><w:t>note</w:t></w:r></w:p></w:footnote>"#;
+    let pages = |body: &str, settings: &str| -> Option<Vec<String>> {
+        Some(super::page_chars(&notes_doc_with(body, settings, long)?).iter().map(|p| p.iter().map(|c| c.0).collect()).collect())
+    };
+    let Some(plain) = pages(&body(None), "") else { return };
+    let last = (1..=80).rev().find(|k| plain[0].contains(&format!("P{k:02}"))).expect("page 1 has lines");
+    let on = |pages: &[String], s: &str| pages.iter().position(|p| p.contains(s));
+    // A 3-line paragraph ending on page 1's last line: its 2-line note fits under its first line only.
+    let Some(c12) = pages(&body(Some(last - 2)), "") else { return };
+    assert_eq!((on(&c12, "Q3"), on(&c12, "Long")), (Some(0), Some(1)), "the lines stay, the note waits: {c12:?}");
+    let Some(c15) = pages(&body(Some(last - 2)), C15) else { return };
+    assert_eq!((on(&c15, "Q1"), on(&c15, "Long")), (Some(1), Some(1)), "compat 15 moves the paragraph with its note");
 }
