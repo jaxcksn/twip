@@ -115,6 +115,8 @@ fn props(s: &Section) -> Section {
         page_borders,
         page_borders_xml,
         line_grid,
+        notes,
+        no_endnote,
         blocks: _,
         change,
     } = s;
@@ -140,6 +142,8 @@ fn props(s: &Section) -> Section {
         page_borders: page_borders.clone(),
         page_borders_xml: page_borders_xml.clone(),
         line_grid: *line_grid,
+        notes: notes.clone(),
+        no_endnote: *no_endnote,
         blocks: Vec::new(),
         change: change.clone(),
     }

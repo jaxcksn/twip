@@ -111,25 +111,26 @@ impl JobNotes {
     pub fn new(doc: &Document) -> JobNotes {
         let mut refs = Vec::new();
         let mut seen = HashSet::new();
-        for s in &doc.sections {
-            collect_refs(&s.blocks, &mut refs, &mut seen);
-        }
         let mut numbers = HashMap::new();
-        let (mut nf, mut ne) = (0, 0);
-        for (k, id) in &refs {
-            let n = match k {
-                NoteKind::Foot => {
-                    nf += 1;
-                    nf.to_string()
+        // Automatic notes counted per kind (foot, end) since the restart origin.
+        let mut count = [0, 0];
+        for s in &doc.sections {
+            let from = refs.len();
+            collect_refs(&s.blocks, &mut refs, &mut seen);
+            for (k, p) in s.notes.iter().enumerate() {
+                if p.restart == NoteRestart::EachSect {
+                    count[k] = 0;
                 }
-                NoteKind::End => {
-                    ne += 1;
-                    crate::docx::numbering::roman(ne).to_lowercase()
-                }
-            };
-            numbers.insert((*k, *id), n);
+            }
+            for &(kind, id, custom) in &refs[from..] {
+                let k = usize::from(kind == NoteKind::End);
+                let p = &s.notes[k];
+                let fmt = p.fmt.as_deref().unwrap_or(if k == 0 { "decimal" } else { "lowerRoman" });
+                numbers.insert((kind, id), crate::docx::numbering::format_number(p.start + count[k], fmt));
+                count[k] += i64::from(!custom);
+            }
         }
-        let endnotes: Vec<i64> = refs.iter().filter(|(k, _)| *k == NoteKind::End).map(|(_, id)| *id).collect();
+        let endnotes: Vec<i64> = refs.iter().filter(|r| r.0 == NoteKind::End).map(|r| r.1).collect();
         let mut separator = Vec::new();
         if !endnotes.is_empty() {
             separator = doc.separators.get("endnote:separator").cloned().unwrap_or_default();
@@ -152,16 +153,16 @@ pub fn has_note_refs(b: &Block) -> bool {
     }
 }
 
-fn collect_refs(blocks: &[Block], out: &mut Vec<(NoteKind, i64)>, seen: &mut HashSet<(NoteKind, i64)>) {
+/// Each note's first reference: kind, id, and whether it carries a custom mark.
+fn collect_refs(blocks: &[Block], out: &mut Vec<(NoteKind, i64, bool)>, seen: &mut HashSet<(NoteKind, i64)>) {
     for b in blocks {
         match b {
             Block::Para(p) => {
                 for i in &p.inlines {
                     if let Inline::NoteRef { kind, id, custom, .. } = i
-                        && !custom
                         && seen.insert((*kind, *id))
                     {
-                        out.push((*kind, *id));
+                        out.push((*kind, *id, *custom));
                     }
                 }
             }

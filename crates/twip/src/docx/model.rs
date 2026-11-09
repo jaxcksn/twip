@@ -948,6 +948,29 @@ pub struct LineNumbering {
     pub restart: String,
 }
 
+/// A section's `w:footnotePr` / `w:endnotePr`: number format, start and restart; for footnotes, `w:pos beneathText`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteProps {
+    pub fmt: Option<String>,
+    pub start: i64,
+    pub restart: NoteRestart,
+    pub beneath: bool,
+}
+
+impl Default for NoteProps {
+    fn default() -> NoteProps {
+        NoteProps { fmt: None, start: 1, restart: NoteRestart::Continuous, beneath: false }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NoteRestart {
+    #[default]
+    Continuous,
+    EachSect,
+    EachPage,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PageBorders {
     pub top: Option<Border>,
@@ -987,6 +1010,10 @@ pub struct Section {
     /// The `w:pgBorders` as written, or as last set.
     pub page_borders_xml: Option<String>,
     pub line_grid: Option<i32>,
+    /// Footnote and endnote properties, by [`NoteKind`] (foot, end).
+    pub notes: [NoteProps; 2],
+    /// `w:noEndnote`: the section's endnotes wait for the next section's.
+    pub no_endnote: bool,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,
@@ -1018,6 +1045,8 @@ pub struct Settings {
     pub borders_do_not_surround_footer: bool,
     /// `w:trackRevisions`: edits are recorded as revisions.
     pub track_revisions: bool,
+    /// `w:endnotePr/w:pos sectEnd`: endnotes follow their section rather than the document.
+    pub endnotes_sect_end: bool,
     pub protection: Option<Protection>,
     /// `w:revisionView` as written, kept for saving.
     pub revision_view_raw: Raw,

@@ -275,6 +275,8 @@ struct Builder<'a> {
     text: String,
     objects: Vec<Object>,
     em1000: bool,
+    /// A custom-mark note reference: the note goes with the next piece (its mark).
+    pending_note: Option<Object>,
 }
 
 struct NewPiece {
@@ -312,7 +314,7 @@ impl Builder<'_> {
         }
         let t0 = self.text.len() as u32;
         self.text.push_str(text);
-        let object = p.object.map(|o| {
+        let object = p.object.or_else(|| self.pending_note.take()).map(|o| {
             self.objects.push(o);
             (self.objects.len() - 1) as u32
         });
@@ -793,7 +795,9 @@ impl Builder<'_> {
                 (Inline::NoteRef { kind, id, custom, .. }, Some(run)) => {
                     let number = space.notes.get(note).cloned().unwrap_or_default();
                     note += 1;
-                    if !*custom {
+                    if *custom {
+                        self.pending_note = Some(Object::Note(*kind, *id));
+                    } else {
                         let start = self.pieces.len();
                         self.text(&number, run)?;
                         if start < self.pieces.len() {
@@ -932,6 +936,12 @@ impl Builder<'_> {
     }
 
     fn finish(mut self) -> ShapedPara {
+        if let Some(o) = self.pending_note.take()
+            && let Some(p) = self.pieces.iter_mut().rev().find(|p| p.object.is_none())
+        {
+            self.objects.push(o);
+            p.object = Some((self.objects.len() - 1) as u32);
+        }
         let text = |p: &Piece| &self.text[p.text.0 as usize..p.text.1 as usize];
         let n = self.pieces.len();
         let mut a = 0;
@@ -1105,6 +1115,7 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
         text: String::new(),
         objects: Vec::new(),
         em1000: space.em1000,
+        pending_note: None,
     };
     super::job::unit("shaping call", || crate::prof::time("itemize", || b.paragraph(para, space)))?;
     if let Some((h, caps, right)) = &space.hyphenate {
@@ -1203,6 +1214,7 @@ pub fn shape_run(text: &str, run: &Run, fonts: &Fonts) -> ShapedPara {
         text: String::new(),
         objects: Vec::new(),
         em1000: false,
+        pending_note: None,
     };
     let _ = b.text(text, run);
     b.finish()

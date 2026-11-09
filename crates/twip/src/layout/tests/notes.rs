@@ -37,3 +37,71 @@ fn rewound_note_follows_reference() {
     assert!(!records[0].effects.notes_shown.iter().any(|n| n.1 == ID), "page 1's effects don't show the rewound note");
     assert!(records[1].effects.notes_shown.iter().any(|n| (n.0, n.1) == (NoteKind::Foot, ID)), "page 2's effects show it");
 }
+
+const W: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
+const PAGE: &str = r#"<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>"#;
+
+/// A paragraph of `text` referencing footnotes (`f<id>`, `c<id>` with a custom mark `*`) and endnotes (`e<id>`).
+fn para(text: &str, refs: &[&str]) -> String {
+    let mut s = format!(r#"<w:p><w:r><w:t xml:space="preserve">{text}</w:t></w:r>"#);
+    for r in refs {
+        let (kind, id) = r.split_at(1);
+        s += &match kind {
+            "f" => format!(r#"<w:r><w:footnoteReference w:id="{id}"/></w:r>"#),
+            "c" => format!(r#"<w:r><w:footnoteReference w:customMarkFollows="1" w:id="{id}"/><w:t>*</w:t></w:r>"#),
+            _ => format!(r#"<w:r><w:endnoteReference w:id="{id}"/></w:r>"#),
+        };
+    }
+    s + "</w:p>"
+}
+
+/// A section's closing `w:sectPr` (in a paragraph when `last` is false) with `extra` properties.
+fn sect(extra: &str, last: bool) -> String {
+    let s = format!("<w:sectPr>{extra}{PAGE}</w:sectPr>");
+    if last { s } else { format!("<w:p><w:pPr>{s}</w:pPr></w:p>") }
+}
+
+/// A document of `body`, with `settings` children and notes 1..=9 of each kind.
+fn notes_doc(body: &str, settings: &str) -> Option<crate::docx::Document> {
+    let note =
+        |tag: &str| -> String { (1..=9).map(|i| format!(r#"<w:{tag} w:id="{i}"><w:p><w:r><w:t>Note {i}</w:t></w:r></w:p></w:{tag}>"#)).collect() };
+    let (foot, end) = (format!("<w:footnotes {W}>{}</w:footnotes>", note("footnote")), format!("<w:endnotes {W}>{}</w:endnotes>", note("endnote")));
+    let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#;
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#;
+    super::package(&[
+        ("[Content_Types].xml", ct),
+        (
+            "_rels/.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", rels),
+        ("word/document.xml", &format!("<w:document {W}><w:body>{body}</w:body></w:document>")),
+        ("word/settings.xml", &format!("<w:settings {W}>{settings}</w:settings>")),
+        ("word/footnotes.xml", &foot),
+        ("word/endnotes.xml", &end),
+    ])
+}
+
+fn numbers(doc: &crate::docx::Document, kind: NoteKind, ids: &[i64]) -> Vec<String> {
+    let notes = crate::layout::document::JobNotes::new(doc);
+    ids.iter().map(|id| notes.numbers.get(&(kind, *id)).cloned().unwrap_or_default()).collect()
+}
+
+#[test]
+fn note_numbers_come_from_the_referencing_section() {
+    let fmt = |f: &str, extra: &str| format!(r#"<w:footnotePr><w:numFmt w:val="{f}"/>{extra}</w:footnotePr>"#);
+    let body = para("a", &["f1", "f2"]) + &sect(&fmt("decimal", ""), false) + &para("b", &["f3", "f4"]) + &sect(&fmt("lowerRoman", ""), true);
+    let settings = r#"<w:footnotePr><w:numFmt w:val="upperLetter"/><w:numStart w:val="5"/></w:footnotePr>"#;
+    let Some(doc) = notes_doc(&body, settings) else { return };
+    assert_eq!(numbers(&doc, NoteKind::Foot, &[1, 2, 3, 4]), ["1", "2", "iii", "iv"], "settings ignored; S2 counts on in its own format");
+    let restart = r#"<w:numStart w:val="10"/><w:numRestart w:val="eachSect"/>"#;
+    let body = para("a", &["f1", "f2"]) + &sect("", false) + &para("b", &["f3", "f4"]) + &sect(&fmt("decimal", restart), true);
+    let Some(doc) = notes_doc(&body, "") else { return };
+    assert_eq!(numbers(&doc, NoteKind::Foot, &[1, 2, 3, 4]), ["1", "2", "10", "11"]);
+    let body = para("a", &["f1", "c2", "f3"]) + &sect(&fmt("chicago", ""), true);
+    let Some(doc) = notes_doc(&body, "") else { return };
+    assert_eq!(numbers(&doc, NoteKind::Foot, &[1, 2, 3]), ["*", "\u{2020}", "\u{2020}"], "a custom mark takes no number; its note shows the next");
+    let body = para("a", &["e1", "e2"]) + &sect(r#"<w:endnotePr><w:numFmt w:val="decimal"/><w:numStart w:val="4"/></w:endnotePr>"#, true);
+    let Some(doc) = notes_doc(&body, r#"<w:endnotePr><w:numFmt w:val="upperRoman"/></w:endnotePr>"#) else { return };
+    assert_eq!(numbers(&doc, NoteKind::End, &[1, 2]), ["4", "5"]);
+}

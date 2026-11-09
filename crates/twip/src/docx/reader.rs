@@ -650,6 +650,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     }
     s.consecutive_hyphen_limit = child(root, "consecutiveHyphenLimit").and_then(|n| int(val(n))).unwrap_or(0);
     s.track_revisions = flag(root, "trackRevisions").unwrap_or(false);
+    s.endnotes_sect_end = child(root, "endnotePr").and_then(|p| child(p, "pos")).and_then(val) == Some("sectEnd");
     s.protection = child(root, "documentProtection").map(|n| Protection {
         edit: match attr(n, "edit") {
             Some("readOnly") => ProtectionKind::ReadOnly,
@@ -1177,6 +1178,8 @@ impl Reader {
             page_borders: None,
             page_borders_xml: None,
             line_grid: None,
+            notes: Default::default(),
+            no_endnote: false,
             blocks: Vec::new(),
             change: None,
         }
@@ -1249,6 +1252,19 @@ impl Reader {
                 restart: attr(l, "restart").unwrap_or("newPage").to_string(),
             });
         }
+        for (k, name) in [(0, "footnotePr"), (1, "endnotePr")] {
+            let Some(p) = child(s, name) else { continue };
+            let n = &mut sec.notes[k];
+            n.fmt = child(p, "numFmt").and_then(val).map(str::to_string);
+            n.start = child(p, "numStart").and_then(|e| int(val(e))).unwrap_or(n.start);
+            n.restart = match child(p, "numRestart").and_then(val) {
+                Some("eachSect") => NoteRestart::EachSect,
+                Some("eachPage") => NoteRestart::EachPage,
+                _ => NoteRestart::Continuous,
+            };
+            n.beneath = k == 0 && child(p, "pos").and_then(val) == Some("beneathText");
+        }
+        sec.no_endnote = flag(s, "noEndnote").unwrap_or(false);
         if let Some(v) = child(s, "vAlign").and_then(val) {
             sec.v_align = v.to_string();
         }

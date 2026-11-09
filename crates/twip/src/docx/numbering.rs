@@ -305,6 +305,7 @@ pub fn format_number(v: i64, fmt: &str) -> String {
         "none" => String::new(),
         "numberInDash" => format!("- {v} -"),
         "hex" => format!("{v:X}"),
+        "chicago" if v > 0 => ["*", "†", "‡", "§"][(v as usize - 1) % 4].repeat((v as usize - 1) / 4 + 1),
         _ => v.to_string(),
     }
 }
