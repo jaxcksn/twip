@@ -473,7 +473,14 @@ pub enum Inline {
     ControlEnd(ControlId),
     /// A ruby (`w:ruby`): one unit.
     Ruby(Rc<Ruby>, Run),
+    /// A date block (`w:dayShort`, `w:dayLong`, `w:monthShort`, `w:monthLong`, `w:yearShort`, `w:yearLong`, by its
+    /// element name) and the date it shows, filled in when fields are evaluated: one unit.
+    DateBlock(&'static str, String, Run),
 }
+
+/// The date blocks' element names and the date pictures they show.
+pub const DATE_BLOCKS: [(&str, &str); 6] =
+    [("dayShort", "dd"), ("dayLong", "dddd"), ("monthShort", "MM"), ("monthLong", "MMMM"), ("yearShort", "yy"), ("yearLong", "yyyy")];
 
 /// A ruby: base text with its annotation set above it, laid out as one object.
 #[derive(Clone, Debug, PartialEq)]
@@ -1254,7 +1261,8 @@ impl Inline {
             | Inline::Picture(_, r)
             | Inline::Float(_, r)
             | Inline::NoteMark(_, _, r)
-            | Inline::Ruby(_, r) => Some(r),
+            | Inline::Ruby(_, r)
+            | Inline::DateBlock(_, _, r) => Some(r),
             Inline::Sym { run, .. }
             | Inline::NoteRef { run, .. }
             | Inline::Separator { run, .. }

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::model::{Block, Document, FieldId, FieldKind, FieldView, Inline, Paragraph, Run};
+use super::model::{Block, DATE_BLOCKS, Document, FieldId, FieldKind, FieldView, Inline, Paragraph, Run};
 
 /// A field's markers in a paragraph's inlines: the indexes of its begin, separator (if it has one) and
 /// end.
@@ -345,6 +345,7 @@ pub fn words(code: &str) -> Vec<String> {
 }
 
 pub fn evaluate(doc: &mut Document, now: i64) {
+    date_blocks(doc, now);
     // Bookmark texts (to the end of the bookmark's paragraph) and every paragraph's style and text, in order.
     let mut marks: HashMap<String, String> = HashMap::new();
     let mut order: Vec<(String, String)> = Vec::new();
@@ -428,6 +429,26 @@ pub fn evaluate(doc: &mut Document, now: i64) {
             }
             at += 1;
         });
+    }
+}
+
+/// Every date block's date at `now`, in its picture: the user locale's names (en-US), whatever the run's language; at
+/// most 40 characters.
+fn date_blocks(doc: &mut Document, now: i64) {
+    let mut visit = |p: &mut Paragraph| {
+        for i in &mut p.inlines {
+            if let Inline::DateBlock(name, text, _) = i
+                && let Some((_, picture)) = DATE_BLOCKS.iter().find(|(e, _)| e == name)
+            {
+                *text = date(&format!("\\@ {picture}"), now).chars().take(40).collect();
+            }
+        }
+    };
+    for s in &mut doc.sections {
+        paras(&mut s.blocks, &mut visit);
+    }
+    for b in doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()) {
+        paras(b, &mut visit);
     }
 }
 
@@ -626,6 +647,30 @@ pub(crate) fn format_field(value: &str, code: &str, default: Option<&str>) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn date_blocks_show_the_date_in_their_picture_whatever_the_language() {
+        use crate::docx::{blank::blank_docx, write::repackage};
+        let body = r#"<w:p><w:r><w:rPr><w:lang w:val="de-DE"/></w:rPr><w:t>x</w:t><w:dayShort/><w:dayLong/><w:monthShort/><w:monthLong/><w:yearShort/><w:yearLong/><w:t>y</w:t></w:r></w:p>"#;
+        let xml = format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}<w:sectPr/></w:body></w:document>"#
+        );
+        let bytes =
+            repackage(&blank_docx(), &[("word/document.xml".to_string(), xml.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
+        // 2026-11-08
+        let doc = crate::docx::read_at(&bytes, 1_794_096_000).expect("reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let shown: String = p
+            .inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Text(t, _) | Inline::DateBlock(_, t, _) => t.as_str(),
+                _ => "",
+            })
+            .collect();
+        assert_eq!(shown, "x08Sunday11November262026y");
+        assert_eq!(p.inlines.iter().map(Inline::units).sum::<usize>(), 8, "a block is one unit");
+    }
 
     #[test]
     fn field_2_a_one_word_code_is_a_bookmark_reference() {

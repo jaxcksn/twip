@@ -123,7 +123,8 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
             | Inline::Sym { run: r, .. }
             | Inline::NoteMark(_, _, r)
             | Inline::Separator { run: r, .. }
-            | Inline::Ruby(_, r) => run(r, f),
+            | Inline::Ruby(_, r)
+            | Inline::DateBlock(_, _, r) => run(r, f),
             Inline::Tab(r) | Inline::PTab(_, r) => {
                 f.insert("tabs");
                 run(r, f);

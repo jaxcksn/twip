@@ -886,6 +886,7 @@ impl<'a> Builder<'a> {
                     p.object = Some(Object::Ruby(Rc::new(RubyShape { base, text, base_x, text_x, raise: r.raise })));
                     self.atom(p, "\u{FFFC}");
                 }
+                (Inline::DateBlock(_, text, _), Some(run)) => self.text(text, run)?,
                 (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) => {}
                 (Inline::Float(f, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Anchor, run, None, run.size, 0.0);

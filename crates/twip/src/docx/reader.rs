@@ -1706,6 +1706,9 @@ impl Reader {
                 }
                 "drawing" => self.read_drawing(c, &run, pkg, out),
                 "pict" | "object" => self.read_pict(c, &run, pkg, out),
+                name if let Some(&(element, _)) = DATE_BLOCKS.iter().find(|(e, _)| *e == name) => {
+                    out.push(Inline::DateBlock(element, String::new(), run.clone()));
+                }
                 "ruby" => {
                     let ruby = self.read_ruby(c, base, pkg);
                     out.push(Inline::Ruby(Rc::new(ruby), run.clone()));

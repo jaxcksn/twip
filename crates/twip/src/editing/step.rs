@@ -413,7 +413,8 @@ pub fn run_of(i: &Inline) -> Option<&Run> {
         | Inline::Picture(_, r)
         | Inline::Float(_, r)
         | Inline::NoteMark(_, _, r)
-        | Inline::Ruby(_, r) => Some(r),
+        | Inline::Ruby(_, r)
+        | Inline::DateBlock(_, _, r) => Some(r),
         Inline::Sym { run, .. }
         | Inline::NoteRef { run, .. }
         | Inline::Separator { run, .. }
