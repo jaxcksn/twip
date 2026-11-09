@@ -183,6 +183,18 @@ fn a_vertical_sections_gutter_is_on_the_right() {
 }
 
 #[test]
+fn a_horizontal_sections_rtl_gutter_is_on_the_right() {
+    let at = |rtl: &str| {
+        let body = format!(r#"{}<w:sectPr>{}{rtl}</w:sectPr>"#, para("first", ""), MARGINS.replace(r#"w:gutter="0""#, r#"w:gutter="720""#));
+        let snap = crate::layout::layout(&sectioned(&body)?, &fonts());
+        crate::layout::traverse::paint_items(&snap.pages()[0]).into_iter().find_map(|i| if let Item::Glyphs(r) = i { Some(r.x) } else { None })
+    };
+    let Some(left) = at("") else { return };
+    // The 36pt gutter goes from the left margin to the right one: the text starts at the plain left margin.
+    assert!((left - 108.0).abs() < 0.01 && (at("<w:rtlGutter/>").unwrap() - 72.0).abs() < 0.01, "{left}");
+}
+
+#[test]
 fn a_continuous_break_into_a_vertical_section_starts_a_page() {
     let body = format!(
         r#"{}<w:p><w:pPr><w:sectPr>{MARGINS}</w:sectPr></w:pPr></w:p>{}<w:sectPr><w:type w:val="continuous"/>{MARGINS}<w:textDirection w:val="tbRl"/></w:sectPr>"#,

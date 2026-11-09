@@ -30,8 +30,9 @@ pub struct PassInfo {
 }
 
 pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64) {
-    // A vertical section's gutter is on the right (the left on a mirrored even page).
-    let vertical = super::vertical::of_section(s.text_flow).is_some();
+    // A vertical section's gutter is on the right (the left on a mirrored even page), and so is a horizontal one's
+    // with `w:rtlGutter`.
+    let vertical = super::vertical::of_section(s.text_flow).is_some() || s.rtl_gutter;
     let s = s.section_in(ctx.env.text.review.view);
     let (mut left, mut right, mut top) = (s.left, s.right, s.top);
     let odd = page_number % 2 == 1;

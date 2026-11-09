@@ -1081,6 +1081,8 @@ pub struct Section {
     pub no_endnote: bool,
     /// The `w:textDirection` text-flow code (`text_flow`; a section's `tbLrV` reads as `tbRlV`).
     pub text_flow: u8,
+    /// `w:rtlGutter`: the gutter is on the right.
+    pub rtl_gutter: bool,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,
