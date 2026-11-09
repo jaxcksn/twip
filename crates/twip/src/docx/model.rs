@@ -1086,7 +1086,8 @@ pub enum Compat {
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
     pub compat_mode: i64,
-    /// `w:compat` child options that are on, and the on/off `w:compatSetting`s that are on (`enableOpenTypeFeatures`).
+    /// `w:compat` child options that are on, and the on/off `w:compatSetting`s that are on (`enableOpenTypeFeatures`,
+    /// `overrideTableStyleFontSizeAndJustification`).
     pub compat: std::collections::HashSet<String>,
     pub default_tab: f64,
     /// `w:characterSpacingControl` is compressPunctuation or compressPunctuationAndJapaneseKana.

@@ -271,6 +271,9 @@ pub struct Styles {
     pub doc_ppr: ParaProps,
     pub compat: Compat,
     pub word2002_rules: bool,
+    /// A 12pt Normal gives way to a table style's size in cells, and an 11pt cell mark takes its paragraph's:
+    /// compat ≤ 14 without `overrideTableStyleFontSizeAndJustification`.
+    pub cell_size_rules: bool,
     /// OpenType features (ligatures, number forms and spacing, stylistic sets) apply: compat 15, or
     /// `enableOpenTypeFeatures`.
     pub open_type: bool,
@@ -515,10 +518,10 @@ impl Styles {
         }
         out.rpr = RunProps::fold_chain(rprs.into_iter());
         let sets = chain.iter().any(|s| s.base.sets_text || !s.regions.is_empty());
-        if self.compat == Compat::Legacy && id.is_some() && id != self.default_table.as_deref() && sets {
+        if self.cell_size_rules && id.is_some() && id != self.default_table.as_deref() && sets {
             out.size_over_normal = out.rpr.size.or(self.doc_rpr.size).filter(|s| *s != 10.0);
         }
-        out.mark_at_style = self.compat == Compat::Legacy
+        out.mark_at_style = self.cell_size_rules
             && (id.is_none() || id == self.default_table.as_deref())
             && self.doc_rpr.size == Some(11.0)
             && self.chain_rpr(self.default_paragraph.as_deref()).size == Some(12.0);

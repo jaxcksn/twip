@@ -547,6 +547,39 @@ fn a_header_row_after_row_0_joins_the_first_row_run() {
 }
 
 #[test]
+fn a_12pt_normal_gives_way_to_the_table_style_only_without_the_override_setting() {
+    let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    let styles = format!(
+        r#"<w:styles xmlns:w="{w}"><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:rPr><w:sz w:val="24"/></w:rPr></w:style><w:style w:type="table" w:default="1" w:styleId="T0"/><w:style w:type="table" w:styleId="T1"><w:basedOn w:val="T0"/><w:rPr><w:rFonts w:ascii="Arial"/></w:rPr></w:style></w:styles>"#
+    );
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#;
+    let body = r#"<w:tbl><w:tblPr><w:tblStyle w:val="T1"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let size = |mode: u32, setting: &str| {
+        let settings = format!(
+            r#"<w:settings xmlns:w="{w}"><w:compat>{setting}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat></w:settings>"#
+        );
+        let parts = [
+            ("word/styles.xml".to_string(), styles.clone().into_bytes()),
+            ("word/settings.xml".to_string(), settings.into_bytes()),
+            ("word/_rels/document.xml.rels".to_string(), rels.as_bytes().to_vec()),
+        ];
+        let src = crate::docx::write::repackage(&with_body(&crate::docx::blank::blank_docx(), body), &parts, zip::CompressionMethod::Deflated)
+            .expect("repackages");
+        let doc = crate::docx::read(&src).expect("reads");
+        let Some(Block::Table(t)) = doc.sections[0].blocks.first() else { panic!("a table") };
+        let Block::Para(p) = &t.rows[0].cells[0].blocks[0] else { panic!("a paragraph") };
+        p.inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.size) } else { None })
+    };
+    let set = |v: u32| {
+        format!(
+            r#"<w:compatSetting w:name="overrideTableStyleFontSizeAndJustification" w:uri="http://schemas.microsoft.com/office/word" w:val="{v}"/>"#
+        )
+    };
+    assert_eq!([size(12, ""), size(14, ""), size(14, &set(0))], [Some(11.0); 3]);
+    assert_eq!([size(12, &set(1)), size(14, &set(1)), size(15, "")], [Some(12.0); 3]);
+}
+
+#[test]
 fn a_rows_top_border_takes_its_width_in_whole_twips() {
     let baseline = |sz: u32| {
         let b = format!(r#"w:val="single" w:sz="{sz}" w:space="0" w:color="000000""#);

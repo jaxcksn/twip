@@ -439,7 +439,7 @@ mod tests {
                 sz(normal)
             );
             let mut styles = Styles::parse(Some(&xml), Default::default());
-            styles.compat = if compat15 { Compat::Generic } else { Compat::Legacy };
+            styles.cell_size_rules = !compat15;
             let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
             let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
             let direct = ParaProps { style: p_style.map(str::to_string), ..ParaProps::default() };
@@ -468,7 +468,7 @@ mod tests {
                 r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="{dd}"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0"><w:rPr><w:sz w:val="{normal}"/></w:rPr></w:style><w:style w:type="table" w:default="1" w:styleId="T0"/><w:style w:type="table" w:styleId="T1"><w:basedOn w:val="T0"/></w:style></w:styles>"#
             );
             let mut styles = Styles::parse(Some(&xml), Default::default());
-            styles.compat = if compat15 { Compat::Generic } else { Compat::Legacy };
+            styles.cell_size_rules = !compat15;
             let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
             let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
             let direct = ParaProps { mark_size: Some(own), ..ParaProps::default() };

@@ -165,6 +165,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     styles.compat = settings.compat();
     styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
     styles.open_type = styles.compat == Compat::Generic || settings.has("enableOpenTypeFeatures");
+    styles.cell_size_rules = styles.compat == Compat::Legacy && !settings.has("overrideTableStyleFontSizeAndJustification");
     let xml = pkg.read_str(&main).ok_or("no main document part")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
@@ -674,7 +675,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
                     && let Some(m) = int(attr(e, "val"))
                 {
                     s.compat_mode = m.min(15);
-                } else if let Some(name @ "enableOpenTypeFeatures") = attr(e, "name")
+                } else if let Some(name @ ("enableOpenTypeFeatures" | "overrideTableStyleFontSizeAndJustification")) = attr(e, "name")
                     && on_off_str(attr(e, "val"))
                 {
                     s.compat.insert(name.to_string());
