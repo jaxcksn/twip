@@ -336,7 +336,7 @@ pub(super) struct Presentation {
     /// The selection the blink last restarted for.
     blink_selection: Option<crate::editing::selection::Selection>,
     /// Unique on the thread: names this session's WebGL canvas or GPU window.
-    #[cfg_attr(not(any(target_os = "emscripten", twip_dawn)), allow(dead_code, reason = "no GPU target in this build"))]
+    #[cfg_attr(not(any(target_os = "emscripten", twip_window)), allow(dead_code, reason = "no GPU target in this build"))]
     serial: u64,
     /// The view settings the chrome and page are drawn with ([`Presentation::apply_look`]); `chrome_set` once the host
     /// chose a scheme (before that, a dark background gives dark chrome).
@@ -937,7 +937,7 @@ impl Drop for Presentation {
 }
 
 /// So does the swap chain on its window.
-#[cfg(twip_dawn)]
+#[cfg(twip_window)]
 impl Drop for Presentation {
     fn drop(&mut self) {
         crate::render::window::detach(self.serial);
@@ -1100,9 +1100,9 @@ impl HostSurface<'_> {
     /// end).
     pub unsafe fn attach_window(&mut self, window: *mut std::ffi::c_void) -> Option<u32> {
         // SAFETY: the caller's promise.
-        #[cfg(twip_dawn)]
+        #[cfg(twip_window)]
         return unsafe { crate::render::window::attach(self.session.presentation.serial, window) }.map(|b| b as u32);
-        #[cfg(not(twip_dawn))]
+        #[cfg(not(twip_window))]
         {
             let _ = window;
             None
@@ -1111,7 +1111,7 @@ impl HostSurface<'_> {
 
     /// Stops drawing into the window [`HostSurface::attach_window`] gave.
     pub fn detach_window(&mut self) {
-        #[cfg(twip_dawn)]
+        #[cfg(twip_window)]
         crate::render::window::detach(self.session.presentation.serial);
     }
 
@@ -1119,7 +1119,7 @@ impl HostSurface<'_> {
     /// [`HostSurface::attach_window`], which makes a new device. Nothing without a GPU build.
     #[doc(hidden)]
     pub fn lose_gpu_device(&mut self) {
-        #[cfg(twip_dawn)]
+        #[cfg(twip_window)]
         crate::render::window::lose_device();
     }
 
@@ -1127,7 +1127,7 @@ impl HostSurface<'_> {
     /// `unavailable` when no window is attached or the GPU can't draw now (the device was lost): draw with
     /// [`HostSurface::frame_rgba`] then.
     pub fn frame_window(&mut self, width: u32, height: u32) -> Result<FrameInfo, Error> {
-        #[cfg(twip_dawn)]
+        #[cfg(twip_window)]
         {
             let key = self.session.presentation.serial;
             if crate::render::window::frame(key, width, height, |c| self.draw(c, f64::from(width), f64::from(height))) {

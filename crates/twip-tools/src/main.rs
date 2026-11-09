@@ -188,8 +188,13 @@ fn main() {
         e.host().set_size(w, h, 1.0);
         let info = ImageInfo::new((w.ceil() as i32, (h.ceil() as i32).min(8000)), ColorType::RGBA8888, AlphaType::Premul, None);
         let image = if gpu {
-            let pixels = vulkan::render(e, &info).unwrap_or_else(|why| panic!("Vulkan: {why}"));
-            skia_safe::images::raster_from_data(&info, skia_safe::Data::new_copy(&pixels), info.min_row_bytes()).expect("image from pixels")
+            #[cfg(target_os = "macos")]
+            panic!("--vulkan: macOS draws with Metal, not Vulkan");
+            #[cfg(not(target_os = "macos"))]
+            {
+                let pixels = vulkan::render(e, &info).unwrap_or_else(|why| panic!("Vulkan: {why}"));
+                skia_safe::images::raster_from_data(&info, skia_safe::Data::new_copy(&pixels), info.min_row_bytes()).expect("image from pixels")
+            }
         } else {
             let mut surface = surfaces::raster(&info, None, None).expect("raster surface");
             e.host().draw(surface.canvas(), w, h);
@@ -203,7 +208,7 @@ fn main() {
     exit_on_error(Err("usage: twip-tools <dump|dumpdiff|roundtrip|units|golden|diff|rows|pairs|metrics|render> ...".into()));
 }
 
-#[cfg(not(target_os = "emscripten"))]
+#[cfg(not(any(target_os = "emscripten", target_os = "macos")))]
 mod vulkan {
     use ash::vk::{self, Handle};
     use skia_safe::ImageInfo;

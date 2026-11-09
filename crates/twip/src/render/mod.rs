@@ -14,7 +14,7 @@ pub mod svg;
 pub mod theme;
 #[cfg(target_os = "emscripten")]
 pub mod web;
-#[cfg(twip_dawn)]
+#[cfg(twip_window)]
 pub mod window;
 
 use skia_safe::font_arguments::{VariationPosition, variation_position::Coordinate};
