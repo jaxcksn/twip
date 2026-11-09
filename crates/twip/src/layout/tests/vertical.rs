@@ -214,6 +214,21 @@ fn a_table_in_a_vertical_section_stands_upright_where_the_next_line_would_go() {
 }
 
 #[test]
+fn only_compat_15_moves_a_vertical_sections_table_too_wide_for_the_rest_of_the_page() {
+    let table = r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="6100"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6100" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let first_page = |mode: i64| {
+        let mut doc = section("tbRl", "0", &format!("{}{table}{}", para("before", ""), para("after", "")))?;
+        doc.settings.compat_mode = mode;
+        let snap = crate::layout::layout(&doc, &fonts());
+        let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
+        Some(items.iter().any(|i| matches!(i, Item::Glyphs(r) if r.chars.iter().any(|c| c.0 == 'c'))))
+    };
+    // 6240 twips across less one line leave no room for 6110: compat 12 places it anyway.
+    let Some(c15) = first_page(15) else { return };
+    assert!(!c15 && first_page(12) == Some(true));
+}
+
+#[test]
 fn a_continuous_break_into_a_vertical_section_starts_a_page() {
     let body = format!(
         r#"{}<w:p><w:pPr><w:sectPr>{MARGINS}</w:sectPr></w:pPr></w:p>{}<w:sectPr><w:type w:val="continuous"/>{MARGINS}<w:textDirection w:val="tbRl"/></w:sectPr>"#,

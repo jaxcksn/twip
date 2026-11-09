@@ -2343,8 +2343,8 @@ impl<'d> PageFill<'d, '_> {
     /// A table in a vertical section, laid out horizontally and drawn upright: at the stack position the next line
     /// would take (compat ≤ 14 moves it back towards the earlier lines by its legacy lead), from the line start or
     /// below an earlier such table it meets, its own `jc` and indent ignored. It doesn't advance the stack: the lines
-    /// it meets, 9pt either side across the page, wrap past it along the line. A table that doesn't fit across the
-    /// rest of the page goes to the next one, unless the page has nothing else. A floating table keeps its
+    /// it meets, 9pt either side across the page, wrap past it along the line. In compat 15 a table that doesn't fit
+    /// across the rest of the page goes to the next one, unless the page has nothing else. A floating table keeps its
     /// left and right distances from the text, on those sides as printed, and starts `tblpY` along the line; one
     /// placed from the page on both axes sits at `tblpX`, `tblpY` as printed.
     #[allow(clippy::too_many_arguments, reason = "as place_table")]
@@ -2370,7 +2370,8 @@ impl<'d> PageFill<'d, '_> {
         let tb = super::table::layout(t, col.bottom.to_pt() - col.top.to_pt(), &env, prev, false, memos)?;
         let (bl, br) = super::table::outer_box(&tb);
         let h: f64 = tb.rows.iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>() + tb.bottom_border;
-        let back = if self.ctx.env.text.compat == Compat::Legacy { super::table::legacy_lead(t) } else { 0.0 };
+        let legacy = self.ctx.env.text.compat == Compat::Legacy;
+        let back = if legacy { super::table::legacy_lead(t) } else { 0.0 };
         let down = v.flow != super::vertical::Flow::DownEast;
         let fp = t.floating;
         let paged = fp.is_some_and(|fp| fp.v_anchor == TableAnchor::Page && fp.h_page);
@@ -2380,7 +2381,8 @@ impl<'d> PageFill<'d, '_> {
             _ => *y - back,
         };
         let y1 = y0 + br - bl;
-        if y1 > col.bottom.to_pt() + EPS && !empty && !paged {
+        // Compat ≤ 14 has no fit test: the table stays at its stack position, over the margin if need be.
+        if y1 > col.bottom.to_pt() + EPS && !empty && !paged && !legacy {
             return Ok(Stop::Full);
         }
         // The distances across, on the turned page's top and bottom: the sides as printed swap when the lines stack
