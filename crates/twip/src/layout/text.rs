@@ -69,6 +69,8 @@ pub struct Piece {
     pub kind: Kind,
     pub break_after: bool,
     pub soft_hyphen: bool,
+    /// The word may break after this piece (automatic hyphenation).
+    pub auto_hyphen: bool,
     pub style: u32,
     pub width: f64,
     pub ascent: f64,
@@ -319,6 +321,7 @@ impl Builder<'_> {
             kind: p.kind,
             break_after: p.break_after,
             soft_hyphen: p.soft_hyphen,
+            auto_hyphen: false,
             style,
             width: p.width,
             ascent: p.ascent,
@@ -881,6 +884,42 @@ impl Builder<'_> {
         }
     }
 
+    // Automatic hyphenation
+    fn hyphenate(&mut self, h: &super::hyphenate::Hyphenation, caps: bool) {
+        let n = self.pieces.len();
+        let letters = |b: &Builder, k: usize| {
+            let p = &b.pieces[k];
+            let t = &b.text[p.text.0 as usize..p.text.1 as usize];
+            p.kind == Kind::Text && !t.is_empty() && t.chars().all(char::is_alphabetic)
+        };
+        let mut k = 0;
+        while k < n {
+            if !letters(self, k) {
+                k += 1;
+                continue;
+            }
+            let lang = self.styles[self.pieces[k].style as usize].run.lang.clone();
+            let mut e = k;
+            let mut word = String::new();
+            let mut ends = Vec::new();
+            while e < n && letters(self, e) && self.styles[self.pieces[e].style as usize].run.lang == lang {
+                let p = &self.pieces[e];
+                word.push_str(&self.text[p.text.0 as usize..p.text.1 as usize]);
+                ends.push(word.chars().count());
+                e += 1;
+            }
+            let shouting = caps && !word.chars().any(char::is_lowercase);
+            if let Some(patterns) = h.for_language(&lang).filter(|_| !shouting) {
+                for at in patterns.points(&word) {
+                    if let Some(j) = ends.iter().position(|&x| x == at).filter(|&j| j + 1 < ends.len()) {
+                        self.pieces[k + j].auto_hyphen = true;
+                    }
+                }
+            }
+            k = e;
+        }
+    }
+
     fn finish(mut self) -> ShapedPara {
         let text = |p: &Piece| &self.text[p.text.0 as usize..p.text.1 as usize];
         let n = self.pieces.len();
@@ -1057,6 +1096,9 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
         em1000: space.em1000,
     };
     super::job::unit("shaping call", || crate::prof::time("itemize", || b.paragraph(para, space)))?;
+    if let Some((h, caps)) = &space.hyphenate {
+        b.hyphenate(h, *caps);
+    }
     memos.meter.unit_done();
     Ok(ShapedPara { join: space.join.clone(), ..b.finish() })
 }
@@ -1073,6 +1115,11 @@ pub fn shape_space(
         compress: text.compress_punctuation,
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
         view: text.review.view,
+        hyphenate: text
+            .hyphenation
+            .as_ref()
+            .filter(|_| !para.para_style_in(text.review.view).suppress_auto_hyphens)
+            .map(|h| (h.patterns.clone(), h.caps)),
         ..ShapeSpace::default()
     };
     let spans = crate::docx::fields::spans(&para.inlines);

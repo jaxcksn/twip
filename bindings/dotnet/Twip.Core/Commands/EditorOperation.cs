@@ -405,6 +405,27 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetDefaultTabStop(Length spacing) => Op(CommandId.SetDefaultTabStop, new Arg("value", Node(spacing)));
 
+    /// <summary>Turns automatic hyphenation on or off for the document.</summary>
+    /// <param name="on">On, with the hyphenation patterns of the text's language.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetAutoHyphenation(bool on) => Op(CommandId.SetAutoHyphenation, new Arg("value", Node(on)));
+
+    /// <summary>Sets the hyphenation zone: in documents in compatibility mode 14 and earlier, a word is hyphenated only
+    /// when moving it whole would leave this gap.</summary>
+    /// <param name="zone">The zone, 0 to 1584 pt.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetHyphenationZone(Length zone) => Op(CommandId.SetHyphenationZone, new Arg("value", Node(zone)));
+
+    /// <summary>Sets the most consecutive lines that may end in a hyphen.</summary>
+    /// <param name="limit">The limit, 0 to 32767; 0 for no limit.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetConsecutiveHyphenLimit(int limit) => Op(CommandId.SetConsecutiveHyphenLimit, new Arg("value", Node(limit)));
+
+    /// <summary>Hyphenates words in capitals, or not.</summary>
+    /// <param name="on">Whether words in capitals are hyphenated.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetHyphenateCaps(bool on) => Op(CommandId.SetHyphenateCaps, new Arg("value", Node(on)));
+
     /// <summary>Sets the page margins of the selection's sections. Unset values are kept.</summary>
     /// <param name="options">The margins to change.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

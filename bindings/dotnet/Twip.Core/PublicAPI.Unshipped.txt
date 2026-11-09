@@ -615,13 +615,15 @@ Twip.Dictionary
 Twip.Dictionary.<Clone>$() -> Twip.Dictionary!
 Twip.Dictionary.Aff.get -> System.ReadOnlyMemory<byte>
 Twip.Dictionary.Aff.init -> void
-Twip.Dictionary.Deconstruct(out string! Language, out System.ReadOnlyMemory<byte> Aff, out System.ReadOnlyMemory<byte> Dic) -> void
 Twip.Dictionary.Dic.get -> System.ReadOnlyMemory<byte>
 Twip.Dictionary.Dic.init -> void
-Twip.Dictionary.Dictionary(string! Language, System.ReadOnlyMemory<byte> Aff, System.ReadOnlyMemory<byte> Dic) -> void
 Twip.Dictionary.Equals(Twip.Dictionary? other) -> bool
 Twip.Dictionary.Language.get -> string!
 Twip.Dictionary.Language.init -> void
+Twip.Dictionary.Deconstruct(out string! Language, out System.ReadOnlyMemory<byte> Aff, out System.ReadOnlyMemory<byte> Dic, out System.ReadOnlyMemory<byte>? Hyphenation) -> void
+Twip.Dictionary.Dictionary(string! Language, System.ReadOnlyMemory<byte> Aff, System.ReadOnlyMemory<byte> Dic, System.ReadOnlyMemory<byte>? Hyphenation = null) -> void
+Twip.Dictionary.Hyphenation.get -> System.ReadOnlyMemory<byte>?
+Twip.Dictionary.Hyphenation.init -> void
 Twip.Direction
 Twip.Direction.Backward = 0 -> Twip.Direction
 Twip.Direction.Forward = 1 -> Twip.Direction
@@ -732,6 +734,10 @@ Twip.EditorCommands.SetColumnWidthAsync(Twip.Length width, System.Threading.Canc
 Twip.EditorCommands.SetColumnsAsync(int count, Twip.Length? spacing = null, bool? separator = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetControlAsync(Twip.ControlChanges! changes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetDefaultTabStopAsync(Twip.Length spacing, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetAutoHyphenationAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetConsecutiveHyphenLimitAsync(int limit, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetHyphenateCapsAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetHyphenationZoneAsync(Twip.Length zone, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetDifferentFirstPageAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetDifferentOddEvenPagesAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetDoubleStrikethroughAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -3497,6 +3503,10 @@ static Twip.EditorOperation.SetColumnWidth(Twip.Length width) -> Twip.EditorOper
 static Twip.EditorOperation.SetColumns(int count, Twip.Length? spacing = null, bool? separator = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetControl(Twip.ControlChanges! changes) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetDefaultTabStop(Twip.Length spacing) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetAutoHyphenation(bool on) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetConsecutiveHyphenLimit(int limit) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetHyphenateCaps(bool on) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetHyphenationZone(Twip.Length zone) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetDifferentFirstPage(bool on) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetDifferentOddEvenPages(bool on) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetDoubleStrikethrough(bool on) -> Twip.EditorOperation!
@@ -6545,4 +6555,8 @@ Twip.CommandId.SetShading = 200 -> Twip.CommandId
 Twip.CommandId.SetStyleMeta = 197 -> Twip.CommandId
 Twip.CommandId.SetTextBorder = 209 -> Twip.CommandId
 Twip.CommandId.UpdateStyleToSelection = 195 -> Twip.CommandId
+Twip.CommandId.SetAutoHyphenation = 211 -> Twip.CommandId
+Twip.CommandId.SetConsecutiveHyphenLimit = 213 -> Twip.CommandId
+Twip.CommandId.SetHyphenateCaps = 214 -> Twip.CommandId
+Twip.CommandId.SetHyphenationZone = 212 -> Twip.CommandId
 Twip.WarningCode.PictureBulletUndecodable = 17 -> Twip.WarningCode

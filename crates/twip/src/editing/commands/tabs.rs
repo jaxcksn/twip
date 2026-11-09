@@ -12,7 +12,7 @@ use crate::layout::ParaId;
 
 use super::Outcome;
 use crate::editing::Editor;
-use crate::editing::step::Step;
+use crate::editing::step::{Hyphenating, Step};
 
 const NEAR: f64 = 0.5;
 const MAX: f64 = 1584.0;
@@ -217,6 +217,23 @@ impl Editor {
             },
             fonts,
         )
+    }
+
+    pub(in crate::editing) fn set_hyphenation_options(&mut self, label: &'static str, edit: impl FnOnce(&mut Hyphenating), fonts: &Fonts) -> Outcome {
+        let s = &self.doc.settings;
+        let was =
+            Hyphenating { auto: s.auto_hyphenation, zone: s.hyphenation_zone, limit: s.consecutive_hyphen_limit, caps: s.do_not_hyphenate_caps };
+        let mut now = was;
+        edit(&mut now);
+        if now == was {
+            return Outcome::Unchanged("already so");
+        }
+        let mut tx = self.begin(label);
+        if self.step(&mut tx, Step::Hyphenation(now)).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("the setting can't change");
+        }
+        self.commit(tx, None, fonts)
     }
 
     pub(in crate::editing) fn set_default_tab_stop(&mut self, spacing: Points, fonts: &Fonts) -> Outcome {

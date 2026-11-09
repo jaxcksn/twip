@@ -21,6 +21,8 @@ pub struct ShapeSpace {
     pub float: Option<std::rc::Rc<crate::docx::Float>>,
     pub hide: Option<u64>,
     pub expansion: Option<std::rc::Rc<super::expansion::Expansion>>,
+    /// The hyphenation patterns, and whether words in capitals are skipped.
+    pub hyphenate: Option<(super::hyphenate::Hyphenation, bool)>,
 }
 
 pub type BorderKey = Option<std::rc::Rc<BorderGroup>>;

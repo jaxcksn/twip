@@ -68,6 +68,12 @@ pub struct Frame {
     pub tab_origin: f64,
     pub wp_justification: bool,
     pub line_grid: Option<i32>,
+    /// Automatic hyphenation points may end this line.
+    pub hyphenate: bool,
+    /// The hyphenation zone.
+    pub hyphen_zone: f64,
+    /// The most consecutive hyphenated lines, 0 for no limit.
+    pub hyphen_limit: i64,
 }
 
 impl Frame {
@@ -83,6 +89,9 @@ impl Frame {
             tab_origin: 0.0,
             wp_justification: e.compat == Compat::Legacy && e.wp_justification,
             line_grid: e.line_grid,
+            hyphenate: e.hyphenation.is_some(),
+            hyphen_zone: e.hyphenation.as_ref().filter(|_| e.compat == Compat::Legacy).map_or(0.0, |h| h.zone),
+            hyphen_limit: e.hyphenation.as_ref().map_or(0, |h| h.limit),
         }
     }
 }
@@ -460,13 +469,17 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
     }
     let with_tabs = justify_smart && pieces.iter().any(|p| p.kind == Kind::Tab);
     let mut first = !continued;
+    let mut hyphens = 0;
+    let all = *frame;
     loop {
+        let frame = &Frame { hyphenate: all.hyphenate && (all.hyphen_limit <= 0 || hyphens < all.hyphen_limit), ..all };
         let left = style.ind_left + if first { style.ind_first } else { 0.0 };
         let limit_end =
             if with_tabs { justified_tab_end(sp, pieces, start, left, right, style, frame) } else { planned.iter().copied().find(|&e| e > start) };
         let fit = fit_line(sp, pieces, start, left, wrap_right, style, frame, limit_end, false);
         let end = fit.end.max(start + 1).min(n.max(start + 1));
         let is_last = end >= n;
+        hyphens = if fit.hyphen { hyphens + 1 } else { 0 };
         let mut line =
             Line { end: end.min(n), xs: fit.xs, widths: fit.widths, hard: fit.hard, hyphen: fit.hyphen, leaders: fit.leaders, ..Line::empty(start) };
         if !frame.no_wrap {
@@ -888,8 +901,8 @@ fn fit_line(
                 }
                 if soft {
                     let hy = hyphen_width(sp, &pieces[at - 1]);
-                    let pen_at = xs[at - 1 - start];
-                    if pen_at + hy > right + EPS {
+                    let pen_at = xs[at - 1 - start] + if pieces[at - 1].auto_hyphen { ws[at - 1 - start] } else { 0.0 };
+                    if pen_at + hy > right + EPS || pieces[at - 1].auto_hyphen && !zoned(pieces, start, at, &xs, &ws, right, frame) {
                         breaks.pop();
                         continue;
                     }
@@ -922,6 +935,8 @@ fn fit_line(
         pen += p.width;
         if p.break_after {
             breaks.push((i + 1, p.soft_hyphen));
+        } else if p.auto_hyphen && frame.hyphenate {
+            breaks.push((i + 1, true));
         }
         i += 1;
     }
@@ -933,6 +948,18 @@ fn fit_line(
     }
     let hyphen = i < n && i > start && pieces[i - 1].soft_hyphen;
     Fit { end: i, xs, widths: ws, hard: None, hyphen, leaders }
+}
+
+// Hyphenation zone
+fn zoned(pieces: &[Piece], start: usize, at: usize, xs: &[f64], ws: &[f64], right: f64, frame: &Frame) -> bool {
+    if frame.hyphen_zone <= 0.0 {
+        return true;
+    }
+    let word = (start..at).rev().find(|&k| pieces[k].kind != Kind::Text).map_or(start, |k| k + 1);
+    match (start..word).rev().find(|&k| pieces[k].kind != Kind::Space) {
+        Some(k) => right - (xs[k - start] + ws[k - start]) >= frame.hyphen_zone - EPS,
+        None => true,
+    }
 }
 
 // Space squeeze
@@ -1651,6 +1678,14 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             let text = text_of(sp, p);
             for (j, c) in text.chars().enumerate() {
                 r.chars.push((symbol_unicode(&face.family, c), x, first.map(|u| Unit(u.0 + j as u32))));
+            }
+            if p.auto_hyphen
+                && line.hyphen
+                && ix + 1 == line.end
+                && let Some(g) = face.glyph('-')
+            {
+                r.glyphs.push((g, gx));
+                r.chars.push(('-', gx, None));
             }
             glyphs_left = glyphs_left.saturating_sub((p.glyphs.1 - p.glyphs.0) as usize);
             chars_left = chars_left.saturating_sub(text.len());

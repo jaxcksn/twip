@@ -486,7 +486,7 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!(
             "dictionary",
             Dictionary,
-            vec![Dictionary { language: "en-US".into(), aff: Bytes(b"SET UTF-8".to_vec()), dic: Bytes(b"1\nhello".to_vec()) }]
+            vec![Dictionary { language: "en-US".into(), aff: Bytes(b"SET UTF-8".to_vec()), dic: Bytes(b"1\nhello".to_vec()), hyphenation: None }]
         ),
         fixture!("session-options", SessionOptions, vec![session_options(), SessionOptions::default()]),
         fixture!("modifiers", Modifiers, vec![Modifiers { ctrl: true, shift: true, alt: false, meta: false }]),
@@ -783,6 +783,10 @@ fn commands() -> Vec<Command> {
         Command::DeleteTabStop(Points(90.5)),
         Command::ClearTabStops,
         Command::SetDefaultTabStop(Points(36.5)),
+        Command::SetAutoHyphenation(true),
+        Command::SetHyphenationZone(Points(18.0)),
+        Command::SetConsecutiveHyphenLimit(2),
+        Command::SetHyphenateCaps(false),
         Command::SetMargins(Margins {
             top: Some(Points(72.5)),
             bottom: Some(Points(72.5)),
@@ -1944,7 +1948,12 @@ fn session_options() -> SessionOptions {
         read_only: true,
         mode: Mode::Design,
         language: "en-GB".into(),
-        dictionaries: vec![Dictionary { language: "en-GB".into(), aff: Bytes(b"SET UTF-8".to_vec()), dic: Bytes(b"1\ncolour".to_vec()) }],
+        dictionaries: vec![Dictionary {
+            language: "en-GB".into(),
+            aff: Bytes(b"SET UTF-8".to_vec()),
+            dic: Bytes(b"1\ncolour".to_vec()),
+            hyphenation: None,
+        }],
         track_changes: true,
     }
 }

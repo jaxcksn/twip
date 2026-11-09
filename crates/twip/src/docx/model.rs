@@ -1048,6 +1048,8 @@ pub struct Document {
     /// Footnote separator / continuation separator stories, when the document defines them.
     pub separators: HashMap<String, Vec<Block>>,
     pub images: Vec<Vec<u8>>,
+    /// The hyphenation patterns the host supplied.
+    pub hyphenation: Option<crate::layout::hyphenate::Hyphenation>,
     /// Content controls the model keeps: row-level wrappers (repeating sections and their items) and checkboxes,
     /// by id.
     pub controls: HashMap<ControlId, Control>,

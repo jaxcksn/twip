@@ -33,7 +33,13 @@ public sealed record Identity(string Provider, string UserId);
 /// <param name="Language">The BCP 47 language it checks.</param>
 /// <param name="Aff">The <c>.aff</c> file.</param>
 /// <param name="Dic">The <c>.dic</c> file.</param>
-public sealed record Dictionary(string Language, ReadOnlyMemory<byte> Aff, ReadOnlyMemory<byte> Dic);
+/// <param name="Hyphenation">Hyphenation patterns (a <c>hyph_*.dic</c> file), for automatic hyphenation. With empty
+/// <paramref name="Aff"/> and <paramref name="Dic"/>, only these.</param>
+public sealed record Dictionary(
+    string Language,
+    ReadOnlyMemory<byte> Aff,
+    ReadOnlyMemory<byte> Dic,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReadOnlyMemory<byte>? Hyphenation = null);
 
 /// <summary>The result of an open.</summary>
 /// <param name="Warnings">What the import approximated.</param>

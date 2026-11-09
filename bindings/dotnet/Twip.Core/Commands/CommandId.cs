@@ -425,4 +425,12 @@ public enum CommandId
     SetTextBorder,
     /// <summary>Sets the page borders.</summary>
     SetPageBorders,
+    /// <summary>Turns automatic hyphenation on or off for the document.</summary>
+    SetAutoHyphenation,
+    /// <summary>Sets the hyphenation zone, which documents in compatibility mode 14 and earlier use.</summary>
+    SetHyphenationZone,
+    /// <summary>Sets the most consecutive lines that may end in a hyphen.</summary>
+    SetConsecutiveHyphenLimit,
+    /// <summary>Hyphenates words in capitals, or not.</summary>
+    SetHyphenateCaps,
 }

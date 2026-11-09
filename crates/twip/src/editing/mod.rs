@@ -452,6 +452,14 @@ impl Editor {
         self.relayout([None]);
     }
 
+    /// The hyphenation patterns automatic hyphenation uses.
+    pub fn set_hyphenation(&mut self, h: Option<crate::layout::hyphenate::Hyphenation>) {
+        if self.doc.hyphenation != h {
+            self.doc.hyphenation = h;
+            self.relayout([None]);
+        }
+    }
+
     fn pending_image(&mut self, data: Vec<u8>) -> usize {
         self.pending_images.push(data);
         self.doc.images.len() + self.pending_images.len() - 1

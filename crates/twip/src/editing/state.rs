@@ -470,6 +470,14 @@ impl Editor {
                 (C::SetMarkupView, _) => (true, (None, Some(CommandValue::MarkupView(self.doc.review.view)))),
                 (C::SetActiveComment | C::SelectComment, _) => (comments, (None, None)),
                 (C::ReplyToComment | C::EditComment | C::DeleteComment | C::ResolveComment, _) => (editable && comments, (None, None)),
+                (C::SetAutoHyphenation, _) => (editable, (Some(self.doc.settings.auto_hyphenation), None)),
+                (C::SetHyphenateCaps, _) => (editable, (Some(!self.doc.settings.do_not_hyphenate_caps), None)),
+                (C::SetHyphenationZone, _) => {
+                    (editable, (None, Some(CommandValue::Length(Tri::Uniform(Points(self.doc.settings.hyphenation_zone))))))
+                }
+                (C::SetConsecutiveHyphenLimit, _) => {
+                    (editable, (None, Some(CommandValue::Number(Tri::Uniform(self.doc.settings.consecutive_hyphen_limit as f64)))))
+                }
                 (C::SetDifferentFirstPage, Some(f)) => {
                     let on = self.doc.sections.get(f.section).is_some_and(|s| s.title_pg);
                     (editable, (Some(on), None))

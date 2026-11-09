@@ -31,6 +31,16 @@ pub struct TextEnv {
     pub theme: std::rc::Rc<crate::drawing::theme::Theme>,
     pub colour_map: crate::drawing::theme::ColourMap,
     pub backdrop: Option<u32>,
+    /// Automatic hyphenation.
+    pub hyphenation: Option<HyphenEnv>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HyphenEnv {
+    pub patterns: super::hyphenate::Hyphenation,
+    pub zone: f64,
+    pub limit: i64,
+    pub caps: bool,
 }
 
 pub fn is_dark(c: u32) -> bool {
@@ -68,6 +78,12 @@ impl TextEnv {
             theme: doc.theme.clone(),
             colour_map: doc.colour_map,
             backdrop: None,
+            hyphenation: doc.hyphenation.clone().filter(|_| s.auto_hyphenation).map(|patterns| HyphenEnv {
+                patterns,
+                zone: s.hyphenation_zone,
+                limit: s.consecutive_hyphen_limit,
+                caps: s.do_not_hyphenate_caps,
+            }),
         }
     }
 }

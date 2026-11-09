@@ -526,6 +526,7 @@ export interface Commands {
         color: Color;
     }): Promise<void>;
     setAutoCorrect(change: AutoCorrectChange): Promise<void>;
+    setAutoHyphenation(on: boolean): Promise<void>;
     setBold(on: boolean): Promise<void>;
     setCellAlignment(vertical: 'top' | 'center' | 'bottom'): Promise<void>;
     setCellBorders(options: {
@@ -551,6 +552,7 @@ export interface Commands {
         separator?: boolean;
     }): Promise<void>;
     setColumnWidth(width: Points): Promise<void>;
+    setConsecutiveHyphenLimit(limit: number): Promise<void>;
     setControl(options: {
         id: ElementId;
         tag?: string;
@@ -596,6 +598,8 @@ export interface Commands {
     setHeaderRow(on: boolean): Promise<void>;
     setHidden(on: boolean): Promise<void>;
     setHighlight(color: HighlightColor | null): Promise<void>;
+    setHyphenateCaps(on: boolean): Promise<void>;
+    setHyphenationZone(zone: Points): Promise<void>;
     setIndents(options: {
         left?: Points;
         right?: Points;
@@ -787,10 +791,12 @@ export interface CommandValues {
     setActiveComment: CommentId | null;
     setAlignment: ParagraphFormatting['alignment'];
     setAllCaps: Tri;
+    setAutoHyphenation: boolean;
     setBold: Tri;
     setCharacterPosition: Mixed<Points>;
     setCharacterSpacing: Mixed<Points>;
     setColumns: PageFormatting['columns'];
+    setConsecutiveHyphenLimit: Mixed<number>;
     setDifferentFirstPage: boolean;
     setDifferentOddEvenPages: boolean;
     setDoubleStrikethrough: Tri;
@@ -803,6 +809,8 @@ export interface CommandValues {
     };
     setHidden: Tri;
     setHighlight: Mixed<HighlightColor | 'none'>;
+    setHyphenateCaps: boolean;
+    setHyphenationZone: Mixed<Points>;
     setIndents: ParagraphFormatting['indents'];
     setItalic: Tri;
     setLineSpacing: Mixed<LineSpacing>;
@@ -1188,6 +1196,7 @@ export interface DialogValues {
 export interface Dictionary {
     aff: Uint8Array;
     dic: Uint8Array;
+    hyphenation?: Uint8Array;
     language: string;
 }
 

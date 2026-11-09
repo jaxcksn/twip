@@ -493,6 +493,30 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetDefaultTabStopAsync(Length spacing, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDefaultTabStop(spacing), ct);
 
+    /// <summary>Turns automatic hyphenation on or off for the document.</summary>
+    /// <param name="on">On, with the hyphenation patterns of the text's language.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetAutoHyphenationAsync(bool on, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetAutoHyphenation(on), ct);
+
+    /// <summary>Sets the hyphenation zone, which documents in compatibility mode 14 and earlier use.</summary>
+    /// <param name="zone">The zone, 0 to 1584 pt.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetHyphenationZoneAsync(Length zone, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetHyphenationZone(zone), ct);
+
+    /// <summary>Sets the most consecutive lines that may end in a hyphen.</summary>
+    /// <param name="limit">The limit, 0 to 32767; 0 for no limit.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetConsecutiveHyphenLimitAsync(int limit, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetConsecutiveHyphenLimit(limit), ct);
+
+    /// <summary>Hyphenates words in capitals, or not.</summary>
+    /// <param name="on">Whether words in capitals are hyphenated.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetHyphenateCapsAsync(bool on, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetHyphenateCaps(on), ct);
+
     /// <summary>Sets the page margins of the selection's sections. Unset values are kept.</summary>
     /// <param name="options">The margins to change.</param>
     /// <param name="ct">Cancels the command before it runs.</param>

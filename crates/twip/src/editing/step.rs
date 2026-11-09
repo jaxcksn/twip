@@ -120,10 +120,21 @@ pub enum Step {
         renames: Vec<crate::docx::font_table::FontRename>,
     },
     DefaultTab(f64),
+    Hyphenation(Hyphenating),
     SectionBreak {
         section: usize,
         back: Option<Box<SectionBack>>,
     },
+}
+
+/// The document's hyphenation settings.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hyphenating {
+    pub auto: bool,
+    pub zone: f64,
+    pub limit: i64,
+    /// Words in capitals aren't hyphenated.
+    pub caps: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -849,6 +860,17 @@ impl Step {
             Step::DefaultTab(v) => {
                 let old = std::mem::replace(&mut doc.settings.default_tab, v);
                 Ok(Applied { inverse: Step::DefaultTab(old), map: Map::Same, hint: None })
+            }
+            Step::Hyphenation(h) => {
+                let s = &mut doc.settings;
+                let old = Hyphenating {
+                    auto: s.auto_hyphenation,
+                    zone: s.hyphenation_zone,
+                    limit: s.consecutive_hyphen_limit,
+                    caps: s.do_not_hyphenate_caps,
+                };
+                (s.auto_hyphenation, s.hyphenation_zone, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps) = (h.auto, h.zone, h.limit, h.caps);
+                Ok(Applied { inverse: Step::Hyphenation(old), map: Map::Same, hint: None })
             }
             Step::SectionBreak { section, back } => {
                 let n = doc.sections.len();

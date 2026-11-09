@@ -12,6 +12,7 @@ mod determinism;
 mod equivalence;
 mod excluded;
 mod hf_frames;
+mod hyphenation;
 mod imports;
 mod notes;
 mod output;

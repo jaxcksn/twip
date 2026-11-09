@@ -2249,3 +2249,40 @@ fn backspace_and_delete_take_a_section_break() {
     e.execute(Command::Undo, fonts());
     assert_eq!((pages(&e), texts(&e)), (was, before));
 }
+
+#[test]
+fn hyphenation_settings_change_undo_and_save_in_schema_order() {
+    use crate::api::state::{CommandValue, Tri};
+    use crate::api::value::Points;
+    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-TEXT.docx")).expect("fixture");
+    let mut e = crate::editing::Editor::open(&bytes, fonts()).expect("opens");
+    e.execute(Command::SetAutoHyphenation(true), fonts());
+    e.execute(Command::SetConsecutiveHyphenLimit(2), fonts());
+    e.execute(Command::SetHyphenationZone(Points(9.0)), fonts());
+    e.execute(Command::SetHyphenateCaps(false), fonts());
+    let s = &e.document().settings;
+    assert_eq!((s.auto_hyphenation, s.consecutive_hyphen_limit, s.hyphenation_zone, s.do_not_hyphenate_caps), (true, 2, 9.0, true));
+    let f = e.format_state();
+    let states = e.command_states(f.as_ref(), super::super::state::StateFlags { read_only: false });
+    let id = |c: Command| c.id();
+    assert_eq!(states[&id(Command::SetAutoHyphenation(true))].checked, Some(true));
+    assert_eq!(states[&id(Command::SetHyphenateCaps(true))].checked, Some(false));
+    assert_eq!(states[&id(Command::SetHyphenationZone(Points(0.0)))].value, Some(CommandValue::Length(Tri::Uniform(Points(9.0)))));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).expect("zip");
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut z.by_name("word/settings.xml").expect("settings"), &mut xml).expect("reads");
+    let at = |el: &str| xml.find(el).unwrap_or_else(|| panic!("{el} in {xml}"));
+    assert!(at("<w:defaultTabStop") < at("<w:autoHyphenation/>"));
+    assert!(at("<w:autoHyphenation/>") < at("<w:consecutiveHyphenLimit w:val=\"2\"/>"));
+    assert!(at("<w:consecutiveHyphenLimit") < at("<w:hyphenationZone w:val=\"180\"/>"));
+    assert!(at("<w:hyphenationZone") < at("<w:doNotHyphenateCaps/>"));
+    let again = crate::docx::read_editable(&saved).expect("reads");
+    assert_eq!((again.settings.auto_hyphenation, again.settings.consecutive_hyphen_limit), (true, 2));
+    for _ in 0..4 {
+        e.execute(Command::Undo, fonts());
+    }
+    let s = &e.document().settings;
+    assert_eq!((s.auto_hyphenation, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps), (false, 0, false));
+    assert!(matches!(e.execute(Command::SetHyphenationZone(Points(-1.0)), fonts()), super::super::commands::Outcome::Refused(_)));
+}

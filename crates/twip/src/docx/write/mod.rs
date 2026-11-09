@@ -92,7 +92,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     fonts::font_renames(doc, &mut parts)?;
     filled_placeholders(doc, &mut parts)?;
     review_parts(doc, &mut parts)?;
-    default_tab_part(doc, &mut parts)?;
+    settings_part(doc, &mut parts)?;
     add_images(&src.package, &doc.images, &mut parts)?;
     data_parts(doc, &mut parts)?;
     Ok(parts)
@@ -171,41 +171,73 @@ const BEFORE: &[&str] = &[
 const BEFORE_DEFAULT_TAB: &[&str] =
     &["trackRevisions", "doNotTrackMoves", "doNotTrackFormatting", "documentProtection", "autoFormatOverride", "styleLockTheme", "styleLockQFSet"];
 
-/// The settings part with `w:defaultTabStop` at the document's default tab spacing, when it changed since reading.
-// shortcut: a document with no settings part keeps the default spacing it was read with.
-fn default_tab_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+/// CT_Settings' children from `w:defaultTabStop` to `w:doNotHyphenateCaps`, in order.
+const TAB_AND_HYPHENATION: &[&str] = &["defaultTabStop", "autoHyphenation", "consecutiveHyphenLimit", "hyphenationZone", "doNotHyphenateCaps"];
+
+/// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading.
+// shortcut: a document with no settings part keeps the settings it was read with.
+fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
     let Some(name) = package::related(&src.package, parts, &src.main, SETTINGS)? else { return Ok(()) };
     let Some(xml) = package::read(&src.package, parts, &name)? else { return Ok(()) };
-    let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
+    let (read, now) = (super::reader::read_settings(Some(&xml)), &doc.settings);
+    let w = {
+        let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
+        match dom.root_element().lookup_prefix(W) {
+            Some(p) if !p.is_empty() => format!("{p}:"),
+            _ => String::new(),
+        }
+    };
+    let mut out = xml.clone();
+    let tw = |v: f64| (v * 20.0).round() as i64;
+    if (read.default_tab - now.default_tab).abs() >= 0.025 {
+        set_setting(&mut out, "defaultTabStop", Some(format!("<{w}defaultTabStop {w}val=\"{}\"/>", tw(now.default_tab))))?;
+    }
+    if read.auto_hyphenation != now.auto_hyphenation {
+        set_setting(&mut out, "autoHyphenation", now.auto_hyphenation.then(|| format!("<{w}autoHyphenation/>")))?;
+    }
+    if read.consecutive_hyphen_limit != now.consecutive_hyphen_limit {
+        let el = (now.consecutive_hyphen_limit > 0).then(|| format!("<{w}consecutiveHyphenLimit {w}val=\"{}\"/>", now.consecutive_hyphen_limit));
+        set_setting(&mut out, "consecutiveHyphenLimit", el)?;
+    }
+    if tw(read.hyphenation_zone) != tw(now.hyphenation_zone) {
+        set_setting(&mut out, "hyphenationZone", Some(format!("<{w}hyphenationZone {w}val=\"{}\"/>", tw(now.hyphenation_zone))))?;
+    }
+    if read.do_not_hyphenate_caps != now.do_not_hyphenate_caps {
+        set_setting(&mut out, "doNotHyphenateCaps", now.do_not_hyphenate_caps.then(|| format!("<{w}doNotHyphenateCaps/>")))?;
+    }
+    if out != xml {
+        package::set(parts, &name, out.into_bytes());
+    }
+    Ok(())
+}
+
+/// Replaces, removes (`el` of `None`) or adds the settings child `name`, where the schema puts it.
+fn set_setting(xml: &mut String, name: &str, el: Option<String>) -> Result<(), String> {
+    let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
-    let old = root.children().find(|c| is_w(*c, "defaultTabStop"));
-    let read = old.and_then(|c| c.attribute((W, "val"))?.parse::<f64>().ok()).map(|t| t / 20.0).filter(|t| *t > 0.0).unwrap_or(36.0);
-    if (read - doc.settings.default_tab).abs() < 0.025 {
+    let el = el.unwrap_or_default();
+    if let Some(c) = root.children().find(|c| is_w(*c, name)) {
+        let r = c.range();
+        drop(dom);
+        xml.replace_range(r, &el);
         return Ok(());
     }
-    let w = match root.lookup_prefix(W) {
-        Some(p) if !p.is_empty() => format!("{p}:"),
-        _ => String::new(),
-    };
-    let el = format!("<{w}defaultTabStop {w}val=\"{}\"/>", (doc.settings.default_tab * 20.0).round() as i64);
-    let mut out = xml.clone();
-    match old {
-        Some(c) => out.replace_range(c.range(), &el),
-        None => {
-            let after =
-                root.children().rfind(|c| c.is_element() && BEFORE.iter().chain(BEFORE_DEFAULT_TAB).any(|b| is_w(*c, b))).map(|c| c.range().end);
-            let r = root.range();
-            let tag = &xml[r.clone()];
-            if after.is_none() && tag.ends_with("/>") {
-                let name = tag[1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("");
-                out.replace_range(r.end - 2..r.end, &format!(">{el}</{name}>"));
-            } else {
-                out.insert_str(after.unwrap_or_else(|| r.start + tag.find('>').map_or(0, |e| e + 1)), &el);
-            }
-        }
+    if el.is_empty() {
+        return Ok(());
     }
-    package::set(parts, &name, out.into_bytes());
+    let earlier = TAB_AND_HYPHENATION.iter().take_while(|n| **n != name);
+    let before: Vec<&str> = BEFORE.iter().chain(BEFORE_DEFAULT_TAB).chain(earlier).copied().collect();
+    let after = root.children().rfind(|c| c.is_element() && before.iter().any(|b| is_w(*c, b))).map(|c| c.range().end);
+    let r = root.range();
+    let tag = xml[r.clone()].to_string();
+    drop(dom);
+    if after.is_none() && tag.ends_with("/>") {
+        let tag_name = tag[1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("").to_string();
+        xml.replace_range(r.end - 2..r.end, &format!(">{el}</{tag_name}>"));
+    } else {
+        xml.insert_str(after.unwrap_or_else(|| r.start + tag.find('>').map_or(0, |e| e + 1)), &el);
+    }
     Ok(())
 }
 

@@ -9,6 +9,7 @@ pub mod expansion;
 pub mod float;
 pub mod flow;
 pub mod fragment;
+pub mod hyphenate;
 pub mod ids;
 pub mod incremental;
 pub mod job;

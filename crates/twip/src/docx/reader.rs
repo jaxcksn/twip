@@ -628,7 +628,7 @@ fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Div>) {
     }
 }
 
-fn read_settings(xml: Option<&str>) -> Settings {
+pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     let mut s = Settings { compat_mode: 12, default_tab: 36.0, hyphenation_zone: 18.0, ..Default::default() };
     let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return s };
     let root = doc.root_element();

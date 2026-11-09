@@ -142,6 +142,14 @@ export interface CommandValues {
   setColumns: PageFormatting['columns'];
   /** The header and footer distances. */
   setHeaderFooterDistance: { header: Points; footer: Points };
+  /** Automatic hyphenation. */
+  setAutoHyphenation: boolean;
+  /** The hyphenation zone. */
+  setHyphenationZone: Mixed<Points>;
+  /** The most consecutive hyphenated lines, 0 for no limit. */
+  setConsecutiveHyphenLimit: Mixed<number>;
+  /** Words in capitals are hyphenated. */
+  setHyphenateCaps: boolean;
   /** A different first page. */
   setDifferentFirstPage: boolean;
   /** Different odd and even pages. */
