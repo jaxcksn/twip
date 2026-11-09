@@ -1204,6 +1204,11 @@ fn compat_12_font_metric_options() {
     let pitch = |s: &str| baselines(s, arial, two).map(|l| l[1].3 - l[0].3);
     let Some(plain) = pitch(&c12("")) else { return };
     assert!((plain - pitch(&c12("<w:noLeading/>")).unwrap() - 0.36).abs() < 0.01, "{plain}");
+    // suppressTopSpacingWP: a proportional font's line is its size plus 2pt, Courier New's its size.
+    assert!((pitch(&c12("<w:suppressTopSpacingWP/>")).unwrap() - 13.0).abs() < 0.01);
+    let courier = r#"<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="22"/>"#;
+    let wp = baselines(&c12("<w:suppressTopSpacingWP/>"), courier, two).map(|l| l[1].3 - l[0].3);
+    assert!(wp.is_none_or(|p| (p - 11.0).abs() < 0.01), "{wp:?}");
     // noSpaceRaiseLower: raised text doesn't move the baseline down.
     let raised = r#"<w:p><w:r><w:t>Plain </w:t></w:r><w:r><w:rPr><w:position w:val="12"/></w:rPr><w:t>raised</w:t></w:r></w:p>"#;
     let y = |s: &str, p: &str| baselines(s, arial, p).map(|l| l[0].3).unwrap();

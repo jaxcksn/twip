@@ -50,6 +50,8 @@ pub struct Face {
     pub strike_pos: f64,
     pub strike_thick: f64,
     pub east_asian: bool,
+    /// `post.isFixedPitch`.
+    pub fixed_pitch: bool,
     /// The height an East Asian face adds above and below its win metrics, font units.
     pub ea_extra: f64,
     pub avg_width: f64,
@@ -129,6 +131,7 @@ impl Face {
             strike_pos: upem * 0.26,
             strike_thick: upem * 0.05,
             east_asian: false,
+            fixed_pitch: false,
             ea_extra: 0.0,
             avg_width: 0.0,
             font: {
@@ -180,6 +183,7 @@ impl Face {
         if let Some(&(o, _)) = t.get(b"post") {
             f.underline_pos = -(i16_at(d, o + 8) as f64);
             f.underline_thick = i16_at(d, o + 10) as f64;
+            f.fixed_pitch = u32_at(d, o + 12) != 0;
         }
         f.ascent = asc;
         f.descent = desc;

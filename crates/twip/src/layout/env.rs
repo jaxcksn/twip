@@ -26,6 +26,8 @@ pub struct TextEnv {
     pub no_raise_lower: bool,
     pub whole_point_spacing: bool,
     pub mac_small_caps: bool,
+    /// `suppressTopSpacingWP`, compat ≤ 14: line heights of Latin fonts from the font size.
+    pub wp_line_heights: bool,
     /// The hanging indent is no tab stop: `noTabHangInd` (any tab) and `doNotUseIndentAsNumberingTabStop` (a
     /// list number's tab), compat ≤ 14.
     pub no_tab_hang_ind: bool,
@@ -92,6 +94,7 @@ impl TextEnv {
             no_raise_lower: s.compat() == Compat::Legacy && s.has("noSpaceRaiseLower"),
             whole_point_spacing: s.compat() == Compat::Legacy && s.has("spacingInWholePoints"),
             mac_small_caps: s.compat() == Compat::Legacy && s.has("mwSmallCaps"),
+            wp_line_heights: s.compat() == Compat::Legacy && s.has("suppressTopSpacingWP"),
             no_tab_hang_ind: s.compat() == Compat::Legacy && s.has("noTabHangInd"),
             no_number_hang_stop: s.compat() == Compat::Legacy && s.has("doNotUseIndentAsNumberingTabStop"),
             show_breaks_in_frames: s.compat() == Compat::Legacy && s.has("showBreaksInFrames"),

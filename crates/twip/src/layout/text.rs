@@ -152,8 +152,7 @@ impl ShapedPara {
     }
 
     pub fn metrics(&self, face: &Face, run: &RunStyle, size: f64) -> (f64, f64, f64) {
-        let (a, d, e) = metrics_at(face, size, self.em1000 && run.east_asia_named);
-        (a, d, if self.rules.no_leading { 0.0 } else { e })
+        ruled(self.rules, face, size, metrics_at(face, size, self.em1000 && run.east_asia_named))
     }
 
     pub fn style(&self, i: usize) -> &PieceStyle {
@@ -210,6 +209,16 @@ impl ShapedPara {
 
 pub fn metrics(face: &Face, size: f64) -> (f64, f64, f64) {
     metrics_at(face, size, false)
+}
+
+/// Ascent, descent and gap under the font metric options: `noLeading` drops the gap; `suppressTopSpacingWP` makes a
+/// Latin font's line its size plus 2pt (a fixed-pitch font's, its size), the descent kept.
+fn ruled(rules: MetricRules, face: &Face, size: f64, (a, d, e): (f64, f64, f64)) -> (f64, f64, f64) {
+    if rules.wp_line_heights && !face.east_asian {
+        let h = if face.fixed_pitch { size } else { size + 2.0 };
+        return ((h - d).max(0.0), d, 0.0);
+    }
+    (a, d, if rules.no_leading { 0.0 } else { e })
 }
 
 pub fn metrics_at(face: &Face, size: f64, em1000: bool) -> (f64, f64, f64) {
@@ -465,8 +474,8 @@ impl<'a> Builder<'a> {
         }
         let (mut ascent, mut descent) = match &face {
             Some(f) => {
-                let (a, d, e) = metrics_at(f, metric_size, self.em1000 && run.east_asia_named);
-                (a + if self.rules.no_leading { 0.0 } else { e }, d)
+                let (a, d, e) = ruled(self.rules, f, metric_size, metrics_at(f, metric_size, self.em1000 && run.east_asia_named));
+                (a + e, d)
             }
             None => (0.0, 0.0),
         };
@@ -1488,6 +1497,7 @@ pub fn shape_space(
             no_raise_lower: text.no_raise_lower,
             whole_point_spacing: text.whole_point_spacing,
             mac_small_caps: text.mac_small_caps,
+            wp_line_heights: text.wp_line_heights,
         },
         view: text.review.view,
         hyphenate: text

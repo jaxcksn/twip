@@ -39,6 +39,7 @@ pub struct MetricRules {
     pub no_raise_lower: bool,
     pub whole_point_spacing: bool,
     pub mac_small_caps: bool,
+    pub wp_line_heights: bool,
 }
 
 pub type BorderKey = Option<std::rc::Rc<BorderGroup>>;
