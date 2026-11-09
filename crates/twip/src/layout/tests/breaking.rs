@@ -1059,3 +1059,25 @@ fn a_vanished_mark_joins_its_paragraph_to_the_next() {
     assert!(l15[2..].iter().all(|l| (l.0 - 144.0).abs() > 0.5) && l15[1].0 > 108.0, "{l15:?}");
     assert!((l12[2].0 - 144.0).abs() < 0.01 && l12[1].0 > 108.0, "{l12:?}");
 }
+
+#[test]
+fn opentype_number_features_apply_in_compat_15_or_when_enabled() {
+    if fonts().face("Calibri", None, false, false).is_none_or(|f| !f.family.eq_ignore_ascii_case("Calibri")) {
+        return;
+    }
+    let body = r#"<w:p><w:r><w:rPr><w14:numSpacing xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w14:val="proportional"/></w:rPr><w:t>0123456789|</w:t></w:r></w:p>"#;
+    let bar = |settings: &str| {
+        let doc = test_doc(settings, r#"<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/>"#, body, "").expect("Arial");
+        super::page_chars(&doc)[0].iter().find(|c| c.0 == '|').map(|c| c.1).expect("a bar")
+    };
+    let setting = |name: &str, v: u32| {
+        format!(r#"<w:compat><w:compatSetting w:name="{name}" w:uri="http://schemas.microsoft.com/office/word" w:val="{v}"/></w:compat>"#)
+    };
+    let (c12, c14, c15) = (bar(""), bar(&setting("compatibilityMode", 14)), bar(&setting("compatibilityMode", 15)));
+    let enabled = bar(&format!(
+        r#"<w:compat><w:compatSetting w:name="enableOpenTypeFeatures" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#
+    ));
+    // Calibri's proportional digits (1087.3 tw) against its tabular default (1115.0 tw).
+    assert!((c12 - c14).abs() < 1e-9 && (c12 - c15 - 27.7 / 20.0).abs() < 0.02, "{c12} {c14} {c15}");
+    assert!((enabled - c15).abs() < 1e-9, "{enabled}");
+}

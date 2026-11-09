@@ -592,7 +592,7 @@ impl<'a> Builder<'a> {
         let kern = run.kern > 0.0 && size >= run.kern - 1e-9;
         let shaped_text: String = s.chars().map(|c| if c == '\u{2011}' { '-' } else { c }).collect();
         let ligatures = if run.spacing != 0.0 { run.ligatures & 16 } else { run.ligatures };
-        let glyphs = face.shape(&shaped_text, kern, ligatures);
+        let glyphs = face.shape(&shaped_text, kern, ligatures, run.figures);
         let scale = face.scale(size) * run.scale / 100.0;
         let mut starts: Vec<u32> = glyphs.iter().map(|g| g.cluster).collect();
         starts.sort_unstable();
@@ -1193,6 +1193,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         scale,
         kern,
         ligatures,
+        figures,
         fit_text,
         em,
         toc,
@@ -1229,6 +1230,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *scale == b.scale
             && *kern == b.kern
             && *ligatures == b.ligatures
+            && *figures == b.figures
             && *fit_text == b.fit_text
             && *em == b.em
             && *toc == b.toc

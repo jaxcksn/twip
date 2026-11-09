@@ -81,6 +81,12 @@ pub struct RunProps {
     /// `w14:ligatures` bits: 1 standard, 2 contextual, 4 historical, 8 discretionary.
     pub ligatures: Option<u8>,
     pub cntxt_alts: Option<bool>,
+    /// `w14:numForm`: 1 lining, 2 old style, 0 default.
+    pub num_form: Option<u32>,
+    /// `w14:numSpacing`: 4 proportional, 8 tabular, 0 default.
+    pub num_spacing: Option<u32>,
+    /// `w14:stylisticSets`: bit n − 1 for set n.
+    pub style_sets: Option<u32>,
     /// `w:em`: the emphasis mark ("dot", "comma", "circle", "underDot"; "none").
     pub em: Option<String>,
     pub lang: Option<String>,
@@ -126,6 +132,22 @@ impl RunProps {
                     });
                 } else if name == "cntxtAlts" {
                     p.cntxt_alts = Some(!matches!(val_any(e), Some("0" | "false" | "off")));
+                } else if name == "numForm" {
+                    p.num_form = Some(match val_any(e) {
+                        Some("lining") => 1,
+                        Some("oldStyle") => 2,
+                        _ => 0,
+                    });
+                } else if name == "numSpacing" {
+                    p.num_spacing = Some(match val_any(e) {
+                        Some("proportional") => 4,
+                        Some("tabular") => 8,
+                        _ => 0,
+                    });
+                } else if name == "stylisticSets" {
+                    let on = |s: &Node| !matches!(s.attribute((W14, "val")), Some("0" | "false" | "off"));
+                    let ids = e.children().filter(|s| is(*s, W14, "styleSet") && on(s)).filter_map(|s| s.attribute((W14, "id"))?.parse::<u32>().ok());
+                    p.style_sets = Some(ids.filter(|n| (1..=20).contains(n)).fold(0, |m, n| m | 1 << (n - 1)));
                 }
                 continue;
             }
@@ -209,8 +231,34 @@ impl RunProps {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
         take!(
-            ascii, h_ansi, east_asia, cs, hint, size, dstrike, underline, color, highlight, shading, shd, border, vert_align, position, spacing,
-            scale, kern, ligatures, cntxt_alts, lang, style, rtl, em, fit_text
+            ascii,
+            h_ansi,
+            east_asia,
+            cs,
+            hint,
+            size,
+            dstrike,
+            underline,
+            color,
+            highlight,
+            shading,
+            shd,
+            border,
+            vert_align,
+            position,
+            spacing,
+            scale,
+            kern,
+            ligatures,
+            cntxt_alts,
+            num_form,
+            num_spacing,
+            style_sets,
+            lang,
+            style,
+            rtl,
+            em,
+            fit_text
         );
         self.toggles = (self.toggles & !o.toggles_set) | (o.toggles & o.toggles_set);
         self.toggles_set |= o.toggles_set;

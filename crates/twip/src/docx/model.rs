@@ -47,6 +47,9 @@ pub struct RunStyle {
     /// Kern at or above this size; 0 = off.
     pub kern: f64,
     pub ligatures: u8,
+    /// OpenType number and style features asked for: 1 `lnum`, 2 `onum`, 4 `pnum`, 8 `tnum`, and `16 << (n − 1)` for
+    /// `ssNN`.
+    pub figures: u32,
     /// `w:fitText`: the width its region of text is fitted to (points) and the region's id.
     pub fit_text: Option<(f64, i64)>,
     /// `w:em`, when it marks the text ("dot", "comma", "circle", "underDot").
@@ -1064,7 +1067,7 @@ pub enum Compat {
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
     pub compat_mode: i64,
-    /// `w:compat` child options that are on.
+    /// `w:compat` child options that are on, and the on/off `w:compatSetting`s that are on (`enableOpenTypeFeatures`).
     pub compat: std::collections::HashSet<String>,
     pub default_tab: f64,
     /// `w:characterSpacingControl` is compressPunctuation or compressPunctuationAndJapaneseKana.

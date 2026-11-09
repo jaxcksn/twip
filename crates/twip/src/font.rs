@@ -52,11 +52,11 @@ pub struct Face {
     pub east_asian: bool,
     pub avg_width: f64,
     font: harfrust::Font,
-    /// Memos: character → glyph, glyph → advance, and shape plans by (kern, ligatures, script). Building a plan
+    /// Memos: character → glyph, glyph → advance, and shape plans by (kern, ligatures, figures, script). Building a plan
     /// collects the font's GSUB/GPOS lookups, far more work than shaping a word.
     glyphs: RefCell<HashMap<char, Option<u32>>>,
     advances: RefCell<HashMap<u32, f64>>,
-    plans: RefCell<HashMap<(bool, u8, Option<harfrust::Script>), Rc<harfrust::ShapePlan>>>,
+    plans: RefCell<HashMap<(bool, u8, u32, Option<harfrust::Script>), Rc<harfrust::ShapePlan>>>,
 }
 
 /// A shaped glyph: advances and offsets in font units, `cluster` = byte offset in the shaped text.
@@ -239,18 +239,20 @@ impl Face {
         (e.height != 0).then_some(e.y_bearing as f64)
     }
 
-    pub fn shape(&self, text: &str, kern: bool, ligatures: u8) -> Vec<Glyph> {
-        crate::prof::time("shape", || self.shape_uncached(text, kern, ligatures))
+    /// Glyphs for `text`: `ligatures` as [`crate::docx::RunStyle::ligatures`], `figures` as
+    /// [`crate::docx::RunStyle::figures`].
+    pub fn shape(&self, text: &str, kern: bool, ligatures: u8, figures: u32) -> Vec<Glyph> {
+        crate::prof::time("shape", || self.shape_uncached(text, kern, ligatures, figures))
     }
 
-    fn shape_uncached(&self, text: &str, kern: bool, ligatures: u8) -> Vec<Glyph> {
+    fn shape_uncached(&self, text: &str, kern: bool, ligatures: u8, figures: u32) -> Vec<Glyph> {
         let sf = ShaperFont::new(&self.font);
         let mut buf = Buffer::new();
         buf.push_str(text);
         buf.set_direction(Direction::LeftToRight);
         buf.guess_segment_properties();
         let on = |b: bool| if b { 1 } else { 0 };
-        let feats = [
+        let mut feats = vec![
             Feature::new(Tag::new(b"kern"), on(kern), ..),
             Feature::new(Tag::new(b"liga"), on(ligatures & 1 != 0), ..),
             Feature::new(Tag::new(b"clig"), on(ligatures & 2 != 0), ..),
@@ -258,7 +260,14 @@ impl Face {
             Feature::new(Tag::new(b"hlig"), on(ligatures & 4 != 0), ..),
             Feature::new(Tag::new(b"dlig"), on(ligatures & 8 != 0), ..),
         ];
-        let key = (kern, ligatures, buf.script());
+        // Number forms and spacing, then the stylistic sets: only those asked for, the font's defaults otherwise.
+        let sets = (1..=20u8).map(|n| [b's', b's', b'0' + n / 10, b'0' + n % 10]);
+        for (k, tag) in [*b"lnum", *b"onum", *b"pnum", *b"tnum"].into_iter().chain(sets).enumerate() {
+            if figures & 1 << k != 0 {
+                feats.push(Feature::new(Tag::new(&tag), 1, ..));
+            }
+        }
+        let key = (kern, ligatures, figures, buf.script());
         let cached = self.plans.borrow().get(&key).cloned();
         let plan = cached.unwrap_or_else(|| {
             let plan = Rc::new(harfrust::ShapePlan::new(&self.font, buf.direction(), buf.script(), None, &feats));
@@ -1265,7 +1274,7 @@ mod tests {
         f.add_bytes(VARIABLE.to_vec()).unwrap();
         let advance = |family: &str, bold: bool| {
             let face = f.face(family, None, bold, false).unwrap();
-            (face.weight, face.sim_bold, face.shape("A", true, 0)[0].advance, face.advance(face.glyph('A').unwrap()))
+            (face.weight, face.sim_bold, face.shape("A", true, 0, 0)[0].advance, face.advance(face.glyph('A').unwrap()))
         };
         assert_eq!(advance("Stand-in Variable", false), (400, false, 500.0, 500.0));
         // Bold is the Bold instance, not a synthesized one.

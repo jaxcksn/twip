@@ -271,6 +271,9 @@ pub struct Styles {
     pub doc_ppr: ParaProps,
     pub compat: Compat,
     pub word2002_rules: bool,
+    /// OpenType features (ligatures, number forms and spacing, stylistic sets) apply: compat 15, or
+    /// `enableOpenTypeFeatures`.
+    pub open_type: bool,
     pub latent: LatentStyles,
     /// The part's root start tag, whose namespace declarations a style's XML is read and written under.
     pub root: String,

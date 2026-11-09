@@ -117,7 +117,9 @@ impl Resolver {
             spacing: p.spacing.unwrap_or(0.0),
             scale: p.scale.unwrap_or(100.0),
             kern: p.kern.unwrap_or(0.0),
-            ligatures: p.ligatures.unwrap_or(0) | if p.cntxt_alts == Some(true) { 16 } else { 0 },
+            // OpenType features only where they apply: else the fonts' default glyphs.
+            ligatures: if self.styles.open_type { p.ligatures.unwrap_or(0) | if p.cntxt_alts == Some(true) { 16 } else { 0 } } else { 0 },
+            figures: if self.styles.open_type { p.num_form.unwrap_or(0) | p.num_spacing.unwrap_or(0) | p.style_sets.unwrap_or(0) << 4 } else { 0 },
             fit_text: p.fit_text,
             lang: p.lang.clone().unwrap_or_default(),
             style_id: p.style.clone(),
