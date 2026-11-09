@@ -1175,6 +1175,7 @@ impl Reader {
             footers: [None, None, None],
             pg_start: None,
             pg_fmt: None,
+            chapter: None,
             line_numbers: None,
             v_align: "top".into(),
             page_borders: None,
@@ -1245,6 +1246,14 @@ impl Reader {
         if let Some(p) = child(s, "pgNumType") {
             sec.pg_start = int(attr(p, "start"));
             sec.pg_fmt = attr(p, "fmt").map(str::to_string);
+            let sep = match attr(p, "chapSep") {
+                Some("period") => ".",
+                Some("colon") => ":",
+                Some("emDash") => "\u{2014}",
+                Some("enDash") => "\u{2013}",
+                _ => "-",
+            };
+            sec.chapter = int(attr(p, "chapStyle")).filter(|&n| n > 0).map(|n| (n, sep.to_string()));
         }
         if let Some(l) = child(s, "lnNumType") {
             sec.line_numbers = Some(LineNumbering {
@@ -1655,6 +1664,24 @@ impl Reader {
                 }
                 "cr" => out.push(Inline::Break(BreakKind::Line, run.clone())),
                 "noBreakHyphen" => push_text(out, "\u{2011}", &run),
+                // `w:pgNum`: the page number, as a PAGE field.
+                "pgNum" => {
+                    let id = FieldId::next();
+                    let view = FieldView::Result;
+                    out.push(Inline::FieldBegin {
+                        id,
+                        kind: Some(FieldKind::Page),
+                        lock: false,
+                        dirty: false,
+                        view,
+                        label: None,
+                        value: None,
+                        run: run.clone(),
+                    });
+                    out.push(Inline::Text("PAGE".into(), run.clone()));
+                    out.push(Inline::FieldSep { id, run: run.clone() });
+                    out.push(Inline::FieldEnd { id, run: run.clone() });
+                }
                 "softHyphen" => push_text(out, "\u{AD}", &run),
                 "sym" => {
                     let font = attr(c, "font").unwrap_or("Symbol").to_string();

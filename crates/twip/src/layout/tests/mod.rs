@@ -16,6 +16,7 @@ mod hyphenation;
 mod imports;
 mod notes;
 mod output;
+mod page_numbers;
 mod pending;
 mod random_edits;
 mod rebreak;

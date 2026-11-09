@@ -110,6 +110,7 @@ fn props(s: &Section) -> Section {
         footers,
         pg_start,
         pg_fmt,
+        chapter,
         line_numbers,
         v_align,
         page_borders,
@@ -137,6 +138,7 @@ fn props(s: &Section) -> Section {
         footers: footers.clone(),
         pg_start: *pg_start,
         pg_fmt: pg_fmt.clone(),
+        chapter: chapter.clone(),
         line_numbers: line_numbers.clone(),
         v_align: v_align.clone(),
         page_borders: page_borders.clone(),
@@ -350,7 +352,7 @@ fn shifted(t: &PageToken, span: Option<&Span>) -> PageToken {
 }
 
 fn same_used(used: &BodyFields, now: &BodyFields) -> bool {
-    (used.page.is_none() || (used.page == now.page && used.page_fmt == now.page_fmt))
+    (used.page.is_none() || (used.page == now.page && used.page_fmt == now.page_fmt && used.chapters == now.chapters))
         && (used.section.is_none() || used.section == now.section)
         && (used.num_pages.is_none() || used.num_pages == now.num_pages)
         && (used.section_pages.is_none() || used.section_pages == now.section_pages)

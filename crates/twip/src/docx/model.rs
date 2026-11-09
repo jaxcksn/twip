@@ -1006,6 +1006,9 @@ pub struct Section {
     pub footers: HfRefs,
     pub pg_start: Option<i64>,
     pub pg_fmt: Option<String>,
+    /// `w:pgNumType w:chapStyle` / `w:chapSep`: page numbers lead with the number of the last heading of this level,
+    /// then this separator.
+    pub chapter: Option<(i64, String)>,
     pub line_numbers: Option<LineNumbering>,
     pub v_align: String,
     pub page_borders: Option<PageBorders>,

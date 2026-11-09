@@ -253,6 +253,8 @@ pub struct Paginator<'d, 'p> {
     pub stories: &'d std::collections::BTreeMap<String, Vec<Block>>,
     pub notes: Notes<'d>,
     pub note_numbers: &'p HashMap<(NoteKind, i64), String>,
+    /// Each body paragraph's chapter number for its page numbers.
+    pub chapters: Option<Rc<HashMap<super::ids::ParaId, String>>>,
     pub run: &'p mut PassRun,
 }
 
@@ -266,6 +268,8 @@ impl<'d> Paginator<'d, '_> {
             page_refs: Some(self.run.known.page_refs.clone()),
             style_refs: Vec::new(),
             page_fmt: self.sections[si].pg_fmt.clone(),
+            chapter: None,
+            chapters: self.chapters.clone(),
         }
     }
 
@@ -681,6 +685,8 @@ pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields 
                             FieldKind::Page => {
                                 out.page.clone_from(&all.page);
                                 out.page_fmt.clone_from(&all.page_fmt);
+                                out.chapter.clone_from(&all.chapter);
+                                out.chapters.clone_from(&all.chapters);
                             }
                             FieldKind::NumPages => out.num_pages.clone_from(&all.num_pages),
                             FieldKind::Section => out.section.clone_from(&all.section),

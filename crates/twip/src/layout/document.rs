@@ -200,6 +200,7 @@ pub struct PassCx<'d> {
     pub notes: &'d JobNotes,
     wanted: Vec<String>,
     paras: HashMap<ParaId, &'d Paragraph>,
+    chapters: Chapters,
 }
 
 impl<'d> PassCx<'d> {
@@ -246,7 +247,7 @@ impl<'d> PassCx<'d> {
                 }
             }
         }
-        PassCx { doc, ctx, nodes, notes, wanted, paras }
+        PassCx { doc, ctx, nodes, notes, wanted, paras, chapters: chapters(doc) }
     }
 
     fn notes(&self) -> Notes<'d> {
@@ -260,6 +261,7 @@ impl<'d> PassCx<'d> {
             stories: &self.doc.stories,
             notes: self.notes(),
             note_numbers: &self.notes.numbers,
+            chapters: self.chapters.body.clone(),
             run,
         }
     }
@@ -401,7 +403,67 @@ pub(crate) fn hf_fields(run: &PassRun, cx: &PassCx, i: usize) -> FieldValues {
         page_refs: Some(info.page_refs.clone()),
         style_refs: style_refs(&cx.wanted, &run.pages, &cx.paras, i),
         page_fmt: cx.doc.sections[si].pg_fmt.clone(),
+        chapter: page_chapter(cx, &run.pages, i),
+        chapters: None,
     }
+}
+
+/// Chapter numbers (`w:pgNumType w:chapStyle`): each body paragraph's page number prefix, and the headings' levels and
+/// numbers, in document order.
+#[derive(Default)]
+struct Chapters {
+    body: Option<Rc<HashMap<ParaId, String>>>,
+    heads: Vec<(ParaId, i64, String)>,
+}
+
+/// A heading's level and chapter number: a "heading N" paragraph numbered through its style, its label without the
+/// level text's literal text before the first and after the last number.
+fn chapter_of(r: &crate::docx::resolve::Resolver, p: &Paragraph) -> Option<(i64, String)> {
+    let (label, (num, ilvl), id) = (p.list.as_ref()?, p.style.num?, p.style.style_id.as_deref()?);
+    let level = r.styles.by_id.get(id)?.name.to_lowercase().strip_prefix("heading ")?.parse().ok()?;
+    if r.styles.chain_ppr(Some(id)).num_id != Some(num) {
+        return None;
+    }
+    let text = &r.numbering.level(num, ilvl, &r.styles)?.text;
+    let before = &text[..text.find('%').unwrap_or(0)];
+    let after = text.rfind('%').and_then(|k| text.get(k + 2..)).unwrap_or("");
+    let t = label.text.strip_prefix(before).unwrap_or(&label.text);
+    Some((level, t.strip_suffix(after).unwrap_or(t).to_string()))
+}
+
+fn chapters(doc: &Document) -> Chapters {
+    let Some(r) = doc.resolver.as_deref().filter(|_| doc.sections.iter().any(|s| s.chapter.is_some())) else { return Chapters::default() };
+    fn walk<'a>(blocks: &'a [Block], si: usize, out: &mut Vec<(usize, &'a Paragraph)>) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => out.push((si, p)),
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, si, out)),
+            }
+        }
+    }
+    let mut paras = Vec::new();
+    doc.sections.iter().enumerate().for_each(|(si, s)| walk(&s.blocks, si, &mut paras));
+    let heads: Vec<(usize, i64, String)> = paras.iter().enumerate().filter_map(|(k, (_, p))| chapter_of(r, p).map(|(l, t)| (k, l, t))).collect();
+    let mut body = HashMap::new();
+    for (k, (si, p)) in paras.iter().enumerate() {
+        let Some((level, sep)) = &doc.sections[*si].chapter else { continue };
+        // The last heading at or before the paragraph; before the first, the first.
+        let mut of_level = heads.iter().filter(|h| h.1 == *level);
+        if let Some(h) = of_level.clone().take_while(|h| h.0 <= k).last().or_else(|| of_level.next()) {
+            body.insert(ParaId(p.id), format!("{}{sep}", h.2));
+        }
+    }
+    let heads = heads.into_iter().map(|(k, l, t)| (ParaId(paras[k].1.id), l, t)).collect();
+    Chapters { body: Some(Rc::new(body)), heads }
+}
+
+/// The chapter prefix of page `i`'s headers and footers: from the last heading at or before the page's end.
+fn page_chapter(cx: &PassCx, pages: &[PageRecord], i: usize) -> Option<String> {
+    let (level, sep) = cx.doc.sections.get(pages[i].section)?.chapter.as_ref()?;
+    let heads = &cx.chapters.heads;
+    let head = |id: &ParaId| heads.iter().find(|h| h.0 == *id && h.1 == *level);
+    let h = (0..=i).rev().find_map(|k| pages[k].effects.paras.iter().rev().find_map(head)).or_else(|| heads.iter().find(|h| h.1 == *level))?;
+    Some(format!("{}{sep}", h.2))
 }
 
 pub(crate) fn hf_parts<'d>(run: &PassRun, cx: &PassCx<'d>, i: usize) -> [Option<&'d String>; 2] {
