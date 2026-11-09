@@ -31,12 +31,14 @@
 
 ### Twip is an engine, not an application.
 
->[!WARNING] 
->Twip is in early development, and it's API surface is likely to change as I continue to make it less and less opinionated. The eventual goal is to remove any API surface that suggests how you should build your application chrome, including dialogs (I may leave them as helpers).
+It isn't trying to be another word processor. Traditional word processors are general-purpose applications. Twip takes a different approach: it provides the underlying document engine, leaving developers free to build experiences tailored to their users, workflows, and industries.
 
-Twip gives you the difficult parts of a Word-like experience—document structure, precise pagination, text shaping, selection, editing, and rendering—without prescribing the application around them. It takes a minimal-as-possible approach to the editor chrome, and it lets the integrating application handle everything from the context menu to the tooltips.
+Twip handles the difficult parts of a sophisticated paginated document editor—document structure, precise pagination, text shaping, selection, editing, and rendering—without prescribing the application around them. You bring your own interface, build your own workflows, and own the majority of the experience.
 
-Build your own ribbon, inspector, or command palette. Twip handles what happens **on the page** and exposes the state your interface needs.
+> [!WARNING]
+> Twip is in early development. Its API surface is evolving toward a smaller, more extensible, and less opinionated foundation. Application-level concerns such as dialogs, context menus, and tooltips are intentionally being reworked to be less prescriptive. Some of the helpers may remain, but they won't define how your application should behave.
+
+Twip's document model originated from OOXML and its rich set of document capabilities. Over time, the model will evolve toward a format-independent representation informed by both OOXML and ODF. The goal isn't to reproduce every feature of Word or LibreOffice. It's to provide a flexible, extensible document foundation capable of supporting complex, specialized use cases without inheriting the constraints of any particular word processor.
 
 <br />
 
