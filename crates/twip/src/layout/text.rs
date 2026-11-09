@@ -1051,13 +1051,14 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Fits pieces `a..e` to `target` points, in layout units (204.8 a twip): within 10 tw nothing changes; wider,
-    /// every character gets `s = trunc(trunc((T - N) / (n - 1)) / 204.8)` tw after it and the last one `s` less the
-    /// twips the region still overshoots; narrower, a scale of `max(15, trunc(100 T / N))` % and the last character
-    /// the overshoot taken off.
+    /// Fits pieces `a..e` to `target` points by the fit loop, in layout units (204.8 a twip): within 10 tw nothing
+    /// changes; wider, character spacing on every character, then a correction on the last one (spread again while it
+    /// exceeds 40 tw, at most twice); narrower, a scale of `max(15, trunc(100 T / N))` %, then the last character's
+    /// correction.
     fn fit_region(&mut self, a: usize, e: usize, target: f64) {
         const TW: f64 = 204.8;
         const TOL: f64 = 2048.0;
+        const EPS_LU: f64 = 1e-6;
         for k in a..e {
             let p = &mut self.pieces[k];
             p.glued = k > a;
@@ -1070,32 +1071,88 @@ impl<'a> Builder<'a> {
         // Each piece's natural width: the runs' own character spacing is replaced.
         let natural: Vec<f64> =
             (a..e).map(|k| (self.pieces[k].width - self.styles[self.pieces[k].style as usize].run.spacing * chars(self, k)) * 4096.0).collect();
-        let (t, n_lu) = ((target * 20.0 * TW).round(), natural.iter().sum::<f64>());
         let n: f64 = (a..e).map(|k| chars(self, k)).sum();
-        if (t - n_lu).abs() <= TOL || n == 0.0 {
+        if n == 0.0 {
             return;
         }
+        let t = (target * 20.0 * TW).trunc();
         let tw = |lu: f64| (lu / TW).trunc();
-        let (widths, last) = if t > n_lu {
-            let s = if n > 1.0 { tw(((t - n_lu) / (n - 1.0)).trunc()) } else { 0.0 };
-            let sl = (s * TW).round();
-            let w = n_lu + n * sl;
-            let mut last = if n > 1.0 { s - tw(w - t) } else { tw(t - n_lu) };
-            // A correction to nothing that leaves the region off by more than the tolerance gives the last character
-            // `s` again.
-            if n > 1.0 && last == 0.0 && (t - (w - sl)).abs() > TOL {
-                last = s;
+        let lu = |tw: f64| (tw * TW).round();
+        let pieces = |b: &Self, scale: f64| -> Vec<f64> {
+            if scale == 100.0 {
+                return natural.clone();
             }
-            let widths: Vec<f64> = (a..e).zip(&natural).map(|(k, w)| w + chars(self, k) * sl).collect();
-            (widths, (last * TW).round() - sl)
-        } else {
-            let scale = (100.0 * t / n_lu).trunc().max(15.0);
-            let widths: Vec<f64> = (a..e).zip(&natural).map(|(k, w)| self.scaled(k, scale).unwrap_or(w * scale / 100.0)).collect();
-            let over = widths.iter().sum::<f64>() - t;
-            (widths, if over.abs() > TOL { -(tw(over) * TW).round() } else { 0.0 })
+            (a..e).zip(&natural).map(|(k, w)| b.scaled(k, scale).unwrap_or(w * scale / 100.0)).collect()
         };
-        for (k, w) in (a..e).zip(widths) {
-            self.pieces[k].width = (w + if k + 1 == e { last } else { 0.0 }) / 4096.0;
+        // The region's state: a scale, a spacing (tw) on every character and the last one's own.
+        let (mut scale, mut sp, mut last) = (100.0, 0.0, 0.0);
+        let width = |b: &Self, scale: f64, sp: f64, last: f64| pieces(b, scale).iter().sum::<f64>() + (n - 1.0) * lu(sp) + lu(last);
+        let mut w = width(self, scale, sp, last);
+        let (mut done, mut corr_done, mut adj_done, mut reset_done) = (false, false, false, false);
+        let (mut k, mut s, mut corr, mut tries, mut nat, mut before) = (1.0, 0.0, 0.0, 0, 0.0, 0.0);
+        for _ in 0..50 {
+            let mut adjust = false;
+            if done {
+                break;
+            }
+            if corr_done {
+                if corr == 0.0 {
+                    if (t - w).abs() <= TOL {
+                        break;
+                    }
+                } else if (before - w).abs() > EPS_LU {
+                    break;
+                }
+                (done, k, adjust) = (true, 0.0, true);
+            } else if adj_done {
+                before = w;
+                if k > 0.0 {
+                    corr = ((tw(s) * k - tw(w - t)) / k).trunc();
+                }
+                if tries < 2 && corr.abs() > 40.0 {
+                    tries += 1;
+                    adjust = true;
+                } else {
+                    (last, corr_done) = (corr, true);
+                }
+            } else if reset_done {
+                adjust = true;
+            } else {
+                if (t - w).abs() <= TOL {
+                    return;
+                }
+                if t < w {
+                    scale = 100.0;
+                }
+                (sp, last, reset_done, k) = (0.0, 0.0, true, 1.0);
+            }
+            if adjust {
+                if nat == 0.0 {
+                    nat = w;
+                }
+                // The whole region: a scale when too wide, else the spacing spread over the gaps.
+                if n >= 2.0 && t != 0.0 && nat != 0.0 && nat != t {
+                    let prev = std::mem::take(&mut s);
+                    if t < nat {
+                        scale = (100.0 * t / nat).trunc().max(15.0);
+                    } else if prev == 0.0 || (w - (nat + k * prev)).abs() < EPS_LU {
+                        s = ((t - nat) / (n - 1.0)).trunc();
+                    } else {
+                        s = (prev * (t - nat) / (w - k * prev - nat)).trunc();
+                    }
+                    (sp, last) = (tw(s), tw(s));
+                } else {
+                    s = 0.0;
+                }
+                adj_done = true;
+            }
+            w = width(self, scale, sp, last);
+        }
+        let widths = pieces(self, scale);
+        for (j, (k, pw)) in (a..e).zip(widths).enumerate() {
+            let cs = chars(self, k);
+            let spacing = if j + 1 == e - a { (cs - 1.0) * lu(sp) + lu(last) } else { cs * lu(sp) };
+            self.pieces[k].width = (pw + spacing) / 4096.0;
         }
     }
 

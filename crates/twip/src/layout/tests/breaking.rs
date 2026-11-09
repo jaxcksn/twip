@@ -1044,6 +1044,24 @@ fn fitted_text_spreads_or_squeezes_to_its_width() {
 }
 
 #[test]
+fn fitted_text_corrections_spread_again_and_meet_the_scale_limit() {
+    let width = |val, text| {
+        let c = glyph_xs("", &fitted(val, text))?;
+        let bars: Vec<f64> = c.iter().filter(|g| g.0 == '|').map(|g| g.1).collect();
+        Some(bars[1] - c[1].1)
+    };
+    // A correction over 40 tw spreads again: 1 tw on all 15 characters, not 0 and 15 on the last.
+    let Some(w) = width(1348, "a.b.c.d.e.f.g.h") else { return };
+    assert!((w - 1348.1 / 20.0).abs() < 0.03, "{w}");
+    // 15 %, then the overshoot off the last character.
+    let w = width(50, "abcdefghij").expect("lays out");
+    assert!((w - 50.7 / 20.0).abs() < 0.03, "{w}");
+    // Two characters: 409 tw, then 1 on the last.
+    let w = width(654, "ab").expect("lays out");
+    assert!((w - 654.7 / 20.0).abs() < 0.03, "{w}");
+}
+
+#[test]
 fn a_fitted_region_never_breaks() {
     // Wider than the line: on a line of its own (the bar glued to it broken off), past the margin.
     let c = glyph_xs("", &fitted(12000, "abc def ghi")).expect("lays out");
