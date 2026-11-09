@@ -11,18 +11,12 @@ use crate::layout::traverse::paint;
 
 use super::doc;
 
-const FONTS: [&[u8]; 4] = [
-    include_bytes!("../../../tests/fixtures/editor/fonts/stand-in-sans.ttf"),
-    include_bytes!("../../../tests/fixtures/editor/fonts/stand-in-serif.ttf"),
-    include_bytes!("../../../tests/fixtures/editor/fonts/stand-in-mono.ttf"),
-    include_bytes!("../../../tests/fixtures/editor/fonts/stand-in-cjk.ttf"),
-];
-
 fn bundled_fonts() -> Fonts {
     let mut fonts = Fonts::default();
     let mut families = Vec::new();
-    for bytes in FONTS {
-        families.extend(fonts.add_bytes(bytes.to_vec()).expect("stand-in font").into_iter().map(|f| f.family));
+    for file in ["stand-in-sans.ttf", "stand-in-serif.ttf", "stand-in-mono.ttf", "stand-in-cjk.ttf"] {
+        let bytes = std::fs::read(root().join("fixtures/editor/fonts").join(file)).expect("stand-in font");
+        families.extend(fonts.add_bytes(bytes).expect("stand-in font").into_iter().map(|f| f.family));
     }
     let family = |prefix: &str| families.iter().find(|f| f.starts_with(prefix)).cloned();
     let (sans, serif, mono, cjk) = (family("Stand-in Sans"), family("Stand-in Serif"), family("Stand-in Mono"), family("Stand-in CJK"));
