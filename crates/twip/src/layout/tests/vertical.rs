@@ -81,6 +81,25 @@ fn a_btlr_cell_runs_up_from_the_content_bottom_with_its_lines_stacked_from_the_l
 }
 
 #[test]
+fn compat_12_aligns_a_vertical_cells_block_into_its_far_margin() {
+    let row = r#"<w:trPr><w:trHeight w:val="2000" w:hRule="exact"/></w:trPr>"#;
+    let at = |mode: i64, align: &str| {
+        let body = table("tbRl", row, "vc amber1")
+            .replace("<w:textDirection", &format!(r#"<w:vAlign w:val="{align}"/><w:textDirection"#))
+            .replace("<w:tblLayout", r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar><w:tblLayout"#);
+        let mut d = doc(&body)?;
+        d.settings.compat_mode = mode;
+        Some(turned_runs(&d)[0].1[0])
+    };
+    // How far a block sits from the top-aligned one.
+    let shift = |mode: i64, align: &str| Some(at(mode, "top")? - at(mode, align)?);
+    let Some(c15) = shift(15, "bottom") else { return };
+    // The far (left) margin, 108 twips less half the 10-twip border, takes the block further left.
+    assert!((shift(12, "bottom").unwrap() - c15 - 5.15).abs() < 0.05, "{c15} {:?}", shift(12, "bottom"));
+    assert!((shift(12, "center").unwrap() - shift(15, "center").unwrap() - 2.575).abs() < 0.05);
+}
+
+#[test]
 fn a_vertical_cell_adds_nothing_to_an_auto_row() {
     let (Some(v), Some(h)) = (doc(&table("tbRl", "", WORDS)), doc(&table("lrTb", "", "x"))) else { return };
     let rows = |d: &crate::docx::Document| {

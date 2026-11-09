@@ -1956,12 +1956,20 @@ fn assemble(
             let Some(v) = v.filter(|_| c.v_merge != VMerge::Continue) else { continue };
             let len = height - top_border - c.margins[0] - c.margins[2];
             let story = vertical_story(&r.cells[g.ci], v, len, t.fixed, env, memos)?;
+            use super::vertical::Flow;
+            // Compat ≤ 14: centred and bottom blocks reach into the margin on the far side (the left one when the
+            // lines stack from the right), up to half its border.
+            let far = if env.ctx.env.text.compat == Compat::Legacy {
+                let side = if v.flow == Flow::Down { 1 } else { 3 };
+                (c.margins[side] - bw(&c.edges[side]) / 2.0).max(0.0)
+            } else {
+                0.0
+            };
             let across = match c.v_align.as_str() {
-                "center" => ((g.cw - story.height) / 2.0).max(0.0),
-                "bottom" => (g.cw - story.height).max(0.0),
+                "center" => ((g.cw + far - story.height) / 2.0).max(0.0),
+                "bottom" => (g.cw + far - story.height).max(0.0),
                 _ => 0.0,
             };
-            use super::vertical::Flow;
             let bottom = match v.flow {
                 Flow::Down => g.cw + g.cx,
                 Flow::Up => g.w - g.cx,
