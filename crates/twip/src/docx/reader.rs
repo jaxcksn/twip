@@ -1390,7 +1390,21 @@ impl Reader {
         let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), controls: Vec::new() };
 
         let mut para = match self.pending_hidden.take() {
+            // A vanished mark joins the paragraph to the next: the first one's indents, alignment and space before
+            // (unless it is empty), the last one's other properties; in compat 15 (without revision marking) the first one's indents and
+            // alignment for every line, otherwise each line's from the paragraph its first character is in.
             Some(mut prev) => {
+                let at = prev.inlines.iter().map(Inline::units).sum::<usize>() as u32;
+                let mut style = (*para.style).clone();
+                let first = &prev.style;
+                // An empty paragraph before the mark gives nothing.
+                if at > 0 {
+                    (style.ind_left, style.ind_right, style.ind_first, style.jc) = (first.ind_left, first.ind_right, first.ind_first, first.jc);
+                    (style.space_before, style.before_auto) = (first.space_before, first.before_auto);
+                    if self.res.styles.compat == Compat::Legacy || self.settings.track_revisions {
+                        style.joined = first.joined.iter().cloned().chain([(at, para.style.clone())]).collect();
+                    }
+                }
                 prev.inlines.extend(para.inlines);
                 let src = match (prev.src, para.src) {
                     (Some(a), Some(b)) => Some(Rc::new(ParaSrc {
@@ -1402,7 +1416,7 @@ impl Reader {
                     (a, b) => a.or(b),
                 };
                 Paragraph {
-                    style: para.style,
+                    style: Rc::new(style),
                     mark: para.mark,
                     list: prev.list.or(para.list),
                     inlines: prev.inlines,

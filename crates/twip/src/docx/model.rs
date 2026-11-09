@@ -163,6 +163,10 @@ pub struct ParaStyle {
     pub direct: Raw,
     /// A tracked change of the paragraph's properties.
     pub change: Option<Rc<ParaChange>>,
+    /// Paragraphs joined onto this one's start through vanished marks, when each line takes its indents, alignment and
+    /// tabs from the paragraph its first character is in: the unit each one after the first starts at, and its own
+    /// style. Empty otherwise.
+    pub joined: Rc<[(u32, Rc<ParaStyle>)]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

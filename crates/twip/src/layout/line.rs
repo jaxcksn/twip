@@ -456,11 +456,20 @@ struct Fit {
     leaders: Vec<(usize, Leader)>,
 }
 
+/// The style a line of a joined paragraph ([`ParaStyle::joined`]) takes its indents, alignment and tabs from: that of
+/// the paragraph its first character is in.
+fn line_style<'a>(style: &'a ParaStyle, pieces: &[Piece], start: usize) -> &'a ParaStyle {
+    if style.joined.is_empty() {
+        return style;
+    }
+    let u = pieces[start.min(pieces.len())..].iter().find_map(|p| p.src).map_or(0, |u| u.0);
+    style.joined.iter().rev().find(|(at, _)| *at <= u).map_or(style, |(_, s)| s)
+}
+
 pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, frame: &Frame, fonts: &Fonts, continued: bool) -> Vec<Line> {
     let mut lines = Vec::new();
-    let right = frame.width - style.ind_right;
+    let line_size = style;
     let justify_smart = matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && !frame.no_wrap;
-    let wrap_right = if frame.no_wrap { f64::INFINITY } else { right + wp_extension(style, frame) };
     let mut start = 0;
     let n = pieces.len();
     let mut planned: Vec<usize> = Vec::new();
@@ -473,6 +482,9 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
     let all = *frame;
     loop {
         let frame = &Frame { hyphenate: all.hyphenate && (all.hyphen_limit <= 0 || hyphens < all.hyphen_limit), ..all };
+        let style = line_style(style, pieces, start);
+        let right = frame.width - style.ind_right;
+        let wrap_right = if frame.no_wrap { f64::INFINITY } else { right + wp_extension(style, frame) };
         let left = style.ind_left + if first { style.ind_first } else { 0.0 };
         let limit_end =
             if with_tabs { justified_tab_end(sp, pieces, start, left, right, style, frame) } else { planned.iter().copied().find(|&e| e > start) };
@@ -487,7 +499,7 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         } else {
             fit_text(&mut line, pieces, right - 1.0);
         }
-        size(&mut line, sp, pieces, style, mark, fonts, is_last, frame);
+        size(&mut line, sp, pieces, line_size, mark, fonts, is_last, frame);
         lines.push(line);
         first = false;
         if end >= n {
@@ -562,6 +574,7 @@ pub fn band(
     fonts: &Fonts,
     force: bool,
 ) -> Result<(Vec<Line>, usize), f64> {
+    let (line_size, style) = (style, line_style(style, pieces, start));
     let n = pieces.len();
     let right_edge = frame.width - style.ind_right;
     let mut segs: Vec<Line> = Vec::new();
@@ -638,7 +651,7 @@ pub fn band(
     }
     let mut merged = segs[0].clone();
     merged.end = s;
-    size(&mut merged, sp, pieces, style, mark, fonts, s >= n, frame);
+    size(&mut merged, sp, pieces, line_size, mark, fonts, s >= n, frame);
     for l in &mut segs {
         l.ascent = merged.ascent;
         l.descent = merged.descent;

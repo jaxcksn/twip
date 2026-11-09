@@ -1040,3 +1040,22 @@ fn a_fitted_region_never_breaks() {
     assert!(c[0].2 < a.2 && a.2 < end.2, "{:?} {a:?} {end:?}", c[0]);
     assert!(c.iter().filter(|g| g.2 == a.2).map(|g| g.1).fold(0.0, f64::max) > 540.0);
 }
+
+#[test]
+fn a_vanished_mark_joins_its_paragraph_to_the_next() {
+    let body = format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:p><w:pPr><w:ind w:left="720" w:right="720"/><w:jc w:val="center"/><w:spacing w:before="240" w:after="480"/><w:rPr><w:vanish/><w:specVanish/></w:rPr></w:pPr><w:r><w:t>Heading.</w:t></w:r></w:p><w:p><w:pPr><w:ind w:left="1440" w:firstLine="360"/><w:spacing w:before="360"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#,
+        super::words(60)
+    );
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let (Some(l12), Some(l15)) = (baselines("", ARIAL_11, &body), baselines(c15, ARIAL_11, &body)) else { return };
+    for l in [&l12, &l15] {
+        assert!(l[1].1.starts_with("Heading.layout") && l.len() > 3, "one paragraph: {l:?}");
+        // The first paragraph's space before, not the second's.
+        assert!((l[1].3 - l[0].3 - (12.6499 + 12.0)).abs() < 0.01, "{} {}", l[0].3, l[1].3);
+    }
+    // Compat 15: the first paragraph's indents and centring on every line; compat 12: the second's left indent (not its
+    // first-line indent) on the lines that start in it.
+    assert!(l15[2..].iter().all(|l| (l.0 - 144.0).abs() > 0.5) && l15[1].0 > 108.0, "{l15:?}");
+    assert!((l12[2].0 - 144.0).abs() < 0.01 && l12[1].0 > 108.0, "{l12:?}");
+}

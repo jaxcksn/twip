@@ -179,6 +179,7 @@ impl Resolver {
             mark_size: None,
             direct: Raw::default(),
             change: None,
+            joined: Rc::from([]),
         }
     }
 
