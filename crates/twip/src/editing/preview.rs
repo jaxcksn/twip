@@ -108,6 +108,7 @@ impl Editor {
             style_id: Some(id),
             width: crate::docx::props::Width::Auto,
             jc: crate::docx::props::Jc::Left,
+            own_jc: None,
             ind: 0.0,
             ind_set: true,
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],

@@ -839,6 +839,8 @@ pub struct Table {
     pub style_id: Option<String>,
     pub width: Width,
     pub jc: Jc,
+    /// The table's own `w:jc`; a layout run after the first row falls back to it.
+    pub own_jc: Option<Jc>,
     pub ind: f64,
     pub ind_set: bool,
     pub borders: [Option<Border>; 6],

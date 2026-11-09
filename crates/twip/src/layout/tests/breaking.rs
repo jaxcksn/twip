@@ -781,6 +781,27 @@ fn a_row_whose_exception_fixes_its_layout_is_a_table_of_its_own() {
     assert!(col2("uno") < 60.0, "the autofit row keeps its narrow grid: {}", col2("uno"));
 }
 
+#[test]
+fn a_first_row_whose_exception_fixes_its_layout_is_a_table_of_its_own() {
+    let cell = |t: &str, w: &str| format!(r#"<w:tc><w:tcPr><w:tcW {w}/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
+    let auto = r#"w:w="0" w:type="auto""#;
+    let table = |layout: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tblPrEx><w:tblW w:w="4000" w:type="dxa"/>{layout}</w:tblPrEx>{}{}</w:tr><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+            cell("one", r#"w:w="2000" w:type="dxa""#),
+            cell("uno", r#"w:w="2000" w:type="dxa""#),
+            cell("two", auto),
+            cell("dos", auto)
+        )
+    };
+    let Some(l) = baselines("", ARIAL_12, &table(r#"<w:tblLayout w:type="fixed"/>"#)) else { return };
+    let col2 = |l: &[(f64, String, f64, f64)], t: &str, first: &str| at(l, t).0 - at(l, first).0;
+    assert!((col2(&l, "uno", "one") - 100.0).abs() < 0.01, "its own fixed grid: {}", col2(&l, "uno", "one"));
+    assert!(col2(&l, "dos", "two") < 60.0, "the rows after it keep their own width: {}", col2(&l, "dos", "two"));
+    let one = baselines("", ARIAL_12, &table("")).unwrap();
+    assert!((col2(&one, "dos", "two") - col2(&one, "uno", "one")).abs() < 0.01, "without fixed the exception's width is the table's");
+}
+
 fn square(x: i64, y: i64, w: i64, h: i64, id: u32) -> String {
     let e = |v: i64| v * 12700;
     format!(

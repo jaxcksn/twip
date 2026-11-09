@@ -534,6 +534,7 @@ impl Editor {
             style_id: grid_style.then(|| "TableGrid".to_string()),
             width: crate::docx::props::Width::Auto,
             jc: crate::docx::props::Jc::Left,
+            own_jc: None,
             ind: 0.0,
             ind_set: true,
             borders: if grid_style {

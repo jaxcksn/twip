@@ -98,6 +98,7 @@ fn shell(t: &Table) -> Table {
         style_id,
         width,
         jc,
+        own_jc,
         ind,
         ind_set,
         borders,
@@ -212,6 +213,7 @@ fn shell(t: &Table) -> Table {
         style_id: style_id.clone(),
         width: *width,
         jc: *jc,
+        own_jc: *own_jc,
         ind: *ind,
         ind_set: *ind_set,
         borders: borders.clone(),
@@ -237,6 +239,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         style_id,
         width,
         jc,
+        own_jc,
         ind,
         ind_set,
         borders,
@@ -258,6 +261,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
     *style_id == t.style_id
         && *width == t.width
         && *jc == t.jc
+        && *own_jc == t.own_jc
         && *ind == t.ind
         && *ind_set == t.ind_set
         && *borders == t.borders
@@ -1237,7 +1241,7 @@ fn layout_runs(t: &Table) -> Option<Vec<std::ops::Range<usize>>> {
             _ => runs.push(ri..ri + 1),
         }
     }
-    (runs.len() > 1).then_some(runs)
+    Some(runs)
 }
 
 fn layout_runs_of(
@@ -1252,26 +1256,22 @@ fn layout_runs_of(
     let mut merged: Option<TableLayout> = None;
     let mut fit: Vec<FitRow> = Vec::new();
     let n = runs.len();
-    // ponytail: assumes no tblPr jc when the first row has its own (compat 15 reads the table's from it); keep the tblPr jc on Table if that shows up.
-    let table_jc = if env.ctx.env.text.compat == Compat::Generic && t.rows[0].jc.is_some() { Jc::Left } else { t.jc };
     for (k, run) in runs.iter().enumerate() {
         let first = &t.rows[run.start];
         let mut sub = Table { rows: t.rows[run.clone()].to_vec(), ..t.clone() };
-        if k > 0 {
-            sub.jc = first.jc.unwrap_or(table_jc);
+        if k > 0 || first.run.is_some() {
+            sub.jc = first.jc.or(t.own_jc).unwrap_or(Jc::Left);
         }
-        if first.run.is_some() {
-            sub.borders = row_borders(t, run.start).clone();
-            sub.rows.iter_mut().for_each(|r| r.run = None);
-        }
-        // The first run keeps the table's own layout.
-        if let Some(width) = first.run.filter(|_| k > 0) {
+        if let Some(width) = first.run {
             sub.fixed = true;
             sub.width = width;
             if let Some(ind) = first.ind {
                 sub.ind = ind;
                 sub.ind_set = true;
             }
+            sub.borders = row_borders(t, run.start).clone();
+            sub.cell_spacing = spacing_of(t, run.start).unwrap_or(0.0);
+            sub.rows.iter_mut().for_each(|r| r.run = None);
         }
         let laid = layout_with(&sub, text_w, env, if k == 0 { prev } else { None }, measure, None, memos)?;
         fit.extend(laid.fit.iter().cloned());
@@ -1793,7 +1793,7 @@ fn assemble(
                     let before: f64 = cols[..gb].iter().sum();
                     let after: f64 = cols[n - ga.min(n - gb)..].iter().sum();
                     let width = total - before - after;
-                    let gap = r.cells.first().map_or(0.0, |c| c.margins[1]) + row_s.map_or(0.0, |s| 2.0 * s + space_h(&t.borders[1]));
+                    let gap = r.cells.first().map_or(0.0, |c| c.margins[1]) + row_s.map_or(0.0, |s| 2.0 * s + space_h(&row_borders(t, ri)[1]));
                     let left = if jc == Jc::Center { (twips(text_w) - twips(width)).div_euclid(2) as f64 / 20.0 } else { text_w - width + gap };
                     left - (x0 + before)
                 }
@@ -1868,7 +1868,7 @@ fn assemble(
         let mut gap_top = 0.0;
         let mut cell_bottom = 0.0;
         if let Some(s) = row_s {
-            gap_top = if ri == 0 { 2.0 * s + space_h(&t.borders[0]) } else { s };
+            gap_top = if ri == 0 { 2.0 * s + space_h(&row_borders(t, 0)[0]) } else { s };
             // An unframed row above leaves its bottom border to this row's top.
             if let Some(p) = ri.checked_sub(1).filter(|&p| !framed(t, p)) {
                 let w = rows[p].cells.iter().map(|c: &CellBox| space_h(&c.edges[2])).fold(0.0, f64::max);
@@ -1938,10 +1938,11 @@ fn assemble(
     }
     let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
     if framed(t, t.rows.len().saturating_sub(1)) {
-        bottom_border = space_h(&t.borders[2]);
+        bottom_border = space_h(&row_borders(t, t.rows.len() - 1)[2]);
     }
     let (l, r) = if rtl { (3, 1) } else { (1, 3) };
-    let outer = [t.borders[0].clone(), t.borders[l].clone(), t.borders[2].clone(), t.borders[r].clone()];
+    let (tb0, tbn) = (row_borders(t, 0), row_borders(t, t.rows.len().saturating_sub(1)));
+    let outer = [tb0[0].clone(), tb0[l].clone(), tbn[2].clone(), tb0[r].clone()];
     TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit, rtl }
 }
 

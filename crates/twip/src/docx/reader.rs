@@ -2315,6 +2315,8 @@ impl Reader {
         let mut rows = Vec::new();
         let mut row_jc: Option<Option<Jc>> = None;
         let mut first_row_jc: Option<Jc> = None;
+        let mut first_row_width: Option<Width> = None;
+        let mut first_row_ind: Option<f64> = None;
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
@@ -2324,6 +2326,10 @@ impl Reader {
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
             if ri == 0 {
                 first_row_jc = trp.jc;
+                // The first row's exceptions are the table's, unless the row starts a layout run of its own.
+                let own = ex.fixed != Some(true) || tbl.fixed == Some(true);
+                first_row_width = ex.width.filter(|_| own);
+                first_row_ind = ex.ind.filter(|_| own);
             }
             let mut row_tbl = tbl.clone();
             row_tbl.borders.merge(&ex.borders);
@@ -2415,14 +2421,15 @@ impl Reader {
         let b = &tbl.borders;
         Table {
             style_id,
-            width: tbl.width.unwrap_or(Width::Auto),
+            width: first_row_width.or(tbl.width).unwrap_or(Width::Auto),
             jc: first_row_jc
                 .filter(|_| self.res.styles.compat == Compat::Generic && tbl.floating.is_none())
                 .or(tbl.jc)
                 .or(row_jc.flatten())
                 .unwrap_or(Jc::Left),
-            ind: tbl.ind.unwrap_or(0.0),
-            ind_set: tbl.ind.is_some() || direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
+            own_jc: tbl.jc,
+            ind: first_row_ind.or(tbl.ind).unwrap_or(0.0),
+            ind_set: first_row_ind.or(tbl.ind).is_some() || direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
