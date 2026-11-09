@@ -105,6 +105,22 @@ impl Placed {
         }
     }
 
+    /// Wraps around a text box's lines instead of its box: one rectangle per line, from the box's top left.
+    pub fn around_lines(mut self, lines: &[[f64; 4]]) -> Placed {
+        if lines.is_empty() {
+            return self;
+        }
+        let (x, y) = (self.rect[0], self.rect[1]);
+        let down = lines.iter().flat_map(|r| [(x + r[2], y + r[1]), (x + r[2], y + r[3])]);
+        let up = lines.iter().rev().flat_map(|r| [(x + r[0], y + r[3]), (x + r[0], y + r[1])]);
+        let points: Rc<[(f64, f64)]> = down.chain(up).collect();
+        let b = points.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]);
+        let [dt, db, dl, dr] = self.float.dist;
+        self.excl = [b[0] - dl, b[1] - dt, b[2] + dr, b[3] + db];
+        self.contour = Some(Contour { points, through: false });
+        self
+    }
+
     pub fn same(&self, o: &Placed) -> bool {
         self.key == o.key && self.rect.iter().zip(&o.rect).all(|(a, b)| (a - b).abs() < 1e-3)
     }

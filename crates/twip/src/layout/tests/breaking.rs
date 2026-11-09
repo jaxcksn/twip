@@ -457,6 +457,29 @@ fn a_nested_groups_text_boxes_each_draw_in_their_own_box() {
 }
 
 #[test]
+fn text_wraps_around_the_lines_of_a_bare_tight_text_box() {
+    let emu = |pt: u32| pt * 12700;
+    let tight = r#"<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/><wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>"#;
+    let text_box = |fill: &str| {
+        format!(
+            r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/>{tight}<wp:docPr id="1" name="T"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{}" cy="{}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{fill}<a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent><w:p><w:pPr><w:textboxTightWrap w:val="allLines"/></w:pPr><w:r><w:t>Ab</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+            emu(200),
+            emu(72),
+            emu(200),
+            emu(60),
+            emu(200),
+            emu(60)
+        )
+    };
+    let body = |fill: &str| format!("<w:p>{}<w:r><w:t>{}</w:t></w:r></w:p>", text_box(fill), "words run on beside the box ".repeat(12));
+    let beside = |l: &[(f64, String, f64)]| l.iter().filter(|x| x.0 > 150.0 && x.1 != "Ab").map(|x| x.0).fold(f64::INFINITY, f64::min);
+    let Some(bare) = lines("", ARIAL_12, &body("<a:noFill/>")) else { return };
+    let filled = lines("", ARIAL_12, &body(r#"<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>"#)).unwrap();
+    assert!(beside(&bare) < 260.0, "beside the line's ink: {bare:?}");
+    assert!(beside(&filled) >= 400.0, "beside the box: {filled:?}");
+}
+
+#[test]
 fn an_empty_section_break_paragraph_after_a_paragraph_takes_no_line() {
     let sect = r#"<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p>"#;
     let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);

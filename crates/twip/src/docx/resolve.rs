@@ -154,6 +154,7 @@ impl Resolver {
             page_break_before: p.page_break_before.unwrap_or(false),
             widow_control: p.widow_control.unwrap_or(true),
             suppress_auto_hyphens: p.suppress_auto_hyphens.unwrap_or(false),
+            tight_wrap: p.tight_wrap.unwrap_or(0),
             suppress_line_numbers: p.suppress_line_numbers.unwrap_or(false),
             div: p.div_id,
             div_boxes: Rc::from([]),

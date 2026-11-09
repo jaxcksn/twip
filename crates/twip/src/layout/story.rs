@@ -464,6 +464,71 @@ pub fn float_height(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<f64,
     })
 }
 
+/// The lines of a tight or through text box with neither fill nor outline, which text wraps around instead of the
+/// box: one rectangle per line from the box's top left, laid out from the top without the top inset, its own
+/// paragraph's setting choosing which lines take their ink extent rather than the full width.
+pub fn tight_lines(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<Option<Vec<[f64; 4]>>, Yield> {
+    use crate::drawing::paint::Fill;
+    let (Some(tb), Some(shape)) = (&f.text_box, f.shape.as_deref()) else { return Ok(None) };
+    let bare = shape.sp().is_some_and(|sp| sp.fill == Some(Fill::None) && sp.line.as_ref().and_then(|l| l.fill.as_ref()) == Some(&Fill::None));
+    if !bare || !matches!(f.wrap.as_str(), "tight" | "through") || shape.xfrm.rot.0 != 0 {
+        return Ok(None);
+    }
+    let fr = inner_frame(tb, Some(shape), [0.0, 0.0, f.w, f.h]);
+    let (left, du, dv) = (fr[0], (fr[2] - fr[0]).max(1.0), fr[3] - fr[1]);
+    let blocks: Vec<&Block> = tb.blocks.iter().collect();
+    let fields = FieldValues::default();
+    let story = layout(&blocks, du, &StoryEnv { fields: &fields, ..*env }, None, memos)?;
+    let units = &story.units;
+    let mut out = Vec::new();
+    for (k, u) in units.iter().enumerate() {
+        if u.top >= dv - EPS {
+            break;
+        }
+        let first = k == 0 || units[k - 1].block != u.block;
+        let last = units.get(k + 1).is_none_or(|n| n.block != u.block);
+        let mode = match tb.blocks.get(u.block) {
+            Some(Block::Para(p)) if u.row.is_none() => p.para_style_in(env.ctx.env.text.review.view).tight_wrap,
+            _ => 0,
+        };
+        let selected = match mode {
+            1 => true,
+            2 => first || last,
+            3 => first,
+            4 => last,
+            _ => false,
+        };
+        // Shifted right by the left inset, then clipped to the content width from the box's left.
+        let (l, r) = ink(&u.content).filter(|_| selected).map_or((0.0, du), |(a, b)| (a.max(0.0), b));
+        out.push([left + l, u.top, (left + r).min(du), (u.top + u.height).min(dv)]);
+    }
+    Ok(Some(out))
+}
+
+/// The first character's x and the start of the trailing white space of a line.
+fn ink(children: &[Child]) -> Option<(f64, f64)> {
+    let mut span: Option<(f64, f64)> = None;
+    let mut line = |placed: &PlacedLine| {
+        let runs: Vec<_> = placed.line.items.iter().filter_map(|i| if let Item::Glyphs(g) = i { Some(g) } else { None }).collect();
+        let chars: Vec<(char, f64)> = runs.iter().flat_map(|g| g.chars.iter().map(|c| (c.0, c.1))).collect();
+        let (Some(a), Some(z)) = (chars.iter().position(|c| !c.0.is_whitespace()), chars.iter().rposition(|c| !c.0.is_whitespace())) else { return };
+        let end = match chars.get(z + 1) {
+            Some(next) => next.1,
+            None => runs.last().and_then(|g| g.glyphs.last().map(|&(id, x)| x + g.face.advance(id) * g.face.scale(g.size))).unwrap_or(chars[z].1),
+        };
+        let (l, r) = (placed.x + chars[a].1, placed.x + end);
+        span = Some(span.map_or((l, r), |(sl, sr): (f64, f64)| (sl.min(l), sr.max(r))));
+    };
+    for c in children {
+        match c {
+            Child::Line { placed, .. } => line(placed),
+            Child::Para(p) => p.lines.iter().for_each(&mut line),
+            _ => {}
+        }
+    }
+    span
+}
+
 // Float drawing
 pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memos: &mut Memos) -> Result<Child, Yield> {
     let [x0, y0, x1, y1] = rect;

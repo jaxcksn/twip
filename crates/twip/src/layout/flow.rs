@@ -1351,6 +1351,15 @@ impl<'d> PageFill<'d, '_> {
         super::story::float_height(f, &StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers }, memos)
     }
 
+    fn wrapped(&self, p: Placed, memos: &mut Memos) -> Result<Placed, Yield> {
+        let fields = FieldValues::default();
+        let lines = super::story::tight_lines(&p.float, &StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers }, memos)?;
+        Ok(match lines {
+            Some(l) => p.around_lines(&l),
+            None => p,
+        })
+    }
+
     // Wrapped paragraphs
     #[allow(
         clippy::too_many_arguments,
@@ -1590,7 +1599,7 @@ impl<'d> PageFill<'d, '_> {
                     continue;
                 }
             }
-            anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
+            anchors.push(self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?);
         }
         // Pagination
         let nb = bands.len();
