@@ -148,6 +148,10 @@ pub struct PageFill<'d, 'p> {
     pub mirror: bool,
     /// The section's footnote area passes to the next section on the page when the section ends.
     pub hold_notes: bool,
+    /// The section starts below the page top.
+    pub mid_page: bool,
+    /// The column being filled.
+    pub column: usize,
 }
 
 pub fn para_space(
@@ -1272,7 +1276,7 @@ impl<'d> PageFill<'d, '_> {
         let g = if !first_part {
             std::mem::take(&mut carry.break_before)
         } else if at_top {
-            if carry.keep_top || carry.first_para {
+            if carry.keep_top || carry.first_para || self.keeps_top_space() {
                 let after = if pos.block == 0 { carry.prev_after.max(carry.balanced_after) } else { carry.prev_after };
                 (super::paragraph::gap_plain(&self.ctx.env.text, after, before) - after).max(0.0)
             } else {
@@ -1284,8 +1288,7 @@ impl<'d> PageFill<'d, '_> {
                 None => self.edge_before(pos.block, style, before),
             }
         };
-        let lifted = at_top && first_part && !(carry.keep_top || carry.first_para);
-        let top = *y + g - if lifted { self.top_lift(style, pb) } else { 0.0 };
+        let top = *y + g - if at_top { self.top_lift(style, pb) } else { 0.0 };
         let wc = style.widow_control;
         // Compat ≤ 14: when the lines can't stay on the page with a line's notes after a note placed whole, those
         // notes wait for the next page and the lines stay.
@@ -1422,7 +1425,7 @@ impl<'d> PageFill<'d, '_> {
                 carry.keep_top = false;
                 carry.prev = None;
                 let kept = (super::paragraph::gap_plain(&self.ctx.env.text, prev_after, before) - prev_after).max(0.0);
-                carry.break_before = if starts_with_break { kept } else { 0.0 };
+                carry.break_before = if starts_with_break && !self.ctx.env.text.suppress_before_after_page_break { kept } else { 0.0 };
                 Stop::Page
             }
             Some(Kind::ColumnBreak) => {
@@ -1448,7 +1451,7 @@ impl<'d> PageFill<'d, '_> {
         if !pos.at.at_start() {
             0.0
         } else if empty {
-            if carry.keep_top || carry.first_para {
+            if carry.keep_top || carry.first_para || self.keeps_top_space() {
                 let after = if pos.block == 0 { carry.prev_after.max(carry.balanced_after) } else { carry.prev_after };
                 (super::paragraph::gap_plain(&self.ctx.env.text, after, before) - after).max(0.0)
             } else {
@@ -1483,14 +1486,20 @@ impl<'d> PageFill<'d, '_> {
             && matches!(self.sec.blocks.get(bi), Some(Block::Para(p)) if p.inlines.iter().all(bare))
     }
 
-    /// How far a paragraph's first line rises at a column's top that dropped its space-before: with `suppressSpacingAtTopOfPage` (compat ≤ 14) by the
-    /// line's height beyond its text; with `suppressTopSpacing`, an exact or at-least line of an unbordered,
-    /// unshaded paragraph by its line height beyond 9.6pt.
+    /// `suppressSpacingAtTopOfPage` below the first column: the space before stays and no line rises.
+    fn keeps_top_space(&self) -> bool {
+        self.ctx.env.text.suppress_spacing_at_top && self.column > 0
+    }
+
+    /// How far a line at the top of a page (or of a later column of a section that starts at the page top) rises:
+    /// with `suppressSpacingAtTopOfPage` (compat ≤ 14) an at-least line by its at-least height beyond its text; with
+    /// `suppressTopSpacing`, an exact or at-least line of an unbordered, unshaded paragraph by its line height beyond
+    /// 9.6pt.
     fn top_lift(&self, style: &ParaStyle, pb: &ParaLines) -> f64 {
         let env = &self.ctx.env.text;
-        let Some(l) = pb.lines.first() else { return 0.0 };
+        let Some(l) = pb.lines.first().filter(|_| !self.mid_page) else { return 0.0 };
         if env.suppress_spacing_at_top {
-            return if style.line != 0.0 { (l.pitch - l.ascent - l.descent).max(0.0) } else { 0.0 };
+            return if style.line_rule == LineRule::AtLeast && !self.keeps_top_space() { (style.line - l.ascent - l.descent).max(0.0) } else { 0.0 };
         }
         let framed = [&style.border_top, &style.border_bottom, &style.border_left, &style.border_right]
             .iter()
@@ -1501,11 +1510,14 @@ impl<'d> PageFill<'d, '_> {
         }
         let line = match style.line_rule {
             LineRule::AtLeast => style.line,
-            // An exact line counts four fifths of its height less its first character's size.
+            // An exact line counts four fifths of its height less its first character's raise (`w:position`).
             LineRule::Exact => {
-                let size = pb.pieces()[l.start..l.end].iter().find(|q| q.kind == Kind::Text).map_or(0.0, |q| pb.shaped.styles[q.style as usize].size);
+                let raise = pb.pieces()[l.start..l.end]
+                    .iter()
+                    .find(|q| q.kind == Kind::Text)
+                    .map_or(0.0, |q| pb.shaped.styles[q.style as usize].run.position);
                 let twips = (style.line.abs() * 20.0).round() as i64;
-                (twips * 4 / 5 - 10 * (size * 2.0).round() as i64) as f64 / 20.0
+                (twips * 4 / 5 - 10 * (raise * 2.0).round() as i64) as f64 / 20.0
             }
             LineRule::Auto => return 0.0,
         };
@@ -1571,8 +1583,7 @@ impl<'d> PageFill<'d, '_> {
         let first_part = pos.at.at_start();
         let after = space_after(&self.ctx.env.text, style);
         let at_top = *empty;
-        let lifted = at_top && first_part && !(carry.keep_top || carry.first_para);
-        let top = *y + self.para_gap(p, pos, carry, *empty) - if lifted { self.top_lift(style, pb) } else { 0.0 };
+        let top = *y + self.para_gap(p, pos, carry, *empty) - if at_top { self.top_lift(style, pb) } else { 0.0 };
         let floats: Vec<Placed> = self.fixed.iter().chain(&self.at.known).cloned().collect();
         let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env: self.ctx.env.text.clone(), fit: false };
         let mut frame = Frame::new(&space);

@@ -83,6 +83,29 @@ fn an_at_least_line_at_the_page_top_rises_with_the_top_spacing_options() {
     assert!((top(15, "suppressSpacingAtTopOfPage").unwrap() - top(15, "").unwrap()).abs() < 1e-6);
 }
 
+#[test]
+fn a_page_top_line_that_keeps_its_space_before_rises_too() {
+    let top = |option: &str, page: usize| {
+        // Paragraph 2 starts with a page break: its text line keeps its 12pt space-before on page 2. Compat 12.
+        let mut doc = broken(0.0, 12.0)?;
+        doc.settings.compat_mode = 12;
+        if !option.is_empty() {
+            doc.settings.compat.insert(option.to_string());
+        }
+        for i in 0..2 {
+            let s = Rc::make_mut(&mut para_mut(&mut doc, i).style);
+            (s.line_rule, s.line) = (crate::docx::props::LineRule::AtLeast, 40.0);
+        }
+        Some(first_para(&doc, page).0)
+    };
+    let (Some(first), Some(plain)) = (top("", 0), top("", 1)) else { return };
+    // The document's first paragraph and the kept-space line both rise by the line's height beyond 9.6pt.
+    assert!((first - top("suppressTopSpacing", 0).unwrap() - 30.4).abs() < 1e-6);
+    assert!((plain - top("suppressTopSpacing", 1).unwrap() - 30.4).abs() < 1e-6);
+    // `suppressSpBfAfterPgBrk`: the space-before after the leading page break goes.
+    assert!((plain - top("suppressSpBfAfterPgBrk", 1).unwrap() - 12.0).abs() < 1e-6);
+}
+
 fn after_continuous_break(after: f64) -> Option<f64> {
     let mut doc = plain_doc(&[words(3), words(3)])?;
     Rc::make_mut(&mut para_mut(&mut doc, 0).style).space_after = after;

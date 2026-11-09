@@ -574,6 +574,7 @@ impl<'d> Paginator<'d, '_> {
             fill.at = AttemptState { known: state.known.clone(), stream, ..Default::default() };
             for (k, c) in cols.iter().enumerate() {
                 let col = ColumnSpace { bottom: Lu::round_half_up(top + h).min(c.bottom), balance: true, ..*c };
+                fill.column = k;
                 let r = fill.fill(&pos, &carry, col, false, memos)?;
                 let s = r.stop;
                 (pos, carry) = (r.token, r.state);
@@ -822,6 +823,8 @@ pub fn layout_body(
         odd: space.odd,
         mirror: space.mirror,
         hold_notes: space.hold_notes,
+        mid_page: space.mid_page,
+        column: 0,
     };
     let mut col_children: Vec<Vec<Child>> = Vec::new();
     let mut end: Option<FlowToken> = None;
@@ -844,6 +847,7 @@ pub fn layout_body(
                 bottoms.clear();
                 for (k, col) in cols.iter().enumerate() {
                     let page_empty = k == 0 && !space.mid_page;
+                    fill.column = k;
                     let r = fill.fill(&pos, &carry, *col, page_empty, memos)?;
                     let st = r.stop;
                     (pos, carry) = (r.token, r.state);
