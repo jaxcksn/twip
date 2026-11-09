@@ -93,9 +93,19 @@ pub enum ChromeFace {
 
 /// The font manager typefaces are made from font data with. On Linux it is Skia's FreeType alone: Fontconfig's (the
 /// system manager) starts the system FreeType when it scans fonts, and FreeType 2.14 then loads the system HarfBuzz
-/// for every library in the process. Windows and macOS draw with their own font services.
+/// for every library in the process. Windows and macOS draw with their own font services. One manager serves the
+/// process: making one asks the system for every installed family (on macOS, a round trip to the font server that
+/// all threads queue on).
 pub(crate) fn font_mgr() -> FontMgr {
-    FontMgr::custom_empty().unwrap_or_default()
+    struct Shared(FontMgr);
+    // SAFETY: none of the three managers (Skia m153: SkFontMgr_Custom, SkFontMgr_Mac, SkFontMgr_DirectWrite) changes
+    // after it's made but DirectWrite's typeface cache, which a mutex guards. Typefaces from data go through CoreText,
+    // DirectWrite, or the one FreeType scanner Skia already shares process-wide behind a mutex. The reference count is
+    // atomic. skia-safe leaves `FontMgr` unmarked.
+    unsafe impl Send for Shared {}
+    unsafe impl Sync for Shared {}
+    static MGR: std::sync::OnceLock<Shared> = std::sync::OnceLock::new();
+    MGR.get_or_init(|| Shared(FontMgr::custom_empty().unwrap_or_default())).0.clone()
 }
 
 /// A chrome typeface, made once per thread.
