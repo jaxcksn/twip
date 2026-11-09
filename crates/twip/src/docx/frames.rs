@@ -62,6 +62,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         .map(|mut p| {
             let mut s = (*p.style).clone();
             s.frame = None;
+            s.in_frame = true;
             p.style = Rc::new(s);
             Block::Para(p)
         })

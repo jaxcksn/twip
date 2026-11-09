@@ -196,6 +196,7 @@ impl Editor {
                         first = Some(style.frame.clone());
                     }
                     style.frame = None;
+                    style.in_frame = true;
                     p.style = Rc::new(style);
                     Block::Para(p)
                 }

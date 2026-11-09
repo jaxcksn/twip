@@ -18,6 +18,8 @@ pub struct ShapeSpace {
     /// The font metric options of [`super::env::TextEnv`].
     pub metric_rules: MetricRules,
     pub in_cell: bool,
+    /// Page and column breaks in a frame break its lines.
+    pub frame_breaks: bool,
     pub view: MarkupView,
     pub join: Option<std::rc::Rc<super::join::JoinMap>>,
     pub float: Option<std::rc::Rc<crate::docx::Float>>,

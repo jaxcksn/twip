@@ -30,6 +30,8 @@ pub struct TextEnv {
     /// list number's tab), compat ≤ 14.
     pub no_tab_hang_ind: bool,
     pub no_number_hang_stop: bool,
+    /// `showBreaksInFrames`, compat ≤ 14: page and column breaks in a frame break its lines.
+    pub show_breaks_in_frames: bool,
     /// `suppressTopSpacing`.
     pub suppress_top_spacing: bool,
     /// `suppressSpacingAtTopOfPage`, compat ≤ 14.
@@ -88,6 +90,7 @@ impl TextEnv {
             mac_small_caps: s.compat() == Compat::Legacy && s.has("mwSmallCaps"),
             no_tab_hang_ind: s.compat() == Compat::Legacy && s.has("noTabHangInd"),
             no_number_hang_stop: s.compat() == Compat::Legacy && s.has("doNotUseIndentAsNumberingTabStop"),
+            show_breaks_in_frames: s.compat() == Compat::Legacy && s.has("showBreaksInFrames"),
             suppress_top_spacing: s.has("suppressTopSpacing"),
             suppress_spacing_at_top: s.compat() == Compat::Legacy && s.has("suppressSpacingAtTopOfPage"),
             breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),

@@ -1157,3 +1157,18 @@ fn compat_12_options_take_the_hanging_indent_stop_from_a_list_numbers_tab() {
         assert!((text(opt, 15).unwrap() - 144.0).abs() < 0.01, "{opt}");
     }
 }
+
+#[test]
+fn a_column_break_in_a_frame_breaks_its_line_only_with_show_breaks_in_frames() {
+    let body = r#"<w:p><w:pPr><w:framePr w:w="3000" w:hSpace="180" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:x="0" w:y="0"/></w:pPr><w:r><w:t>before</w:t></w:r><w:r><w:br w:type="column"/><w:t>after</w:t></w:r></w:p><w:p><w:r><w:t>Body</w:t></w:r></w:p>"#;
+    let framed = |opt: &str, mode: u32| {
+        let s = format!(
+            r#"<w:compat>{opt}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#
+        );
+        lines(&s, ARIAL_12, body).map(|l| l.into_iter().map(|x| x.1).filter(|t| t != "Body").collect::<Vec<_>>())
+    };
+    let Some(plain) = framed("", 12) else { return };
+    assert_eq!(plain, ["beforeafter"]);
+    assert_eq!(framed("<w:showBreaksInFrames/>", 12).unwrap(), ["before", "after"]);
+    assert_eq!(framed("<w:showBreaksInFrames/>", 15).unwrap(), ["beforeafter"]);
+}

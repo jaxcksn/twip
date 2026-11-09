@@ -156,6 +156,8 @@ pub struct ParaStyle {
     pub frame: Option<FramePr>,
     /// The `w:textDirection` text-flow code (`text_flow`): a frame's paragraphs run in it.
     pub text_flow: u8,
+    /// The paragraph is in a frame: its `frame` made the float that holds it.
+    pub in_frame: bool,
     pub text_alignment: String,
     pub outline_lvl: Option<i64>,
     pub list_jc: String,

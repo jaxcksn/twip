@@ -777,6 +777,7 @@ impl<'a> Builder<'a> {
                 .find(|s| matches!(para.inlines[s.begin], Inline::FieldBegin { id, .. } if id == e.field))
                 .map(|s| (s.begin..=s.end, e.clone()))
         });
+        let in_frame = !space.frame_breaks && para.para_style_in(view).in_frame;
         for (k, inl) in para.inlines.iter().enumerate() {
             let evaluated = matches!(inl, Inline::FieldBegin { kind: Some(_), .. });
             if let Some((span, e)) = expanded.as_ref().filter(|(s, _)| s.contains(&k)) {
@@ -857,7 +858,7 @@ impl<'a> Builder<'a> {
                     p.object = Some(Object::PTab(*t));
                     self.atom(p, "\t");
                 }
-                (Inline::Break(BreakKind::Page | BreakKind::Column, _), Some(_)) if space.in_cell => {}
+                (Inline::Break(BreakKind::Page | BreakKind::Column, _), Some(_)) if space.in_cell || in_frame => {}
                 (Inline::Break(k, _), Some(run)) => {
                     let kind = match k {
                         BreakKind::Page => Kind::PageBreak,
@@ -1345,6 +1346,7 @@ pub fn shape_space(
         balance: text.default_east_asia.clone().filter(|_| text.balance_spaces),
         compress: text.compress_punctuation,
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
+        frame_breaks: text.show_breaks_in_frames,
         metric_rules: MetricRules {
             no_leading: text.no_leading,
             no_raise_lower: text.no_raise_lower,
