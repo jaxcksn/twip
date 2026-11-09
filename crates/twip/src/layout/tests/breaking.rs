@@ -1073,6 +1073,21 @@ fn a_vanished_mark_joins_its_paragraph_to_the_next() {
 }
 
 #[test]
+fn compat_14_a_line_starting_at_a_vanished_mark_is_the_earlier_paragraphs() {
+    let long = "m".repeat(48);
+    let body = format!(
+        r#"<w:p><w:pPr><w:rPr><w:vanish/><w:specVanish/></w:rPr></w:pPr><w:r><w:t xml:space="preserve">Heading. </w:t></w:r></w:p><w:p><w:pPr><w:ind w:left="1440"/></w:pPr><w:r><w:t>{long} {}</w:t></w:r></w:p>"#,
+        super::words(30)
+    );
+    let c15 = r#"<w:trackRevisions/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let (Some(l12), Some(l15)) = (baselines("", ARIAL_11, &body), baselines(c15, ARIAL_11, &body)) else { return };
+    // Line 2 starts with the second paragraph's first word, at the vanished mark: the first paragraph's indent.
+    assert!(l12[1].1.starts_with('m') && (l12[1].0 - 72.0).abs() < 0.01 && (l12[2].0 - 144.0).abs() < 0.01, "{l12:?}");
+    // Revision tracking alone keeps compat 15's lines on the first paragraph's indent.
+    assert!(l15.iter().all(|l| (l.0 - 72.0).abs() < 0.01), "{l15:?}");
+}
+
+#[test]
 fn opentype_number_features_apply_in_compat_15_or_when_enabled() {
     if fonts().face("Calibri", None, false, false).is_none_or(|f| !f.family.eq_ignore_ascii_case("Calibri")) {
         return;

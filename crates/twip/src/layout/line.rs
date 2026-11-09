@@ -475,13 +475,14 @@ struct Fit {
 }
 
 /// The style a line of a joined paragraph ([`ParaStyle::joined`]) takes its indents, alignment and tabs from: that of
-/// the paragraph its first character is in.
+/// the paragraph its first character is in; a line starting at a paragraph's first character starts at the vanished
+/// mark before it, so it is the earlier paragraph's.
 fn line_style<'a>(style: &'a ParaStyle, pieces: &[Piece], start: usize) -> &'a ParaStyle {
     if style.joined.is_empty() {
         return style;
     }
     let u = pieces[start.min(pieces.len())..].iter().find_map(|p| p.src).map_or(0, |u| u.0);
-    style.joined.iter().rev().find(|(at, _)| *at <= u).map_or(style, |(_, s)| s)
+    style.joined.iter().rev().find(|(at, _)| *at < u).map_or(style, |(_, s)| s)
 }
 
 pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, frame: &Frame, fonts: &Fonts, continued: bool) -> Vec<Line> {

@@ -1417,9 +1417,11 @@ impl Reader {
         let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), controls: Vec::new() };
 
         let mut para = match self.pending_hidden.take() {
-            // A vanished mark joins the paragraph to the next: the first one's indents, alignment and space before
-            // (unless it is empty), the last one's other properties; in compat 15 (without revision marking) the first one's indents and
-            // alignment for every line, otherwise each line's from the paragraph its first character is in.
+            // A vanished mark joins the paragraph to the next: the first one's indents, alignment, tabs and space
+            // before (unless it is empty), the last one's other properties; in compat 15 the first one's indents,
+            // alignment, tabs, borders and shading for every line, in compat ≤ 14 each later line's indents,
+            // alignment and tabs from the paragraph of its first character (a line starting at a vanished mark is
+            // the mark's) and the top border from the first.
             Some(mut prev) => {
                 let at = prev.inlines.iter().map(Inline::units).sum::<usize>() as u32;
                 let mut style = (*para.style).clone();
@@ -1428,8 +1430,21 @@ impl Reader {
                 if at > 0 {
                     (style.ind_left, style.ind_right, style.ind_first, style.jc) = (first.ind_left, first.ind_right, first.ind_first, first.jc);
                     (style.space_before, style.before_auto) = (first.space_before, first.before_auto);
-                    if self.res.styles.compat == Compat::Legacy || self.settings.track_revisions {
+                    style.tabs = first.tabs.clone();
+                    if self.res.styles.compat == Compat::Legacy {
                         style.joined = first.joined.iter().cloned().chain([(at, para.style.clone())]).collect();
+                        // ponytail: the top border from the first paragraph, the rest from the last; per-line
+                        // sides and shading (each line its paragraph's) aren't drawn.
+                        style.border_top = first.border_top.clone();
+                    } else {
+                        (style.border_top, style.border_bottom, style.border_left, style.border_right, style.border_between) = (
+                            first.border_top.clone(),
+                            first.border_bottom.clone(),
+                            first.border_left.clone(),
+                            first.border_right.clone(),
+                            first.border_between.clone(),
+                        );
+                        (style.shading, style.shd) = (first.shading, first.shd.clone());
                     }
                 }
                 prev.inlines.extend(para.inlines);
