@@ -672,7 +672,33 @@ impl<'a> Builder<'a> {
                 p.kind = Kind::ListNumber;
                 p.break_after = false;
             }
+            // A legacy level: the number moved in by its alignment, then a fixed gap to the text (no tab stop, any
+            // suffix).
+            if let Some((legacy_space, indent)) = l.legacy {
+                let lu = |pt: f64| Lu::round_half_up(pt).0 as i64;
+                let num_w = lu(self.pieces[start..].iter().map(|p| p.width).sum());
+                let width = lu((-para.para_style_in(space.view).ind_first).max(indent));
+                let (w, gap) = ((width - num_w).max(0), lu(legacy_space));
+                let r = (w - gap).max(0);
+                let (shift, gap) = match l.jc.as_str() {
+                    "center" if w >> 1 >= gap => (w >> 1, w >> 1),
+                    "center" | "right" => (r, gap),
+                    _ => (0, gap.max(w)),
+                };
+                let at = |b: &Self, w: i64| {
+                    let mut p = b.new_piece(Kind::ListNumber, &l.run, None, l.run.size, 0.0);
+                    p.width = Lu(w as i32).to_pt();
+                    p
+                };
+                let lead = at(self, shift);
+                self.atom(lead, "");
+                let lead = self.pieces.pop().expect("just pushed");
+                self.pieces.insert(start, lead);
+                let gap = at(self, gap);
+                self.atom(gap, "");
+            }
             match l.suff.as_str() {
+                _ if l.legacy.is_some() => {}
                 "space" => {
                     let s = self.pieces.len();
                     self.text(" ", &l.run)?;
@@ -1165,7 +1191,9 @@ pub fn same_para(a: &Paragraph, b: &Paragraph) -> bool {
         && run(&a.mark, &b.mark)
         && match (&a.list, &b.list) {
             (None, None) => true,
-            (Some(x), Some(y)) => x.text == y.text && x.jc == y.jc && x.suff == y.suff && x.picture == y.picture && run(&x.run, &y.run),
+            (Some(x), Some(y)) => {
+                x.text == y.text && x.jc == y.jc && x.suff == y.suff && x.picture == y.picture && x.legacy == y.legacy && run(&x.run, &y.run)
+            }
             _ => false,
         }
         && a.inlines == b.inlines

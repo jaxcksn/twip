@@ -490,6 +490,8 @@ pub struct ListLabel {
     pub suff: String,
     /// A picture bullet's image (an index into [`Document::images`]), drawn instead of the text.
     pub picture: Option<usize>,
+    /// A legacy level's space and indent ([`super::numbering::Level::legacy`]).
+    pub legacy: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

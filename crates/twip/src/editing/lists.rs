@@ -296,7 +296,14 @@ impl Editor {
                     let mut lp = res.run_props(&base, &mark);
                     lp.merge(&level.rpr);
                     let picture = res.numbering.bullet_image(&level);
-                    let label = ListLabel { text: text.clone(), run: res.run_style(&lp), jc: level.jc.clone(), suff: level.suff.clone(), picture };
+                    let label = ListLabel {
+                        text: text.clone(),
+                        run: res.run_style(&lp),
+                        jc: level.jc.clone(),
+                        suff: level.suff.clone(),
+                        picture,
+                        legacy: level.legacy,
+                    };
                     if p.list.as_ref() == Some(&label) {
                         continue;
                     }

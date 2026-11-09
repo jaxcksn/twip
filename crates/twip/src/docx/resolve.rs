@@ -222,7 +222,8 @@ impl Resolver {
         ppr.num_id = num_id;
         let mut style = self.para_style(&ppr);
         if let Some(l) = &level {
-            style.list_jc = l.jc.clone();
+            // A legacy level places its number itself, in the label.
+            style.list_jc = if l.legacy.is_some() { "left".into() } else { l.jc.clone() };
             style.num = num_id.map(|id| (id, ilvl));
             style.list_fmt = Some(l.fmt.clone());
             style.list = num_id.and_then(|id| self.numbering.abstract_of(id, &self.styles));

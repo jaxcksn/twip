@@ -21,6 +21,8 @@ pub struct Level {
     pub pstyle: Option<String>,
     /// `w:lvlPicBulletId`: the picture bullet (a `w:numPicBullet`) drawn for the label.
     pub pic_bullet: Option<i64>,
+    /// `w:legacy` with `w:legacy` on: its `w:legacySpace` and `w:legacyIndent`, points.
+    pub legacy: Option<(f64, f64)>,
     pub ppr: ParaProps,
     pub rpr: RunProps,
 }
@@ -81,6 +83,9 @@ fn level(l: roxmltree::Node, colours: &super::props::ThemeColours) -> Level {
         restart: child(l, "lvlRestart").and_then(|s| int(val(s))),
         pstyle: v("pStyle"),
         pic_bullet: child(l, "lvlPicBulletId").and_then(|s| int(val(s))),
+        legacy: child(l, "legacy")
+            .filter(|g| attr(*g, "legacy").is_some_and(|v| on_off_str(Some(v))))
+            .map(|g| (attr_twips(g, "legacySpace").unwrap_or(0.0), attr_twips(g, "legacyIndent").unwrap_or(0.0))),
         ppr: ParaProps::parse(child(l, "pPr"), colours),
         rpr: RunProps::parse(child(l, "rPr"), colours),
     }

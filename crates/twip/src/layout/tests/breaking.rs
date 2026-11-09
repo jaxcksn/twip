@@ -19,29 +19,17 @@ fn baselines(settings: &str, rpr: &str, body: &str) -> Option<Vec<(f64, String, 
 }
 
 fn page_baselines(settings: &str, rpr: &str, body: &str, page: usize) -> Option<Vec<(f64, String, f64, f64)>> {
+    numbered_page(settings, rpr, body, "", page)
+}
+
+/// As [`baselines`], with a numbering part when `numbering` (its `w:abstractNum` and `w:num` elements) isn't empty.
+fn numbered_baselines(settings: &str, rpr: &str, body: &str, numbering: &str) -> Option<Vec<(f64, String, f64, f64)>> {
+    numbered_page(settings, rpr, body, numbering, 0)
+}
+
+fn numbered_page(settings: &str, rpr: &str, body: &str, numbering: &str, page: usize) -> Option<Vec<(f64, String, f64, f64)>> {
     let fonts = fonts();
-    fonts.face("Arial", None, false, false)?;
-    let compat = if settings.contains("compatibilityMode") {
-        ""
-    } else {
-        r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#
-    };
-    let parts = [
-        (
-            "word/document.xml",
-            format!(
-                r#"<w:document xmlns:w="{W}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
-            ),
-        ),
-        ("word/styles.xml", format!(r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{rpr}</w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults></w:styles>"#)),
-        ("word/settings.xml", format!(r#"<w:settings xmlns:w="{W}">{settings}<w:characterSpacingControl w:val="compressPunctuation"/>{compat}</w:settings>"#)),
-        (
-            "word/_rels/document.xml.rels",
-            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#.to_string(),
-        ),
-    ];
-    let parts: Vec<(String, Vec<u8>)> = parts.into_iter().map(|(n, x)| (n.to_string(), x.into_bytes())).collect();
-    let doc = crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads");
+    let doc = test_doc(settings, rpr, body, numbering)?;
     let snap = layout(&doc, &fonts);
     let mut out: Vec<(u32, f64, String, f64, f64)> = Vec::new();
     paint(&snap.pages()[page], &mut |p| {
@@ -58,6 +46,35 @@ fn page_baselines(settings: &str, rpr: &str, body: &str, page: usize) -> Option<
         }
     });
     Some(out.into_iter().map(|(_, x, t, last, y)| (x, t.trim_end().to_string(), last, y)).collect())
+}
+
+/// The document of [`numbered_baselines`]: compat 12 unless `settings` sets a mode; `None` without Arial.
+fn test_doc(settings: &str, rpr: &str, body: &str, numbering: &str) -> Option<crate::docx::Document> {
+    fonts().face("Arial", None, false, false)?;
+    let compat = if settings.contains("compatibilityMode") {
+        ""
+    } else {
+        r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#
+    };
+    let mut parts = vec![
+        (
+            "word/document.xml",
+            format!(
+                r#"<w:document xmlns:w="{W}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+            ),
+        ),
+        ("word/styles.xml", format!(r#"<w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault><w:rPr>{rpr}</w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults></w:styles>"#)),
+        ("word/settings.xml", format!(r#"<w:settings xmlns:w="{W}">{settings}<w:characterSpacingControl w:val="compressPunctuation"/>{compat}</w:settings>"#)),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>"#.to_string(),
+        ),
+    ];
+    if !numbering.is_empty() {
+        parts.push(("word/numbering.xml", format!(r#"<w:numbering xmlns:w="{W}">{numbering}</w:numbering>"#)));
+    }
+    let parts: Vec<(String, Vec<u8>)> = parts.into_iter().map(|(n, x)| (n.to_string(), x.into_bytes())).collect();
+    Some(crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads"))
 }
 
 const ARIAL_12: &str = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsiaTheme="minorEastAsia"/><w:sz w:val="24"/>"#;
@@ -960,4 +977,25 @@ fn a_rubys_raised_annotation_adds_its_ascent_to_the_line() {
     // 20pt raise + the 5.5pt annotation's ascent over the 11pt base's.
     assert!((raised - flat - 14.8411).abs() < 0.01, "{flat} {raised}");
     assert!((low - flat).abs() < 1e-9, "a raise the base's ascent covers changes nothing");
+}
+
+fn legacy_level(space: u32, indent: u32, jc: &str, suff: &str) -> String {
+    format!(
+        r#"<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:suff w:val="{suff}"/><w:lvlText w:val="%1."/><w:legacy w:legacy="1" w:legacySpace="{space}" w:legacyIndent="{indent}"/><w:lvlJc w:val="{jc}"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num>"#
+    )
+}
+
+#[test]
+fn a_legacy_list_level_puts_its_text_a_fixed_gap_after_the_number() {
+    let body = r#"<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>Text</w:t></w:r></w:p>"#;
+    let at = |space, indent, jc, suff| numbered_baselines("", ARIAL_11, body, &legacy_level(space, indent, jc, suff)).map(|l| (l[0].0, l[0].2));
+    let Some((number, text)) = at(120, 720, "left", "tab") else { return };
+    assert!((number - 90.0).abs() < 0.01 && (text - 126.0).abs() < 0.01, "{number} {text}");
+    // The suffix doesn't count; a gap wider than the indent leaves the number's width plus the gap.
+    assert_eq!(at(120, 720, "left", "space"), Some((number, text)));
+    let (_, past) = at(360, 360, "left", "tab").expect("lays out");
+    assert!((past - (90.0 + 9.17 + 18.0)).abs() < 0.01, "{past}");
+    // Right: the number moves right by what the gap leaves; the text stays at the indent.
+    let (right, text) = at(120, 360, "right", "tab").expect("lays out");
+    assert!((right - 92.83).abs() < 0.01 && (text - 108.0).abs() < 0.01, "{right} {text}");
 }

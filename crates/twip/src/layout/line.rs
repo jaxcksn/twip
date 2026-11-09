@@ -1646,7 +1646,11 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             if !matches!(p.kind, Kind::Text | Kind::Space | Kind::ListNumber) {
                 continue;
             }
-            let Some(face) = &st.face else { continue };
+            // A piece that draws nothing (a legacy list number's gap) ends the glyph run.
+            let Some(face) = &st.face else {
+                flush(&mut run, &mut out);
+                continue;
+            };
             if p.soft_hyphen && !(line.hyphen && ix + 1 == line.end) {
                 continue;
             }
