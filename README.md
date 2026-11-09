@@ -10,7 +10,7 @@
   <br />
 
   A high-fidelity document layout, editing, and rendering engine.  
-  Written in Rust. Built for the browser, desktop, and server.
+  Written in Rust 🦀. Built for the browser, desktop, and server.
 
   <a href="https://github.com/jaxcksn/twip/actions/workflows/ci.yml"><img src="https://flat.badgen.net/github/checks/jaxcksn/twip/main?label=build&icon=github" alt="Build"></a>
   <img src="https://flat.badgen.net/https/sonarqube-badge-generation.vercel.app/api/sonarqube/quality_gate?cache=301&icon=sonar" alt="Quality gate">
