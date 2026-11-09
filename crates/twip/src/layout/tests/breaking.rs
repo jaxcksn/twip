@@ -998,12 +998,42 @@ fn a_rubys_raised_annotation_adds_its_ascent_to_the_line() {
 fn a_right_vertical_ruby_turns_its_annotation_beside_the_base() {
     let line = |align: &str, annotation: &str| baselines("", ARIAL_11, &ruby(align, 0, annotation, "M")).map(|l| (l[0].2, l[0].3));
     let (Some((centre, flat)), Some((turned, short))) = (line("center", "ab"), line("rightVertical", "ab")) else { return };
-    // M 21.4 tw narrower, then the 5.5pt annotation's line height and its gap.
-    assert!((turned - centre - (6.325 + 0.1 - 1.07)).abs() < 0.02, "{centre} {turned}");
+    // M 4506 lu narrower (the 11pt ruby run's 22 half-points), then the 5.5pt annotation's centred vertical
+    // height, 2419 font units.
+    assert!((turned - centre - (2419.0 * 5.5 / 2048.0 - 4506.0 / 4096.0)).abs() < 0.01, "{centre} {turned}");
     assert!((short - flat).abs() < 1e-9, "a short annotation leaves the line");
     // A 20-character annotation (52pt long): the line's ascent is half of it.
     let (_, tall) = line("rightVertical", "abcdefghijklmnopqrst").expect("lays out");
     assert!(tall - flat > 14.0, "{flat} {tall}");
+}
+
+#[test]
+fn a_right_vertical_ruby_narrows_its_base_by_the_ruby_runs_size_and_adds_its_spacing() {
+    let end = |outer: &str, base_rpr: &str| {
+        let body = ruby("rightVertical", 0, "a", "MMMM")
+            .replace("<w:r><w:ruby>", &format!("<w:r><w:rPr>{outer}</w:rPr><w:ruby>"))
+            .replace("<w:rubyBase><w:r>", &format!("<w:rubyBase><w:r><w:rPr>{base_rpr}</w:rPr>"));
+        baselines("", ARIAL_11, &body).map(|l| l[0].2)
+    };
+    let Some(plain) = end("", "") else { return };
+    // 16pt: each of the four characters 2048 lu narrower than at 11pt; 2pt of spacing after the annotation; the
+    // base's own spacing ignored.
+    assert!((plain - end(r#"<w:sz w:val="32"/>"#, "").unwrap() - 2.0).abs() < 1e-6);
+    assert!((end(r#"<w:spacing w:val="40"/>"#, "").unwrap() - plain - 2.0).abs() < 1e-6);
+    assert!((end("", r#"<w:spacing w:val="40"/>"#).unwrap() - plain).abs() < 1e-6);
+}
+
+#[test]
+fn a_right_vertical_rubys_kana_stand_upright() {
+    if !fonts().is_installed("MS Mincho") {
+        return;
+    }
+    let body = ruby("rightVertical", 0, "あい", "MM")
+        .replace("<w:rPr><w:sz w:val=\"11\"/>", r#"<w:rPr><w:rFonts w:eastAsia="MS Mincho"/><w:sz w:val="11"/>"#);
+    let Some(doc) = test_doc("", ARIAL_11, &body, "") else { return };
+    let items = crate::layout::traverse::paint_items(&layout(&doc, &fonts()).pages()[0]);
+    let turned = items.iter().find_map(|i| if let Item::Turned(t) = i { Some(t) } else { None }).expect("a turned annotation");
+    assert_eq!(turned.items.iter().filter(|i| matches!(i, Item::Turned(u) if u.deg == -90.0)).count(), 2);
 }
 
 fn legacy_level(space: u32, indent: u32, jc: &str, suff: &str) -> String {

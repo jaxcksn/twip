@@ -1841,6 +1841,8 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                     Some([dx, dy]) => {
                         let (centre, mut items) = ([x + dx, base + dy], Vec::new());
                         ruby_glyphs(&r.text, &r.text_x, centre[0], centre[1], 0.0, q, o.review, behind_text, &mut items);
+                        // A vertical line of its own: East Asian glyphs stand upright in it.
+                        let items = super::vertical::east_asian_turned(&items);
                         out.push(Item::Turned(Rc::new(super::fragment::Turned { centre, deg: 90.0, items })));
                     }
                     None => ruby_glyphs(&r.text, &r.text_x, x, base - r.raise, 0.0, q, o.review, behind_text, &mut out),

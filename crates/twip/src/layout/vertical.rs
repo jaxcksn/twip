@@ -263,7 +263,7 @@ fn stands_upright(c: char) -> bool {
 
 /// `items` with each upright glyph turned a quarter counter-clockwise about the middle of its em box, the font's em
 /// middle above the run's baseline, its own baseline its vertical origin past the start of its advance.
-fn east_asian_turned(items: &[Item]) -> Vec<Item> {
+pub fn east_asian_turned(items: &[Item]) -> Vec<Item> {
     let ea = |r: &GlyphRun, x: f64| r.chars.iter().any(|c| (c.1 - x).abs() < 1e-6 && stands_upright(c.0));
     if !items.iter().any(|i| matches!(i, Item::Glyphs(r) if r.glyphs.iter().any(|g| ea(r, g.1)))) {
         return items.to_vec();
