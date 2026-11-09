@@ -189,22 +189,68 @@ fn a_nested_table_wider_than_its_cell_is_drawn_in_full() {
 }
 
 #[test]
-fn a_rows_own_indent_moves_it_in_an_autofit_table_only() {
-    let table = |layout: &str| {
+fn a_rows_own_indent_counts_only_when_it_also_fixes_the_rows_layout() {
+    let table = |layout: &str, ex: &str| {
         let row = |ex: &str, t: &str| {
             format!(r#"<w:tr>{ex}<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#)
         };
-        let ex = r#"<w:tblPrEx><w:tblInd w:w="0" w:type="dxa"/></w:tblPrEx>"#;
         format!(
             r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblInd w:w="720" w:type="dxa"/><w:tblLayout w:type="{layout}"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}{}</w:tbl><w:p/>"#,
             row("", "first"),
-            row(ex, "second")
+            row(&format!(r#"<w:tblPrEx>{ex}<w:tblInd w:w="0" w:type="dxa"/></w:tblPrEx>"#), "second")
         )
     };
-    let x = |layout: &str, t: &str| lines("", ARIAL_12, &table(layout)).map(|l| l.iter().find(|(_, s, _)| s == t).expect("drawn").0);
-    let Some(first) = x("autofit", "first") else { return };
-    assert!((first - x("autofit", "second").unwrap() - 36.0).abs() < 0.01);
-    assert!((x("fixed", "first").unwrap() - x("fixed", "second").unwrap()).abs() < 0.01);
+    let shift = |layout: &str, ex: &str| {
+        let l = lines("", ARIAL_12, &table(layout, ex))?;
+        let x = |t: &str| l.iter().find(|(_, s, _)| s == t).expect("drawn").0;
+        Some(x("first") - x("second"))
+    };
+    let Some(autofit) = shift("autofit", "") else { return };
+    assert!(autofit.abs() < 0.01, "{autofit}");
+    assert!(shift("fixed", "").unwrap().abs() < 0.01);
+    let fixes = r#"<w:tblLayout w:type="fixed"/>"#;
+    assert!((shift("autofit", fixes).unwrap() - 36.0).abs() < 0.01);
+    assert!(shift("fixed", fixes).unwrap().abs() < 0.01);
+}
+
+#[test]
+fn a_rows_exceptions_give_it_its_own_borders_and_cell_margins() {
+    let body = |ex: &str| {
+        let row = |ex: &str, t: &str| format!(r#"<w:tr>{ex}<w:tc><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#);
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}{}{}</w:tbl><w:p/>"#,
+            row("", "first"),
+            row(ex, "second"),
+            row("", "third")
+        )
+    };
+    let x = |ex: &str, t: &str| lines("", ARIAL_12, &body(ex)).map(|l| l.iter().find(|(_, s, _)| s == t).expect("drawn").0);
+    let Some(plain) = x("", "second") else { return };
+    let wide = r#"<w:tblPrEx><w:tblCellMar><w:left w:w="500" w:type="dxa"/></w:tblCellMar></w:tblPrEx>"#;
+    assert!((x(wide, "second").unwrap() - plain - 20.0).abs() < 0.01);
+    assert!((x(wide, "third").unwrap() - x("", "third").unwrap()).abs() < 0.01, "only its own row");
+    let doc = |ex: &str| {
+        let parts = [(
+            "word/document.xml".to_string(),
+            format!(r#"<w:document xmlns:w="{W}"><w:body>{}<w:sectPr/></w:body></w:document>"#, body(ex)).into_bytes(),
+        )];
+        crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads")
+    };
+    let lined = r#"<w:tblPrEx><w:tblBorders><w:insideH w:val="single" w:sz="8" w:space="0" w:color="000000"/></w:tblBorders></w:tblPrEx>"#;
+    let d = doc(lined);
+    let Some(crate::docx::Block::Table(t)) = d.sections[0].blocks.first() else { panic!("a table") };
+    assert!(t.rows[1].borders.as_ref().is_some_and(|b| b[4].is_some()) && t.rows[0].borders.is_none() && t.borders[4].is_none());
+    let h = |d: &crate::docx::Document| {
+        let s = layout(d, &fonts());
+        let mut n = 0;
+        paint(&s.pages()[0], &mut |p| {
+            if let Item::Rect { rect, .. } = p.absolute() {
+                n += usize::from((rect[3] - rect[1]).abs() < 2.0 && (rect[2] - rect[0]) > 100.0);
+            }
+        });
+        n
+    };
+    assert!(h(&d) > h(&doc("")), "the row draws its exception's inside border");
 }
 
 #[test]
@@ -649,4 +695,88 @@ fn a_row_in_a_division_moves_by_its_margins() {
     let at = |l: &[(f64, String, f64, f64)], t: &str| l.iter().find(|x| x.1 == t).map(|x| (x.0, x.3)).expect("drawn");
     assert!((at(&inside, "cell").0 - at(&outside, "cell").0 - 36.0).abs() < 0.01);
     assert!((at(&inside, "cell").1 - at(&outside, "cell").1 - 13.5).abs() < 0.01, "margin, border and space above");
+}
+
+fn three_rows(row2: &str, settings: &str) -> Option<Vec<(f64, String, f64, f64)>> {
+    let cell = |t: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{}{}</w:tr>{row2}<w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+        cell("one"),
+        cell("uno"),
+        cell("three"),
+        cell("tres")
+    );
+    baselines(settings, ARIAL_12, &body)
+}
+
+fn at(l: &[(f64, String, f64, f64)], t: &str) -> (f64, f64) {
+    l.iter().find(|x| x.1.starts_with(t)).map(|x| (x.0, x.3)).expect("drawn")
+}
+
+const COMPAT_15: &str =
+    r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+
+#[test]
+fn a_row_whose_every_character_is_hidden_takes_no_room() {
+    let vanished = |t: &str| {
+        format!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:rPr><w:vanish/></w:rPr><w:t>{t}</w:t></w:r></w:p></w:tc>"#
+        )
+    };
+    let row = |pr: &str| format!("<w:tr>{pr}{}{}</w:tr>", vanished("two"), vanished("dos"));
+    let Some(none) = three_rows("", "") else { return };
+    let gap = |l: &[(f64, String, f64, f64)]| at(l, "three").1 - at(l, "one").1;
+    let hidden = three_rows(&row(r#"<w:trPr><w:hidden/></w:trPr>"#), "").unwrap();
+    assert!((gap(&hidden) - gap(&none)).abs() < 0.01, "skipped: {} {}", gap(&hidden), gap(&none));
+    let kept = three_rows(&row(""), "").unwrap();
+    assert!(gap(&kept) > gap(&none) + 10.0, "the row mark keeps it");
+}
+
+#[test]
+fn an_empty_hide_mark_cell_takes_no_line() {
+    let empty = |hide: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{hide}</w:tcPr><w:p/></w:tc>"#);
+    let row = |hide: &str| format!("<w:tr>{}{}</w:tr>", empty(hide), empty(hide));
+    let Some(none) = three_rows("", "") else { return };
+    let gap = |l: &[(f64, String, f64, f64)]| at(l, "three").1 - at(l, "one").1;
+    let hidden = three_rows(&row("<w:hideMark/>"), "").unwrap();
+    let plain = three_rows(&row(""), "").unwrap();
+    assert!((gap(&hidden) - gap(&none) - 0.5).abs() < 0.01, "only its border band: {}", gap(&hidden) - gap(&none));
+    assert!(gap(&plain) > gap(&hidden) + 10.0);
+}
+
+#[test]
+fn a_row_exception_aligns_its_row_in_compat_14_only() {
+    let row = r#"<w:tr><w:tblPrEx><w:jc w:val="center"/></w:tblPrEx><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>two</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>dos</w:t></w:r></w:p></w:tc></w:tr>"#;
+    let Some(c12) = three_rows(row, "") else { return };
+    assert!(at(&c12, "two").0 > at(&c12, "one").0 + 50.0, "centred: {:?} {:?}", at(&c12, "two"), at(&c12, "one"));
+    let c15 = three_rows(row, COMPAT_15).unwrap();
+    assert!((at(&c15, "two").0 - at(&c15, "one").0).abs() < 0.01, "the first row's alignment");
+}
+
+#[test]
+fn a_rows_own_cell_spacing_spaces_that_row() {
+    let row = r#"<w:tr><w:trPr><w:tblCellSpacing w:w="60" w:type="dxa"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>two</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>dos</w:t></w:r></w:p></w:tc></w:tr>"#;
+    let Some(spaced) = three_rows(row, "") else { return };
+    let dx = at(&spaced, "two").0 - at(&spaced, "one").0;
+    assert!(dx > 5.0 && dx < 8.0, "the row's cells sit inside their spacing: {dx}");
+    let ex = row.replace("<w:trPr>", "<w:tblPrEx>").replace("</w:trPr>", "</w:tblPrEx>");
+    let excepted = three_rows(&ex, "").unwrap();
+    assert!((at(&excepted, "two").0 - at(&spaced, "two").0).abs() < 0.01, "an exception's spacing is the row's");
+}
+
+#[test]
+fn a_row_whose_exception_fixes_its_layout_is_a_table_of_its_own() {
+    let cell = |t: &str, w: &str| format!(r#"<w:tc><w:tcPr><w:tcW {w}/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
+    let auto = r#"w:w="0" w:type="auto""#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr><w:tblPrEx><w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPrEx>{}{}</w:tr></w:tbl><w:p/>"#,
+        cell("one", auto),
+        cell("uno", auto),
+        cell("two", r#"w:w="2000" w:type="dxa""#),
+        cell("dos", r#"w:w="2000" w:type="dxa""#)
+    );
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    let col2 = |t: &str| at(&l, t).0 - at(&l, "one").0;
+    assert!((col2("dos") - 100.0).abs() < 0.01, "its own fixed grid: {}", col2("dos"));
+    assert!(col2("uno") < 60.0, "the autofit row keeps its narrow grid: {}", col2("uno"));
 }

@@ -755,6 +755,8 @@ pub struct Cell {
     pub text_direction: String,
     pub no_wrap: bool,
     pub fit_text: bool,
+    /// `w:hideMark`.
+    pub hide_mark: bool,
     /// The cell's `w:tcPr` as read (or as table formatting changed it): what re-resolution merges over the cell's
     /// table-style region when its place in the table changes.
     pub direct: Raw,
@@ -778,6 +780,17 @@ pub struct Row {
     pub jc: Option<Jc>,
     /// The HTML division the row is in (`trPr/w:divId`).
     pub div: Option<Rc<RowDiv>>,
+    /// The table borders the row's exceptions (`w:tblPrEx`) give it, in [`Table::borders`] order; `None` for the
+    /// table's.
+    pub borders: Option<Rc<[Option<Border>; 6]>>,
+    /// The row's exception shading (`w:tblPrEx/w:shd`).
+    pub shading: Option<u32>,
+    /// Every character of the row, its row-end mark included, is hidden.
+    pub vanished: bool,
+    /// The row's own cell spacing (`trPr` or `w:tblPrEx`).
+    pub cell_spacing: Option<f64>,
+    /// The table width of the layout run the row starts or continues, when its exceptions fix its layout.
+    pub run: Option<Width>,
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
     pub controls: Vec<ControlId>,

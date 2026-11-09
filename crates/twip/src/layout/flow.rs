@@ -1767,7 +1767,8 @@ impl<'d> PageFill<'d, '_> {
         carry.prev = None;
         carry.prev_after = 0.0;
         carry.balanced_after = 0.0;
-        let headers: Vec<usize> = (0..tb.rows.len()).take_while(|&r| tb.rows[r].header).collect();
+        let headers: Vec<usize> =
+            (0..tb.rows.len()).take_while(|&r| tb.rows[r].header || tb.rows[r].hidden).filter(|&r| !tb.rows[r].hidden).collect();
         let n = tb.rows.len();
         // Header rows
         if *empty && !pos.at.at_start() && !headers.contains(&pos.at.index()) {

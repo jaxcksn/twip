@@ -63,6 +63,11 @@ impl Editor {
                 ind: None,
                 jc: None,
                 div: None,
+                borders: None,
+                shading: None,
+                vanished: false,
+                cell_spacing: None,
+                run: None,
                 cells: texts
                     .iter()
                     .enumerate()
@@ -85,6 +90,7 @@ impl Editor {
                             text_direction: "lrTb".into(),
                             no_wrap: false,
                             fit_text: false,
+                            hide_mark: false,
                             direct: Default::default(),
                             blocks: vec![paragraph(Rc::new(para.style), run, t.to_string())],
                             controls: Vec::new(),

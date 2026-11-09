@@ -119,7 +119,27 @@ fn shell(t: &Table) -> Table {
     let rows = rows
         .iter()
         .map(|r| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, jc, div, cells, src: _, controls: _, rev } = r;
+            let Row {
+                height,
+                cant_split,
+                header,
+                grid_before,
+                grid_after,
+                w_before,
+                w_after,
+                ind,
+                jc,
+                div,
+                borders,
+                shading,
+                vanished,
+                cell_spacing: row_spacing,
+                run,
+                cells,
+                src: _,
+                controls: _,
+                rev,
+            } = r;
             let cells = cells
                 .iter()
                 .map(|c| {
@@ -137,6 +157,7 @@ fn shell(t: &Table) -> Table {
                         text_direction,
                         no_wrap,
                         fit_text,
+                        hide_mark,
                         blocks: _,
                         direct: _,
                         controls: _,
@@ -156,6 +177,7 @@ fn shell(t: &Table) -> Table {
                         text_direction: text_direction.clone(),
                         no_wrap: *no_wrap,
                         fit_text: *fit_text,
+                        hide_mark: *hide_mark,
                         blocks: Vec::new(),
                         direct: Default::default(),
                         controls: Vec::new(),
@@ -174,6 +196,11 @@ fn shell(t: &Table) -> Table {
                 ind: *ind,
                 jc: *jc,
                 div: div.clone(),
+                borders: borders.clone(),
+                shading: *shading,
+                vanished: *vanished,
+                cell_spacing: *row_spacing,
+                run: *run,
                 cells,
                 src: None,
                 controls: Vec::new(),
@@ -246,7 +273,27 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         && *grid_change == t.grid_change
         && rows.len() == t.rows.len()
         && rows.iter().zip(&t.rows).all(|(r, q)| {
-            let Row { height, cant_split, header, grid_before, grid_after, w_before, w_after, ind, jc, div, cells, src: _, controls: _, rev } = r;
+            let Row {
+                height,
+                cant_split,
+                header,
+                grid_before,
+                grid_after,
+                w_before,
+                w_after,
+                ind,
+                jc,
+                div,
+                borders,
+                shading,
+                vanished,
+                cell_spacing: row_spacing,
+                run,
+                cells,
+                src: _,
+                controls: _,
+                rev,
+            } = r;
             *height == q.height
                 && *cant_split == q.cant_split
                 && *header == q.header
@@ -257,6 +304,11 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 && *ind == q.ind
                 && *jc == q.jc
                 && *div == q.div
+                && *borders == q.borders
+                && *shading == q.shading
+                && *vanished == q.vanished
+                && *row_spacing == q.cell_spacing
+                && *run == q.run
                 && *rev == q.rev
                 && cells.len() == q.cells.len()
                 && cells.iter().zip(&q.cells).all(|(c, d)| {
@@ -274,6 +326,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         text_direction,
                         no_wrap,
                         fit_text,
+                        hide_mark,
                         blocks: _,
                         direct: _,
                         controls: _,
@@ -292,6 +345,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         && *text_direction == d.text_direction
                         && *no_wrap == d.no_wrap
                         && *fit_text == d.fit_text
+                        && *hide_mark == d.hide_mark
                         && *rev == d.rev
                 })
         })
@@ -344,6 +398,11 @@ pub struct RowBox {
     pub lead: f64,
     pub trail: f64,
     pub div_boxes: Rc<[crate::docx::model::DivBox]>,
+    pub shading: Option<u32>,
+    /// The row's cell spacing; its cells are framed when it has one.
+    pub spacing: Option<f64>,
+    /// The next row is framed: the row draws its own bottom border.
+    pub closes: bool,
 }
 
 impl TableLayout {
@@ -781,13 +840,26 @@ fn edge_add(compat: Compat, t: &Table) -> (f64, f64) {
     }
 }
 
+fn row_borders(t: &Table, ri: usize) -> &[Option<Border>; 6] {
+    t.rows.get(ri).and_then(|r| r.borders.as_deref()).unwrap_or(&t.borders)
+}
+
 fn edge_right(t: &Table) -> f64 {
     let last = t.rows.first().and_then(|r| if rtl(t) { r.cells.first() } else { r.cells.last() });
-    space_h(candidate(last.map(|c| &c.right), &t.borders[3]))
+    space_h(candidate(last.map(|c| &c.right), &row_borders(t, 0)[3]))
 }
 
 fn edge_gap(t: &Table, b: f64, mar: f64) -> f64 {
-    half_border(b).max(if t.cell_spacing > 0.0 { 2.0 * t.cell_spacing + b + mar } else { mar })
+    half_border(b).max(spacing_of(t, 0).map_or(mar, |s| 2.0 * s + b + mar))
+}
+
+/// The row's cell spacing, `None` when it has none. A row whose own spacing is 0 still frames its cells.
+fn spacing_of(t: &Table, ri: usize) -> Option<f64> {
+    t.rows.get(ri).and_then(|r| r.cell_spacing).or((t.cell_spacing > 0.0).then_some(t.cell_spacing))
+}
+
+fn framed(t: &Table, ri: usize) -> bool {
+    spacing_of(t, ri).is_some()
 }
 
 fn gap(s: f64, outer: bool) -> f64 {
@@ -987,11 +1059,12 @@ fn fit_inputs<'k>(
     kept: &dyn Fn(usize) -> Option<&'k FitRow>,
 ) -> Result<Vec<FitRow>, Yield> {
     let n = grid_columns(t);
-    let s2 = twips(2.0 * t.cell_spacing.max(0.0));
-    let spacing = twips(t.cell_spacing.max(0.0));
     let grid_tw: Vec<i64> = (0..n).map(|i| twips(t.grid.get(i).copied().unwrap_or(0.0))).collect();
     let mut rows = Vec::with_capacity(t.rows.len());
     for (ri, (r, gs)) in t.rows.iter().zip(geo).enumerate() {
+        let row_s = spacing_of(t, ri);
+        let s2 = twips(2.0 * row_s.unwrap_or(0.0));
+        let spacing = twips(row_s.unwrap_or(0.0));
         if let Some(k) = kept(ri).filter(|k| k.cells.len() == gs.len()) {
             rows.push(k.clone());
             continue;
@@ -1002,7 +1075,7 @@ fn fit_inputs<'k>(
             let c = &r.cells[g.ci];
             let (bl, br) = (twips(space_h(&g.edges[1])), twips(space_h(&g.edges[3])));
             let (ml, mr) = (twips(c.margins[1]), twips(c.margins[3]));
-            let gap = |b: i64, m: i64| if t.cell_spacing > 0.0 { spacing + b + m } else { m };
+            let gap = |b: i64, m: i64| if row_s.is_some() { spacing + b + m } else { m };
             let pad = (gap(bl, ml) + gap(br, mr)).max((bl + br + 1) / 2);
             let cell_pad = (pad - 2 * spacing).max(0);
             let continuation = c.v_merge == VMerge::Continue;
@@ -1134,9 +1207,113 @@ fn layout_with(
     reuse: Option<(&TableLayout, std::ops::RangeInclusive<usize>)>,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
+    if let Some(runs) = layout_runs(t) {
+        return layout_runs_of(t, &runs, text_w, env, prev, measure, memos);
+    }
     match in_view(t, env.ctx.env.text.review.view, env.ctx.expansions) {
         None => layout_shown(t, text_w, env, prev, measure, reuse, memos),
-        Some(v) => Ok(v.expand(&*layout_shown(&v.table, text_w, env, prev, measure, None, memos)?)),
+        Some(v) => {
+            let mut tb = v.expand(&*layout_shown(&v.table, text_w, env, prev, measure, None, memos)?);
+            if hidden_tail(t)
+                && env.ctx.env.text.compat == Compat::Legacy
+                && let Some(tb) = Rc::get_mut(&mut tb)
+            {
+                tb.bottom_border = 0.0;
+            }
+            Ok(tb)
+        }
+    }
+}
+
+// Layout runs
+fn layout_runs(t: &Table) -> Option<Vec<std::ops::Range<usize>>> {
+    if t.fixed || t.rows.iter().all(|r| r.run.is_none()) {
+        return None;
+    }
+    let mut runs: Vec<std::ops::Range<usize>> = Vec::new();
+    for ri in 0..t.rows.len() {
+        match runs.last_mut() {
+            Some(run) if t.rows[run.start].run.is_some() == t.rows[ri].run.is_some() => run.end = ri + 1,
+            _ => runs.push(ri..ri + 1),
+        }
+    }
+    (runs.len() > 1).then_some(runs)
+}
+
+fn layout_runs_of(
+    t: &Table,
+    runs: &[std::ops::Range<usize>],
+    text_w: f64,
+    env: &StoryEnv,
+    prev: Option<&ParaStyle>,
+    measure: bool,
+    memos: &mut Memos,
+) -> Result<Rc<TableLayout>, Yield> {
+    let mut merged: Option<TableLayout> = None;
+    let mut fit: Vec<FitRow> = Vec::new();
+    let n = runs.len();
+    // ponytail: assumes no tblPr jc when the first row has its own (compat 15 reads the table's from it); keep the tblPr jc on Table if that shows up.
+    let table_jc = if env.ctx.env.text.compat == Compat::Generic && t.rows[0].jc.is_some() { Jc::Left } else { t.jc };
+    for (k, run) in runs.iter().enumerate() {
+        let first = &t.rows[run.start];
+        let mut sub = Table { rows: t.rows[run.clone()].to_vec(), ..t.clone() };
+        if k > 0 {
+            sub.jc = first.jc.unwrap_or(table_jc);
+        }
+        if first.run.is_some() {
+            sub.borders = row_borders(t, run.start).clone();
+            sub.rows.iter_mut().for_each(|r| r.run = None);
+        }
+        // The first run keeps the table's own layout.
+        if let Some(width) = first.run.filter(|_| k > 0) {
+            sub.fixed = true;
+            sub.width = width;
+            if let Some(ind) = first.ind {
+                sub.ind = ind;
+                sub.ind_set = true;
+            }
+        }
+        let laid = layout_with(&sub, text_w, env, if k == 0 { prev } else { None }, measure, None, memos)?;
+        fit.extend(laid.fit.iter().cloned());
+        let shift = merged.as_ref().map_or(0.0, |m| laid.x0 - m.x0);
+        let mut rows: Vec<RowBox> = laid.rows.clone();
+        for r in &mut rows {
+            r.cells.iter_mut().for_each(|c| c.x += shift);
+            r.seams.iter_mut().for_each(|s| {
+                s.0 += shift;
+                s.1 += shift;
+            });
+        }
+        if k + 1 < n
+            && let Some(last) = rows.last_mut()
+        {
+            last.height += laid.bottom_border;
+            last.trail += laid.bottom_border;
+        }
+        match merged.as_mut() {
+            None => merged = Some(TableLayout { rows, fit: Rc::from([]), ..clone_layout(&laid) }),
+            Some(m) => {
+                m.rows.extend(rows);
+                m.bottom_border = laid.bottom_border;
+            }
+        }
+    }
+    let mut m = merged.expect("a run");
+    m.fit = fit.into();
+    Ok(Rc::new(m))
+}
+
+fn clone_layout(tb: &TableLayout) -> TableLayout {
+    TableLayout {
+        x0: tb.x0,
+        cols: tb.cols.clone(),
+        rows: Vec::new(),
+        bottom_border: tb.bottom_border,
+        spacing: tb.spacing,
+        id: tb.id,
+        outer: tb.outer.clone(),
+        fit: tb.fit.clone(),
+        rtl: tb.rtl,
     }
 }
 
@@ -1150,7 +1327,7 @@ fn in_view(t: &Table, view: MarkupView, expansions: Option<&super::expansion::Ex
     let original = view == MarkupView::Original;
     let grid = t.table_grid_in(view);
     let differs = |c: &Cell| view.hides_cell(&c.rev) || c.v_merge_in(view) != c.v_merge || original && c.rev.change.is_some();
-    let hides = t.rows.iter().any(|r| view.hides_row(&r.rev) || original && r.rev.change.is_some() || r.cells.iter().any(differs));
+    let hides = t.rows.iter().any(|r| r.vanished || view.hides_row(&r.rev) || original && r.rev.change.is_some() || r.cells.iter().any(differs));
     let shown_row = |ri: usize| expansions.and_then(|e| e.rows.get(&(super::ids::TableId(t.id), ri)));
     let expanded = expansions.is_some_and(|e| !e.rows.is_empty()) && (0..t.rows.len()).any(|ri| shown_row(ri).is_some());
     if !hides && !expanded && grid == t.grid.as_slice() && !(original && t.change.is_some()) {
@@ -1158,6 +1335,7 @@ fn in_view(t: &Table, view: MarkupView, expansions: Option<&super::expansion::Ex
     }
     let mut table = t.clone();
     table.grid = grid.to_vec();
+    carry_hidden_bottoms(&mut table);
     if let Some(p) = t.change.as_ref().and_then(|c| c.previous.as_ref()).filter(|_| original) {
         p.restore_table(&mut table);
     }
@@ -1173,7 +1351,7 @@ fn in_view(t: &Table, view: MarkupView, expansions: Option<&super::expansion::Ex
                 rows.push(Some((0..r.cells.len()).map(|k| k.min(n - 1)).collect()));
                 return Some(r);
             }
-            if view.hides_row(&r.rev) {
+            if r.vanished || view.hides_row(&r.rev) {
                 rows.push(None);
                 return None;
             }
@@ -1218,6 +1396,9 @@ impl ViewTable {
                     lead: 0.0,
                     trail: 0.0,
                     div_boxes: Rc::from([]),
+                    shading: None,
+                    spacing: None,
+                    closes: false,
                 };
                 rows.push(row);
                 fit.push(FitRow::default());
@@ -1333,9 +1514,60 @@ fn layout_shown(
     cached(memos, |c| &mut c.tables, probe, table_bytes, |_| Ok(assemble(t, text_w, env, cols.clone(), &geo, &stories, &closings, inputs.into())))
 }
 
+// Hidden rows
+fn carry_hidden_bottoms(t: &mut Table) {
+    let starts = |r: &Row| {
+        let mut col = r.grid_before;
+        r.cells
+            .iter()
+            .map(|c| {
+                let s = col;
+                col += c.span;
+                s
+            })
+            .collect::<Vec<usize>>()
+    };
+    for ri in (1..t.rows.len()).rev() {
+        if !t.rows[ri].vanished || t.rows[ri - 1].vanished {
+            continue;
+        }
+        let below = ri + t.rows[ri..].iter().take_while(|r| r.vanished).count() - 1;
+        let hidden = &t.rows[below];
+        let at = starts(hidden);
+        let bottoms: Vec<(usize, usize, Option<Border>)> = hidden.cells.iter().zip(&at).map(|(c, &s)| (s, s + c.span, c.bottom.clone())).collect();
+        let inside = hidden.borders.as_ref().map(|b| b[4].clone());
+        let above = &mut t.rows[ri - 1];
+        let at = starts(above);
+        for (c, s) in above.cells.iter_mut().zip(at) {
+            c.bottom = bottoms.iter().find(|(a, b, _)| s >= *a && s < *b).and_then(|x| x.2.clone());
+        }
+        if let Some(inside) = inside {
+            let mut b = above.borders.as_deref().cloned().unwrap_or_else(|| t.borders.clone());
+            b[4] = inside;
+            above.borders = Some(Rc::new(b));
+        }
+    }
+}
+
+fn hidden_tail(t: &Table) -> bool {
+    t.rows.last().is_some_and(|r| r.vanished)
+}
+
+fn mark_only(p: &crate::docx::Paragraph) -> bool {
+    p.inlines.iter().all(|i| match i {
+        Inline::Text(t, r) => t.is_empty() || r.hidden,
+        Inline::Bookmark(..) | Inline::Range(..) => true,
+        i => i.run().is_some_and(|r| r.hidden),
+    })
+}
+
 fn closing_para(c: &Cell) -> Option<(ParaId, f64)> {
+    let bordered = |s: &crate::docx::ParaStyle| {
+        [&s.border_top, &s.border_left, &s.border_bottom, &s.border_right, &s.border_between].iter().any(|b| b.is_some())
+    };
     match c.blocks.as_slice() {
         [.., Block::Table(_), Block::Para(p)] if p.inlines.is_empty() => Some((ParaId(p.id), p.mark.size)),
+        [.., Block::Para(p)] if c.hide_mark && mark_only(p) && p.list.is_none() && !bordered(&p.style) => Some((ParaId(p.id), p.mark.size)),
         _ => None,
     }
 }
@@ -1378,9 +1610,9 @@ fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k Ro
         }
         grid_cells.push(v);
     }
-    let alone = t.cell_spacing > 0.0;
     let mut out = Vec::new();
     for (ri, r) in t.rows.iter().enumerate() {
+        let alone = framed(t, ri);
         if let Some(k) = kept(ri).filter(|k| k.cells.iter().all(|c| c.index < r.cells.len())) {
             out.push(k.cells.iter().map(|c| CellEdges { ci: c.index, col: c.col, span: c.span, edges: c.edges.clone() }).collect());
             continue;
@@ -1392,40 +1624,41 @@ fn cell_edges<'k>(t: &Table, ncols: usize, kept: &dyn Fn(usize) -> Option<&'k Ro
             if span == 0 {
                 continue;
             }
-            let top_t = if ri == 0 { &t.borders[0] } else { &t.borders[4] };
-            let bot_t = if ri + 1 == nrows { &t.borders[2] } else { &t.borders[4] };
-            let left_t = if col == 0 { &t.borders[1] } else { &t.borders[5] };
-            let right_t = if col + span >= ncols { &t.borders[3] } else { &t.borders[5] };
+            let tb = row_borders(t, ri);
+            let top_t = if ri == 0 { &tb[0] } else { &tb[4] };
+            let bot_t = if ri + 1 == nrows { &tb[2] } else { &tb[4] };
+            let left_t = if col == 0 { &tb[1] } else { &tb[5] };
+            let right_t = if col + span >= ncols { &tb[3] } else { &tb[5] };
             let (top, left, bottom, right) = (side(&c.top, top_t), side(&c.left, left_t), side(&c.bottom, bot_t), side(&c.right, right_t));
             let neighbour = |rr: usize, cc: usize| -> Option<&Cell> {
                 t.rows.get(rr).and_then(|row| grid_cells[rr].iter().position(|&(c0, s)| cc >= c0 && cc < c0 + s).map(|i| &row.cells[i]))
             };
-            let top_e = if ri == 0 || alone {
+            let top_e = if ri == 0 || alone || framed(t, ri - 1) {
                 conflict((top.b, top.cell), (None, false))
             } else {
                 let above = neighbour(ri - 1, col);
-                let ab = above.map(|a| side(&a.bottom, &t.borders[4]));
+                let ab = above.map(|a| side(&a.bottom, &row_borders(t, ri - 1)[4]));
                 conflict((top.b, top.cell), ab.map_or((None, false), |s| (s.b, s.cell)))
             };
-            let bot_e = if ri + 1 == nrows || alone {
+            let bot_e = if ri + 1 == nrows || alone || framed(t, ri + 1) {
                 conflict((bottom.b, bottom.cell), (None, false))
             } else {
                 let below = neighbour(ri + 1, col);
-                let bl = below.map(|a| side(&a.top, &t.borders[4]));
+                let bl = below.map(|a| side(&a.top, &row_borders(t, ri + 1)[4]));
                 conflict((bottom.b, bottom.cell), bl.map_or((None, false), |s| (s.b, s.cell)))
             };
             let left_e = if ci == 0 || alone {
                 conflict((left.b, left.cell), (None, false))
             } else {
                 let lc = &r.cells[ci - 1];
-                let ls = side(&lc.right, &t.borders[5]);
+                let ls = side(&lc.right, &tb[5]);
                 conflict((left.b, left.cell), (ls.b, ls.cell))
             };
             let right_e = if ci + 1 == r.cells.len() || alone {
                 conflict((right.b, right.cell), (None, false))
             } else {
                 let rc = &r.cells[ci + 1];
-                let rs = side(&rc.left, &t.borders[5]);
+                let rs = side(&rc.left, &tb[5]);
                 conflict((right.b, right.cell), (rs.b, rs.cell))
             };
             cells.push(CellEdges { ci, col, span, edges: Rc::new([top_e, left_e, bot_e, right_e]) });
@@ -1447,7 +1680,8 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
     edges
         .iter()
         .zip(&t.rows)
-        .map(|(row, r)| {
+        .enumerate()
+        .map(|(ri, (row, r))| {
             row.iter()
                 .map(|e| {
                     let (c, col, span) = (&r.cells[e.ci], e.col, e.span);
@@ -1458,10 +1692,12 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
                     }
                     let (x, w) = (col_x[col], col_x[col + span] - col_x[col]);
                     let (ml, mr) = (twips(c.margins[1]), twips(c.margins[3]));
-                    let (cx, cw) = if t.cell_spacing > 0.0 {
-                        let (gl, gr) = (twips(gap(t.cell_spacing, left_outer)), twips(gap(t.cell_spacing, right_outer)));
-                        let cx = gl + twips(space_h(left_e)) + ml;
-                        (cx, (w - cx - mr - twips(space_h(right_e)) - gr).max(0))
+                    let (cx, cw) = if let Some(row_s) = spacing_of(t, ri) {
+                        let (gl, gr) = (twips(gap(row_s, left_outer)), twips(gap(row_s, right_outer)));
+                        let (bl, br) = (twips(space_h(left_e)), twips(space_h(right_e)));
+                        // Without a gap the text starts half the border further left; the width stays.
+                        let indent = if gl > 0 { ml } else { (ml - bl / 2).max(0) };
+                        (gl + bl + indent, (w - gl - bl - ml - mr - br - gr).max(0))
                     } else {
                         let (bl, br) = (twips(box_h(left_e)), twips(box_h(right_e)));
                         (ml.max(bl / 2), (w - (ml + mr).max((bl + br) / 2)).max(0))
@@ -1486,8 +1722,8 @@ fn assemble(
 ) -> TableLayout {
     let total: f64 = cols.iter().sum();
     let compat = env.ctx.env.text.compat;
-    let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| (space_h(candidate(Some(&c.left), &t.borders[1])), c.margins[1]));
-    let (lw, lmar) = first_left.unwrap_or((space_h(&t.borders[1]), 0.0));
+    let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| (space_h(candidate(Some(&c.left), &row_borders(t, 0)[1])), c.margins[1]));
+    let (lw, lmar) = first_left.unwrap_or((space_h(&row_borders(t, 0)[1]), 0.0));
     let mut x0 = match compat {
         Compat::Generic => t.ind + half_border(lw),
         Compat::Legacy if !t.ind_set => t.ind,
@@ -1540,11 +1776,12 @@ fn assemble(
     let mirror = |x: f64, w: f64| if rtl { total - x - w } else { x };
     let mut stories = stories.iter();
     let mut closings = closings.iter();
-    let mut rows = Vec::new();
+    let mut rows: Vec<RowBox> = Vec::new();
     let review = &env.ctx.env.text.review;
     for ((ri, r), cells_geo) in t.rows.iter().enumerate().zip(geo) {
+        let row_s = spacing_of(t, ri);
         let shift = match r.ind {
-            Some(i) if compat == Compat::Legacy && !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - t.ind,
+            Some(i) if !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - t.ind,
             _ => 0.0,
         } + r.div.as_ref().filter(|_| t.jc == Jc::Left && t.floating.is_none() && !rtl).map_or(0.0, |d| d.shift);
         // Row alignment
@@ -1556,8 +1793,7 @@ fn assemble(
                     let before: f64 = cols[..gb].iter().sum();
                     let after: f64 = cols[n - ga.min(n - gb)..].iter().sum();
                     let width = total - before - after;
-                    let gap = r.cells.first().map_or(0.0, |c| c.margins[1])
-                        + if t.cell_spacing > 0.0 { 2.0 * t.cell_spacing + space_h(&t.borders[1]) } else { 0.0 };
+                    let gap = r.cells.first().map_or(0.0, |c| c.margins[1]) + row_s.map_or(0.0, |s| 2.0 * s + space_h(&t.borders[1]));
                     let left = if jc == Jc::Center { (twips(text_w) - twips(width)).div_euclid(2) as f64 / 20.0 } else { text_w - width + gap };
                     left - (x0 + before)
                 }
@@ -1601,7 +1837,7 @@ fn assemble(
                 || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
         let mut top_border = cells.iter().map(|c| space_h(&c.edges[0])).fold(0.0, f64::max);
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
-            Some(above) if t.cell_spacing == 0.0 => above
+            Some(above) if row_s.is_none() && !framed(t, ri - 1) => above
                 .iter()
                 .filter(|a| !cells_geo.iter().any(|b| b.col == a.col))
                 .filter(|a| {
@@ -1617,10 +1853,13 @@ fn assemble(
             _ => Vec::new(),
         };
         top_border = seams.iter().map(|s| thick(&s.2)).fold(top_border, f64::max);
-        if t.cell_spacing == 0.0 {
+        if row_s.is_none() {
             let cand = |own: &Option<Border>, table: &Option<Border>| space_h(if own.is_some() { own } else { table });
-            let top_t = if ri == 0 { &t.borders[0] } else { &t.borders[4] };
-            let w = ri.checked_sub(1).map_or(0.0, |p| t.rows[p].cells.iter().map(|c| cand(&c.bottom, &t.borders[4])).fold(0.0, f64::max));
+            let top_t = if ri == 0 { &row_borders(t, ri)[0] } else { &row_borders(t, ri)[4] };
+            let w = ri
+                .checked_sub(1)
+                .filter(|&p| !framed(t, p))
+                .map_or(0.0, |p| t.rows[p].cells.iter().map(|c| cand(&c.bottom, &row_borders(t, p)[4])).fold(0.0, f64::max));
             let above = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(w, f64::max);
             for c in &mut cells {
                 c.margins[0] = (above - top_border).max(0.0);
@@ -1628,9 +1867,14 @@ fn assemble(
         }
         let mut gap_top = 0.0;
         let mut cell_bottom = 0.0;
-        if t.cell_spacing > 0.0 {
-            let s = t.cell_spacing;
+        if let Some(s) = row_s {
             gap_top = if ri == 0 { 2.0 * s + space_h(&t.borders[0]) } else { s };
+            // An unframed row above leaves its bottom border to this row's top.
+            if let Some(p) = ri.checked_sub(1).filter(|&p| !framed(t, p)) {
+                let w = rows[p].cells.iter().map(|c: &CellBox| space_h(&c.edges[2])).fold(0.0, f64::max);
+                let own = top_border + s + cells.iter().map(|c| c.margins[0]).fold(0.0, f64::max);
+                gap_top += (w - own).max(0.0);
+            }
             top_border += gap_top;
             cell_bottom = cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max) + gap(s, ri + 1 == t.rows.len());
         }
@@ -1649,6 +1893,7 @@ fn assemble(
             Some(Block::Para(p)) => Some(p.para_style_in(env.ctx.env.text.review.view)),
             _ => None,
         };
+        let closes = row_s.is_none() && ri + 1 < t.rows.len() && framed(t, ri + 1);
         let (lead, trail) = r.div.as_ref().map_or((0.0, 0.0), |d| (d.lead, d.trail));
         rows.push(RowBox {
             cells,
@@ -1667,6 +1912,9 @@ fn assemble(
             lead,
             trail,
             div_boxes: r.div.as_ref().map_or_else(|| Rc::from([]), |d| d.boxes.clone()),
+            shading: r.shading.filter(|_| row_s.is_some_and(|s| s > 0.0)),
+            spacing: row_s,
+            closes,
         });
     }
     for ri in 0..rows.len() {
@@ -1689,7 +1937,7 @@ fn assemble(
         }
     }
     let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
-    if t.cell_spacing > 0.0 {
+    if framed(t, t.rows.len().saturating_sub(1)) {
         bottom_border = space_h(&t.borders[2]);
     }
     let (l, r) = if rtl { (3, 1) } else { (1, 3) };
@@ -1881,6 +2129,9 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         }
         rect = [x0 + first.x, top, x0 + end.x + end.w, top + height];
     }
+    if let Some(fill) = row.shading {
+        background.push(Item::rect(rect, fill));
+    }
     for (k, c) in row.cells.iter().enumerate() {
         let part = parts.map(|p| p[k]).unwrap_or(CellPart { units: &c.units.units, base: 0.0, ends: true });
         let ch = if part.ends && part.base == 0.0 && part.units.len() == c.units.units.len() { c.align_h } else { part.height() };
@@ -1924,15 +2175,15 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             closing,
         };
         cells.push(CellFragment { cell: k, content: content.into_boxed_slice(), place });
-        if tb.spacing > 0.0 {
+        if let Some(spacing) = row.spacing {
             let ncols = tb.cols.len();
             let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= ncols);
             if tb.rtl {
                 (lo, ro) = (ro, lo);
             }
-            let bx0 = x0 + c.x + gap(tb.spacing, lo);
-            let bx1 = x0 + c.x + c.w - gap(tb.spacing, ro);
-            let (by0, by1) = (top + row.gap_top, top + height - gap(tb.spacing, tb.is_last(ri)));
+            let bx0 = x0 + c.x + gap(spacing, lo);
+            let bx1 = x0 + c.x + c.w - gap(spacing, ro);
+            let (by0, by1) = (top + row.gap_top, top + height - gap(spacing, tb.is_last(ri)));
             if let Some(fill) = c.shading {
                 background.push(Item::rect([bx0, by0, bx1, by1], fill));
             }
@@ -1980,14 +2231,16 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         if let Some(r) = r.as_ref().filter(|b| b.visible()) {
             edge(&mut borders, [cx1 - thick(r) / 2.0, top, cx1 + thick(r) / 2.0, top + height], false, true, r);
         }
-        if last_of_table && let Some(b) = b.as_ref().filter(|b| b.visible()) {
+        if (last_of_table || row.closes)
+            && let Some(b) = b.as_ref().filter(|b| b.visible())
+        {
             edge(&mut borders, [cx0 - bw(l) / 2.0, top + height, cx1 + bw(r) / 2.0, top + height + thick(b)], true, true, b);
         }
     }
     for (a, b, s) in &row.seams {
         edge(&mut borders, [x0 + a, top, x0 + b, top + thick(s)], true, false, s);
     }
-    if tb.spacing > 0.0 {
+    if row.spacing.is_some_and(|s| s > 0.0) {
         // Outer border
         let [t, l, b, r] = &tb.outer;
         let x1 = x0 + tb.cols.iter().sum::<f64>();

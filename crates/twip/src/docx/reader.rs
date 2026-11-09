@@ -2299,11 +2299,16 @@ impl Reader {
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
+            let ex = TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours);
+            trp.jc = trp.jc.or(ex.jc);
             // Every row's alignment, or none when they differ.
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
             if ri == 0 {
                 first_row_jc = trp.jc;
             }
+            let mut row_tbl = tbl.clone();
+            row_tbl.borders.merge(&ex.borders);
+            row_tbl.margins.merge(&ex.margins);
             let cell_nodes: Vec<(Node, Vec<ControlId>)> = self.cells_of(*rn, &[]);
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
@@ -2313,7 +2318,7 @@ impl Reader {
                 let tc_pr = child(*cn, "tcPr");
                 tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
                 let unset = if style_id.is_none() { 0.5 } else { 0.0 };
-                let tm = &tbl.margins;
+                let tm = &row_tbl.margins;
                 let rev = self.cell_revisions(tc_pr, &region.tc, tm, unset);
                 let ctx = TableCtx { region: region.clone() };
                 let blocks = self.read_blocks(*cn, pkg, Some(&ctx));
@@ -2336,6 +2341,7 @@ impl Reader {
                     text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
                     no_wrap: tcp.no_wrap.unwrap_or(false),
                     fit_text: tcp.fit_text.unwrap_or(false),
+                    hide_mark: tc_pr.and_then(|p| child(p, "hideMark")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off"))),
                     direct: Raw(child(*cn, "tcPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
                     blocks,
                     controls: cell_controls.clone(),
@@ -2361,12 +2367,26 @@ impl Reader {
                 grid_after: trp.grid_after.unwrap_or(0).max(0) as usize,
                 w_before: trp.w_before.map(|w| w.max(0.0)),
                 w_after: trp.w_after.map(|w| w.max(0.0)),
-                ind: TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours).ind,
+                ind: ex.ind.filter(|_| ex.fixed == Some(true) && tbl.fixed != Some(true)),
                 jc: trp.jc,
                 div: tr_pr
                     .and_then(|p| child(p, "divId"))
                     .and_then(|n| int(val(n)))
                     .map(|id| Rc::new(RowDiv { id, shift: 0.0, lead: 0.0, trail: 0.0, boxes: Rc::from([]) })),
+                shading: ex.shading.flatten(),
+                cell_spacing: trp.cell_spacing.or(ex.cell_spacing).map(|s| s.max(0.0)),
+                run: (ex.fixed == Some(true) && tbl.fixed != Some(true)).then(|| ex.width.or(tbl.width).unwrap_or(Width::Auto)),
+                vanished: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off")))
+                    && cells.iter().all(|c| {
+                        c.blocks.iter().all(|b| match b {
+                            Block::Para(p) => p.mark.hidden && p.inlines.iter().all(|i| i.run().is_none_or(|r| r.hidden)),
+                            Block::Table(_) => false,
+                        })
+                    }),
+                borders: (ex.borders != Borders::default()).then(|| {
+                    let b = &row_tbl.borders;
+                    Rc::new([b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()])
+                }),
                 cells,
                 controls: row_controls.clone(),
                 src: self.record.then(|| Rc::new(rn.range())),
