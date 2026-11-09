@@ -83,6 +83,10 @@ fn run() {
     }
     let st = state(&mut e);
     assert_eq!(st["caret"]["chain"].as_array().map(Vec::len), Some(DEPTH), "the caret is in the innermost cell");
+    // One more level would save a document the reader refuses.
+    let table = Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 });
+    assert!(matches!(e.execute(table, fonts()), super::super::Outcome::Unchanged(_)), "no table past the deepest level");
+    assert_eq!(state(&mut e)["dump"], original, "the refused table leaves the document as it was");
 
     for c in "xyz".chars() {
         e.execute(Command::InsertText(c.to_string()), fonts());
