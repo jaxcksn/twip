@@ -229,6 +229,32 @@ fn only_compat_15_moves_a_vertical_sections_table_too_wide_for_the_rest_of_the_p
 }
 
 #[test]
+fn adjacent_tables_in_a_vertical_section_are_one_table_from_the_first_ones_left_edge() {
+    let table = |w: u32, text: &str| {
+        let border = r#"w:val="single" w:sz="4" w:space="0" w:color="000000""#;
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblBorders><w:top {border}/><w:bottom {border}/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let body = format!("{}{}{}{}", para("before", ""), table(3000, "wide"), table(2000, "narrow"), para("after", ""));
+    let Some(doc) = section("tbRl", "0", &body) else { return };
+    let snap = crate::layout::layout(&doc, &fonts());
+    let cell = |t: char| {
+        crate::layout::traverse::paint_items(&snap.pages()[0]).into_iter().find_map(|i| match i {
+            Item::Glyphs(r) if r.chars.first().is_some_and(|c| c.0 == t) => Some((r.x, r.baseline)),
+            _ => None,
+        })
+    };
+    let (Some(wide), Some(narrow)) = (cell('w'), cell('n')) else { panic!("both cells") };
+    // The narrow rows start where the wide ones do, below them.
+    assert!((wide.0 - narrow.0).abs() < 0.01 && narrow.1 > wide.1, "{wide:?} {narrow:?}");
+    // The text beside the whole table starts past its last rows.
+    let runs = turned_runs(&doc);
+    let after = runs.iter().find(|r| r.0 == "after").map(|r| r.1).expect("a line");
+    assert!(after[1] > narrow.1, "{after:?} {narrow:?}");
+}
+
+#[test]
 fn a_continuous_break_into_a_vertical_section_starts_a_page() {
     let body = format!(
         r#"{}<w:p><w:pPr><w:sectPr>{MARGINS}</w:sectPr></w:pPr></w:p>{}<w:sectPr><w:type w:val="continuous"/>{MARGINS}<w:textDirection w:val="tbRl"/></w:sectPr>"#,

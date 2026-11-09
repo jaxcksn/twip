@@ -2380,6 +2380,26 @@ impl<'d> PageFill<'d, '_> {
             Some(fp) if paged => fp.x - back,
             _ => *y - back,
         };
+        // A table right after another is the same table: its rows go on below the earlier ones, the border between
+        // them shared, from the earlier rows' far edge as printed (their left edge).
+        let joined = match bi.checked_sub(1).map(|p| (p, self.sec.blocks.get(p))) {
+            Some((p, Some(Block::Table(pt)))) if fp.is_none() => {
+                let earlier = self.at.found.iter().rev().find(|o| o.key == (self.sec.index, p, float::UPRIGHT_TABLE)).map(|o| o.rect);
+                match earlier {
+                    Some(r) => {
+                        let pprev = self.sec.blocks.neighbours(p, p, self.ctx.env.text.review.view).0;
+                        Some((r, super::table::layout(pt, col.bottom.to_pt() - col.top.to_pt(), &env, pprev, false, memos)?.bottom_border))
+                    }
+                    None => None,
+                }
+            }
+            _ => None,
+        };
+        let y0 = match joined {
+            Some((r, _)) if down => r[3] - (br - bl),
+            Some((r, _)) => r[1],
+            None => y0,
+        };
         let y1 = y0 + br - bl;
         // Compat ≤ 14 has no fit test: the table stays at its stack position, over the margin if need be.
         if y1 > col.bottom.to_pt() + EPS && !empty && !paged && !legacy {
@@ -2390,6 +2410,7 @@ impl<'d> PageFill<'d, '_> {
         let (l, r) = fp.map_or((9.0, 9.0), |fp| (fp.dist[2], fp.dist[3]));
         let (above, below) = if down { (r, l) } else { (l, r) };
         let along = match fp {
+            _ if let Some((r, under)) = joined => r[2] - under,
             Some(fp) if paged => fp.y,
             Some(fp) => col.x + fp.y,
             None => self
@@ -2400,8 +2421,10 @@ impl<'d> PageFill<'d, '_> {
                 .map(|o| o.excl[2])
                 .fold(col.x, f64::max),
         };
-        let f = table_float(t.id, h, br - bl, [above, below, 0.0, 0.0], true);
-        self.at.found.push(Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, along, y0, br - bl));
+        // Joined rows keep text as far off as the earlier rows do.
+        let (o0, o1) = joined.map_or((y0, y1), |(r, _)| (y0.min(r[1]), y1.max(r[3])));
+        let f = table_float(t.id, h, o1 - o0, [above, below, 0.0, 0.0], true);
+        self.at.found.push(Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, along, o0, o1 - o0));
         // On the page as printed: the turned page's y runs leftwards from its right edge, or rightwards when the
         // lines stack from the left.
         let left = if v.flow == super::vertical::Flow::DownEast { y0 } else { self.page_h - y1 };
