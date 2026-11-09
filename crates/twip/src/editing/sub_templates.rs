@@ -767,7 +767,7 @@ impl Editor {
         let (rules, types) = (&self.sub_template_rules, &self.application_field_types);
         let (changed, back) = fields::rekind(&mut self.doc, &|code: &FieldCode| field_kind(rules, types, code));
         if back {
-            fields::evaluate(&mut self.doc, crate::docx::now_utc());
+            fields::evaluate(&mut self.doc, crate::docx::now_local());
         }
         if changed {
             self.relayout(vec![None]);

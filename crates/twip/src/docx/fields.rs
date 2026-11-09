@@ -649,6 +649,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_local_clock_is_utc_moved_by_quarter_hours() {
+        let off = crate::docx::now_local() - crate::docx::now_utc();
+        assert!(off.abs() <= 14 * 3600 && (off + 1).rem_euclid(900) <= 2, "{off}");
+    }
+
+    #[test]
     fn date_blocks_show_the_date_in_their_picture_whatever_the_language() {
         use crate::docx::{blank::blank_docx, write::repackage};
         let body = r#"<w:p><w:r><w:rPr><w:lang w:val="de-DE"/></w:rPr><w:t>x</w:t><w:dayShort/><w:dayLong/><w:monthShort/><w:monthLong/><w:yearShort/><w:yearLong/><w:t>y</w:t></w:r></w:p>"#;

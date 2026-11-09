@@ -73,11 +73,11 @@ fn resolve_path(dir: &str, target: &str) -> String {
 }
 
 pub fn read(bytes: &[u8]) -> Result<Document, String> {
-    read_with(bytes, false, now_utc())
+    read_with(bytes, false, now_local())
 }
 
-/// As [`read`], with `DATE`/`TIME` fields computed at `now` (seconds since 1970, UTC) instead of the system clock, so
-/// the layout is the same on every run.
+/// As [`read`], with `DATE`/`TIME` fields and date blocks computed at `now` (seconds since 1970, local time) instead
+/// of the system clock, so the layout is the same on every run.
 pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
     read_with(bytes, false, now)
 }
@@ -87,10 +87,56 @@ pub fn now_utc() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
+/// Seconds since 1970 by the system clock in the local time zone: the wall-clock time dates and times show.
+pub fn now_local() -> i64 {
+    let t = now_utc();
+    t + local_offset(t)
+}
+
+/// The local time zone's offset from UTC at `t` (seconds since 1970, UTC), in seconds; 0 without a time zone.
+fn local_offset(t: i64) -> i64 {
+    // The fields `struct tm` starts with on every platform, with room for the rest.
+    #[repr(C)]
+    #[derive(Default)]
+    struct Tm {
+        sec: i32,
+        min: i32,
+        hour: i32,
+        mday: i32,
+        mon: i32,
+        year: i32,
+        rest: [i64; 4],
+    }
+    let mut tm = Tm::default();
+    #[cfg(windows)]
+    // SAFETY: `_localtime64_s` writes one `struct tm` (nine ints, within `Tm`) and reads one 64-bit time.
+    let ok = unsafe {
+        unsafe extern "C" {
+            fn _localtime64_s(tm: *mut Tm, t: *const i64) -> i32;
+        }
+        _localtime64_s(&mut tm, &t) == 0
+    };
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    // SAFETY: `localtime_r` writes one `struct tm` (nine ints, a long and a pointer, within `Tm`) and reads one time_t.
+    let ok = unsafe {
+        unsafe extern "C" {
+            fn localtime_r(t: *const i64, tm: *mut Tm) -> *mut Tm;
+        }
+        !localtime_r(&t, &mut tm).is_null()
+    };
+    #[cfg(not(any(windows, all(unix, target_pointer_width = "64"))))]
+    let ok = false;
+    if !ok {
+        return 0;
+    }
+    let days = super::review::days_from_civil(i64::from(tm.year) + 1900, i64::from(tm.mon) + 1, i64::from(tm.mday));
+    days * 86_400 + i64::from(tm.hour) * 3600 + i64::from(tm.min) * 60 + i64::from(tm.sec) - t
+}
+
 /// As [`read`], keeping what saving needs: the package, the main part's XML, where each body paragraph and table came
 /// from ([`Paragraph::src`], [`Table::src`]) and each run's direct formatting ([`RunStyle::direct`]).
 pub fn read_editable(bytes: &[u8]) -> Result<Document, String> {
-    read_with(bytes, true, now_utc())
+    read_with(bytes, true, now_local())
 }
 
 /// The XML text of an element as written.
