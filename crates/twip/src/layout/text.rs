@@ -104,6 +104,8 @@ pub struct Piece {
     pub soft_hyphen: bool,
     /// The word may break after this piece (automatic hyphenation).
     pub auto_hyphen: bool,
+    /// No line break before this piece (inside a fitted region of text).
+    pub glued: bool,
     pub style: u32,
     pub width: f64,
     pub ascent: f64,
@@ -381,6 +383,7 @@ impl<'a> Builder<'a> {
             break_after: p.break_after,
             soft_hyphen: p.soft_hyphen,
             auto_hyphen: false,
+            glued: false,
             style,
             width: p.width,
             ascent: p.ascent,
@@ -924,6 +927,7 @@ impl<'a> Builder<'a> {
             at += units;
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
+        self.fit_text();
         if let Some(dd) = &space.balance
             && (dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian))
         {
@@ -944,6 +948,91 @@ impl<'a> Builder<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Each fitted region (consecutive text whose runs have `w:fitText` with one id) made as wide as its first run's
+    /// `w:fitText`: wider with character spacing, narrower with a horizontal scale; never broken.
+    fn fit_text(&mut self) {
+        let fit = |b: &Self, k: usize| {
+            let p = &b.pieces[k];
+            b.styles[p.style as usize].run.fit_text.filter(|_| matches!(p.kind, Kind::Text | Kind::Space))
+        };
+        let mut a = 0;
+        while a < self.pieces.len() {
+            let Some((target, id)) = fit(self, a) else {
+                a += 1;
+                continue;
+            };
+            let mut e = a + 1;
+            while e < self.pieces.len() && fit(self, e).is_some_and(|(_, i)| i == id) {
+                e += 1;
+            }
+            self.fit_region(a, e, target);
+            a = e;
+        }
+    }
+
+    /// Fits pieces `a..e` to `target` points, in layout units (204.8 a twip): within 10 tw nothing changes; wider,
+    /// every character gets `s = trunc(trunc((T - N) / (n - 1)) / 204.8)` tw after it and the last one `s` less the
+    /// twips the region still overshoots; narrower, a scale of `max(15, trunc(100 T / N))` % and the last character
+    /// the overshoot taken off.
+    fn fit_region(&mut self, a: usize, e: usize, target: f64) {
+        const TW: f64 = 204.8;
+        const TOL: f64 = 2048.0;
+        for k in a..e {
+            let p = &mut self.pieces[k];
+            p.glued = k > a;
+            p.auto_hyphen = false;
+            if k + 1 < e {
+                p.break_after = false;
+            }
+        }
+        let chars = |b: &Self, k: usize| b.text[b.pieces[k].text.0 as usize..b.pieces[k].text.1 as usize].chars().count() as f64;
+        // Each piece's natural width: the runs' own character spacing is replaced.
+        let natural: Vec<f64> =
+            (a..e).map(|k| (self.pieces[k].width - self.styles[self.pieces[k].style as usize].run.spacing * chars(self, k)) * 4096.0).collect();
+        let (t, n_lu) = ((target * 20.0 * TW).round(), natural.iter().sum::<f64>());
+        let n: f64 = (a..e).map(|k| chars(self, k)).sum();
+        if (t - n_lu).abs() <= TOL || n == 0.0 {
+            return;
+        }
+        let tw = |lu: f64| (lu / TW).trunc();
+        let (widths, last) = if t > n_lu {
+            let s = if n > 1.0 { tw(((t - n_lu) / (n - 1.0)).trunc()) } else { 0.0 };
+            let sl = (s * TW).round();
+            let w = n_lu + n * sl;
+            let mut last = if n > 1.0 { s - tw(w - t) } else { tw(t - n_lu) };
+            // A correction to nothing that leaves the region off by more than the tolerance gives the last character
+            // `s` again.
+            if n > 1.0 && last == 0.0 && (t - (w - sl)).abs() > TOL {
+                last = s;
+            }
+            let widths: Vec<f64> = (a..e).zip(&natural).map(|(k, w)| w + chars(self, k) * sl).collect();
+            (widths, (last * TW).round() - sl)
+        } else {
+            let scale = (100.0 * t / n_lu).trunc().max(15.0);
+            let widths: Vec<f64> = (a..e).zip(&natural).map(|(k, w)| self.scaled(k, scale).unwrap_or(w * scale / 100.0)).collect();
+            let over = widths.iter().sum::<f64>() - t;
+            (widths, if over.abs() > TOL { -(tw(over) * TW).round() } else { 0.0 })
+        };
+        for (k, w) in (a..e).zip(widths) {
+            self.pieces[k].width = (w + if k + 1 == e { last } else { 0.0 }) / 4096.0;
+        }
+    }
+
+    /// A piece's width in lu at a horizontal scale: each glyph's advance at `round(fu × floor(avg × scale / 100) / avg)`
+    /// font units, `avg` the font's average character width.
+    fn scaled(&self, k: usize, scale: f64) -> Option<f64> {
+        let st = &self.styles[self.pieces[k].style as usize];
+        let face = st.face.as_ref()?;
+        let avg = (face.avg_width * face.upem).round();
+        if avg <= 0.0 {
+            return None;
+        }
+        let q = (avg * scale / 100.0).floor();
+        let (g0, g1) = self.pieces[k].glyphs;
+        let fu: f64 = (g0 as usize..g1 as usize).map(|g| (self.glyph_advances[g] * q / avg).round()).sum();
+        Some(fu * face.scale(st.size) * 4096.0)
     }
 
     fn east_asia_face(&self, style: u32) -> Option<Rc<Face>> {
@@ -1103,6 +1192,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         scale,
         kern,
         ligatures,
+        fit_text,
         em,
         toc,
         lang,
@@ -1138,6 +1228,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *scale == b.scale
             && *kern == b.kern
             && *ligatures == b.ligatures
+            && *fit_text == b.fit_text
             && *em == b.em
             && *toc == b.toc
             && *lang == b.lang

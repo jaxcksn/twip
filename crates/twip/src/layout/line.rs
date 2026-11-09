@@ -844,6 +844,7 @@ fn fit_line(
             Kind::Space | Kind::Anchor => {
                 let ink = (start..i).rev().find(|&j| pieces[j].kind != Kind::Space);
                 if p.kind == Kind::Space
+                    && !p.glued
                     && frame.compat == Compat::Legacy
                     && ink.is_some_and(|j| pen - pieces[j + 1..i].iter().map(|q| q.width).sum::<f64>() > right + EPS)
                     && squeeze.is_none()
@@ -923,11 +924,16 @@ fn fit_line(
             if strict {
                 return Fit { end: start, xs: Vec::new(), widths: Vec::new(), hard: None, hyphen: false, leaders: Vec::new() };
             }
-            if i > start && pieces[start..i].iter().any(|q| !matches!(q.kind, Kind::ListNumber | Kind::Anchor)) {
-                if let Some(pt) = pending.take() {
-                    resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i, right);
+            // Inside a fitted region the break goes before the region, unless the region starts the line.
+            let at = (start..=i).rev().find(|&k| !pieces[k].glued).unwrap_or(start);
+            if at > start && pieces[start..at].iter().any(|q| !matches!(q.kind, Kind::ListNumber | Kind::Anchor)) {
+                xs.truncate(at - start);
+                ws.truncate(at - start);
+                leaders.retain(|(k, _)| *k < at - start);
+                if let Some(pt) = pending.take().filter(|pt| pt.idx < at) {
+                    resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, at, right);
                 }
-                return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
+                return Fit { end: at, xs, widths: ws, hard: None, hyphen: false, leaders };
             }
         }
         xs.push(pen);

@@ -47,6 +47,8 @@ pub struct RunStyle {
     /// Kern at or above this size; 0 = off.
     pub kern: f64,
     pub ligatures: u8,
+    /// `w:fitText`: the width its region of text is fitted to (points) and the region's id.
+    pub fit_text: Option<(f64, i64)>,
     /// `w:em`, when it marks the text ("dot", "comma", "circle", "underDot").
     pub em: Option<String>,
     /// In a table of contents' result: the Hyperlink character style doesn't show ([`crate::docx::resolve::Resolver::rerun`]).

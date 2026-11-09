@@ -86,6 +86,8 @@ pub struct RunProps {
     pub lang: Option<String>,
     pub style: Option<String>,
     pub rtl: Option<bool>,
+    /// `w:fitText`: the width to fit the text to (points) and its region id.
+    pub fit_text: Option<(f64, i64)>,
 }
 
 fn font_ref(n: Node, name: &str) -> Option<FontRef> {
@@ -177,6 +179,7 @@ impl RunProps {
                 "lang" => p.lang = val(e).map(str::to_string),
                 "rStyle" => p.style = val(e).map(str::to_string),
                 "rtl" => p.rtl = Some(on_off(e)),
+                "fitText" => p.fit_text = twips(val(e)).map(|w| (w, int(attr(e, "id")).unwrap_or(0))),
                 _ => {}
             }
         }
@@ -207,7 +210,7 @@ impl RunProps {
         }
         take!(
             ascii, h_ansi, east_asia, cs, hint, size, dstrike, underline, color, highlight, shading, shd, border, vert_align, position, spacing,
-            scale, kern, ligatures, cntxt_alts, lang, style, rtl, em
+            scale, kern, ligatures, cntxt_alts, lang, style, rtl, em, fit_text
         );
         self.toggles = (self.toggles & !o.toggles_set) | (o.toggles & o.toggles_set);
         self.toggles_set |= o.toggles_set;

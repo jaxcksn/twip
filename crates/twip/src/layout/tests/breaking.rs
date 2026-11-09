@@ -999,3 +999,44 @@ fn a_legacy_list_level_puts_its_text_a_fixed_gap_after_the_number() {
     let (right, text) = at(120, 360, "right", "tab").expect("lays out");
     assert!((right - 92.83).abs() < 0.01 && (text - 108.0).abs() < 0.01, "{right} {text}");
 }
+
+/// Each character on the first page with its x and baseline.
+fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
+    Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))
+}
+
+fn fitted(val: u32, text: &str) -> String {
+    format!(
+        r#"<w:p><w:r><w:t>|</w:t></w:r><w:r><w:rPr><w:fitText w:val="{val}" w:id="1"/></w:rPr><w:t xml:space="preserve">{text}</w:t></w:r><w:r><w:t>|end</w:t></w:r></w:p>"#
+    )
+}
+
+#[test]
+fn fitted_text_spreads_or_squeezes_to_its_width() {
+    let width = |val, text| {
+        let c = glyph_xs("", &fitted(val, text))?;
+        let bars: Vec<f64> = c.iter().filter(|g| g.0 == '|').map(|g| g.1).collect();
+        Some((bars[1] - c[1].1, c))
+    };
+    // `abc def` (721.6 tw) to 2880: 359 tw after each character, 5 after the last.
+    let Some((w, c)) = width(2880, "abc def") else { return };
+    assert!((w - 2880.6 / 20.0).abs() < 0.03, "{w}");
+    // `a` (1139 fu) then 359 tw.
+    assert!((c[2].1 - c[1].1 - (1139.0 * 11.0 / 2048.0 + 17.95)).abs() < 0.01, "{:?}", &c[..3]);
+    // Within 10 tw of the target: unchanged.
+    let (natural, _) = width(1076, "abcdefghi").expect("lays out");
+    assert!((natural - 1076.4 / 20.0).abs() < 0.03, "{natural}");
+    // `abcdef` (660.5 tw) to 800: 74 %, the overshoot off the last character.
+    let (narrow, _) = width(500, "abcdef").expect("lays out");
+    assert!((narrow - 25.0).abs() < 0.6, "{narrow}");
+}
+
+#[test]
+fn a_fitted_region_never_breaks() {
+    // Wider than the line: on a line of its own (the bar glued to it broken off), past the margin.
+    let c = glyph_xs("", &fitted(12000, "abc def ghi")).expect("lays out");
+    let a = c.iter().find(|g| g.0 == 'a').expect("a");
+    let end = c.iter().rfind(|g| g.0 == '|').expect("|end");
+    assert!(c[0].2 < a.2 && a.2 < end.2, "{:?} {a:?} {end:?}", c[0]);
+    assert!(c.iter().filter(|g| g.2 == a.2).map(|g| g.1).fold(0.0, f64::max) > 540.0);
+}
