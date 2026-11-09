@@ -783,6 +783,12 @@ pub fn nested_shift(t: &Table, single: bool) -> f64 {
     if matches!(t.jc, Jc::Center | Jc::Right) {
         return 0.0;
     }
+    legacy_lead(t)
+}
+
+/// How far compat ≤ 14 puts a left-aligned table's box out before its column edge: half its left border and its
+/// first cell's left margin.
+pub fn legacy_lead(t: &Table) -> f64 {
     let (lw, lmar) = t
         .rows
         .first()

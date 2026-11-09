@@ -14,6 +14,8 @@ mod position;
 const EPS: f64 = 1e-6;
 
 pub const TABLE_PIECE: usize = usize::MAX;
+/// A table in a vertical section: drawn upright, an obstacle on the turned page.
+pub const UPRIGHT_TABLE: usize = usize::MAX - 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Wrap {

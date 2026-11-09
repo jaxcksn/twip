@@ -691,6 +691,7 @@ pub fn band(
         l.pitch = merged.pitch;
         l.baseline = merged.baseline;
         l.below = merged.below;
+        l.centred = merged.centred;
     }
     Ok((segs, s))
 }

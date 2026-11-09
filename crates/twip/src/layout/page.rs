@@ -702,7 +702,7 @@ impl<'d> Paginator<'d, '_> {
         let env = StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
         placed
             .iter()
-            .filter(|p| p.key.2 != super::float::TABLE_PIECE)
+            .filter(|p| !matches!(p.key.2, super::float::TABLE_PIECE | super::float::UPRIGHT_TABLE))
             .map(|p| super::story::float_box(&p.float, p.rect, p.anchor, &env, memos))
             .collect()
     }
@@ -957,7 +957,11 @@ pub fn layout_body(
         }
     }
     let (size, children) = match vertical {
-        Some(v) => ((space.page_h, space.page_w), super::vertical::turn_body(&body, v, [space.page_h, space.page_w]).into()),
+        Some(v) => {
+            let mut turned = super::vertical::turn_body(&body, v, [space.page_h, space.page_w]);
+            turned.append(&mut fill.at.upright);
+            ((space.page_h, space.page_w), turned.into())
+        }
         None if s.text_flow == 4 => ((space.page_w, space.page_h), super::vertical::turn_east_asian(&body).into()),
         None => ((space.page_w, space.page_h), body.into()),
     };

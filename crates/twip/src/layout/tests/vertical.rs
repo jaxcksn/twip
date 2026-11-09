@@ -195,6 +195,25 @@ fn a_horizontal_sections_rtl_gutter_is_on_the_right() {
 }
 
 #[test]
+fn a_table_in_a_vertical_section_stands_upright_where_the_next_line_would_go() {
+    let table = r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let Some(doc) = section("tbRl", "0", &format!("{}{table}{}", para("before", ""), para("after", ""))) else { return };
+    let snap = crate::layout::layout(&doc, &fonts());
+    // The cell's text isn't turned; its box ends where the next line would start, one line in from the right
+    // margin (512pt), and its row starts at the top margin.
+    let cell = crate::layout::traverse::paint_items(&snap.pages()[0])
+        .into_iter()
+        .find_map(|i| if let Item::Glyphs(r) = i { r.chars.iter().any(|c| c.0 == 'c').then_some((r.x, r.baseline)) } else { None });
+    let Some((x, baseline)) = cell else { panic!("an upright cell") };
+    assert!((x - (512.0 - 12.99 - 100.0)).abs() < 1.5 && baseline > 50.0 && baseline < 65.0, "{x} {baseline}");
+    // The paragraph after it takes that stack position too, its line starting past the table along the line.
+    let runs = turned_runs(&doc);
+    let at = |t: &str| runs.iter().find(|r| r.0 == t).map(|r| r.1).expect("a line");
+    let (before, after) = (at("before"), at("after"));
+    assert!((before[0] - after[0] - 12.99).abs() < 0.05 && after[1] > baseline, "{before:?} {after:?}");
+}
+
+#[test]
 fn a_continuous_break_into_a_vertical_section_starts_a_page() {
     let body = format!(
         r#"{}<w:p><w:pPr><w:sectPr>{MARGINS}</w:sectPr></w:pPr></w:p>{}<w:sectPr><w:type w:val="continuous"/>{MARGINS}<w:textDirection w:val="tbRl"/></w:sectPr>"#,

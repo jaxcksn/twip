@@ -129,6 +129,8 @@ pub struct AttemptState {
     pub effects: PageEffects,
     pub keep_cap: Option<(usize, usize)>,
     pub end: Option<FlowToken>,
+    /// Tables of a vertical section, drawn upright on the page as printed.
+    pub upright: Vec<Child>,
 }
 
 pub struct PageFill<'d, 'p> {
@@ -1096,6 +1098,12 @@ impl<'d> PageFill<'d, '_> {
                         (chain, members) = (None, Vec::new());
                     }
                 }
+                Some(Block::Table(_)) if self.ctx.env.text.vertical.is_some() => {
+                    match self.place_upright_table(bi, pos, carry, &col, &mut y, empty, memos)? {
+                        Stop::Done => (chain, members) = (None, Vec::new()),
+                        s => return Ok((s, y)),
+                    }
+                }
                 Some(Block::Table(t)) => {
                     let breaks = t.rows.first().is_some_and(|r| {
                         r.cells.iter().any(
@@ -1972,8 +1980,9 @@ impl<'d> PageFill<'d, '_> {
         if pos.at.at_start() && !*empty {
             *y += self.after_above_table(pos.block, carry);
         }
+        // A vertical section's tables are placed upright by their caller, floating or not.
         let fp = match self.sec.blocks.get(pos.block) {
-            Some(Block::Table(t)) => t.floating,
+            Some(Block::Table(t)) if self.ctx.env.text.vertical.is_none() => t.floating,
             _ => None,
         };
         let (flow_y, was_empty) = (*y, *empty);
@@ -2017,7 +2026,7 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             if let Some(Block::Table(t)) = self.sec.blocks.get(pos.block) {
-                let f = table_float(t.id, &fp, br - bl, h, in_flow);
+                let f = table_float(t.id, br - bl, h, table_dist(&fp, in_flow), !fp.never_overlap);
                 let mut probe = Placed::new((self.sec.index, pos.block, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, h);
                 let body_bottom = self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom;
                 float::avoid(&mut probe, &tables, (self.margins.0, self.page_w), body_bottom, self.ctx.env.text.compat);
@@ -2317,17 +2326,89 @@ impl<'d> PageFill<'d, '_> {
         Ok(Stop::Done)
     }
 
+    /// A table in a vertical section, laid out horizontally and drawn upright: at the stack position the next line
+    /// would take (compat ≤ 14 moves it back towards the earlier lines by its legacy lead), from the line start or
+    /// below an earlier such table it meets, its own `jc` and indent ignored. It doesn't advance the stack: the lines
+    /// it meets, 9pt either side across the page, wrap past it along the line. A table that doesn't fit across the
+    /// rest of the page goes to the next one, unless the page has nothing else. A floating table keeps its
+    /// left and right distances from the text, on those sides as printed, and starts `tblpY` along the line; one
+    /// placed from the page on both axes sits at `tblpX`, `tblpY` as printed.
+    #[allow(clippy::too_many_arguments, reason = "as place_table")]
+    fn place_upright_table(
+        &mut self,
+        bi: usize,
+        pos: &mut FlowToken,
+        carry: &mut FlowState,
+        col: &ColumnSpace,
+        y: &mut f64,
+        empty: bool,
+        memos: &mut Memos,
+    ) -> Result<Stop, Yield> {
+        let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { unreachable!("an upright table") };
+        let Some(v) = self.ctx.env.text.vertical else { unreachable!("a vertical section") };
+        if !empty {
+            *y += self.after_above_table(bi, carry);
+        }
+        let text = super::env::TextEnv { vertical: None, ..self.ctx.env.text.clone() };
+        let le = super::LayoutEnv { text, ..self.ctx.env.clone() };
+        let env = StoryEnv { ctx: LayoutCtx { env: &le, ..self.ctx }, fields: self.fields, notes: self.note_numbers };
+        let prev = self.sec.blocks.neighbours(bi, bi, self.ctx.env.text.review.view).0;
+        let tb = super::table::layout(t, col.bottom.to_pt() - col.top.to_pt(), &env, prev, false, memos)?;
+        let (bl, br) = super::table::outer_box(&tb);
+        let h: f64 = tb.rows.iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>() + tb.bottom_border;
+        let back = if self.ctx.env.text.compat == Compat::Legacy { super::table::legacy_lead(t) } else { 0.0 };
+        let down = v.flow != super::vertical::Flow::DownEast;
+        let fp = t.floating;
+        let paged = fp.is_some_and(|fp| fp.v_anchor == TableAnchor::Page && fp.h_page);
+        let y0 = match fp {
+            Some(fp) if paged && down => self.page_h - (fp.x - back) - (br - bl),
+            Some(fp) if paged => fp.x - back,
+            _ => *y - back,
+        };
+        let y1 = y0 + br - bl;
+        if y1 > col.bottom.to_pt() + EPS && !empty && !paged {
+            return Ok(Stop::Full);
+        }
+        // The distances across, on the turned page's top and bottom: the sides as printed swap when the lines stack
+        // from the right.
+        let (l, r) = fp.map_or((9.0, 9.0), |fp| (fp.dist[2], fp.dist[3]));
+        let (above, below) = if down { (r, l) } else { (l, r) };
+        let along = match fp {
+            Some(fp) if paged => fp.y,
+            Some(fp) => col.x + fp.y,
+            None => self
+                .at
+                .found
+                .iter()
+                .filter(|o| o.key.2 == float::UPRIGHT_TABLE && o.excl[1] < y1 - EPS && o.excl[3] > y0 + EPS)
+                .map(|o| o.excl[2])
+                .fold(col.x, f64::max),
+        };
+        let f = table_float(t.id, h, br - bl, [above, below, 0.0, 0.0], true);
+        self.at.found.push(Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, along, y0, br - bl));
+        // On the page as printed: the turned page's y runs leftwards from its right edge, or rightwards when the
+        // lines stack from the left.
+        let left = if v.flow == super::vertical::Flow::DownEast { y0 } else { self.page_h - y1 };
+        let page_col = ColumnSpace { x: left - bl, width: br - bl, top: Lu::round_half_up(along), bottom: Lu::MAX, balance: false };
+        let (mut top, mut fresh, mut area, mut rows) = (along, true, NoteArea::default(), Vec::new());
+        let saved = std::mem::take(&mut self.at.starts);
+        self.place_table(&tb, pos, carry, &page_col, &mut top, &mut fresh, &mut area, &mut rows, memos)?;
+        self.at.starts = saved;
+        self.at.upright.extend(rows);
+        Ok(Stop::Done)
+    }
+
     #[allow(clippy::too_many_arguments, reason = "the part's place and the attempt state it was placed in")]
     fn table_obstacle(&mut self, bi: usize, tb: &TableLayout, at_x: f64, top: f64, bottom: f64, flow_y: f64, settled: bool) {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return };
-        let Some(fp) = t.floating else { return };
+        let Some(fp) = t.floating.filter(|_| self.ctx.env.text.vertical.is_none()) else { return };
         if bottom <= top + EPS {
             return;
         }
         let legacy = self.ctx.env.text.compat == Compat::Legacy;
         let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
         let (bl, br) = super::table::outer_box(tb);
-        let f = table_float(t.id, &fp, br - bl, bottom - top, in_flow);
+        let f = table_float(t.id, br - bl, bottom - top, table_dist(&fp, in_flow), !fp.never_overlap);
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));
         let l = at_x + bl - if fp.x_spec.is_none() && !fp.h_text { 0.05 } else { 0.0 };
@@ -2342,10 +2423,14 @@ impl<'d> PageFill<'d, '_> {
     }
 }
 
-/// A floating table as a float: its outer box, the distances text keeps from it (none above or below one placed in
-/// the flow) and whether it may overlap others.
-fn table_float(id: u64, fp: &crate::docx::props::TablePos, w: f64, h: f64, in_flow: bool) -> Rc<Float> {
+/// A floating table's distances from the text: none above or below one placed in the flow.
+fn table_dist(fp: &crate::docx::props::TablePos, in_flow: bool) -> [f64; 4] {
     let [dt, db, dl, dr] = fp.dist;
+    if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] }
+}
+
+/// A table's box as a square, both-sides float `dist` apart from the text.
+fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool) -> Rc<Float> {
     Rc::new(Float {
         id,
         w,
@@ -2363,11 +2448,11 @@ fn table_float(id: u64, fp: &crate::docx::props::TablePos, w: f64, h: f64, in_fl
         v_offset: 0.0,
         wrap: "square".into(),
         wrap_text: "bothSides".into(),
-        dist: if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] },
+        dist,
         effect: [0.0; 4],
         poly: None,
         behind: false,
-        allow_overlap: !fp.never_overlap,
+        allow_overlap,
         layout_in_cell: true,
         order: 0,
         z: 0,
