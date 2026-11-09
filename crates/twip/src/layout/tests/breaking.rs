@@ -1138,3 +1138,22 @@ fn compat_12_font_metric_options() {
     let p15 = |s: &str| baselines(s, arial, two).map(|l| l[1].3 - l[0].3).unwrap();
     assert!((p15(c15) - p15(&c15.replace("<w:noLeading/>", ""))).abs() < 1e-6, "compat 15 clears the options");
 }
+
+#[test]
+fn compat_12_options_take_the_hanging_indent_stop_from_a_list_numbers_tab() {
+    let numbering = r#"<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="1440" w:hanging="1080"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num>"#;
+    let body = r#"<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>Text</w:t></w:r></w:p>"#;
+    let text = |opt: &str, mode: u32| {
+        let s = format!(
+            r#"<w:compat>{opt}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#
+        );
+        numbered_baselines(&s, ARIAL_11, body, numbering).map(|l| l[0].2)
+    };
+    let Some(plain) = text("", 12) else { return };
+    assert!((plain - 144.0).abs() < 0.01, "the hanging indent: {plain}");
+    // The next default stop after the number instead; compat 15 clears the options.
+    for opt in ["<w:noTabHangInd/>", "<w:doNotUseIndentAsNumberingTabStop/>"] {
+        assert!((text(opt, 12).unwrap() - 108.0).abs() < 0.01, "{opt}");
+        assert!((text(opt, 15).unwrap() - 144.0).abs() < 0.01, "{opt}");
+    }
+}

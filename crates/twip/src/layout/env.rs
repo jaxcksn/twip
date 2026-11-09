@@ -26,6 +26,10 @@ pub struct TextEnv {
     pub no_raise_lower: bool,
     pub whole_point_spacing: bool,
     pub mac_small_caps: bool,
+    /// The hanging indent is no tab stop: `noTabHangInd` (any tab) and `doNotUseIndentAsNumberingTabStop` (a
+    /// list number's tab), compat ≤ 14.
+    pub no_tab_hang_ind: bool,
+    pub no_number_hang_stop: bool,
     /// `suppressTopSpacing`.
     pub suppress_top_spacing: bool,
     /// `suppressSpacingAtTopOfPage`, compat ≤ 14.
@@ -82,6 +86,8 @@ impl TextEnv {
             no_raise_lower: s.compat() == Compat::Legacy && s.has("noSpaceRaiseLower"),
             whole_point_spacing: s.compat() == Compat::Legacy && s.has("spacingInWholePoints"),
             mac_small_caps: s.compat() == Compat::Legacy && s.has("mwSmallCaps"),
+            no_tab_hang_ind: s.compat() == Compat::Legacy && s.has("noTabHangInd"),
+            no_number_hang_stop: s.compat() == Compat::Legacy && s.has("doNotUseIndentAsNumberingTabStop"),
             suppress_top_spacing: s.has("suppressTopSpacing"),
             suppress_spacing_at_top: s.compat() == Compat::Legacy && s.has("suppressSpacingAtTopOfPage"),
             breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),

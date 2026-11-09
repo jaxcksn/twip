@@ -80,6 +80,9 @@ pub struct Frame {
     pub centred: bool,
     /// East Asian line-breaking rules: an opening bracket doesn't end a line, a closing one doesn't start it.
     pub breaking_rules: bool,
+    /// The hanging indent is a tab stop: for any tab, for a list number's tab.
+    pub hang_stop: bool,
+    pub number_hang_stop: bool,
 }
 
 impl Frame {
@@ -101,6 +104,8 @@ impl Frame {
             vertical: e.vertical.is_some(),
             centred: e.vertical.is_some_and(|v| v.upright),
             breaking_rules: e.breaking_rules,
+            hang_stop: !e.no_tab_hang_ind,
+            number_hang_stop: !e.no_tab_hang_ind && !e.no_number_hang_stop,
         }
     }
 }
@@ -682,13 +687,14 @@ fn ptab_stop(t: &crate::docx::PTab, style: &ParaStyle, frame: &Frame) -> (f64, T
     (pos, t.align, t.leader)
 }
 
-fn next_stop(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leader) {
+/// The stop a tab at `pen` goes to; `number`: the tab after a list number.
+fn next_stop(pen: f64, style: &ParaStyle, frame: &Frame, number: bool) -> (f64, TabKind, Leader) {
     let o = frame.tab_origin;
-    let (stop, kind, leader) = stop_from(pen - o, style, frame);
+    let (stop, kind, leader) = stop_from(pen - o, style, frame, if number { frame.number_hang_stop } else { frame.hang_stop });
     (stop + o, kind, leader)
 }
 
-fn stop_from(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leader) {
+fn stop_from(pen: f64, style: &ParaStyle, frame: &Frame, hang_stop: bool) -> (f64, TabKind, Leader) {
     let custom = style.tabs.iter().find(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
     let (mut stop, mut kind, mut leader) = match custom {
         Some(t) => (t.pos, t.kind, t.leader),
@@ -700,7 +706,7 @@ fn stop_from(pen: f64, style: &ParaStyle, frame: &Frame) -> (f64, TabKind, Leade
             (s, TabKind::Left, Leader::None)
         }
     };
-    if pen < style.ind_left - EPS && (stop > style.ind_left + EPS || custom.is_none()) {
+    if hang_stop && pen < style.ind_left - EPS && (stop > style.ind_left + EPS || custom.is_none()) {
         stop = style.ind_left;
         kind = TabKind::Left;
         leader = Leader::None;
@@ -830,7 +836,7 @@ fn fit_line(
                 }
                 let (mut stop, mut kind, leader) = match p.object.map(|o| &sp.objects[o as usize]) {
                     Some(Object::PTab(t)) => ptab_stop(t, style, frame),
-                    _ => next_stop(pen, style, frame),
+                    _ => next_stop(pen, style, frame, i > 0 && pieces[..i].iter().all(|q| q.kind == Kind::ListNumber)),
                 };
                 let stop_custom = style.tabs.iter().any(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
                 let custom = p.object.is_some() || stop_custom;
