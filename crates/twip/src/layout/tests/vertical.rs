@@ -537,3 +537,15 @@ fn compat_14_draws_a_vertical_table_too_long_below_an_earlier_one_from_the_line_
     let kept = p1.iter().filter(|c| c.0.starts_with('s')).count();
     assert!(kept > 0 && kept + p2.iter().filter(|c| c.0.starts_with('s')).count() == 14, "{kept}");
 }
+
+#[test]
+fn compat_15_moves_a_vertical_table_too_long_below_an_earlier_one_across_past_it() {
+    let body = format!("{}{}{}{}{}", para("pa", ""), named_table("r", 12, 2500), para("pb", ""), named_table("s", 18, 1500), para("pc", ""));
+    let Some(mut doc) = section("tbRl", "0", &body) else { return };
+    doc.settings.compat_mode = 15;
+    let p1 = cells_on(&doc, 0);
+    let x = |t: &str| p1.iter().find(|c| c.0 == t).map(|c| c.1);
+    // All its rows stay on the page, from the line start, past the earlier table across the stack.
+    let (r0, s0) = (x("r0").expect("r0"), x("s0").expect("s0"));
+    assert!(x("s17").is_some() && s0 < r0 - 75.0 - 18.0 + 0.01, "{r0} {s0}");
+}

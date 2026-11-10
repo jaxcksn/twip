@@ -2461,15 +2461,28 @@ impl<'d> PageFill<'d, '_> {
             // Its later parts go on where the first one was, across the page.
             None => carry.upright_at.filter(|_| !pos.at.at_start()).or(known).unwrap_or(y0),
         };
+        // The distances across, on the turned page's top and bottom: the sides as printed swap when the lines stack
+        // from the right.
+        let (l, r) = fp.map_or((9.0, 9.0), |fp| (fp.dist[2], fp.dist[3]));
+        let (above, below) = if down { (r, l) } else { (l, r) };
+        let end = col.x + col.width;
+        let meeting = |y0: f64| {
+            let y1 = y0 + br - bl;
+            self.at.found.iter().filter(move |o| o.key.2 == float::UPRIGHT_TABLE && o.excl[1] < y1 - EPS && o.excl[3] > y0 + EPS)
+        };
+        let below_tables = |y0: f64| meeting(y0).map(|o| o.excl[2]).fold(col.x, f64::max);
+        // Compat 15 moves a table that runs past the line end below the tables it meets across the stack, past the
+        // one that holds it back (their distances touching).
+        let mut y0 = y0;
+        while !legacy && fp.is_none() && joined.is_none() && below_tables(y0) > col.x + EPS && below_tables(y0) + h > end + EPS {
+            let Some(b) = meeting(y0).max_by(|a, b| a.excl[2].total_cmp(&b.excl[2])) else { break };
+            y0 = b.excl[3] + above;
+        }
         let y1 = y0 + br - bl;
         // Compat ≤ 14 has no fit test: the table stays at its stack position, over the margin if need be.
         if y1 > col.bottom.to_pt() + EPS && !empty && !paged && !legacy {
             return Ok(Stop::Full);
         }
-        // The distances across, on the turned page's top and bottom: the sides as printed swap when the lines stack
-        // from the right.
-        let (l, r) = fp.map_or((9.0, 9.0), |fp| (fp.dist[2], fp.dist[3]));
-        let (above, below) = if down { (r, l) } else { (l, r) };
         let along = match fp {
             _ if let Some((r, under)) = joined => r[2] - under,
             Some(fp) if paged => fp.y,
@@ -2483,17 +2496,10 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             Some(fp) => col.x + fp.y,
-            None => self
-                .at
-                .found
-                .iter()
-                .filter(|o| o.key.2 == float::UPRIGHT_TABLE && o.excl[1] < y1 - EPS && o.excl[3] > y0 + EPS)
-                .map(|o| o.excl[2])
-                .fold(col.x, f64::max),
+            None => below_tables(y0),
         };
         // Compat 15 also moves a table longer than the rest of the line to the next page; one that starts a page
         // splits by rows at the line end, in either mode, its header rows repeated.
-        let end = col.x + col.width;
         if along + h > end + EPS && !empty && !legacy && fp.is_none() && joined.is_none() {
             return Ok(Stop::Full);
         }
