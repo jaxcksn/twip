@@ -822,10 +822,19 @@ const TRADITIONAL_CHINESE: Kinsoku = Kinsoku {
     hanging: "!),.:;?]}’”′、。〉》」』】〕〞﹚﹜﹞！），．：；？］｝",
 };
 
+const KOREAN: Kinsoku = Kinsoku {
+    no_end: "$([\\{£¥‘“〈《「『【〔＄（［｛￡￥￦",
+    no_start: "!%),.:;?]}¢°’”′″℃〉》」』】〕！％），．：；？］｝￠",
+    no_start_strict: "!%),.:;?]}¢°’”′″℃〉》」』】〕！％），．：；？］｝￠",
+    hanging: "!%),.:;?]}¢°’”′″℃〉》」』】〕！％），．：；？］｝￠",
+};
+
 /// The kinsoku classes of a run's East Asian language (`w:lang w:eastAsia`); none for other languages.
 fn kinsoku(lang: &str) -> Option<&'static Kinsoku> {
     let is = |l: &str| lang.eq_ignore_ascii_case(l);
-    if is("ja-JP") {
+    if is("ko-KR") {
+        Some(&KOREAN)
+    } else if is("ja-JP") {
         Some(&JAPANESE)
     } else if is("zh-CN") || is("ii-CN") {
         Some(&SIMPLIFIED_CHINESE)
@@ -947,13 +956,12 @@ fn fit_line(
                 .is_some_and(|k| classes(k).is_some_and(|t| first_char(k).is_some_and(|c| no_start(t).contains(c))))
     };
     // Under the breaking rules a line may break between two characters unless both wrap as words: Hangul and every
-    // letter of a Korean run with `w:wordWrap` on, other text outside the East Asian characters only with it on.
-    // ponytail: punctuation in a Korean run breaks like a kinsoku character (which classes Korean runs have is not
-    // known); a Korean kinsoku table if measured.
+    // character of a Korean run with `w:wordWrap` on (its punctuation too: such a run breaks only at spaces), other
+    // text outside the East Asian characters only with it on.
+    let korean_run = |k: usize| sp.styles[pieces[k].style as usize].run.lang_east_asia.eq_ignore_ascii_case("ko-KR");
     let wraps = |k: usize, c: char| {
-        let korean = hangul(c) || sp.styles[pieces[k].style as usize].run.lang_east_asia.eq_ignore_ascii_case("ko-KR");
         let east = super::text::is_east_asian(c as u32);
-        if korean { (!style.no_word_wrap || !east) && c.is_alphanumeric() } else { !style.no_word_wrap && !east }
+        if hangul(c) || korean_run(k) { !style.no_word_wrap || !east && c.is_alphanumeric() } else { !style.no_word_wrap && !east }
     };
     let between = |k: usize| {
         rules
@@ -963,17 +971,23 @@ fn fit_line(
             && !pieces[k + 1].glued
             && !(last_char(k).is_some_and(|c| wraps(k, c)) && first_char(k + 1).is_some_and(|c| wraps(k + 1, c)))
     };
-    // topLinePunct: an opening bracket that starts a line keeps only its right half.
+    // topLinePunct: an opening bracket that starts a line keeps only its right half; an opening quote too when it is
+    // in the run's East Asian font (`w:hint="eastAsia"`).
+    let hinted = |k: usize| sp.styles[pieces[k].style as usize].run.hint_east_asia;
     if east_asian
         && style.top_line_punct
         && pieces.get(start).is_some_and(|p| p.kind == Kind::Text)
-        && first_char(start).is_some_and(|c| "〈《「『【〔（［｛".contains(c))
+        && first_char(start).is_some_and(|c| "〈《「『【〔（［｛".contains(c) || "‘“".contains(c) && hinted(start))
     {
         pen -= pieces[start].width / 2.0;
     }
-    // Punctuation that may hang past the right margin, in East Asian paragraphs.
+    // Punctuation that may hang past the right margin, in East Asian paragraphs; compat 15 hangs none.
     let hangs = |k: usize| {
-        east_asian && !style.no_overflow_punct && !style.in_frame && classes(k).is_some_and(|t| first_char(k).is_some_and(|c| t.hanging.contains(c)))
+        east_asian
+            && frame.compat == Compat::Legacy
+            && !style.no_overflow_punct
+            && !style.in_frame
+            && classes(k).is_some_and(|t| first_char(k).is_some_and(|c| t.hanging.contains(c)))
     };
     let mut i = start;
     while i < n {
@@ -1148,10 +1162,17 @@ fn fit_line(
             if strict {
                 return Fit { end: start, xs: Vec::new(), widths: Vec::new(), hard: None, hyphen: false, leaders: Vec::new() };
             }
-            // Inside a fitted region the break goes before the region, unless the region starts the line.
+            // Inside a fitted region the break goes before the region, unless the region starts the line. In a
+            // Korean run the cut ignores the kinsoku classes and spaces that don't fit go down with the rest.
             let mut at = (start..=i).rev().find(|&k| !pieces[k].glued).unwrap_or(start);
-            while at > start + 1 && refused(at) {
-                at -= 1;
+            if korean_run(at.min(n - 1)) {
+                while at > start + 1 && pieces[at - 1].kind == Kind::Space && xs[at - 1 - start] + ws[at - 1 - start] > right + EPS {
+                    at -= 1;
+                }
+            } else {
+                while at > start + 1 && refused(at) {
+                    at -= 1;
+                }
             }
             if at > start && pieces[start..at].iter().any(|q| !matches!(q.kind, Kind::ListNumber | Kind::Anchor)) {
                 xs.truncate(at - start);
@@ -1532,7 +1553,7 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
         }
         // Every line, the last too: equal gaps between the characters (spaces included), the first at the left edge
         // and the last ending at the right; a character alone is centred. Where East Asian text meets a Latin letter
-        // or a digit the gap takes half an em more.
+        // or a digit the gap takes half an em more. Compat 15: each space first stretches by half its width.
         Jc::Distribute => {
             let chars: Vec<usize> = (0..content_end).filter(|&k| pieces[idx(k)].kind != Kind::Tab).collect();
             let extra = right - line_end_x;
@@ -1541,7 +1562,14 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                     *x += extra / 2.0;
                 }
             } else if chars.len() > 1 {
-                let bonus: Vec<f64> = chars.windows(2).map(|w| auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style)).collect();
+                let mut bonus: Vec<f64> = chars.windows(2).map(|w| auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style)).collect();
+                if frame.compat == Compat::Generic {
+                    for (j, &k) in chars[..chars.len() - 1].iter().enumerate() {
+                        if pieces[idx(k)].kind == Kind::Space {
+                            bonus[j] += line.widths[k] / 2.0;
+                        }
+                    }
+                }
                 let extra = extra - bonus.iter().sum::<f64>();
                 if extra > 0.0 {
                     let q = extra / (chars.len() - 1) as f64;

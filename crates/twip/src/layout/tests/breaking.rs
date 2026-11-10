@@ -1261,9 +1261,25 @@ fn a_korean_run_wraps_as_words_unless_word_wrap_is_off() {
     assert_eq!(mincho_lines(SZ_11, &run("ko-KR")).unwrap()[0], 38);
     let no_wrap = mincho_lines(SZ_11, &format!(r#"</w:p><w:p><w:pPr><w:wordWrap w:val="0"/><w:ind w:right="340"/></w:pPr>{}"#, run("ko-KR")));
     assert_eq!(no_wrap.unwrap()[1], 41);
-    // Punctuation breaks: after a `)` that just fits rather than at the space before it.
+    // No break at the space before a `)`, none after it: cut where the line is full.
     let paren = run("ko-KR").replace(&format!("{} 字", "字".repeat(38)), &format!("{} )字", "字".repeat(40)));
     assert_eq!(mincho_lines(SZ_11, &paren).unwrap()[0], 42);
+}
+
+#[test]
+fn a_korean_runs_punctuation_never_breaks_and_its_cut_takes_a_space_down() {
+    let run = |lang: &str, text: &str| {
+        format!(
+            r#"<w:r><w:rPr><w:rFonts w:ascii="MS Mincho" w:hAnsi="MS Mincho" w:eastAsia="MS Mincho"/><w:lang w:val="en-US" w:eastAsia="{lang}"/></w:rPr><w:t xml:space="preserve">{text}</w:t></w:r>"#
+        )
+    };
+    let (k30, k40) = ("字".repeat(30), "字".repeat(40));
+    // No break at the closing bracket: the run is cut at the full line.
+    let Some(ko) = mincho_lines(SZ_11, &run("ko-KR", &format!("{k30}）{}", "字".repeat(14)))) else { return };
+    assert_eq!(ko[0], 41);
+    // Not after the space after an opening bracket: the cut falls after the bracket and the space starts line 2.
+    assert_eq!(mincho_lines(SZ_11, &run("ko-KR", &format!("{k40}「 字字字字字"))).unwrap(), [41, 6]);
+    assert_eq!(mincho_lines(SZ_11, &run("ko-KR", &format!("{k40}） 字字字字字"))).unwrap(), [41, 5]);
 }
 
 #[test]
@@ -1288,10 +1304,15 @@ fn punctuation_hangs_in_east_asian_paragraphs() {
     // the last 字 down with it.
     let hung = mincho_lines(r#"<w:rFonts w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#, &run).unwrap();
     assert_eq!((plain[0], hung[0]), (40, 42));
+    // Compat 15 hangs none.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let body = format!(r#"<w:p><w:pPr><w:ind w:right="340"/></w:pPr>{run}</w:p>"#);
+    let c15 = lines(c15, r#"<w:rFonts w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#, &body).unwrap();
+    assert_eq!(c15[0].1.chars().count(), 40);
 }
 
 /// Each character's x (twips) on the first page of distributed MS Mincho paragraphs of `texts` in a 9020 tw column.
-fn distributed_xs(ppr: &str, texts: &[&str]) -> Option<Vec<(char, f64)>> {
+fn distributed_xs(settings: &str, ppr: &str, texts: &[&str]) -> Option<Vec<(char, f64)>> {
     if !fonts().is_installed("MS Mincho") {
         return None;
     }
@@ -1299,19 +1320,24 @@ fn distributed_xs(ppr: &str, texts: &[&str]) -> Option<Vec<(char, f64)>> {
         .iter()
         .map(|t| format!(r#"<w:p><w:pPr><w:jc w:val="distribute"/><w:ind w:right="340"/>{ppr}</w:pPr><w:r>{MINCHO_JA}<w:t xml:space="preserve">{t}</w:t></w:r></w:p>"#))
         .collect();
-    let c = super::page_chars(&test_doc("", SZ_11, &body, "")?).swap_remove(0);
+    let c = super::page_chars(&test_doc(settings, SZ_11, &body, "")?).swap_remove(0);
     Some(c.into_iter().map(|(ch, x, _)| (ch, x * 20.0)).collect())
 }
 
 #[test]
 fn a_distributed_line_spreads_its_characters_and_spaces_east_asian_text_from_latin() {
-    let Some(xs) = distributed_xs("", &["字", "字ab字c字"]) else { return };
+    let Some(xs) = distributed_xs("", "", &["字", "字ab字c字"]) else { return };
     let near = |got: &[(char, f64)], want: &[f64]| got.len() == want.len() && got.iter().zip(want).all(|(g, w)| (g.1 - w).abs() < 0.5);
     // Alone, centred; the last line spread to both margins, half an em more at each of the four boundaries.
     assert!(near(&xs, &[5840.0, 1440.0, 3288.0, 4916.0, 6654.0, 8502.0, 10240.0]), "{xs:?}");
     // Without autoSpaceDE every gap is (9020 − 990) / 5.
-    let plain = distributed_xs(r#"<w:autoSpaceDE w:val="0"/>"#, &["字ab字c字"]).expect("lays out");
+    let plain = distributed_xs("", r#"<w:autoSpaceDE w:val="0"/>"#, &["字ab字c字"]).expect("lays out");
     assert!(near(&plain, &[1440.0, 3266.0, 4982.0, 6698.0, 8524.0, 10240.0]), "{plain:?}");
+    // Compat 15: the space first stretches by half its width, then the gaps are equal.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let xs = distributed_xs(c15, "", &["abc def"]).expect("lays out");
+    let g = (9020.0 - 770.0 - 55.0) / 6.0;
+    assert!(near(&xs, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0].map(|k| 1440.0 + k * (110.0 + g) + if k > 3.5 { 55.0 } else { 0.0 })), "{xs:?}");
 }
 
 #[test]
@@ -1326,6 +1352,16 @@ fn top_line_punct_takes_the_left_half_off_an_opening_bracket_at_a_line_start() {
     let ea = r#"<w:rFonts w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#;
     let Some(cut) = first(ea, "<w:topLinePunct/>", "「字字") else { return };
     assert!((cut[0] - 1330.0).abs() < 0.01 && (cut[1] - 1550.0).abs() < 0.01, "{cut:?}");
+    // An opening quote only in the East Asian font slot.
+    let hinted = |text: &str| first(ea, "<w:topLinePunct/>", text).map(|x| x[0]);
+    let hint = |text: &str| {
+        let body = format!(
+            r#"<w:p><w:pPr><w:topLinePunct/></w:pPr><w:r><w:rPr><w:rFonts w:hint="eastAsia" w:ascii="MS Mincho" w:hAnsi="MS Mincho" w:eastAsia="MS Mincho"/><w:lang w:eastAsia="ja-JP"/></w:rPr><w:t>{text}</w:t></w:r></w:p>"#
+        );
+        test_doc("", ea, &body, "").map(|d| super::page_chars(&d)[0][0].1 * 20.0)
+    };
+    assert!((hinted("“字字").unwrap() - 1440.0).abs() < 0.01);
+    assert!((hint("“字字").unwrap() - 1330.0).abs() < 0.01);
     // Not for `(`, not without the option, not outside an East Asian paragraph.
     assert!((first(ea, "<w:topLinePunct/>", "(字字").unwrap()[0] - 1440.0).abs() < 0.01);
     assert!((first(ea, "", "「字字").unwrap()[0] - 1440.0).abs() < 0.01);
