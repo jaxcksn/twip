@@ -1237,6 +1237,25 @@ fn kinsoku_classes_follow_the_runs_east_asian_language() {
 }
 
 #[test]
+fn a_korean_run_wraps_as_words_unless_word_wrap_is_off() {
+    let run = |lang: &str| {
+        format!(
+            r#"<w:r><w:rPr><w:rFonts w:ascii="MS Mincho" w:hAnsi="MS Mincho" w:eastAsia="MS Mincho"/><w:lang w:val="en-US" w:eastAsia="{lang}"/></w:rPr><w:t xml:space="preserve">{} 字字字字字</w:t></w:r>"#,
+            "字".repeat(38)
+        )
+    };
+    // Kanji break anywhere; in a Korean run only after the space, unless wordWrap is off.
+    let Some(en) = mincho_lines(SZ_11, &run("en-US")) else { return };
+    assert_eq!(en[0], 41);
+    assert_eq!(mincho_lines(SZ_11, &run("ko-KR")).unwrap()[0], 38);
+    let no_wrap = mincho_lines(SZ_11, &format!(r#"</w:p><w:p><w:pPr><w:wordWrap w:val="0"/><w:ind w:right="340"/></w:pPr>{}"#, run("ko-KR")));
+    assert_eq!(no_wrap.unwrap()[1], 41);
+    // Punctuation breaks: after a `)` that just fits rather than at the space before it.
+    let paren = run("ko-KR").replace(&format!("{} 字", "字".repeat(38)), &format!("{} )字", "字".repeat(40)));
+    assert_eq!(mincho_lines(SZ_11, &paren).unwrap()[0], 42);
+}
+
+#[test]
 fn a_half_width_voiced_mark_is_a_character_of_its_own() {
     let run = |lang: &str| {
         format!(

@@ -826,9 +826,8 @@ fn kinsoku(lang: &str) -> Option<&'static Kinsoku> {
     }
 }
 
-/// A CJK character (not Hangul): a line may break before or after it under the East Asian breaking rules.
-fn ideographic(c: char) -> bool {
-    super::text::is_east_asian(c as u32) && !matches!(c as u32, 0x1100..=0x11FF | 0xA960..=0xA97F | 0xAC00..=0xD7FF)
+fn hangul(c: char) -> bool {
+    matches!(c as u32, 0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF)
 }
 
 fn text_of<'a>(sp: &'a ShapedPara, p: &Piece) -> &'a str {
@@ -935,14 +934,22 @@ fn fit_line(
                 .find(|&k| pieces[k].kind != Kind::Space)
                 .is_some_and(|k| classes(k).is_some_and(|t| first_char(k).is_some_and(|c| no_start(t).contains(c))))
     };
-    // Under the breaking rules a line may break between two characters when either is a CJK one.
+    // Under the breaking rules a line may break between two characters unless both wrap as words: Hangul and every
+    // letter of a Korean run with `w:wordWrap` on, other text outside the East Asian characters only with it on.
+    // ponytail: punctuation in a Korean run breaks like a kinsoku character (which classes Korean runs have is not
+    // known); a Korean kinsoku table if measured.
+    let wraps = |k: usize, c: char| {
+        let korean = hangul(c) || sp.styles[pieces[k].style as usize].run.lang_east_asia.eq_ignore_ascii_case("ko-KR");
+        let east = super::text::is_east_asian(c as u32);
+        if korean { (!style.no_word_wrap || !east) && c.is_alphanumeric() } else { !style.no_word_wrap && !east }
+    };
     let between = |k: usize| {
         rules
             && k + 1 < n
             && pieces[k].kind == Kind::Text
             && pieces[k + 1].kind == Kind::Text
             && !pieces[k + 1].glued
-            && (last_char(k).is_some_and(ideographic) || first_char(k + 1).is_some_and(ideographic))
+            && !(last_char(k).is_some_and(|c| wraps(k, c)) && first_char(k + 1).is_some_and(|c| wraps(k + 1, c)))
     };
     // topLinePunct: an opening bracket that starts a line keeps only its right half.
     if east_asian

@@ -144,6 +144,8 @@ pub struct ParaStyle {
     pub no_auto_space_dn: bool,
     /// `w:topLinePunct`: an opening bracket starting a line in an East Asian paragraph loses its left half.
     pub top_line_punct: bool,
+    /// `w:wordWrap` off: East Asian and Latin text may break between any two characters.
+    pub no_word_wrap: bool,
     /// `w:textboxTightWrap` in a text box: 0 none, 1 all lines, 2 first and last, 3 first only, 4 last only.
     pub tight_wrap: u8,
     /// `w:suppressOverlap`: the paragraph's frame may not overlap other frames and floats.
