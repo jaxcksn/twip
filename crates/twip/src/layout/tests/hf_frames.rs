@@ -148,3 +148,36 @@ fn a_header_float_wraps_the_body_text_of_its_page() {
     let (none, _) = beside("<wp:wrapNone/>").expect("lays out");
     assert!(none < 80.0, "wrapNone doesn't wrap: {none}");
 }
+
+#[test]
+fn frame_4_a_frame_ending_the_body_anchors_in_the_paragraph_before_it() {
+    use crate::docx::model::{Block, Inline};
+    let frame = |v: &str| format!(r#"<w:p><w:pPr><w:framePr w:w="1440" w:wrap="around" w:hAnchor="page" {v} w:x="3000" w:y="3000"/></w:pPr><w:r><w:t>F</w:t></w:r></w:p>"#);
+    let body = |v: &str| format!(r#"<w:document {W}><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p>{}</w:body></w:document>"#, frame(v));
+    let doc = |v: &str| {
+        package(&[
+            (
+                "[Content_Types].xml",
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            ("word/document.xml", &body(v)),
+        ])
+    };
+    let shape = |d: crate::docx::Document| {
+        d.sections[0]
+            .blocks
+            .iter()
+            .map(|b| match b {
+                Block::Para(p) => p.inlines.iter().filter(|i| matches!(i, Inline::Float(..))).count(),
+                Block::Table(_) => 9,
+            })
+            .collect::<Vec<_>>()
+    };
+    let Some(page) = doc(r#"w:vAnchor="page""#) else { return };
+    assert_eq!(shape(page), [1], "a float of the body paragraph");
+    assert_eq!(shape(doc(r#"w:vAnchor="text""#).unwrap()), [0, 0], "a text-anchored one stays in the flow");
+}

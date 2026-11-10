@@ -44,7 +44,17 @@ fn blocks(list: &mut Vec<Block>) {
             }
         }
     }
-    out.extend(groups.into_iter().flatten().map(Block::Para));
+    // Frames ending the list are placed by the page or margin: they anchor at the end of the paragraph before them.
+    // shortcut: a text-anchored frame or drop cap there, or one after a table, stays in the flow.
+    let placed = |g: &[Paragraph]| {
+        g[0].style.frame.as_ref().is_some_and(|f| matches!(f.v_anchor.as_deref(), None | Some("page" | "margin")) && f.drop_cap.as_deref().is_none_or(|d| d == "none"))
+    };
+    for g in groups {
+        match out.last_mut() {
+            Some(Block::Para(p)) if placed(&g) => p.inlines.push(Inline::Float(Box::new(float(g)), p.mark.clone())),
+            _ => out.extend(g.into_iter().map(Block::Para)),
+        }
+    }
     *list = out;
 }
 
