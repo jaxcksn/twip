@@ -777,6 +777,16 @@ pub fn float_box(tb: &TableLayout, legacy: bool) -> (f64, f64) {
     sides_box(tb, if legacy { part } else { half_border }, part)
 }
 
+/// The rows' widest extent between the first cell's left and the last cell's right grid edge, or with `inset`
+/// between their margins.
+pub fn cells_box(tb: &TableLayout, inset: bool) -> (f64, f64) {
+    let m = |c: &CellBox, i: usize| if inset { c.margins[i] } else { 0.0 };
+    tb.rows.iter().filter_map(|r| Some((r.cells.first()?, r.cells.last()?))).fold((f64::INFINITY, f64::NEG_INFINITY), |(l, r), (a, z)| {
+        let (a, z) = if tb.rtl { (z, a) } else { (a, z) };
+        (l.min(tb.x0 + a.x + m(a, 1)), r.max(tb.x0 + z.x + z.w - m(z, 3)))
+    })
+}
+
 /// The rows' widest extent: the first cell's grid edge less `left` of its left border, the last cell's plus `right`
 /// of its right border.
 fn sides_box(tb: &TableLayout, left: fn(f64) -> f64, right: fn(f64) -> f64) -> (f64, f64) {

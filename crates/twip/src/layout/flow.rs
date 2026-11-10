@@ -2067,13 +2067,14 @@ impl<'d> PageFill<'d, '_> {
             }
             .max(0.0);
             let (bl, br) = super::table::float_box(tb, legacy);
-            let [dt, db, dl, dr] = fp.dist;
-            // Compat ≤ 14 puts a table placed in the flow below an earlier table it meets.
+            let [dt, db, ..] = fp.dist;
+            // Compat ≤ 14 puts a table placed in the flow below an earlier table whose text its cells reach.
             let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
             let tables: Vec<Placed> = self.at.found.iter().filter(|o| o.key.2 == float::TABLE_PIECE).cloned().collect();
+            let (c0, c1) = super::table::cells_box(tb, false);
             for o in tables.iter().filter(|_| in_flow) {
-                let (x0, x1) = (at_x + bl - dl.max(0.5), at_x + br + dr.max(0.5));
-                if o.excl[0] < x1 && o.excl[2] > x0 && o.excl[3].min(top + h + db) - o.excl[1].max(top - dt) >= 9.0 {
+                let Some((f0, f1)) = o.cells else { continue };
+                if f0 < at_x + c1 && f1 > at_x + c0 && o.excl[3].min(top + h + db) - o.excl[1].max(top - dt) >= 9.0 {
                     top = o.excl[3] + dt;
                 }
             }
@@ -2544,6 +2545,8 @@ impl<'d> PageFill<'d, '_> {
         let f = table_float(t.id, br - bl, bottom - top, table_dist(&fp, in_flow), !fp.never_overlap);
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));
+        let (c0, c1) = super::table::cells_box(tb, true);
+        o.cells = Some((at_x + c0, at_x + c1));
         // One twip left of `tblpX`, in either mode.
         if fp.x_spec.is_none() && !fp.h_text {
             o.excl[0] -= 0.05;

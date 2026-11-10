@@ -405,6 +405,28 @@ fn a_floating_tables_obstacle_counts_a_missing_border_as_a_thin_one() {
 }
 
 #[test]
+fn a_compat_14_table_in_the_flow_drops_only_when_its_cells_reach_the_earlier_tables_text() {
+    let table = |x: u32, rows: usize, label: &str| {
+        let row = format!(r#"<w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>{label}</w:t></w:r></w:p></w:tc></w:tr>"#);
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="0" w:rightFromText="0" w:vertAnchor="text" w:horzAnchor="page" w:tblpX="{x}" w:tblpY="0"/><w:tblW w:w="1440" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid>{}</w:tbl>"#,
+            row.repeat(rows)
+        )
+    };
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let b_top = |bx: u32| {
+        let body = format!("{}{}{}{}{}", p("Lead."), table(4000, 3, "A"), p("Between."), table(bx, 1, "B"), p("After."));
+        baselines("", ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _, _)| t == "B").expect("B drawn").3)
+    };
+    // A's text ends at 5223 tw. B's cells from 5352 overlap A's registered box but not its text: B stays.
+    let Some(stays) = b_top(5461) else { return };
+    assert!(stays < 115.0, "{stays}");
+    // From 5192 they reach it: B goes to A's bottom.
+    let drops = b_top(5300).unwrap();
+    assert!(drops > 120.0, "{drops}");
+}
+
+#[test]
 fn a_right_aligned_floating_tables_frame_counts_a_missing_border_whole() {
     let at = |borders: &str| {
         let body = format!(
