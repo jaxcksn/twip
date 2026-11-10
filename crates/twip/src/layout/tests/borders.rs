@@ -28,6 +28,30 @@ fn a_text_border_boxes_its_runs_once() {
 }
 
 #[test]
+fn compat_12_joined_paragraphs_border_each_line_by_its_first_characters_paragraph() {
+    let ppr = |boxed: bool, vanish: bool| {
+        let bdr = r#"<w:pBdr><w:top w:val="single" w:sz="8" w:space="0" w:color="C00000"/><w:left w:val="single" w:sz="8" w:space="0" w:color="C00000"/><w:bottom w:val="single" w:sz="8" w:space="0" w:color="C00000"/><w:right w:val="single" w:sz="8" w:space="0" w:color="C00000"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="D9D9D9"/>"#;
+        let mark = if vanish { "<w:rPr><w:vanish/><w:specVanish/></w:rPr>" } else { "" };
+        format!("<w:pPr>{}{mark}</w:pPr>", if boxed { bdr } else { "" })
+    };
+    // Lines: `OneTwo` (the first paragraph's), `ThreeFour` (the second's, plain), `Five` (the third's).
+    let body = format!(
+        "<w:p>{}<w:r><w:t>One</w:t></w:r></w:p><w:p>{}<w:r><w:t>Two</w:t><w:br/><w:t>Three</w:t></w:r></w:p><w:p>{}<w:r><w:t>Four</w:t><w:br/><w:t>Five</w:t></w:r></w:p>",
+        ppr(true, true),
+        ppr(false, true),
+        ppr(true, false)
+    );
+    let r = rects(&body);
+    let shaded: Vec<[f64; 4]> = r.iter().filter(|(_, c)| *c == 0xD9D9D9).map(|(r, _)| *r).collect();
+    let rules: Vec<[f64; 4]> = r.iter().filter(|(r, c)| *c == 0xC00000 && r[2] - r[0] > 100.0).map(|(r, _)| *r).collect();
+    assert_eq!(shaded.len(), 2, "the first and last lines: {shaded:?}");
+    assert!(shaded[1][1] - shaded[0][3] > 10.0, "the middle line is plain: {shaded:?}");
+    // One top rule above the first line, one bottom rule below the last.
+    assert_eq!(rules.len(), 2, "{rules:?}");
+    assert!(rules[0][3] <= shaded[0][1] + 1e-6 && rules[1][1] >= shaded[1][3] - 1e-6, "{rules:?} {shaded:?}");
+}
+
+#[test]
 fn paragraph_borders_draw_their_style() {
     let para = |style: &str| {
         format!(

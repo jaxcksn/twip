@@ -294,7 +294,17 @@ pub fn break_lines_uncached(
     let mut lines =
         super::job::unit("line breaking", || crate::prof::time("break", || break_paragraph(shaped, pieces, style, mark, &frame, fonts, from > 0)));
     let prev = if opens { space.borders.0.clone() } else { continued_key(style) };
-    apply_borders(&mut lines, style, prev.as_deref(), space.borders.1.as_deref(), space.width, false, opens, true);
+    // A joined paragraph (compat ≤ 14): each line has the borders and shading of the paragraph its first character
+    // is in, the top rule only above the first line and the bottom rule only below the last.
+    let (mut a, n) = (0, lines.len());
+    while a < n {
+        let s = line_style(style, pieces, lines[a].start);
+        let b = (a + 1..n).find(|&b| !std::ptr::eq(line_style(style, pieces, lines[b].start), s)).unwrap_or(n);
+        let before = if a == 0 && opens { prev.clone() } else { continued_key(s) };
+        let next = if b == n { space.borders.1.clone() } else { continued_key(s) };
+        apply_borders(&mut lines[a..b], s, before.as_deref(), next.as_deref(), space.width, false, opens && a == 0, b == n);
+        a = b;
+    }
     memos.meter.unit_done();
     let n = lines.len();
     Ok(ParaLines {
