@@ -1635,6 +1635,31 @@ fn a_frame_in_the_flow_that_meets_an_earlier_one_goes_below_it() {
 }
 
 #[test]
+fn a_compat_14_frame_in_the_flow_drops_when_it_meets_the_earlier_ones_distance_from_the_nearest_twip() {
+    let frame = |x: u32, w: u32, h: u32, t: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:framePr w:w="{w}" w:h="{h}" w:hRule="exact" w:hSpace="180" w:vSpace="0" w:wrap="around" w:vAnchor="text" w:hAnchor="page" w:x="{x}" w:y="0"/><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#
+        )
+    };
+    let lead = |n: usize| (0..n).map(|i| format!("<w:p><w:r><w:t>Lead {i}.</w:t></w:r></w:p>")).collect::<String>();
+    let b = |n: usize, bx: u32, bw: u32| {
+        let body = format!("{}{}{}<w:p><w:r><w:t>After.</w:t></w:r></w:p>", lead(n), frame(4000, 1440, 600, "A"), frame(bx, bw, 200, "B"));
+        let l = baselines("", ARIAL_11, &body)?;
+        let at = |t: &str| l.iter().find(|x| x.1 == t).map(|x| x.3).expect("drawn");
+        Some((at("A"), at("B")))
+    };
+    // A's box with its distance ends at 5619 tw: B drawn from 5500 meets it and drops to A's bottom.
+    let Some((ay, by)) = b(1, 5501, 1440) else { return };
+    assert!((by - ay - 30.0).abs() < 0.1, "{ay} {by}");
+    // From 5620 it doesn't.
+    let (ay, by) = b(1, 5621, 1440).unwrap();
+    assert!((by - ay).abs() < 0.01, "{ay} {by}");
+    // After 28 single lines A ends 0.4 tw past a twip: B starts at the twip before it.
+    let (ay, by) = b(28, 4500, 1000).unwrap();
+    assert!(((by - ay) * 20.0 - 599.6).abs() < 0.05, "{ay} {by}");
+}
+
+#[test]
 fn a_compat_14_line_blocked_by_a_frame_goes_just_below_it() {
     // Frames leaving only a piece too narrow for text: each body line goes to the bottom of the frame it meets.
     let frame = |y: u32| {
