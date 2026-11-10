@@ -73,6 +73,11 @@ export interface ViewOptions {
   detail?: MeasureDetail;
   /** When the dot grid objects snap to shows (unrelated to `gridlines`, the table gridlines). */
   objectGrid?: ObjectGrid;
+  /**
+   * Labels content controls and shown sub-templates while the caret is in them or the pointer is over them. Default
+   * `true`. A control whose `w15:appearance` is `hidden` is never labelled.
+   */
+  controlLabels?: boolean;
   /** When fields are shaded. Default `'whenSelected'`. */
   fieldShading?: FieldShading;
   /** Pointer shapes over elements instead of the editor's own, replacing those set before; the first match wins. */

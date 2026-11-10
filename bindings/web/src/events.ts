@@ -159,10 +159,10 @@ export interface ElementSelection {
   boxes: ClientRect[];
 }
 
-/** A hover tooltip to show. */
+/** A hover tooltip to show, over the document or its rulers. */
 export interface Tooltip {
   /** What is hovered. */
-  kind: 'link' | 'mark' | 'revision' | 'comment';
+  kind: 'link' | 'mark' | 'revision' | 'comment' | 'ruler';
   /** The text to show. */
   text: string;
   /** The pointer. */

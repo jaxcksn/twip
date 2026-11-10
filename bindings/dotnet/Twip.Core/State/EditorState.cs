@@ -876,6 +876,9 @@ public sealed record ViewState
     /// <summary>When the objects' dot grid shows.</summary>
     public ObjectGrid ObjectGrid { get; init; } = ObjectGrid.WhileDragging;
 
+    /// <summary>Content controls and shown sub-templates are labelled while selected or hovered.</summary>
+    public bool ControlLabels { get; init; } = true;
+
     /// <summary>When fields are shaded.</summary>
     public FieldShading FieldShading { get; init; } = FieldShading.WhenSelected;
 

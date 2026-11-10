@@ -765,6 +765,8 @@ pub struct ViewState {
     pub detail: super::services::MeasureDetail,
     /// When the objects' dot grid shows.
     pub object_grid: super::services::ObjectGrid,
+    /// Content controls and shown sub-templates are labelled while selected or hovered.
+    pub control_labels: bool,
     /// When fields are shaded.
     pub field_shading: super::services::FieldShading,
     /// The pointer shapes shown over elements instead of the editor's own.
@@ -796,6 +798,7 @@ impl Default for ViewState {
             appearance: super::services::DocumentAppearance::Light,
             detail: super::services::MeasureDetail::Standard,
             object_grid: super::services::ObjectGrid::WhileDragging,
+            control_labels: true,
             field_shading: super::services::FieldShading::WhenSelected,
             cursor_overrides: Vec::new(),
             sub_template_rules: Vec::new(),

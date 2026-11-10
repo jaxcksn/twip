@@ -2708,7 +2708,7 @@ export type ThemeColour = 'text1' | 'background1' | 'text2' | 'background2' | 'a
 // @public
 export interface Tooltip {
     at: ClientPoint;
-    kind: 'link' | 'mark' | 'revision' | 'comment';
+    kind: 'link' | 'mark' | 'revision' | 'comment' | 'ruler';
     rect: ClientRect_2;
     text: string;
 }
@@ -2841,6 +2841,7 @@ export interface View {
 export interface ViewOptions {
     accent?: Color;
     appearance?: DocumentAppearance;
+    controlLabels?: boolean;
     cursorOverrides?: CursorOverride[];
     detail?: MeasureDetail;
     fieldShading?: FieldShading;
@@ -2859,6 +2860,7 @@ export interface ViewState {
     accentOn: Color;
     appearance: DocumentAppearance;
     background: Color;
+    controlLabels: boolean;
     cursorOverrides?: CursorOverride[];
     detail: MeasureDetail;
     fieldCodes: boolean;

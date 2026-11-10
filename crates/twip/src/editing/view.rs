@@ -132,7 +132,6 @@ pub struct CorrectionView {
 pub enum Measure {
     Dimension { from: [Pt; 2], to: [Pt; 2], label: String, tone: Tone },
     Chip { at: [Px; 2], label: String },
-    Hint { at: Px, label: String },
     Status { at: [Pt; 2], label: String, tone: Tone },
 }
 
@@ -156,6 +155,7 @@ pub enum TableZone {
     SelectColumn(usize),
     SelectRow(usize),
     Border(usize),
+    RowBorder(usize),
     Move,
     Resize,
 }
@@ -181,6 +181,7 @@ pub enum TableMark {
     SelectColumn { x0: f64, x1: f64, top: f64 },
     SelectRow { y0: f64, y1: f64, left: f64 },
     Border { x: f64, top: f64, bottom: f64 },
+    RowBorder { y: f64, left: f64, right: f64 },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -293,7 +294,6 @@ pub struct MarkView {
 pub enum RulerMeasure {
     Dimension { from: [f64; 2], to: [f64; 2], label: String, tone: Tone },
     Chip { at: [f64; 2], label: String },
-    Hint { at: f64, label: String },
     Status { at: [f64; 2], label: String, tone: Tone },
 }
 

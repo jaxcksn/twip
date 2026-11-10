@@ -4711,7 +4711,7 @@ Twip.DocumentAppearance.Dark = 1 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.DarkWithLightPage = 2 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.Light = 0 -> Twip.DocumentAppearance
 Twip.EditorCommands.SetRulerTabTypeAsync(Twip.TabSelector value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabStopAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabTypesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSession.PopoverClosed -> System.EventHandler?
@@ -4839,7 +4839,7 @@ static Twip.ChromeTheme.Light.get -> Twip.ChromeTheme!
 static Twip.ChromeTheme.operator !=(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.ChromeTheme.operator ==(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.EditorOperation.SetRulerTabType(Twip.TabSelector value) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabStop() -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabTypes() -> Twip.EditorOperation!
 static Twip.HighContrastColors.operator !=(Twip.HighContrastColors? left, Twip.HighContrastColors? right) -> bool
@@ -6552,3 +6552,6 @@ Twip.CommandId.SetStyleMeta = 197 -> Twip.CommandId
 Twip.CommandId.SetTextBorder = 209 -> Twip.CommandId
 Twip.CommandId.UpdateStyleToSelection = 195 -> Twip.CommandId
 Twip.WarningCode.PictureBulletUndecodable = 17 -> Twip.WarningCode
+Twip.TooltipKind.Ruler = 4 -> Twip.TooltipKind
+Twip.ViewState.ControlLabels.get -> bool
+Twip.ViewState.ControlLabels.init -> void

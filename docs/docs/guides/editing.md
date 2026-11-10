@@ -50,6 +50,15 @@ The shading covers what the field shows: its result, its code while codes are sh
 field nested in another is shaded once, with the outer one. Shading is a view setting: it isn't saved with the
 document, and it never reaches a PDF or a print. The state's `view.fieldShading` is the current setting.
 
+## Content control labels
+
+As in Word, the content control holding the caret and the one under the pointer show a dashed box with a tab above
+it. The tab shows the control's title, or its tag when it has no title. Every repeating section around the caret is
+boxed, and so is a shown sub-template, whose tab shows its name. A click on a tab selects the control. Nothing is
+shown while read-only. `setViewOptions({ controlLabels: false })` turns the labels off for the whole document, and a
+control whose `w15:appearance` is `hidden` (Word's Show as None) never shows one. The state's `view.controlLabels`
+is the current setting.
+
 ## Tables
 
 - Hovering a table shows its move handle and its resize handle. The move handle selects the table on a click and moves

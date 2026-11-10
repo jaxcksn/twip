@@ -4,6 +4,7 @@
     "accentOn": "#FFFFFF",
     "appearance": "light",
     "background": "#E8E7E3",
+    "controlLabels": true,
     "detail": "standard",
     "fieldCodes": false,
     "fieldShading": "whenSelected",

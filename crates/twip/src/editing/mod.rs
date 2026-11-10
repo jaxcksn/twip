@@ -190,7 +190,9 @@ pub struct Editor {
     style_part: Option<&'static str>,
     /// The lists applied or defined in this session, newest first, by gallery.
     recent_lists: Vec<(crate::api::services::ListGalleryKind, Vec<crate::api::command::ListLevel>)>,
-    hover_region: Option<crate::docx::ControlId>,
+    hover_region: Option<crate::docx::ElementId>,
+    /// Controls and shown sub-templates are labelled while selected or hovered (`setViewOptions`'s `controlLabels`).
+    pub control_labels: bool,
     comments: comments::State,
     review_list: revisions::index::List,
     author: (Rc<str>, Option<crate::docx::review::Identity>),
@@ -346,6 +348,7 @@ impl Editor {
             style_part: None,
             recent_lists: Vec::new(),
             hover_region: None,
+            control_labels: true,
             comments: comments::State::default(),
             review_list: Default::default(),
             author: ("Author".into(), None),
@@ -2160,7 +2163,7 @@ impl Editor {
                 let mods = if self.modes.extend > 0 && clicks == 1 { keymap::Mods { shift: true, ..mods } } else { mods };
                 self.goal_x = None;
                 self.history.break_typing();
-                if self.mode == Mode::Design && self.region_title_click(x, y, fonts) {
+                if self.region_title_click(x, y, fonts) {
                     return;
                 }
                 if !mods.shift && self.expansion_click(x, y, clicks, fonts) {

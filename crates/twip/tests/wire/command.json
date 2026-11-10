@@ -1076,6 +1076,7 @@
   {
     "accent": "#0A74E4",
     "appearance": "darkWithLightPage",
+    "controlLabels": false,
     "cursorOverrides": [
       {
         "cursor": "pointer",

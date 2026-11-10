@@ -1009,6 +1009,7 @@ fn commands() -> Vec<Command> {
             appearance: Some(DocumentAppearance::DarkWithLightPage),
             detail: Some(MeasureDetail::Full),
             object_grid: Some(ObjectGrid::Always),
+            control_labels: Some(false),
             field_shading: Some(FieldShading::Always),
             cursor_overrides: Some(vec![
                 CursorOverride { on: CursorTarget::Action(PressAction::Toggle), cursor: Cursor::Pointer },

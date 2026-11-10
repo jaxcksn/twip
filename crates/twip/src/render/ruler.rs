@@ -10,7 +10,7 @@ use super::{ChromeFace, chrome_typeface};
 use crate::api::services::{Popover, RulerView, TabSelector};
 use crate::api::value::TabAlignment;
 use crate::editing::view::{RulerMeasure, Tone};
-use crate::services::ruler::{BAND, Bands, HINT_Y, INSET, Marker, SELECTOR, marks};
+use crate::services::ruler::{BAND, Bands, INSET, Marker, SELECTOR, marks};
 
 /// A ruler's paper strip, from `S0` to `S1` across its band (CSS px): it floats on the desk.
 const S0: f32 = INSET as f32;
@@ -387,9 +387,6 @@ fn measures(view: &RulerView, theme: &Theme, canvas: &Canvas, measures: &[RulerM
             RulerMeasure::Chip { at, label: text } => {
                 label(canvas, &chip, text, at[0] as f32, at[1] as f32, 7.0, 4.0, Some((t.ink, 2.0)), t.paper);
             }
-            RulerMeasure::Hint { at, label: text } => {
-                label(canvas, &chip, text, *at as f32, (BAND + HINT_Y) as f32, 7.0, 4.0, Some((t.ink, 2.0)), t.paper);
-            }
             RulerMeasure::Status { at, label: text, tone: c } => {
                 let (x, y) = client(*at);
                 label(canvas, &value, text, x, y, 0.0, 0.0, None, tone(*c));
@@ -501,17 +498,17 @@ mod tests {
     fn measurements_draw_over_the_document() {
         let theme = Theme::default();
         let dimension = RulerMeasure::Dimension { from: [10.0, 60.0], to: [350.0, 60.0], label: "First line 1.00″".into(), tone: Tone::Accent };
-        let hint = RulerMeasure::Hint { at: 100.0, label: "First line · 0.50″ — indents only the first line".into() };
-        let p = draw(&theme, &frame(&[dimension, hint], None));
+        let chip = RulerMeasure::Chip { at: [100.0, 34.0], label: "First line 0.50″".into() };
+        let p = draw(&theme, &frame(&[dimension, chip], None));
         // The dimension's end ticks, at the page's x 10 and 350 and y 60, and its line.
         let accent = [0x0a, 0x74, 0xe4];
         assert_eq!(at(&p, 24 + 10, 24 + 60 + 2)[..3], accent);
         assert_eq!(at(&p, 24 + 349, 24 + 60 - 2)[..3], accent);
         assert_eq!(at(&p, 24 + 40, 24 + 60)[..3], accent);
-        // The chips' face has the hints' dash and the values' prime and delta.
+        // The chips' face has the dash and the values' prime and delta.
         let mono = chrome_typeface(ChromeFace::Mono500).expect("the chips' face");
         assert!(['—', '″', 'Δ', '·', '−'].iter().all(|c| mono.unichar_to_glyph(*c as i32) != 0));
-        // The hint's dark chip under the band.
+        // The chip's dark backdrop under the band.
         assert_eq!(at(&p, 102, 18 + 16 + 1)[..3], [0x1c, 0x1d, 0x1f]);
     }
 }

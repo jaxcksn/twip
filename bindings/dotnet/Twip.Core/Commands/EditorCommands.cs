@@ -1279,9 +1279,10 @@ public sealed class EditorCommands
     /// <param name="themeColors">The application's colours for the light and dark schemes, to match its own UI.</param>
     /// <param name="fieldShading">When fields are shaded (default <see cref="FieldShading.WhenSelected"/>).</param>
     /// <param name="cursorOverrides">Pointer shapes over elements instead of the editor's own, replacing those set before; the first match wins, and an empty list clears them.</param>
+    /// <param name="controlLabels">Labels content controls and shown sub-templates while the caret is in them or the pointer is over them (default on); a control whose <c>w15:appearance</c> is <c>hidden</c> is never labelled.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, FieldShading? fieldShading = null, IReadOnlyList<CursorOverride>? cursorOverrides = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid, themeColors, fieldShading, cursorOverrides), ct);
+    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, FieldShading? fieldShading = null, IReadOnlyList<CursorOverride>? cursorOverrides = null, bool? controlLabels = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid, themeColors, fieldShading, cursorOverrides, controlLabels), ct);
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>

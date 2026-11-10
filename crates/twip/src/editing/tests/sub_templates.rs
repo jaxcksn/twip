@@ -658,3 +658,15 @@ fn the_body_is_replaced_from_a_docx_keeping_the_sub_templates() {
         .collect();
     assert_eq!(template, violation.1);
 }
+
+#[test]
+fn a_selected_shown_body_is_labelled_with_its_sub_template() {
+    let (mut e, reference) = expanded();
+    assert!(e.view(0..1).regions.is_empty(), "nothing selected, nothing hovered");
+    click_line(&mut e, reference, 1);
+    let regions = e.view(0..1).regions;
+    let g = regions.iter().find(|g| g.title == "Violation").expect("the sub-template's label");
+    let (_, line_top, line_bottom) = line_of(&mut e, reference);
+    let (_, r) = g.rects[0];
+    assert!(r[1] >= line_top - 0.5 && r[3] <= line_bottom + 0.5 && r[3] - r[1] > 60.0, "around the shown body: {r:?}");
+}

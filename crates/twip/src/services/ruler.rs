@@ -18,9 +18,7 @@ pub const BAND: f64 = 18.0;
 /// The desk between a band's edges and its paper strip, CSS px.
 pub const INSET: f64 = 2.0;
 
-/// Below the horizontal ruler's band, CSS px: a hover hint's top, a quiet drag's chip's top, and a drag's dimension
-/// line.
-pub const HINT_Y: f64 = 16.0;
+/// Below the horizontal ruler's band, CSS px: a quiet drag's chip's top and a drag's dimension line.
 const CHIP_Y: f64 = 38.0;
 const DIMENSION_Y: f64 = 51.0;
 
@@ -365,15 +363,16 @@ pub fn drag_measures(view: &RulerView, marker: Marker, at: f64, removing: bool, 
     vec![RulerMeasure::Dimension { from, to, label, tone: Tone::Accent }]
 }
 
-/// What hovering `on` says: the marker's name, its value and what a click or drag does; over the empty ruler, where a
-/// click adds the box's type (`free`: Alt is down, no snapping). Under the horizontal ruler the hint's x stays in the
-/// viewport `width` wide; a vertical ruler marker's hint is a chip beside it.
-pub fn hint(view: &RulerView, on: Hit, selector: TabSelector, free: bool, width: f64) -> Option<RulerMeasure> {
+/// What hovering `on` says, for the host's tooltip: the marker's name, its value and what a click or drag does; over
+/// the empty ruler, where a click adds the box's type (`free`: Alt is down, no snapping). With the box it is about,
+/// viewport CSS px.
+pub fn hint(view: &RulerView, on: Hit, selector: TabSelector, free: bool) -> Option<(ClientRect, String)> {
     let (m, unit) = (&view.model, view.unit);
     let (h, v) = (view.horizontal, view.vertical);
-    let (x, label) = match on {
-        Hit::Ruler => return None,
-        Hit::Selector => (BAND + 6.0, format!("{} {} — {}", words::TAB_TYPE, words::tab_type(selector).0, words::TAB_TYPE_DOES)),
+    let along = |x: f64| ClientRect { left: x - 7.0, top: 0.0, width: 14.0, height: BAND };
+    match on {
+        Hit::Ruler => None,
+        Hit::Selector => Some((SELECTOR, format!("{} {} — {}", words::TAB_TYPE, words::tab_type(selector).0, words::TAB_TYPE_DOES))),
         Hit::Text(pt) => {
             let at = ghost(view, pt, free)?;
             let name = words::tab_type(selector).0.to_lowercase();
@@ -383,7 +382,7 @@ pub fn hint(view: &RulerView, on: Hit, selector: TabSelector, free: bool, width:
                     format!("{} {name} {}", words::CLICK_TO_ADD, words::TAB)
                 }
             };
-            (h.origin + at * h.scale, format!("{what} · {}", length(at - m.horizontal.text.start.0, unit)))
+            Some((along(h.origin + at * h.scale), format!("{what} · {}", length(at - m.horizontal.text.start.0, unit))))
         }
         Hit::Marker(marker) => {
             let at = marker.position(m)?;
@@ -399,14 +398,14 @@ pub fn hint(view: &RulerView, on: Hit, selector: TabSelector, free: bool, width:
                 Marker::TableColumn(_) => words::COLUMN_BORDER.to_string(),
                 Marker::TableRow(_) => words::ROW_BORDER.to_string(),
             };
-            if !marker.horizontal() {
-                return Some(RulerMeasure::Chip { at: [BAND + 6.0, v.origin + at * v.scale + 6.0], label });
-            }
-            (h.origin + at * h.scale, label)
+            let rect = if marker.horizontal() {
+                along(h.origin + at * h.scale)
+            } else {
+                ClientRect { left: 0.0, top: v.origin + at * v.scale - 7.0, width: BAND, height: 14.0 }
+            };
+            Some((rect, label))
         }
-    };
-    // ponytail: a fixed width for the longest hint keeps it on screen; measure the label if hints get longer.
-    Some(RulerMeasure::Hint { at: (x - 6.0).min(width - 340.0).max(0.0), label })
+    }
 }
 
 /// What a point on the rulers is over.
@@ -620,10 +619,7 @@ mod tests {
     fn labels(m: &[RulerMeasure]) -> Vec<&str> {
         m.iter()
             .map(|m| match m {
-                RulerMeasure::Dimension { label, .. }
-                | RulerMeasure::Chip { label, .. }
-                | RulerMeasure::Hint { label, .. }
-                | RulerMeasure::Status { label, .. } => label.as_str(),
+                RulerMeasure::Dimension { label, .. } | RulerMeasure::Chip { label, .. } | RulerMeasure::Status { label, .. } => label.as_str(),
             })
             .collect()
     }
@@ -689,14 +685,14 @@ mod tests {
     #[test]
     fn hovering_a_marker_names_it_with_its_value_and_what_it_does() {
         let v = page();
-        let h = |on| hint(&v, Hit::Marker(on), TabSelector::Left, false, 1000.0);
-        let text = |m: Option<RulerMeasure>| match m {
-            Some(RulerMeasure::Hint { label, .. } | RulerMeasure::Chip { label, .. }) => label,
-            other => panic!("{other:?}"),
-        };
+        let h = |on| hint(&v, Hit::Marker(on), TabSelector::Left, false);
+        let text = |m: Option<(ClientRect, String)>| m.expect("a hint").1;
         assert_eq!(
             h(Marker::FirstLine),
-            Some(RulerMeasure::Hint { at: 30.0 + 126.0 - 6.0, label: "First line · 0.75″ — indents only the first line".into() })
+            Some((
+                ClientRect { left: 30.0 + 126.0 - 7.0, top: 0.0, width: 14.0, height: BAND },
+                "First line · 0.75″ — indents only the first line".into()
+            ))
         );
         assert_eq!(text(h(Marker::Hanging)), "Hanging indent · 0.50″ — where wrapped lines start");
         assert_eq!(text(h(Marker::Left)), "Left indent · 0.50″ — moves the first line with it");
@@ -706,29 +702,20 @@ mod tests {
         assert_eq!(text(h(Marker::TextEnd)), "Right margin · 1.00″ — drag to change");
         let mut table = page();
         table.model.horizontal.table_columns = vec![Points(72.0), Points(300.0)];
-        assert_eq!(text(hint(&table, Hit::Marker(Marker::TableColumn(1)), TabSelector::Left, false, 1000.0)), "Column border — drag to resize");
-        // A vertical ruler marker's hint is a chip beside it.
+        assert_eq!(text(hint(&table, Hit::Marker(Marker::TableColumn(1)), TabSelector::Left, false)), "Column border — drag to resize");
+        // A vertical ruler marker's box is across the vertical band.
         assert_eq!(
             h(Marker::Top),
-            Some(RulerMeasure::Chip { at: [BAND + 6.0, 30.0 + 72.0 + 6.0], label: "Top margin · 1.00″ — drag to change".into() })
+            Some((ClientRect { left: 0.0, top: 30.0 + 72.0 - 7.0, width: BAND, height: 14.0 }, "Top margin · 1.00″ — drag to change".into()))
         );
         // Over the empty ruler: where a click adds the box's type, snapped unless Alt is down.
-        let empty = |selector, free| text(hint(&v, Hit::Text(163.0), selector, free, 1000.0));
+        let empty = |selector, free| text(hint(&v, Hit::Text(163.0), selector, free));
         assert_eq!(empty(TabSelector::Decimal, false), "Click to add a decimal tab · 1.25″");
         assert_eq!(empty(TabSelector::Decimal, true), "Click to add a decimal tab · 1.26″");
         assert_eq!(empty(TabSelector::FirstLineIndent, false), "Click to set the first line indent · 1.25″");
-        assert_eq!(hint(&v, Hit::Text(73.0), TabSelector::Left, false, 1000.0), None, "no stop at the margin");
+        assert_eq!(hint(&v, Hit::Text(73.0), TabSelector::Left, false), None, "no stop at the margin");
         // The box says its type.
-        assert_eq!(
-            hint(&v, Hit::Selector, TabSelector::Left, false, 1000.0),
-            Some(RulerMeasure::Hint { at: BAND, label: "Tab type: Left — click to change".into() })
-        );
-        assert_eq!(hint(&v, Hit::Ruler, TabSelector::Left, false, 1000.0), None);
-        // A hint near the right end stays in the viewport.
-        assert_eq!(
-            hint(&v, Hit::Marker(Marker::TextEnd), TabSelector::Left, false, 600.0)
-                .map(|m| matches!(m, RulerMeasure::Hint { at, .. } if at == 260.0)),
-            Some(true)
-        );
+        assert_eq!(hint(&v, Hit::Selector, TabSelector::Left, false), Some((SELECTOR, "Tab type: Left — click to change".into())));
+        assert_eq!(hint(&v, Hit::Ruler, TabSelector::Left, false), None);
     }
 }
