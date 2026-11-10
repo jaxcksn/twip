@@ -1629,6 +1629,8 @@ impl<'d> PageFill<'d, '_> {
             let mut got = None;
             let mut blocked = false;
             let mut trial = None;
+            // Every piece of the line was cut away or too narrow.
+            let mut no_room = false;
             let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS { &[] } else { &floats };
             let mut uncut: Option<Vec<Placed>> = None;
             if compat == Compat::Legacy {
@@ -1663,6 +1665,7 @@ impl<'d> PageFill<'d, '_> {
                         break;
                     }
                     Some(iv) => {
+                        no_room = iv.is_empty();
                         let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
                         let open = iv.len() == 1 && (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS;
                         let first = first_part && bands.is_empty();
@@ -1753,8 +1756,18 @@ impl<'d> PageFill<'d, '_> {
                     }
                     // A vertical section's table moves the line to its far side whole.
                     let square = here.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square" && f.key.2 != float::UPRIGHT_TABLE);
+                    // Compat ≤ 14: a line whose content fits no piece retries lower in steps of its height. One left no
+                    // piece at all first goes to the top of a float starting inside it, then down by its height or to
+                    // the bottom of the floats over its top, whichever is nearer.
                     if let Some(t) = trial.filter(|&t| compat == Compat::Legacy && square && t > EPS) {
-                        yy = (yy + t).min(col.bottom.to_pt().max(yy + EPS));
+                        let starts = here.iter().filter(meets).filter(|f| f.excl[1] > yy + EPS).map(|f| f.excl[1]).fold(f64::INFINITY, f64::min);
+                        let covers = here.iter().filter(meets).filter(|f| f.excl[1] <= yy + EPS).map(|f| f.excl[3]).fold(f64::INFINITY, f64::min);
+                        let next = match no_room {
+                            true if starts < yy + h - EPS => starts,
+                            true => (yy + t).min(covers.max(yy + EPS)),
+                            false => yy + t,
+                        };
+                        yy = next.min(col.bottom.to_pt().max(yy + EPS));
                         continue;
                     }
                     match float::next_edge(here, cx0, cx1, yy, yy + h).filter(|_| !float::steps(here, yy, yy + h)) {

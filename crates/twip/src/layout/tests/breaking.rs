@@ -1395,3 +1395,19 @@ fn a_column_break_in_a_frame_breaks_its_line_only_with_show_breaks_in_frames() {
     assert_eq!(framed("<w:showBreaksInFrames/>", 12).unwrap(), ["before", "after"]);
     assert_eq!(framed("<w:showBreaksInFrames/>", 15).unwrap(), ["beforeafter"]);
 }
+
+#[test]
+fn a_compat_14_line_blocked_by_a_frame_goes_just_below_it() {
+    // Frames leaving only a piece too narrow for text: each body line goes to the bottom of the frame it meets.
+    let frame = |y: u32| {
+        format!(
+            r#"<w:p><w:pPr><w:framePr w:w="7925" w:h="200" w:hRule="exact" w:hSpace="180" w:wrap="around" w:vAnchor="page" w:hAnchor="page" w:x="1440" w:y="{y}"/><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>F</w:t></w:r></w:p>"#
+        )
+    };
+    let body = |n: u32| format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>Body {n}</w:t></w:r></w:p>"#);
+    let doc: String = (0..4).map(|k| frame(1490 + 600 * k) + &body(k)).collect();
+    let Some(l) = baselines("", ARIAL_12, &doc) else { return };
+    let y: Vec<f64> = l.iter().filter(|(_, t, _, _)| t.starts_with("Body")).map(|l| l.3).collect();
+    // The frames end at 1689, 2289, 2889, 3489 twips: one line below each, 30pt apart.
+    assert!(y.len() == 4 && y.windows(2).all(|w| (w[1] - w[0] - 30.0).abs() < 0.5), "{y:?}");
+}
