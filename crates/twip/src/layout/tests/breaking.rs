@@ -381,7 +381,7 @@ fn a_compat_14_line_goes_to_a_floats_bottom_when_another_starts_inside_it() {
 }
 
 #[test]
-fn a_floating_tables_obstacle_sits_on_device_pixels() {
+fn a_floating_tables_obstacle_starts_a_twip_left_of_tblpx() {
     let body = r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="1000" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Left words beside the table on the right side.</w:t></w:r></w:p>"#;
     let Some(l) = lines("", ARIAL_12, body) else { return };
     let right = l.iter().find(|(x, t, _)| *x > 200.0 && t != "cell").expect("text right of the table");
@@ -389,8 +389,19 @@ fn a_floating_tables_obstacle_sits_on_device_pixels() {
     let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
     let l = lines(c15, ARIAL_12, body).unwrap();
     let right = l.iter().find(|(x, t, _)| *x > 200.0 && t != "cell").expect("text right of the table");
-    // Compat 15: one twip left of `tblpX`, not on device pixels.
+    // Compat 15: from the table's left edge.
     assert!((right.0 - 272.95).abs() < 0.01, "{l:?}");
+}
+
+#[test]
+fn a_floating_tables_obstacle_counts_a_missing_border_as_a_thin_one() {
+    let body = r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="200" w:tblpY="0"/><w:tblW w:w="1440" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Words beside the table on the right side.</w:t></w:r></w:p>"#;
+    let right = |compat: &str| lines(compat, ARIAL_12, body).map(|l| l.iter().find(|(_, t, _)| t.starts_with("Words")).expect("text beside the table").0);
+    let Some(c14) = right("") else { return };
+    // Compat ≤ 14 starts the table its first cell's margin before `tblpX`, and counts 0.75pt either side.
+    assert!((c14 - 158.3).abs() < 0.01, "{c14}");
+    let c15 = right(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#).unwrap();
+    assert!((c15 - 163.7).abs() < 0.01, "{c15}");
 }
 
 #[test]

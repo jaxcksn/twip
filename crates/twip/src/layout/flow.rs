@@ -2062,7 +2062,7 @@ impl<'d> PageFill<'d, '_> {
                 (_, None) => t0 + fp.y - 0.05,
             }
             .max(0.0);
-            let (bl, br) = super::table::outer_box(tb);
+            let (bl, br) = super::table::float_box(tb, legacy);
             let [dt, db, dl, dr] = fp.dist;
             // Compat ≤ 14 puts a table placed in the flow below an earlier table it meets.
             let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
@@ -2503,14 +2503,15 @@ impl<'d> PageFill<'d, '_> {
         }
         let legacy = self.ctx.env.text.compat == Compat::Legacy;
         let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
-        let (bl, br) = super::table::outer_box(tb);
+        let (bl, br) = super::table::float_box(tb, legacy);
         let f = table_float(t.id, br - bl, bottom - top, table_dist(&fp, in_flow), !fp.never_overlap);
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));
-        let l = at_x + bl - if fp.x_spec.is_none() && !fp.h_text { 0.05 } else { 0.0 };
-        let shift = if legacy { (l / 0.12 + 0.5).floor() * 0.12 } else { l } - (at_x + bl);
-        o.excl[0] += shift;
-        o.excl[2] += shift;
+        // One twip left of `tblpX`, in either mode.
+        if fp.x_spec.is_none() && !fp.h_text {
+            o.excl[0] -= 0.05;
+            o.excl[2] -= 0.05;
+        }
         if legacy {
             o.excl[0] -= t.ind.min(0.0);
         }

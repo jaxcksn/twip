@@ -764,13 +764,29 @@ fn half_border(w: f64) -> f64 {
 }
 
 pub fn outer_box(tb: &TableLayout) -> (f64, f64) {
+    sides_box(tb, half_border, |w| w / 2.0)
+}
+
+/// A floating table's box as the text beside it sees it: past each row's last cell a missing border counts 0.75pt,
+/// a drawn one half its width. Compat ≤ 14 also counts the first cell's left side that way; compat 15 keeps the
+/// table's left edge.
+pub fn float_box(tb: &TableLayout, legacy: bool) -> (f64, f64) {
+    fn part(w: f64) -> f64 {
+        if w > 0.0 { w / 2.0 } else { 0.75 }
+    }
+    sides_box(tb, if legacy { part } else { half_border }, part)
+}
+
+/// The rows' widest extent: the first cell's grid edge less `left` of its left border, the last cell's plus `right`
+/// of its right border.
+fn sides_box(tb: &TableLayout, left: fn(f64) -> f64, right: fn(f64) -> f64) -> (f64, f64) {
     let ends = |r: &RowBox| {
         let last = r.cells.len().checked_sub(1)?;
         Some(if tb.rtl { (last, 0) } else { (0, last) })
     };
     tb.rows.iter().filter_map(|r| ends(r).map(|(a, z)| (&r.cells[a], &r.cells[z]))).fold((f64::INFINITY, f64::NEG_INFINITY), |(l, r), (a, z)| {
         let (al, zr) = (drawn_edges(tb, a)[1], drawn_edges(tb, z)[3]);
-        (l.min(tb.x0 + a.x - half_border(bw(al))), r.max(tb.x0 + z.x + z.w + bw(zr) / 2.0))
+        (l.min(tb.x0 + a.x - left(bw(al))), r.max(tb.x0 + z.x + z.w + right(bw(zr))))
     })
 }
 
