@@ -326,6 +326,20 @@ fn a_separator_story_counts_only_when_the_settings_list_it() {
 }
 
 #[test]
+fn compat_14_separator_line_spacing_is_the_mark_height() {
+    let sep = r#"<w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:sz w:val="40"/></w:rPr><w:separator/></w:r></w:p></w:footnote>"#;
+    let listing = r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"#;
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let note_y = |compat: &str| {
+        let doc = notes_doc_with(&(para("Body", &["f1"]) + &sect(pr, true)), &format!("{listing}{compat}"), sep)?;
+        super::page_chars(&doc)[0].iter().find(|c| c.0 == 'N').map(|c| c.2)
+    };
+    let (Some(c12), Some(c15)) = (note_y(""), note_y(C15)) else { return };
+    // Half a line more of the 20 pt run in compat 15 than of the 11 pt mark in compat 12.
+    assert!(c15 - c12 > 4.0, "{c12} {c15}");
+}
+
+#[test]
 fn notes_keep_the_space_after_between_them() {
     let note = |id: u32, after: u32| format!(r#"<w:footnote w:id="{id}"><w:p><w:pPr><w:spacing w:after="{after}"/></w:pPr><w:r><w:t>Q{id}</w:t></w:r></w:p></w:footnote>"#);
     let gap = |after: u32| {

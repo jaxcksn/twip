@@ -1613,6 +1613,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let mut num_asc = 0.0f64;
     let mut has_content = false;
     let mut has_text = false;
+    let mut separator = false;
     let mut brk: Option<(f64, f64)> = None;
     // `auto` centres the runs in flows that keep East Asian text upright, else aligns them to the baseline.
     line.align = match style.text_alignment.as_str() {
@@ -1653,6 +1654,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 un_desc = un_desc.max(d0);
                 if p.kind == Kind::Object {
                     object = true;
+                } else if compat == Compat::Legacy && p.kind != Kind::Text {
+                    separator = true;
                 } else {
                     un_text_asc = un_text_asc.max(a0);
                     un_text_desc = un_text_desc.max(d0);
@@ -1701,6 +1704,14 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let mut text_h = if has_text && run_h > 0.0 { run_h } else { un_asc + un_desc };
     if object {
         text_h = run_h.max(picture_line_height(sp, &pieces[line.start..line.end.min(pieces.len())], mark, fonts, last, compat, run_h));
+    }
+    // Compat ≤ 14: a note separator gives no height to space by, like an object, so the mark's is used.
+    if separator
+        && run_h == 0.0
+        && let Some(f) = fonts.face(&mark.ascii, None, mark.bold, mark.italic)
+    {
+        let (a, d, e) = sp.metrics(&f, mark, mark_size);
+        text_h = a + e + d;
     }
     // Line spacing
     match style.line_rule {
