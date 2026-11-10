@@ -46,8 +46,6 @@ pub struct Placed {
     pub contour: Option<Contour>,
     /// The distances text keeps from it: top, bottom, left, right.
     pub dist: [f64; 4],
-    /// A floating table's text across: from its first cell's left margin to its last cell's right one.
-    pub cells: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -109,7 +107,6 @@ impl Placed {
             settled: true,
             contour,
             dist: f.dist,
-            cells: None,
         }
     }
 
@@ -274,7 +271,6 @@ mod tests {
             settled: true,
             contour: None,
             dist: [0.0; 4],
-            cells: None,
         }
     }
 
