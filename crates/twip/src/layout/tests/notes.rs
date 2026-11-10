@@ -508,3 +508,18 @@ fn a_referencing_last_lines_space_after_comes_off_its_notes_room() {
     }
     assert!(fewer, "a case with the note split");
 }
+
+#[test]
+fn compat_15_section_end_endnotes_balance_over_the_columns() {
+    let long: String = (1..=12).map(|i| format!("<w:p><w:r><w:t>E{i:02}</w:t></w:r></w:p>")).collect();
+    let extra = format!(r#"<w:endnote w:id="10">{long}</w:endnote>"#);
+    let mut body: String = (1..10).map(|i| para(&format!("L{i:02}"), if i == 5 { &["e10"][..] } else { &[] })).collect();
+    body += &format!(r#"<w:p><w:pPr><w:sectPr><w:cols w:num="2" w:space="720"/>{PAGE}</w:sectPr></w:pPr><w:r><w:t>L10</w:t></w:r></w:p>"#);
+    body += &(para("Tail", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true));
+    let Some(doc) = notes_doc_with(&body, &format!(r#"<w:endnotePr><w:pos w:val="sectEnd"/></w:endnotePr>{C15}"#), &extra) else { return };
+    let page = &super::page_chars(&doc)[0];
+    let x = |s: &str| page.windows(s.len()).find(|w| w.iter().map(|c| c.0).eq(s.chars())).map(|w| (w[0].1, w[0].2));
+    let (Some(first), Some(last), Some(tail)) = (x("E01"), x("E12"), x("Tail")) else { panic!("on page 1: {page:?}") };
+    assert!(first.0 < 100.0 && last.0 > 300.0, "six lines in each column: {first:?} {last:?}");
+    assert!(tail.1 > last.1, "the next section below them: {tail:?}");
+}

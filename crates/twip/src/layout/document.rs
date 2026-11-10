@@ -310,15 +310,28 @@ pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
     (doc.sections[si].section_in(doc.review.view).columns.num > 1 && cx.notes.ends.contains(&si) && !in_flow).then(|| doc.sections[si].blocks.len())
 }
 
+/// The next place after `block` where the section's layout starts again below what came before: the end of its body
+/// before its endnotes (see [`endnote_split`]) and, compat 15, the end of their separator, the endnotes balanced on
+/// their own below it.
+fn next_split(cx: &PassCx, si: usize, block: usize) -> Option<usize> {
+    let e = endnote_split(cx, si)?;
+    let sep = (cx.doc.settings.compat() == crate::docx::Compat::Generic).then(|| e + cx.notes.separator.len());
+    [Some(e), sep].into_iter().flatten().find(|&k| block < k)
+}
+
 /// Whether the section's columns are balanced on the page starting at `token`: the endnotes started below a balanced
-/// body aren't.
+/// body aren't in compat ≤ 14; in compat 15 they balance on their own below their separator when the next section goes
+/// on on the page.
 pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
     let doc = cx.doc;
     let nsec = doc.sections.len();
     let off = doc.settings.compat() == crate::docx::Compat::Legacy && doc.settings.has("noColumnBalance");
-    let split = endnote_split(cx, si);
+    let mut split = endnote_split(cx, si);
     if split.is_some_and(|e| token.flow.block >= e) {
-        return false;
+        if next_split(cx, si, token.flow.block).is_some() || doc.settings.compat() == crate::docx::Compat::Legacy {
+            return false;
+        }
+        split = None;
     }
     (!off
         && doc.sections[si].section_in(doc.review.view).columns.num > 1
@@ -396,7 +409,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
                 return memos.meter.page_done();
             }
             let balance = balances(cx, si, &token);
-            let split = endnote_split(cx, si).filter(|&e| token.flow.block < e);
+            let split = next_split(cx, si, token.flow.block);
             let body_only;
             let node = match split {
                 Some(e) => {
