@@ -453,3 +453,87 @@ fn a_vertical_runs_extra_is_an_em_64th_in_whole_font_units() {
     let e = crate::layout::vertical::extra(Some(&face), 11.0);
     assert!((e - crate::layout::units::Lu((16 * 22 * 2048 + 500) / 1000).to_pt()).abs() < 1e-9, "{e}");
 }
+
+/// A one-column table whose rows hold `prefix0`, `prefix1`, …
+fn named_table(prefix: &str, rows: usize, w: u32) -> String {
+    let row = |i: usize| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{prefix}{i}</w:t></w:r></w:p></w:tc></w:tr>"#);
+    let rows: String = (0..rows).map(row).collect();
+    format!(r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid>{rows}</w:tbl>"#)
+}
+
+/// A footnote of `lines` one-line paragraphs `n0`, `n1`, … referenced from the first cell of the section's first
+/// table.
+fn note_in_table(doc: &mut crate::docx::Document, lines: usize) {
+    use crate::docx::{Block, Inline, NoteKind};
+    const ID: i64 = 7001;
+    let blocks = &mut doc.sections[0].blocks;
+    let Some(Block::Table(t)) = blocks.iter_mut().find(|b| matches!(b, Block::Table(_))) else { panic!("a table") };
+    let Some(Block::Para(p)) = t.rows[0].cells[0].blocks.first_mut() else { panic!("a cell paragraph") };
+    p.inlines.push(Inline::NoteRef { kind: NoteKind::Foot, id: ID, custom: false, run: p.mark.clone() });
+    let Some(Block::Para(model)) = doc.sections[0].blocks.iter().find(|b| matches!(b, Block::Para(_))).cloned() else { panic!("a paragraph") };
+    let note = (0..lines)
+        .map(|k| {
+            let mut n = model.clone();
+            let run = n.inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.clone()) } else { None }).unwrap_or_else(|| n.mark.clone());
+            n.inlines = vec![Inline::Text(format!("n{k}").into(), run)];
+            n.id = crate::docx::model::next_para_id();
+            Block::Para(n)
+        })
+        .collect();
+    doc.footnotes.insert(ID, note);
+}
+
+#[test]
+fn a_footnote_in_a_vertical_sections_table_goes_to_the_page_and_runs_on_past_the_text() {
+    let body = format!("{}{}{}", para("before", ""), named_table("c", 1, 2000), para("after", ""));
+    let Some(mut doc) = section("tbRl", "0", &body) else { return };
+    doc.settings.compat_mode = 15;
+    note_in_table(&mut doc, 30);
+    let on = |page: usize| turned_runs_on(&doc, page).into_iter().map(|r| r.0).collect::<Vec<_>>();
+    let (p1, p2) = (on(0), on(1));
+    // The page holds 24 lines: the note starts on the table's page and goes on on a page of its own.
+    assert!(p1.iter().any(|t| t == "n0") && p1.iter().any(|t| t == "after"), "{p1:?}");
+    assert!(p2.iter().any(|t| t == "n29") && !p2.iter().any(|t| t == "after"), "{p2:?}");
+}
+
+#[test]
+fn a_footnote_cut_after_a_vertical_sections_table_leaves_no_room_for_the_text_after_it() {
+    let exact = r#"<w:spacing w:after="0" w:line="300" w:lineRule="exact"/>"#;
+    let lines: String = (0..16).map(|k| para(&format!("l{k}"), exact)).collect();
+    let pages = |mode: i64, w: u32| {
+        let mut doc = section("tbRl", "0", &format!("{lines}{}{}", named_table("c", 1, w), para("after", "")))?;
+        doc.settings.compat_mode = mode;
+        note_in_table(&mut doc, 6);
+        let on = |page: usize| turned_runs_on(&doc, page).into_iter().map(|r| r.0).collect::<Vec<_>>();
+        Some((on(0), on(1)))
+    };
+    let Some((p1, p2)) = pages(15, 200) else { return };
+    // Compat 15: the note's first lines go past the table across the page and the rest on the next page; the
+    // line after the table, reaching past it, has no room left before them.
+    assert!(p1.iter().any(|t| t == "n0") && !p1.iter().any(|t| t == "n5"), "{p1:?}");
+    assert!(!p1.iter().any(|t| t == "after") && p2.iter().any(|t| t == "after"), "{p1:?}");
+    // A table reaching nearly to the end of the page leaves its note no room past it; compat ≤ 14 counts the
+    // room from where the table starts.
+    let has = |(p, _): (Vec<String>, Vec<String>), t: &str| p.iter().any(|x| x == t);
+    assert!(!has(pages(15, 1000).unwrap(), "n0") && has(pages(12, 1000).unwrap(), "n0"));
+}
+
+#[test]
+fn compat_14_draws_a_vertical_table_too_long_below_an_earlier_one_from_the_line_start() {
+    let body = format!("{}{}{}{}{}", para("pa", ""), named_table("r", 12, 2000), para("pb", ""), named_table("s", 14, 2000), para("pc", ""));
+    let at = |mode: i64, page: usize| {
+        let mut doc = section("tbRl", "0", &body)?;
+        doc.settings.compat_mode = mode;
+        Some(cells_on(&doc, page))
+    };
+    let Some(p1) = at(12, 0) else { return };
+    let base = |cells: &[(String, f64, f64)], t: &str| cells.iter().find(|c| c.0 == t).map(|c| c.2);
+    // Over the earlier table from the top margin, with only the rows that fit below that table; the rest on the
+    // next page.
+    let (r0, s0) = (base(&p1, "r0").expect("r0"), base(&p1, "s0").expect("s0"));
+    assert!((r0 - s0).abs() < 0.01, "{r0} {s0}");
+    let p2 = at(12, 1).unwrap();
+    assert!(base(&p1, "s13").is_none() && base(&p2, "s13").is_some(), "{p1:?}");
+    let kept = p1.iter().filter(|c| c.0.starts_with('s')).count();
+    assert!(kept > 0 && kept + p2.iter().filter(|c| c.0.starts_with('s')).count() == 14, "{kept}");
+}

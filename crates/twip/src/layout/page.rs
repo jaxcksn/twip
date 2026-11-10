@@ -910,7 +910,7 @@ pub fn layout_body(
         }
         section_end = Some(e.max(fill.at.notes_bottom));
         carry.page_notes = carry.page_notes.take().or(passed);
-    } else if pos.block >= nblocks {
+    } else if pos.block >= nblocks && (carry.note_rest.is_empty() || stop != Stop::Full) {
         section_end = Some(bottoms.iter().copied().fold(page_top, f64::max));
     }
     let mut texts = Vec::new();

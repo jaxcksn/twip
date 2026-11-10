@@ -62,6 +62,8 @@ pub struct NoteArea {
     /// column it is filled in.
     pub cols: Vec<(f64, f64)>,
     pub below: bool,
+    /// Room kept clear above the notes, down from where a note that goes on on the next page was referenced.
+    pub kept: f64,
 }
 
 /// The space shared between two notes in an area: the gap between them is the later one's space before or the
@@ -86,7 +88,7 @@ impl NoteArea {
         if self.below {
             return 0.0;
         }
-        self.sep + self.shared.map_or(self.height, |r| self.height.max(r))
+        self.sep + self.shared.map_or(self.height, |r| self.height.max(r)) + self.kept
     }
 }
 
@@ -1032,7 +1034,9 @@ impl<'d> PageFill<'d, '_> {
         loop {
             if pos.block >= nblocks {
                 let end = y + if col.balance { carry.prev_after } else { 0.0 };
-                return Ok((Stop::Done, end));
+                // A note cut on this page goes on on the next one, even past the end of the text.
+                let more = !carry.note_rest.is_empty() && !area.parts.is_empty();
+                return Ok((if more { Stop::Full } else { Stop::Done }, end));
             }
             if self.at.end.as_ref() == Some(&*pos) {
                 return Ok((Stop::Page, y));
@@ -1133,7 +1137,7 @@ impl<'d> PageFill<'d, '_> {
                     }
                 }
                 Some(Block::Table(_)) if self.ctx.env.text.vertical.is_some() => {
-                    match self.place_upright_table(bi, pos, carry, &col, &mut y, empty, memos)? {
+                    match self.place_upright_table(bi, pos, carry, &col, &mut y, empty, area, memos)? {
                         Stop::Done => (chain, members) = (None, Vec::new()),
                         s => return Ok((s, y)),
                     }
@@ -2391,6 +2395,7 @@ impl<'d> PageFill<'d, '_> {
         col: &ColumnSpace,
         y: &mut f64,
         empty: bool,
+        notes: &mut NoteArea,
         memos: &mut Memos,
     ) -> Result<Stop, Yield> {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { unreachable!("an upright table") };
@@ -2480,13 +2485,45 @@ impl<'d> PageFill<'d, '_> {
         // lines stack from the left.
         let left = if v.flow == super::vertical::Flow::DownEast { y0 } else { self.page_h - y1 };
         let bottom = if fp.is_some() { Lu::MAX } else { Lu::round_half_up(end) };
+        // Compat ≤ 14: one that runs past the line end below an earlier table is drawn from the line start, over
+        // it, with the rows that fit below it.
+        let (along, bottom) = if legacy && along > col.x + EPS && along + h > end + EPS && fp.is_none() && joined.is_none() {
+            (col.x, Lu::round_half_up(end - (along - col.x)))
+        } else {
+            (along, bottom)
+        };
         let page_col = ColumnSpace { x: left - bl, width: br - bl, top: Lu::round_half_up(along), bottom, balance: false };
-        let (mut top, mut fresh, mut area, mut rows) = (along, true, NoteArea::default(), Vec::new());
+        // Its notes don't count against its fit: they are collected aside and go to the page's note area.
+        let mut area = NoteArea { shared: Some(0.0), below: true, ..NoteArea::default() };
+        let (mut top, mut fresh, mut rows) = (along, true, Vec::new());
         let saved = std::mem::take(&mut self.at.starts);
         let stop = self.place_table(&tb, pos, carry, &page_col, &mut top, &mut fresh, &mut area, &mut rows, memos)?;
         carry.upright_at = (stop == Stop::Full).then_some(y0);
         self.at.starts = saved;
         self.at.upright.extend(rows);
+        let refs: Vec<(NoteKind, i64)> = area.parts.iter().map(|p| (p.kind, p.id)).collect();
+        if !refs.is_empty() {
+            // From past the table across the page; compat ≤ 14 from where it starts. What doesn't fit goes on on
+            // the next page.
+            let from = if legacy { y0 } else { y1 };
+            let (mut a, mut rest) = (notes.clone(), Vec::new());
+            if self.add_notes(&refs, &mut a, col, from, &mut rest, false, memos)? {
+                // A note cut there leaves no room for the text after the table.
+                if !rest.is_empty() {
+                    a.kept = (col.bottom.to_pt() - from - a.total()).max(0.0);
+                }
+                *notes = a;
+                carry.note_rest.extend(rest);
+            } else {
+                // ponytail: a note that waits whole for the next page is drawn there as a continuation, under the
+                // continuation separator; give it a fresh start if Word draws the plain separator there.
+                for &(kind, id) in refs.iter().filter(|r| r.0 == NoteKind::Foot) {
+                    let units = self.note_units(kind, id, col.width, memos)?.units.clone();
+                    self.at.effects.notes_shown.push((kind, id, self.note_numbers.get(&(kind, id)).cloned().unwrap_or_default()));
+                    carry.note_rest.push(NotePart { kind, id, units });
+                }
+            }
+        }
         // Joined rows keep text as far off as the earlier rows do.
         let (o0, o1) = joined.map_or((y0, y1), |(r, _)| (y0.min(r[1]), y1.max(r[3])));
         let f = table_float(t.id, top - along, o1 - o0, [above, below, 0.0, 0.0], true);
