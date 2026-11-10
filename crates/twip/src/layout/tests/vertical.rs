@@ -549,3 +549,21 @@ fn compat_15_moves_a_vertical_table_too_long_below_an_earlier_one_across_past_it
     let (r0, s0) = (x("r0").expect("r0"), x("s0").expect("s0"));
     assert!(x("s17").is_some() && s0 < r0 - 75.0 - 18.0 + 0.01, "{r0} {s0}");
 }
+
+#[test]
+fn compat_15_moves_a_vertical_table_whose_note_cant_start_past_it_to_the_next_page() {
+    let lines: String = (0..18).map(|k| para(&format!("l{k}"), "")).collect();
+    let pages = |mode: i64| {
+        let mut doc = section("tbRl", "0", &format!("{lines}{}{}", named_table("c", 1, 1300), para("after", "")))?;
+        doc.settings.compat_mode = mode;
+        note_in_table(&mut doc, 2);
+        let on = |page: usize| cells_on(&doc, page).into_iter().map(|r| r.0).chain(turned_runs_on(&doc, page).into_iter().map(|r| r.0)).collect::<Vec<_>>();
+        Some((on(0), on(1)))
+    };
+    let Some((p1, p2)) = pages(15) else { return };
+    // Its far side leaves less than the separator and a note line before the page's end: it goes on with its note.
+    assert!(!p1.iter().any(|t| t.starts_with("c0")) && p2.iter().any(|t| t.starts_with("c0")) && p2.iter().any(|t| t == "n0"), "{p1:?} {p2:?}");
+    // Compat ≤ 14 keeps it.
+    let (p1, _) = pages(12).unwrap();
+    assert!(p1.iter().any(|t| t.starts_with("c0")), "{p1:?}");
+}

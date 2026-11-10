@@ -2514,6 +2514,14 @@ impl<'d> PageFill<'d, '_> {
         } else {
             (along, bottom)
         };
+        // Compat 15: a table whose notes can't start past it goes to the next page with them.
+        if !legacy && !empty && !paged && pos.at.at_start() {
+            let refs: Vec<(NoteKind, i64)> =
+                tb.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.units.units.iter().flat_map(|u| u.notes.iter().copied())).collect();
+            if refs.iter().any(|r| r.0 == NoteKind::Foot) && !self.add_notes(&refs, &mut notes.clone(), col, y1, &mut Vec::new(), false, memos)? {
+                return Ok(Stop::Full);
+            }
+        }
         let page_col = ColumnSpace { x: left - bl, width: br - bl, top: Lu::round_half_up(along), bottom, balance: false };
         // Its notes don't count against its fit: they are collected aside and go to the page's note area.
         let mut area = NoteArea { shared: Some(0.0), below: true, ..NoteArea::default() };
