@@ -2249,3 +2249,18 @@ fn backspace_and_delete_take_a_section_break() {
     e.execute(Command::Undo, fonts());
     assert_eq!((pages(&e), texts(&e)), (was, before));
 }
+
+#[test]
+fn a_list_reapplied_after_backspacing_out_indents_again() {
+    let mut e = open("FX-TEXT.docx");
+    let para = super::super::tests::para_id(&e, 1);
+    e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(0))));
+    let ind = |e: &super::super::Editor| e.index.para(&e.doc, para).map(|p| (p.style.ind_left, p.style.ind_first));
+    e.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
+    let listed = ind(&e);
+    e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
+    e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
+    assert_ne!(ind(&e), listed, "backspace took the list off");
+    e.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
+    assert_eq!(ind(&e), listed);
+}

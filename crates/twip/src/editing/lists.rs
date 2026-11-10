@@ -183,6 +183,7 @@ impl Editor {
         for &para in &paras {
             let ok = self.repara(&mut tx, para, &|p, w| {
                 p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
+                p.remove("ind");
                 if list_style && p.get("pStyle").is_none() {
                     p.set("pStyle", format!("<{w}pStyle {w}val=\"ListParagraph\"/>"));
                 }
