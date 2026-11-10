@@ -2004,10 +2004,10 @@ impl<'d> PageFill<'d, '_> {
         let placed_end = bands[take - 1].1.last().map_or(0, |l| l.end);
         for mut a in anchors {
             if a.key.2 - pb.from < placed_end.max(1) {
-                // A frame placed in the flow: compat ≤ 14 lays it out below an earlier such frame whose box with its
+                // A frame placed in the flow: compat ≤ 14 lays it out below an earlier frame whose box with its
                 // distances it meets, from the nearest twip; compat 15 moves one that may not overlap only down.
-                let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.float.v_relative == "paragraph";
-                let in_flow = frame(&a) && a.float.v_offset == 0.0;
+                let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none();
+                let in_flow = frame(&a) && a.float.v_relative == "paragraph" && a.float.v_offset == 0.0;
                 if in_flow && compat == Compat::Legacy {
                     for o in self.at.found.iter().filter(|o| frame(o)) {
                         if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
