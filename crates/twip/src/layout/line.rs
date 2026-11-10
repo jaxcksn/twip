@@ -35,8 +35,45 @@ pub struct Line {
     pub hyphen: bool,
     pub leaders: Vec<(usize, Leader)>,
     pub rects: Vec<([f64; 4], u32)>,
-    /// Its runs are centred: `baseline` is the reference baseline, each run's text its own centred drop below it.
-    pub centred: bool,
+    /// How its runs sit on it (`w:textAlignment`): `baseline` is the reference baseline, each run's text its own
+    /// [`align_drop`] below it.
+    pub align: Align,
+    /// It is a vertical line: its runs take an em/64 more ascent and descent.
+    pub vertical: bool,
+}
+
+/// A line's `w:textAlignment`, `auto` resolved.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Align {
+    #[default]
+    Baseline,
+    Top,
+    Center,
+    Bottom,
+}
+
+/// How far below a line's reference baseline a run's glyphs sit (points), in the run font's units with `A`, `D` its
+/// win ascent and descent (an em/64 more each in a vertical line) and `h = A + D`: top `A − 1`, center
+/// `A − h div 2`, bottom `−round(D × f / 1000)` (`f` 497 for TrueType outlines, else 500; an East Asian face 750,
+/// else 1000), baseline 0. The run's ascent and descent on the line move with it.
+pub fn align_drop(face: &crate::font::Face, size: f64, align: Align, vertical: bool) -> f64 {
+    let e = if vertical { (face.upem / 64.0).round() as i64 } else { 0 };
+    let (a, d) = ((face.ascent - face.ea_extra).round() as i64 + e, (face.descent - face.ea_extra).round() as i64 + e);
+    let c = match align {
+        Align::Baseline => return 0.0,
+        Align::Top => a - 1,
+        Align::Center => a - (a + d) / 2,
+        Align::Bottom => {
+            let f = match (face.east_asian, face.truetype) {
+                (true, true) => 750,
+                (true, false) => 1000,
+                (false, true) => 497,
+                (false, false) => 500,
+            };
+            -((d * f + 500) / 1000)
+        }
+    };
+    Lu::from_font(c as f64, size, face.upem).to_pt()
 }
 
 impl Line {
@@ -55,7 +92,8 @@ impl Line {
             hyphen: false,
             leaders: Vec::new(),
             rects: Vec::new(),
-            centred: false,
+            align: Align::Baseline,
+            vertical: false,
         }
     }
 }
@@ -691,7 +729,7 @@ pub fn band(
         l.pitch = merged.pitch;
         l.baseline = merged.baseline;
         l.below = merged.below;
-        l.centred = merged.centred;
+        (l.align, l.vertical) = (merged.align, merged.vertical);
     }
     Ok((segs, s))
 }
@@ -1528,10 +1566,15 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let mut has_content = false;
     let mut has_text = false;
     let mut brk: Option<(f64, f64)> = None;
-    // Centred metrics: in flows that keep East Asian text upright unless the paragraph aligns to the baseline (or to
-    // the top or bottom), and in every vertical flow with `center`.
-    let ta = style.text_alignment.as_str();
-    line.centred = frame.vertical && (frame.centred && matches!(ta, "auto" | "center") || ta == "center");
+    // `auto` centres the runs in flows that keep East Asian text upright, else aligns them to the baseline.
+    line.align = match style.text_alignment.as_str() {
+        "top" => Align::Top,
+        "center" => Align::Center,
+        "bottom" => Align::Bottom,
+        "auto" | "" if frame.vertical && frame.centred => Align::Center,
+        _ => Align::Baseline,
+    };
+    line.vertical = frame.vertical;
     for p in &pieces[line.start..line.end.min(pieces.len())] {
         match p.kind {
             // A note separator's line is in its run's size.
@@ -1541,11 +1584,10 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 let st = &sp.styles[p.style as usize];
                 let e = if frame.vertical && p.kind == Kind::Text { super::vertical::extra(st.face.as_deref(), st.size) } else { 0.0 };
                 let (mut pa, mut pd) = (p.ascent + e, p.descent + e);
-                if line.centred
-                    && p.kind == Kind::Text
+                if p.kind == Kind::Text
                     && let Some(f) = &st.face
                 {
-                    let c = super::vertical::centred_drop(f, st.size);
+                    let c = align_drop(f, st.size, line.align, frame.vertical);
                     (pa, pd) = (pa - c, pd + c);
                 }
                 asc = asc.max(pa);
@@ -1632,14 +1674,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         LineRule::Exact => {
             line.pitch = style.line;
             let x = Lu::round_half_up(style.line).0;
-            line.baseline = Lu(x - x / 5).to_pt()
-                + match style.text_alignment.as_str() {
-                    _ if line.centred => 0.0,
-                    "top" => asc,
-                    "center" => (asc - desc) / 2.0,
-                    "bottom" => -desc / 2.0,
-                    _ => 0.0,
-                };
+            line.baseline = Lu(x - x / 5).to_pt();
         }
     }
     // Document grid
@@ -1852,7 +1887,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             if p.soft_hyphen && !(line.hyphen && ix + 1 == line.end) {
                 continue;
             }
-            let y = base - st.raise + if line.centred { st.face.as_ref().map_or(0.0, |f| super::vertical::centred_drop(f, st.size)) } else { 0.0 };
+            let y = base - st.raise + align_drop(face, st.size, line.align, line.vertical);
             let color = ink(&st.run, o.review, behind_text);
             let same = run.as_ref().is_some_and(|r| {
                 Rc::ptr_eq(&r.face, face) && (r.size - st.size).abs() < EPS && (r.y - y).abs() < EPS && r.color == color && r.para == Some(q)

@@ -80,15 +80,6 @@ pub fn story(
     super::story::layout(blocks, len.max(1.0), &venv, cell, memos)
 }
 
-/// How far below a centred line's reference baseline a run sits (points): its runs are centred on the line, so a
-/// run's Roman ascent exceeds its centred one by `A + e − (A + D + 2e) div 2` (font units, `A` and `D` the win
-/// metrics; the line gap or an East Asian face's extra is on both and cancels).
-pub fn centred_drop(face: &crate::font::Face, size: f64) -> f64 {
-    let (a, d) = ((face.ascent - face.ea_extra).round() as i64, (face.descent - face.ea_extra).round() as i64);
-    let e = (face.upem / 64.0).round() as i64;
-    super::units::Lu::from_font((a + e - (a + d + 2 * e) / 2) as f64, size, face.upem).to_pt()
-}
-
 /// `units`, laid out with their lines along x and stacked down y, turned into `rect` = `[x0, y0, x1, y1]`: each
 /// line starts at the flow's start edge (top, or bottom for `Up`), the first line against the flow's first side,
 /// `across` further in. Glyphs whose ink lies `bottom` or more across from the first side are not drawn.

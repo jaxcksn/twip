@@ -59,6 +59,8 @@ pub struct Face {
     pub em_middle: f64,
     /// It has vertical metrics (`vmtx` or `VORG`).
     vertical: bool,
+    /// Its outlines are TrueType (`glyf`).
+    pub truetype: bool,
     pub avg_width: f64,
     font: harfrust::Font,
     /// Memos: character → glyph, glyph → advance, and shape plans by (kern, ligatures, figures, script). Building a plan
@@ -163,6 +165,7 @@ impl Face {
             ea_extra: 0.0,
             em_middle: 0.0,
             vertical: t.contains_key(b"vmtx") || t.contains_key(b"VORG"),
+            truetype: t.contains_key(b"glyf"),
             avg_width: 0.0,
             font: {
                 let font = harfrust::Font::new(Arc::clone(&data) as Arc<dyn AsRef<[u8]> + Send + Sync>, e.index)?;

@@ -378,6 +378,30 @@ fn each_run_of_a_centred_line_sits_its_own_drop_below_the_reference_baseline() {
     assert!(mixed(r#"<w:textAlignment w:val="baseline"/>"#).unwrap().abs() < 1e-6);
 }
 
+#[test]
+fn text_alignment_sets_each_runs_own_metrics_in_every_flow() {
+    if fonts().face("Times New Roman", None, false, false).is_none_or(|f| f.family != "Times New Roman") {
+        return;
+    }
+    let baselines = |spacing: &str, align: &str| {
+        let p = format!(
+            r#"<w:p><w:pPr><w:spacing w:after="0" {spacing}/><w:textAlignment w:val="{align}"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="40"/></w:rPr><w:t xml:space="preserve">big </w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr><w:t>small</w:t></w:r></w:p>"#
+        );
+        let items = cells_on(&section("lrTb", "0", &p)?, 0);
+        let at = |t: &str| items.iter().find(|i| i.0.starts_with(t)).map(|i| i.2);
+        Some((at("big")?, at("small")?))
+    };
+    // Exact 600: the reference baseline 480 twips below the line top, Times New Roman hung its win ascent less a
+    // unit below it (1824 × 20 / 2048 pt), Arial its own.
+    let Some((big, small)) = baselines(r#"w:line="600" w:lineRule="exact""#, "top") else { return };
+    assert!((big - (50.0 + 24.0 + 17.8125)).abs() < 0.01 && (small - (50.0 + 24.0 + 1853.0 * 11.0 / 2048.0)).abs() < 0.01, "{big} {small}");
+    // An auto line takes the aligned metrics: a unit and the line gap above the reference baseline.
+    let (big, small) = baselines(r#"w:line="240" w:lineRule="auto""#, "top").unwrap();
+    assert!((big - small - (1824.0 * 20.0 - 1853.0 * 11.0) / 2048.0).abs() < 0.01, "{big} {small}");
+    let (big, small) = baselines(r#"w:line="240" w:lineRule="auto""#, "baseline").unwrap();
+    assert!((big - small).abs() < 1e-6);
+}
+
 fn east_asian(text: &str) -> String {
     format!(
         r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:hAnsi="MS Gothic" w:eastAsia="MS Gothic"/><w:sz w:val="22"/></w:rPr><w:t>{text}</w:t></w:r></w:p>"#
