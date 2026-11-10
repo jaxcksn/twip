@@ -156,6 +156,24 @@ fn inline_pic(w: u32, h: u32) -> String {
 }
 
 #[test]
+fn text_alignment_aligns_an_inline_picture_and_a_list_number_like_runs() {
+    let m = r#"<w:p><w:pPr><w:spacing w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>m</w:t></w:r></w:p>"#;
+    let top = |runs: &str, numbered: bool| {
+        let num = if numbered { r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"# } else { "" };
+        let body = format!(r#"{m}<w:p><w:pPr>{num}<w:spacing w:after="0"/><w:textAlignment w:val="top"/></w:pPr>{runs}</w:p>{m}"#);
+        let numbering = r#"<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num>"#;
+        numbered_baselines("", ARIAL_11, &body, numbering).map(|l| l.last().map_or(0.0, |l| l.3) - 72.0 - 15.0 - 12.0)
+    };
+    let Some(picture) = top(&format!("<w:r><w:t xml:space=\"preserve\">to </w:t></w:r>{}", inline_pic(30, 30)), false) else { return };
+    // A picture hangs below the reference like a run whose ascent is its height: the line is the picture and Arial's
+    // line gap (and a unit) above it.
+    assert!((picture - 30.0 - 67.0 * 11.0 / 2048.0).abs() < 0.05, "{picture}");
+    // A list number shifts like the text in its font: it adds nothing above.
+    let text = top("<w:r><w:t>to</w:t></w:r>", false).expect("lays out");
+    assert!((top("<w:r><w:t>to</w:t></w:r>", true).unwrap() - text).abs() < 1e-6);
+}
+
+#[test]
 fn a_line_that_fits_no_gap_retries_lower_in_steps_of_its_height() {
     let Some(l) = beside_float(r#"<w:p><w:r><w:t>Supercalifragilisticexpialidocious</w:t></w:r></w:p>"#) else { return };
     let pitch = l[2].3 - l[1].3;

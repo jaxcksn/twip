@@ -76,6 +76,18 @@ pub fn align_drop(face: &crate::font::Face, size: f64, align: Align, vertical: b
     Lu::from_font(c as f64, size, face.upem).to_pt()
 }
 
+/// [`align_drop`] for an inline picture: a run as tall as the picture (`a` above its baseline, `d` below), with no
+/// line gap or vertical extra.
+fn object_drop(a: f64, d: f64, align: Align) -> f64 {
+    match align {
+        Align::Baseline => 0.0,
+        Align::Top => a - Lu(1).to_pt(),
+        Align::Center => a - (a + d) / 2.0,
+        // ponytail: half the depth, as for a font that isn't TrueType; a picture raised or lowered by its run is rare.
+        Align::Bottom => -d / 2.0,
+    }
+}
+
 impl Line {
     fn empty(start: usize) -> Line {
         Line {
@@ -1673,6 +1685,9 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 {
                     let c = align_drop(f, st.size, line.align, frame.vertical);
                     (pa, pd) = (pa - c, pd + c);
+                } else if let Some(Object::Picture(_)) = p.object.map(|o| &sp.objects[o as usize]) {
+                    let c = object_drop(p.ascent, p.descent, line.align);
+                    (pa, pd) = (pa - c, pd + c);
                 }
                 asc = asc.max(pa);
                 desc = desc.max(pd);
@@ -1702,9 +1717,12 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                     run_h = run_h.max(a0 + d0);
                 }
             }
+            // A list number is a run in its own font under the paragraph's alignment.
             Kind::ListNumber => {
                 has_content = true;
-                num_asc = num_asc.max(p.ascent);
+                let st = &sp.styles[p.style as usize];
+                let c = st.face.as_ref().map_or(0.0, |f| align_drop(f, st.size, line.align, frame.vertical));
+                num_asc = num_asc.max(p.ascent - c);
             }
             Kind::LineBreak => brk = Some((p.ascent, p.descent)),
             Kind::Space | Kind::Tab => {}
@@ -1955,7 +1973,8 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             if p.kind == Kind::Object || (p.kind == Kind::ListNumber && p.object.is_some()) {
                 if let Some(Object::Picture(pic)) = p.object.map(|o| &sp.objects[o as usize]) {
                     flush(&mut run, &mut out);
-                    let bottom = base - sp.styles[p.style as usize].run.position - pic.effect[3];
+                    let drop = if p.kind == Kind::Object { object_drop(p.ascent, p.descent, line.align) } else { 0.0 };
+                    let bottom = base + drop - sp.styles[p.style as usize].run.position - pic.effect[3];
                     let x0 = x + pic.effect[0];
                     let rect = [x0, bottom - pic.h, x0 + pic.w, bottom];
                     match pic.shape.as_deref() {
