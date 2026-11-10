@@ -1450,14 +1450,16 @@ impl<'d> PageFill<'d, '_> {
                     first_ref = Some(i);
                 }
                 let defer = i == 0 || first_part && wc && (i == 1 || n <= 3);
+                // The last line's space after comes off the room for its notes (a line without notes fits without it).
+                let tail = if i + 1 == n { after } else { 0.0 };
+                let note_tail = if foot { tail } else { 0.0 };
                 if force == Some(i) {
                     for &(k, id) in refs.iter().filter(|r| r.0 == NoteKind::Foot) {
                         rest.push(NotePart { kind: k, id, units: self.note_units(k, id, col.width, memos)?.units.clone() });
                     }
-                } else if !self.add_notes(&refs, &mut a, col, yy + room, &mut rest, defer, memos)? && !pb.leading_page_break(i) {
+                } else if !self.add_notes(&refs, &mut a, col, yy + room + note_tail, &mut rest, defer, memos)? && !pb.leading_page_break(i) {
                     break;
                 }
-                let tail = if i + 1 == n { after } else { 0.0 };
                 let over = |a: &NoteArea| a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) && !pb.leading_page_break(i);
                 let waits = |a: &NoteArea, rest: &[NotePart]| rest.iter().any(|r| !a.parts.iter().any(|p| (p.kind, p.id) == (r.kind, r.id)));
                 if over(&a) && defer {
@@ -1985,10 +1987,11 @@ impl<'d> PageFill<'d, '_> {
             let refs: Vec<(NoteKind, i64)> = segs.iter().flat_map(|l| (l.start..l.end).filter_map(|k| sp.note(pb.from + k))).collect();
             let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
             let lead = segs.len() == 1 && breaks_only(pieces, l) && l.end < n;
-            if !self.add_notes(&refs, &mut a, col, bt + room, &mut rest, false, memos)? && !lead {
+            let tail = if bi_ + 1 == nb { after } else { 0.0 };
+            let note_tail = if refs.iter().any(|r| r.0 == NoteKind::Foot) { tail } else { 0.0 };
+            if !self.add_notes(&refs, &mut a, col, bt + room + note_tail, &mut rest, false, memos)? && !lead {
                 break;
             }
-            let tail = if bi_ + 1 == nb { after } else { 0.0 };
             if a.total() > 0.0 && !col.bottom.holds(bt + l.pitch + tail + a.total()) && !lead {
                 break;
             }

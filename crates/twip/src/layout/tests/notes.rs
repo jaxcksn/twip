@@ -476,3 +476,35 @@ fn a_body_ending_with_a_table_ends_with_a_paragraph() {
     };
     assert_eq!(implicit, written, "laid out as a written empty paragraph");
 }
+
+#[test]
+fn a_referencing_last_lines_space_after_comes_off_its_notes_room() {
+    let long: String = (1..=8).map(|i| format!("<w:p><w:pPr><w:spacing w:after=\"0\"/></w:pPr><w:r><w:t>Q{i}</w:t></w:r></w:p>")).collect();
+    let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
+    let body = |k: usize, after: u32| {
+        let mut b = String::new();
+        for i in 1..=80 {
+            let (r, a) = if i == k { (r#"<w:r><w:footnoteReference w:id="10"/></w:r>"#, after) } else { ("", 0) };
+            b += &format!(r#"<w:p><w:pPr><w:spacing w:after="{a}"/></w:pPr><w:r><w:t>P{i:02}</w:t></w:r>{r}</w:p>"#);
+        }
+        b + &sect("", true)
+    };
+    let pages = |k: usize, after: u32| -> Option<Vec<String>> {
+        Some(super::page_chars(&notes_doc_with(&body(k, after), "", &extra)?).iter().map(|p| p.iter().map(|c| c.0).collect()).collect())
+    };
+    let Some(plain) = pages(0, 0) else { return };
+    let last = (1..=80).rev().find(|k| plain[0].contains(&format!("P{k:02}"))).expect("page 1 has lines");
+    let kept = |p: &[String]| (1..=8).filter(|i| p[0].contains(&format!("Q{i}"))).count();
+    let mut fewer = false;
+    for k in last - 8..=last {
+        let (Some(none), Some(some)) = (pages(k, 0), pages(k, 600)) else { return };
+        let line = format!("P{k:02}");
+        // The line stays while a note line fits after its space after, with fewer note lines than without it.
+        if kept(&none) > 4 {
+            assert!(some[0].contains(&line), "{k}: {some:?}");
+            assert!(kept(&some) > 0 && kept(&some) < kept(&none), "{k}: {} {}", kept(&none), kept(&some));
+            fewer = true;
+        }
+    }
+    assert!(fewer, "a case with the note split");
+}
