@@ -340,6 +340,25 @@ fn compat_14_separator_line_spacing_is_the_mark_height() {
 }
 
 #[test]
+fn compat_14_separator_line_is_at_least_the_mark_height() {
+    let sep = |sz: u32| {
+        format!(
+            r#"<w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:sz w:val="{sz}"/></w:rPr><w:separator/></w:r></w:p></w:footnote>"#
+        )
+    };
+    let listing = r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"#;
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let note_y = |compat: &str, sz: u32| {
+        let doc = notes_doc_with(&(para("Body", &["f1"]) + &sect(pr, true)), &format!("{listing}{compat}"), &sep(sz))?;
+        super::page_chars(&doc)[0].iter().find(|c| c.0 == 'N').map(|c| c.2)
+    };
+    let (Some(small), Some(mark)) = (note_y("", 16), note_y("", 20)) else { return };
+    assert!((small - mark).abs() < 0.01, "an 8 pt separator run under a 10 pt mark: {small} {mark}");
+    let (Some(small), Some(mark)) = (note_y(C15, 16), note_y(C15, 20)) else { return };
+    assert!(mark - small > 1.0, "compat 15 leaves the mark out: {small} {mark}");
+}
+
+#[test]
 fn notes_keep_the_space_after_between_them() {
     let note = |id: u32, after: u32| format!(r#"<w:footnote w:id="{id}"><w:p><w:pPr><w:spacing w:after="{after}"/></w:pPr><w:r><w:t>Q{id}</w:t></w:r></w:p></w:footnote>"#);
     let gap = |after: u32| {

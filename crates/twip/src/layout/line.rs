@@ -1745,6 +1745,18 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         un_asc = un_asc.max(a);
         un_desc = un_desc.max(d);
     }
+    // Compat ≤ 14: a note separator with no text before it counts as an object: the line is at least the mark's
+    // height, and spaces by it.
+    let mut sep_mark = None;
+    if separator
+        && run_h == 0.0
+        && let Some(f) = fonts.face(&mark.ascii, None, mark.bold, mark.italic)
+    {
+        let (a, d, e) = sp.metrics(&f, mark, mark_size);
+        asc = asc.max(a + e);
+        desc = desc.max(d);
+        sep_mark = Some(a + e + d);
+    }
     if last
         && object
         && un_text_asc + un_text_desc + num_asc == 0.0
@@ -1763,13 +1775,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     if object {
         text_h = run_h.max(picture_line_height(sp, &pieces[line.start..line.end.min(pieces.len())], mark, fonts, last, compat, run_h));
     }
-    // Compat ≤ 14: a note separator gives no height to space by, like an object, so the mark's is used.
-    if separator
-        && run_h == 0.0
-        && let Some(f) = fonts.face(&mark.ascii, None, mark.bold, mark.italic)
-    {
-        let (a, d, e) = sp.metrics(&f, mark, mark_size);
-        text_h = a + e + d;
+    if let Some(m) = sep_mark {
+        text_h = m;
     }
     // Line spacing
     match style.line_rule {
