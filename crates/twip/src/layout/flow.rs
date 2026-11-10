@@ -2672,8 +2672,9 @@ impl<'d> PageFill<'d, '_> {
             o.excl[0] -= 0.05;
             o.excl[2] -= 0.05;
         }
+        // Compat ≤ 14 draws the cells the indent further along but keeps the obstacle's left edge.
         if legacy {
-            o.excl[0] -= t.ind.min(0.0);
+            o.excl[0] -= t.ind;
         }
         o.settled = settled;
         self.at.found.push(o);

@@ -418,6 +418,29 @@ fn a_floating_tables_obstacle_starts_a_twip_left_of_tblpx() {
 }
 
 #[test]
+fn a_compat_14_floating_tables_indent_widens_its_obstacle_to_the_right() {
+    let body = |ind: u32| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="page" w:tblpX="4000" w:tblpY="0"/><w:tblW w:w="1440" w:type="dxa"/><w:tblInd w:w="{ind}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>{}</w:t></w:r></w:p>"#,
+            "a ".repeat(60)
+        )
+    };
+    let pieces = |compat: &str, ind: u32| {
+        let l = lines(compat, ARIAL_12, &body(ind))?;
+        let left = l.iter().find(|(x, t, _)| *x < 100.0 && t.starts_with('a')).expect("left piece").1.len();
+        let right = l.iter().find(|(x, t, _)| *x > 200.0 && t.starts_with('a')).expect("right piece").0;
+        Some((left, right))
+    };
+    let Some((left, right)) = pieces("", 0) else { return };
+    // Compat ≤ 14: the obstacle's left edge stays (3696 tw); its right edge moves out by the indent.
+    let (l2, r2) = pieces("", 200).unwrap();
+    assert!(l2 == left && (r2 - right - 10.0).abs() < 0.01, "{left} {right} {l2} {r2}");
+    // Compat 15 ignores the indent.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    assert_eq!(pieces(c15, 0), pieces(c15, 200));
+}
+
+#[test]
 fn a_floating_tables_obstacle_counts_a_missing_border_as_a_thin_one() {
     let body = r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="200" w:tblpY="0"/><w:tblW w:w="1440" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Words beside the table on the right side.</w:t></w:r></w:p>"#;
     let right = |compat: &str| lines(compat, ARIAL_12, body).map(|l| l.iter().find(|(_, t, _)| t.starts_with("Words")).expect("text beside the table").0);
