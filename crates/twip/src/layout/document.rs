@@ -302,20 +302,29 @@ impl<'d> PassCx<'d> {
     }
 }
 
+/// Where a section with columns ends its body before the endnotes that follow it, when its body is balanced first and
+/// the endnotes start below it. Compat ≤ 14: the endnotes after a section that isn't the last stay in its flow.
 pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
     let doc = cx.doc;
-    (doc.sections[si].section_in(doc.review.view).columns.num > 1 && cx.notes.ends.contains(&si)).then(|| doc.sections[si].blocks.len())
+    let in_flow = doc.settings.compat() == crate::docx::Compat::Legacy && si + 1 < doc.sections.len();
+    (doc.sections[si].section_in(doc.review.view).columns.num > 1 && cx.notes.ends.contains(&si) && !in_flow).then(|| doc.sections[si].blocks.len())
 }
 
+/// Whether the section's columns are balanced on the page starting at `token`: the endnotes started below a balanced
+/// body aren't.
 pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
     let doc = cx.doc;
     let nsec = doc.sections.len();
     let off = doc.settings.compat() == crate::docx::Compat::Legacy && doc.settings.has("noColumnBalance");
+    let split = endnote_split(cx, si);
+    if split.is_some_and(|e| token.flow.block >= e) {
+        return false;
+    }
     (!off
         && doc.sections[si].section_in(doc.review.view).columns.num > 1
         && si + 1 < nsec
         && super::vertical::same_page(&doc.sections[si], &doc.sections[si + 1]))
-        || endnote_split(cx, si).is_some_and(|e| token.flow.block < e)
+        || split.is_some()
 }
 
 pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &mut Memos) -> Result<(), Yield> {

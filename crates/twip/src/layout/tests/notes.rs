@@ -145,6 +145,32 @@ fn section_end_endnotes_wait_for_a_section_with_its_own() {
     assert_eq!([on(&doc_end, "1"), on(&doc_end, "3")], [Some(2), Some(2)], "the section's pos is ignored: {doc_end:?}");
 }
 
+/// Two columns of ten lines, the fifth referencing endnote 1, its endnotes at the section end, then a continuous
+/// section: each page's characters.
+fn section_end_endnotes_in_columns(settings: &str) -> Option<Vec<Vec<(char, f64, f64)>>> {
+    let mut body: String = (1..10).map(|i| para(&format!("L{i:02}"), if i == 5 { &["e1"][..] } else { &[] })).collect();
+    body += &format!(r#"<w:p><w:pPr><w:sectPr><w:cols w:num="2" w:space="720"/>{PAGE}</w:sectPr></w:pPr><w:r><w:t>L10</w:t></w:r></w:p>"#);
+    body += &(para("Tail", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true));
+    let doc = notes_doc(&body, &format!(r#"<w:endnotePr><w:pos w:val="sectEnd"/></w:endnotePr>{settings}"#))?;
+    Some(super::page_chars(&doc))
+}
+
+#[test]
+fn compat_14_section_end_endnotes_balance_with_the_columns() {
+    let Some(pages) = section_end_endnotes_in_columns("") else { return };
+    let top = pages[0].iter().filter(|c| c.1 > 300.0).map(|c| c.2).fold(f64::MAX, f64::min);
+    let first: String = pages[0].iter().filter(|c| c.1 > 300.0 && c.2 == top).map(|c| c.0).collect();
+    assert_eq!(first, "L07", "six lines in column 1, four and the endnote in column 2");
+}
+
+#[test]
+fn compat_15_section_end_endnotes_start_below_the_balanced_columns() {
+    let Some(pages) = section_end_endnotes_in_columns(C15) else { return };
+    let note = pages[0].iter().find(|c| c.0 == 'N').expect("the endnote is on page 1");
+    let last = pages[0].iter().filter(|c| c.0 == 'L').map(|c| c.2).fold(0.0, f64::max);
+    assert!(note.1 < 100.0 && note.2 > last, "in column 1 under the columns: {note:?} {last}");
+}
+
 #[test]
 fn each_page_footnotes_count_from_their_page() {
     let brk = r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#;
