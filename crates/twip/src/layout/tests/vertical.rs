@@ -318,6 +318,24 @@ fn a_line_with_no_room_beside_a_vertical_table_moves_to_its_far_side_and_the_tab
 }
 
 #[test]
+fn a_vertical_table_longer_than_the_line_splits_by_rows_its_header_repeated() {
+    let body = format!("{}{}{}", para("one", ""), long_table(40, 2000), para("after", ""));
+    let at = |mode: i64, page: usize| {
+        let mut doc = section("tbRl", "0", &body)?;
+        doc.settings.compat_mode = mode;
+        Some(cells_on(&doc, page))
+    };
+    let first = |cells: &[(String, f64, f64)], t: &str| cells.iter().find(|c| c.0 == t).map(|c| c.1);
+    // Compat 15 moves it to the next page, as the line has no room for it after "one".
+    let Some(p1) = at(15, 0) else { return };
+    assert!(first(&p1, "r0").is_none() && first(&at(15, 1).unwrap(), "r0").is_some());
+    // Compat 12 starts it after "one" and goes on where it was across the next page, below the header row again.
+    let (p1, p2) = (at(12, 0).unwrap(), at(12, 1).unwrap());
+    let (x1, x2) = (first(&p1, "r0").expect("on the first page"), first(&p2, "r0").expect("its header again"));
+    assert!((x1 - x2).abs() < 0.01 && first(&p1, "r39").is_none() && first(&p2, "r39") == Some(x1), "{x1} {x2}");
+}
+
+#[test]
 fn a_continuous_break_into_a_vertical_section_starts_a_page() {
     let body = format!(
         r#"{}<w:p><w:pPr><w:sectPr>{MARGINS}</w:sectPr></w:pPr></w:p>{}<w:sectPr><w:type w:val="continuous"/>{MARGINS}<w:textDirection w:val="tbRl"/></w:sectPr>"#,

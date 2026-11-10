@@ -2404,7 +2404,8 @@ impl<'d> PageFill<'d, '_> {
         let y0 = match joined {
             Some((r, _)) if down => r[3] - (br - bl),
             Some((r, _)) => r[1],
-            None => known.unwrap_or(y0),
+            // Its later parts go on where the first one was, across the page.
+            None => carry.upright_at.filter(|_| !pos.at.at_start()).or(known).unwrap_or(y0),
         };
         let y1 = y0 + br - bl;
         // Compat ≤ 14 has no fit test: the table stays at its stack position, over the margin if need be.
@@ -2436,20 +2437,28 @@ impl<'d> PageFill<'d, '_> {
                 .map(|o| o.excl[2])
                 .fold(col.x, f64::max),
         };
-        // Joined rows keep text as far off as the earlier rows do.
-        let (o0, o1) = joined.map_or((y0, y1), |(r, _)| (y0.min(r[1]), y1.max(r[3])));
-        let f = table_float(t.id, h, o1 - o0, [above, below, 0.0, 0.0], true);
-        self.at.found.push(Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, along, o0, o1 - o0));
+        // Compat 15 also moves a table longer than the rest of the line to the next page; one that starts a page
+        // splits by rows at the line end, in either mode, its header rows repeated.
+        let end = col.x + col.width;
+        if along + h > end + EPS && !empty && !legacy && fp.is_none() && joined.is_none() {
+            return Ok(Stop::Full);
+        }
         // On the page as printed: the turned page's y runs leftwards from its right edge, or rightwards when the
         // lines stack from the left.
         let left = if v.flow == super::vertical::Flow::DownEast { y0 } else { self.page_h - y1 };
-        let page_col = ColumnSpace { x: left - bl, width: br - bl, top: Lu::round_half_up(along), bottom: Lu::MAX, balance: false };
+        let bottom = if fp.is_some() { Lu::MAX } else { Lu::round_half_up(end) };
+        let page_col = ColumnSpace { x: left - bl, width: br - bl, top: Lu::round_half_up(along), bottom, balance: false };
         let (mut top, mut fresh, mut area, mut rows) = (along, true, NoteArea::default(), Vec::new());
         let saved = std::mem::take(&mut self.at.starts);
-        self.place_table(&tb, pos, carry, &page_col, &mut top, &mut fresh, &mut area, &mut rows, memos)?;
+        let stop = self.place_table(&tb, pos, carry, &page_col, &mut top, &mut fresh, &mut area, &mut rows, memos)?;
+        carry.upright_at = (stop == Stop::Full).then_some(y0);
         self.at.starts = saved;
         self.at.upright.extend(rows);
-        Ok(Stop::Done)
+        // Joined rows keep text as far off as the earlier rows do.
+        let (o0, o1) = joined.map_or((y0, y1), |(r, _)| (y0.min(r[1]), y1.max(r[3])));
+        let f = table_float(t.id, top - along, o1 - o0, [above, below, 0.0, 0.0], true);
+        self.at.found.push(Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, along, o0, o1 - o0));
+        Ok(stop)
     }
 
     #[allow(clippy::too_many_arguments, reason = "the part's place and the attempt state it was placed in")]

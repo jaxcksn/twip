@@ -76,6 +76,8 @@ pub struct FlowState {
     /// Compat 15: the footnote area of the earlier sections on the page, drawn after the page's last text, and
     /// whether it goes beneath the text.
     pub page_notes: Option<(super::flow::NoteArea, bool)>,
+    /// A vertical section's table split across pages: where across the turned page its first part was put.
+    pub upright_at: Option<f64>,
 }
 
 impl Default for FlowState {
@@ -90,6 +92,7 @@ impl Default for FlowState {
             break_before: 0.0,
             balanced_after: 0.0,
             page_notes: None,
+            upright_at: None,
         }
     }
 }
@@ -112,6 +115,7 @@ impl PartialEq for FlowState {
             && self.line_no == o.line_no
             && self.break_before == o.break_before
             && self.balanced_after == o.balanced_after
+            && self.upright_at == o.upright_at
     }
 }
 
