@@ -256,6 +256,17 @@ fn compat_15_footnote_area_has_the_first_reference_columns() {
 }
 
 #[test]
+fn compat_15_notes_wrap_at_the_width_of_their_area_column() {
+    let words = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa";
+    let extra: String = (10..=11).map(|i| format!(r#"<w:footnote w:id="{i}"><w:p><w:r><w:t>{words}</w:t></w:r></w:p></w:footnote>"#)).collect();
+    let cols = r#"<w:cols w:num="2" w:space="720" w:equalWidth="0"><w:col w:w="2000" w:space="720"/><w:col w:w="6640"/></w:cols>"#;
+    let body = para("A", &["f10"]) + &para("B", &[]) + &sect(cols, false) + &para("C", &["f11"]) + &sect(r#"<w:type w:val="continuous"/>"#, true);
+    let Some(doc) = notes_doc_with(&body, C15, &extra) else { return };
+    let right = super::page_chars(&doc)[0].iter().map(|c| c.1).fold(0.0, f64::max);
+    assert!(right > 320.0, "a note in the wide column is wrapped at its width: {right}");
+}
+
+#[test]
 fn compat_15_a_note_in_a_column_area_goes_on_on_the_next_page() {
     let long: String = (1..=8).map(|i| format!("<w:p><w:r><w:t>Q{i}</w:t></w:r></w:p>")).collect();
     let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);

@@ -32,6 +32,8 @@ pub struct StoryUnit {
     pub after: f64,
     pub content: Rc<[Child]>,
     pub block: usize,
+    /// The line's first piece in its paragraph (0 for a table row).
+    pub from: usize,
     pub widow: bool,
     pub keep_next: bool,
     pub keep_lines: bool,
@@ -181,7 +183,14 @@ pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEn
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
     let probe = StoryKey::new(children.clone(), Some(width), cell, env, &blocks);
-    cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, m))
+    cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, (0, 0), m))
+}
+
+/// The story's text from piece `at.1` of block `at.0` on, laid out at `width` (not cached).
+pub fn layout_from(blocks: &[&Block], width: f64, env: &StoryEnv, at: (usize, usize), memos: &mut Memos) -> Result<StoryLayout, Yield> {
+    let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let children = child_ids(&blocks, Some(width), env, None, memos)?;
+    layout_with(&blocks, &children, width, env, None, at, memos)
 }
 
 pub fn layout_with(
@@ -190,6 +199,7 @@ pub fn layout_with(
     width: f64,
     env: &StoryEnv,
     cell: Option<CellEnds>,
+    start: (usize, usize),
     memos: &mut Memos,
 ) -> Result<StoryLayout, Yield> {
     let text = &env.ctx.env.text;
@@ -205,7 +215,10 @@ pub fn layout_with(
     let mut held = 0.0f64;
     let mut prev_table: Option<(&Table, f64)> = None;
     for (bi, b) in blocks.iter().enumerate() {
+        // The part of a paragraph starting at a later line goes on without its space before.
+        let from = if bi == start.0 { start.1 } else { 0 };
         match b {
+            _ if bi < start.0 => {}
             LaidBlock::Para(laid) if super::paragraph::vanished(laid.para()) && !(cell.is_some() && bi + 1 == blocks.len()) => {}
             LaidBlock::Para(laid) => {
                 let p = laid.para();
@@ -221,7 +234,7 @@ pub fn layout_with(
                 let line_grid = text.line_grid.filter(|_| in_cell && text.adjust_line_height_in_table);
                 let ps = ParaSpace {
                     width,
-                    start: 0,
+                    start: from,
                     borders: neighbour_borders(style, prev, next),
                     x0: 0.0,
                     env: TextEnv { line_grid, ..text.clone() },
@@ -236,6 +249,7 @@ pub fn layout_with(
                     after = 0.0;
                 }
                 let g = match prev {
+                    _ if from > 0 => 0.0,
                     None if bi == 0 && ends.before => 0.0,
                     None => before,
                     Some(_) if !contextual => gap_plain(text, prev_after, before),
@@ -321,6 +335,7 @@ pub fn layout_with(
                         after: if i + 1 == rows { after } else { 0.0 },
                         content: content.into(),
                         block: bi,
+                        from: lines.from + start,
                         widow: style.widow_control,
                         keep_next: style.keep_next,
                         keep_lines: style.keep_lines,

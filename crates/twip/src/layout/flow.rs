@@ -100,6 +100,7 @@ pub struct PassMemo {
     varies: HashMap<usize, bool>,
     joined: HashMap<(usize, usize), Rc<Joined>>,
     mirrored: HashMap<(usize, usize), LaidPara<'static>>,
+    rewrapped: HashMap<(NoteKind, i64, usize, usize, u64), Vec<StoryUnit>>,
     pub(crate) held: Held,
 }
 
@@ -489,13 +490,22 @@ pub fn rebase(units: &[StoryUnit]) -> Vec<StoryUnit> {
 }
 
 // Note streams
-/// `notes` flowed through `ncols` columns `h` high: the columns, the tallest one's height, and the parts that don't fit.
-pub fn stream_flow(notes: &[NotePart], ncols: usize, h: f64) -> (Vec<Vec<NotePart>>, f64, Vec<NotePart>) {
+/// Lays a note part out again at a column's width: the note's text from the part's first line on.
+pub type Rewrap<'w> = dyn FnMut(&NotePart, f64) -> Result<NotePart, Yield> + 'w;
+
+/// `notes` flowed through columns of `widths`, `h` high: the columns, the tallest one's height, and the parts that don't
+/// fit. A note (or its rest) is wrapped at the width of the column it starts in.
+pub fn stream_flow(notes: &[NotePart], widths: &[f64], h: f64, wrap: &mut Rewrap) -> Result<(Vec<Vec<NotePart>>, f64, Vec<NotePart>), Yield> {
+    let ncols = widths.len().max(1);
+    let uneven = widths.iter().any(|w| (w - widths[0]).abs() > EPS);
     let mut cols: Vec<Vec<NotePart>> = vec![Vec::new()];
     let (mut used, mut tallest) = (0.0, 0.0f64);
     for (i, note) in notes.iter().enumerate() {
         let mut part = note.clone();
         loop {
+            if uneven {
+                part = wrap(&part, widths[cols.len() - 1])?;
+            }
             let total = part.height();
             if total <= h - used + EPS {
                 used += total;
@@ -511,35 +521,38 @@ pub fn stream_flow(notes: &[NotePart], ncols: usize, h: f64) -> (Vec<Vec<NotePar
             tallest = tallest.max(used);
             if cols.len() >= ncols {
                 let rest = std::iter::once(part).chain(notes[i + 1..].iter().cloned()).collect();
-                return (cols, tallest, rest);
+                return Ok((cols, tallest, rest));
             }
             cols.push(Vec::new());
             used = 0.0;
         }
     }
-    (cols, tallest.max(used), Vec::new())
+    Ok((cols, tallest.max(used), Vec::new()))
 }
 
-pub fn stream_fill(notes: &[NotePart], ncols: usize, h: f64) -> Option<(Vec<Vec<NotePart>>, f64)> {
-    let (cols, tallest, rest) = stream_flow(notes, ncols, h);
-    rest.is_empty().then_some((cols, tallest))
+pub fn stream_fill(notes: &[NotePart], widths: &[f64], h: f64, wrap: &mut Rewrap) -> Result<Option<(Vec<Vec<NotePart>>, f64)>, Yield> {
+    let (cols, tallest, rest) = stream_flow(notes, widths, h, wrap)?;
+    Ok(rest.is_empty().then_some((cols, tallest)))
 }
 
-pub fn stream_height(notes: &[NotePart], ncols: usize, room: f64) -> Option<f64> {
+/// The smallest height `notes` balance to in columns of `widths` within `room`.
+pub fn stream_height(notes: &[NotePart], widths: &[f64], room: f64, wrap: &mut Rewrap) -> Result<Option<f64>, Yield> {
     if notes.is_empty() {
-        return Some(0.0);
+        return Ok(Some(0.0));
     }
-    stream_fill(notes, ncols, room)?;
+    if stream_fill(notes, widths, room, wrap)?.is_none() {
+        return Ok(None);
+    }
     let (mut lo, mut hi) = (0.0, room);
     for _ in 0..40 {
         let mid = (lo + hi) / 2.0;
-        if stream_fill(notes, ncols, mid).is_some() {
+        if stream_fill(notes, widths, mid, wrap)?.is_some() {
             hi = mid;
         } else {
             lo = mid;
         }
     }
-    stream_fill(notes, ncols, hi).map(|(_, t)| t)
+    Ok(stream_fill(notes, widths, hi, wrap)?.map(|(_, t)| t))
 }
 
 fn part_height(row: &super::table::RowBox, parts: &[CellPart]) -> f64 {
@@ -736,6 +749,7 @@ impl<'d> PageFill<'d, '_> {
                         after: 0.0,
                         content,
                         block: 0,
+                        from: 0,
                         widow: false,
                         keep_next: false,
                         keep_lines: false,
@@ -787,14 +801,15 @@ impl<'d> PageFill<'d, '_> {
                 return Ok(col.bottom.holds(line_bottom));
             }
             let room = col.bottom.to_pt() - line_bottom - a.sep;
-            let ncols = a.cols.len().max(1);
+            let widths: Vec<f64> = if a.cols.is_empty() { vec![col.width] } else { a.cols.iter().map(|c| c.1).collect() };
+            let mut wrap = |p: &NotePart, w: f64| self.rewrap(p, w, memos);
             let mut cut = Vec::new();
-            let h = if ncols > 1 { stream_height(&a.parts, ncols, room) } else { Some(stacked(&a.parts)).filter(|&h| h <= room + EPS) };
+            let h = if widths.len() > 1 { stream_height(&a.parts, &widths, room, &mut wrap)? } else { Some(stacked(&a.parts)).filter(|&h| h <= room + EPS) };
             match h {
                 Some(h) => a.height = h,
                 // Compat 15: the line's last note goes on on the next page when its first part fits.
                 None => {
-                    let (cols, tallest, over) = stream_flow(&a.parts, ncols, room);
+                    let (cols, tallest, over) = stream_flow(&a.parts, &widths, room, &mut wrap)?;
                     let last = a.parts.last().expect("the line's notes");
                     let Some(first) = over.first().filter(|o| (o.kind, o.id) == (last.kind, last.id)) else { return Ok(false) };
                     let placed: usize = cols.iter().flatten().filter(|p| (p.kind, p.id) == (first.kind, first.id)).map(|p| p.units.len()).sum();
@@ -803,7 +818,6 @@ impl<'d> PageFill<'d, '_> {
                     if placed < if units.first().is_some_and(|u| u.widow) { 2.min(first_para) } else { 1.min(first_para) } {
                         return Ok(false);
                     }
-                    a.parts = cols.concat();
                     a.height = tallest;
                     a.cut = true;
                     cut = over;
@@ -887,15 +901,31 @@ impl<'d> PageFill<'d, '_> {
         Ok(())
     }
 
+    /// `part` laid out at `width`: its note's text from the part's first line on. A part starting at a table row keeps
+    /// its layout.
+    fn rewrap(&mut self, part: &NotePart, width: f64, memos: &mut Memos) -> Result<NotePart, Yield> {
+        let Some(u) = part.units.first().filter(|u| u.row.is_none()) else { return Ok(part.clone()) };
+        let key = (part.kind, part.id, u.block, u.from, width.to_bits());
+        if let Some(units) = self.pass.rewrapped.get(&key) {
+            return Ok(NotePart { units: units.clone(), ..part.clone() });
+        }
+        let blocks: Vec<&Block> = self.notes.blocks(part.kind, part.id).map(|b| b.iter().collect()).unwrap_or_default();
+        let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
+        let units = rebase(&super::story::layout_from(&blocks, width, &env, (u.block, u.from), memos)?.units);
+        self.pass.rewrapped.insert(key, units.clone());
+        Ok(NotePart { units, ..part.clone() })
+    }
+
     /// Starts the page's note stream with the notes going on from the last page, flowed through its columns.
     fn continue_stream(&mut self, carry: &mut FlowState, col: &ColumnSpace, area: &mut NoteArea, memos: &mut Memos) -> Result<(), Yield> {
         area.cont = true;
         area.sep = self.separator(true, col.width, memos)?.height;
         let room = col.bottom.to_pt() - col.top.to_pt() - area.sep;
-        let ncols = area.cols.len().max(1);
-        let (cols, tallest, over) = stream_flow(&carry.note_rest, ncols, room);
-        area.parts = cols.concat();
-        area.height = if over.is_empty() { stream_height(&area.parts, ncols, room).unwrap_or(tallest) } else { tallest };
+        let widths: Vec<f64> = if area.cols.is_empty() { vec![col.width] } else { area.cols.iter().map(|c| c.1).collect() };
+        let mut wrap = |p: &NotePart, w: f64| self.rewrap(p, w, memos);
+        let (_, tallest, over) = stream_flow(&carry.note_rest, &widths, room, &mut wrap)?;
+        area.parts = std::mem::take(&mut carry.note_rest);
+        area.height = if over.is_empty() { stream_height(&area.parts, &widths, room, &mut wrap)?.unwrap_or(tallest) } else { tallest };
         area.carried = area.parts.len();
         area.cut = !over.is_empty();
         carry.note_rest = over;
@@ -978,9 +1008,12 @@ impl<'d> PageFill<'d, '_> {
         if self.beneath() {
             self.at.notes_bottom = self.at.notes_bottom.max(y - 0.15 + h);
         }
-        let parts = match stream_fill(&area.parts, cols.len(), area.height + EPS) {
-            Some((parts, _)) if cols.len() > 1 => parts,
-            _ => vec![area.parts.clone()],
+        let widths: Vec<f64> = cols.iter().map(|c| c.1).collect();
+        let parts = if cols.len() > 1 || area.cut {
+            let mut wrap = |p: &NotePart, w: f64| self.rewrap(p, w, memos);
+            stream_flow(&area.parts, &widths, area.height + EPS, &mut wrap)?.0
+        } else {
+            vec![area.parts.clone()]
         };
         let per_col: Vec<(f64, &[NotePart])> = cols.iter().zip(&parts).map(|(c, p)| (c.0, &p[..])).collect();
         out.push(self.notes_box(area, &per_col, first.1, y, memos)?);
