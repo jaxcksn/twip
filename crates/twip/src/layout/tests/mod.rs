@@ -52,8 +52,9 @@ pub fn fixture(rel: &str) -> Option<Document> {
     doc(&fixtures().join(rel))
 }
 
+/// Reads a fixture with a fixed clock, so date fields lay out the same on every day.
 pub fn doc(path: &Path) -> Option<Document> {
-    crate::docx::read(&std::fs::read(path).ok()?).ok()
+    crate::docx::read_at(&std::fs::read(path).ok()?, 1_794_096_000).ok()
 }
 
 pub fn fonts() -> Fonts {

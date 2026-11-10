@@ -233,7 +233,7 @@ page 7 612.0 792.0
   72.0 382.8 Internal hyperlink to a bookmark: the complex table in the landscape section.
   72.0 402.4 Footnotes appear at the bottom of the page2 and endnotes collect at the end of the
   72.0 415.1 document.i
-  72.0 434.7 Fields: this is page 8 of 10; the file name is showcase.docx; and today is November 9,
+  72.0 434.7 Fields: this is page 8 of 10; the file name is showcase.docx; and today is November 8,
   72.0 447.4 2026.
   72.0 483.6 8Review & Collaboration
   72.0 512.2 Comments anchor to a range: this sentence has a reviewer comment attached, and so
