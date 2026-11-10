@@ -1277,6 +1277,16 @@ fn compat_15_draws_a_fitted_region_from_the_stale_passes_state() {
 }
 
 #[test]
+fn compat_15_fits_a_region_in_a_table_cell_as_compat_12() {
+    let cell = format!(r#"<w:tbl><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc>{}</w:tc></w:tr></w:tbl><w:p/>"#, fitted(1440, "ab"));
+    let body = format!("<w:p><w:r><w:t>Before</w:t></w:r></w:p>{cell}");
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let Some(c) = glyph_xs(c15, &body) else { return };
+    let x = |ch: char| c.iter().find(|g| g.0 == ch).map(|g| g.1).expect("drawn");
+    assert!((x('b') - x('a') - (1139.0 * 11.0 / 2048.0 + 59.75)).abs() < 0.05, "1195 tw after the `a`: {}", x('b') - x('a'));
+}
+
+#[test]
 fn a_vanished_mark_joins_its_paragraph_to_the_next() {
     let body = format!(
         r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:p><w:pPr><w:ind w:left="720" w:right="720"/><w:jc w:val="center"/><w:spacing w:before="240" w:after="480"/><w:rPr><w:vanish/><w:specVanish/></w:rPr></w:pPr><w:r><w:t>Heading.</w:t></w:r></w:p><w:p><w:pPr><w:ind w:left="1440" w:firstLine="360"/><w:spacing w:before="360"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#,

@@ -1057,7 +1057,8 @@ impl<'a> Builder<'a> {
             at += units;
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
-        self.fit_text(space.stale_fit, space.first_line);
+        // Compat 15: table-cell paragraphs fit their regions as compat 12.
+        self.fit_text(space.stale_fit && !space.in_cell, space.first_line);
         if let Some(dd) = &space.balance
             && (dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian))
         {
