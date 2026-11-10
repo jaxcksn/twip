@@ -162,6 +162,7 @@ impl Resolver {
             no_overflow_punct: p.overflow_punct == Some(false),
             no_auto_space_de: p.auto_space_de == Some(false),
             no_auto_space_dn: p.auto_space_dn == Some(false),
+            top_line_punct: p.top_line_punct.unwrap_or(false),
             tight_wrap: p.tight_wrap.unwrap_or(0),
             suppress_overlap: p.suppress_overlap.unwrap_or(false),
             suppress_line_numbers: p.suppress_line_numbers.unwrap_or(false),

@@ -944,6 +944,14 @@ fn fit_line(
             && !pieces[k + 1].glued
             && (last_char(k).is_some_and(ideographic) || first_char(k + 1).is_some_and(ideographic))
     };
+    // topLinePunct: an opening bracket that starts a line keeps only its right half.
+    if east_asian
+        && style.top_line_punct
+        && pieces.get(start).is_some_and(|p| p.kind == Kind::Text)
+        && first_char(start).is_some_and(|c| "〈《「『【〔（［｛".contains(c))
+    {
+        pen -= pieces[start].width / 2.0;
+    }
     // Punctuation that may hang past the right margin, in East Asian paragraphs.
     let hangs = |k: usize| {
         east_asian && !style.no_overflow_punct && !style.in_frame && classes(k).is_some_and(|t| first_char(k).is_some_and(|c| t.hanging.contains(c)))

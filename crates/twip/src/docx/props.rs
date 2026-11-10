@@ -560,6 +560,7 @@ pub struct ParaProps {
     pub overflow_punct: Option<bool>,
     pub auto_space_de: Option<bool>,
     pub auto_space_dn: Option<bool>,
+    pub top_line_punct: Option<bool>,
     pub tight_wrap: Option<u8>,
     pub suppress_overlap: Option<bool>,
     pub suppress_line_numbers: Option<bool>,
@@ -630,6 +631,7 @@ impl ParaProps {
                 "overflowPunct" => p.overflow_punct = Some(on_off(e)),
                 "autoSpaceDE" => p.auto_space_de = Some(on_off(e)),
                 "autoSpaceDN" => p.auto_space_dn = Some(on_off(e)),
+                "topLinePunct" => p.top_line_punct = Some(on_off(e)),
                 "suppressOverlap" => p.suppress_overlap = Some(on_off(e)),
                 "textboxTightWrap" => {
                     p.tight_wrap = Some(match val(e) {
@@ -744,6 +746,7 @@ impl ParaProps {
             overflow_punct,
             auto_space_de,
             auto_space_dn,
+            top_line_punct,
             tight_wrap,
             suppress_overlap,
             suppress_line_numbers,

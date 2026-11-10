@@ -1271,6 +1271,24 @@ fn a_distributed_line_spreads_its_characters_and_spaces_east_asian_text_from_lat
 }
 
 #[test]
+fn top_line_punct_takes_the_left_half_off_an_opening_bracket_at_a_line_start() {
+    if !fonts().is_installed("MS Mincho") {
+        return;
+    }
+    let first = |rpr: &str, ppr: &str, text: &str| {
+        let body = format!("<w:p><w:pPr>{ppr}</w:pPr><w:r>{MINCHO_JA}<w:t>{text}</w:t></w:r></w:p>");
+        test_doc("", rpr, &body, "").map(|d| super::page_chars(&d)[0][..2].iter().map(|c| c.1 * 20.0).collect::<Vec<_>>())
+    };
+    let ea = r#"<w:rFonts w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#;
+    let Some(cut) = first(ea, "<w:topLinePunct/>", "「字字") else { return };
+    assert!((cut[0] - 1330.0).abs() < 0.01 && (cut[1] - 1550.0).abs() < 0.01, "{cut:?}");
+    // Not for `(`, not without the option, not outside an East Asian paragraph.
+    assert!((first(ea, "<w:topLinePunct/>", "(字字").unwrap()[0] - 1440.0).abs() < 0.01);
+    assert!((first(ea, "", "「字字").unwrap()[0] - 1440.0).abs() < 0.01);
+    assert!((first(SZ_11, "<w:topLinePunct/>", "「字字").unwrap()[0] - 1440.0).abs() < 0.01);
+}
+
+#[test]
 fn compat_12_font_metric_options() {
     let c12 = |opt: &str| {
         format!(
