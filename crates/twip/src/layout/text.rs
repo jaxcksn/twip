@@ -1083,7 +1083,8 @@ impl<'a> Builder<'a> {
 
     /// Each fitted region (consecutive text whose runs have `w:fitText` with one id) made as wide as its first run's
     /// `w:fitText`: wider with character spacing, narrower with a horizontal scale; never broken. `stale`: lines are
-    /// broken with the region's first adjustment (compat 15), except on the document's first line, `first_line` wide.
+    /// broken with the region's first adjustment (compat 15), except on the document's first line, `first_line` wide;
+    /// a squeezed region there is treated like any other line.
     fn fit_text(&mut self, stale: bool, first_line: Option<f64>) {
         let fit = |b: &Self, k: usize| {
             let p = &b.pieces[k];
@@ -1110,19 +1111,8 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Fits pieces `a..e` to `target` points by the fit loop, in layout units (204.8 a twip): within 10 tw nothing
-    /// changes; wider, character spacing on every character, then a correction on the last one (spread again while it
-    /// exceeds 40 tw, at most twice); narrower, a scale of `max(15, trunc(100 T / N))` %, then the last character's
-    /// correction. `stale`: the loop runs twice with every re-measure returning the starting width, lines are broken
-    /// with the width the first run leaves (the spacing on every character without the correction, or the scale
-    /// alone), and the region is drawn as the loop leaves it run once more from the second one's state (a scale kept
-    /// when the region is to grow, reset to 100 % when it is to shrink).
-    /// `first`: the room left on the document's first line before the region; a region that fits there unadjusted and
-    /// expands is drawn and broken as the loop leaves it run live from the first stale run's state.
+    /// Fits pieces `a..e` to `target` points. `stale`: compat 15; `first`: the room left on the document's first line.
     fn fit_region(&mut self, a: usize, e: usize, target: f64, stale: bool, first: Option<f64>) {
-        const TW: f64 = 204.8;
-        const TOL: f64 = 2048.0;
-        const EPS_LU: f64 = 1e-6;
         for k in a..e {
             let p = &mut self.pieces[k];
             p.glued = k > a;
@@ -1131,120 +1121,53 @@ impl<'a> Builder<'a> {
                 p.break_after = false;
             }
         }
-        let chars = |b: &Self, k: usize| b.text[b.pieces[k].text.0 as usize..b.pieces[k].text.1 as usize].chars().count() as f64;
+        let chars = |b: &Self, k: usize| b.text[b.pieces[k].text.0 as usize..b.pieces[k].text.1 as usize].chars().count();
         // Each piece's natural width: the runs' own character spacing is replaced.
-        let natural: Vec<f64> =
-            (a..e).map(|k| (self.pieces[k].width - self.styles[self.pieces[k].style as usize].run.spacing * chars(self, k)) * 4096.0).collect();
-        let n: f64 = (a..e).map(|k| chars(self, k)).sum();
-        if n == 0.0 {
+        let natural: Vec<f64> = (a..e)
+            .map(|k| (self.pieces[k].width - self.styles[self.pieces[k].style as usize].run.spacing * chars(self, k) as f64) * 4096.0)
+            .collect();
+        let counts: Vec<usize> = (a..e).map(|k| chars(self, k)).collect();
+        let n: usize = counts.iter().sum();
+        if n == 0 {
             return;
         }
-        let t = (target * 20.0 * TW).trunc();
-        let tw = |lu: f64| (lu / TW).trunc();
-        let lu = |tw: f64| (tw * TW).round();
-        let pieces = |b: &Self, scale: f64| -> Vec<f64> {
-            if scale == 100.0 {
-                return natural.clone();
-            }
-            (a..e).zip(&natural).map(|(k, w)| b.scaled(k, scale).unwrap_or(w * scale / 100.0)).collect()
-        };
-        // The region's state: a scale, a spacing (tw) on every character and the last one's own.
-        let width = |b: &Self, scale: f64, sp: f64, last: f64| pieces(b, scale).iter().sum::<f64>() + (n - 1.0) * lu(sp) + lu(last);
-        let run = |b: &Self, live: bool, (mut scale, mut sp, mut last): (f64, f64, f64)| -> (f64, f64, f64) {
-            let start = width(b, scale, sp, last);
-            let mut w = start;
-            let (mut done, mut corr_done, mut adj_done, mut reset_done) = (false, false, false, false);
-            let (mut k, mut s, mut corr, mut tries, mut nat, mut before) = (1.0, 0.0, 0.0, 0, 0.0, 0.0);
-            for _ in 0..50 {
-                let mut adjust = false;
-                if done {
-                    break;
-                }
-                if corr_done {
-                    if corr == 0.0 {
-                        if (t - w).abs() <= TOL {
-                            break;
-                        }
-                    } else if (before - w).abs() > EPS_LU {
-                        break;
-                    }
-                    (done, k, adjust) = (true, 0.0, true);
-                } else if adj_done {
-                    before = w;
-                    if k > 0.0 {
-                        corr = ((tw(s) * k - tw(w - t)) / k).trunc();
-                    }
-                    if tries < 2 && corr.abs() > 40.0 {
-                        tries += 1;
-                        adjust = true;
-                    } else {
-                        (last, corr_done) = (corr, true);
-                    }
-                } else if reset_done {
-                    adjust = true;
-                } else {
-                    if (t - w).abs() <= TOL {
-                        return (scale, sp, last);
-                    }
-                    if t < w {
-                        scale = 100.0;
-                    }
-                    (sp, last, reset_done, k) = (0.0, 0.0, true, 1.0);
-                }
-                if adjust {
-                    if nat == 0.0 {
-                        nat = w;
-                    }
-                    // The whole region: a scale when too wide, else the spacing spread over the gaps.
-                    if n >= 2.0 && t != 0.0 && nat != 0.0 && nat != t {
-                        let prev = std::mem::take(&mut s);
-                        if t < nat {
-                            scale = (100.0 * t / nat).trunc().max(15.0);
-                        } else if prev == 0.0 || (w - (nat + k * prev)).abs() < EPS_LU {
-                            s = ((t - nat) / (n - 1.0)).trunc();
-                        } else {
-                            s = (prev * (t - nat) / (w - k * prev - nat)).trunc();
-                        }
-                        (sp, last) = (tw(s), tw(s));
-                    } else {
-                        s = 0.0;
-                    }
-                    adj_done = true;
-                }
-                w = if live { width(b, scale, sp, last) } else { start };
-            }
-            (scale, sp, last)
-        };
-        let widths = |b: &Self, (scale, sp, last): (f64, f64, f64)| -> Vec<f64> {
+        // Per character: a piece's advance is its first character's.
+        let advances = |scale: f64| -> Vec<f64> {
             (a..e)
-                .zip(pieces(b, scale))
-                .enumerate()
-                .map(|(j, (k, pw))| {
-                    let cs = chars(b, k);
-                    let spacing = if j + 1 == e - a { (cs - 1.0) * lu(sp) + lu(last) } else { cs * lu(sp) };
-                    (pw + spacing).max(0.0) / 4096.0
+                .zip(&natural)
+                .zip(&counts)
+                .flat_map(|((k, &w), &c)| {
+                    let w = if scale == 100.0 { w } else { self.scaled(k, scale).unwrap_or(w * scale / 100.0) };
+                    (0..c).map(move |i| if i == 0 { w } else { 0.0 })
                 })
                 .collect()
         };
+        let region = FitRegion { n, advances: &advances, target: ((target * 20.0).round() * 1024.0 / 5.0).trunc() };
+        let natural_w: f64 = natural.iter().sum();
+        // An expanding region on the document's first line takes that line's state; a squeezed one breaks as on any
+        // other line.
+        let on_first = region.target > natural_w && first.is_some_and(|r| natural_w / 4096.0 <= r + 1e-9);
         let unadjusted = (100.0, 0.0, 0.0);
-        // ponytail: only an expanding region takes the first line's state; a squeezed one there breaks as on any
-        // other line, as observed, though the loop run live from its scale alone would add a correction.
-        let on_first = t > natural.iter().sum::<f64>() && first.is_some_and(|r| natural.iter().sum::<f64>() / 4096.0 <= r + 1e-9);
-        let (printed, broken) = if stale && on_first {
-            let w = widths(self, run(self, true, run(self, false, unadjusted)));
-            (w.clone(), w)
-        } else if stale {
-            // Two stale passes, the first breaking the lines; then the loop run live from where they leave the region.
-            let first = run(self, false, unadjusted);
-            let printed = run(self, true, run(self, false, first));
-            (widths(self, printed), widths(self, first))
+        let (printed, broken) = if !stale {
+            let s = region.fit(unadjusted);
+            (s, s)
         } else {
-            let w = widths(self, run(self, true, unadjusted));
-            (w.clone(), w)
+            let first_step = region.step(unadjusted);
+            if on_first {
+                let s = region.fit(first_step);
+                (s, s)
+            } else {
+                (region.fit(region.step(first_step)), first_step)
+            }
         };
+        let pieces = |s: FitState| -> Vec<f64> {
+            let mut w = region.parts(s).into_iter();
+            counts.iter().map(|&c| w.by_ref().take(c).sum()).collect()
+        };
+        let (printed, broken) = (pieces(printed), pieces(broken));
         for ((k, w), bw) in (a..e).zip(printed).zip(broken) {
-            self.pieces[k].width = w;
-            self.pieces[k].break_extra = bw - w;
+            self.pieces[k].width = w / 4096.0;
+            self.pieces[k].break_extra = (bw - w) / 4096.0;
         }
     }
 
@@ -1661,6 +1584,103 @@ pub fn shape_run(text: &str, run: &Run, fonts: &Fonts) -> ShapedPara {
     b.finish()
 }
 
+/// Scale (percent), spacing on every character but the last, the last's spacing (twips).
+type FitState = (f64, f64, f64);
+
+fn fit_lu(tw: f64) -> f64 {
+    (tw * 1024.0 / 5.0).round()
+}
+
+fn fit_tw(lu: f64) -> f64 {
+    (lu * 5.0 / 1024.0).trunc()
+}
+
+/// `n` characters, their advances (lu) at a scale, and the target (lu).
+struct FitRegion<'a> {
+    n: usize,
+    advances: &'a dyn Fn(f64) -> Vec<f64>,
+    target: f64,
+}
+
+impl FitRegion<'_> {
+    const CLOSE: f64 = 2048.0;
+
+    /// Each character's width (lu), never below zero.
+    fn parts(&self, (scale, sp, last): FitState) -> Vec<f64> {
+        let (sp, last) = (fit_lu(sp), fit_lu(last));
+        let end = self.n - 1;
+        (self.advances)(scale).iter().enumerate().map(|(j, w)| (w + if j == end { last } else { sp }).max(0.0)).collect()
+    }
+
+    fn width(&self, s: FitState) -> f64 {
+        self.parts(s).iter().sum()
+    }
+
+    /// Compat 15's single adjustment.
+    fn step(&self, x: FitState) -> FitState {
+        let (n, t, w) = (self.n as f64, self.target, self.width(x));
+        if (t - w).abs() <= Self::CLOSE {
+            x
+        } else if n == 1.0 || t == 0.0 || w == 0.0 {
+            (if t < w { 100.0 } else { x.0 }, 0.0, -fit_tw(w - t))
+        } else if t < w {
+            ((100.0 * t / w).trunc().max(15.0), 0.0, 0.0)
+        } else {
+            let a = fit_tw(((t - w) / (n - 1.0)).trunc());
+            (x.0, a, a)
+        }
+    }
+
+    /// The new state and the spread (lu).
+    fn spread(&self, x: FitState, base: f64, prev: f64, w: f64, k: f64) -> (FitState, f64) {
+        let (n, t) = (self.n as f64, self.target);
+        if n < 2.0 || t == 0.0 || base == 0.0 || base == t {
+            return (x, 0.0);
+        }
+        if t < base {
+            return (((100.0 * t / base).trunc().max(15.0), 0.0, 0.0), 0.0);
+        }
+        let s = if prev == 0.0 || w == base + k * prev {
+            ((t - base) / (n - 1.0)).trunc()
+        } else {
+            (prev * (t - base) / (w - k * prev - base)).trunc()
+        };
+        let a = fit_tw(s);
+        ((x.0, a, a), s)
+    }
+
+    /// The compat 12 fit procedure from `x`.
+    fn fit(&self, x: FitState) -> FitState {
+        let t = self.target;
+        let w = self.width(x);
+        if (t - w).abs() <= Self::CLOSE {
+            return x;
+        }
+        let reset = (if t < w { 100.0 } else { x.0 }, 0.0, 0.0);
+        let n0 = self.width(reset);
+        let base = |w: f64| if n0 == 0.0 { w } else { n0 };
+        let (mut x, mut s) = self.spread(reset, base(n0), 0.0, n0, 1.0);
+        let mut w = self.width(x);
+        let mut again = 0;
+        let corr = loop {
+            let corr = fit_tw(s) - fit_tw(w - t);
+            if corr.abs() <= 40.0 || again == 2 {
+                break corr;
+            }
+            (x, s) = self.spread(x, base(w), s, w, 1.0);
+            w = self.width(x);
+            again += 1;
+        };
+        let before = w;
+        x.2 = corr;
+        let w = self.width(x);
+        if corr == 0.0 && (t - w).abs() > Self::CLOSE || corr != 0.0 && w == before {
+            x = self.spread(x, base(w), s, w, 0.0).0;
+        }
+        x
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1714,5 +1734,70 @@ mod tests {
         assert_eq!(stretches, 1);
         let inserted: Vec<bool> = (0..shaped.len()).map(|i| shaped.run(i).rev.ins.is_some()).collect();
         assert_eq!(inserted, [false, false, true, true, false, false]);
+    }
+
+    /// The fitted-text acceptance vectors.
+    #[test]
+    fn fitted_text_vectors() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cleanroom/fit_vectors.jsonl");
+        let text = std::fs::read_to_string(path).expect("fit vectors");
+        let mut fails = Vec::new();
+        let mut cases = 0;
+        for (line, l) in text.lines().enumerate() {
+            let v: serde_json::Value = serde_json::from_str(l).unwrap();
+            let glyphs: Vec<[i64; 3]> = serde_json::from_value(v["glyphs"].clone()).unwrap();
+            let advances = |scale: f64| -> Vec<f64> {
+                glyphs
+                    .iter()
+                    .map(|&[fu, avg, hp]| {
+                        let q = avg * scale as i64 / 100;
+                        ((2 * fu * q + avg) / (2 * avg) * hp) as f64
+                    })
+                    .collect()
+            };
+            let target = (v["target_tw"].as_f64().unwrap() * 1024.0 / 5.0).trunc();
+            let region = FitRegion { n: glyphs.len(), advances: &advances, target };
+            let state = |k: &str| -> FitState {
+                let s: [f64; 3] = serde_json::from_value(v[k].clone()).unwrap();
+                (s[0], s[1], s[2])
+            };
+            let unadjusted = (100.0, 0.0, 0.0);
+            let first = region.step(unadjusted);
+            let second = region.step(first);
+            // One character: (σ, 0, c) is (σ, c, c).
+            let one = |s: FitState| if glyphs.len() == 1 { (s.0, s.2, s.2) } else { s };
+            let got = [region.fit(unadjusted), first, second, region.fit(second)].map(one);
+            let want = [state("c12"), state("c15_A"), state("c15_B"), state("c15_printed")];
+            if got != want {
+                fails.push((line + 1, got, want));
+            }
+            cases += 1;
+        }
+        assert_eq!(cases, 600);
+        assert!(fails.is_empty(), "{} of 600 differ, first: {:?}", fails.len(), &fails[..fails.len().min(5)]);
+    }
+
+    #[test]
+    fn a_fitted_region_spreads_then_corrects_its_last_character() {
+        // `abcdef` Arial 11 to 2880 tw.
+        let advances = |scale: f64| -> Vec<f64> {
+            let fu: [i64; 6] = [1139, 1139, 1024, 1139, 1139, 569];
+            let q = 904 * scale as i64 / 100;
+            fu.iter().map(|&f| ((2 * f * q + 904) / (2 * 904) * 22) as f64).collect()
+        };
+        let region = FitRegion { n: 6, advances: &advances, target: 589824.0 };
+        let first = region.step((100.0, 0.0, 0.0));
+        assert_eq!(first, (100.0, 443.0, 443.0));
+        assert_eq!(region.step(first), (86.0, 0.0, 0.0));
+        assert_eq!(region.fit((86.0, 0.0, 0.0)), (86.0, 462.0, 3.0));
+        assert_eq!(region.fit((100.0, 0.0, 0.0)), (100.0, 443.0, 5.0));
+    }
+
+    #[test]
+    fn a_negative_spacing_wider_than_a_character_clamps_that_character() {
+        let advances = |_: f64| vec![20480.0, 1024.0, 20480.0];
+        let region = FitRegion { n: 3, advances: &advances, target: 0.0 };
+        assert_eq!(region.parts((100.0, -10.0, 0.0)), [18432.0, 0.0, 20480.0]);
+        assert_eq!(region.parts((100.0, 0.0, -101.0)), [20480.0, 1024.0, 0.0]);
     }
 }

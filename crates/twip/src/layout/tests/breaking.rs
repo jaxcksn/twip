@@ -1249,7 +1249,7 @@ fn compat_15_breaks_a_squeezed_region_at_its_scale_without_the_correction() {
 
 #[test]
 fn compat_15_fits_a_region_on_the_documents_first_line_as_compat_12() {
-    // `S00 ` + `abcdef` fitted to 2880 + `|end` on a 3860 tw line: it fits drawn, not with the first stale run's 443 tw
+    // `S00 ` + `abcdef` fitted to 2880 + `|end` on a 3860 tw line: it fits drawn, not with the first adjustment's 443 tw
     // on every character (438 tw wider); the document's first line takes the compat 12 width.
     let row = r#"<w:p><w:pPr><w:ind w:right="5500"/></w:pPr><w:r><w:t xml:space="preserve">S00 </w:t></w:r><w:r><w:rPr><w:fitText w:val="2880" w:id="1"/></w:rPr><w:t>abcdef</w:t></w:r><w:r><w:t>|end</w:t></w:r></w:p>"#;
     let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
@@ -1261,9 +1261,9 @@ fn compat_15_fits_a_region_on_the_documents_first_line_as_compat_12() {
 }
 
 #[test]
-fn compat_15_draws_a_fitted_region_from_the_stale_passes_state() {
-    // `ab` to 1440 tw: compat 12 spreads 1195 tw after the `a`; compat 15 draws 54 % and 1307 tw, the loop run again
-    // from the scale two stale passes leave.
+fn compat_15_draws_a_fitted_region_from_its_second_adjustment() {
+    // `ab` to 1440 tw: compat 12 spreads 1195 tw after the `a`; compat 15 draws 54 % and 1307 tw, the fit procedure
+    // from the second adjustment's scale.
     let body = format!("<w:p><w:r><w:t>Before</w:t></w:r></w:p>{}", fitted(1440, "ab"));
     let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
     let gap = |settings: &str| {

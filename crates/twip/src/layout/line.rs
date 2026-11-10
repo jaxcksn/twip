@@ -1129,9 +1129,9 @@ fn fit_line(
         if over && right_edge <= limit + room + EPS {
             squeeze = Some((word, room));
         } else if over {
-            // In compat ≤ 14 an automatic point needs three letters of the word to fit and its last letter before the
-            // last one that fits; when its hyphen doesn't fit, the next point must end before that letter.
-            let mut exceed = i;
+            // Compat ≤ 14: at least three letters must fit, and the hyphen goes at least one letter before the first
+            // letter that doesn't fit.
+            let mut first_unfit = i;
             while let Some(&(at, soft)) = breaks.last() {
                 if at <= start {
                     breaks.pop();
@@ -1145,12 +1145,12 @@ fn fit_line(
                     let legacy = auto && frame.compat == Compat::Legacy;
                     if legacy {
                         let word = (start..at).rev().find(|&k| pieces[k].kind != Kind::Text).map_or(start, |k| k + 1);
-                        if exceed <= word + 2 || at + 1 > exceed {
+                        if first_unfit <= word + 2 || at + 1 > first_unfit {
                             breaks.pop();
                             continue;
                         }
                         if !fits {
-                            exceed = at - 1;
+                            first_unfit = at - 1;
                         }
                     }
                     if !fits || auto && !zoned(pieces, start, at, &xs, right, frame) {
@@ -1174,17 +1174,10 @@ fn fit_line(
             if strict {
                 return Fit { end: start, xs: Vec::new(), widths: Vec::new(), hard: None, hyphen: false, leaders: Vec::new() };
             }
-            // Inside a fitted region the break goes before the region, unless the region starts the line. In a
-            // Korean run the cut ignores the kinsoku classes and spaces that don't fit go down with the rest.
+            // Before a fitted region unless it starts the line; no kinsoku, and spaces that don't fit go down.
             let mut at = (start..=i).rev().find(|&k| !pieces[k].glued).unwrap_or(start);
-            if korean_run(at.min(n - 1)) {
-                while at > start + 1 && pieces[at - 1].kind == Kind::Space && xs[at - 1 - start] + ws[at - 1 - start] > right + EPS {
-                    at -= 1;
-                }
-            } else {
-                while at > start + 1 && refused(at) {
-                    at -= 1;
-                }
+            while at > start + 1 && pieces[at - 1].kind == Kind::Space && xs[at - 1 - start] + ws[at - 1 - start] > right + EPS {
+                at -= 1;
             }
             if at > start && pieces[start..at].iter().any(|q| !matches!(q.kind, Kind::ListNumber | Kind::Anchor)) {
                 xs.truncate(at - start);
