@@ -381,7 +381,7 @@ fn a_compat_14_line_goes_to_a_floats_bottom_when_another_starts_inside_it() {
 }
 
 #[test]
-fn a_compat_14_line_pushed_to_a_floats_bottom_goes_below_one_ending_within_its_height() {
+fn a_compat_14_line_pushed_to_a_floats_bottom_goes_below_one_ending_within_its_height_of_its_top() {
     let table = |y: u32, w: u32, borders: &str| {
         format!(
             r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="page" w:horzAnchor="page" w:tblpX="4000" w:tblpY="{y}"/><w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/>{borders}</w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>T</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
@@ -395,12 +395,12 @@ fn a_compat_14_line_pushed_to_a_floats_bottom_goes_below_one_ending_within_its_h
         let body = format!("{}{}{}{}{}", p(line), table(1490, 1440, &borders), table(1750 + g, 1640, ""), p(&format!("Test line {line}")), p("After."));
         baselines("", ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _, _)| t.starts_with("Test")).expect("drawn").3)
     };
-    // The test line's top is inside A (ending at 1749 tw); B starts inside the line, g below A.
-    let Some(below) = test_line(40) else { return };
-    // B ends 240 tw below A, less than the line's height: the line goes below B.
-    assert!((below - (1989.0 + 240.0) / 20.0).abs() < 0.1, "{below}");
-    // B ends 299 tw below A: the line stays at A's bottom.
-    let at_a = test_line(99).unwrap();
+    // The test line's top (1740 tw) is inside A (ending at 1749 tw); B starts inside the line, g below A.
+    let Some(below) = test_line(91) else { return };
+    // B ends 300 tw below the line's top, its height: the line goes below B.
+    assert!((below - (2040.0 + 240.0) / 20.0).abs() < 0.1, "{below}");
+    // B ends 301 tw below it: the line stays at A's bottom.
+    let at_a = test_line(92).unwrap();
     assert!((at_a - (1749.0 + 240.0) / 20.0).abs() < 0.1, "{at_a}");
 }
 
