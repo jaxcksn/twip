@@ -9,8 +9,6 @@ use crate::layout::fragment::Item;
 use crate::layout::layout;
 use crate::layout::traverse::paint;
 
-use super::doc;
-
 fn bundled_fonts() -> Fonts {
     let mut fonts = Fonts::default();
     let mut families = Vec::new();
@@ -183,7 +181,8 @@ fn layout_output_matches_snapshots() {
     fixtures(&root().join("fixtures"), &mut paths);
     let mut got = BTreeMap::new();
     for path in &paths {
-        let Some(d) = doc(path) else { continue };
+        // DATE/TIME fields at a fixed instant (2026-11-09 12:00 UTC), so the snapshots don't change with the day.
+        let Some(d) = std::fs::read(path).ok().and_then(|b| crate::docx::read_at(&b, 1_794_225_600).ok()) else { continue };
         let rel = path.strip_prefix(root().join("fixtures")).unwrap().to_string_lossy().replace(['\\', '/'], "__");
         got.insert(rel.replace(".docx", ".txt"), snapshot(&d, &fonts));
     }
