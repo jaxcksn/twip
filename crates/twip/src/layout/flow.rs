@@ -64,6 +64,8 @@ pub struct NoteArea {
     pub below: bool,
     /// Room kept clear above the notes, down from where a note that goes on on the next page was referenced.
     pub kept: f64,
+    /// A note in the area goes on on the next page.
+    pub cut: bool,
 }
 
 /// The space shared between two notes in an area: the gap between them is the later one's space before or the
@@ -487,33 +489,40 @@ pub fn rebase(units: &[StoryUnit]) -> Vec<StoryUnit> {
 }
 
 // Note streams
-pub fn stream_fill(notes: &[NotePart], ncols: usize, h: f64) -> Option<(Vec<Vec<NotePart>>, f64)> {
+/// `notes` flowed through `ncols` columns `h` high: the columns, the tallest one's height, and the parts that don't fit.
+pub fn stream_flow(notes: &[NotePart], ncols: usize, h: f64) -> (Vec<Vec<NotePart>>, f64, Vec<NotePart>) {
     let mut cols: Vec<Vec<NotePart>> = vec![Vec::new()];
     let (mut used, mut tallest) = (0.0, 0.0f64);
-    for note in notes {
+    for (i, note) in notes.iter().enumerate() {
         let mut part = note.clone();
         loop {
             let total = part.height();
             if total <= h - used + EPS {
                 used += total;
-                cols.last_mut()?.push(part);
+                cols.last_mut().expect("a column").push(part);
                 break;
             }
             let fit = note_cut(&part.units, h - used);
             if fit > 0 {
                 used += part.units[fit - 1].top + part.units[fit - 1].height;
-                cols.last_mut()?.push(NotePart { units: part.units[..fit].to_vec(), ..part.clone() });
+                cols.last_mut().expect("a column").push(NotePart { units: part.units[..fit].to_vec(), ..part.clone() });
                 part = NotePart { units: rebase(&part.units[fit..]), ..part };
             }
             tallest = tallest.max(used);
-            if cols.len() == ncols {
-                return None;
+            if cols.len() >= ncols {
+                let rest = std::iter::once(part).chain(notes[i + 1..].iter().cloned()).collect();
+                return (cols, tallest, rest);
             }
             cols.push(Vec::new());
             used = 0.0;
         }
     }
-    Some((cols, tallest.max(used)))
+    (cols, tallest.max(used), Vec::new())
+}
+
+pub fn stream_fill(notes: &[NotePart], ncols: usize, h: f64) -> Option<(Vec<Vec<NotePart>>, f64)> {
+    let (cols, tallest, rest) = stream_flow(notes, ncols, h);
+    rest.is_empty().then_some((cols, tallest))
 }
 
 pub fn stream_height(notes: &[NotePart], ncols: usize, room: f64) -> Option<f64> {
@@ -764,6 +773,11 @@ impl<'d> PageFill<'d, '_> {
             a.sep = self.separator(false, col.width, memos)?.height;
         }
         if a.shared.is_some() {
+            // ponytail: after a note is cut, a later line's notes move it to the next page; where the body after the
+            // cut goes on in a later column, its notes might share the next page's stream instead.
+            if a.cut && !a.below {
+                return Ok(false);
+            }
             for &(k, id) in refs.iter().filter(|r| r.0 == NoteKind::Foot) {
                 let u = self.note_units(k, id, a.cols.first().map_or(col.width, |c| c.1), memos)?;
                 a.parts.push(NotePart { kind: k, id, units: u.units.clone() });
@@ -773,13 +787,33 @@ impl<'d> PageFill<'d, '_> {
                 return Ok(col.bottom.holds(line_bottom));
             }
             let room = col.bottom.to_pt() - line_bottom - a.sep;
-            let h = if a.cols.len() > 1 { stream_height(&a.parts, a.cols.len(), room) } else { Some(stacked(&a.parts)).filter(|&h| h <= room + EPS) };
-            let Some(h) = h else { return Ok(false) };
-            a.height = h;
+            let ncols = a.cols.len().max(1);
+            let mut cut = Vec::new();
+            let h = if ncols > 1 { stream_height(&a.parts, ncols, room) } else { Some(stacked(&a.parts)).filter(|&h| h <= room + EPS) };
+            match h {
+                Some(h) => a.height = h,
+                // Compat 15: the line's last note goes on on the next page when its first part fits.
+                None => {
+                    let (cols, tallest, over) = stream_flow(&a.parts, ncols, room);
+                    let last = a.parts.last().expect("the line's notes");
+                    let Some(first) = over.first().filter(|o| (o.kind, o.id) == (last.kind, last.id)) else { return Ok(false) };
+                    let placed: usize = cols.iter().flatten().filter(|p| (p.kind, p.id) == (first.kind, first.id)).map(|p| p.units.len()).sum();
+                    let units = &last.units;
+                    let first_para = units.iter().take_while(|x| x.block == units[0].block).count();
+                    if placed < if units.first().is_some_and(|u| u.widow) { 2.min(first_para) } else { 1.min(first_para) } {
+                        return Ok(false);
+                    }
+                    a.parts = cols.concat();
+                    a.height = tallest;
+                    a.cut = true;
+                    cut = over;
+                }
+            }
             if !col.bottom.holds(line_bottom + a.total()) {
                 return Ok(false);
             }
             *area = a;
+            rest.extend(cut);
             return Ok(true);
         }
         let mut new_rest = Vec::new();
@@ -850,6 +884,21 @@ impl<'d> PageFill<'d, '_> {
         }
         carry.note_rest = rest;
         area.carried = area.parts.len();
+        Ok(())
+    }
+
+    /// Starts the page's note stream with the notes going on from the last page, flowed through its columns.
+    fn continue_stream(&mut self, carry: &mut FlowState, col: &ColumnSpace, area: &mut NoteArea, memos: &mut Memos) -> Result<(), Yield> {
+        area.cont = true;
+        area.sep = self.separator(true, col.width, memos)?.height;
+        let room = col.bottom.to_pt() - col.top.to_pt() - area.sep;
+        let ncols = area.cols.len().max(1);
+        let (cols, tallest, over) = stream_flow(&carry.note_rest, ncols, room);
+        area.parts = cols.concat();
+        area.height = if over.is_empty() { stream_height(&area.parts, ncols, room).unwrap_or(tallest) } else { tallest };
+        area.carried = area.parts.len();
+        area.cut = !over.is_empty();
+        carry.note_rest = over;
         Ok(())
     }
 
@@ -951,6 +1000,9 @@ impl<'d> PageFill<'d, '_> {
         let (stop, bottom) = if let Some(mut area) = self.at.stream.take() {
             if area.sep == 0.0 && area.shared.is_some_and(|r| r > 0.0) {
                 area.sep = self.separator(false, col.width, memos)?.height;
+            }
+            if self.column == 0 && area.parts.is_empty() && !carry.note_rest.is_empty() {
+                self.continue_stream(&mut carry, &col, &mut area, memos)?;
             }
             let r = self.fill_body(&mut pos, &mut carry, col, page_empty, &mut area, &mut out, memos);
             self.at.stream = Some(area);

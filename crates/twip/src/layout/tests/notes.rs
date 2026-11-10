@@ -256,6 +256,60 @@ fn compat_15_footnote_area_has_the_first_reference_columns() {
 }
 
 #[test]
+fn compat_15_a_note_in_a_column_area_goes_on_on_the_next_page() {
+    let long: String = (1..=8).map(|i| format!("<w:p><w:r><w:t>Q{i}</w:t></w:r></w:p>")).collect();
+    let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
+    let cols = r#"<w:cols w:num="2" w:space="720"/>"#;
+    let body = |k: usize| {
+        let mut b: String = para("A", &["f1"]) + &para("B", &[]) + &sect(cols, false);
+        for i in 1..=70 {
+            let r = if i == k { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" };
+            b += &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>P{i:02}</w:t></w:r>{r}</w:p>"#);
+        }
+        b + &sect(r#"<w:type w:val="continuous"/>"#, true)
+    };
+    let on = |pages: &[String], s: &str| pages.iter().position(|p| p.contains(s));
+    let Some(plain) = notes_doc_with(&body(0), C15, &extra) else { return };
+    let plain: String = super::page_chars(&plain)[0].iter().map(|c| c.0).collect();
+    let last = (1..=70).rev().find(|k| plain.contains(&format!("P{k:02}"))).expect("page 1 has lines");
+    let mut split = false;
+    for k in last - 10..=last {
+        let Some(doc) = notes_doc_with(&body(k), C15, &extra) else { return };
+        let pages: Vec<String> = super::page_chars(&doc).iter().map(|p| p.iter().map(|c| c.0).collect()).collect();
+        let line = on(&pages, &format!("P{k:02}2"));
+        assert_eq!(line, on(&pages, "Q1"), "the reference line and the note's first line: {k} {pages:?}");
+        split |= line == Some(0) && on(&pages, "Q8") == Some(1);
+    }
+    assert!(split, "a note split between the pages");
+}
+
+#[test]
+fn compat_15_a_note_going_on_starts_the_next_column_area() {
+    let long: String = (1..=12).map(|i| format!("<w:p><w:r><w:t>Q{i:02}</w:t></w:r></w:p>")).collect();
+    let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
+    let body = |k: usize| {
+        let mut b = String::new();
+        for i in 1..=160 {
+            let r = if i == k { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" };
+            b += &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>P{i:03}</w:t></w:r>{r}</w:p>"#);
+        }
+        b + &sect(r#"<w:cols w:num="2" w:space="720"/>"#, true)
+    };
+    let Some(plain) = notes_doc_with(&body(0), C15, &extra) else { return };
+    let plain: String = super::page_chars(&plain)[0].iter().map(|c| c.0).collect();
+    let last = (1..=160).rev().find(|k| plain.contains(&format!("P{k:03}"))).expect("page 1 has lines");
+    let mut split = false;
+    for k in last - 40..=last {
+        let Some(doc) = notes_doc_with(&body(k), C15, &extra) else { return };
+        let pages: Vec<String> = super::page_chars(&doc).iter().map(|p| p.iter().map(|c| c.0).collect()).collect();
+        let on: Vec<Vec<usize>> = (1..=12).map(|i| (0..pages.len()).filter(|&p| pages[p].contains(&format!("Q{i:02}"))).collect()).collect();
+        assert!(on.iter().all(|p| p.len() == 1), "every note line once: {k} {on:?}");
+        split |= on[0] != on[11];
+    }
+    assert!(split, "a note split between the pages");
+}
+
+#[test]
 fn compat_14_continuous_break_after_a_page_bottom_note_starts_a_page() {
     let body = para("A", &["f1"]) + &sect("", false) + &para("B", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true);
     let page_of_b = |settings: &str| {
