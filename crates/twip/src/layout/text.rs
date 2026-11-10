@@ -1057,7 +1057,7 @@ impl<'a> Builder<'a> {
             at += units;
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
-        self.fit_text(space.stale_fit);
+        self.fit_text(space.stale_fit, space.first_line);
         if let Some(dd) = &space.balance
             && (dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian))
         {
@@ -1082,8 +1082,8 @@ impl<'a> Builder<'a> {
 
     /// Each fitted region (consecutive text whose runs have `w:fitText` with one id) made as wide as its first run's
     /// `w:fitText`: wider with character spacing, narrower with a horizontal scale; never broken. `stale`: lines are
-    /// broken with the region's first adjustment (compat 15).
-    fn fit_text(&mut self, stale: bool) {
+    /// broken with the region's first adjustment (compat 15), except on the document's first line, `first_line` wide.
+    fn fit_text(&mut self, stale: bool, first_line: Option<f64>) {
         let fit = |b: &Self, k: usize| {
             let p = &b.pieces[k];
             b.styles[p.style as usize].run.fit_text.filter(|_| matches!(p.kind, Kind::Text | Kind::Space))
@@ -1098,7 +1098,13 @@ impl<'a> Builder<'a> {
             while e < self.pieces.len() && fit(self, e).is_some_and(|(_, i)| i == id) {
                 e += 1;
             }
-            self.fit_region(a, e, target, stale);
+            // ponytail: the region is on the first line when the text up to its end fits unadjusted, tabs and line
+            // ends aside; the line breaker's own decision would need the region's widths first.
+            let before = &self.pieces[..a];
+            let room = first_line
+                .filter(|_| !before.iter().any(|p| matches!(p.kind, Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak)))
+                .map(|w| w - before.iter().map(|p| p.width).sum::<f64>());
+            self.fit_region(a, e, target, stale, room);
             a = e;
         }
     }
@@ -1110,7 +1116,9 @@ impl<'a> Builder<'a> {
     /// with the width the first run leaves (the spacing on every character without the correction, or the scale
     /// alone), and the region is drawn as the loop leaves it run once more from the second one's state (a scale kept
     /// when the region is to grow, reset to 100 % when it is to shrink).
-    fn fit_region(&mut self, a: usize, e: usize, target: f64, stale: bool) {
+    /// `first`: the room left on the document's first line before the region; a region that fits there unadjusted and
+    /// expands is drawn and broken as the loop leaves it run live from the first stale run's state.
+    fn fit_region(&mut self, a: usize, e: usize, target: f64, stale: bool, first: Option<f64>) {
         const TW: f64 = 204.8;
         const TOL: f64 = 2048.0;
         const EPS_LU: f64 = 1e-6;
@@ -1218,7 +1226,13 @@ impl<'a> Builder<'a> {
                 .collect()
         };
         let unadjusted = (100.0, 0.0, 0.0);
-        let (printed, broken) = if stale {
+        // ponytail: only an expanding region takes the first line's state; a squeezed one there breaks as on any
+        // other line, as observed, though the loop run live from its scale alone would add a correction.
+        let on_first = t > natural.iter().sum::<f64>() && first.is_some_and(|r| natural.iter().sum::<f64>() / 4096.0 <= r + 1e-9);
+        let (printed, broken) = if stale && on_first {
+            let w = widths(self, run(self, true, run(self, false, unadjusted)));
+            (w.clone(), w)
+        } else if stale {
             // Two stale passes, the first breaking the lines; then the loop run live from where they leave the region.
             let first = run(self, false, unadjusted);
             let printed = run(self, true, run(self, false, first));
@@ -1227,8 +1241,6 @@ impl<'a> Builder<'a> {
             let w = widths(self, run(self, true, unadjusted));
             (w.clone(), w)
         };
-        // ponytail: a region on the document's first line gets the loop run live from the first pass's state, to break
-        // and to print; it is treated as any other.
         for ((k, w), bw) in (a..e).zip(printed).zip(broken) {
             self.pieces[k].width = w;
             self.pieces[k].break_extra = bw - w;

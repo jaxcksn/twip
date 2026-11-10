@@ -680,7 +680,10 @@ impl<'d> PageFill<'d, '_> {
         let prev = prev.filter(|_| !breaks_first(self.sec.blocks.get(bi)));
         let next = next.filter(|_| !breaks_first(self.sec.blocks.get(end + 1)));
         let next = next.or_else(|| self.sec.next.filter(|_| end + 1 >= self.sec.blocks.len()));
-        let space = laid.shape_space(self.fields, self.note_numbers, &self.ctx);
+        let mut space = laid.shape_space(self.fields, self.note_numbers, &self.ctx);
+        if space.stale_fit && self.sec.index == 0 && bi == 0 && p.inlines.iter().any(|i| i.run().is_some_and(|r| r.fit_text.is_some())) {
+            space.first_line = Some(width - style.ind_left - style.ind_right - style.ind_first);
+        }
         let shaped = shape(p, &space, self.ctx.fonts, memos)?;
         let mut ps = para_space(style, prev, next, width, from, x0, &self.ctx);
         if from > 0 && shaped.pieces[..from.min(shaped.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak)) {
