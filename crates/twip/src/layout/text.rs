@@ -1106,8 +1106,10 @@ impl<'a> Builder<'a> {
     /// Fits pieces `a..e` to `target` points by the fit loop, in layout units (204.8 a twip): within 10 tw nothing
     /// changes; wider, character spacing on every character, then a correction on the last one (spread again while it
     /// exceeds 40 tw, at most twice); narrower, a scale of `max(15, trunc(100 T / N))` %, then the last character's
-    /// correction. `stale`: the loop also runs with every re-measure returning the starting width, and lines are broken
-    /// with the width it leaves (the spacing on every character without the correction, or the scale alone).
+    /// correction. `stale`: the loop runs twice with every re-measure returning the starting width, lines are broken
+    /// with the width the first run leaves (the spacing on every character without the correction, or the scale
+    /// alone), and the region is drawn as the loop leaves it run once more from the second one's state (a scale kept
+    /// when the region is to grow, reset to 100 % when it is to shrink).
     fn fit_region(&mut self, a: usize, e: usize, target: f64, stale: bool) {
         const TW: f64 = 204.8;
         const TOL: f64 = 2048.0;
@@ -1139,8 +1141,7 @@ impl<'a> Builder<'a> {
         };
         // The region's state: a scale, a spacing (tw) on every character and the last one's own.
         let width = |b: &Self, scale: f64, sp: f64, last: f64| pieces(b, scale).iter().sum::<f64>() + (n - 1.0) * lu(sp) + lu(last);
-        let run = |b: &Self, live: bool| -> (f64, f64, f64) {
-            let (mut scale, mut sp, mut last) = (100.0, 0.0, 0.0);
+        let run = |b: &Self, live: bool, (mut scale, mut sp, mut last): (f64, f64, f64)| -> (f64, f64, f64) {
             let start = width(b, scale, sp, last);
             let mut w = start;
             let (mut done, mut corr_done, mut adj_done, mut reset_done) = (false, false, false, false);
@@ -1216,10 +1217,18 @@ impl<'a> Builder<'a> {
                 })
                 .collect()
         };
-        let printed = widths(self, run(self, true));
-        let broken = if stale { widths(self, run(self, false)) } else { printed.clone() };
-        // ponytail: compat 15 prints the compat 12 result; Word prints the loop run again from the stale passes' state
-        // (a scale and spacing, as wide), and a region on the document's first line breaks like compat 12.
+        let unadjusted = (100.0, 0.0, 0.0);
+        let (printed, broken) = if stale {
+            // Two stale passes, the first breaking the lines; then the loop run live from where they leave the region.
+            let first = run(self, false, unadjusted);
+            let printed = run(self, true, run(self, false, first));
+            (widths(self, printed), widths(self, first))
+        } else {
+            let w = widths(self, run(self, true, unadjusted));
+            (w.clone(), w)
+        };
+        // ponytail: a region on the document's first line gets the loop run live from the first pass's state, to break
+        // and to print; it is treated as any other.
         for ((k, w), bw) in (a..e).zip(printed).zip(broken) {
             self.pieces[k].width = w;
             self.pieces[k].break_extra = bw - w;

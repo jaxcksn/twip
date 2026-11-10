@@ -1248,6 +1248,22 @@ fn compat_15_breaks_a_squeezed_region_at_its_scale_without_the_correction() {
 }
 
 #[test]
+fn compat_15_draws_a_fitted_region_from_the_stale_passes_state() {
+    // `ab` to 1440 tw: compat 12 spreads 1195 tw after the `a`; compat 15 draws 54 % and 1307 tw, the loop run again
+    // from the scale two stale passes leave.
+    let body = format!("<w:p><w:r><w:t>Before</w:t></w:r></w:p>{}", fitted(1440, "ab"));
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let gap = |settings: &str| {
+        let c = glyph_xs(settings, &body)?;
+        let x = |ch: char| c.iter().find(|g| g.0 == ch).map(|g| g.1);
+        Some(x('b')? - x('a')?)
+    };
+    let (Some(c12), Some(c15)) = (gap(""), gap(c15)) else { return };
+    assert!((c12 - (1139.0 * 11.0 / 2048.0 + 59.75)).abs() < 0.05, "{c12}");
+    assert!((c15 - (615.0 * 11.0 / 2048.0 + 65.35)).abs() < 0.05, "{c15}");
+}
+
+#[test]
 fn a_vanished_mark_joins_its_paragraph_to_the_next() {
     let body = format!(
         r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:p><w:pPr><w:ind w:left="720" w:right="720"/><w:jc w:val="center"/><w:spacing w:before="240" w:after="480"/><w:rPr><w:vanish/><w:specVanish/></w:rPr></w:pPr><w:r><w:t>Heading.</w:t></w:r></w:p><w:p><w:pPr><w:ind w:left="1440" w:firstLine="360"/><w:spacing w:before="360"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#,
