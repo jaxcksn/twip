@@ -8,7 +8,7 @@ use crate::docx::model::*;
 use crate::docx::review::MarkupView;
 
 use super::LayoutCtx;
-use super::flow::{AttemptState, NoteArea, PageFill, PassMemo, Stop, stream_fill};
+use super::flow::{AttemptState, NoteArea, PageFill, PassMemo, Stop};
 use super::fragment::{BoxFragment, BoxKind, Child, Item, PlacedLine, RowFragment};
 use super::ids::FragmentId;
 use super::job::{Memos, Yield};
@@ -454,7 +454,6 @@ impl<'d> Paginator<'d, '_> {
                 hold_notes: false,
                 hf_floats: Vec::new(),
                 odd: self.run.page_number % 2 == 1,
-                note_width: None,
                 mirror: self.mirrors_indents(),
                 hf,
             });
@@ -471,24 +470,10 @@ impl<'d> Paginator<'d, '_> {
             mid_page: start.is_some(),
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
-            hold_notes: self.ctx.env.text.compat == Compat::Generic
-                && [Some(sec), self.sections.get(si + 1)].iter().all(|x| {
-                    x.is_some_and(|x| {
-                        let c = &x.section_in(self.ctx.env.text.review.view).columns;
-                        c.num <= 1 && c.cols.len() <= 1
-                    })
-                })
-                && self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
+            hold_notes: self.ctx.env.text.compat == Compat::Generic && self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
             hf_floats,
             odd: self.run.page_number % 2 == 1,
             mirror: self.mirrors_indents(),
-            note_width: start.and_then(|_| {
-                let ts = self.run.pages.last()?.section;
-                let top = self.sections.get(ts)?;
-                let c = &top.section_in(self.ctx.env.text.review.view).columns;
-                let one = c.num <= 1 && c.cols.len() <= 1;
-                (one && references_footnote(&top.blocks)).then_some(width)
-            }),
             hf,
         })
     }
@@ -547,8 +532,7 @@ impl<'d> Paginator<'d, '_> {
         cols: &[ColumnSpace],
         saved: &(FlowToken, FlowState),
         mid: bool,
-        stream: Option<f64>,
-        note_width: Option<f64>,
+        stream: Option<&NoteArea>,
         memos: &mut Memos,
     ) -> Result<Option<(f64, Vec<Child>, FlowToken, FlowState, PageEffects)>, Yield> {
         let (p0, c0) = saved;
@@ -571,8 +555,8 @@ impl<'d> Paginator<'d, '_> {
             let mut children = Vec::new();
             let mut stats = Vec::new();
             let mut end = top;
-            let stream = stream.map(|r| NoteArea { below: true, ..stream_area(r, cols.len(), note_width) });
-            fill.at = AttemptState { known: state.known.clone(), stream, ..Default::default() };
+            let stream = stream.map(|a| NoteArea { below: true, ..a.clone() });
+            fill.at = AttemptState { known: state.known.clone(), stream, beneath: state.beneath, ..Default::default() };
             for (k, c) in cols.iter().enumerate() {
                 let col = ColumnSpace { bottom: Lu::round_half_up(top + h).min(c.bottom), balance: true, ..*c };
                 fill.column = k;
@@ -672,31 +656,6 @@ impl<'d> Paginator<'d, '_> {
         Ok(Some((end, children, p, c, eff)))
     }
 
-    fn draw_stream(
-        fill: &mut PageFill,
-        area: &NoteArea,
-        cols: &[ColumnSpace],
-        text: f64,
-        out: &mut Vec<Child>,
-        memos: &mut Memos,
-    ) -> Result<(), Yield> {
-        if area.parts.is_empty() {
-            return Ok(());
-        }
-        fill.at.notes_drawn = true;
-        let last = cols[cols.len() - 1];
-        let span = ColumnSpace { width: last.x + last.width - cols[0].x, ..cols[0] };
-        let top = fill.note_top(area.sep + area.height, &span, text) + 0.15;
-        if let Some(w) = area.width {
-            out.push(fill.notes_box(area, &[(cols[0].x, &area.parts)], w, top, memos)?);
-            return Ok(());
-        }
-        let Some((parts, _)) = stream_fill(&area.parts, cols.len(), area.height + EPS) else { return Ok(()) };
-        let per_col: Vec<(f64, &[super::token::NotePart])> = cols.iter().zip(&parts).map(|(c, p)| (c.x, &p[..])).collect();
-        out.push(fill.notes_box(area, &per_col, cols[0].width, top, memos)?);
-        Ok(())
-    }
-
     fn draw_floats(fill: &PageFill, placed: &[super::float::Placed], memos: &mut Memos) -> Result<Vec<Child>, Yield> {
         let fields = FieldValues::default();
         let env = StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
@@ -793,12 +752,19 @@ pub fn layout_body(
     let page_top = cols[0].top.to_pt();
     let mut pos = token.flow.clone();
     let mut carry = token.state.clone();
-    let saved = (pos.clone(), carry.clone());
     let mut bottoms = Vec::new();
     let mut stop = Stop::Full;
     let mut known = Vec::new();
     let shared = cols.len() > 1 && env.ctx.env.text.compat == Compat::Generic;
-    let mut reserve = 0.0;
+    // Compat 15: the page's footnote area, started by an earlier section on the page, takes this section's notes too.
+    let held = if shared { carry.page_notes.take() } else { None };
+    let beneath = held.as_ref().map_or(s.notes[0].beneath, |h| h.1);
+    let geometry: Vec<(f64, f64)> = cols.iter().map(|c| (c.x, c.width)).collect();
+    let stream_area = |reserve: f64| match &held {
+        Some((a, _)) => NoteArea { shared: Some(reserve), ..a.clone() },
+        None => NoteArea { shared: Some(reserve), cols: geometry.clone(), ..Default::default() },
+    };
+    let mut reserve = held.as_ref().map_or(0.0, |h| h.0.height);
     let grid_env;
     let vertical = super::vertical::of_section(s.text_flow);
     let ctx = match (s.line_grid, vertical) {
@@ -829,6 +795,7 @@ pub fn layout_body(
     };
     let mut col_children: Vec<Vec<Child>> = Vec::new();
     let mut end: Option<FlowToken> = None;
+    let saved = (pos.clone(), carry.clone());
     let mut drops = 0;
     let mut attempts = 6;
     let mut attempt = 0;
@@ -839,7 +806,8 @@ pub fn layout_body(
                 fill.at = AttemptState {
                     known: known.clone(),
                     end: end.clone(),
-                    stream: shared.then(|| stream_area(reserve, cols.len(), space.note_width)),
+                    stream: shared.then(|| stream_area(reserve)),
+                    beneath: held.as_ref().map(|h| h.1),
                     ..Default::default()
                 };
                 pos = saved.0.clone();
@@ -888,11 +856,20 @@ pub fn layout_body(
         .drain(..)
         .map(|c| Child::Box(BoxFragment { kind: BoxKind::Column, id: None, offset: (0.0, 0.0), size: (0.0, 0.0), children: c.into() }))
         .collect();
+    let next_shares = stop == Stop::Done && space.next_continuous;
+    // The area passes to the next section on the page, drawn after the page's last text.
+    let (stream, passed) = match stream {
+        Some(a) if next_shares && space.hold_notes && !a.parts.is_empty() => {
+            // Across columns a later section's notes keep flowing through the columns; in one column they stack.
+            let shared = (a.cols.len() > 1).then_some(0.0);
+            (None, Some((NoteArea { shared, ..a }, beneath)))
+        }
+        a => (a, None),
+    };
     if let Some(a) = &stream {
         let text = bottoms.iter().copied().fold(page_top, f64::max) + if pos.at.at_start() { carry.prev_after } else { 0.0 };
-        Paginator::draw_stream(&mut fill, a, cols, text, &mut body, memos)?;
+        fill.draw_notes(a, &cols[0], text, &mut body, memos)?;
     }
-    let next_shares = stop == Stop::Done && space.next_continuous;
     let floats = crate::prof::time("layout:floats", || Paginator::draw_floats(&fill, &placed, memos))?;
     if !space.mid_page && !next_shares && cols.len() == 1 {
         let done = pos.at.at_start();
@@ -909,7 +886,8 @@ pub fn layout_body(
     if stop == Stop::Done {
         let mut e = bottoms.iter().copied().fold(page_top, f64::max) + carry.prev_after;
         if space.balance && cols.len() > 1 {
-            match Paginator::balance(&mut fill, sec, cols, &saved, space.mid_page, shared.then_some(reserve), space.note_width, memos)? {
+            let template = shared.then(|| stream_area(reserve));
+            match Paginator::balance(&mut fill, sec, cols, &saved, space.mid_page, template.as_ref(), memos)? {
                 Some((h, children, p, c, eff)) => {
                     e = h;
                     pos = p;
@@ -921,10 +899,11 @@ pub fn layout_body(
             }
             body.extend(floats.iter().cloned());
             if let Some(a) = &stream {
-                Paginator::draw_stream(&mut fill, a, cols, e, &mut body, memos)?;
+                fill.draw_notes(a, &cols[0], e, &mut body, memos)?;
             }
         }
         section_end = Some(e.max(fill.at.notes_bottom));
+        carry.page_notes = carry.page_notes.take().or(passed);
     } else if pos.block >= nblocks {
         section_end = Some(bottoms.iter().copied().fold(page_top, f64::max));
     }
@@ -1104,15 +1083,4 @@ impl ColStats {
         }
         st
     }
-}
-
-fn stream_area(reserve: f64, cols: usize, width: Option<f64>) -> NoteArea {
-    NoteArea { shared: Some(reserve), cols: if width.is_some() { 1 } else { cols }, width, ..Default::default() }
-}
-
-fn references_footnote(blocks: &[Block]) -> bool {
-    blocks.iter().any(|b| match b {
-        Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind: crate::docx::NoteKind::Foot, .. })),
-        Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| references_footnote(&c.blocks))),
-    })
 }

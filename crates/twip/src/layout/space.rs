@@ -103,9 +103,8 @@ pub struct BodySpace {
     pub mid_page: bool,
     pub balance: bool,
     pub next_continuous: bool,
-    /// Compat 15: the section's footnote area passes to the next section on the page (both one column).
+    /// Compat 15: the section's footnote area passes to the next section on the page.
     pub hold_notes: bool,
-    pub note_width: Option<f64>,
     pub hf: HfHeights,
     /// The wrapping floats of the page's header and footer.
     pub hf_floats: Vec<super::float::Placed>,

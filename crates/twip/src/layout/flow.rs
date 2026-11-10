@@ -58,8 +58,9 @@ pub struct NoteArea {
     pub sep: f64,
     pub cont: bool,
     pub shared: Option<f64>,
-    pub cols: usize,
-    pub width: Option<f64>,
+    /// The area's columns (x, width), those of the section holding the page's first reference; empty for the
+    /// column it is filled in.
+    pub cols: Vec<(f64, f64)>,
     pub below: bool,
 }
 
@@ -73,6 +74,11 @@ fn note_join(prev: Option<&NotePart>, next: &NotePart) -> f64 {
 /// A note's height in its area, its space after included.
 fn note_extent(part: &NotePart) -> f64 {
     part.height() + part.units.last().map_or(0.0, |u| u.after)
+}
+
+/// The height of `parts` stacked in one column.
+fn stacked(parts: &[NotePart]) -> f64 {
+    parts.iter().enumerate().map(|(i, p)| note_extent(p) - note_join(i.checked_sub(1).map(|j| &parts[j]), p)).sum()
 }
 
 impl NoteArea {
@@ -757,14 +763,16 @@ impl<'d> PageFill<'d, '_> {
         }
         if a.shared.is_some() {
             for &(k, id) in refs.iter().filter(|r| r.0 == NoteKind::Foot) {
-                let u = self.note_units(k, id, a.width.unwrap_or(col.width), memos)?;
+                let u = self.note_units(k, id, a.cols.first().map_or(col.width, |c| c.1), memos)?;
                 a.parts.push(NotePart { kind: k, id, units: u.units.clone() });
             }
             if a.below {
                 *area = a;
                 return Ok(col.bottom.holds(line_bottom));
             }
-            let Some(h) = stream_height(&a.parts, a.cols, col.bottom.to_pt() - line_bottom - a.sep) else { return Ok(false) };
+            let room = col.bottom.to_pt() - line_bottom - a.sep;
+            let h = if a.cols.len() > 1 { stream_height(&a.parts, a.cols.len(), room) } else { Some(stacked(&a.parts)).filter(|&h| h <= room + EPS) };
+            let Some(h) = h else { return Ok(false) };
             a.height = h;
             if !col.bottom.holds(line_bottom + a.total()) {
                 return Ok(false);
@@ -905,17 +913,26 @@ impl<'d> PageFill<'d, '_> {
         if top > bottom + EPS { bottom } else { top }
     }
 
-    fn draw_notes(&mut self, area: &NoteArea, col: &ColumnSpace, text: f64, out: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
+    /// Draws `area` in its columns, or in `col` when it has none of its own, below `text` or at the bottom of `col`.
+    pub fn draw_notes(&mut self, area: &NoteArea, col: &ColumnSpace, text: f64, out: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
         if area.parts.is_empty() {
             return Ok(());
         }
         self.at.notes_drawn = true;
-        let y = self.note_top(area.total(), col, text) + 0.15;
+        let cols = if area.cols.is_empty() { vec![(col.x, col.width)] } else { area.cols.clone() };
+        let (first, last) = (cols[0], cols[cols.len() - 1]);
+        let span = ColumnSpace { x: first.0, width: last.0 + last.1 - first.0, ..*col };
+        let h = area.sep + area.height;
+        let y = self.note_top(h, &span, text) + 0.15;
         if self.beneath() {
-            self.at.notes_bottom = self.at.notes_bottom.max(y - 0.15 + area.total());
+            self.at.notes_bottom = self.at.notes_bottom.max(y - 0.15 + h);
         }
-        let parts = area.parts.clone();
-        out.push(self.notes_box(area, &[(col.x, &parts)], col.width, y, memos)?);
+        let parts = match stream_fill(&area.parts, cols.len(), area.height + EPS) {
+            Some((parts, _)) if cols.len() > 1 => parts,
+            _ => vec![area.parts.clone()],
+        };
+        let per_col: Vec<(f64, &[NotePart])> = cols.iter().zip(&parts).map(|(c, p)| (c.0, &p[..])).collect();
+        out.push(self.notes_box(area, &per_col, first.1, y, memos)?);
         Ok(())
     }
 
@@ -946,6 +963,9 @@ impl<'d> PageFill<'d, '_> {
             let r = self.fill_body(&mut pos, &mut carry, col, page_empty, &mut area, &mut out, memos)?;
             let text = r.1 + if pos.at.at_start() { carry.prev_after } else { 0.0 };
             if r.0 == Stop::Done && self.hold_notes && !area.parts.is_empty() {
+                if area.cols.is_empty() {
+                    area.cols = vec![(col.x, col.width)];
+                }
                 carry.page_notes = Some((area, self.beneath()));
             } else {
                 self.draw_notes(&area, &col, text, &mut out, memos)?;

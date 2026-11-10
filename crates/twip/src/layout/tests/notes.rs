@@ -204,6 +204,32 @@ fn compat_15_footnote_area_follows_the_page_text() {
 }
 
 #[test]
+fn compat_15_footnote_area_passes_through_columns() {
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let next = |cols: u32| format!(r#"<w:type w:val="continuous"/>{pr}<w:cols w:num="{cols}" w:space="720"/>"#);
+    let body = |refs: &[&str]| {
+        para("A", refs) + &sect(pr, false) + &para("B", &[]) + &para("C", &[]) + &sect(&next(2), false) + &para("D", &[]) + &sect(&next(1), true)
+    };
+    let chars = |refs: &[&str]| Some(super::page_chars(&notes_doc(&body(refs), C15)?).swap_remove(0));
+    let (Some(plain), Some(noted)) = (chars(&[]), chars(&["f1"])) else { return };
+    let y = |p: &[(char, f64, f64)], ch: char| p.iter().find(|c| c.0 == ch).map(|c| c.2);
+    assert_eq!(y(&plain, 'B'), y(&noted, 'B'), "the columns don't move for the area");
+    assert!(y(&noted, 'N') > y(&noted, 'D'), "the area is drawn after the last section's text: {noted:?}");
+}
+
+#[test]
+fn compat_15_footnote_area_has_the_first_reference_columns() {
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let cols = format!(r#"{pr}<w:cols w:num="2" w:space="720"/>"#);
+    let next = format!(r#"<w:type w:val="continuous"/>{pr}"#);
+    let body = para("A", &["f1"]) + &para("B", &[]) + &sect(&cols, false) + &para("C", &["f2"]) + &sect(&next, true);
+    let Some(doc) = notes_doc(&body, C15) else { return };
+    let notes: Vec<(f64, f64)> = super::page_chars(&doc)[0].iter().filter(|c| c.0 == 'N').map(|c| (c.1, c.2)).collect();
+    assert_eq!(notes.len(), 2);
+    assert!((notes[1].0 - 324.0).abs() < 0.5 && (notes[1].1 - notes[0].1).abs() < 0.01, "the one-column section's note in column 2: {notes:?}");
+}
+
+#[test]
 fn compat_14_continuous_break_after_a_page_bottom_note_starts_a_page() {
     let body = para("A", &["f1"]) + &sect("", false) + &para("B", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true);
     let page_of_b = |settings: &str| {
