@@ -1751,7 +1751,8 @@ impl<'d> PageFill<'d, '_> {
                         yy = (below + before).min(col.bottom.to_pt().max(yy + EPS));
                         continue;
                     }
-                    let square = here.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
+                    // A vertical section's table moves the line to its far side whole.
+                    let square = here.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square" && f.key.2 != float::UPRIGHT_TABLE);
                     if let Some(t) = trial.filter(|&t| compat == Compat::Legacy && square && t > EPS) {
                         yy = (yy + t).min(col.bottom.to_pt().max(yy + EPS));
                         continue;
@@ -2398,10 +2399,12 @@ impl<'d> PageFill<'d, '_> {
             }
             _ => None,
         };
+        // Lines pushed past it don't move it: it stays where an earlier attempt at the page put it.
+        let known = self.at.known.iter().find(|k| k.key == (self.sec.index, bi, float::UPRIGHT_TABLE)).map(|k| k.rect[1]);
         let y0 = match joined {
             Some((r, _)) if down => r[3] - (br - bl),
             Some((r, _)) => r[1],
-            None => y0,
+            None => known.unwrap_or(y0),
         };
         let y1 = y0 + br - bl;
         // Compat ≤ 14 has no fit test: the table stays at its stack position, over the margin if need be.

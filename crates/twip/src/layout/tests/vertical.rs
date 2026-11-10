@@ -275,6 +275,48 @@ fn a_vertical_sections_floating_table_takes_tblpx_along_the_stack_and_tblpyspec_
     assert!(bottom.1 > 600.0 && bottom.1 < 642.0 && (bottom.0 - text.0).abs() < 0.01, "{bottom:?}");
 }
 
+/// A one-column table of `rows` rows `w` twips wide, the first a header row.
+fn long_table(rows: usize, w: u32) -> String {
+    let row = |i: usize| {
+        let header = if i == 0 { "<w:trPr><w:tblHeader/></w:trPr>" } else { "" };
+        format!(r#"<w:tr>{header}<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>r{i}</w:t></w:r></w:p></w:tc></w:tr>"#)
+    };
+    let rows: String = (0..rows).map(row).collect();
+    let mar = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
+    format!(r#"<w:tbl><w:tblPr>{mar}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid>{rows}</w:tbl>"#)
+}
+
+/// Where each cell's text starts on page `page`: text, x, baseline.
+fn cells_on(doc: &crate::docx::Document, page: usize) -> Vec<(String, f64, f64)> {
+    let snap = crate::layout::layout(doc, &fonts());
+    let Some(page) = snap.pages().get(page) else { return Vec::new() };
+    crate::layout::traverse::paint_items(page)
+        .into_iter()
+        .filter_map(|i| match i {
+            Item::Glyphs(r) => Some((r.chars.iter().map(|c| c.0).collect::<String>(), r.x, r.baseline)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_line_with_no_room_beside_a_vertical_table_moves_to_its_far_side_and_the_table_stays() {
+    let body = format!("{}{}{}{}", para("one", ""), para("two", ""), para("three", ""), long_table(50, 2000));
+    let Some(mut doc) = section("tbRl", "0", &body) else { return };
+    doc.settings.compat_mode = 12;
+    // The table at the stack position after three lines, compat 12's 5.4pt back: its first cell's text 5.4pt in.
+    let cells = cells_on(&doc, 0);
+    let Some(&(_, x, _)) = cells.iter().find(|c| c.0 == "r0") else { panic!("{cells:?}") };
+    let left = 512.0 - 3.0 * 12.9925 + 5.4 - 100.0;
+    assert!((x - 5.4 - left).abs() < 0.05, "{x}");
+    // Lines two and three meet it 9pt out: two takes its far side, three the next line beyond; one stays.
+    let runs = turned_runs(&doc);
+    let at = |t: &str| runs.iter().find(|r| r.0 == t).map(|r| r.1[0]).expect("a line");
+    assert!((at("one") - (512.0 - 10.49)).abs() < 0.05);
+    assert!((at("two") - (left - 9.0 - 10.49)).abs() < 0.05, "{} {runs:?} {:?}", at("two"), &cells[..4]);
+    assert!((at("two") - at("three") - 12.99).abs() < 0.05);
+}
+
 #[test]
 fn a_continuous_break_into_a_vertical_section_starts_a_page() {
     let body = format!(
