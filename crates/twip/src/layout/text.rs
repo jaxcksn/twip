@@ -337,6 +337,8 @@ fn shared_with_east_asia(cp: u32) -> bool {
     match cp {
         0xA1 | 0xA4 | 0xA7 | 0xA8 | 0xAA | 0xAD | 0xAF | 0xD7 | 0xF7 => true,
         0xB0..=0xB4 | 0xB6..=0xBA | 0xBC..=0xBF => true,
+        // Greek and Cyrillic.
+        0x370..=0x4FF => true,
         0x200B..=0x200F | 0x2028..=0x202E => false,
         0x2000..=0x2BFF => true,
         _ => false,
@@ -1602,6 +1604,17 @@ mod tests {
         assert!(near(ruby_x(&s, wo, 2), [e / 6.0, w[0] + e / 2.0, w[0] + w[1] + e * 5.0 / 6.0]));
         assert!(near(ruby_x(&s, wo, 3), [0.0, w[0], w[0] + w[1]]));
         assert!(near(ruby_x(&s, wo, 4), [e, e + w[0], e + w[0] + w[1]]));
+    }
+
+    #[test]
+    fn an_east_asian_hinted_runs_greek_and_cyrillic_take_its_east_asian_font() {
+        let Some(doc) = plain_doc(&["one".into()]) else { return };
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { unreachable!() };
+        let base = p.inlines.iter().find_map(Inline::run).expect("a run");
+        let run = RunStyle { ascii: "A".into(), h_ansi: "H".into(), east_asia: "E".into(), ..(**base).clone() };
+        let hinted = RunStyle { hint_east_asia: true, ..run.clone() };
+        assert_eq!(['α', 'Б', 'é', 'Ā'].map(|c| family_for(c, &hinted)), ["E", "E", "H", "H"]);
+        assert_eq!(family_for('α', &run), "H");
     }
 
     #[test]
