@@ -1666,8 +1666,11 @@ impl<'d> PageFill<'d, '_> {
                 let left = float::intervals(&over, cx0, cx1, yy, yy + h, true).unwrap_or_default();
                 let meets = |f: &Placed| left.iter().any(|&(a, b)| f.excl[0] < b - EPS && f.excl[2] > a + EPS);
                 let hidden = |f: &Placed| f.in_band(yy, yy + h) && f.excl[1] > yy + EPS && !meets(f);
+                // At their bottom, the line goes below such a float that ends less than its height further on.
+                // ponytail: the limit is taken as a twip less than the line's height; the exact one lies between 20
+                // twips and one twip less.
                 if e < yy + h - EPS && near().any(|f| f.excl[1] > yy + EPS && meets(f)) {
-                    yy = e;
+                    yy = near().filter(|f| f.excl[1] > yy + EPS && meets(f) && f.excl[3] - e < h - 0.05 - EPS).map(|f| f.excl[3]).fold(e, f64::max);
                     continue;
                 }
                 if here.iter().any(hidden) {

@@ -381,6 +381,30 @@ fn a_compat_14_line_goes_to_a_floats_bottom_when_another_starts_inside_it() {
 }
 
 #[test]
+fn a_compat_14_line_pushed_to_a_floats_bottom_goes_below_one_ending_within_its_height() {
+    let table = |y: u32, w: u32, borders: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="page" w:horzAnchor="page" w:tblpX="4000" w:tblpY="{y}"/><w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/>{borders}</w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>T</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let b = |s: &str| format!(r#"<w:{s} w:val="single" w:sz="24" w:space="0" w:color="000000"/>"#);
+    let borders = format!("<w:tcBorders>{}{}{}{}</w:tcBorders>", b("top"), b("left"), b("bottom"), b("right"));
+    let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let line = "Body text runs on beside the box so that";
+    let test_line = |g: u32| {
+        let body = format!("{}{}{}{}{}", p(line), table(1490, 1440, &borders), table(1750 + g, 1640, ""), p(&format!("Test line {line}")), p("After."));
+        baselines("", ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _, _)| t.starts_with("Test")).expect("drawn").3)
+    };
+    // The test line's top is inside A (ending at 1749 tw); B starts inside the line, g below A.
+    let Some(below) = test_line(40) else { return };
+    // B ends 240 tw below A, less than the line's height: the line goes below B.
+    assert!((below - (1989.0 + 240.0) / 20.0).abs() < 0.1, "{below}");
+    // B ends 299 tw below A: the line stays at A's bottom.
+    let at_a = test_line(99).unwrap();
+    assert!((at_a - (1749.0 + 240.0) / 20.0).abs() < 0.1, "{at_a}");
+}
+
+#[test]
 fn a_floating_tables_obstacle_starts_a_twip_left_of_tblpx() {
     let body = r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="1000" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Left words beside the table on the right side.</w:t></w:r></w:p>"#;
     let Some(l) = lines("", ARIAL_12, body) else { return };
