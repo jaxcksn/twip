@@ -405,6 +405,20 @@ fn east_asian_glyphs_stand_upright_where_the_flow_keeps_them_so() {
 }
 
 #[test]
+fn an_upright_glyphs_em_box_takes_the_base_middle_and_its_vertical_origin() {
+    let fonts = fonts();
+    let Some(yu) = fonts.face("Yu Gothic", None, false, false).filter(|f| f.family == "Yu Gothic") else { return };
+    // Ideographic baseline −246, Roman 0, upem 2048: the em box middle 778 units up, not the win metrics' 699.
+    assert_eq!(yu.em_middle, 778.0);
+    // 漢 hangs from its vertical origin: top side bearing 116 above its top at 1686.
+    let kan = yu.glyph('漢').expect("a glyph");
+    assert_eq!(yu.v_origin(kan), Some(1802.0));
+    if let Some(arial) = fonts.face("Arial", None, false, false).filter(|f| f.family == "Arial") {
+        assert_eq!((arial.em_middle, arial.v_origin(arial.glyph('a').expect("a glyph"))), (710.0, None));
+    }
+}
+
+#[test]
 fn a_vertical_runs_extra_is_an_em_64th_in_whole_font_units() {
     let mut fonts = crate::font::Fonts::default();
     let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/fonts/stand-in-sans.ttf")).expect("the stand-in font");

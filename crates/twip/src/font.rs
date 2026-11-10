@@ -54,6 +54,11 @@ pub struct Face {
     pub fixed_pitch: bool,
     /// The height an East Asian face adds above and below its win metrics, font units.
     pub ea_extra: f64,
+    /// How far an upright East Asian glyph's em box middle is above its baseline, font units: from the `BASE`
+    /// table's ideographic and Roman baselines (Han script, else the default), else the win metrics' middle.
+    pub em_middle: f64,
+    /// It has vertical metrics (`vmtx` or `VORG`).
+    vertical: bool,
     pub avg_width: f64,
     font: harfrust::Font,
     /// Memos: character → glyph, glyph → advance, and shape plans by (kern, ligatures, figures, script). Building a plan
@@ -81,6 +86,29 @@ fn i16_at(d: &[u8], o: usize) -> i16 {
 }
 fn u32_at(d: &[u8], o: usize) -> u32 {
     d.get(o..o + 4).map_or(0, |b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+}
+
+/// The `BASE` table at `o`: the horizontal axis's ideographic baseline less its Roman one, plus half the em, for the
+/// Han script or else the default one.
+fn base_middle(d: &[u8], o: usize, upem: f64) -> Option<f64> {
+    let axis = o + u16_at(d, o + 4) as usize;
+    if axis == o {
+        return None;
+    }
+    let (tags, scripts) = (axis + u16_at(d, axis) as usize, axis + u16_at(d, axis + 2) as usize);
+    let tag = |i: usize| d.get(tags + 2 + 4 * i..tags + 6 + 4 * i);
+    let n = u16_at(d, tags) as usize;
+    let (ideo, romn) = ((0..n).find(|&i| tag(i) == Some(b"ideo"))?, (0..n).find(|&i| tag(i) == Some(b"romn"))?);
+    let record = |want: &[u8; 4]| {
+        (0..u16_at(d, scripts) as usize).map(|i| scripts + 2 + 6 * i).find(|&r| d.get(r..r + 4) == Some(want)).map(|r| scripts + u16_at(d, r + 4) as usize)
+    };
+    let script = record(b"hani").or_else(|| record(b"DFLT"))?;
+    let values = script + u16_at(d, script) as usize;
+    if values == script || u16_at(d, values + 2) as usize != n {
+        return None;
+    }
+    let coord = |i: usize| i16_at(d, values + u16_at(d, values + 4 + 2 * i) as usize + 2) as f64;
+    Some(coord(ideo) - coord(romn) + upem / 2.0)
 }
 
 /// Table offsets of face `index` (a TTC holds several).
@@ -133,6 +161,8 @@ impl Face {
             east_asian: false,
             fixed_pitch: false,
             ea_extra: 0.0,
+            em_middle: 0.0,
+            vertical: t.contains_key(b"vmtx") || t.contains_key(b"VORG"),
             avg_width: 0.0,
             font: {
                 let font = harfrust::Font::new(Arc::clone(&data) as Arc<dyn AsRef<[u8]> + Send + Sync>, e.index)?;
@@ -188,7 +218,14 @@ impl Face {
         f.ascent = asc;
         f.descent = desc;
         f.leading = gap;
+        f.em_middle = t.get(b"BASE").and_then(|&(o, _)| base_middle(d, o, upem)).unwrap_or((asc - desc) / 2.0);
         Some(f)
+    }
+
+    /// Where an upright glyph's horizontal baseline is below the top of its em along a vertical line, font units:
+    /// its vertical origin (`VORG`, or `vmtx` top side bearing plus the glyph's top); `None` without vertical metrics.
+    pub fn v_origin(&self, glyph: u32) -> Option<f64> {
+        self.vertical.then(|| ShaperFont::new(&self.font).glyph_v_origin(harfrust::GlyphId::new(glyph)).1 as f64)
     }
 
     /// Points per font unit at `size`.

@@ -89,17 +89,6 @@ pub fn centred_drop(face: &crate::font::Face, size: f64) -> f64 {
     super::units::Lu::from_font((a + e - (a + d + 2 * e) / 2) as f64, size, face.upem).to_pt()
 }
 
-/// How far above a centred run's glyph baseline its middle is (points): the drop plus half its centred ascent
-/// less its centred descent.
-fn centred_middle(face: &crate::font::Face, size: f64) -> f64 {
-    let (a, d) = ((face.ascent - face.ea_extra).round() as i64, (face.descent - face.ea_extra).round() as i64);
-    let e = (face.upem / 64.0).round() as i64;
-    let h = a + d + 2 * e;
-    let gap = if face.east_asian { 0 } else { face.leading.round() as i64 };
-    let (up, down) = (h / 2 + gap, h - h / 2);
-    centred_drop(face, size) + super::units::Lu::from_font((up - down) as f64 / 2.0, size, face.upem).to_pt()
-}
-
 /// `units`, laid out with their lines along x and stacked down y, turned into `rect` = `[x0, y0, x1, y1]`: each
 /// line starts at the flow's start edge (top, or bottom for `Up`), the first line against the flow's first side,
 /// `across` further in. Glyphs whose ink lies `bottom` or more across from the first side are not drawn.
@@ -174,7 +163,7 @@ pub fn turn_body(children: &[Child], v: Vertical, page: [f64; 2]) -> Vec<Child> 
 /// A horizontal flow's East Asian glyphs turned a quarter counter-clockwise (`lrTbV`), each about the middle of its
 /// em box.
 pub fn turn_east_asian(children: &[Child]) -> Vec<Child> {
-    let f = |items: &[Item], _: [f64; 2], _: Option<(f64, f64)>| east_asian_turned(items, false).into();
+    let f = |items: &[Item], _: [f64; 2], _: Option<(f64, f64)>| east_asian_turned(items).into();
     children.iter().map(|c| map_child(c, &f, 0.0, 0.0)).collect()
 }
 
@@ -264,7 +253,7 @@ fn turn_items(items: &[Item], flow: Flow, page: [f64; 2], origin: [f64; 2], band
 /// `items` with their East Asian glyphs set upright when the flow keeps them so: each turned back a quarter about the
 /// middle of its em box, put on the middle of its centred run.
 fn upright(items: &[Item], v: Vertical) -> Vec<Item> {
-    if v.upright { east_asian_turned(items, true) } else { items.to_vec() }
+    if v.upright { east_asian_turned(items) } else { items.to_vec() }
 }
 
 /// A character that stands upright in a vertical line (Unicode vertical orientation `U`, `Tu` or `Tr`): CJK, kana,
@@ -281,9 +270,9 @@ fn stands_upright(c: char) -> bool {
         | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE7 | 0x1F000..=0x1FAFF | 0x20000..=0x3FFFD)
 }
 
-/// `items` with each upright glyph turned a quarter counter-clockwise about the middle of its em box, put on the
-/// middle of its run when the run is `centred`, else where the box is.
-fn east_asian_turned(items: &[Item], centred: bool) -> Vec<Item> {
+/// `items` with each upright glyph turned a quarter counter-clockwise about the middle of its em box, the font's em
+/// middle above the run's baseline, its own baseline its vertical origin past the start of its advance.
+fn east_asian_turned(items: &[Item]) -> Vec<Item> {
     let ea = |r: &GlyphRun, x: f64| r.chars.iter().any(|c| (c.1 - x).abs() < 1e-6 && stands_upright(c.0));
     if !items.iter().any(|i| matches!(i, Item::Glyphs(r) if r.glyphs.iter().any(|g| ea(r, g.1)))) {
         return items.to_vec();
@@ -295,9 +284,7 @@ fn east_asian_turned(items: &[Item], centred: bool) -> Vec<Item> {
             continue;
         };
         let k = r.face.scale(r.size);
-        // The em box's middle above the glyph's baseline, and where it goes.
-        let lift = (r.face.ascent - r.face.descent) / 2.0 * k;
-        let middle = r.baseline - if centred { centred_middle(&r.face, r.size) } else { lift };
+        let middle = r.baseline - r.face.em_middle * k;
         let mut rest = Vec::new();
         for (i, &(g, x)) in r.glyphs.iter().enumerate() {
             if !ea(r, x) {
@@ -306,7 +293,9 @@ fn east_asian_turned(items: &[Item], centred: bool) -> Vec<Item> {
             }
             let advance = r.glyphs.get(i + 1).map_or(r.face.advance(g) * k, |n| n.1 - x);
             let chars = r.chars.iter().copied().filter(|c| (c.1 - x).abs() < 1e-6).collect();
-            let glyph = GlyphRun { glyphs: Box::new([(g, x)]), chars, x, baseline: middle + lift, ..r.clone() };
+            // A face without vertical metrics centres the glyph's own em box on the middle.
+            let down = r.face.v_origin(g).map_or(r.face.em_middle * k, |o| o * k - advance / 2.0);
+            let glyph = GlyphRun { glyphs: Box::new([(g, x)]), chars, x, baseline: middle + down, ..r.clone() };
             out.push(Item::Turned(Rc::new(Turned { centre: [x + advance / 2.0, middle], deg: -90.0, items: vec![Item::Glyphs(glyph)] })));
         }
         if !rest.is_empty() {
