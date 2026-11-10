@@ -1058,7 +1058,7 @@ impl<'a> Builder<'a> {
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
         // Compat 15: table-cell paragraphs fit their regions as compat 12.
-        self.fit_text(space.stale_fit && !space.in_cell, space.first_line);
+        self.fit_text(space.stale_fit && !space.in_cell, space.first_line, space.unfitted);
         if let Some(dd) = &space.balance
             && (dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian))
         {
@@ -1083,9 +1083,10 @@ impl<'a> Builder<'a> {
 
     /// Each fitted region (consecutive text whose runs have `w:fitText` with one id) made as wide as its first run's
     /// `w:fitText`: wider with character spacing, narrower with a horizontal scale; never broken. `stale`: lines are
-    /// broken with the region's first adjustment (compat 15), except on the document's first line, `first_line` wide;
-    /// a squeezed region there is treated like any other line.
-    fn fit_text(&mut self, stale: bool, first_line: Option<f64>) {
+    /// broken with the region's first adjustment (compat 15), except on the document's first line, which holds the
+    /// first `first_line` pieces; a squeezed region there is treated like any other line. `unfitted`: the regions keep
+    /// their natural widths.
+    fn fit_text(&mut self, stale: bool, first_line: Option<usize>, unfitted: bool) {
         let fit = |b: &Self, k: usize| {
             let p = &b.pieces[k];
             b.styles[p.style as usize].run.fit_text.filter(|_| matches!(p.kind, Kind::Text | Kind::Space))
@@ -1100,19 +1101,13 @@ impl<'a> Builder<'a> {
             while e < self.pieces.len() && fit(self, e).is_some_and(|(_, i)| i == id) {
                 e += 1;
             }
-            // ponytail: the region is on the first line when the text up to its end fits unadjusted, tabs and line
-            // ends aside; the line breaker's own decision would need the region's widths first.
-            let before = &self.pieces[..a];
-            let room = first_line
-                .filter(|_| !before.iter().any(|p| matches!(p.kind, Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak)))
-                .map(|w| w - before.iter().map(|p| p.width).sum::<f64>());
-            self.fit_region(a, e, target, stale, room);
+            self.fit_region(a, e, target, stale, first_line.is_some_and(|n| e <= n), unfitted);
             a = e;
         }
     }
 
-    /// Fits pieces `a..e` to `target` points. `stale`: compat 15; `first`: the room left on the document's first line.
-    fn fit_region(&mut self, a: usize, e: usize, target: f64, stale: bool, first: Option<f64>) {
+    /// Fits pieces `a..e` to `target` points. `stale`: compat 15; `first`: the region is on the document's first line.
+    fn fit_region(&mut self, a: usize, e: usize, target: f64, stale: bool, first: bool, unfitted: bool) {
         for k in a..e {
             let p = &mut self.pieces[k];
             p.glued = k > a;
@@ -1120,6 +1115,9 @@ impl<'a> Builder<'a> {
             if k + 1 < e {
                 p.break_after = false;
             }
+        }
+        if unfitted {
+            return;
         }
         let chars = |b: &Self, k: usize| b.text[b.pieces[k].text.0 as usize..b.pieces[k].text.1 as usize].chars().count();
         // Each piece's natural width: the runs' own character spacing is replaced.
@@ -1146,7 +1144,7 @@ impl<'a> Builder<'a> {
         let natural_w: f64 = natural.iter().sum();
         // An expanding region on the document's first line takes that line's state; a squeezed one breaks as on any
         // other line.
-        let on_first = region.target > natural_w && first.is_some_and(|r| natural_w / 4096.0 <= r + 1e-9);
+        let on_first = region.target > natural_w && first;
         let unadjusted = (100.0, 0.0, 0.0);
         let (printed, broken) = if !stale {
             let s = region.fit(unadjusted);

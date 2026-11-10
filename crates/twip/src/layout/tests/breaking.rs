@@ -1302,6 +1302,21 @@ fn compat_15_fits_a_region_on_the_documents_first_line_as_compat_12() {
 }
 
 #[test]
+fn compat_15_first_line_test_advances_the_tab_to_its_stop() {
+    // With the tab at its 720 tw stop the unadjusted first line can't hold the region and its `|end` (with the tab
+    // as nothing it could): the region takes the state of any later line.
+    let row = r#"<w:p><w:r><w:t>W1</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t xml:space="preserve">Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lim |</w:t></w:r><w:r><w:rPr><w:fitText w:val="2976" w:id="1"/></w:rPr><w:t xml:space="preserve">abc def ghi jkl mno</w:t></w:r><w:r><w:t>|end</w:t></w:r></w:p>"#;
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let region = |body: &str| {
+        let c = glyph_xs(c15, body)?;
+        let a = c.windows(2).position(|w| (w[0].0, w[1].0) == ('a', 'b'))?;
+        Some(c[a..a + 15].iter().map(|g| g.1).collect::<Vec<f64>>())
+    };
+    let (Some(first), Some(later)) = (region(row), region(&format!("<w:p><w:r><w:t>Before</w:t></w:r></w:p>{row}"))) else { return };
+    assert!(first.iter().zip(&later).all(|(a, b)| (a - b).abs() < 0.01), "{first:?} {later:?}");
+}
+
+#[test]
 fn compat_15_draws_a_fitted_region_from_its_second_adjustment() {
     // `ab` to 1440 tw: compat 12 spreads 1195 tw after the `a`; compat 15 draws 54 % and 1307 tw, the fit procedure
     // from the second adjustment's scale.

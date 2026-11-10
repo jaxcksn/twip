@@ -21,7 +21,7 @@ use super::line::{
 use super::node::{Notes, SectionNode};
 use super::paragraph::{gap, lines_to_take, space_after, space_before};
 use super::record::PageEffects;
-use super::space::{BorderKey, ColumnSpace, ParaSpace};
+use super::space::{BorderKey, ColumnSpace, ParaSpace, ShapeSpace};
 use super::story::{NestedRow, StoryEnv, StoryLayout, StoryUnit};
 use super::table::{CellPart, DrawnRow, TableLayout, draw_row, draw_whole_row, whole};
 use super::text::{FieldValues, FontMetrics, Kind, Object, ShapedPara, para_id, shape};
@@ -682,7 +682,11 @@ impl<'d> PageFill<'d, '_> {
         let next = next.or_else(|| self.sec.next.filter(|_| end + 1 >= self.sec.blocks.len()));
         let mut space = laid.shape_space(self.fields, self.note_numbers, &self.ctx);
         if space.stale_fit && self.sec.index == 0 && bi == 0 && p.inlines.iter().any(|i| i.run().is_some_and(|r| r.fit_text.is_some())) {
-            space.first_line = Some(width - style.ind_left - style.ind_right - style.ind_first);
+            // The document's first line as broken with its regions unadjusted: real tab stops and list number.
+            let probe = ShapeSpace { unfitted: true, ..space.clone() };
+            let shaped = shape(p, &probe, self.ctx.fonts, memos)?;
+            let lines = break_lines(&shaped, p, &para_space(style, prev, next, width, 0, x0, &self.ctx), self.ctx.fonts, memos)?;
+            space.first_line = Some(lines.lines.first().map_or(0, |l| l.end));
         }
         let shaped = shape(p, &space, self.ctx.fonts, memos)?;
         let mut ps = para_space(style, prev, next, width, from, x0, &self.ctx);

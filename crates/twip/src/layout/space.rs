@@ -26,8 +26,11 @@ pub struct ShapeSpace {
     pub frame_breaks: bool,
     /// Fitted regions break lines with their first adjustment (compat 15).
     pub stale_fit: bool,
-    /// The width of the document's first line, when this paragraph holds it (compat 15 fitted text).
-    pub first_line: Option<f64>,
+    /// How many pieces the document's first line holds, broken with its fitted regions unadjusted, when this
+    /// paragraph holds it (compat 15 fitted text).
+    pub first_line: Option<usize>,
+    /// Fitted regions keep their natural widths (still never broken).
+    pub unfitted: bool,
     pub view: MarkupView,
     pub join: Option<std::rc::Rc<super::join::JoinMap>>,
     pub float: Option<std::rc::Rc<crate::docx::Float>>,
