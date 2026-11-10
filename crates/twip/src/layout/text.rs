@@ -624,7 +624,8 @@ impl<'a> Builder<'a> {
                 (None, None) => true,
                 _ => false,
             };
-            if i > 0 && !same {
+            // The half-width voiced marks are characters of their own, not part of the one before.
+            if i > 0 && (!same || matches!(c, '\u{FF9E}' | '\u{FF9F}')) {
                 idx.push((stretch_start, i, stretch_face.take()));
                 stretch_start = i;
             }

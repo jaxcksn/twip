@@ -1237,6 +1237,20 @@ fn kinsoku_classes_follow_the_runs_east_asian_language() {
 }
 
 #[test]
+fn a_half_width_voiced_mark_is_a_character_of_its_own() {
+    let run = |lang: &str| {
+        format!(
+            r#"<w:r><w:rPr><w:rFonts w:ascii="MS Mincho" w:hAnsi="MS Mincho" w:eastAsia="MS Mincho"/><w:lang w:val="en-US" w:eastAsia="{lang}"/></w:rPr><w:t>{}ﾞ字字字字字</w:t></w:r>"#,
+            "字".repeat(41)
+        )
+    };
+    // A line may start with it; in Japanese it may not, so the 字 before it goes along.
+    let Some(en) = mincho_lines(SZ_11, &run("en-US")) else { return };
+    assert_eq!(en, [41, 6]);
+    assert_eq!(mincho_lines(SZ_11, &run("ja-JP")).unwrap(), [40, 7]);
+}
+
+#[test]
 fn punctuation_hangs_in_east_asian_paragraphs() {
     let run = format!("<w:r>{MINCHO_JA}<w:t>{}、字字</w:t></w:r>", "字".repeat(41));
     let Some(plain) = mincho_lines(SZ_11, &run) else { return };
