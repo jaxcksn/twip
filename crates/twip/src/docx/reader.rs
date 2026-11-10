@@ -1865,7 +1865,8 @@ impl Reader {
             _ => 0,
         };
         let raise = pr.and_then(|p| child(p, "hpsRaise")).and_then(|h| half_points(val(h))).unwrap_or(0.0);
-        Ruby { base: base_text, text: annotation, align, raise, xml: Raw(Some(raw(ruby))) }
+        let size = pr.and_then(|p| child(p, "hps")).and_then(|h| half_points(val(h)));
+        Ruby { base: base_text, text: annotation, align, raise, size, xml: Raw(Some(raw(ruby))) }
     }
 
     /// A checkbox content control (`w14:checkbox`) as one symbol: the character it

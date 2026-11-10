@@ -77,8 +77,10 @@ pub struct RubyShape {
     /// An annotation turned a quarter clockwise beside the base: its start (its baseline's x from the object's start,
     /// its first character's y from the line's baseline).
     pub turned: Option<[f64; 2]>,
-    /// How much narrower each base character is drawn than its advance.
+    /// How much narrower each base character is drawn than its advance (never below no advance).
     pub narrow: f64,
+    /// The object's descent in an at-least line: the turned annotation's lower half when that is deeper.
+    pub at_least_descent: f64,
 }
 
 /// Each piece's x in a ruby object `wo` wide: the narrower part spread by the ruby's alignment.
@@ -943,16 +945,37 @@ impl<'a> Builder<'a> {
                     p.ascent = top(&base, |q| q.ascent).max(r.raise + top(&text, |q| q.ascent));
                     p.descent = top(&base, |q| q.descent);
                     let (base_x, text_x) = (ruby_x(&base, wo, r.align), ruby_x(&text, wo, r.align));
-                    let shape = RubyShape { base, text, base_x, text_x, raise: r.raise, turned: None, narrow: 0.0 };
+                    let shape = RubyShape { base, text, base_x, text_x, raise: r.raise, turned: None, narrow: 0.0, at_least_descent: p.descent };
                     p.object = Some(Object::Ruby(Rc::new(shape)));
                     self.atom(p, "\u{FFFC}");
                 }
                 // `rightVertical` in horizontal text: the annotation turned a quarter clockwise after the base, centred
                 // on the base text's middle. Each base character is the ruby run's size in half-points (in layout
-                // units) narrower, its own character spacing ignored; the object adds the annotation's height as a centred vertical line and the ruby
-                // run's character spacing; the line is as tall as the annotation is long, about its middle.
+                // units) narrower, down to no advance, its own character spacing ignored; the object adds the
+                // annotation's height as a centred vertical line and the ruby run's character spacing; the line is as
+                // tall as the annotation is long, about its middle. The annotation is one font at one size: every run
+                // at `w:hps`, in the first run's ascii font, not bold, in its own colour.
                 (Inline::Ruby(r, _), Some(run)) => {
-                    let (base, text) = (self.sub(&r.base, view)?, self.sub(&r.text, view)?);
+                    let first = r.text.first().map(|(_, f)| f.clone());
+                    let parts: Vec<(String, Run)> = r
+                        .text
+                        .iter()
+                        .map(|(t, own)| {
+                            let Some(f) = &first else { return (t.clone(), own.clone()) };
+                            let mut s = (**own).clone();
+                            (s.ascii, s.h_ansi, s.bold) = (f.ascii.clone(), f.ascii.clone(), false);
+                            s.categories[..2].fill(f.categories[0]);
+                            s.size = r.size.unwrap_or(s.size);
+                            // ponytail: East Asian characters the first run's font lacks keep their run's East Asian
+                            // font (Word falls back to a font of its own); a fallback font if it matters.
+                            let face = self.face(&f.ascii, f);
+                            if face.is_some_and(|face| t.chars().filter(|&c| is_east_asian(c as u32)).all(|c| face.has_glyph(c))) {
+                                (s.east_asia, s.categories[2]) = (f.ascii.clone(), f.categories[0]);
+                            }
+                            (t.clone(), Rc::new(s))
+                        })
+                        .collect();
+                    let (base, text) = (self.sub(&r.base, view)?, self.sub(&parts, view)?);
                     let face = self.face(&run.ascii, run);
                     let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
                     let top = |s: &ShapedPara, f: fn(&Piece) -> f64| s.pieces.iter().map(f).fold(0.0, f64::max);
@@ -961,7 +984,9 @@ impl<'a> Builder<'a> {
                     let mut x = 0.0;
                     for (i, q) in base.pieces.iter().enumerate() {
                         base_x.push(x);
-                        x += q.width - (narrow + base.styles[q.style as usize].run.spacing) * base.text(i).chars().count() as f64;
+                        let st = &base.styles[q.style as usize];
+                        let scale = st.face.as_ref().map_or(0.0, |f| f.scale(st.size) * st.run.scale / 100.0);
+                        x += base.glyphs(i).map(|(_, a, _)| (a * scale - narrow).max(0.0)).sum::<f64>();
                     }
                     let len = text.pieces.iter().map(|q| q.width).sum::<f64>();
                     // The annotation's centred ascent and descent, and its glyphs' drop below its reference baseline.
@@ -969,7 +994,8 @@ impl<'a> Builder<'a> {
                     for q in text.pieces.iter().filter(|q| q.kind == Kind::Text) {
                         let st = &text.styles[q.style as usize];
                         let Some(f) = &st.face else { continue };
-                        let (e, c) = (super::vertical::extra(Some(f), st.size), super::line::align_drop(f, st.size, super::line::Align::Center, true));
+                        let (e, c) =
+                            (super::vertical::extra(Some(f), st.size), super::line::align_drop(f, st.size, super::line::Align::Center, true));
                         (up, down) = (up.max(q.ascent + e - c), down.max(q.descent + e + c));
                         // ponytail: one drop for the whole annotation (its first run's), per-run drops if mixed fonts matter.
                         drop.get_or_insert(c);
@@ -977,10 +1003,11 @@ impl<'a> Builder<'a> {
                     p.width = x + up + down + run.spacing;
                     p.ascent = top(&base, |q| q.ascent).max(len / 2.0);
                     p.descent = top(&base, |q| q.descent).max(len - p.ascent);
+                    let at_least_descent = top(&base, |q| q.descent).max(len / 2.0);
                     let delta = top(&base, |q| q.ascent) - top(&base, |q| q.descent);
                     let start = [x + down - drop.unwrap_or(0.0), -(delta + len) / 2.0];
                     let text_x = ruby_x(&text, len, 3);
-                    let shape = RubyShape { base, text, base_x, text_x, raise: 0.0, turned: Some(start), narrow };
+                    let shape = RubyShape { base, text, base_x, text_x, raise: 0.0, turned: Some(start), narrow, at_least_descent };
                     p.object = Some(Object::Ruby(Rc::new(shape)));
                     self.atom(p, "\u{FFFC}");
                 }

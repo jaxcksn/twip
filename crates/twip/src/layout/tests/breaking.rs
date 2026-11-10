@@ -1024,6 +1024,41 @@ fn a_right_vertical_ruby_narrows_its_base_by_the_ruby_runs_size_and_adds_its_spa
 }
 
 #[test]
+fn a_right_vertical_rubys_annotation_is_one_font_at_the_rubys_size() {
+    let end = |body: String| baselines("", ARIAL_11, &body).map(|l| l[0].2);
+    let Some(plain) = end(ruby("rightVertical", 0, "abcd", "M")) else { return };
+    // Runs of their own sizes, a bold one, a later one in Times: all Arial at the ruby's 5.5pt.
+    let runs = ruby("rightVertical", 0, "ab", "M").replace(
+        r#"<w:rPr><w:sz w:val="11"/></w:rPr><w:t xml:space="preserve">ab</w:t></w:r>"#,
+        r#"<w:rPr><w:b/><w:sz w:val="32"/></w:rPr><w:t xml:space="preserve">ab</w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="64"/></w:rPr><w:t xml:space="preserve">cd</w:t></w:r>"#,
+    );
+    assert!((end(runs).unwrap() - plain).abs() < 1e-6);
+}
+
+#[test]
+fn an_at_least_line_keeps_half_a_turned_annotation_below_its_baseline() {
+    let y = |rule: &str| {
+        let body = ruby("rightVertical", 0, "abcde", "M")
+            .replace("<w:p>", &format!("<w:p><w:pPr><w:spacing w:line=\"400\" w:lineRule=\"{rule}\"/></w:pPr>"));
+        baselines("", ARIAL_11, &body).map(|l| l[0].3)
+    };
+    let Some(at_least) = y("atLeast") else { return };
+    // The 5.5pt annotation is 5580 font units long: half of it stays below the baseline of the 20pt line.
+    assert!((at_least - 72.0 - (20.0 - 5580.0 * 5.5 / 2048.0 / 2.0)).abs() < 0.05, "{at_least}");
+}
+
+#[test]
+fn a_right_vertical_rubys_base_narrows_to_no_advance_at_most() {
+    let end = |base: &str| {
+        let body = ruby("rightVertical", 0, "a", base).replace("<w:r><w:ruby>", r#"<w:r><w:rPr><w:sz w:val="72"/></w:rPr><w:ruby>"#);
+        baselines("", ARIAL_11, &body).map(|l| l[0].2)
+    };
+    let Some(one) = end("i") else { return };
+    // 36pt narrows each 2.4pt `i` by 3.6pt: four of them take no more room than one.
+    assert!((end("iiii").unwrap() - one).abs() < 1e-6);
+}
+
+#[test]
 fn a_right_vertical_rubys_kana_stand_upright() {
     if !fonts().is_installed("MS Mincho") {
         return;

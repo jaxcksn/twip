@@ -1648,6 +1648,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let mut has_text = false;
     let mut separator = false;
     let mut brk: Option<(f64, f64)> = None;
+    // The deepest descent an at-least line keeps below its baseline (a turned ruby annotation's lower half).
+    let mut at_least_desc = 0.0f64;
     // `auto` centres the runs in flows that keep East Asian text upright, else aligns them to the baseline.
     line.align = match style.text_alignment.as_str() {
         "top" => Align::Top,
@@ -1674,6 +1676,11 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 }
                 asc = asc.max(pa);
                 desc = desc.max(pd);
+                let deeper = match p.object.map(|o| &sp.objects[o as usize]) {
+                    Some(Object::Ruby(r)) => r.at_least_descent - p.descent,
+                    _ => 0.0,
+                };
+                at_least_desc = at_least_desc.max(pd + deeper);
                 let r = if sp.rules.no_raise_lower { 0.0 } else { st.run.position };
                 let (a0, d0) = ((pa - r).max(0.0), (pd + r).max(0.0));
                 if p.kind == Kind::Text {
@@ -1761,7 +1768,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         LineRule::AtLeast => {
             let x = style.line;
             line.pitch = x.max(h);
-            line.baseline = if x <= h { asc } else { x - desc };
+            line.baseline = if x <= h { asc } else { asc.max(x - desc.max(at_least_desc + em_down)) };
         }
         LineRule::Exact => {
             line.pitch = style.line;
@@ -2090,7 +2097,7 @@ fn ruby_glyphs(
         let mut gx = x0;
         for (id, advance, dx) in s.glyphs(i) {
             r.glyphs.push((id, gx + dx * scale));
-            gx += advance * scale - narrow;
+            gx += (advance * scale - narrow).max(0.0);
         }
         r.chars.extend(s.text(i).chars().map(|c| (symbol_unicode(&face.family, c), x0, None)));
     }

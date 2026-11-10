@@ -515,6 +515,8 @@ pub struct Ruby {
     pub align: u8,
     /// `w:hpsRaise`: the annotation's baseline above the base's, points.
     pub raise: f64,
+    /// `w:hps`: the annotation's size, points.
+    pub size: Option<f64>,
     /// The `w:ruby` element as read: what saving writes.
     pub xml: Raw,
 }
