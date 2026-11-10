@@ -885,7 +885,13 @@ pub fn layout_body(
     let mut section_end = None;
     if stop == Stop::Done {
         let mut e = bottoms.iter().copied().fold(page_top, f64::max) + carry.prev_after;
-        if space.balance && cols.len() > 1 {
+        // Compat ≤ 14: after a page-bottom footnote the next continuous break starts a new page, so the columns end
+        // unbalanced as before a page break.
+        let breaks = env.ctx.env.text.compat == Compat::Legacy
+            && space.next_continuous
+            && !s.notes[0].beneath
+            && effects.notes_shown.iter().any(|n| n.0 == NoteKind::Foot);
+        if space.balance && cols.len() > 1 && !breaks {
             let template = shared.then(|| stream_area(reserve));
             match Paginator::balance(&mut fill, sec, cols, &saved, space.mid_page, template.as_ref(), memos)? {
                 Some((h, children, p, c, eff)) => {

@@ -241,6 +241,15 @@ fn compat_14_continuous_break_after_a_page_bottom_note_starts_a_page() {
 }
 
 #[test]
+fn compat_14_columns_before_a_page_bottom_note_break_stay_unbalanced() {
+    let cols = r#"<w:cols w:num="2" w:space="720"/>"#;
+    let body = para("A", &["f1"]) + &para("B", &[]) + &sect(cols, false) + &para("C", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true);
+    let Some(doc) = notes_doc(&body, "") else { return };
+    let x = |ch: char| super::page_chars(&doc)[0].iter().find(|c| c.0 == ch).map(|c| c.1);
+    assert_eq!(x('A'), x('B'), "both paragraphs in column 1");
+}
+
+#[test]
 fn compat_14_note_waits_when_its_paragraph_cant_keep_its_lines() {
     let body = |at: Option<usize>| {
         let mut b = para("P01", &["f1"]);
