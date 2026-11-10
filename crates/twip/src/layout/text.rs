@@ -112,6 +112,8 @@ pub struct Piece {
     pub auto_hyphen: bool,
     /// No line break before this piece (inside a fitted region of text).
     pub glued: bool,
+    /// How much wider the piece counts than it is drawn when lines are broken (a fitted region in compat 15).
+    pub break_extra: f64,
     pub style: u32,
     pub width: f64,
     pub ascent: f64,
@@ -428,6 +430,7 @@ impl<'a> Builder<'a> {
             soft_hyphen: p.soft_hyphen,
             auto_hyphen: false,
             glued: false,
+            break_extra: 0.0,
             style,
             width: p.width,
             ascent: p.ascent,
@@ -1027,7 +1030,7 @@ impl<'a> Builder<'a> {
             at += units;
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
-        self.fit_text();
+        self.fit_text(space.stale_fit);
         if let Some(dd) = &space.balance
             && (dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian))
         {
@@ -1051,8 +1054,9 @@ impl<'a> Builder<'a> {
     }
 
     /// Each fitted region (consecutive text whose runs have `w:fitText` with one id) made as wide as its first run's
-    /// `w:fitText`: wider with character spacing, narrower with a horizontal scale; never broken.
-    fn fit_text(&mut self) {
+    /// `w:fitText`: wider with character spacing, narrower with a horizontal scale; never broken. `stale`: lines are
+    /// broken with the region's first adjustment (compat 15).
+    fn fit_text(&mut self, stale: bool) {
         let fit = |b: &Self, k: usize| {
             let p = &b.pieces[k];
             b.styles[p.style as usize].run.fit_text.filter(|_| matches!(p.kind, Kind::Text | Kind::Space))
@@ -1067,7 +1071,7 @@ impl<'a> Builder<'a> {
             while e < self.pieces.len() && fit(self, e).is_some_and(|(_, i)| i == id) {
                 e += 1;
             }
-            self.fit_region(a, e, target);
+            self.fit_region(a, e, target, stale);
             a = e;
         }
     }
@@ -1075,8 +1079,9 @@ impl<'a> Builder<'a> {
     /// Fits pieces `a..e` to `target` points by the fit loop, in layout units (204.8 a twip): within 10 tw nothing
     /// changes; wider, character spacing on every character, then a correction on the last one (spread again while it
     /// exceeds 40 tw, at most twice); narrower, a scale of `max(15, trunc(100 T / N))` %, then the last character's
-    /// correction.
-    fn fit_region(&mut self, a: usize, e: usize, target: f64) {
+    /// correction. `stale`: the loop also runs with every re-measure returning the starting width, and lines are broken
+    /// with the width it leaves (the spacing on every character without the correction, or the scale alone).
+    fn fit_region(&mut self, a: usize, e: usize, target: f64, stale: bool) {
         const TW: f64 = 204.8;
         const TOL: f64 = 2048.0;
         const EPS_LU: f64 = 1e-6;
@@ -1106,74 +1111,91 @@ impl<'a> Builder<'a> {
             (a..e).zip(&natural).map(|(k, w)| b.scaled(k, scale).unwrap_or(w * scale / 100.0)).collect()
         };
         // The region's state: a scale, a spacing (tw) on every character and the last one's own.
-        let (mut scale, mut sp, mut last) = (100.0, 0.0, 0.0);
         let width = |b: &Self, scale: f64, sp: f64, last: f64| pieces(b, scale).iter().sum::<f64>() + (n - 1.0) * lu(sp) + lu(last);
-        let mut w = width(self, scale, sp, last);
-        let (mut done, mut corr_done, mut adj_done, mut reset_done) = (false, false, false, false);
-        let (mut k, mut s, mut corr, mut tries, mut nat, mut before) = (1.0, 0.0, 0.0, 0, 0.0, 0.0);
-        for _ in 0..50 {
-            let mut adjust = false;
-            if done {
-                break;
-            }
-            if corr_done {
-                if corr == 0.0 {
-                    if (t - w).abs() <= TOL {
-                        break;
-                    }
-                } else if (before - w).abs() > EPS_LU {
+        let run = |b: &Self, live: bool| -> (f64, f64, f64) {
+            let (mut scale, mut sp, mut last) = (100.0, 0.0, 0.0);
+            let start = width(b, scale, sp, last);
+            let mut w = start;
+            let (mut done, mut corr_done, mut adj_done, mut reset_done) = (false, false, false, false);
+            let (mut k, mut s, mut corr, mut tries, mut nat, mut before) = (1.0, 0.0, 0.0, 0, 0.0, 0.0);
+            for _ in 0..50 {
+                let mut adjust = false;
+                if done {
                     break;
                 }
-                (done, k, adjust) = (true, 0.0, true);
-            } else if adj_done {
-                before = w;
-                if k > 0.0 {
-                    corr = ((tw(s) * k - tw(w - t)) / k).trunc();
-                }
-                if tries < 2 && corr.abs() > 40.0 {
-                    tries += 1;
+                if corr_done {
+                    if corr == 0.0 {
+                        if (t - w).abs() <= TOL {
+                            break;
+                        }
+                    } else if (before - w).abs() > EPS_LU {
+                        break;
+                    }
+                    (done, k, adjust) = (true, 0.0, true);
+                } else if adj_done {
+                    before = w;
+                    if k > 0.0 {
+                        corr = ((tw(s) * k - tw(w - t)) / k).trunc();
+                    }
+                    if tries < 2 && corr.abs() > 40.0 {
+                        tries += 1;
+                        adjust = true;
+                    } else {
+                        (last, corr_done) = (corr, true);
+                    }
+                } else if reset_done {
                     adjust = true;
                 } else {
-                    (last, corr_done) = (corr, true);
-                }
-            } else if reset_done {
-                adjust = true;
-            } else {
-                if (t - w).abs() <= TOL {
-                    return;
-                }
-                if t < w {
-                    scale = 100.0;
-                }
-                (sp, last, reset_done, k) = (0.0, 0.0, true, 1.0);
-            }
-            if adjust {
-                if nat == 0.0 {
-                    nat = w;
-                }
-                // The whole region: a scale when too wide, else the spacing spread over the gaps.
-                if n >= 2.0 && t != 0.0 && nat != 0.0 && nat != t {
-                    let prev = std::mem::take(&mut s);
-                    if t < nat {
-                        scale = (100.0 * t / nat).trunc().max(15.0);
-                    } else if prev == 0.0 || (w - (nat + k * prev)).abs() < EPS_LU {
-                        s = ((t - nat) / (n - 1.0)).trunc();
-                    } else {
-                        s = (prev * (t - nat) / (w - k * prev - nat)).trunc();
+                    if (t - w).abs() <= TOL {
+                        return (scale, sp, last);
                     }
-                    (sp, last) = (tw(s), tw(s));
-                } else {
-                    s = 0.0;
+                    if t < w {
+                        scale = 100.0;
+                    }
+                    (sp, last, reset_done, k) = (0.0, 0.0, true, 1.0);
                 }
-                adj_done = true;
+                if adjust {
+                    if nat == 0.0 {
+                        nat = w;
+                    }
+                    // The whole region: a scale when too wide, else the spacing spread over the gaps.
+                    if n >= 2.0 && t != 0.0 && nat != 0.0 && nat != t {
+                        let prev = std::mem::take(&mut s);
+                        if t < nat {
+                            scale = (100.0 * t / nat).trunc().max(15.0);
+                        } else if prev == 0.0 || (w - (nat + k * prev)).abs() < EPS_LU {
+                            s = ((t - nat) / (n - 1.0)).trunc();
+                        } else {
+                            s = (prev * (t - nat) / (w - k * prev - nat)).trunc();
+                        }
+                        (sp, last) = (tw(s), tw(s));
+                    } else {
+                        s = 0.0;
+                    }
+                    adj_done = true;
+                }
+                w = if live { width(b, scale, sp, last) } else { start };
             }
-            w = width(self, scale, sp, last);
-        }
-        let widths = pieces(self, scale);
-        for (j, (k, pw)) in (a..e).zip(widths).enumerate() {
-            let cs = chars(self, k);
-            let spacing = if j + 1 == e - a { (cs - 1.0) * lu(sp) + lu(last) } else { cs * lu(sp) };
-            self.pieces[k].width = (pw + spacing).max(0.0) / 4096.0;
+            (scale, sp, last)
+        };
+        let widths = |b: &Self, (scale, sp, last): (f64, f64, f64)| -> Vec<f64> {
+            (a..e)
+                .zip(pieces(b, scale))
+                .enumerate()
+                .map(|(j, (k, pw))| {
+                    let cs = chars(b, k);
+                    let spacing = if j + 1 == e - a { (cs - 1.0) * lu(sp) + lu(last) } else { cs * lu(sp) };
+                    (pw + spacing).max(0.0) / 4096.0
+                })
+                .collect()
+        };
+        let printed = widths(self, run(self, true));
+        let broken = if stale { widths(self, run(self, false)) } else { printed.clone() };
+        // ponytail: compat 15 prints the compat 12 result; Word prints the loop run again from the stale passes' state
+        // (a scale and spacing, as wide), and a region on the document's first line breaks like compat 12.
+        for ((k, w), bw) in (a..e).zip(printed).zip(broken) {
+            self.pieces[k].width = w;
+            self.pieces[k].break_extra = bw - w;
         }
     }
 
@@ -1501,6 +1523,7 @@ pub fn shape_space(
         compress: text.compress_punctuation,
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
         frame_breaks: text.show_breaks_in_frames,
+        stale_fit: text.compat == crate::docx::Compat::Generic,
         vertical: text.vertical.is_some(),
         metric_rules: MetricRules {
             no_leading: text.no_leading,

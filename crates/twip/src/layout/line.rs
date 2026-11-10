@@ -903,6 +903,8 @@ fn fit_line(
     let mut xs: Vec<f64> = Vec::new();
     let mut ws: Vec<f64> = Vec::new();
     let mut pen = left;
+    // How much wider the pieces so far count for breaking than they are drawn.
+    let mut drift = 0.0;
     if start == 0 && style.list_jc != "left" {
         let w: f64 = pieces.iter().take_while(|p| p.kind == Kind::ListNumber).map(|p| p.width).sum();
         pen -= if style.list_jc == "right" { w } else { w / 2.0 };
@@ -1061,6 +1063,7 @@ fn fit_line(
                 xs.push(pen);
                 ws.push(p.width);
                 pen += p.width;
+                drift += p.break_extra;
                 if p.break_after && !pieces[start..=i].iter().all(|q| q.kind == Kind::Anchor) && !refused(i + 1) {
                     breaks.push((i + 1, false));
                 }
@@ -1079,7 +1082,8 @@ fn fit_line(
                 (pt.pen_at_tab + w).max(pt.stop + w / 2.0)
             }
             _ => pen + p.width,
-        };
+        } + drift
+            + p.break_extra;
         let forced = limit_end.is_some();
         let limit = match &pending {
             Some(pt) if pt.kind == TabKind::Right && pt.stop > right => pt.stop,
@@ -1162,6 +1166,7 @@ fn fit_line(
         xs.push(pen);
         ws.push(p.width);
         pen += p.width;
+        drift += p.break_extra;
         if p.break_after {
             breaks.push((i + 1, p.soft_hyphen));
         } else if frame.hyphenate
@@ -1367,7 +1372,7 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
         let p = &pieces[k];
         if matches!(p.kind, Kind::Space) {
             let w = (p.width * LU_PER_PT).round() as i64;
-            gap.width += p.width;
+            gap.width += p.width + p.break_extra;
             gap.shrink += (w + 2) >> 2;
             gap.stretch += (w + 1) >> 1;
             joined |= !p.break_after;
@@ -1381,7 +1386,7 @@ fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) ->
         let ws = k;
         let mut w = 0.0;
         while k < seg_end && !matches!(pieces[k].kind, Kind::Space | Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak) {
-            w += pieces[k].width;
+            w += pieces[k].width + pieces[k].break_extra;
             k += 1;
             if pieces[k - 1].break_after && !pieces[k - 1].soft_hyphen {
                 break;

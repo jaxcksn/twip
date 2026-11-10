@@ -24,6 +24,8 @@ pub struct ShapeSpace {
     pub vertical: bool,
     /// Page and column breaks in a frame break its lines.
     pub frame_breaks: bool,
+    /// Fitted regions break lines with their first adjustment (compat 15).
+    pub stale_fit: bool,
     pub view: MarkupView,
     pub join: Option<std::rc::Rc<super::join::JoinMap>>,
     pub float: Option<std::rc::Rc<crate::docx::Float>>,

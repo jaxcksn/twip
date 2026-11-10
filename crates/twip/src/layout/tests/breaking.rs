@@ -1127,6 +1127,17 @@ fn a_fitted_region_never_breaks() {
 }
 
 #[test]
+fn compat_15_breaks_a_squeezed_region_at_its_scale_without_the_correction() {
+    // `abcdefghij` to 30 tw: 15 %, then a correction past the `j`. The line holds 1020 tw: the word with the drawn
+    // region (1019.2) fits, with the region at 15 % alone (1026.5) it doesn't.
+    let body = r#"<w:p><w:pPr><w:ind w:right="8340"/></w:pPr><w:r><w:t xml:space="preserve">S00 </w:t></w:r><w:r><w:rPr><w:fitText w:val="30" w:id="1"/></w:rPr><w:t>abcdefghij</w:t></w:r><w:r><w:t>|end</w:t></w:r></w:p>"#;
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let (Some(l12), Some(l15)) = (lines("", ARIAL_11, body), lines(c15, ARIAL_11, body)) else { return };
+    assert_eq!(l12.len(), 1, "{l12:?}");
+    assert_eq!(l15.len(), 2, "{l15:?}");
+}
+
+#[test]
 fn a_vanished_mark_joins_its_paragraph_to_the_next() {
     let body = format!(
         r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:p><w:pPr><w:ind w:left="720" w:right="720"/><w:jc w:val="center"/><w:spacing w:before="240" w:after="480"/><w:rPr><w:vanish/><w:specVanish/></w:rPr></w:pPr><w:r><w:t>Heading.</w:t></w:r></w:p><w:p><w:pPr><w:ind w:left="1440" w:firstLine="360"/><w:spacing w:before="360"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#,
