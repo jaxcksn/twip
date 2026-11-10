@@ -1530,6 +1530,23 @@ fn a_column_break_in_a_frame_breaks_its_line_only_with_show_breaks_in_frames() {
 }
 
 #[test]
+fn a_text_anchored_frames_y_is_its_offset_from_the_text() {
+    let cut = |y: u32| {
+        let sp = r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/>"#;
+        let body = format!(
+            r#"<w:p><w:pPr><w:framePr w:w="1440" w:h="200" w:hRule="exact" w:hSpace="180" w:vSpace="0" w:wrap="around" w:vAnchor="text" w:hAnchor="page" w:x="5000" w:y="{y}"/><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>F</w:t></w:r></w:p><w:p><w:pPr>{sp}</w:pPr><w:r><w:t>Anchor</w:t></w:r></w:p><w:p><w:pPr>{sp}</w:pPr><w:r><w:t>Next line text runs on beside the box so that every line shows where the edge is.</w:t></w:r></w:p>"#
+        );
+        let l = baselines("", ARIAL_12, &body)?;
+        let first = l.iter().find(|(_, t, _, _)| t.starts_with("Next")).expect("drawn").3;
+        Some(l.iter().filter(|(_, t, _, y)| t != "F" && (y - first).abs() < 0.01).count())
+    };
+    let Some(above) = cut(100) else { return };
+    // Its bottom at the next line's top leaves that line whole; one twip lower cuts it.
+    assert_eq!(above, 1);
+    assert_eq!(cut(101).unwrap(), 2);
+}
+
+#[test]
 fn a_compat_14_line_blocked_by_a_frame_goes_just_below_it() {
     // Frames leaving only a piece too narrow for text: each body line goes to the bottom of the frame it meets.
     let frame = |y: u32| {

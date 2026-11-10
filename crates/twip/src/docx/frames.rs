@@ -142,6 +142,8 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: f64) {
         -16 => (Some("outside"), None),
         _ => (None, Some(x - 0.05)),
     });
+    // From the text, `w:y` is the position itself.
+    let text_y = fr.v_anchor.as_deref().is_some_and(|a| a != "margin" && a != "page");
     let (y_code, y_at) = fr.y.map_or((None, None), |y| match (y * 20.0).round() as i64 {
         0 => (None, Some(0.0)),
         -4 => (Some("top"), None),
@@ -149,6 +151,7 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: f64) {
         -12 => (Some("bottom"), None),
         -16 => (Some("inside"), None),
         -20 => (Some("outside"), None),
+        _ if text_y => (None, Some(y)),
         _ => (None, Some(y - 0.05)),
     });
     f.h_align = if margin_cap {
