@@ -1571,6 +1571,31 @@ fn a_text_anchored_frames_y_is_its_offset_from_the_text() {
 }
 
 #[test]
+fn a_frame_in_the_flow_that_meets_an_earlier_one_goes_below_it() {
+    let frame = |x: u32, t: &str, apart: bool| {
+        let so = if apart { "<w:suppressOverlap/>" } else { "" };
+        format!(
+            r#"<w:p><w:pPr><w:framePr w:w="2880" w:hSpace="180" w:vSpace="0" w:wrap="around" w:vAnchor="text" w:hAnchor="page" w:x="{x}" w:y="0"/>{so}</w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#
+        )
+    };
+    let b = |settings: &str, apart: bool| {
+        let body = format!("<w:p><w:r><w:t>Lead.</w:t></w:r></w:p>{}{}<w:p><w:r><w:t>Body text beside the frames.</w:t></w:r></w:p>", frame(2880, "Frame A", false), frame(4320, "Frame B", apart));
+        let l = baselines(settings, ARIAL_12, &body)?;
+        let at = |t: &str| l.iter().find(|x| x.1 == t).map(|x| (x.0, x.3)).expect("drawn");
+        Some((at("Frame A"), at("Frame B")))
+    };
+    let Some(((_, ay), (bx, by))) = b("", false) else { return };
+    // Compat ≤ 14 lays B out below A, at its own x.
+    assert!(by > ay + 10.0 && (bx - 216.0).abs() < 0.1, "{ay} {bx} {by}");
+    // Compat 15 lets them overlap; B may not: it moves down, not across.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let ((_, ay), (_, by)) = b(c15, false).unwrap();
+    assert!((by - ay).abs() < 0.01, "{ay} {by}");
+    let ((_, ay), (bx, by)) = b(c15, true).unwrap();
+    assert!(by > ay + 10.0 && (bx - 216.0).abs() < 0.1, "{ay} {bx} {by}");
+}
+
+#[test]
 fn a_compat_14_line_blocked_by_a_frame_goes_just_below_it() {
     // Frames leaving only a piece too narrow for text: each body line goes to the bottom of the frame it meets.
     let frame = |y: u32| {

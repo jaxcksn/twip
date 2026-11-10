@@ -161,7 +161,7 @@ impl Placed {
         self.wrap != Wrap::None && top < self.excl[3] - EPS && self.excl[1] < bottom - EPS
     }
 
-    fn moved_to(&mut self, x: f64, y: f64) {
+    pub fn moved_to(&mut self, x: f64, y: f64) {
         let (dx, dy) = (x - self.rect[0], y - self.rect[1]);
         for (k, d) in [dx, dy, dx, dy].iter().enumerate() {
             self.rect[k] += d;

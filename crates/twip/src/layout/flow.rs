@@ -1917,7 +1917,19 @@ impl<'d> PageFill<'d, '_> {
         let placed_end = bands[take - 1].1.last().map_or(0, |l| l.end);
         for mut a in anchors {
             if a.key.2 - pb.from < placed_end.max(1) {
-                if !float::avoid(&mut a, &self.at.found, (frames.margin[0], frames.page_w), col.bottom.to_pt(), compat) {
+                // A frame placed in the flow: compat ≤ 14 lays it out below an earlier such frame it meets, from a
+                // whole twip; compat 15 moves one that may not overlap only down.
+                let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.float.v_relative == "paragraph";
+                let in_flow = frame(&a) && a.float.v_offset == 0.0;
+                if in_flow && compat == Compat::Legacy {
+                    for o in self.at.found.iter().filter(|o| frame(o)) {
+                        if o.rect[0] < a.rect[2] - EPS && a.rect[0] < o.rect[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
+                            a.moved_to(a.rect[0], (o.rect[3] * 20.0 - 1e-6).ceil() / 20.0);
+                        }
+                    }
+                }
+                let across = if in_flow && compat == Compat::Generic { (f64::INFINITY, f64::NEG_INFINITY) } else { (frames.margin[0], frames.page_w) };
+                if !float::avoid(&mut a, &self.at.found, across, col.bottom.to_pt(), compat) {
                     let b = band_of(a.key.2 - pb.from).unwrap_or(0);
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
                 }
