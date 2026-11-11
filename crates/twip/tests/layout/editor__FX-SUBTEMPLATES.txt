@@ -1,15 +1,21 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-SUBTEMPLATES
-  72.0 110.1 Error! Bookmark not defined.
-  72.0 129.9 After the violation.
-  77.7 150.3 Fee
-  311.6 150.3 Amount
-  77.7 170.7 Error! Bookmark not defined.
-  77.7 191.1 Total
-  72.0 211.4 See Error! Bookmark not defined. here.
-  72.0 231.3 Error! Bookmark not defined.
-  72.0 251.2 Error! Bookmark not defined.
-  72.0 271.0 Error! Bookmark not defined.
-page 1 792.0 612.0
-  72.0 80.8 Error! Bookmark not defined.
-  72.0 100.7 Landscape section text.
+page 0 12240 15840
+  1440 1936 FX-SUBTEMPLATES
+  1440 2201 Error! Bookmark not defined.
+  1440 2599 After the violation.
+  1553 3006 Fee
+  6233 3006 Amount
+  1553 3414 Error! Bookmark not defined.
+  1553 3821 Total
+  1440 4228 See Error! Bookmark not defined. here.
+  1440 4626 Error! Bookmark not defined.
+  1440 5023 Error! Bookmark not defined.
+  1440 5421 Error! Bookmark not defined.
+  cell 1445 2820 6125 3228
+  cell 6125 2820 10805 3228
+  cell 1445 3228 6125 3635
+  cell 6125 3228 10805 3635
+  cell 1445 3635 6125 4042
+  cell 6125 3635 10805 4042
+page 1 15840 12240
+  1440 1616 Error! Bookmark not defined.
+  1440 2013 Landscape section text.

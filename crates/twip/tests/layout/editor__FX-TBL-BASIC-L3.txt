@@ -1,51 +1,96 @@
-page 0 612.0 792.0
-  89.0 82.3 A1, the document starts
-  89.0 94.2 with this table
-  386.6 82.3 C1
-  237.8 114.5 First paragraph of the
-  237.8 126.4 cell.
-  237.8 146.3 Second paragraph.
-  237.8 186.0 Fourth paragraph, after
-  237.8 197.9 an empty one.
-  89.0 218.3 A3
-  237.8 218.3 B3
-  83.3 238.6 Paragraph between the first and second tables.
-  89.0 259.0 T2 R1 C1
-  237.8 259.0 T2 R1 C2
-  386.6 259.0 T2 R1 C3
-  89.0 279.4 T2 R2 C1
-  237.8 279.4 T2 R2 C2
-  386.6 279.4 T2 R2 C3
-  89.0 299.8 T2 R3 C1
-  237.8 299.8 T2 R3 C2
-  386.6 299.8 T2 R3 C3
-  89.0 320.6 T3 R1 C1
-  239.0 320.6 T3 R1 C2
-  89.0 341.0 T3 R2 C1
-  239.0 341.0 T3 R2 C2
-  83.3 361.4 The second and third tables above are adjacent in the XML, with no paragraph
-  83.3 373.2 between them (Word joins them into one table).
-  89.0 393.6 T4 R1 C1
-  237.8 393.6 T4 R1 C2
-  386.6 393.6 T4 R1 C3
-  89.0 414.0 T4 R2 C1
-  237.8 414.0 T4 R2 C2
-  386.6 414.0 T4 R2 C3
-  89.0 454.7 T5 R1 C1
-  237.8 454.7 T5 R1 C2
-  386.6 454.7 T5 R1 C3
-  89.0 475.1 T5 R2 C1
-  237.8 475.1 T5 R2 C2
-  386.6 475.1 T5 R2 C3
-  83.3 495.5 The fourth and fifth tables above are separated only by an empty paragraph.
-  83.3 515.3 Paragraph before the last table.
-  89.0 535.7 End R1 C1
-  237.8 535.7 End R1 C2
-  386.6 535.7 End R1 C3
-  89.0 556.1 End R2 C1
-  237.8 556.1 End R2 C2
-  386.6 556.1 End R2 C3
-  89.0 576.4 End R3 C1
-  237.8 576.4 End R3 C2
-  386.6 576.4 End R3 C3
-  72.0 597.8 Paragraph after the wrapper table.
+page 0 12240 15840
+  1779 1646 A1, the document starts
+  1779 1883 with this table
+  7731 1646 C1
+  4755 2291 First paragraph of the
+  4755 2528 cell.
+  4755 2926 Second paragraph.
+  4755 3721 Fourth paragraph, after
+  4755 3958 an empty one.
+  1779 4365 A3
+  4755 4365 B3
+  1666 4773 Paragraph between the first and second tables.
+  1779 5180 T2 R1 C1
+  4755 5180 T2 R1 C2
+  7731 5180 T2 R1 C3
+  1779 5588 T2 R2 C1
+  4755 5588 T2 R2 C2
+  7731 5588 T2 R2 C3
+  1779 5995 T2 R3 C1
+  4755 5995 T2 R3 C2
+  7731 5995 T2 R3 C3
+  1779 6412 T3 R1 C1
+  4779 6412 T3 R1 C2
+  1779 6820 T3 R2 C1
+  4779 6820 T3 R2 C2
+  1666 7227 The second and third tables above are adjacent in the XML, with no paragraph
+  1666 7465 between them (Word joins them into one table).
+  1779 7872 T4 R1 C1
+  4755 7872 T4 R1 C2
+  7731 7872 T4 R1 C3
+  1779 8280 T4 R2 C1
+  4755 8280 T4 R2 C2
+  7731 8280 T4 R2 C3
+  1779 9094 T5 R1 C1
+  4755 9094 T5 R1 C2
+  7731 9094 T5 R1 C3
+  1779 9502 T5 R2 C1
+  4755 9502 T5 R2 C2
+  7731 9502 T5 R2 C3
+  1666 9909 The fourth and fifth tables above are separated only by an empty paragraph.
+  1666 10307 Paragraph before the last table.
+  1779 10714 End R1 C1
+  4755 10714 End R1 C2
+  7731 10714 End R1 C3
+  1779 11121 End R2 C1
+  4755 11121 End R2 C2
+  7731 11121 End R2 C3
+  1779 11529 End R3 C1
+  4755 11529 End R3 C2
+  7731 11529 End R3 C3
+  1440 11956 Paragraph after the wrapper table.
+  cell 1445 1440 10589 11770
+  cell 1558 1450 10486 11760
+  cell 1671 1460 4647 2105
+  cell 4647 1460 7623 2105
+  cell 7623 1460 10599 2105
+  cell 1671 2105 4647 4179
+  cell 4647 2105 7623 4179
+  cell 7623 2105 10599 4179
+  cell 1671 4179 4647 4587
+  cell 4647 4179 7623 4587
+  cell 7623 4179 10599 4587
+  cell 1671 4994 4647 5402
+  cell 4647 4994 7623 5402
+  cell 7623 4994 10599 5402
+  cell 1671 5402 4647 5809
+  cell 4647 5402 7623 5809
+  cell 7623 5402 10599 5809
+  cell 1671 5809 4647 6216
+  cell 4647 5809 7623 6216
+  cell 7623 5809 10599 6216
+  cell 1671 6226 4671 6634
+  cell 4671 6226 7671 6634
+  cell 1671 6634 4671 7041
+  cell 4671 6634 7671 7041
+  cell 1671 7686 4647 8094
+  cell 4647 7686 7623 8094
+  cell 7623 7686 10599 8094
+  cell 1671 8094 4647 8501
+  cell 4647 8094 7623 8501
+  cell 7623 8094 10599 8501
+  cell 1671 8908 4647 9316
+  cell 4647 8908 7623 9316
+  cell 7623 8908 10599 9316
+  cell 1671 9316 4647 9723
+  cell 4647 9316 7623 9723
+  cell 7623 9316 10599 9723
+  cell 1671 10528 4647 10935
+  cell 4647 10528 7623 10935
+  cell 7623 10528 10599 10935
+  cell 1671 10935 4647 11343
+  cell 4647 10935 7623 11343
+  cell 7623 10935 10599 11343
+  cell 1671 11343 4647 11750
+  cell 4647 11343 7623 11750
+  cell 7623 11343 10599 11750

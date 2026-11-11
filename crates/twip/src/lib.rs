@@ -5,7 +5,7 @@ pub mod api;
 pub(crate) mod docx;
 pub(crate) mod drawing;
 pub(crate) mod editing;
-#[cfg(not(target_os = "emscripten"))]
+#[cfg(any(test, not(target_os = "emscripten")))]
 pub(crate) mod features;
 pub(crate) mod font;
 pub(crate) mod layout;

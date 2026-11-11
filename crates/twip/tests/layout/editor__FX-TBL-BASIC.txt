@@ -1,50 +1,93 @@
-page 0 612.0 792.0
-  77.7 81.3 A1, the document starts
-  77.7 93.2 with this table
-  389.6 81.3 C1
-  233.7 113.5 First paragraph of the
-  233.7 125.4 cell.
-  233.7 145.3 Second paragraph.
-  233.7 185.0 Fourth paragraph, after
-  233.7 196.9 an empty one.
-  77.7 217.3 A3
-  233.7 217.3 B3
-  72.0 237.6 Paragraph between the first and second tables.
-  77.7 258.0 T2 R1 C1
-  233.7 258.0 T2 R1 C2
-  389.6 258.0 T2 R1 C3
-  77.7 278.4 T2 R2 C1
-  233.7 278.4 T2 R2 C2
-  389.6 278.4 T2 R2 C3
-  77.7 298.8 T2 R3 C1
-  233.7 298.8 T2 R3 C2
-  389.6 298.8 T2 R3 C3
-  77.7 319.6 T3 R1 C1
-  227.7 319.6 T3 R1 C2
-  77.7 340.0 T3 R2 C1
-  227.7 340.0 T3 R2 C2
-  72.0 360.4 The second and third tables above are adjacent in the XML, with no paragraph between
-  72.0 372.2 them (Word joins them into one table).
-  77.7 392.6 T4 R1 C1
-  233.7 392.6 T4 R1 C2
-  389.6 392.6 T4 R1 C3
-  77.7 413.0 T4 R2 C1
-  233.7 413.0 T4 R2 C2
-  389.6 413.0 T4 R2 C3
-  77.7 453.7 T5 R1 C1
-  233.7 453.7 T5 R1 C2
-  389.6 453.7 T5 R1 C3
-  77.7 474.1 T5 R2 C1
-  233.7 474.1 T5 R2 C2
-  389.6 474.1 T5 R2 C3
-  72.0 494.5 The fourth and fifth tables above are separated only by an empty paragraph.
-  72.0 514.3 Paragraph before the last table.
-  77.7 534.7 End R1 C1
-  233.7 534.7 End R1 C2
-  389.6 534.7 End R1 C3
-  77.7 555.1 End R2 C1
-  233.7 555.1 End R2 C2
-  389.6 555.1 End R2 C3
-  77.7 575.4 End R3 C1
-  233.7 575.4 End R3 C2
-  389.6 575.4 End R3 C3
+page 0 12240 15840
+  1553 1626 A1, the document starts
+  1553 1863 with this table
+  7793 1626 C1
+  4673 2271 First paragraph of the
+  4673 2508 cell.
+  4673 2906 Second paragraph.
+  4673 3701 Fourth paragraph, after
+  4673 3938 an empty one.
+  1553 4345 A3
+  4673 4345 B3
+  1440 4753 Paragraph between the first and second tables.
+  1553 5160 T2 R1 C1
+  4673 5160 T2 R1 C2
+  7793 5160 T2 R1 C3
+  1553 5568 T2 R2 C1
+  4673 5568 T2 R2 C2
+  7793 5568 T2 R2 C3
+  1553 5975 T2 R3 C1
+  4673 5975 T2 R3 C2
+  7793 5975 T2 R3 C3
+  1553 6392 T3 R1 C1
+  4553 6392 T3 R1 C2
+  1553 6800 T3 R2 C1
+  4553 6800 T3 R2 C2
+  1440 7207 The second and third tables above are adjacent in the XML, with no paragraph between
+  1440 7445 them (Word joins them into one table).
+  1553 7852 T4 R1 C1
+  4673 7852 T4 R1 C2
+  7793 7852 T4 R1 C3
+  1553 8260 T4 R2 C1
+  4673 8260 T4 R2 C2
+  7793 8260 T4 R2 C3
+  1553 9074 T5 R1 C1
+  4673 9074 T5 R1 C2
+  7793 9074 T5 R1 C3
+  1553 9482 T5 R2 C1
+  4673 9482 T5 R2 C2
+  7793 9482 T5 R2 C3
+  1440 9889 The fourth and fifth tables above are separated only by an empty paragraph.
+  1440 10287 Paragraph before the last table.
+  1553 10694 End R1 C1
+  4673 10694 End R1 C2
+  7793 10694 End R1 C3
+  1553 11101 End R2 C1
+  4673 11101 End R2 C2
+  7793 11101 End R2 C3
+  1553 11509 End R3 C1
+  4673 11509 End R3 C2
+  7793 11509 End R3 C3
+  cell 1445 1440 4565 2085
+  cell 4565 1440 7685 2085
+  cell 7685 1440 10805 2085
+  cell 1445 2085 4565 4159
+  cell 4565 2085 7685 4159
+  cell 7685 2085 10805 4159
+  cell 1445 4159 4565 4567
+  cell 4565 4159 7685 4567
+  cell 7685 4159 10805 4567
+  cell 1445 4974 4565 5382
+  cell 4565 4974 7685 5382
+  cell 7685 4974 10805 5382
+  cell 1445 5382 4565 5789
+  cell 4565 5382 7685 5789
+  cell 7685 5382 10805 5789
+  cell 1445 5789 4565 6196
+  cell 4565 5789 7685 6196
+  cell 7685 5789 10805 6196
+  cell 1445 6206 4445 6614
+  cell 4445 6206 7445 6614
+  cell 1445 6614 4445 7021
+  cell 4445 6614 7445 7021
+  cell 1445 7666 4565 8074
+  cell 4565 7666 7685 8074
+  cell 7685 7666 10805 8074
+  cell 1445 8074 4565 8481
+  cell 4565 8074 7685 8481
+  cell 7685 8074 10805 8481
+  cell 1445 8888 4565 9296
+  cell 4565 8888 7685 9296
+  cell 7685 8888 10805 9296
+  cell 1445 9296 4565 9703
+  cell 4565 9296 7685 9703
+  cell 7685 9296 10805 9703
+  cell 1445 10508 4565 10915
+  cell 4565 10508 7685 10915
+  cell 7685 10508 10805 10915
+  cell 1445 10915 4565 11323
+  cell 4565 10915 7685 11323
+  cell 7685 10915 10805 11323
+  cell 1445 11323 4565 11730
+  cell 4565 11323 7685 11730
+  cell 7685 11323 10805 11730

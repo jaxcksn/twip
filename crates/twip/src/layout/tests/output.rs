@@ -5,7 +5,7 @@ use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use crate::font::Fonts;
-use crate::layout::fragment::Item;
+use crate::layout::fragment::{BoxKind, Child, Item, PageChild};
 use crate::layout::layout;
 use crate::layout::traverse::paint;
 
@@ -44,11 +44,34 @@ fn fixtures(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Pages, then per drawn line its start, baseline and text, then picture boxes.
-// ponytail: coordinates rounded to 0.1 pt and compared as text; a value landing on a rounding edge on one platform
-// only would need a tolerance compare.
+/// Each float's rectangle and each table cell's, in page space, in tree order.
+fn boxes(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(&'static str, [f64; 4])>) {
+    let at = |r: [f64; 4]| [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy];
+    for c in children {
+        match c {
+            Child::Box(b) => {
+                if let BoxKind::Float { rect, .. } = b.kind {
+                    out.push(("float", at(rect)));
+                }
+                boxes(&b.children, dx + b.offset.0, dy + b.offset.1, out);
+            }
+            Child::Group { offset, children } => boxes(children, dx + offset.0, dy + offset.1, out),
+            Child::Table(t) => {
+                for cell in t.rows.iter().flat_map(|r| r.cells.iter()) {
+                    out.push(("cell", at(cell.place.rect)));
+                    boxes(&cell.content, dx, dy, out);
+                }
+            }
+            Child::Para(_) | Child::Line { .. } | Child::Items(_) => {}
+        }
+    }
+}
+
+/// Pages, then per drawn line its start, baseline and text, then picture boxes, floats and table cells, in twips.
+// ponytail: coordinates rounded to whole twips and compared as text; a value landing on a rounding edge on one
+// platform only would need a tolerance compare.
 fn snapshot(doc: &crate::docx::Document, fonts: &Fonts) -> String {
-    let f = |v: f64| format!("{:.1}", v + 0.0);
+    let f = |v: f64| format!("{}", (v * 20.0).round() as i64);
     let mut s = String::new();
     for (pi, page) in layout(doc, fonts).pages().iter().enumerate() {
         writeln!(s, "page {pi} {} {}", f(page.w), f(page.h)).unwrap();
@@ -80,6 +103,17 @@ fn snapshot(doc: &crate::docx::Document, fonts: &Fonts) -> String {
         }
         for r in images {
             writeln!(s, "  image {} {} {} {}", f(r[0]), f(r[1]), f(r[2]), f(r[3])).unwrap();
+        }
+        let mut found = Vec::new();
+        for c in page.children.iter() {
+            let b = match c {
+                PageChild::Body(b) => &**b,
+                PageChild::Header(b) | PageChild::Footer(b) => b,
+            };
+            boxes(&b.children, b.offset.0, b.offset.1, &mut found);
+        }
+        for (kind, r) in found {
+            writeln!(s, "  {kind} {} {} {} {}", f(r[0]), f(r[1]), f(r[2]), f(r[3])).unwrap();
         }
     }
     s
@@ -113,20 +147,20 @@ fn pages(t: &str) -> Vec<(&str, Vec<&str>)> {
 
 /// One page drawn twice: grey where the snapshot and the layout agree, red for the snapshot only, green for the layout only.
 fn page_svg(header: &str, want: &[&str], got: &[&str]) -> String {
-    let n = |s: &str| s.parse::<f64>().unwrap_or(0.0);
+    let n = |s: &str| s.parse::<f64>().unwrap_or(0.0) / 20.0;
     let dims: Vec<f64> = header.split(' ').skip(2).map(n).collect();
     let (w, h) = (dims.first().copied().unwrap_or(612.0), dims.get(1).copied().unwrap_or(792.0));
     let mut s = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {w} {h}\" width=\"{}\" height=\"{}\">\n", w * 1.5, h * 1.5);
     writeln!(s, "<rect width=\"{w}\" height=\"{h}\" fill=\"white\" stroke=\"black\"/>").unwrap();
     let mut draw = |item: &str, colour: &str| {
         let v: Vec<&str> = item.splitn(3, ' ').collect();
-        if let Some(r) = item.strip_prefix("image ") {
+        if let Some(r) = ["image ", "float ", "cell "].iter().find_map(|k| item.strip_prefix(k)) {
             let r: Vec<f64> = r.split(' ').map(n).collect();
             if let [x0, y0, x1, y1] = r[..] {
                 writeln!(s, "<rect x=\"{x0}\" y=\"{y0}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{colour}\"/>", x1 - x0, y1 - y0).unwrap();
             }
         } else if let [x, y, text] = v[..] {
-            let text = escape(text);
+            let (x, y, text) = (n(x), n(y), escape(text));
             writeln!(
                 s,
                 "<text x=\"{x}\" y=\"{y}\" font-size=\"9\" font-family=\"sans-serif\" fill=\"{colour}\" xml:space=\"preserve\">{text}</text>"
@@ -147,9 +181,10 @@ fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-/// `target/layout-diff`, which CI uploads as an artifact when the check fails.
+/// `target/layout-diff`, which CI uploads as an artifact when the check fails. By `..`, not by the path's ancestors: the
+/// WebAssembly build reads a Windows host's path as one component.
 fn diff_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap().join("target").join("layout-diff")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/layout-diff")
 }
 
 /// The pages that differ as SVG files in `target/layout-diff/<name>/`, returning their paths under the root.

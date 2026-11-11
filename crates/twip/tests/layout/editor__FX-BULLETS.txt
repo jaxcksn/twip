@@ -1,12 +1,12 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-BULLETS
-  90.0 111.5 •Bullet 1: Symbol F0B7
-  90.0 123.3 oBullet 2: Courier New 006F
-  90.0 136.6 ▪Bullet 3: Wingdings F0A7
-  90.0 149.9 ❖Bullet 4: Wingdings F076
-  90.0 163.2 ➢Bullet 5: Wingdings F0D8
-  90.0 176.5 ✓Bullet 6: Wingdings F0FC
-  90.0 189.8 ◆Bullet 7: Wingdings F075
-  90.0 203.0 ■Bullet 8: Wingdings F06E
-  90.0 216.3 ➔Bullet 9: Wingdings F0E8
-  72.0 237.6 Symbol bullet: • Wingdings check: ✓ end.
+page 0 12240 15840
+  1440 1936 FX-BULLETS
+  1800 2230 •Bullet 1: Symbol F0B7
+  1800 2467 oBullet 2: Courier New 006F
+  1800 2733 ▪Bullet 3: Wingdings F0A7
+  1800 2998 ❖Bullet 4: Wingdings F076
+  1800 3264 ➢Bullet 5: Wingdings F0D8
+  1800 3529 ✓Bullet 6: Wingdings F0FC
+  1800 3795 ◆Bullet 7: Wingdings F075
+  1800 4061 ■Bullet 8: Wingdings F06E
+  1800 4326 ➔Bullet 9: Wingdings F0E8
+  1440 4752 Symbol bullet: • Wingdings check: ✓ end.

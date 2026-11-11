@@ -1,10 +1,10 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-UNDERLINE-TABS
-  72.0 110.1 Name:
-  72.0 129.9 Beforeafter
-  72.0 169.7 Leader.................................................................
-  72.0 189.6 Trailing spaces
-  72.0 229.3 a bc
-  72.0 249.2 Name:
-  72.0 269.0 Trailing spaces
-  72.0 288.9 a bc
+page 0 12240 15840
+  1440 1936 FX-UNDERLINE-TABS
+  1440 2201 Name:
+  1440 2599 Beforeafter
+  1440 3394 Leader.................................................................
+  1440 3791 Trailing spaces
+  1440 4586 a bc
+  1440 4983 Name:
+  1440 5381 Trailing spaces
+  1440 5778 a bc

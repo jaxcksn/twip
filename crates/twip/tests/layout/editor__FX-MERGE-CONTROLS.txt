@@ -1,22 +1,26 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-MERGE-CONTROLS
-  72.0 110.1 Name: John Doe.
-  72.0 129.9 Address: 1 Main St.
-  72.0 149.8 Rich block one.
-  72.0 169.7 Rich block two.
-  72.0 189.6 Date: 1/1/2026.
-  72.0 210.8 Done: ☐ done
-  72.0 258.4 Barcode:
-  72.0 278.3 Status: Paid.
-  72.0 298.2 Grouped paragraph.
-  77.7 318.6 R1 C1
-  311.6 318.6 Cell control
-  77.7 338.9 Row control C1
-  311.6 338.9 Row control C2
-  72.0 359.3 Locked control: cannot delete
-  72.0 379.2 Locked content: cannot edit
-  72.0 399.0 Locked both: neither
-  72.0 418.9 Placeholder: Click or tap here to enter text.
-  72.0 438.8 Bound: Corporate Store
-  72.0 458.6 Custom XML: Doe.
-  72.0 478.5 After the controls.
+page 0 12240 15840
+  1440 1936 FX-MERGE-CONTROLS
+  1440 2201 Name: John Doe.
+  1440 2599 Address: 1 Main St.
+  1440 2996 Rich block one.
+  1440 3394 Rich block two.
+  1440 3791 Date: 1/1/2026.
+  1440 4217 Done: ☐ done
+  1440 5169 Barcode:
+  1440 5566 Status: Paid.
+  1440 5964 Grouped paragraph.
+  1553 6371 R1 C1
+  6233 6371 Cell control
+  1553 6778 Row control C1
+  6233 6778 Row control C2
+  1440 7186 Locked control: cannot delete
+  1440 7583 Locked content: cannot edit
+  1440 7981 Locked both: neither
+  1440 8378 Placeholder: Click or tap here to enter text.
+  1440 8776 Bound: Corporate Store
+  1440 9173 Custom XML: Doe.
+  1440 9570 After the controls.
+  cell 1445 6185 6125 6592
+  cell 6125 6185 10805 6592
+  cell 1445 6592 6125 7000
+  cell 6125 6592 10805 7000

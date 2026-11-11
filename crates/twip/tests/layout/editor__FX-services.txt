@@ -1,12 +1,17 @@
-page 0 612.0 792.0
-  72.0 96.8 Services
-  72.0 110.1 Teh quick brown fox saw a brwon hat, a quikc answer and a zorbly cloud.
-  72.0 129.9 Apple, apple and APPLE.
-  72.0 149.8 Visit the example site for more.
-  72.0 169.7 Keep this obsolete sentence.
-  72.0 189.6 A picture sits beside this text.
-  77.7 209.9 Cell one
-  311.6 209.9 Cell two
-  77.7 230.3 Cell three
-  311.6 230.3 Cell four
-  72.0 250.7 End.
+page 0 12240 15840
+  1440 1936 Services
+  1440 2201 Teh quick brown fox saw a brwon hat, a quikc answer and a zorbly cloud.
+  1440 2599 Apple, apple and APPLE.
+  1440 2996 Visit the example site for more.
+  1440 3394 Keep this obsolete sentence.
+  1440 3791 A picture sits beside this text.
+  1553 4198 Cell one
+  6233 4198 Cell two
+  1553 4606 Cell three
+  6233 4606 Cell four
+  1440 5013 End.
+  cell 1445 4012 6125 4420
+  cell 6125 4012 10805 4420
+  cell 1445 4420 6125 4827
+  cell 6125 4420 10805 4827
+  float 7920 3615 9360 4695

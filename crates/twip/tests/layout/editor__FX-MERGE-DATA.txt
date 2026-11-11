@@ -1,5 +1,5 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-MERGE-DATA
-  72.0 110.1 Store: Corporate Store.
-  72.0 129.9 Cost plus fee: «Cost_Plus_Fee».
-  72.0 149.8 The definition part holds calculated fields, filters and output-director settings.
+page 0 12240 15840
+  1440 1936 FX-MERGE-DATA
+  1440 2201 Store: Corporate Store.
+  1440 2599 Cost plus fee: «Cost_Plus_Fee».
+  1440 2996 The definition part holds calculated fields, filters and output-director settings.
