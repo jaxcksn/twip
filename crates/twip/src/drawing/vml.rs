@@ -8,7 +8,7 @@ use super::colour::{Colour, ColourMod};
 use super::geom::{CustomGeom, Geometry, Preset};
 use super::paint::{self, Fill, Line};
 use super::read::Ctx;
-use super::text::{BodyProps, VAnchor};
+use super::text::{BodyProps, TextDirection, VAnchor};
 use super::units::{Angle, Emu, Pct};
 use super::{GroupShape, NonVisual, PicShape, Shape, ShapeKind, ShapeText, SpShape, Spans, Xfrm};
 
@@ -54,6 +54,21 @@ pub struct Style {
     pub pos_percent: [Option<i64>; 2],
     /// `mso-wrap-distance-top`, `-bottom`, `-left`, `-right`.
     pub wrap_dist: [Option<f64>; 4],
+    /// `layout-flow` and `mso-layout-flow-alt`.
+    pub layout_flow: Option<String>,
+    pub layout_flow_alt: Option<String>,
+}
+
+impl Style {
+    /// The text flow `layout-flow` gives, as the DrawingML direction it lays out like; `None` when not given. The
+    /// ideographic flows stay horizontal.
+    fn direction(&self) -> Option<TextDirection> {
+        Some(match (self.layout_flow.as_deref()?, self.layout_flow_alt.as_deref()) {
+            ("vertical", Some("bottom-to-top")) => TextDirection::Vert270,
+            ("vertical", _) => TextDirection::Vert,
+            _ => TextDirection::Horizontal,
+        })
+    }
 }
 
 fn is(n: Node, ns: &str, name: &str) -> bool {
@@ -141,6 +156,8 @@ pub fn style(n: Node) -> Style {
             "mso-position-vertical" => s.v_align = Some(v.to_string()),
             "mso-position-vertical-relative" => s.v_relative = Some(v.to_string()),
             "v-text-anchor" => s.text_anchor = Some(v.to_string()),
+            "layout-flow" => s.layout_flow = Some(v.to_string()),
+            "mso-layout-flow-alt" => s.layout_flow_alt = Some(v.to_string()),
             "mso-width-percent" | "mso-height-percent" => {
                 let k = usize::from(k == "mso-height-percent");
                 let from = s.size_percent[k].take().map_or_else(|| "margin".to_string(), |(f, _)| f);
@@ -966,6 +983,8 @@ fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &
         Some(a) if a.starts_with("bottom") => VAnchor::Bottom,
         _ => VAnchor::Top,
     };
+    // The text box's own flow, else the shape's.
+    let direction = child(el, "textbox").and_then(|tb| style(tb).direction()).or_else(|| st.direction()).unwrap_or_default();
     let ins = child(el, "textbox").map(|tb| {
         let v: Vec<f64> = tb.attribute("inset").unwrap_or("").split(',').map(|v| length(v).unwrap_or(f64::NAN)).collect();
         let i = |k: usize, d: f64| emu(v.get(k).copied().filter(|x| !x.is_nan()).unwrap_or(d));
@@ -977,7 +996,7 @@ fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &
         line: Some(stroke(el)),
         effects: shadow(el),
         style: None,
-        body: BodyProps { anchor, insets: ins.unwrap_or(BodyProps::default().insets), ..BodyProps::default() },
+        body: BodyProps { anchor, insets: ins.unwrap_or(BodyProps::default().insets), direction, ..BodyProps::default() },
         text: if text { ShapeText::Story } else { ShapeText::None },
         text_box: text,
         chain: None,
@@ -1068,6 +1087,19 @@ mod tests {
         assert!(s.absolute);
         assert_eq!((s.x, s.y, s.w, s.h, s.rotation, s.flip_h, s.z), (72.0, 72.0, 90.0, 60.0, 30.0, true, -3));
         assert_eq!(s.h_relative.as_deref(), Some("page"));
+    }
+
+    #[test]
+    fn a_layout_flow_reads_as_its_text_direction() {
+        let dir = |css: &str| {
+            let xml = format!(r#"<v:textbox xmlns:v="urn:schemas-microsoft-com:vml" style="{css}"/>"#);
+            style(roxmltree::Document::parse(&xml).unwrap().root_element()).direction()
+        };
+        assert_eq!(dir("layout-flow:vertical"), Some(TextDirection::Vert));
+        assert_eq!(dir("layout-flow:vertical;mso-layout-flow-alt:bottom-to-top"), Some(TextDirection::Vert270));
+        assert_eq!(dir("mso-layout-flow-alt:top-to-bottom;layout-flow:vertical"), Some(TextDirection::Vert));
+        assert_eq!(dir("layout-flow:vertical-ideographic"), Some(TextDirection::Horizontal));
+        assert_eq!(dir("mso-fit-shape-to-text:t"), None);
     }
 
     #[test]
