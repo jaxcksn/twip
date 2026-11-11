@@ -1114,8 +1114,8 @@ pub enum Compat {
 pub struct Settings {
     pub compat_mode: i64,
     /// `w:compat` child options that are on, and the on/off `w:compatSetting`s that are on (`enableOpenTypeFeatures`,
-    /// `overrideTableStyleFontSizeAndJustification`, `allowHyphenationAtTrackBottom`);
-    /// `useWord2013TrackBottomHyphenation=0` when that one is off.
+    /// `overrideTableStyleFontSizeAndJustification`, `allowHyphenationAtTrackBottom`,
+    /// `allowTextAfterFloatingTableBreak`); `useWord2013TrackBottomHyphenation=0` when that one is off.
     pub compat: std::collections::HashSet<String>,
     pub default_tab: f64,
     /// `w:characterSpacingControl` is compressPunctuation or compressPunctuationAndJapaneseKana.

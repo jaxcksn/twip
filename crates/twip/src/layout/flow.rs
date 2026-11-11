@@ -1116,6 +1116,15 @@ impl<'d> PageFill<'d, '_> {
         let nblocks = self.sec.blocks.len();
         let mut y = col.top.to_pt();
         let mut empty = true;
+        if let Some(mut t) = carry.table_rest.take() {
+            let tb = self.table_layout(t.block, col.width, memos)?;
+            let (prev, prev_after) = (carry.prev.clone(), carry.prev_after);
+            let (mut ty, mut te) = (y, empty);
+            if self.place_table(&tb, &mut t, carry, &col, &mut ty, &mut te, area, out, memos)? != Stop::Done {
+                carry.table_rest.get_or_insert(t);
+            }
+            (carry.prev, carry.prev_after) = (prev, prev_after);
+        }
         if page_empty
             && self.continues_endnote(pos)
             && let Some(sep) = self.separator_story("endnote:continuationSeparator", col.width, memos)?
@@ -1160,7 +1169,7 @@ impl<'d> PageFill<'d, '_> {
             if pos.block >= nblocks || passes {
                 let end = y + if col.balance { carry.prev_after } else { 0.0 };
                 // A note cut on this page goes on on the next one, even past the end of the text.
-                let more = !carry.note_rest.is_empty() && !area.parts.is_empty() && !passes;
+                let more = !carry.note_rest.is_empty() && !area.parts.is_empty() && !passes || carry.table_rest.is_some();
                 return Ok((if more { Stop::Full } else { Stop::Done }, end));
             }
             if self.at.end.as_ref() == Some(&*pos) {
@@ -2520,7 +2529,7 @@ impl<'d> PageFill<'d, '_> {
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
                 finish(rows, out, at_x, opened, false);
                 self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
-                return Ok(Stop::Full);
+                return Ok(self.text_goes_on(fp.is_some(), pos, carry, y, empty, (flow_y, was_empty)));
             }
             if at_top {
                 rows.push(draw_row(tb, ri, at_x, *y, height, Some(&parts), last));
@@ -2554,12 +2563,13 @@ impl<'d> PageFill<'d, '_> {
                     rows[idx] = redrawn;
                 }
             }
-            if !rows.is_empty() {
+            let split = !rows.is_empty();
+            if split {
                 *y += tb.bottom_border;
             }
             finish(rows, out, at_x, opened, true);
             self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
-            return Ok(Stop::Full);
+            return Ok(self.text_goes_on(fp.is_some() && split, pos, carry, y, empty, (flow_y, was_empty)));
         }
         finish(rows, out, at_x, opened, false);
         if fp.is_some() {
@@ -2783,6 +2793,18 @@ impl<'d> PageFill<'d, '_> {
         o.early_right = reach.map(|r| along + r);
         self.at.found.push(o);
         Ok(stop)
+    }
+
+    /// Compat 15 with `allowTextAfterFloatingTableBreak`: after a floating table's part that doesn't end it, the text
+    /// goes on beside the part, from where the table started; the rest of the table opens the next column.
+    fn text_goes_on(&self, floating: bool, pos: &mut FlowToken, carry: &mut FlowState, y: &mut f64, empty: &mut bool, from: (f64, bool)) -> Stop {
+        if !floating || !self.ctx.env.text.text_after_table_break {
+            return Stop::Full;
+        }
+        carry.table_rest = Some(pos.clone());
+        pos.next_block();
+        (*y, *empty) = from;
+        Stop::Done
     }
 
     #[allow(clippy::too_many_arguments, reason = "the part's place and the attempt state it was placed in")]

@@ -73,6 +73,9 @@ pub struct TextEnv {
     /// hyphenation point.
     pub bottom_unhyphenated: bool,
     pub bottom_hyphen_moves: bool,
+    /// Compat 15, `allowTextAfterFloatingTableBreak`: the text after a floating table split across pages goes on
+    /// beside its first part.
+    pub text_after_table_break: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -145,6 +148,7 @@ impl TextEnv {
             }),
             bottom_unhyphenated: bottom && s.has("useWord2013TrackBottomHyphenation=0"),
             bottom_hyphen_moves: bottom && !s.has("useWord2013TrackBottomHyphenation=0"),
+            text_after_table_break: s.compat() == Compat::Generic && s.has("allowTextAfterFloatingTableBreak"),
         }
     }
 }

@@ -752,7 +752,8 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
                 } else if let Some(
                     name @ ("enableOpenTypeFeatures"
                     | "overrideTableStyleFontSizeAndJustification"
-                    | "allowHyphenationAtTrackBottom"),
+                    | "allowHyphenationAtTrackBottom"
+                    | "allowTextAfterFloatingTableBreak"),
                 ) = attr(e, "name")
                     && on_off_str(attr(e, "val"))
                 {

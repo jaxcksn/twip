@@ -1782,3 +1782,36 @@ fn suppress_bottom_spacing_lets_an_exact_line_into_the_room_under_its_text() {
     let on = baselines(&C12_WITH.replace("{}", "<w:suppressBottomSpacing/>"), ARIAL_11, &body).expect("Arial");
     assert_eq!((off.len(), on.len()), (29, 30));
 }
+
+#[test]
+fn compat_15_text_after_a_split_floating_table_can_stay_beside_its_first_part() {
+    let row = |k: u32| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>R{k:02}</w:t></w:r></w:p></w:tc></w:tr>"#);
+    let rows: String = (1..=70).map(row).collect();
+    let table = format!(
+        r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="0"/><w:tblW w:w="1500" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/></w:tblGrid>{rows}</w:tbl>"#
+    );
+    let after: String = (1..=5).map(|k| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>A{k:02}</w:t></w:r></w:p>"#)).collect();
+    let page_of_a01 = |compat: u32, on: bool| {
+        let uri = "http://schemas.microsoft.com/office/word";
+        let setting = if on { format!(r#"<w:compatSetting w:name="allowTextAfterFloatingTableBreak" w:uri="{uri}" w:val="1"/>"#) } else { String::new() };
+        let settings = format!(r#"<w:compat>{setting}<w:compatSetting w:name="compatibilityMode" w:uri="{uri}" w:val="{compat}"/></w:compat>"#);
+        let doc = test_doc(&settings, ARIAL_12, &format!("{table}{after}"), "")?;
+        let snap = layout(&doc, &fonts());
+        let mut page = None;
+        for (k, pg) in snap.pages().iter().enumerate() {
+            paint(pg, &mut |p| {
+                if let Item::Glyphs(r) = p.absolute()
+                    && r.chars.iter().map(|c| c.0).collect::<String>().starts_with("A01")
+                {
+                    page.get_or_insert(k);
+                }
+            });
+        }
+        page
+    };
+    let Some(on) = page_of_a01(15, true) else { return };
+    assert_eq!(on, 0);
+    // Without it, and in compat 12, the text after starts on the page of the table's last part.
+    assert_eq!(page_of_a01(15, false), Some(1));
+    assert_eq!(page_of_a01(12, true), Some(1));
+}
