@@ -1168,7 +1168,7 @@ fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, input
     let a = avail.unwrap_or_else(|| twips(text_w - t.ind + add_l + add_r));
     let s2 = twips(2.0 * t.cell_spacing.max(0.0));
     let cells: Vec<autofit::Cell> = inputs.iter().flat_map(|r| r.cells.iter().copied()).collect();
-    let gaps = skipped(t, n, &cells, text_w);
+    let gaps = skipped(t, n, &cells);
     let cols = autofit::columns(n, &cells, s2, &gaps, t.fixed);
     let pad_total = s2 * (n as i64 + 1);
     let tbl_w = match t.width {
@@ -1184,13 +1184,8 @@ fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, input
     Fit { cols: widths.iter().map(|&w| w as f64 / 20.0).collect(), min_t: r.min_t, width: r.width, hard_t: r.hard_t }
 }
 
-fn skipped(t: &Table, n: usize, cells: &[autofit::Cell], text_w: f64) -> Vec<Vec<autofit::Gap>> {
-    // ponytail: a pct skip is taken as the dxa share of the width the table is laid out in; how Word types it is unmeasured.
-    let w = |w: Width| match w {
-        Width::Pct(p) => autofit::rdiv(twips(text_w), (p * 5000.0).round() as i64, 5000),
-        w => twips(w.dxa()),
-    }
-    .max(0);
+fn skipped(t: &Table, n: usize, cells: &[autofit::Cell]) -> Vec<Vec<autofit::Gap>> {
+    let w = |w: Width| twips(w.dxa()).max(0);
     let mut xs = vec![0i64];
     for i in 0..n {
         xs.push(xs[i] + twips(t.grid.get(i).copied().unwrap_or(0.0)));
@@ -1267,6 +1262,14 @@ fn layout_with(
         }
         None => t,
     };
+    let rebuilt;
+    let t = match pct_skip_grid(t, text_w) {
+        Some(g) => {
+            rebuilt = g;
+            &rebuilt
+        }
+        None => t,
+    };
     if let Some(runs) = layout_runs(t) {
         return layout_runs_of(t, &runs, text_w, env, prev, measure, memos);
     }
@@ -1283,6 +1286,64 @@ fn layout_with(
             Ok(tb)
         }
     }
+}
+
+/// The table on the grid its first row with a pct skip gives: the skip, a share of the table's width, is that row's
+/// skipped columns' width and the row's cells share the rest equally. Every row lays out on that grid, its cells as
+/// wide as the columns they span.
+fn pct_skip_grid(t: &Table, text_w: f64) -> Option<Table> {
+    let pct = |w: Option<Width>, k: usize| w.and_then(Width::pct).filter(|_| k > 0);
+    let r = t.rows.iter().find(|r| pct(r.w_before, r.grid_before).is_some() || pct(r.w_after, r.grid_after).is_some())?;
+    let n = grid_columns(t);
+    let grid: Vec<i64> = (0..n).map(|i| twips(t.grid.get(i).copied().unwrap_or(0.0))).collect();
+    // ponytail: a pct or auto width table's skip is taken from its pct share of the text width or its grid; unmeasured.
+    let total = match t.width {
+        Width::Dxa(w) => twips(w),
+        Width::Pct(p) => autofit::rdiv(twips(text_w), (p * 5000.0).round() as i64, 5000),
+        _ => grid.iter().sum(),
+    };
+    let (gb, span) = (r.grid_before.min(n), r.cells.iter().map(|c| c.span).sum::<usize>());
+    let end = (gb + span).min(n);
+    let skip = |w: Option<Width>, k: usize, cols: &[i64]| match pct(w, k) {
+        Some(p) => autofit::rdiv(total, (p * 5000.0).round() as i64, 5000),
+        None => cols.iter().sum(),
+    };
+    let (before, after) = (skip(r.w_before, r.grid_before, &grid[..gb]), skip(r.w_after, r.grid_after, &grid[end..]));
+    let mut cols = vec![0i64; n];
+    let mut share = |from: usize, to: usize, w: i64| {
+        let k = (to - from) as i64;
+        for (i, c) in cols[from..to].iter_mut().enumerate() {
+            *c = w / k + i64::from(i as i64 == k - 1) * (w % k);
+        }
+    };
+    if gb > 0 {
+        share(0, gb, before);
+    }
+    if end < n {
+        share(end, n, after);
+    }
+    // ponytail: the row's cells share the rest equally whatever their widths; whether Word shares it by them is unmeasured.
+    let rest = (total - before - after).max(0);
+    let (k, mut x) = (r.cells.len().max(1) as i64, gb);
+    for (i, c) in r.cells.iter().enumerate() {
+        let to = (x + c.span).min(end);
+        if to > x {
+            share(x, to, rest / k + i64::from(i as i64 == k - 1) * (rest % k));
+        }
+        x = to;
+    }
+    let mut g = t.clone();
+    g.grid = cols.iter().map(|&w| w as f64 / 20.0).collect();
+    for row in &mut g.rows {
+        (row.w_before, row.w_after) = (None, None);
+        let mut x = row.grid_before;
+        for c in &mut row.cells {
+            let to = (x + c.span).min(n);
+            c.width = Some(Width::Dxa(cols[x.min(n)..to].iter().sum::<i64>() as f64 / 20.0));
+            x = to;
+        }
+    }
+    Some(g)
 }
 
 /// The table to lay out in less room than its column: its pct width and pct indent stay shares of the column.

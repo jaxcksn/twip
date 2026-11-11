@@ -164,17 +164,37 @@ fn glyph_x(body: &str, c: char) -> (f64, i64) {
 }
 
 #[test]
-fn a_pct_indent_and_skip_are_shares_of_the_text_width() {
-    let table = |ind: &str, before: &str| {
+fn a_pct_indent_is_a_share_of_the_text_width() {
+    let table = |ind: &str| {
         format!(
-            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>{ind}</w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:trPr><w:gridBefore w:val="1"/>{before}</w:trPr><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:tcW w:w="300" w:type="dxa"/></w:tcPr><w:p/></w:tc><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>{ind}</w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
         )
     };
-    let (pct, text_w) = glyph_x(&table(r#"<w:tblInd w:w="1000" w:type="pct"/>"#, r#"<w:wBefore w:w="500" w:type="pct"/>"#), 'a');
-    let (ind, skip) = (1000 * text_w / 5000, (500 * text_w + 2500) / 5000);
-    let (dxa, _) = glyph_x(&table(&format!(r#"<w:tblInd w:w="{ind}" w:type="dxa"/>"#), &format!(r#"<w:wBefore w:w="{skip}" w:type="dxa"/>"#)), 'a');
-    let (none, _) = glyph_x(&table("", ""), 'a');
+    let (pct, text_w) = glyph_x(&table(r#"<w:tblInd w:w="1000" w:type="pct"/>"#), 'a');
+    let (dxa, _) = glyph_x(&table(&format!(r#"<w:tblInd w:w="{}" w:type="dxa"/>"#, 1000 * text_w / 5000)), 'a');
+    let (none, _) = glyph_x(&table(""), 'a');
     assert!((pct - dxa).abs() < 0.01 && dxa - none > 80.0, "{pct} {dxa} {none}");
+}
+
+#[test]
+fn a_pct_skip_is_a_share_of_the_table_width_and_rebuilds_the_grid() {
+    let cell = |t: char| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
+    let table = |before: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:gridBefore w:val="1"/>{before}</w:trPr>{}{}</w:tr><w:tr>{}{}{}</w:tr></w:tbl><w:p/>"#,
+            cell('p'),
+            cell('q'),
+            cell('a'),
+            cell('b'),
+            cell('c')
+        )
+    };
+    let x = |before: &str, c: char| glyph_x(&table(before), c).0;
+    // 20 % of the 6000 table, not of the text width; the row's two cells share the other 4800, and the other row
+    // lays out on that grid: 1200 / 2400 / 2400.
+    let pct = r#"<w:wBefore w:w="1000" w:type="pct"/>"#;
+    assert!((x(pct, 'p') - x("", 'p') + 40.0).abs() < 0.01 && (x(pct, 'q') - x("", 'q') + 20.0).abs() < 0.01);
+    assert!((x(pct, 'b') - x("", 'b') + 40.0).abs() < 0.01 && (x(pct, 'c') - x(pct, 'q')).abs() < 0.01);
 }
 
 #[test]
