@@ -643,3 +643,21 @@ fn compat_15_takes_a_vertical_table_along_with_the_lines_before_it_that_jumped_a
     assert!((at("pa")[1] - 72.0).abs() < 0.01 && at("pb")[1] > 170.0, "{runs:?}");
     assert!(s0 < at("pb")[0] - 200.0 && s0 > at("pb")[0] - 230.0, "{s0} {runs:?}");
 }
+
+#[test]
+fn compat_12_breaks_a_word_too_long_for_the_piece_beside_a_vertical_table_and_compat_15_moves_it_across() {
+    // The table runs the line but for about 440 tw at its end.
+    let body = format!("{}{}", exact_table("r", &[500; 25], 1500), para("pc amber1 garden2", ""));
+    let runs = |mode: i64| {
+        let mut doc = inch_section(&body)?;
+        doc.settings.compat_mode = mode;
+        Some(turned_runs(&doc))
+    };
+    let Some(c12) = runs(12) else { return };
+    // Its only piece: "amber1" breaks after the characters that fit there.
+    let am = c12.iter().find(|r| r.0.starts_with("am")).expect("a line");
+    assert!(am.0.len() < 6 && am.1[1] > 690.0, "{c12:?}");
+    // Compat 15 doesn't break it: the line goes across past the table, from the line start.
+    let c15 = runs(15).unwrap();
+    assert!(c15.iter().any(|r| r.0.starts_with("amber1") && (r.1[1] - 72.0).abs() < 0.01), "{c15:?}");
+}

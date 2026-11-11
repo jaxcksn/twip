@@ -1918,7 +1918,10 @@ impl<'d> PageFill<'d, '_> {
                     Some(iv) => {
                         no_room = iv.is_empty();
                         let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
-                        let open = iv.len() == 1 && (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS;
+                        // A word too long for the line breaks after the last character that fits: in an uncut line,
+                        // and in compat ≤ 14 in a line's only piece beside a float.
+                        let open = iv.len() == 1
+                            && (compat == Compat::Legacy || (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS);
                         let first = first_part && bands.is_empty();
                         let r = band(
                             sp,
