@@ -351,8 +351,10 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             }
             let sec = &doc.sections[si];
             let mut p = cx.paginator(run);
-            // Compat ≤ 14: a continuous break starts a new page after a footnote in the page-bottom area.
+            // Compat ≤ 14: a continuous break starts a new page after a footnote in the page-bottom area, unless
+            // `footnoteLayoutLikeWW8` keeps the section on the page above it.
             let bottom_notes = doc.settings.compat() == crate::docx::Compat::Legacy
+                && !cx.ctx.env.notes_like_ww8
                 && p.run.pages.last().is_some_and(|pg| {
                     pg.bodies
                         .iter()

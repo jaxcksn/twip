@@ -15,6 +15,8 @@ pub struct PageEffects {
     pub paras: Vec<ParaId>,
     pub bookmarks: Vec<String>,
     pub notes_shown: Vec<(NoteKind, i64, String)>,
+    /// The top of the highest footnote area drawn at the bottom of its column.
+    pub notes_top: Option<f64>,
 }
 
 impl PageEffects {
@@ -29,6 +31,7 @@ impl PageEffects {
             self.bookmarks.push(b.clone());
         }
         self.notes_shown.extend(o.notes_shown.iter().cloned());
+        self.notes_top = self.notes_top.into_iter().chain(o.notes_top).reduce(f64::min);
     }
 }
 

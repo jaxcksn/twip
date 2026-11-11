@@ -112,6 +112,9 @@ pub struct BodySpace {
     pub next_continuous: bool,
     /// Compat 15: the section's footnote area passes to the next section on the page.
     pub hold_notes: bool,
+    /// The body ends above an earlier section's page-bottom footnotes, which a line with a footnote reference can't
+    /// join.
+    pub notes_closed: bool,
     pub hf: HfHeights,
     /// The wrapping floats of the page's header and footer.
     pub hf_floats: Vec<super::float::Placed>,

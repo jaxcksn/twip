@@ -452,13 +452,27 @@ impl<'d> Paginator<'d, '_> {
                 balance,
                 next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
                 hold_notes: false,
+                notes_closed: false,
                 hf_floats: Vec::new(),
                 odd: self.run.page_number % 2 == 1,
                 mirror: self.mirrors_indents(),
                 hf,
             });
         }
-        let area = BodyArea { left, width, top: Lu::round_half_up(body_top), bottom: Lu::round_half_up(body_bottom) };
+        // Compat ≤ 14 with `footnoteLayoutLikeWW8`: a section going on on the page ends above the page-bottom
+        // footnotes of the sections before it.
+        let notes_top = match start {
+            Some(_) if self.ctx.env.notes_like_ww8 => {
+                self.run.pages.last().and_then(|p| p.bodies.iter().filter_map(|b| b.effects.notes_top).reduce(f64::min))
+            }
+            _ => None,
+        };
+        let area = BodyArea {
+            left,
+            width,
+            top: Lu::round_half_up(body_top),
+            bottom: Lu::round_half_up(notes_top.map_or(body_bottom, |t| t.min(body_bottom))),
+        };
         let hf_floats = self.hf_obstacles(si, &hf, memos)?;
         Ok(BodySpace {
             section: si,
@@ -471,6 +485,7 @@ impl<'d> Paginator<'d, '_> {
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
             hold_notes: self.ctx.env.text.compat == Compat::Generic && self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
+            notes_closed: notes_top.is_some(),
             hf_floats,
             odd: self.run.page_number % 2 == 1,
             mirror: self.mirrors_indents(),
@@ -791,6 +806,7 @@ pub fn layout_body(
         mirror: space.mirror,
         hold_notes: space.hold_notes,
         mid_page: space.mid_page,
+        notes_closed: space.notes_closed,
         column: 0,
     };
     let mut col_children: Vec<Vec<Child>> = Vec::new();
@@ -887,7 +903,10 @@ pub fn layout_body(
         let mut e = bottoms.iter().copied().fold(page_top, f64::max) + carry.prev_after;
         // Compat ≤ 14: after a page-bottom footnote the next continuous break starts a new page, so the columns end
         // unbalanced as before a page break.
+        // ponytail: with `footnoteLayoutLikeWW8` the break stays continuous and the columns balance as before any
+        // continuous break; a balanced section above page-bottom notes wasn't measured.
         let breaks = env.ctx.env.text.compat == Compat::Legacy
+            && !env.ctx.env.notes_like_ww8
             && space.next_continuous
             && !s.notes[0].beneath
             && effects.notes_shown.iter().any(|n| n.0 == NoteKind::Foot);

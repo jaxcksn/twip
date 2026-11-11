@@ -141,6 +141,9 @@ pub struct LayoutEnv {
     pub book_fold: Option<bool>,
     pub line_number_run: Option<Run>,
     pub chains: Rc<[Chain]>,
+    /// `footnoteLayoutLikeWW8`, compat ≤ 14: a continuous section goes on above the page-bottom footnotes of an
+    /// earlier section on the page, up to its first line with a footnote reference.
+    pub notes_like_ww8: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -205,6 +208,7 @@ impl LayoutEnv {
             book_fold: s.book_fold,
             line_number_run: doc.line_number_run.clone(),
             chains: chains(doc),
+            notes_like_ww8: s.compat() == Compat::Legacy && s.has("footnoteLayoutLikeWW8"),
         }
     }
 }

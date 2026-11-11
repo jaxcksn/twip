@@ -175,6 +175,8 @@ pub struct PageFill<'d, 'p> {
     pub hold_notes: bool,
     /// The section starts below the page top.
     pub mid_page: bool,
+    /// The page's footnote area is closed: a line with a footnote reference goes to the next page.
+    pub notes_closed: bool,
     /// The column being filled.
     pub column: usize,
 }
@@ -795,6 +797,9 @@ impl<'d> PageFill<'d, '_> {
         if !refs.iter().any(|r| r.0 == NoteKind::Foot) {
             return Ok(col.bottom.holds(line_bottom + area.total()));
         }
+        if self.notes_closed {
+            return Ok(false);
+        }
         let mut a = area.clone();
         if a.sep == 0.0 {
             a.sep = self.separator(false, col.width, memos)?.height;
@@ -1037,6 +1042,8 @@ impl<'d> PageFill<'d, '_> {
         let y = self.note_top(h, &span, text) + 0.15;
         if self.beneath() {
             self.at.notes_bottom = self.at.notes_bottom.max(y - 0.15 + h);
+        } else {
+            self.at.effects.notes_top = self.at.effects.notes_top.into_iter().chain([y - 0.15]).reduce(f64::min);
         }
         let widths: Vec<f64> = cols.iter().map(|c| c.1).collect();
         let parts = if cols.len() > 1 || area.cut {
@@ -1546,10 +1553,11 @@ impl<'d> PageFill<'d, '_> {
         }
         if take == 0 {
             // Under notes going on from an earlier column or page that leave no room for it, the line waits (a
-            // balancing trial fails instead).
+            // balancing trial fails instead). So does a line with a footnote reference above an earlier section's closed
+            // footnote area.
             // ponytail: in a balanced section the trial heights decide how a note is shared between the columns' areas
             // and whether a column holds text above a continuation; the split rule itself isn't known.
-            if at_top && !(fit == 0 && area.carried > 0 && !col.balance) {
+            if at_top && !(fit == 0 && area.carried > 0 && !col.balance) && !(fit == 0 && self.notes_closed) {
                 self.at.forced = self.at.forced || col.balance;
                 take = fit.max(1).min(n);
             } else {

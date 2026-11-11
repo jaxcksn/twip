@@ -332,6 +332,15 @@ fn compat_14_continuous_break_after_a_page_bottom_note_starts_a_page() {
 }
 
 #[test]
+fn compat_14_like_ww8_a_continuous_section_goes_on_above_the_notes_up_to_its_first_reference() {
+    let body = para("A", &["f1"]) + &sect("", false) + &para("B", &[]) + &para("C", &["f2"]) + &sect(r#"<w:type w:val="continuous"/>"#, true);
+    let Some(doc) = notes_doc(&body, "<w:compat><w:footnoteLayoutLikeWW8/></w:compat>") else { return };
+    let pages = super::page_chars(&doc);
+    let page_of = |ch: char| pages.iter().position(|p| p.iter().any(|c| c.0 == ch));
+    assert_eq!((page_of('B'), page_of('C')), (Some(0), Some(1)));
+}
+
+#[test]
 fn compat_14_columns_before_a_page_bottom_note_break_stay_unbalanced() {
     let cols = r#"<w:cols w:num="2" w:space="720"/>"#;
     let body = para("A", &["f1"]) + &para("B", &[]) + &sect(cols, false) + &para("C", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true);
