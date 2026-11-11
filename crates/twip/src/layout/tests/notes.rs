@@ -571,3 +571,20 @@ fn compat_14_no_line_under_notes_going_on_that_fill_its_column() {
     assert_eq!((on("P010"), on("Q001")), (Some(0), Some(0)), "{pages:?}");
     assert!(on("P011") > Some(0), "{pages:?}");
 }
+
+#[test]
+fn compat_15_a_cut_note_goes_on_in_the_next_sections_layout_before_its_text() {
+    let long: String = (1..=160).map(|i| format!("<w:p><w:pPr><w:spacing w:after=\"0\"/></w:pPr><w:r><w:t>Q{i:03}</w:t></w:r></w:p>")).collect();
+    let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
+    let line = |s: &str, r: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{s}</w:t></w:r>{r}</w:p>"#);
+    let mut b: String = (1..=9).map(|i| line(&format!("P{i:02}"), "")).collect();
+    b += &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/><w:sectPr><w:cols w:num="2" w:space="720"/>{PAGE}</w:sectPr></w:pPr><w:r><w:t>P10</w:t></w:r><w:r><w:footnoteReference w:id="10"/></w:r></w:p>"#);
+    b += &((1..=20).map(|i| line(&format!("T{i:02}"), "")).collect::<String>() + &sect(r#"<w:type w:val="continuous"/>"#, true));
+    let Some(doc) = notes_doc_with(&b, C15, &extra) else { return };
+    let pages = super::page_chars(&doc);
+    let text: Vec<String> = pages.iter().map(|p| p.iter().map(|c| c.0).collect()).collect();
+    let on = |s: &str| text.iter().position(|p| p.contains(s));
+    let (Some(cut), Some(end), Some(next)) = (on("P10"), on("Q160"), on("T01")) else { panic!("{text:?}") };
+    assert!(end > cut && next == end + 1, "the text after the note's last page: {text:?}");
+    assert!(pages[cut + 1].iter().all(|c| c.1 < 300.0), "one column: {:?}", text[cut + 1]);
+}

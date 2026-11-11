@@ -733,6 +733,12 @@ impl<'d> PageFill<'d, '_> {
         super::story::layout(&blocks, width, &env, None, memos).map(Some)
     }
 
+    /// Whether only the section's empty closing paragraph, or nothing, is left from `pos`.
+    fn at_section_end(&self, pos: &FlowToken) -> bool {
+        let n = self.sec.blocks.len();
+        pos.block >= n || pos.at.at_start() && pos.block + 1 == n && n > 1 && matches!(self.sec.blocks.get(pos.block), Some(Block::Para(p)) if p.inlines.is_empty())
+    }
+
     /// Whether `pos` is inside an endnote that began on an earlier page.
     fn continues_endnote(&self, pos: &FlowToken) -> bool {
         let s = &self.sec.blocks.stories;
@@ -898,7 +904,8 @@ impl<'d> PageFill<'d, '_> {
     }
 
     fn continue_notes(&mut self, carry: &mut FlowState, col: &ColumnSpace, area: &mut NoteArea, memos: &mut Memos) -> Result<(), Yield> {
-        if carry.note_rest.is_empty() {
+        // A cut area's rest goes on on the next page.
+        if carry.note_rest.is_empty() || area.cut {
             return Ok(());
         }
         area.cont = true;
@@ -1140,10 +1147,13 @@ impl<'d> PageFill<'d, '_> {
         let mut members: Vec<(Breakpoint, usize, bool, bool)> = Vec::new();
         let generic = self.ctx.env.text.compat == Compat::Generic;
         loop {
-            if pos.block >= nblocks {
+            // Compat 15: a note cut at the end of a section that the next one follows on the page goes on in the next
+            // section's layout.
+            let passes = self.hold_notes && area.cut && self.at_section_end(pos);
+            if pos.block >= nblocks || passes {
                 let end = y + if col.balance { carry.prev_after } else { 0.0 };
                 // A note cut on this page goes on on the next one, even past the end of the text.
-                let more = !carry.note_rest.is_empty() && !area.parts.is_empty();
+                let more = !carry.note_rest.is_empty() && !area.parts.is_empty() && !passes;
                 return Ok((if more { Stop::Full } else { Stop::Done }, end));
             }
             if self.at.end.as_ref() == Some(&*pos) {
@@ -1157,6 +1167,17 @@ impl<'d> PageFill<'d, '_> {
             {
                 pos.next_block();
                 continue;
+            }
+            // Compat 15: a continuous section's text waits for the notes going on from an earlier section, on pages
+            // of their own.
+            if generic
+                && pos.block == 0
+                && pos.at.at_start()
+                && self.sec.index > 0
+                && self.sec.section.break_kind == crate::docx::SectionBreak::Continuous
+                && (area.carried > 0 || !carry.note_rest.is_empty())
+            {
+                return Ok((Stop::Full, y));
             }
             let bi = pos.block;
             let start_state = Breakpoint {
@@ -1570,7 +1591,7 @@ impl<'d> PageFill<'d, '_> {
         } else {
             pos.at = At::Piece(pb.from + pb.lines[take].start);
         }
-        if notes_continue && stop_kind.is_none() {
+        if notes_continue && stop_kind.is_none() && !(self.hold_notes && self.at_section_end(pos)) {
             carry.keep_top = false;
             return Ok(Stop::Full);
         }

@@ -894,9 +894,13 @@ pub fn layout_body(
         if space.balance && cols.len() > 1 && !breaks {
             let template = shared.then(|| stream_area(reserve));
             match Paginator::balance(&mut fill, sec, cols, &saved, space.mid_page, template.as_ref(), memos)? {
-                Some((h, children, p, c, eff)) => {
+                Some((h, children, p, mut c, eff)) => {
                     e = h;
                     pos = p;
+                    // The trials leave the page's shared area out: what goes on of its notes comes from the fill.
+                    if template.is_some() {
+                        c.note_rest = std::mem::take(&mut carry.note_rest);
+                    }
                     carry = c;
                     effects = eff;
                     body = children;
