@@ -2551,30 +2551,48 @@ impl<'d> PageFill<'d, '_> {
             }
             _ => None,
         };
-        // Lines pushed past it don't move it: it stays where an earlier attempt at the page put it.
-        let known = self.at.known.iter().find(|k| k.key == (self.sec.index, bi, float::UPRIGHT_TABLE)).map(|k| k.rect[1]);
-        let y0 = match joined {
-            Some((r, _)) if down => r[3] - (br - bl),
-            Some((r, _)) => r[1],
-            // Its later parts go on where the first one was, across the page.
-            None => carry.upright_at.filter(|_| !pos.at.at_start()).or(known).unwrap_or(y0),
-        };
-        // The distances across, on the turned page's top and bottom: the sides as printed swap when the lines stack
-        // from the right.
-        let (l, r) = fp.map_or((9.0, 9.0), |fp| (fp.dist[2], fp.dist[3]));
-        let (above, below) = if down { (r, l) } else { (l, r) };
         let end = col.x + col.width;
         let meeting = |y0: f64| {
             let y1 = y0 + br - bl;
             self.at.found.iter().filter(move |o| o.key.2 == float::UPRIGHT_TABLE && o.excl[1] < y1 - EPS && o.excl[3] > y0 + EPS)
         };
         let below_tables = |y0: f64| meeting(y0).map(|o| o.excl[2]).fold(col.x, f64::max);
+        // The distances across, on the turned page's top and bottom: the sides as printed swap when the lines stack
+        // from the right.
+        let (l, r) = fp.map_or((9.0, 9.0), |fp| (fp.dist[2], fp.dist[3]));
+        let (above, below) = if down { (r, l) } else { (l, r) };
+        // Lines pushed past it don't move it: it stays where an earlier attempt at the page put it. In compat 15 the
+        // lines before it that went past an earlier table take it along when it was there moved past that table or
+        // ran past the line end below it.
+        let passed = |k: f64| {
+            let (moved, short) = (|o: &Placed| (o.excl[3] + above - k).abs() < EPS, below_tables(k) + h > end + EPS);
+            self.at.found.iter().filter(|o| o.key.2 == float::UPRIGHT_TABLE && o.excl[3] <= y0 + EPS).any(|o| moved(o) || (short && meeting(k).any(|m| m.same(o))))
+        };
+        let known = self
+            .at
+            .known
+            .iter()
+            .find(|k| k.key == (self.sec.index, bi, float::UPRIGHT_TABLE))
+            .map(|k| k.rect[1])
+            .filter(|&k| legacy || !passed(k));
+        let stack = y0;
+        let y0 = match joined {
+            Some((r, _)) if down => r[3] - (br - bl),
+            Some((r, _)) => r[1],
+            // Its later parts go on where the first one was, across the page.
+            None => carry.upright_at.filter(|_| !pos.at.at_start()).or(known).unwrap_or(y0),
+        };
         // Compat 15 moves a table that runs past the line end below the tables it meets across the stack, past the
-        // one that holds it back (their distances touching).
-        let mut y0 = y0;
+        // one that holds it back (their distances touching). Where that would put its far distance past the page's
+        // edge it stays, drawn from the line start over them.
+        let (own, mut y0) = (y0, y0);
         while !legacy && fp.is_none() && joined.is_none() && below_tables(y0) > col.x + EPS && below_tables(y0) + h > end + EPS {
             let Some(b) = meeting(y0).max_by(|a, b| a.excl[2].total_cmp(&b.excl[2])) else { break };
             y0 = b.excl[3] + above;
+        }
+        let over = y0 > own + EPS && y0 + br - bl + below > self.page_h + EPS;
+        if over {
+            y0 = own;
         }
         let y1 = y0 + br - bl;
         // Compat ≤ 14 has no fit test: the table stays at its stack position, over the margin if need be.
@@ -2582,6 +2600,7 @@ impl<'d> PageFill<'d, '_> {
             return Ok(Stop::Full);
         }
         let along = match fp {
+            _ if over => col.x,
             _ if let Some((r, under)) = joined => r[2] - under,
             Some(fp) if paged => fp.y,
             // `tblpYSpec` from the margin or the page: along the line as printed.
@@ -2596,9 +2615,9 @@ impl<'d> PageFill<'d, '_> {
             Some(fp) => col.x + fp.y,
             None => below_tables(y0),
         };
-        // Compat 15 also moves a table longer than the rest of the line to the next page; one that starts a page
-        // splits by rows at the line end, in either mode, its header rows repeated.
-        if along + h > end + EPS && !empty && !legacy && fp.is_none() && joined.is_none() {
+        // Compat 15 also moves a table longer than the rest of the line to the next page; one that starts a page or
+        // was moved across splits by rows at the line end, in either mode, its header rows repeated.
+        if along + h > end + EPS && !empty && !legacy && fp.is_none() && joined.is_none() && y0 <= stack + EPS {
             return Ok(Stop::Full);
         }
         // On the page as printed: the turned page's y runs leftwards from its right edge, or rightwards when the

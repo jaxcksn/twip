@@ -601,3 +601,45 @@ fn compat_14_keeps_the_more_of_a_too_long_vertical_tables_rows_below_the_earlier
     let pb = runs.iter().find(|r| r.0 == "pb").expect("pb").1[1];
     assert!((pb - 525.0).abs() < 0.01, "{pb}");
 }
+
+/// A Letter `tbRl` section with inch margins in compat 15: lines 12960 tw long from 1440 tw.
+fn inch_section(body: &str) -> Option<crate::docx::Document> {
+    let mut doc = sectioned(&format!(r#"{body}<w:sectPr>{MARGINS}<w:textDirection w:val="tbRl"/></w:sectPr>"#))?;
+    doc.settings.compat_mode = 15;
+    Some(doc)
+}
+
+#[test]
+fn compat_15_draws_a_vertical_table_over_an_earlier_one_when_moving_it_across_would_cross_the_page_edge() {
+    let on_first = |w2: u32| {
+        let body = format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &[263; 25], 5000), para("pb", ""), exact_table("s", &[263; 30], w2), para("pc", ""));
+        let cells = cells_on(&inch_section(&body)?, 0);
+        Some(cells.iter().filter(|c| c.0.starts_with('s')).map(|c| c.2).collect::<Vec<f64>>())
+    };
+    // Across past the earlier table its far distance would cross the page's edge: it stays at its own place, all its
+    // rows from the line start.
+    let Some(s) = on_first(5100) else { return };
+    assert!(s.len() == 30 && s[0] < 90.0, "{s:?}");
+    // A narrower one would fit the page there but not the margins: the next page.
+    assert!(on_first(4000).unwrap().is_empty());
+}
+
+#[test]
+fn compat_15_splits_a_vertical_table_longer_than_the_line_once_moved_across() {
+    let body = format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &[263; 12], 5000), para("pb", ""), exact_table("s", &[263; 50], 3000), para("pc", ""));
+    let Some(doc) = inch_section(&body) else { return };
+    assert_eq!(cells_on(&doc, 0).iter().filter(|c| c.0.starts_with('s')).count(), 49);
+}
+
+#[test]
+fn compat_15_takes_a_vertical_table_along_with_the_lines_before_it_that_jumped_an_earlier_one() {
+    // The earlier table fills the line: the lines before the next one go across past it, and the next one follows
+    // them, pushing only the line that meets it.
+    let body = format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &[263; 49], 4000), para("pb", ""), exact_table("s", &[263; 8], 4000), para("pc", ""));
+    let Some(doc) = inch_section(&body) else { return };
+    let runs = turned_runs(&doc);
+    let at = |t: &str| runs.iter().find(|r| r.0 == t).map(|r| r.1).expect("a line");
+    let s0 = cells_on(&doc, 0).iter().find(|c| c.0 == "s0").map(|c| c.1).expect("s0 on the first page");
+    assert!((at("pa")[1] - 72.0).abs() < 0.01 && at("pb")[1] > 170.0, "{runs:?}");
+    assert!(s0 < at("pb")[0] - 200.0 && s0 > at("pb")[0] - 230.0, "{s0} {runs:?}");
+}
