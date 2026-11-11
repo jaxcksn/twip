@@ -181,9 +181,10 @@ fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-/// `target/layout-diff`, which CI uploads as an artifact when the check fails.
+/// `target/layout-diff`, which CI uploads as an artifact when the check fails. By `..`, not by the path's ancestors: the
+/// WebAssembly build reads a Windows host's path as one component.
 fn diff_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).unwrap().join("target").join("layout-diff")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/layout-diff")
 }
 
 /// The pages that differ as SVG files in `target/layout-diff/<name>/`, returning their paths under the root.

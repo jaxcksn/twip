@@ -24,6 +24,16 @@ fn main() {
                 .define("SK_GRAPHITE", None)
                 .define("SK_DAWN", None)
                 .compile("twip_dawn");
+            // The crate's own test binaries, which run under Node (build-web.mjs test): the host's files (fixtures and
+            // snapshots) through NODERAWFS, and emscripten's default 64 KB stack overflows in layout.
+            for arg in [
+                format!("--use-port={}/emdawnwebgpu.port.py", need("EMDAWNWEBGPU_DIR")),
+                "-sNODERAWFS=1".into(),
+                "-sALLOW_MEMORY_GROWTH=1".into(),
+                "-sSTACK_SIZE=8MB".into(),
+            ] {
+                println!("cargo:rustc-link-arg={arg}");
+            }
         }
         Ok("windows") => {
             let Ok(dir) = env("TWIP_DAWN_DIR") else { return };
