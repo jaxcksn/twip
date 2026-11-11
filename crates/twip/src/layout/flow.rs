@@ -2801,19 +2801,46 @@ impl<'d> PageFill<'d, '_> {
             let (moved, short) = (|o: &Placed| (o.excl[3] + above - k).abs() < EPS, below_tables(k) + h > end + EPS);
             self.at.found.iter().filter(|o| o.key.2 == float::UPRIGHT_TABLE && o.excl[3] <= y0 + EPS).any(|o| moved(o) || (short && meeting(k).any(|m| m.same(o))))
         };
-        let known = self
-            .at
-            .known
-            .iter()
-            .find(|k| k.key == (self.sec.index, bi, float::UPRIGHT_TABLE))
-            .map(|k| k.rect[1])
-            .filter(|&k| legacy || !passed(k));
+        let known_rect = self.at.known.iter().find(|k| k.key == (self.sec.index, bi, float::UPRIGHT_TABLE)).map(|k| k.rect);
+        let known = known_rect.map(|r| r[1]).filter(|&k| legacy || !passed(k));
+        // Compat ≤ 14 after lines that went across past an earlier table (a line starts at its obstacle's far edge
+        // `e`): it takes the stack position after them, and keeps it when the lines then went past it too. It stays
+        // there with the lines that meet it below it when its obstacle clears the first of those lines or spans the
+        // earlier table's on the page; else, when the earlier table's far edge (less its legacy lead) is at or past
+        // the middle of the text across and the lines still fit past it before the far margin, it runs the line for
+        // them and they go across past it again; else it goes to the next page.
+        let mut full_line = false;
+        let mut jumped_at = None;
+        if legacy && fp.is_none() && joined.is_none() && carry.upright_at.is_none() {
+            let upright = || self.at.found.iter().filter(|o| o.key.2 == float::UPRIGHT_TABLE && o.excl[3] <= *y + EPS);
+            let after = known_rect.filter(|r| *y >= r[3] + below - EPS && upright().any(|o| o.excl[3] <= r[1] + EPS));
+            if let Some(r) = after {
+                (full_line, jumped_at) = (true, Some(r[1]));
+            } else if let Some(o) = upright().filter(|o| self.at.starts.iter().any(|s| (s.0 - o.excl[3]).abs() < EPS)).max_by(|a, b| a.excl[3].total_cmp(&b.excl[3])) {
+                let e = o.excl[3];
+                let lead = match self.sec.blocks.get(o.key.1) {
+                    Some(Block::Table(t1)) => super::table::legacy_lead(t1),
+                    _ => back,
+                };
+                let second = self.at.starts.iter().map(|s| s.0).filter(|&s| s > e + EPS && s < *y - EPS).fold(*y, f64::min);
+                let (top, bottom) = (col.top.to_pt(), col.bottom.to_pt());
+                let clears = y0 - above >= second - EPS || br - bl + above + below >= e - top - EPS;
+                if !clears {
+                    let fits = y0 + br - bl + below + (*y - e) <= bottom + EPS;
+                    if e + lead > (top + bottom) / 2.0 + EPS || !fits {
+                        return Ok(Stop::Full);
+                    }
+                    full_line = true;
+                }
+                jumped_at = Some(y0);
+            }
+        }
         let stack = y0;
         let y0 = match joined {
             Some((r, _)) if down => r[3] - (br - bl),
             Some((r, _)) => r[1],
             // Its later parts go on where the first one was, across the page.
-            None => carry.upright_at.filter(|_| !pos.at.at_start()).or(known).unwrap_or(y0),
+            None => carry.upright_at.filter(|_| !pos.at.at_start()).or(jumped_at).or(known).unwrap_or(y0),
         };
         // Compat 15 moves a table that runs past the line end below the tables it meets across the stack, past the
         // one that holds it back (their distances touching). Where that would put its far distance past the page's
@@ -2932,8 +2959,9 @@ impl<'d> PageFill<'d, '_> {
         }
         // Joined rows keep text as far off as the earlier rows do.
         let (o0, o1) = joined.map_or((y0, y1), |(r, _)| (y0.min(r[1]), y1.max(r[3])));
-        let f = table_float(t.id, top - along, o1 - o0, [above, below, 0.0, 0.0], true);
-        let mut o = Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, along, o0, o1 - o0);
+        let (from, to) = if full_line { (col.x, end) } else { (along, top) };
+        let f = table_float(t.id, to - from, o1 - o0, [above, below, 0.0, 0.0], true);
+        let mut o = Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, from, o0, o1 - o0);
         o.early_right = reach.map(|r| along + r);
         self.at.found.push(o);
         Ok(stop)
