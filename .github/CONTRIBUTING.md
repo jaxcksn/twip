@@ -172,7 +172,9 @@ The code is the documentation. A comment in the engine names a part of the code 
   changed page in `target/layout-diff/index.html` (red: before, green: after); CI uploads it as the `layout-diff-<os>`
   artifact (`layout-diff-wasm` for WebAssembly) on the run's summary page. When the change is intended, run
   `TWIP_WRITE_LAYOUT=1 cargo test -p twip --lib layout_output` and commit the snapshots with it. A pull request that
-  changes the snapshots needs the `layout-change` label; the `layout-label` check blocks the merge without it.
+  changes the snapshots needs the `layout-change` label; the `layout-label` check blocks the merge without it. The
+  release workflow lists every pull request with the label under **Layout changes** in the next release's changelog
+  entry, by its title: say there what moves.
 - History is linear. No merge commits. Rebase on the target branch instead of merging it in.
 - New behaviour needs a test. Layout changes need a fidelity check (see the harness docs).
 

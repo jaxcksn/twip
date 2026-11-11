@@ -35,6 +35,43 @@ jobs:
           target-branch: ${{ github.ref_name }}
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
+      # The pull requests labelled layout-change since the last release, under "Layout changes" in the open release
+      # PR's changelog entry. Rewritten on every run: release-please rebuilds the entry when it updates the PR.
+      - uses: actions/checkout@v7
+        if: github.event_name == 'push'
+      - name: Layout changes
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --label 'autorelease: pending' --json headRefName --jq '.[0].headRefName // ""')
+          [ -n "$branch" ] || exit 0
+          # The last release, from main's manifest (the release PR's names the next one).
+          tag=v$(jq -r '."."' .github/.release-please-manifest.json)
+          git fetch --depth 1 origin "$branch" && git checkout -B "$branch" FETCH_HEAD
+          since=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .commit.committer.date)
+          gh pr list --repo "$GITHUB_REPOSITORY" --state merged --base main --label layout-change --search "merged:>$since" \
+            --limit 500 --json number,title,url > "$RUNNER_TEMP/layout.json"
+          python3 - "$RUNNER_TEMP/layout.json" <<'EOF'
+          import json, re, sys
+          # As release-please words an entry: the type dropped, the scope in bold.
+          def entry(pr):
+              m = re.match(r'[a-z]+(?:\((.*?)\))?!?: (.*)', pr['title'])
+              title = (f'**{m[1]}:** ' if m[1] else '') + m[2] if m else pr['title']
+              return f"* {title} ([#{pr['number']}]({pr['url']}))"
+          items = '\n'.join(entry(pr) for pr in sorted(json.load(open(sys.argv[1])), key=lambda pr: pr['number']))
+          text = open('CHANGELOG.md', newline='').read()
+          head = re.search(r'^## .*\n+', text, re.M)
+          end = re.search(r'^## ', text[head.end():], re.M)
+          end = head.end() + end.start() if end else len(text)
+          body = re.sub(r'### Layout changes\n.*?(?=^### |\Z)', '', text[head.end():end], flags=re.M | re.S)
+          section = f'### Layout changes\n\n{items}\n\n\n' if items else ''
+          open('CHANGELOG.md', 'w', newline='').write(text[:head.end()] + section + body + text[end:])
+          EOF
+          git diff --quiet && exit 0
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -qam 'chore(release): list layout changes'
+          git push origin "HEAD:$branch"
 
   crate:
     needs: release-please
