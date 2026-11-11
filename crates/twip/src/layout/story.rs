@@ -54,12 +54,15 @@ pub struct StoryLayout {
     pub units: Vec<StoryUnit>,
     pub height: f64,
     pub float_bottom: f64,
+    /// A header's or footer's floats that keep where they were first placed on the page, by block and float.
+    pub frozen: Vec<((usize, usize), [f64; 4])>,
 }
 
 impl PartialEq for StoryLayout {
     fn eq(&self, o: &Self) -> bool {
         self.height == o.height
             && self.float_bottom == o.float_bottom
+            && self.frozen == o.frozen
             && self.units.len() == o.units.len()
             && self
                 .units
@@ -131,6 +134,7 @@ pub struct StoryKey {
     text: TextEnv,
     fonts: u64,
     boxed_fields: Option<FieldValues>,
+    hf: bool,
 }
 
 impl StoryKey {
@@ -146,6 +150,7 @@ impl StoryKey {
             text: env.ctx.env.text.clone(),
             fonts: env.ctx.fonts.revision(),
             boxed_fields: boxed.then(|| env.fields.clone()),
+            hf: false,
         }
     }
 }
@@ -180,20 +185,25 @@ fn story_bytes(s: &StoryLayout) -> usize {
 }
 
 pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnds>, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
+    layout_in(blocks, width, env, cell, false, memos)
+}
+
+/// `hf`: a header or footer story, whose floating tables float.
+fn layout_in(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnds>, hf: bool, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
-    let probe = StoryKey::new(children.clone(), Some(width), cell, env, &blocks);
-    cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, (0, 0), &[], m))
+    let probe = StoryKey { hf, ..StoryKey::new(children.clone(), Some(width), cell, env, &blocks) };
+    cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, (0, 0), &[], hf, m))
 }
 
 /// The story's text from piece `at.1` of block `at.0` on, laid out at `width` (not cached).
 pub fn layout_from(blocks: &[&Block], width: f64, env: &StoryEnv, at: (usize, usize), memos: &mut Memos) -> Result<StoryLayout, Yield> {
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, None, memos)?;
-    layout_with(&blocks, &children, width, env, None, at, &[], memos)
+    layout_with(&blocks, &children, width, env, None, at, &[], false, memos)
 }
 
-#[allow(clippy::too_many_arguments, reason = "the story, its width and cell ends, where it starts and the floats placed around it")]
+#[allow(clippy::too_many_arguments, reason = "the story, its width and cell ends, where it starts, the floats placed around it and its kind")]
 pub fn layout_with(
     blocks: &[LaidBlock],
     resolved: &[ChildId],
@@ -202,6 +212,7 @@ pub fn layout_with(
     cell: Option<CellEnds>,
     start: (usize, usize),
     around: &[Placed],
+    hf: bool,
     memos: &mut Memos,
 ) -> Result<StoryLayout, Yield> {
     let text = &env.ctx.env.text;
@@ -215,6 +226,7 @@ pub fn layout_with(
     let mut wrapping: Vec<(usize, usize, f64, f64)> = Vec::new();
     let mut float_bottom = 0.0f64;
     let mut held = 0.0f64;
+    let mut tables: Vec<Placed> = Vec::new();
     for (bi, b) in blocks.iter().enumerate() {
         // The part of a paragraph starting at a later line goes on without its space before.
         let from = if bi == start.0 { start.1 } else { 0 };
@@ -282,7 +294,7 @@ pub fn layout_with(
                 let mut floats: Vec<Placed> = own.iter().map(|(_, a)| a.clone()).collect();
                 // The story's own floats placed from outside it: only those beside the paragraph's unwrapped lines.
                 let bottom = para_top + lines.lines.iter().map(|l| l.pitch).sum::<f64>();
-                floats.extend(around.iter().filter(|f| f.in_band(para_top, bottom)).cloned());
+                floats.extend(around.iter().chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned());
                 let bands =
                     (!floats.is_empty()).then(|| wrap_bands(&lines, p, style, &floats, &ps, para_top, env.ctx.fonts)).filter(|b| !b.is_empty());
                 let rows = bands.as_ref().map_or(lines.lines.len(), Vec::len);
@@ -359,16 +371,32 @@ pub fn layout_with(
                 };
                 let (rows, h) = super::table::table_units(&tl);
                 let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
+                // A header's or footer's floating table takes no room in the story: it stands `tblpY` below where it
+                // starts (from the text) and the text after it wraps around it. Compat ≤ 14: the text runs over it.
+                // ponytail: tblpX and the margin and page anchors are not placed, it starts where the story is.
+                let fp = t.floating.filter(|_| hf && !in_cell);
+                let top = match fp {
+                    Some(fp) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
+                    _ => y,
+                };
                 for mut u in rows {
                     u.block = bi;
-                    u.top += y;
+                    u.top += top;
                     if shift != 0.0 {
                         u.content = Rc::from([Child::Group { offset: (shift, 0.0), children: u.content }]);
                         u.row = u.row.map(|r| Rc::new(NestedRow { shift, ..(*r).clone() }));
                     }
                     units.push(u);
                 }
-                y += h;
+                match fp {
+                    Some(_) if text.compat == Compat::Legacy => {}
+                    Some(fp) => {
+                        let (bl, br) = super::table::float_box(&tl, false);
+                        let f = super::flow::table_float(t.id, br - bl, h, super::flow::table_dist(&fp, false), !fp.never_overlap);
+                        tables.push(Placed::new((0, bi, float::TABLE_PIECE), ParaId(t.id), &f, bl, top, h));
+                    }
+                    None => y += h,
+                }
                 prev = None;
                 prev_after = 0.0;
             }
@@ -378,7 +406,7 @@ pub fn layout_with(
         y += prev_after;
     }
     unwrapped_floats(&mut units, &wrapping);
-    Ok(StoryLayout { units, height: y.max(held), float_bottom })
+    Ok(StoryLayout { units, height: y.max(held), float_bottom, frozen: Vec::new() })
 }
 
 // Cell floats
@@ -1042,27 +1070,38 @@ pub fn hf_layout(
     env: &StoryEnv,
     memos: &mut Memos,
 ) -> Result<Rc<StoryLayout>, Yield> {
-    let mut l = layout(blocks, width, env, None, memos)?;
+    let mut l = layout_in(blocks, width, env, None, true, memos)?;
     if !blocks.iter().any(|b| matches!(b, Block::Para(p) if !env.ctx.floats_of(p).is_empty())) {
         return Ok(l);
     }
     let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&laid, Some(width), env, None, memos)?;
     let mut seen: Option<Vec<[f64; 4]>> = None;
+    let mut frozen = Vec::new();
     // ponytail: a few passes for floats placed from the story's own text, no convergence test beyond them.
     for _ in 0..3 {
         let at = top(&l);
-        let around: Vec<Placed> = hf_float_rects(blocks, &l, fr, at, env, memos)?
-            .into_iter()
-            .enumerate()
-            .map(|(i, (f, r, para))| Placed::new((usize::MAX, 0, i), para, &f, r[0] - fr.column.0, r[1] - at, r[3] - r[1]))
-            .filter(|p| p.wrap != super::float::Wrap::None)
-            .collect();
+        let mut around = Vec::new();
+        for (i, (key, f, r, para)) in float_rects(blocks, &l, fr, at, env, memos)?.into_iter().enumerate() {
+            let p = Placed::new((usize::MAX, 0, i), para, &f, r[0] - fr.column.0, r[1] - at, r[3] - r[1]);
+            if p.wrap == super::float::Wrap::None {
+                continue;
+            }
+            // A float that meets the story's lines where it is placed keeps that place on the page in the passes
+            // after, even when its anchor moves.
+            // ponytail: a line meets it when their bands overlap and it reaches into the story's width.
+            let line = |u: &StoryUnit| u.content.iter().any(|c| matches!(c, Child::Line { .. })) && p.in_band(u.top, u.top + u.height);
+            let meets = p.excl[2] > EPS && p.excl[0] < width - EPS && l.units.iter().any(line);
+            if meets && frozen.iter().all(|(k, _)| *k != key) {
+                frozen.push((key, r));
+            }
+            around.push(p);
+        }
         let rects: Vec<[f64; 4]> = around.iter().map(|p| p.rect).collect();
         if around.is_empty() || seen.as_ref() == Some(&rects) {
             break;
         }
-        l = Rc::new(layout_with(&laid, &children, width, env, None, (0, 0), &around, memos)?);
+        l = Rc::new(StoryLayout { frozen: frozen.clone(), ..layout_with(&laid, &children, width, env, None, (0, 0), &around, true, memos)? });
         seen = Some(rects);
     }
     Ok(l)
@@ -1076,19 +1115,36 @@ pub fn hf_float_rects(
     env: &StoryEnv,
     memos: &mut Memos,
 ) -> Result<Vec<(Rc<Float>, [f64; 4], ParaId)>, Yield> {
+    Ok(float_rects(blocks, story, fr, top, env, memos)?.into_iter().map(|(_, f, r, p)| (f, r, p)).collect())
+}
+
+/// The story's floats on the page, each with its block and its place among the paragraph's floats.
+#[allow(clippy::type_complexity, reason = "the float's key, the float, its rect and anchor")]
+fn float_rects(
+    blocks: &[&Block],
+    story: &StoryLayout,
+    fr: &super::float::Frames,
+    top: f64,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<Vec<((usize, usize), Rc<Float>, [f64; 4], ParaId)>, Yield> {
     let mut out = Vec::new();
     for (bi, b) in blocks.iter().enumerate() {
         let Block::Para(p) = b else { continue };
         let Some(u) = story.units.iter().find(|u| u.block == bi) else { continue };
         let para_top = top + u.top - if bi == 0 { space_before(&env.ctx.env.text, p.para_style_in(env.ctx.env.text.review.view)) } else { 0.0 };
-        for f in env.ctx.floats_of(p) {
+        for (k, f) in env.ctx.floats_of(p).iter().enumerate() {
             let sized = super::float::sized(f, fr);
             let f = sized.as_ref().unwrap_or(f);
             let fitted = fit_frame(f, fr.column.1, env, memos)?;
             let f = fitted.as_ref().unwrap_or(f);
             let h = float_height(f, env, memos)?;
             let (fx, fy) = (super::float::h_pos(f, fr), super::float::v_pos(f, h, fr, para_top, para_top));
-            out.push((Rc::new(f.clone()), [fx, fy, fx + f.w, fy + h], para_id(p)));
+            let rect = match story.frozen.iter().find(|(key, _)| *key == (bi, k)) {
+                Some((_, r)) => *r,
+                None => [fx, fy, fx + f.w, fy + h],
+            };
+            out.push(((bi, k), Rc::new(f.clone()), rect, para_id(p)));
         }
     }
     Ok(out)

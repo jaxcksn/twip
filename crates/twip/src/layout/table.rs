@@ -2187,7 +2187,7 @@ fn assemble(
                 notes: story.units.iter().flat_map(|u| u.notes.iter().copied()).collect(),
                 row: None,
             };
-            c.units = Rc::new(StoryLayout { units: vec![unit], height: 0.0, float_bottom: 0.0 });
+            c.units = Rc::new(StoryLayout { units: vec![unit], ..StoryLayout::default() });
             c.v_align = "top".into();
         }
         let first = match r.cells.first().and_then(|c| c.blocks.first()) {

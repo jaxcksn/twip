@@ -777,6 +777,7 @@ impl<'d> PageFill<'d, '_> {
                     }],
                     height: h,
                     float_bottom: 0.0,
+                    frozen: Vec::new(),
                 }
             }),
         };
@@ -3092,13 +3093,13 @@ impl<'d> PageFill<'d, '_> {
 }
 
 /// A floating table's distances from the text: none above or below one placed in the flow.
-fn table_dist(fp: &crate::docx::props::TablePos, in_flow: bool) -> [f64; 4] {
+pub(super) fn table_dist(fp: &crate::docx::props::TablePos, in_flow: bool) -> [f64; 4] {
     let [dt, db, dl, dr] = fp.dist;
     if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] }
 }
 
 /// A table's box as a square, both-sides float `dist` apart from the text.
-fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool) -> Rc<Float> {
+pub(super) fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool) -> Rc<Float> {
     Rc::new(Float {
         id,
         w,
