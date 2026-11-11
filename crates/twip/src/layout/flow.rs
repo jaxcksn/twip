@@ -216,7 +216,7 @@ pub fn note_cut(units: &[StoryUnit], room: f64) -> usize {
     if after < 2 {
         fit = fit.saturating_sub(2 - after);
     }
-    if fit - start < 2 && before > 0 {
+    if fit - start < 2 && before > 0 && units[start].from == 0 {
         fit = start;
     }
     fit
@@ -941,7 +941,10 @@ impl<'d> PageFill<'d, '_> {
             // In a later column of the page the note goes on at that column's width.
             let part = if self.column > 0 { self.rewrap(&part, col.width, memos)? } else { part };
             let room = col.bottom.to_pt() - col.top.to_pt() - area.total();
-            let fit = part.units.iter().position(|x| x.top + x.height > room + EPS).unwrap_or(part.units.len());
+            // Cut as a new note is, the orphan step only for a part holding its paragraph's first line.
+            // ponytail: measured between a balanced section's columns; a continuation going on from page to page is
+            // assumed to cut the same way.
+            let fit = note_cut(&part.units, room);
             if fit == 0 || !rest.is_empty() {
                 rest.push(part);
                 continue;

@@ -683,6 +683,17 @@ fn compat_14_a_balanced_column_under_a_continuation_that_goes_on_holds_only_the_
     assert!(p3.1 > 400.0, "line 3 in column 3: {pages:?}");
 }
 
+#[test]
+fn compat_14_a_continued_note_keeps_its_paragraphs_last_two_lines_together() {
+    // Nine note lines on line 2 of six in three columns: one line would be left alone for column 3, so column 2 keeps
+    // one line less; the columns grow and column 2 holds line 3 above the rest instead.
+    let cols = r#"<w:cols w:num="3" w:space="720"/>"#;
+    let (Some(lines), Some(one)) = (note_in_balanced(cols, 6, 2, 9, false, 2), note_in_balanced(cols, 6, 2, 9, true, 2)) else { return };
+    let (Some((0, a)), Some((0, b))) = (find(&lines, "P003"), find(&one, "P003")) else { panic!("{lines:?}\n{one:?}") };
+    assert!(a.1 > 400.0, "one paragraph per note line: line 3 in column 3: {lines:?}");
+    assert!(b.1 > 200.0 && b.1 < 300.0, "one paragraph: line 3 in column 2: {one:?}");
+}
+
 /// The note lines on pages 1 and 2 when the note of [`note_in_balanced`] referenced on the last of ten lines in two
 /// columns goes on past page 2.
 fn note_pages(cols: &str) -> Option<(usize, usize)> {
