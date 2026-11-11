@@ -227,6 +227,55 @@ fn vertical_text_is_turned_into_its_frame() {
     assert!(items.iter().any(|i| matches!(i, Item::Turned(t) if (t.deg - 270.0).abs() < 1e-9)));
 }
 
+/// A text box with no outline, its paragraphs in Arial 10 with single lines.
+fn vertical_box(w: i64, h: i64, body: &str, paras: &[&str]) -> String {
+    let ps: String = paras
+        .iter()
+        .map(|t| format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="20"/></w:rPr><w:t>{t}</w:t></w:r></w:p>"#))
+        .collect();
+    format!(
+        r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr><wps:txbx><w:txbxContent>{ps}</w:txbxContent></wps:txbx>{body}</wps:wsp>"#,
+        xfrm(0, 0, w, h, "")
+    )
+}
+
+/// The first page's turned runs: text, origin and direction.
+fn turned_runs(snap: &crate::layout::Snapshot) -> Vec<(String, [f64; 2], [f64; 2])> {
+    let mut out = Vec::new();
+    for it in paint_items(&snap.pages()[0]) {
+        if let Item::Turned(t) = it {
+            for (r, at, dir) in crate::layout::vertical::runs(&t) {
+                out.push((r.chars.iter().map(|c| c.0).collect::<String>().trim().to_string(), at, dir));
+            }
+        }
+    }
+    out.retain(|r| !r.0.is_empty());
+    out
+}
+
+#[test]
+fn a_vert_text_box_lays_its_lines_out_like_a_vertical_cell_its_anchor_moving_them_across() {
+    // Bottom-anchored: the block against the side the lines stack towards, the left one.
+    let v = vertical_box(100, 200, r#"<wps:bodyPr vert="vert" lIns="0" tIns="0" rIns="0" bIns="0" anchor="b"/>"#, &["HHHH x", "second"]);
+    let body = format!("<w:p>{}</w:p>", anchor(100, 100, 100, 200, 1, false, 1, &v));
+    let d = settings_doc(&body, 15).expect("the document reads");
+    let runs = turned_runs(&crate::layout::layout(&d, &fonts()));
+    assert!(runs.len() == 2 && runs.iter().all(|r| r.2 == [0.0, 1.0]), "{runs:?}");
+    // A vertical line's metrics: the last line its descent in from the left, the lines a vertical pitch apart.
+    assert!((runs[1].1[0] - 102.26).abs() < 0.2 && (runs[0].1[0] - 114.26).abs() < 0.2, "{runs:?}");
+    assert!(runs.iter().all(|r| (r.1[1] - 100.0).abs() < 0.1), "{runs:?}");
+}
+
+#[test]
+fn a_word_art_vertical_text_box_stacks_its_lines_from_the_left() {
+    let v = vertical_box(100, 200, r#"<wps:bodyPr vert="wordArtVert" lIns="0" tIns="0" rIns="0" bIns="0"/>"#, &["HHHH x", "second"]);
+    let body = format!("<w:p>{}</w:p>", anchor(100, 100, 100, 200, 1, false, 1, &v));
+    let d = settings_doc(&body, 15).expect("the document reads");
+    let runs = turned_runs(&crate::layout::layout(&d, &fonts()));
+    assert!(runs.len() == 2 && runs.iter().all(|r| r.2 == [0.0, 1.0]), "{runs:?}");
+    assert!((runs[0].1[0] - 102.50).abs() < 0.25 && (runs[1].1[0] - 114.26).abs() < 0.2, "{runs:?}");
+}
+
 #[test]
 fn effects_resolve_from_the_effect_list_and_the_style() {
     let effects = r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"><a:alpha val="40000"/></a:srgbClr></a:outerShdw><a:glow rad="101600"><a:srgbClr val="FFC000"/></a:glow><a:softEdge rad="63500"/></a:effectLst>"#;

@@ -846,14 +846,28 @@ fn turned_text(
     let body = shape.and_then(|s| s.sp()).map(|s| &s.body);
     let turn = (deg + body.map_or(0.0, |b| b.rot.degrees()) + if flip_v { 180.0 } else { 0.0 }).rem_euclid(360.0);
     let mut frame = layout_frame(tb, shape, rect);
-    // A frame's own text flow.
-    if body.is_none()
-        && let Some(v) = super::vertical::of_cell(tb.flow)
-    {
+    // A frame's own text flow, or a text box's: lines along the frame's height, stacked across its width.
+    if let Some(v) = text_flow(tb, shape) {
         let blocks: Vec<&Block> = tb.blocks.iter().collect();
         let story = super::vertical::story(&blocks, frame[3] - frame[1], v, env, None, memos)?;
-        let bottom = if v.flow == super::vertical::Flow::DownEast { f64::INFINITY } else { frame[2] - frame[0] + super::table::INK_SLACK };
-        groups.push(Child::Items(super::vertical::turned(&story.units, v, frame, 0.0, bottom).into()));
+        let width = frame[2] - frame[0];
+        // The anchor moves the block across, towards the side the lines stack to.
+        let across = if body.is_some() && !tb.auto_fit && tb.v_anchor > 0 {
+            let free = Lu::round_half_up(width - story.height).0.max(0);
+            Lu(if tb.v_anchor == 2 { free } else { free / 2 }).to_pt()
+        } else {
+            0.0
+        };
+        let clip = body.is_none() || !tb.auto_fit;
+        let bottom = if v.flow == super::vertical::Flow::DownEast || !clip { f64::INFINITY } else { width + super::table::INK_SLACK };
+        let items = super::vertical::turned(&story.units, v, frame, across, bottom);
+        let items = if turn.abs() < 1e-9 {
+            items
+        } else {
+            let centre = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0];
+            vec![Item::Turned(Rc::new(super::fragment::Turned { centre, deg: turn, items }))]
+        };
+        groups.push(Child::Items(items.into()));
         return Ok(());
     }
     use crate::drawing::text::TextDirection as D;
@@ -862,11 +876,10 @@ fn turned_text(
         let [x0, y0, x1, y1] = frame;
         let (fx, fy, hw, hh) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (y1 - y0) / 2.0, (x1 - x0) / 2.0);
         let quarter = [fx - hw, fy - hh, fx + hw, fy + hh];
-        let reverse = matches!(dir, D::MongolianVert | D::WordArtVert | D::WordArtVertRtl);
+        let reverse = dir == D::MongolianVert;
         let mut lines = Vec::new();
         lay_lines(tb, quarter, Some((VERTICAL_PITCH, reverse)), env, &mut lines, memos)?;
-        let quarter_turn = if dir == D::Vert270 { 270.0 } else { 90.0 };
-        let inner = Item::Turned(Rc::new(super::fragment::Turned { centre: [fx, fy], deg: quarter_turn, items: super::traverse::items_of(&lines) }));
+        let inner = Item::Turned(Rc::new(super::fragment::Turned { centre: [fx, fy], deg: 90.0, items: super::traverse::items_of(&lines) }));
         let item = if turn.abs() < 1e-9 {
             inner
         } else {
@@ -896,6 +909,14 @@ fn turned_text(
 }
 
 // Text boxes
+/// The way a frame's or text box's lines run, `None` horizontal.
+fn text_flow(tb: &crate::docx::TextBox, shape: Option<&crate::drawing::Shape>) -> Option<super::vertical::Vertical> {
+    match shape.and_then(|s| s.sp()) {
+        None => super::vertical::of_cell(tb.flow),
+        Some(s) => super::vertical::of_text_box(s.body.direction),
+    }
+}
+
 fn outline(o: f64, rect: [f64; 4], groups: &mut Vec<Child>) {
     if o <= 0.0 {
         return;

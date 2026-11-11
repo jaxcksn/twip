@@ -39,6 +39,19 @@ pub fn of_cell(code: u8) -> Option<Vertical> {
     }
 }
 
+/// A text box's `bodyPr@vert` as its flow, mapped like a cell: `vert` runs down with East Asian glyphs upright
+/// (`tbRlV`), `vert270` runs up (`btLr`), the word-art flows run down with lines stacked left to right (`tbLrV`).
+/// `None` is horizontal, or a flow laid out on its own (`eaVert`, `mongolianVert`).
+pub fn of_text_box(dir: crate::drawing::text::TextDirection) -> Option<Vertical> {
+    use crate::drawing::text::TextDirection as D;
+    match dir {
+        D::Vert => of_cell(5),
+        D::Vert270 => of_cell(3),
+        D::WordArtVert | D::WordArtVertRtl => of_cell(7),
+        _ => None,
+    }
+}
+
 /// A section's text-flow code as its flow: a section's `btLr` runs down like `tbRl`.
 pub fn of_section(code: u8) -> Option<Vertical> {
     match code {
