@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use twip::internal::drawing::paint::Paint;
 use twip::internal::layout::hyphenate::Hyphenation;
 
 /// A document as Word's PDF shows it: its text without markup (the export's "document without markup": tracked
@@ -15,7 +16,7 @@ fn read(bytes: &[u8], hyphenation: Option<&Hyphenation>) -> Result<twip::interna
     Ok(doc)
 }
 
-/// A document's characters and image boxes per page.
+/// A document's characters and image boxes (pictures, and shapes a picture fills) per page.
 pub fn lay_out(doc: &twip::internal::docx::Document, fonts: &twip::internal::font::Fonts) -> (Vec<Vec<Ch>>, Vec<Vec<[f64; 4]>>) {
     let snapshot = twip::internal::layout::layout(doc, fonts);
     let mut chars = Vec::new();
@@ -31,6 +32,8 @@ pub fn lay_out(doc: &twip::internal::docx::Document, fonts: &twip::internal::fon
                 }
             }
             twip::internal::layout::fragment::Item::Image { rect, .. } => im.push(rect),
+            // A picture drawn as a shape filled with it: the picture's rectangle (unrotated).
+            twip::internal::layout::fragment::Item::Shape(s) if matches!(s.fill, Paint::Picture { image: Some(_), .. }) => im.push(s.rect),
             _ => {}
         });
         chars.push(cs);
@@ -528,6 +531,15 @@ mod tests {
 
     fn seg(s: &str, x: f64, y: f64, seg: usize) -> Vec<Ch> {
         s.chars().enumerate().map(|(i, c)| Ch { c, x: x + i as f64 * 5.0, y, lig: false, seg }).collect()
+    }
+
+    #[test]
+    fn pictures_drawn_as_shapes_are_images() {
+        // The fixture's four pictures are drawn as shapes filled with them, none as plain images.
+        let path = format!("{}/../twip/tests/fixtures/objects.docx", env!("CARGO_MANIFEST_DIR"));
+        let doc = read(&std::fs::read(path).unwrap(), None).unwrap();
+        let images = lay_out(&doc, &twip::internal::font::Fonts::default()).1;
+        assert_eq!(images.iter().map(Vec::len).sum::<usize>(), 4);
     }
 
     #[test]
