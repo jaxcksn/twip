@@ -1818,8 +1818,9 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
             line.baseline = if x <= h { asc } else { asc.max(x - desc.max(at_least_desc + em_down)) };
         }
         LineRule::Exact => {
-            line.pitch = style.line;
+            // Whole layout units, so a page's run of exact lines adds up as their rounded heights.
             let x = Lu::round_half_up(style.line).0;
+            line.pitch = Lu(x).to_pt();
             let down = if frame.exact_on_top { (x - Lu::round_half_up(asc).0).max(0) } else { x / 5 };
             line.baseline = Lu(x - down).to_pt();
             if frame.exact_extra_after {

@@ -1784,6 +1784,17 @@ fn suppress_bottom_spacing_lets_an_exact_line_into_the_room_under_its_text() {
 }
 
 #[test]
+fn exact_lines_fill_a_page_in_rounded_layout_units() {
+    // 30 lines of 432 twips are the text height in twips but 12 layout units over it; 20 of 648 are 8 under.
+    let lines = |n: usize, x: u32| {
+        let body = format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="{x}" w:lineRule="exact"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>"#).repeat(n + 2);
+        baselines("", ARIAL_11, &body).map(|l| l.len())
+    };
+    let Some(n) = lines(30, 432) else { return };
+    assert_eq!((n, lines(20, 648)), (29, Some(20)));
+}
+
+#[test]
 fn compat_15_text_after_a_split_floating_table_can_stay_beside_its_first_part() {
     let row = |k: u32| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>R{k:02}</w:t></w:r></w:p></w:tc></w:tr>"#);
     let rows: String = (1..=70).map(row).collect();
