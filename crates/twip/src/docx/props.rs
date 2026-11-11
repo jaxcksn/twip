@@ -831,6 +831,24 @@ impl Width {
             },
         }
     }
+
+    /// A dxa or pct width as it is, any other as 0 points.
+    pub fn sized(self) -> Width {
+        match self {
+            Width::Dxa(_) | Width::Pct(_) => self,
+            _ => Width::Dxa(0.0),
+        }
+    }
+
+    /// The points of a dxa width, 0 for any other.
+    pub fn dxa(self) -> f64 {
+        if let Width::Dxa(v) = self { v } else { 0.0 }
+    }
+
+    /// The fraction of a pct width.
+    pub fn pct(self) -> Option<f64> {
+        if let Width::Pct(p) = self { Some(p) } else { None }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -910,7 +928,8 @@ pub struct TblProps {
     pub style: Option<String>,
     pub width: Option<Width>,
     pub jc: Option<Jc>,
-    pub ind: Option<f64>,
+    /// Dxa or pct.
+    pub ind: Option<Width>,
     pub borders: Borders,
     pub margins: Margins,
     pub fixed: Option<bool>,
@@ -966,7 +985,7 @@ impl TblProps {
                         _ => Jc::Left,
                     })
                 }
-                "tblInd" => p.ind = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
+                "tblInd" => p.ind = Some(Width::parse(c).sized()),
                 "tblBorders" => p.borders = Borders::parse(c, tc),
                 "tblCellMar" => p.margins = Margins::parse(c),
                 "tblLayout" => p.fixed = Some(attr(c, "type") == Some("fixed")),
@@ -1111,9 +1130,9 @@ pub struct TrProps {
     pub jc: Option<Jc>,
     pub grid_before: Option<i64>,
     pub grid_after: Option<i64>,
-    /// `w:wBefore` / `w:wAfter`: the width of the grid columns a row skips (points, dxa only).
-    pub w_before: Option<f64>,
-    pub w_after: Option<f64>,
+    /// `w:wBefore` / `w:wAfter`: the width of the grid columns a row skips, dxa or pct.
+    pub w_before: Option<Width>,
+    pub w_after: Option<Width>,
     pub cell_spacing: Option<f64>,
 }
 
@@ -1135,8 +1154,8 @@ impl TrProps {
                 }
                 "gridBefore" => p.grid_before = int(val(c)),
                 "gridAfter" => p.grid_after = int(val(c)),
-                "wBefore" => p.w_before = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
-                "wAfter" => p.w_after = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
+                "wBefore" => p.w_before = Some(Width::parse(c).sized()),
+                "wAfter" => p.w_after = Some(Width::parse(c).sized()),
                 "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
                 _ => {}
             }

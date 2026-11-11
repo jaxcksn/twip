@@ -100,6 +100,7 @@ fn shell(t: &Table) -> Table {
         jc,
         own_jc,
         ind,
+        ind_pct,
         ind_set,
         borders,
         fixed,
@@ -215,6 +216,7 @@ fn shell(t: &Table) -> Table {
         jc: *jc,
         own_jc: *own_jc,
         ind: *ind,
+        ind_pct: *ind_pct,
         ind_set: *ind_set,
         borders: borders.clone(),
         fixed: *fixed,
@@ -241,6 +243,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         jc,
         own_jc,
         ind,
+        ind_pct,
         ind_set,
         borders,
         fixed,
@@ -263,6 +266,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         && *jc == t.jc
         && *own_jc == t.own_jc
         && *ind == t.ind
+        && *ind_pct == t.ind_pct
         && *ind_set == t.ind_set
         && *borders == t.borders
         && *fixed == t.fixed
@@ -1164,7 +1168,7 @@ fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, input
     let a = avail.unwrap_or_else(|| twips(text_w - t.ind + add_l + add_r));
     let s2 = twips(2.0 * t.cell_spacing.max(0.0));
     let cells: Vec<autofit::Cell> = inputs.iter().flat_map(|r| r.cells.iter().copied()).collect();
-    let gaps = skipped(t, n, &cells);
+    let gaps = skipped(t, n, &cells, text_w);
     let cols = autofit::columns(n, &cells, s2, &gaps, t.fixed);
     let pad_total = s2 * (n as i64 + 1);
     let tbl_w = match t.width {
@@ -1180,7 +1184,13 @@ fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, input
     Fit { cols: widths.iter().map(|&w| w as f64 / 20.0).collect(), min_t: r.min_t, width: r.width, hard_t: r.hard_t }
 }
 
-fn skipped(t: &Table, n: usize, cells: &[autofit::Cell]) -> Vec<Vec<autofit::Gap>> {
+fn skipped(t: &Table, n: usize, cells: &[autofit::Cell], text_w: f64) -> Vec<Vec<autofit::Gap>> {
+    // ponytail: a pct skip is taken as the dxa share of the width the table is laid out in; how Word types it is unmeasured.
+    let w = |w: Width| match w {
+        Width::Pct(p) => autofit::rdiv(twips(text_w), (p * 5000.0).round() as i64, 5000),
+        w => twips(w.dxa()),
+    }
+    .max(0);
     let mut xs = vec![0i64];
     for i in 0..n {
         xs.push(xs[i] + twips(t.grid.get(i).copied().unwrap_or(0.0)));
@@ -1196,11 +1206,11 @@ fn skipped(t: &Table, n: usize, cells: &[autofit::Cell]) -> Vec<Vec<autofit::Gap
             let mut out = Vec::new();
             let (gb, end) = (r.grid_before, r.grid_before + r.cells.iter().map(|c| c.span).sum::<usize>());
             if gb > 0 && gb <= n && lo < x(gb) {
-                out.push((gb - 1, gb, r.w_before.map_or(x(gb) - x(0), twips)));
+                out.push((gb - 1, gb, r.w_before.map_or(x(gb) - x(0), w)));
             }
             if end < n && x(end) < hi {
-                let w = if r.grid_after > 0 { r.w_after } else { None };
-                out.push((n - 1, n - end, w.map_or(x(n) - x(end), twips)));
+                let after = if r.grid_after > 0 { r.w_after } else { None };
+                out.push((n - 1, n - end, after.map_or(x(n) - x(end), w)));
             }
             out
         })
@@ -1246,6 +1256,17 @@ fn layout_with(
     reuse: Option<(&TableLayout, std::ops::RangeInclusive<usize>)>,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
+    // A pct indent is a share of the width the table is laid out in, truncated to twips; none while measuring, and
+    // none for a floating table.
+    let resolved;
+    let t = match t.ind_pct {
+        Some(p) => {
+            let ind = if measure || t.floating.is_some() { 0 } else { (p * 5000.0).round() as i64 * twips(text_w) / 5000 };
+            resolved = Table { ind: ind as f64 / 20.0, ind_pct: None, ..t.clone() };
+            &resolved
+        }
+        None => t,
+    };
     if let Some(runs) = layout_runs(t) {
         return layout_runs_of(t, &runs, text_w, env, prev, measure, memos);
     }

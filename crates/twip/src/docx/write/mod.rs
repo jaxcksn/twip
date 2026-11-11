@@ -1274,7 +1274,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             && a.grid == b.grid
             && (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
             && a.width == b.width
-            && (&a.style_id, a.look, a.jc, a.ind, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.floating);
+            && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating);
         if !same_rows {
             // Rows or cells came or went: the table is written again, its kept rows from their source.
             let range = (**a.src.as_ref().ok_or("a table without its source")?).clone();
@@ -1464,7 +1464,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                             };
                             fix.push(self.set_child(p, "jc", format!("<{w}jc {w}val=\"{v}\"/>"), before("jc")));
                         }
-                        if a.ind != t.ind {
+                        if (a.ind, a.ind_pct) != (t.ind, t.ind_pct) {
                             fix.push(self.set_child(p, "tblInd", format!("<{w}tblInd {w}w=\"{}\" {w}type=\"dxa\"/>", twips(t.ind)), before("tblInd")));
                         }
                         if a.look != t.look
@@ -4340,7 +4340,9 @@ fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
     if t.cell_spacing != 0.0 {
         s.push_str(&width(w, "tblCellSpacing", &Width::Dxa(t.cell_spacing)));
     }
-    if t.ind != 0.0 {
+    if let Some(p) = t.ind_pct {
+        s.push_str(&width(w, "tblInd", &Width::Pct(p)));
+    } else if t.ind != 0.0 {
         s.push_str(&width(w, "tblInd", &Width::Dxa(t.ind)));
     }
     if t.borders.iter().any(Option::is_some) {

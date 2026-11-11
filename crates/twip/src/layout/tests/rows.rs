@@ -149,6 +149,34 @@ fn a_column_a_row_does_not_reach_keeps_its_grid_width() {
     assert!((w - 50.0).abs() < 0.1, "column 3 is 50pt: {w} ({ex:?})");
 }
 
+/// Where `c` is first drawn on page 1 of a blank document with `body`, and the text width in twips.
+fn glyph_x(body: &str, c: char) -> (f64, i64) {
+    let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+    let s = &doc.sections[0];
+    let text_w = ((s.page_w - s.left - s.right) * 20.0).round() as i64;
+    let mut x = None;
+    crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
+        if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
+            x = x.or(r.chars.iter().find(|g| g.0 == c).map(|g| g.1));
+        }
+    });
+    (x.expect("drawn"), text_w)
+}
+
+#[test]
+fn a_pct_indent_and_skip_are_shares_of_the_text_width() {
+    let table = |ind: &str, before: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>{ind}</w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:trPr><w:gridBefore w:val="1"/>{before}</w:trPr><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:tcW w:w="300" w:type="dxa"/></w:tcPr><w:p/></w:tc><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+        )
+    };
+    let (pct, text_w) = glyph_x(&table(r#"<w:tblInd w:w="1000" w:type="pct"/>"#, r#"<w:wBefore w:w="500" w:type="pct"/>"#), 'a');
+    let (ind, skip) = (1000 * text_w / 5000, (500 * text_w + 2500) / 5000);
+    let (dxa, _) = glyph_x(&table(&format!(r#"<w:tblInd w:w="{ind}" w:type="dxa"/>"#), &format!(r#"<w:wBefore w:w="{skip}" w:type="dxa"/>"#)), 'a');
+    let (none, _) = glyph_x(&table("", ""), 'a');
+    assert!((pct - dxa).abs() < 0.01 && dxa - none > 80.0, "{pct} {dxa} {none}");
+}
+
 #[test]
 fn a_border_wider_than_its_margin_takes_the_other_sides_margin_first() {
     let right_edge = |border: &str| {

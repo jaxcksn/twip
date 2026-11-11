@@ -882,8 +882,8 @@ pub struct Row {
     pub header: bool,
     pub grid_before: usize,
     pub grid_after: usize,
-    pub w_before: Option<f64>,
-    pub w_after: Option<f64>,
+    pub w_before: Option<Width>,
+    pub w_after: Option<Width>,
     pub ind: Option<f64>,
     pub jc: Option<Jc>,
     /// The HTML division the row is in (`trPr/w:divId`).
@@ -917,6 +917,8 @@ pub struct Table {
     /// The table's own `w:jc`; a layout run after the first row falls back to it.
     pub own_jc: Option<Jc>,
     pub ind: f64,
+    /// A `pct` indent, the fraction of the width the table is laid out in; [`Table::ind`] is then 0.
+    pub ind_pct: Option<f64>,
     pub ind_set: bool,
     pub borders: [Option<Border>; 6],
     pub fixed: bool,

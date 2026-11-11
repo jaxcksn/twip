@@ -110,6 +110,7 @@ impl Editor {
             jc: crate::docx::props::Jc::Left,
             own_jc: None,
             ind: 0.0,
+            ind_pct: None,
             ind_set: true,
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: true,

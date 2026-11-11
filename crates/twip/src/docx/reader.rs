@@ -2500,7 +2500,7 @@ impl Reader {
                 style_id,
                 width: tbl.width.unwrap_or(Width::Auto),
                 jc: tbl.jc.unwrap_or(Jc::Left),
-                ind: tbl.ind.unwrap_or(0.0),
+                ind: tbl.ind.map_or(0.0, Width::dxa),
                 borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
                 fixed: tbl.fixed.unwrap_or(false),
                 cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
@@ -2531,7 +2531,7 @@ impl Reader {
         let mut row_jc: Option<Option<Jc>> = None;
         let mut first_row_jc: Option<Jc> = None;
         let mut first_row_width: Option<Width> = None;
-        let mut first_row_ind: Option<f64> = None;
+        let mut first_row_ind: Option<Width> = None;
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
@@ -2605,9 +2605,9 @@ impl Reader {
                 header: trp.header.unwrap_or(false),
                 grid_before: trp.grid_before.unwrap_or(0).max(0) as usize,
                 grid_after: trp.grid_after.unwrap_or(0).max(0) as usize,
-                w_before: trp.w_before.map(|w| w.max(0.0)),
-                w_after: trp.w_after.map(|w| w.max(0.0)),
-                ind: ex.ind.filter(|_| ex.fixed == Some(true) && tbl.fixed != Some(true)),
+                w_before: trp.w_before,
+                w_after: trp.w_after,
+                ind: ex.ind.map(Width::dxa).filter(|_| ex.fixed == Some(true) && tbl.fixed != Some(true)),
                 jc: trp.jc,
                 div: tr_pr
                     .and_then(|p| child(p, "divId"))
@@ -2643,7 +2643,8 @@ impl Reader {
                 .or(row_jc.flatten())
                 .unwrap_or(Jc::Left),
             own_jc: tbl.jc,
-            ind: first_row_ind.or(tbl.ind).unwrap_or(0.0),
+            ind: first_row_ind.or(tbl.ind).map_or(0.0, Width::dxa),
+            ind_pct: first_row_ind.or(tbl.ind).and_then(Width::pct),
             ind_set: first_row_ind.or(tbl.ind).is_some() || direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),

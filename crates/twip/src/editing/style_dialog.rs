@@ -515,7 +515,7 @@ impl Editor {
                 Some(crate::docx::props::Jc::Right) => HorizontalAlignment::Right,
                 _ => HorizontalAlignment::Left,
             },
-            indent: Points(r.tbl.ind.unwrap_or(0.0)),
+            indent: Points(r.tbl.ind.map_or(0.0, crate::docx::props::Width::dxa)),
             row_height: Tri::Unavailable,
             row_can_break: Tri::Uniform(!r.tr.cant_split.unwrap_or(false)),
             header_row: Tri::Unavailable,

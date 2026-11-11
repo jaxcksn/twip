@@ -152,6 +152,7 @@ pub struct TableProps {
     pub width: crate::docx::props::Width,
     pub jc: crate::docx::props::Jc,
     pub ind: f64,
+    pub ind_pct: Option<f64>,
     pub borders: [Option<crate::docx::props::Border>; 6],
     pub bands: (i64, i64),
     pub floating: Option<crate::docx::props::TablePos>,
@@ -328,6 +329,7 @@ impl TableProps {
             width: t.width,
             jc: t.jc,
             ind: t.ind,
+            ind_pct: t.ind_pct,
             borders: t.borders.clone(),
             bands: t.bands,
             floating: t.floating,
@@ -927,8 +929,8 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.borders, t.bands, t.floating) =
-                    (props.style_id, props.look, props.width, props.jc, props.ind, props.borders, props.bands, props.floating);
+                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating) =
+                    (props.style_id, props.look, props.width, props.jc, props.ind, props.ind_pct, props.borders, props.bands, props.floating);
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
                     section,
