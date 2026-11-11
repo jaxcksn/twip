@@ -2193,6 +2193,8 @@ impl Reader {
         let twips = |v: f64| (v * 20.0).trunc() / 20.0;
         let dflt = [0.0, 0.0, 9.0, 9.0];
         let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
+        // Compat 15: a VML float is behind the text only without wrapping.
+        let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == "none");
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
@@ -2215,7 +2217,7 @@ impl Reader {
                 dist,
                 effect: [0.0; 4],
                 poly: None,
-                behind: st.z < 0,
+                behind,
                 allow_overlap: v.allow_overlap,
                 layout_in_cell: v.allow_in_cell,
                 order: self.float_order,

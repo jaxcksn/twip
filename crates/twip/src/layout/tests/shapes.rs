@@ -288,3 +288,11 @@ fn a_vml_float_reads_its_overlap_and_cell_flags() {
     let f = vml_float("", r#"o:allowoverlap="t""#, "", 14);
     assert!(f.allow_overlap && f.layout_in_cell);
 }
+
+#[test]
+fn a_compat_15_vml_float_is_behind_the_text_only_without_wrapping() {
+    let behind = |wrap: &str, compat| vml_float("z-index:-3", "", wrap, compat).behind;
+    let square = r#"<w10:wrap type="square"/>"#;
+    assert!(!behind(square, 15) && behind("", 15) && behind(r#"<w10:wrap type="none"/>"#, 15));
+    assert!(behind(square, 14));
+}
