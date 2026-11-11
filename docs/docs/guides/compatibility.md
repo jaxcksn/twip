@@ -45,7 +45,7 @@ The table says what each one does to layout.
 | `doNotUseHTMLParagraphAutoSpacing` | Laid out: automatic paragraph spacing is 5pt and the spaces between paragraphs add up. |
 | `doNotUseIndentAsNumberingTabStop` | Laid out, modes 14 and below: the hanging indent is no tab stop after a list number. |
 | `doNotVertAlignCellWithSp` | Laid out, modes 14 and below: a cell holding a float is top-aligned. |
-| `doNotVertAlignInTxbx` | Laid out, modes 14 and below: a text box's text stays at its top. |
+| `doNotVertAlignInTxbx` | No effect in Word. |
 | `doNotWrapTextWithPunct` | East Asian, after 1.0. |
 | `footnoteLayoutLikeWW8` | Not laid out yet: notes are placed by the mode's usual rules. |
 | `forgetLastTabAlignment` | No effect in Word. |

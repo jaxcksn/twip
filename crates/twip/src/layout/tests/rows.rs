@@ -353,12 +353,20 @@ mod floats {
 
     #[test]
     fn float_10_a_text_box_aligns_its_text_down_by_its_anchor() {
-        let at = |anchor: &str| {
+        let at = |anchor: &str, legacy: bool| {
             let tb = text_box(r#"<wp:wrapNone/>"#, 100.0, "Boxed").replace("<wps:bodyPr ", &format!(r#"<wps:bodyPr anchor="{anchor}" "#));
-            baseline_of(&doc(&tb), "Boxed")
+            let mut d = doc(&tb);
+            if legacy {
+                // The option has no effect on layout.
+                d.settings.compat_mode = 14;
+                d.settings.compat.insert("doNotVertAlignInTxbx".into());
+            }
+            baseline_of(&d, "Boxed")
         };
-        let (Some(t), Some(c), Some(b)) = (at("t"), at("ctr"), at("b")) else { return };
+        let (Some(t), Some(c), Some(b)) = (at("t", false), at("ctr", false), at("b", false)) else { return };
         assert!(c - t > 30.0 && ((b - t) - 2.0 * (c - t)).abs() < 0.01, "{t} {c} {b}");
+        let (Some(t), Some(c)) = (at("t", true), at("ctr", true)) else { return };
+        assert!(c - t > 30.0, "{t} {c}");
     }
 
     #[test]

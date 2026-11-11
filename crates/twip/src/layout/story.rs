@@ -970,8 +970,7 @@ fn lay_lines(
     let story = layout(&blocks, w, env, None, memos)?;
     let (cx, mut cy) = (fr[0], fr[1]);
     let content_bottom = fr[3];
-    let text = &env.ctx.env.text;
-    if !tb.auto_fit && tb.v_anchor > 0 && !(text.compat == Compat::Legacy && text.do_not_vert_align_in_txbx) {
+    if !tb.auto_fit && tb.v_anchor > 0 {
         let free = Lu::round_half_up(content_bottom - cy - story.height).0.max(0);
         cy += Lu(if tb.v_anchor == 2 { free } else { free / 2 }).to_pt();
     }

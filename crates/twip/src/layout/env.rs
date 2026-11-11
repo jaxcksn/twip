@@ -16,7 +16,6 @@ pub struct TextEnv {
     pub align_tables_row_by_row: bool,
     pub do_not_vert_align_cell_with_sp: bool,
     pub do_not_break_wrapped_tables: bool,
-    pub do_not_vert_align_in_txbx: bool,
     pub wp_justification: bool,
     pub word97_line_breaks: bool,
     /// Font metric options, compat ≤ 14: `noLeading` (no external leading), `noSpaceRaiseLower` (raised and
@@ -104,7 +103,6 @@ impl TextEnv {
             align_tables_row_by_row: s.has("alignTablesRowByRow"),
             do_not_vert_align_cell_with_sp: s.has("doNotVertAlignCellWithSp"),
             do_not_break_wrapped_tables: s.has("doNotBreakWrappedTables"),
-            do_not_vert_align_in_txbx: s.has("doNotVertAlignInTxbx"),
             wp_justification: s.has("wpJustification"),
             word97_line_breaks: s.has("useWord97LineBreakRules"),
             no_leading: s.compat() == Compat::Legacy && s.has("noLeading"),
