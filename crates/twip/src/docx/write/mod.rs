@@ -17,7 +17,7 @@ use std::rc::Rc;
 use roxmltree::Node;
 
 use super::review::{CommentId, People, RangeKind, RangeMark, RevisionMark, SectionChange};
-use super::xml::{MC, W, child, is, is_w};
+use super::xml::{MC, W, attr, child, is, is_w};
 use super::*;
 
 mod comments;
@@ -1275,7 +1275,9 @@ impl<'a, 'i> Saver<'a, 'i> {
             && (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
             && a.width == b.width
             && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating);
-        if !same_rows {
+        // Tables read as one (nothing between them) are written as one.
+        let joined = a.src.as_ref().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
+        if !same_rows || joined {
             // Rows or cells came or went: the table is written again, its kept rows from their source.
             let range = (**a.src.as_ref().ok_or("a table without its source")?).clone();
             let text = self.table_xml(Some(a), b)?;
@@ -1538,7 +1540,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                         self.container(&c.blocks, &d.blocks)?;
                     }
                     let mut inner = std::mem::replace(&mut self.splices, outer);
-                    inner.extend(self.row_fixes(n, k, row));
+                    inner.extend(self.row_fixes(n, k, row, node));
                     out.push_str(&self.spliced(n.range(), inner)?);
                 }
                 (_, n) => {
@@ -1645,25 +1647,47 @@ impl<'a, 'i> Saver<'a, 'i> {
 
     /// A kept row's height and its cells' widths changed by a border drag, and its and its cells' revisions, patched
     /// into its source properties.
-    fn row_fixes(&self, n: Node, was: &Row, now: &Row) -> Vec<Splice> {
+    /// `table` is the table written (the first of tables read as one).
+    fn row_fixes(&self, n: Node, was: &Row, now: &Row, table: Option<Node>) -> Vec<Splice> {
         let w = self.w.clone();
         let mut out = Vec::new();
+        // A row of a later table read as one with the first: its own table's alignment and cell margins become its
+        // exceptions (the row's own win).
+        let own = n.ancestors().skip(1).find(|a| is_w(*a, "tbl")).filter(|t| table.is_some_and(|f| f != *t));
+        let ex = child(n, "tblPrEx");
+        let mut later: Vec<(&str, String, &[&str])> = Vec::new();
+        for name in ["jc", "tblCellMar"] {
+            if let Some(c) = own.and_then(|t| child(t, "tblPr")).and_then(|p| child(p, name))
+                && ex.is_none_or(|e| child(e, name).is_none())
+            {
+                later.push((name, self.xml[c.range()].to_string(), revisions::before(revisions::TBLPREX, name)));
+            }
+        }
         // The table exceptions' tracked change.
-        if was.rev.ex_change != now.rev.ex_change {
-            let tag = revisions::ex_change(&w, &now.rev, self.people);
-            match child(n, "tblPrEx") {
-                Some(p) => out.push(self.set_child(p, "tblPrExChange", tag, revisions::before(revisions::TBLPREX, "tblPrExChange"))),
-                None if !tag.is_empty() => {
-                    let at = self.open_end(n);
-                    out.push((at..at, format!("<{w}tblPrEx>{tag}</{w}tblPrEx>")));
+        let change = if was.rev.ex_change != now.rev.ex_change { Some(revisions::ex_change(&w, &now.rev, self.people)) } else { None };
+        match ex {
+            Some(p) => {
+                if let Some(tag) = change {
+                    out.push(self.set_child(p, "tblPrExChange", tag, revisions::before(revisions::TBLPREX, "tblPrExChange")));
                 }
-                None => {}
+                out.extend(self.set_children(p, later));
+            }
+            None => {
+                let kids: String = later.into_iter().map(|(_, t, _)| t).chain(change).collect();
+                if !kids.is_empty() {
+                    let at = self.open_end(n);
+                    out.push((at..at, format!("<{w}tblPrEx>{kids}</{w}tblPrEx>")));
+                }
             }
         }
         // Grid gaps before and after the cells (a border moved in some rows only).
         const BASE: &[&str] = &["cnfStyle", "divId"];
         let mut tr: Vec<(&str, String, &[&str])> = Vec::new();
-        for (name, a, b) in [("gridBefore", was.grid_before, now.grid_before), ("gridAfter", was.grid_after, now.grid_after)] {
+        // Against the row's source: a row of tables read as one has its gaps and spans over their merged grid.
+        let int_of = |n: Option<Node>, name: &str| n.and_then(|p| child(p, name)).and_then(|c| attr(c, "val")).and_then(|v| v.parse::<usize>().ok());
+        let tr_pr = child(n, "trPr");
+        let gaps = [(int_of(tr_pr, "gridBefore").unwrap_or(0), now.grid_before), (int_of(tr_pr, "gridAfter").unwrap_or(0), now.grid_after)];
+        for (name, (a, b)) in ["gridBefore", "gridAfter"].into_iter().zip(gaps) {
             if a != b {
                 tr.push((name, if b > 0 { format!("<{w}{name} {w}val=\"{b}\"/>") } else { String::new() }, BASE));
             }
@@ -1710,7 +1734,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 if a.width != b.width {
                     fix.push(("tcW", b.width.as_ref().map_or(String::new(), |v| width(&w, "tcW", v)), &["cnfStyle"]));
                 }
-                if a.span.max(1) != b.span.max(1) {
+                if int_of(child(*tc, "tcPr"), "gridSpan").unwrap_or(1).max(1) != b.span.max(1) {
                     let tag = if b.span > 1 { format!("<{w}gridSpan {w}val=\"{}\"/>", b.span) } else { String::new() };
                     fix.push(("gridSpan", tag, &["cnfStyle", "tcW"]));
                 }

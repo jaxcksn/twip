@@ -344,7 +344,7 @@ fn regions_save_and_read_back() {
     send(&mut e, &mut seq, json!({ "type": "select", "para": ids[13].0, "start": 0, "end": 0 }));
     send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "select", "value": "table"}}));
     send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "wrapInRepeatingSection", "tag": "Rows"}}));
-    send(&mut e, &mut seq, json!({ "type": "select", "para": ids[40].0, "start": 0, "end": 0 }));
+    send(&mut e, &mut seq, json!({ "type": "select", "para": ids[41].0, "start": 0, "end": 0 }));
     send(&mut e, &mut seq, json!({ "type": "key", "code": "ArrowDown", "mods": { "shift": true } }));
     send(&mut e, &mut seq, json!({ "type": "key", "code": "End", "mods": { "shift": true } }));
     send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "wrapInRepeatingSection", "tag": "Paras"}}));

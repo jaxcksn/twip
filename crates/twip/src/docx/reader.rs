@@ -1210,7 +1210,10 @@ impl Reader {
         table: Option<&TableCtx>,
     ) -> Vec<(Option<Block>, Option<Node<'a, 'i>>)> {
         let mut out = Vec::new();
-        for n in container.children().filter(|c| c.is_element()) {
+        let kids: Vec<Node> = container.children().filter(|c| c.is_element()).collect();
+        let mut i = 0;
+        while let Some(&n) = kids.get(i) {
+            i += 1;
             if is_w(n, "p") {
                 let sect = child(n, "pPr").and_then(|p| child(p, "sectPr"));
                 self.uncounted = sect.is_some() && matches!(out.last(), Some((Some(Block::Para(_)), None))) && !has_content(n);
@@ -1221,7 +1224,16 @@ impl Reader {
                 if let Some(p) = self.pending_hidden.take() {
                     out.push((Some(Block::Para(p)), None));
                 }
-                out.push((Some(Block::Table(self.read_table(n, pkg))), None));
+                // Tables with nothing between them are one table.
+                let mut run = vec![n];
+                while let Some(&m) = kids.get(i)
+                    && is_w(m, "tbl")
+                    && self.joins(&run, m)
+                {
+                    run.push(m);
+                    i += 1;
+                }
+                out.push((Some(Block::Table(self.read_table(&run, pkg))), None));
             } else if is_w(n, "sdt") || is_w(n, "customXml") {
                 let content = if is_w(n, "sdt") { child(n, "sdtContent") } else { Some(n) };
                 if let Some(c) = content {
@@ -2485,7 +2497,26 @@ impl Reader {
 
     // ---------------- tables ----------------
 
-    fn read_table(&mut self, t: Node, pkg: &mut Package) -> Table {
+    /// Whether the table `m` right after the tables `run` is one table with them: neither floats, both have the same
+    /// style and run the same way, and their grids are the same or have no column without a width (their edges then
+    /// merge).
+    fn joins(&self, run: &[Node], m: Node) -> bool {
+        let kind = |t: Node| {
+            let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
+            let style = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
+            let mut tbl = self.res.styles.table_region(style.as_deref(), &[]).tbl.clone();
+            tbl.merge(&direct);
+            (tbl.floating.is_some(), style, tbl.bidi_visual.unwrap_or(false))
+        };
+        let grids: Vec<Vec<f64>> = run.iter().copied().chain([m]).map(table_grid).collect();
+        let first = kind(run[0]);
+        !first.0 && kind(m) == first && (grids.iter().all(|g| *g == grids[0]) || grids.iter().flatten().all(|w| *w > 0.0))
+    }
+
+    /// One table from `ts`, tables with nothing between them: the first one's properties and grid, every table's
+    /// rows in order.
+    fn read_table(&mut self, ts: &[Node], pkg: &mut Package) -> Table {
+        let t = ts[0];
         let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
         let style_id = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
         let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
@@ -2493,7 +2524,7 @@ impl Reader {
         tbl.merge(&direct);
         let widths = |g: Node| children(g, "gridCol").map(|c| attr_twips(c, "w").unwrap_or(0.0)).collect::<Vec<f64>>();
         let grid_node = child(t, "tblGrid");
-        let grid = grid_node.map(widths).unwrap_or_default();
+        let mut grid = grid_node.map(widths).unwrap_or_default();
         // The earlier properties resolve over the earlier table style, as the table's own do over its style. Earlier
         // properties without borders leave the table's borders as they are (FX-REVIEW-TABLES and its rejected twin).
         let now = &tbl.borders;
@@ -2521,7 +2552,13 @@ impl Reader {
         });
         let look =
             direct.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
-        let row_nodes: Vec<(Node, Vec<ControlId>)> = self.rows_of(t, &[]);
+        let mut row_nodes: Vec<(Node, Vec<ControlId>)> = Vec::new();
+        let mut row_table = Vec::new();
+        for (k, t) in ts.iter().enumerate() {
+            let rows = self.rows_of(*t, &[]);
+            row_table.extend(std::iter::repeat_n(k, rows.len()));
+            row_nodes.extend(rows);
+        }
         let nrows = row_nodes.len();
         let row_band = tbl.row_band.unwrap_or(0);
         let headers = row_nodes
@@ -2542,7 +2579,14 @@ impl Reader {
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
-            let ex = TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours);
+            let mut ex = TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours);
+            // A later table's rows keep its own alignment and cell margins as their exceptions.
+            if row_table[ri] > 0 {
+                let own = TblProps::parse(child(ts[row_table[ri]], "tblPr"), &self.res.styles.colours);
+                let mut later = TblProps { jc: own.jc, margins: own.margins, ..Default::default() };
+                later.merge(&ex);
+                ex = later;
+            }
             trp.jc = trp.jc.or(ex.jc);
             // Every row's alignment, or none when they differ.
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
@@ -2640,6 +2684,10 @@ impl Reader {
                 rev,
             });
         }
+        let grids: Vec<Vec<f64>> = ts.iter().copied().map(table_grid).collect();
+        if grids.iter().any(|g| *g != grid) {
+            grid = merged_grid(&grids, &mut rows, &row_table);
+        }
         let b = &tbl.borders;
         Table {
             style_id,
@@ -2662,7 +2710,7 @@ impl Reader {
             bidi_visual: tbl.bidi_visual.unwrap_or(false),
             grid,
             rows,
-            src: self.record.then(|| Rc::new(t.range())),
+            src: self.record.then(|| Rc::new(t.range().start..ts[ts.len() - 1].range().end)),
             id: next_para_id(),
             direct: Raw(child(t, "tblPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
             controls: Vec::new(),
@@ -2712,6 +2760,40 @@ impl Reader {
         });
         CellRevisions { structural, change }
     }
+}
+
+/// A table's `w:tblGrid` column widths.
+fn table_grid(t: Node) -> Vec<f64> {
+    child(t, "tblGrid").map(|g| children(g, "gridCol").map(|c| attr_twips(c, "w").unwrap_or(0.0)).collect()).unwrap_or_default()
+}
+
+/// The grid of tables joined into one: every table's column edges, from the table's start (to the nearest twip).
+/// `rows` (from table `row_table[i]` of `grids`) get their gaps and cells' spans over it; columns a row has past its
+/// own grid's end come after the merged grid's.
+fn merged_grid(grids: &[Vec<f64>], rows: &mut [Row], row_table: &[usize]) -> Vec<f64> {
+    let edges: Vec<Vec<i64>> = grids
+        .iter()
+        .map(|g| std::iter::once(0).chain(g.iter().scan(0.0, |x, w| { *x += w; Some((*x * 20.0).round() as i64) })).collect())
+        .collect();
+    let mut all: Vec<i64> = edges.iter().flatten().copied().collect();
+    all.sort_unstable();
+    all.dedup();
+    let at = |k: usize, c: usize| match edges[k].get(c) {
+        Some(e) => all.binary_search(e).unwrap_or(0),
+        None => all.len() + c - edges[k].len(),
+    };
+    for (r, &k) in rows.iter_mut().zip(row_table) {
+        let mut c = r.grid_before;
+        r.grid_before = at(k, c);
+        for cell in &mut r.cells {
+            let from = at(k, c);
+            c += cell.span;
+            cell.span = at(k, c) - from;
+        }
+        let end = at(k, c);
+        r.grid_after = at(k, c + r.grid_after) - end;
+    }
+    all.windows(2).map(|w| (w[1] - w[0]) as f64 / 20.0).collect()
 }
 
 fn cell_margins(tcp: &TcProps, tm: &Margins, unset: f64) -> [f64; 4] {

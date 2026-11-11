@@ -19,33 +19,33 @@ page 0 612.0 792.0
   89.0 299.8 T2 R3 C1
   237.8 299.8 T2 R3 C2
   386.6 299.8 T2 R3 C3
-  89.0 320.6 T3 R1 C1
-  239.0 320.6 T3 R1 C2
-  89.0 341.0 T3 R2 C1
-  239.0 341.0 T3 R2 C2
-  83.3 361.4 The second and third tables above are adjacent in the XML, with no paragraph
-  83.3 373.2 between them (Word joins them into one table).
-  89.0 393.6 T4 R1 C1
-  237.8 393.6 T4 R1 C2
-  386.6 393.6 T4 R1 C3
-  89.0 414.0 T4 R2 C1
-  237.8 414.0 T4 R2 C2
-  386.6 414.0 T4 R2 C3
-  89.0 454.7 T5 R1 C1
-  237.8 454.7 T5 R1 C2
-  386.6 454.7 T5 R1 C3
-  89.0 475.1 T5 R2 C1
-  237.8 475.1 T5 R2 C2
-  386.6 475.1 T5 R2 C3
-  83.3 495.5 The fourth and fifth tables above are separated only by an empty paragraph.
-  83.3 515.3 Paragraph before the last table.
-  89.0 535.7 End R1 C1
-  237.8 535.7 End R1 C2
-  386.6 535.7 End R1 C3
-  89.0 556.1 End R2 C1
-  237.8 556.1 End R2 C2
-  386.6 556.1 End R2 C3
-  89.0 576.4 End R3 C1
-  237.8 576.4 End R3 C2
-  386.6 576.4 End R3 C3
-  72.0 597.8 Paragraph after the wrapper table.
+  89.0 340.5 T3 R1 C1
+  239.0 340.5 T3 R1 C2
+  89.0 360.9 T3 R2 C1
+  239.0 360.9 T3 R2 C2
+  83.3 381.2 The second and third tables above are separated by an empty paragraph, so they
+  83.3 393.1 stay two tables (with none, Word joins them).
+  89.0 413.5 T4 R1 C1
+  237.8 413.5 T4 R1 C2
+  386.6 413.5 T4 R1 C3
+  89.0 433.8 T4 R2 C1
+  237.8 433.8 T4 R2 C2
+  386.6 433.8 T4 R2 C3
+  89.0 474.6 T5 R1 C1
+  237.8 474.6 T5 R1 C2
+  386.6 474.6 T5 R1 C3
+  89.0 495.0 T5 R2 C1
+  237.8 495.0 T5 R2 C2
+  386.6 495.0 T5 R2 C3
+  83.3 515.3 The fourth and fifth tables above are separated only by an empty paragraph.
+  83.3 535.2 Paragraph before the last table.
+  89.0 555.6 End R1 C1
+  237.8 555.6 End R1 C2
+  386.6 555.6 End R1 C3
+  89.0 575.9 End R2 C1
+  237.8 575.9 End R2 C2
+  386.6 575.9 End R2 C3
+  89.0 596.3 End R3 C1
+  237.8 596.3 End R3 C2
+  386.6 596.3 End R3 C3
+  72.0 617.7 Paragraph after the wrapper table.

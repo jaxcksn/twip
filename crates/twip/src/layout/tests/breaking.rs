@@ -1921,3 +1921,104 @@ fn compat_15_text_after_a_split_floating_table_can_stay_beside_its_first_part() 
     assert_eq!(page_of_a01(15, false), Some(1));
     assert_eq!(page_of_a01(12, true), Some(1));
 }
+
+/// Fixed tables of one row each, `cells` (text, width in twips) per table, back to back; `between` is written
+/// between them and `tbl_pr` into the second one's properties.
+fn back_to_back(tables: &[&[(&str, u32)]], between: &str, tbl_pr: &str) -> String {
+    let table = |(i, cells): (usize, &&[(&str, u32)])| {
+        let border = r#"w:val="single" w:sz="4" w:space="0" w:color="000000""#;
+        let total: u32 = cells.iter().map(|c| c.1).sum();
+        let grid: String = cells.iter().map(|c| format!(r#"<w:gridCol w:w="{}"/>"#, c.1)).collect();
+        let tcs: String = cells
+            .iter()
+            .map(|(t, w)| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#))
+            .collect();
+        let own = if i > 0 { tbl_pr } else { "" };
+        format!(
+            r#"<w:tbl><w:tblPr>{own}<w:tblW w:w="{total}" w:type="dxa"/><w:tblBorders><w:top {border}/><w:left {border}/><w:bottom {border}/><w:right {border}/><w:insideH {border}/><w:insideV {border}/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>{grid}</w:tblGrid><w:tr>{tcs}</w:tr></w:tbl>"#
+        )
+    };
+    let body: Vec<String> = tables.iter().enumerate().map(table).collect();
+    format!("<w:p><w:r><w:t>before</w:t></w:r></w:p>{}<w:p><w:r><w:t>after</w:t></w:r></w:p>", body.join(between))
+}
+
+#[test]
+fn tables_with_nothing_between_them_are_one_table_on_the_union_of_their_edges() {
+    let body = back_to_back(&[&[("aa", 2000), ("ab", 2000)], &[("ba", 3000), ("bb", 3000)]], "", "");
+    let Some(doc) = test_doc(COMPAT_15, ARIAL_12, &body, "") else { return };
+    let tables: Vec<_> = doc.sections[0].blocks.iter().filter_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).collect();
+    assert_eq!(tables.len(), 1);
+    let t = tables[0];
+    assert_eq!(t.grid, vec![100.0, 50.0, 50.0, 100.0]);
+    let spans = |r: usize| t.rows[r].cells.iter().map(|c| c.span).collect::<Vec<_>>();
+    assert_eq!((spans(0), spans(1)), (vec![1, 2], vec![2, 2]));
+    assert_eq!(t.width, crate::docx::props::Width::Dxa(200.0), "the first table's width");
+    // Laid out as one fixed table 4000 wide: the later row's second cell starts past the first two columns as they
+    // shrink to fit, and the rows share their border.
+    let l = baselines(COMPAT_15, ARIAL_12, &body).unwrap();
+    let dx = at(&l, "bb").0 - at(&l, "ba").0;
+    assert!(dx > 95.0 && dx < 110.0, "{dx}");
+    let two = baselines(COMPAT_15, ARIAL_12, &back_to_back(&[&[("aa", 2000), ("ab", 2000)], &[("ba", 3000), ("bb", 3000)]], "<w:p/>", "")).unwrap();
+    assert!((at(&two, "bb").0 - at(&two, "ba").0 - 150.0).abs() < 0.01);
+}
+
+#[test]
+fn a_floating_or_differently_directed_table_stays_apart_from_the_one_before() {
+    let tables = |pr: &str| {
+        let body = back_to_back(&[&[("aa", 2000)], &[("ba", 3000)]], "", pr);
+        test_doc(COMPAT_15, ARIAL_12, &body, "").map(|d| d.sections[0].blocks.iter().filter(|b| matches!(b, crate::docx::Block::Table(_))).count())
+    };
+    let Some(plain) = tables("") else { return };
+    assert_eq!(plain, 1);
+    assert_eq!(tables(r#"<w:tblpPr w:vertAnchor="text" w:tblpY="200"/>"#), Some(2));
+    assert_eq!(tables("<w:bidiVisual/>"), Some(2));
+}
+
+#[test]
+fn tables_read_as_one_save_as_one() {
+    let body = back_to_back(&[&[("aa", 2000), ("ab", 2000)], &[("ba", 3000), ("bb", 3000)]], "", "");
+    let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    let doc = format!(r#"<w:document xmlns:w="{w}"><w:body>{body}<w:sectPr/></w:body></w:document>"#);
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>"#;
+    let bytes = super::package_bytes(&[("word/document.xml", &doc), ("word/_rels/document.xml.rels", rels)]).unwrap();
+    let saved = crate::docx::write::save(&crate::docx::read_editable(&bytes).expect("reads")).expect("saves");
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).unwrap().by_name("word/document.xml").unwrap(), &mut xml)
+        .unwrap();
+    assert_eq!(xml.matches("<w:tbl>").count(), 1, "{xml}");
+    let grid: Vec<&str> = xml.split(r#"<w:gridCol w:w=""#).skip(1).map(|s| &s[..s.find('"').unwrap()]).collect();
+    assert_eq!(grid, ["2000", "1000", "1000", "2000"]);
+    assert_eq!(xml.matches(r#"<w:gridSpan w:val="2"/>"#).count(), 3, "{xml}");
+    let again = crate::docx::read_editable(&saved).expect("reads again");
+    assert!(matches!(&again.sections[0].blocks[1], crate::docx::Block::Table(t) if t.rows.len() == 2 && t.grid.len() == 4));
+}
+
+#[test]
+fn a_later_tables_alignment_and_margins_are_its_rows_exceptions_and_another_style_keeps_it_apart() {
+    let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    let styles = format!(r#"<w:styles xmlns:w="{w}"><w:style w:type="table" w:styleId="Grid"><w:name w:val="Grid"/></w:style></w:styles>"#);
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#;
+    let read = |second: &str| {
+        let body = back_to_back(&[&[("aa", 2000)], &[("ba", 2000)]], "", second).replacen("<w:tblPr>", r#"<w:tblPr><w:tblStyle w:val="Grid"/>"#, 1);
+        let doc = format!(r#"<w:document xmlns:w="{w}"><w:body>{body}<w:sectPr/></w:body></w:document>"#);
+        let bytes = super::package_bytes(&[("word/document.xml", &doc), ("word/styles.xml", &styles), ("word/_rels/document.xml.rels", rels)]).unwrap();
+        crate::docx::read_editable(&bytes).expect("reads")
+    };
+    let tables = |d: &crate::docx::Document| d.sections[0].blocks.iter().filter(|b| matches!(b, crate::docx::Block::Table(_))).count();
+    assert_eq!(tables(&read("")), 2, "the second has no style");
+    let mar = r#"<w:tblCellMar><w:left w:w="500" w:type="dxa"/></w:tblCellMar>"#;
+    let doc = read(&format!(r#"<w:tblStyle w:val="Grid"/><w:jc w:val="center"/>{mar}"#));
+    assert_eq!(tables(&doc), 1);
+    let Some(crate::docx::Block::Table(t)) = doc.sections[0].blocks.get(1) else { panic!("a table") };
+    assert_eq!((t.rows[0].jc, t.rows[1].jc), (None, Some(crate::docx::props::Jc::Center)));
+    assert_eq!((t.rows[0].cells[0].margins[1], t.rows[1].cells[0].margins[1]), (0.0, 25.0), "{:?}", t.rows[1].cells[0].margins);
+    let saved = crate::docx::write::save(&doc).expect("saves");
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).unwrap().by_name("word/document.xml").unwrap(), &mut xml)
+        .unwrap();
+    assert_eq!(xml.matches("<w:tbl>").count(), 1, "{xml}");
+    assert!(xml.contains(&format!(r#"<w:tblPrEx><w:jc w:val="center"/>{mar}</w:tblPrEx>"#)), "{xml}");
+    let again = crate::docx::read_editable(&saved).expect("reads again");
+    let Some(crate::docx::Block::Table(u)) = again.sections[0].blocks.get(1) else { panic!("a table") };
+    assert_eq!((u.rows[1].jc, u.rows[1].cells[0].margins), (t.rows[1].jc, t.rows[1].cells[0].margins));
+}

@@ -22,9 +22,9 @@ page 0 612.0 792.0
   85.1 302.6 T2 R3 C1
   241.1 302.6 T2 R3 C2
   397.1 302.6 T2 R3 C3
-  85.1 323.0 T3 R1 C1
-  235.1 323.0 T3 R1 C2
-  85.1 343.3 T3 R2 C1
-  235.1 343.3 T3 R2 C2
-  79.5 363.7 The second and third tables above are adjacent in the XML, with no paragraph
-  79.5 375.6 between them (Word joins them into one table).
+  85.1 343.3 T3 R1 C1
+  235.1 343.3 T3 R1 C2
+  85.1 363.7 T3 R2 C1
+  235.1 363.7 T3 R2 C2
+  79.5 384.1 The second and third tables above are separated by an empty paragraph, so they
+  79.5 396.0 stay two tables (with none, Word joins them).
