@@ -1524,7 +1524,11 @@ impl<'d> PageFill<'d, '_> {
             take = take.min(cap);
         }
         if take == 0 {
-            if at_top {
+            // Under notes going on from an earlier column or page that leave no room for it, the line waits (a
+            // balancing trial fails instead).
+            // ponytail: in a balanced section the trial heights decide how a note is shared between the columns' areas
+            // and whether a column holds text above a continuation; the split rule itself isn't known.
+            if at_top && !(fit == 0 && area.carried > 0 && !col.balance) {
                 self.at.forced = self.at.forced || col.balance;
                 take = fit.max(1).min(n);
             } else {

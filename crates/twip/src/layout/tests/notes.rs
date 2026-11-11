@@ -562,3 +562,12 @@ fn compat_15_a_note_that_fits_the_page_stays_whole_as_the_text_moves_on() {
     let on = |s: &str| pages.iter().position(|p| p.contains(s));
     assert_eq!([on(&format!("P{:03}", col - 4)), on("Q001"), on("Q024")], [Some(0); 3], "{pages:?}");
 }
+
+#[test]
+fn compat_14_no_line_under_notes_going_on_that_fill_its_column() {
+    // The note goes on under column 1's text, fills column 2 and goes on on the next page: column 2 has no text.
+    let Some(pages) = long_note_in_columns(10, 150, "") else { return };
+    let on = |s: &str| pages.iter().position(|p| p.contains(s));
+    assert_eq!((on("P010"), on("Q001")), (Some(0), Some(0)), "{pages:?}");
+    assert!(on("P011") > Some(0), "{pages:?}");
+}
