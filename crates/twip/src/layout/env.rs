@@ -68,6 +68,11 @@ pub struct TextEnv {
     pub vertical: Option<super::vertical::Vertical>,
     /// Automatic hyphenation.
     pub hyphenation: Option<HyphenEnv>,
+    /// Compat 15, the last line of a page or column without `allowHyphenationAtTrackBottom`: re-broken without
+    /// automatic hyphenation (`useWord2013TrackBottomHyphenation` off), else moved to the next one when it ends at a
+    /// hyphenation point.
+    pub bottom_unhyphenated: bool,
+    pub bottom_hyphen_moves: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -85,6 +90,7 @@ pub fn is_dark(c: u32) -> bool {
 impl TextEnv {
     pub fn new(doc: &Document) -> TextEnv {
         let s = &doc.settings;
+        let bottom = s.compat() == Compat::Generic && !s.has("allowHyphenationAtTrackBottom");
         TextEnv {
             compat: s.compat(),
             default_tab: s.default_tab,
@@ -137,6 +143,8 @@ impl TextEnv {
                 limit: s.consecutive_hyphen_limit,
                 caps: s.do_not_hyphenate_caps,
             }),
+            bottom_unhyphenated: bottom && s.has("useWord2013TrackBottomHyphenation=0"),
+            bottom_hyphen_moves: bottom && !s.has("useWord2013TrackBottomHyphenation=0"),
         }
     }
 }

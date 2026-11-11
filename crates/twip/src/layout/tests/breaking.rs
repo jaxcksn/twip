@@ -49,7 +49,7 @@ fn numbered_page(settings: &str, rpr: &str, body: &str, numbering: &str, page: u
 }
 
 /// The document of [`numbered_baselines`]: compat 12 unless `settings` sets a mode; `None` without Arial.
-fn test_doc(settings: &str, rpr: &str, body: &str, numbering: &str) -> Option<crate::docx::Document> {
+pub(super) fn test_doc(settings: &str, rpr: &str, body: &str, numbering: &str) -> Option<crate::docx::Document> {
     fonts().face("Arial", None, false, false)?;
     let compat = if settings.contains("compatibilityMode") {
         ""

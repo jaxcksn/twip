@@ -749,10 +749,16 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
                     && let Some(m) = int(attr(e, "val"))
                 {
                     s.compat_mode = m.min(15);
-                } else if let Some(name @ ("enableOpenTypeFeatures" | "overrideTableStyleFontSizeAndJustification")) = attr(e, "name")
+                } else if let Some(
+                    name @ ("enableOpenTypeFeatures"
+                    | "overrideTableStyleFontSizeAndJustification"
+                    | "allowHyphenationAtTrackBottom"),
+                ) = attr(e, "name")
                     && on_off_str(attr(e, "val"))
                 {
                     s.compat.insert(name.to_string());
+                } else if attr(e, "name") == Some("useWord2013TrackBottomHyphenation") && !on_off_str(attr(e, "val")) {
+                    s.compat.insert("useWord2013TrackBottomHyphenation=0".to_string());
                 }
             } else if on_off(e) {
                 s.compat.insert(e.tag_name().name().to_string());

@@ -1537,6 +1537,8 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             let hard = pb.lines[..fit.min(n)].iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
+            // Compat 15: a line that would end the page or column at a hyphenation point goes on to the next one.
+            let fit = if self.ctx.env.text.bottom_hyphen_moves && fit > 0 && fit < n && !hard && pb.lines[fit - 1].hyphen { fit - 1 } else { fit };
             let take = lines_to_take(n, fit, hard, first_part, style.keep_lines, style.widow_control);
             if take == 0 && force.is_none() && wc && !at_top && self.ctx.env.text.compat == Compat::Legacy && first_ref.is_some() {
                 force = first_ref;
@@ -1574,12 +1576,26 @@ impl<'d> PageFill<'d, '_> {
         *area = a;
         let notes_continue = !rest.is_empty();
         carry.note_rest.extend(rest);
+        // Compat 15 with automatic hyphenation: the line that ends the page or column is broken again without it.
+        let text = &self.ctx.env.text;
+        let last = match &pb.lines[take - 1] {
+            l if text.bottom_unhyphenated && text.hyphenation.is_some() && take < n && l.hyphen && !pb.pieces()[l.end - 1].soft_hyphen => {
+                let env = super::env::TextEnv { hyphenation: None, ..text.clone() };
+                let space = ParaSpace { width: pb.width, start: pb.from + l.start, borders: pb.borders.clone(), x0: pb.x0, env, fit: false };
+                Some(break_lines(&pb.shaped, p, &space, self.ctx.fonts, memos)?)
+            }
+            _ => None,
+        };
         let mut yy = top;
         let mut stop_kind = None;
         let mut lines = Vec::with_capacity(take);
         let mut numbers = Vec::new();
         for (i, l) in pb.lines[..take].iter().enumerate() {
-            lines.push(PlacedLine { x: 0.0, y: yy, line: pb.fragment(i, p, self.ctx.fonts) });
+            let (l, line) = match &last {
+                Some(a) if i + 1 == take => (&a.lines[0], a.fragment(0, p, self.ctx.fonts)),
+                _ => (l, pb.fragment(i, p, self.ctx.fonts)),
+            };
+            lines.push(PlacedLine { x: 0.0, y: yy, line });
             self.line_number(carry, style, col, yy + l.baseline, &mut numbers);
             yy += l.pitch;
             if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
@@ -1597,7 +1613,7 @@ impl<'d> PageFill<'d, '_> {
         if done {
             pos.next_block();
         } else {
-            pos.at = At::Piece(pb.from + pb.lines[take].start);
+            pos.at = At::Piece(last.map_or(pb.from + pb.lines[take].start, |a| a.from + a.lines[0].end));
         }
         if notes_continue && stop_kind.is_none() && !(self.hold_notes && self.at_section_end(pos)) {
             carry.keep_top = false;
