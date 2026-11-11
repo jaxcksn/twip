@@ -1113,7 +1113,12 @@ impl<'d> PageFill<'d, '_> {
                 self.at.beneath = Some(beneath);
             }
             self.continue_notes(&mut carry, &col, &mut area, memos)?;
-            let r = self.fill_body(&mut pos, &mut carry, col, page_empty, &mut area, &mut out, memos)?;
+            // Compat ≤ 14, a balanced column: under a continuation that goes on past it the column holds only the note.
+            let r = if col.balance && self.ctx.env.text.compat == Compat::Legacy && !carry.note_rest.is_empty() {
+                (Stop::Full, col.top.to_pt())
+            } else {
+                self.fill_body(&mut pos, &mut carry, col, page_empty, &mut area, &mut out, memos)?
+            };
             let text = r.1 + if pos.at.at_start() { carry.prev_after } else { 0.0 };
             if r.0 == Stop::Done && self.hold_notes && !area.parts.is_empty() {
                 if area.cols.is_empty() {
@@ -1592,12 +1597,11 @@ impl<'d> PageFill<'d, '_> {
             take = take.min(cap);
         }
         if take == 0 {
-            // Under notes going on from an earlier column or page that leave no room for it, the line waits (a
-            // balancing trial fails instead). So does a line with a footnote reference above an earlier section's closed
-            // footnote area.
-            // ponytail: in a balanced section the trial heights decide how a note is shared between the columns' areas
-            // and whether a column holds text above a continuation; the split rule itself isn't known.
-            if at_top && !(fit == 0 && area.carried > 0 && !col.balance) && !(fit == 0 && self.notes_closed) {
+            // Under notes going on from an earlier column or page that leave no room for it, the line waits (in
+            // compat 15 a balancing trial fails instead). So does a line with a footnote reference above an earlier
+            // section's closed footnote area.
+            let waits = fit == 0 && (area.carried > 0 && (!col.balance || self.ctx.env.text.compat == Compat::Legacy) || self.notes_closed);
+            if at_top && !waits {
                 self.at.forced = self.at.forced || col.balance;
                 take = fit.max(1).min(n);
             } else {

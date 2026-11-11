@@ -633,3 +633,73 @@ fn a_continuation_notice_takes_note_room_under_a_cut_note() {
     assert!(count(&off) == 10 && count(&on) == 10 && !on.contains("Cont"), "{off}\n{on}");
     assert_eq!(body_end(&on).map(|k| k + 1), body_end(&off));
 }
+
+/// A beneath-text section of `body` one-line paragraphs in `cols` columns, the `ref`th referencing a note of `lines`
+/// lines (one paragraph of line breaks when `breaks`, else one paragraph per line), then a continuous one-column section
+/// of `tail` lines: each page's (text, x, baseline) of every text run start.
+fn note_in_balanced(cols: &str, body: usize, r: usize, lines: usize, breaks: bool, tail: usize) -> Option<Vec<Vec<(String, f64, f64)>>> {
+    let p = |s: String| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>{s}</w:p>"#);
+    let long: String = if breaks {
+        p((1..=lines).map(|i| format!(r#"<w:r>{}<w:t>Q{i:03}</w:t></w:r>"#, if i > 1 { "<w:br/>" } else { "" })).collect())
+    } else {
+        (1..=lines).map(|i| p(format!("<w:r><w:t>Q{i:03}</w:t></w:r>"))).collect()
+    };
+    let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let line = |s: String, k: usize| p(format!(r#"<w:r><w:t>{s}</w:t></w:r>{}"#, if k == r { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" }));
+    let mut b: String = (1..=body).map(|k| line(format!("P{k:03}"), k)).collect();
+    b += &sect(&format!("{pr}{cols}"), false);
+    b += &((1..=tail).map(|k| line(format!("T{k:03}"), 0)).collect::<String>() + &sect(&format!(r#"<w:type w:val="continuous"/>{pr}"#), true));
+    let pages = super::page_chars(&notes_doc_with(&b, "", &extra)?);
+    Some(
+        pages
+            .iter()
+            .map(|pg| {
+                let mut runs: Vec<(String, f64, f64)> = Vec::new();
+                for &(c, x, y) in pg {
+                    match runs.last_mut() {
+                        Some(r) if (r.2 - y).abs() < 0.01 && c.is_alphanumeric() && !(c.is_uppercase() && r.0.len() >= 4) => r.0.push(c),
+                        _ if c.is_alphanumeric() => runs.push((c.to_string(), x, y)),
+                        _ => {}
+                    }
+                }
+                runs
+            })
+            .collect(),
+    )
+}
+
+fn find<'a>(pages: &'a [Vec<(String, f64, f64)>], s: &str) -> Option<(usize, &'a (String, f64, f64))> {
+    pages.iter().enumerate().find_map(|(i, p)| p.iter().find(|r| r.0.starts_with(s)).map(|r| (i, r)))
+}
+
+#[test]
+fn compat_14_a_balanced_column_under_a_continuation_that_goes_on_holds_only_the_note() {
+    // Three columns, six lines, a four-line note on line 2: column 1 holds two lines and the note's first, column 2
+    // the rest of the note only, column 3 the last four lines.
+    let Some(pages) = note_in_balanced(r#"<w:cols w:num="3" w:space="720"/>"#, 6, 2, 4, false, 2) else { return };
+    let (Some((0, p3)), Some((0, q2)), Some((0, q4))) = (find(&pages, "P003"), find(&pages, "Q002"), find(&pages, "Q004")) else { panic!("{pages:?}") };
+    assert!(q2.1 > 200.0 && q2.1 < 300.0 && q4.1 == q2.1, "the rest of the note in column 2: {pages:?}");
+    assert!(p3.1 > 400.0, "line 3 in column 3: {pages:?}");
+}
+
+/// The note lines on pages 1 and 2 when the note of [`note_in_balanced`] referenced on the last of ten lines in two
+/// columns goes on past page 2.
+fn note_pages(cols: &str) -> Option<(usize, usize)> {
+    let pages = note_in_balanced(cols, 10, 10, 400, false, 5)?;
+    let n = |k: usize| pages[k].iter().filter(|r| r.0.starts_with('Q')).count();
+    Some((n(0), n(1)))
+}
+
+#[test]
+fn compat_14_a_note_cut_at_a_balanced_sections_end_balances_on_its_last_page() {
+    // Ten lines in two columns, a long note on the last: page 2 holds the last 21 note lines as 11 + 10 at its top and
+    // the next section below them.
+    let cols = r#"<w:cols w:num="2" w:space="720"/>"#;
+    let Some((first, _)) = note_pages(cols) else { return };
+    let Some(pages) = note_in_balanced(cols, 10, 10, first + 21, false, 5) else { return };
+    let q = |k: usize| find(&pages, &format!("Q{:03}", first + k));
+    let (Some((1, a)), Some((1, b)), Some((1, c)), Some((1, t))) = (q(11), q(12), q(21), find(&pages, "T001")) else { panic!("{pages:?}") };
+    assert!(a.1 < 200.0 && b.1 > 300.0 && c.1 == b.1 && b.2 < a.2, "11 + 10: {:?}", pages[1]);
+    assert!(t.1 < 200.0 && t.2 > a.2, "the next section below the notes: {:?}", pages[1]);
+}
