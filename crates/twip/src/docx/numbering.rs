@@ -311,8 +311,34 @@ pub fn format_number(v: i64, fmt: &str) -> String {
         "numberInDash" => format!("- {v} -"),
         "hex" => format!("{v:X}"),
         "chicago" if v > 0 => ["*", "†", "‡", "§"][(v as usize - 1) % 4].repeat((v as usize - 1) / 4 + 1),
+        "russianLower" => repeated(v, &chars(&[(0x430, 0x438), (0x43A, 0x43F), (0x440, 0x449), (0x44B, 0x44B), (0x44D, 0x44F)])),
+        "russianUpper" => repeated(v, &chars(&[(0x410, 0x418), (0x41A, 0x41F), (0x420, 0x429), (0x42B, 0x42B), (0x42D, 0x42F)])),
+        "hindiVowels" => repeated(v, &chars(&[(0x915, 0x939)])),
+        "hindiConsonants" => repeated(v, &[chars(&[(0x905, 0x914)]), vec!["\u{905}\u{902}".into(), "\u{905}\u{903}".into()]].concat()),
+        "thaiLetters" => repeated(v, &chars(&[(0xE01, 0xE02), (0xE04, 0xE04), (0xE07, 0xE23), (0xE25, 0xE25), (0xE27, 0xE2E)])),
+        "hindiNumbers" => digits(v, 0x966),
+        "thaiNumbers" => digits(v, 0xE50),
         _ => v.to_string(),
     }
+}
+
+/// The characters of the code point ranges, in order.
+fn chars(ranges: &[(u32, u32)]) -> Vec<String> {
+    ranges.iter().flat_map(|&(a, b)| (a..=b).filter_map(char::from_u32).map(String::from)).collect()
+}
+
+/// The set's `v`th member, written once more for each time the set was gone through.
+fn repeated(v: i64, set: &[String]) -> String {
+    if v <= 0 {
+        return String::new();
+    }
+    let n = (v - 1) as usize;
+    set[n % set.len()].repeat(n / set.len() + 1)
+}
+
+/// `v` in decimal with the digits from `zero` on.
+fn digits(v: i64, zero: u32) -> String {
+    v.to_string().chars().map(|c| c.to_digit(10).and_then(|d| char::from_u32(zero + d)).unwrap_or(c)).collect()
 }
 
 /// a … z, aa, bb, … (the letter repeated).
@@ -455,5 +481,16 @@ mod tests {
         assert_eq!(cardinal(14), "fourteen");
         assert_eq!(ordinal_text(20), "twentieth");
         assert_eq!(ordinal_text(21), "twenty-first");
+        assert_eq!(format_number(29, "russianLower"), "я");
+        assert_eq!(format_number(30, "russianUpper"), "АА");
+        assert_eq!(format_number(10, "russianLower"), "к");
+        assert_eq!(format_number(38, "hindiVowels"), "कक");
+        assert_eq!(format_number(17, "hindiConsonants"), "अं");
+        assert_eq!(format_number(19, "hindiConsonants"), "अअ");
+        assert_eq!(format_number(41, "thaiLetters"), "ฮ");
+        assert_eq!(format_number(3, "thaiLetters"), "ค");
+        assert_eq!(format_number(42, "thaiLetters"), "กก");
+        assert_eq!(format_number(120, "hindiNumbers"), "१२०");
+        assert_eq!(format_number(29, "thaiNumbers"), "๒๙");
     }
 }
