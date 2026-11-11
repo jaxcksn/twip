@@ -4,12 +4,14 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use twip::internal::layout::hyphenate::Hyphenation;
 
 /// A document as Word's PDF shows it: its text without markup (the export's "document without markup": tracked
-/// changes accepted, no comments).
-fn read(bytes: &[u8]) -> Result<twip::internal::docx::Document, String> {
+/// changes accepted, no comments), hyphenated with the host's `hyphenation` patterns when there are any.
+fn read(bytes: &[u8], hyphenation: Option<&Hyphenation>) -> Result<twip::internal::docx::Document, String> {
     let mut doc = twip::internal::docx::read(bytes)?;
     doc.review.view = twip::internal::docx::review::MarkupView::NoMarkup;
+    doc.hyphenation = hyphenation.cloned();
     Ok(doc)
 }
 
@@ -353,7 +355,7 @@ pub fn compare(ours: &[Vec<Ch>], gold: &[Vec<Ch>]) -> Verdict {
 }
 
 fn load(docx: &Path, fonts: &twip::internal::font::Fonts) -> (Vec<Vec<Ch>>, Vec<Vec<Ch>>) {
-    let doc = read(&std::fs::read(docx).expect("read docx")).expect("parse docx");
+    let doc = read(&std::fs::read(docx).expect("read docx"), None).expect("parse docx");
     let g: Value = serde_json::from_str(&std::fs::read_to_string(docx.with_extension("golden.json")).expect("golden")).unwrap();
     (lay_out(&doc, fonts).0, golden(&g))
 }
@@ -441,7 +443,13 @@ fn trunc(s: &str) -> String {
 
 /// Runs every fixture under `paths` (folders or .docx files); prints pass rates per folder and writes
 /// `report`. With `features`, only documents whose features are within the set count (`golden --features`).
-pub fn run(paths: &[String], fonts: &twip::internal::font::Fonts, report: &Path, features: Option<&std::collections::BTreeSet<&'static str>>) {
+pub fn run(
+    paths: &[String],
+    fonts: &twip::internal::font::Fonts,
+    hyphenation: Option<&Hyphenation>,
+    report: &Path,
+    features: Option<&std::collections::BTreeSet<&'static str>>,
+) {
     let mut files: Vec<PathBuf> = Vec::new();
     for p in paths {
         collect(Path::new(p), &mut files);
@@ -453,7 +461,7 @@ pub fn run(paths: &[String], fonts: &twip::internal::font::Fonts, report: &Path,
         let Ok(gold) = std::fs::read_to_string(&gold_path) else { continue };
         let folder = f.parent().and_then(|p| p.file_name()).map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let name = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        let verdict = match std::fs::read(f).map_err(|e| e.to_string()).and_then(|b| read(&b)) {
+        let verdict = match std::fs::read(f).map_err(|e| e.to_string()).and_then(|b| read(&b, hyphenation)) {
             Ok(doc) if features.is_some_and(|f| !twip::internal::features::of(&doc).is_subset(f)) => continue,
             Ok(doc) => {
                 let layout = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lay_out(&doc, fonts)));

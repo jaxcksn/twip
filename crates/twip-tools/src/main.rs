@@ -25,15 +25,21 @@ fn main() {
     let mut args = std::env::args().skip(1).peekable();
     match args.peek().map(String::as_str) {
         Some("dump") => {
-            // twip dump <out dir> <docx or folders...>: every page's items as text, to compare engine builds.
-            let a: Vec<String> = args.skip(1).collect();
+            // twip dump [--hyphenation <lang>=<patterns file>]... <out dir> <docx or folders...>: every page's items as
+            // text, to compare engine builds.
+            let mut a: Vec<String> = args.skip(1).collect();
+            let hyphenation = match cli::hyphenation(&mut a) {
+                Ok(h) => h,
+                Err(e) => return exit_on_error(Err(e)),
+            };
             let Some((out, paths)) = a.split_first() else {
-                return exit_on_error(Err("usage: dump <out dir> <docx or folders...>".into()));
+                return exit_on_error(Err("usage: dump [--hyphenation <lang>=<patterns file>]... <out dir> <docx or folders...>".into()));
             };
             let fonts = twip::internal::font::Fonts::system();
             let result = cli::dump::run(std::path::Path::new(out), paths, |doc| {
                 let mut doc = doc.clone();
                 doc.review.view = twip::internal::docx::review::MarkupView::NoMarkup;
+                doc.hyphenation = hyphenation.clone();
                 twip::internal::layout::dump::page_text(&twip::internal::layout::layout(&doc, &fonts), &doc)
             });
             return exit_on_error(result.map(|n| println!("dumped {n} documents into {out}")));
@@ -104,9 +110,13 @@ fn main() {
         _ => {}
     }
     if args.peek().map(String::as_str) == Some("golden") {
-        // twip golden [--features f1,...] <fixture folders or .docx...>: compare layouts with reference (golden)
-        // geometry; --features keeps documents within a feature set.
+        // twip golden [--features f1,...] [--hyphenation <lang>=<patterns file>]... <fixture folders or .docx...>:
+        // compare layouts with reference (golden) geometry; --features keeps documents within a feature set.
         let mut a: Vec<String> = args.skip(1).collect();
+        let hyphenation = match cli::hyphenation(&mut a) {
+            Ok(h) => h,
+            Err(e) => return exit_on_error(Err(e)),
+        };
         let features = match a.iter().position(|x| x == "--features") {
             Some(i) => {
                 let list = a.get(i + 1).cloned().unwrap_or_default();
@@ -119,7 +129,7 @@ fn main() {
             None => None,
         };
         let fonts = twip::internal::font::Fonts::system();
-        golden::run(&a, &fonts, std::path::Path::new("golden-report.txt"), features.as_ref());
+        golden::run(&a, &fonts, hyphenation.as_ref(), std::path::Path::new("golden-report.txt"), features.as_ref());
         return;
     }
     if args.peek().map(String::as_str) == Some("diff") {
