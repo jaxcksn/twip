@@ -2138,6 +2138,12 @@ impl<'d> PageFill<'d, '_> {
                 let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none();
                 let in_flow = frame(&a) && a.float.v_relative == "paragraph" && a.float.v_offset == 0.0;
                 let mut under = Vec::new();
+                // Compat ≤ 14 places a frame that may not overlap, or any frame once the page holds one, at the nearest
+                // twip, its height kept.
+                let apart = !a.allow_overlap || self.at.found.iter().any(|o| frame(o) && !o.allow_overlap);
+                if frame(&a) && apart && compat == Compat::Legacy {
+                    a.moved_to(a.rect[0], (a.rect[1] * 20.0).round() / 20.0);
+                }
                 if in_flow && compat == Compat::Legacy {
                     for o in self.at.found.iter().filter(|o| frame(o)) {
                         if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {

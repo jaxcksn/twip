@@ -1792,6 +1792,17 @@ fn a_compat_14_line_with_one_piece_left_stays_beside_a_float_starting_above_the_
 }
 
 #[test]
+fn a_compat_14_frame_placed_apart_from_others_starts_at_the_nearest_twip() {
+    // The flow y after the lead line is 1692.98 tw: a frame that may not overlap starts at 1693 and its bottom covers
+    // the fourth body line's top by 0.02 tw; the other frame, placed first, ends at that top.
+    let frames = |sup: &str| three_line_frame(2880, 1440, r#"w:vAnchor="text" w:y="0""#, "", "A") + &three_line_frame(7200, 1440, r#"w:vAnchor="text" w:y="0""#, sup, "B");
+    let fourth = |sup: &str| after_frames(&frames(sup)).map(|l| l.into_iter().filter(|x| (x.1 - 2659.6).abs() < 3.0).map(|x| x.0).collect::<Vec<f64>>());
+    let Some(cut) = fourth("<w:suppressOverlap/>") else { return };
+    assert!(cut.len() == 2 && (cut[1] - 8819.0).abs() < 0.5, "{cut:?}");
+    assert_eq!(fourth("").unwrap().len(), 1);
+}
+
+#[test]
 fn a_compat_14_line_blocked_by_a_frame_goes_just_below_it() {
     // Frames leaving only a piece too narrow for text: each body line goes to the bottom of the frame it meets.
     let frame = |y: u32| {
