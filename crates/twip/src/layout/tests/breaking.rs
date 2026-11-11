@@ -474,6 +474,24 @@ fn a_compat_14_table_in_the_flow_drops_when_its_text_box_meets_the_earlier_table
 }
 
 #[test]
+fn a_compat_14_table_dropped_in_the_flow_from_the_nearest_twip_stays_at_its_x_when_it_may_not_overlap() {
+    let table = |x: u32, label: &str, never: &str| {
+        let row = format!(r#"<w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>{label}</w:t></w:r></w:p></w:tc></w:tr>"#);
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="0" w:rightFromText="0" w:vertAnchor="text" w:horzAnchor="page" w:tblpX="{x}" w:tblpY="0"/>{never}<w:tblW w:w="2000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>{}</w:tbl>"#,
+            row.repeat(3)
+        )
+    };
+    // After 28 single lines the earlier table ends 0.4 tw past a twip: the later one starts at that twip.
+    let lead: String = (0..28).map(|i| format!("<w:p><w:r><w:t>Lead {i}.</w:t></w:r></w:p>")).collect();
+    let body = format!("{lead}{}{}<w:p><w:r><w:t>After.</w:t></w:r></w:p>", table(4000, "A", ""), table(4500, "B", r#"<w:tblOverlap w:val="never"/>"#));
+    let Some(l) = baselines("", ARIAL_11, &body) else { return };
+    let at = |t: &str| l.iter().find(|x| x.1 == t).map(|x| (x.0, x.3)).expect("drawn");
+    let ((ax, ay), (bx, by)) = (at("A"), at("B"));
+    assert!(((by - ay) * 20.0 - 599.6).abs() < 0.05 && (bx - ax - 25.0).abs() < 0.01, "{ax} {ay} {bx} {by}");
+}
+
+#[test]
 fn a_right_aligned_floating_tables_frame_counts_a_missing_border_whole() {
     let at = |borders: &str| {
         let body = format!(

@@ -2013,15 +2013,18 @@ impl<'d> PageFill<'d, '_> {
                 // distances it meets, from the nearest twip; compat 15 moves one that may not overlap only down.
                 let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none();
                 let in_flow = frame(&a) && a.float.v_relative == "paragraph" && a.float.v_offset == 0.0;
+                let mut under = Vec::new();
                 if in_flow && compat == Compat::Legacy {
                     for o in self.at.found.iter().filter(|o| frame(o)) {
                         if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
                             a.moved_to(a.rect[0], (o.rect[3] * 20.0).round() / 20.0);
+                            under.push(o.key);
                         }
                     }
                 }
                 let across = if in_flow && compat == Compat::Generic { (f64::INFINITY, f64::NEG_INFINITY) } else { (frames.margin[0], frames.page_w) };
-                if !float::avoid(&mut a, &self.at.found, across, col.bottom.to_pt(), compat) {
+                let others: Vec<Placed> = self.at.found.iter().filter(|o| !under.contains(&o.key)).cloned().collect();
+                if !float::avoid(&mut a, &others, across, col.bottom.to_pt(), compat) {
                     let b = band_of(a.key.2 - pb.from).unwrap_or(0);
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
                 }
@@ -2186,16 +2189,20 @@ impl<'d> PageFill<'d, '_> {
                 _ => 0.0,
             };
             let (f0, f1) = (at_x + c0 - shift - ind, at_x + c1 - shift);
+            // A table below which it went is not avoided again for what the rounding left of their overlap.
+            let mut under = Vec::new();
             for o in tables.iter().filter(|_| in_flow) {
                 if f0 < o.excl[2] - EPS && o.excl[0] < f1 - EPS && o.excl[3].min(top + h + db) - o.excl[1].max(top - dt) >= 9.0 {
                     top = (o.excl[3] * 20.0).round() / 20.0;
+                    under.push(o.key);
                 }
             }
             if let Some(Block::Table(t)) = self.sec.blocks.get(pos.block) {
                 let f = table_float(t.id, br - bl, h, table_dist(&fp, in_flow), !fp.never_overlap);
                 let mut probe = Placed::new((self.sec.index, pos.block, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, h);
                 let body_bottom = self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom;
-                float::avoid(&mut probe, &tables, (self.margins.0, self.page_w), body_bottom, self.ctx.env.text.compat);
+                let others: Vec<Placed> = tables.iter().filter(|o| !under.contains(&o.key)).cloned().collect();
+                float::avoid(&mut probe, &others, (self.margins.0, self.page_w), body_bottom, self.ctx.env.text.compat);
                 (at_x, top) = (probe.rect[0] - bl, probe.rect[1]);
             }
             *y = self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)).map_or(top, |k| k.rect[1]);
