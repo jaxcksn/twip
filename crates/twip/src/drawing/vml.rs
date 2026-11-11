@@ -1048,7 +1048,7 @@ pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, '
     let mut shape = shape;
     shape.xfrm.off = [Emu(0); 2];
     let nums: Vec<f64> = el.attribute("wrapcoords").unwrap_or("").split([' ', ',']).filter_map(|v| v.trim().parse().ok()).collect();
-    let wrap_coords = (nums.len() >= 4).then(|| nums.chunks_exact(2).map(|p| (p[0] / 21600.0, p[1] / 21600.0)).collect());
+    let wrap_coords = (nums.len() >= 4).then(|| nums.as_chunks::<2>().0.iter().map(|p| (p[0] / 21600.0, p[1] / 21600.0)).collect());
     Some(VmlObject {
         textbox: textbox(el, &st),
         shape,

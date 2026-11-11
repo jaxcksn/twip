@@ -1418,9 +1418,7 @@ fn opentype_number_features_apply_in_compat_15_or_when_enabled() {
         format!(r#"<w:compat><w:compatSetting w:name="{name}" w:uri="http://schemas.microsoft.com/office/word" w:val="{v}"/></w:compat>"#)
     };
     let (c12, c14, c15) = (bar(""), bar(&setting("compatibilityMode", 14)), bar(&setting("compatibilityMode", 15)));
-    let enabled = bar(&format!(
-        r#"<w:compat><w:compatSetting w:name="enableOpenTypeFeatures" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#
-    ));
+    let enabled = bar(r#"<w:compat><w:compatSetting w:name="enableOpenTypeFeatures" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#);
     // Calibri's proportional digits (1087.3 tw) against its tabular default (1115.0 tw).
     assert!((c12 - c14).abs() < 1e-9 && (c12 - c15 - 27.7 / 20.0).abs() < 0.02, "{c12} {c14} {c15}");
     assert!((enabled - c15).abs() < 1e-9, "{enabled}");

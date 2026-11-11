@@ -475,7 +475,7 @@ fn note_in_table(doc: &mut crate::docx::Document, lines: usize) {
         .map(|k| {
             let mut n = model.clone();
             let run = n.inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.clone()) } else { None }).unwrap_or_else(|| n.mark.clone());
-            n.inlines = vec![Inline::Text(format!("n{k}").into(), run)];
+            n.inlines = vec![Inline::Text(format!("n{k}"), run)];
             n.id = crate::docx::model::next_para_id();
             Block::Para(n)
         })

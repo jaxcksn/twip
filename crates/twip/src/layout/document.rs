@@ -712,7 +712,7 @@ impl LayoutJob {
         }
         cache.begin();
         let mut meter = Meter::new(budget);
-        let mut notes = std::mem::replace(&mut self.notes, JobNotes::default());
+        let mut notes = std::mem::take(&mut self.notes);
         let step_result = loop {
             let cx = PassCx::new(doc, *ctx, &notes);
             let mut memos = Memos { cache, job: None, meter: &mut meter };
@@ -745,7 +745,7 @@ impl LayoutJob {
         if self.finished.is_some() || self.run.info.is_some() {
             return;
         }
-        let notes = std::mem::replace(&mut self.notes, JobNotes::default());
+        let notes = std::mem::take(&mut self.notes);
         {
             let cx = PassCx::new(doc, *ctx, &notes);
             let mut meter = Meter::new(Budget::Unlimited);

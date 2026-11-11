@@ -104,7 +104,7 @@ pub fn columns(n: usize, cells: &[Cell], sp: i64, gaps: &[Vec<Gap>], fixed: bool
         }
     }
     for e in if n == 1 { vec![0] } else { vec![0, n - 1] } {
-        if let Some(&(_, _, w)) = gaps.iter().filter(|g| g.0 == e && g.1 == 1 && g.2 > 0).last() {
+        if let Some(&(_, _, w)) = gaps.iter().rfind(|g| g.0 == e && g.1 == 1 && g.2 > 0) {
             add_single(&mut cols[e], Kind::Dxa, w, PSEUDO_CELL_MIN, w, 0, fixed);
         }
     }
