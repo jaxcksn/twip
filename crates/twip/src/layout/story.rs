@@ -1061,7 +1061,7 @@ pub fn hf_floats(
 }
 
 /// A header or footer story laid out around its own wrapping floats. `top` gives the story's page y from its
-/// layout (a footer grows upward), `fr` the page the floats are placed on.
+/// layout (a footer grows upward), `fr` the page the floats are placed on. Compat ≤ 14: the text runs over them.
 pub fn hf_layout(
     blocks: &[&Block],
     width: f64,
@@ -1071,7 +1071,9 @@ pub fn hf_layout(
     memos: &mut Memos,
 ) -> Result<Rc<StoryLayout>, Yield> {
     let mut l = layout_in(blocks, width, env, None, true, memos)?;
-    if !blocks.iter().any(|b| matches!(b, Block::Para(p) if !env.ctx.floats_of(p).is_empty())) {
+    // ponytail: compat ≤ 14 seen only with empty paragraphs under a picture as wide as the page; text beside a
+    // smaller float is unverified.
+    if env.ctx.env.text.compat == Compat::Legacy || !blocks.iter().any(|b| matches!(b, Block::Para(p) if !env.ctx.floats_of(p).is_empty())) {
         return Ok(l);
     }
     let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
