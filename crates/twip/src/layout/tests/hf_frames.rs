@@ -109,13 +109,13 @@ fn frame_3_an_explicit_position_is_one_twip_less_and_beats_the_alignment() {
     assert_eq!(got, [(None, 2879.0, None, 5999.0), (s("right"), 0.0, s("bottom"), 0.0), (None, 0.0, None, 0.0)]);
 }
 
-fn header_float(wrap: &str) -> Option<crate::docx::Document> {
+fn header_float(wrap: &str, y: i64, head: &str) -> Option<crate::docx::Document> {
     let words = super::words(600);
     let body = format!(
         r#"<w:document {W}><w:body><w:p><w:r><w:t>{words}</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
     );
     let header = format!(
-        r#"<w:hdr {W} xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>3810000</wp:posOffset></wp:positionV><wp:extent cx="2540000" cy="1270000"/>{wrap}<wp:docPr id="1" name="H"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing><w:t>Head</w:t></w:r></w:p></w:hdr>"#
+        r#"<w:hdr {W} xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{y}</wp:posOffset></wp:positionV><wp:extent cx="2540000" cy="1270000"/>{wrap}<wp:docPr id="1" name="H"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing><w:t>{head}</w:t></w:r></w:p></w:hdr>"#
     );
     package(&[
         (
@@ -138,7 +138,7 @@ fn header_float(wrap: &str) -> Option<crate::docx::Document> {
 #[test]
 fn a_header_float_wraps_the_body_text_of_its_page() {
     let beside = |wrap: &str| {
-        let doc = header_float(wrap)?;
+        let doc = header_float(wrap, 3810000, "Head")?;
         let pages = page_chars(&doc);
         let left = |k: usize| pages[k].iter().filter(|c| c.2 > 305.0 && c.2 < 395.0).map(|c| c.1).fold(f64::INFINITY, f64::min);
         Some((left(0), left(1)))
@@ -147,6 +147,14 @@ fn a_header_float_wraps_the_body_text_of_its_page() {
     assert!(first >= 272.0 && second >= 272.0, "beside the float on both pages: {first} {second}");
     let (none, _) = beside("<wp:wrapNone/>").expect("lays out");
     assert!(none < 80.0, "wrapNone doesn't wrap: {none}");
+}
+
+#[test]
+fn a_header_wraps_its_own_float() {
+    let Some(doc) = header_float(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 457200, &super::words(40)) else { return };
+    let pages = page_chars(&doc);
+    let beside: Vec<f64> = pages[0].iter().filter(|c| c.2 < 136.0).map(|c| c.1).collect();
+    assert!(!beside.is_empty() && beside.iter().all(|&x| x >= 272.0), "header lines start right of the float: {beside:?}");
 }
 
 #[test]

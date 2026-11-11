@@ -183,16 +183,17 @@ pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEn
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
     let probe = StoryKey::new(children.clone(), Some(width), cell, env, &blocks);
-    cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, (0, 0), m))
+    cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, (0, 0), &[], m))
 }
 
 /// The story's text from piece `at.1` of block `at.0` on, laid out at `width` (not cached).
 pub fn layout_from(blocks: &[&Block], width: f64, env: &StoryEnv, at: (usize, usize), memos: &mut Memos) -> Result<StoryLayout, Yield> {
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, None, memos)?;
-    layout_with(&blocks, &children, width, env, None, at, memos)
+    layout_with(&blocks, &children, width, env, None, at, &[], memos)
 }
 
+#[allow(clippy::too_many_arguments, reason = "the story, its width and cell ends, where it starts and the floats placed around it")]
 pub fn layout_with(
     blocks: &[LaidBlock],
     resolved: &[ChildId],
@@ -200,6 +201,7 @@ pub fn layout_with(
     env: &StoryEnv,
     cell: Option<CellEnds>,
     start: (usize, usize),
+    around: &[Placed],
     memos: &mut Memos,
 ) -> Result<StoryLayout, Yield> {
     let text = &env.ctx.env.text;
@@ -277,7 +279,10 @@ pub fn layout_with(
                         own.push((k, Placed::new((0, bi, k), id, f, fx, fy, h)));
                     }
                 }
-                let floats: Vec<Placed> = own.iter().map(|(_, a)| a.clone()).collect();
+                let mut floats: Vec<Placed> = own.iter().map(|(_, a)| a.clone()).collect();
+                // The story's own floats placed from outside it: only those beside the paragraph's unwrapped lines.
+                let bottom = para_top + lines.lines.iter().map(|l| l.pitch).sum::<f64>();
+                floats.extend(around.iter().filter(|f| f.in_band(para_top, bottom)).cloned());
                 let bands =
                     (!floats.is_empty()).then(|| wrap_bands(&lines, p, style, &floats, &ps, para_top, env.ctx.fonts)).filter(|b| !b.is_empty());
                 let rows = bands.as_ref().map_or(lines.lines.len(), Vec::len);
@@ -1025,6 +1030,42 @@ pub fn hf_floats(
         out.push(float_box(&f, rect, para, env, memos)?);
     }
     Ok(out)
+}
+
+/// A header or footer story laid out around its own wrapping floats. `top` gives the story's page y from its
+/// layout (a footer grows upward), `fr` the page the floats are placed on.
+pub fn hf_layout(
+    blocks: &[&Block],
+    width: f64,
+    fr: &super::float::Frames,
+    top: impl Fn(&StoryLayout) -> f64,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<Rc<StoryLayout>, Yield> {
+    let mut l = layout(blocks, width, env, None, memos)?;
+    if !blocks.iter().any(|b| matches!(b, Block::Para(p) if !env.ctx.floats_of(p).is_empty())) {
+        return Ok(l);
+    }
+    let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let children = child_ids(&laid, Some(width), env, None, memos)?;
+    let mut seen: Option<Vec<[f64; 4]>> = None;
+    // ponytail: a few passes for floats placed from the story's own text, no convergence test beyond them.
+    for _ in 0..3 {
+        let at = top(&l);
+        let around: Vec<Placed> = hf_float_rects(blocks, &l, fr, at, env, memos)?
+            .into_iter()
+            .enumerate()
+            .map(|(i, (f, r, para))| Placed::new((usize::MAX, 0, i), para, &f, r[0] - fr.column.0, r[1] - at, r[3] - r[1]))
+            .filter(|p| p.wrap != super::float::Wrap::None)
+            .collect();
+        let rects: Vec<[f64; 4]> = around.iter().map(|p| p.rect).collect();
+        if around.is_empty() || seen.as_ref() == Some(&rects) {
+            break;
+        }
+        l = Rc::new(layout_with(&laid, &children, width, env, None, (0, 0), &around, memos)?);
+        seen = Some(rects);
+    }
+    Ok(l)
 }
 
 pub fn hf_float_rects(

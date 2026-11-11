@@ -332,6 +332,7 @@ impl<'d> Paginator<'d, '_> {
         let (left, right, _) = margins(sec, &self.ctx, self.run.page_number);
         let s = sec.section_in(view);
         let width = s.page_w - left - right;
+        let frames = self.hf_frames(si);
         let pis = self.page_in_section(si).saturating_sub(1);
         let fields = self.fields(si);
         let limit = hf_limit(self.ctx.env.text.compat, s.page_h);
@@ -345,10 +346,27 @@ impl<'d> Paginator<'d, '_> {
                 continue;
             };
             let blocks: Vec<&Block> = blocks.iter().collect();
-            let layout = super::story::layout(&blocks, width, &env, None, memos)?;
+            let at = |l: &super::story::StoryLayout| if footer { s.page_h - s.footer - stack_limited(l, 0.0, 0.0, limit).1 } else { s.header };
+            let layout = super::story::hf_layout(&blocks, width, &frames, at, &env, memos)?;
             out[k] = Some(stack_limited(&layout, left, if footer { 0.0 } else { s.header }, limit).1);
         }
         Ok(out)
+    }
+
+    /// The page the current page's header and footer floats are placed on.
+    fn hf_frames(&self, si: usize) -> super::float::Frames {
+        let sec = &self.sections[si];
+        let (left, right, top) = margins(sec, &self.ctx, self.run.page_number);
+        let s = sec.section_in(self.ctx.env.text.review.view);
+        super::float::Frames {
+            page_w: s.page_w,
+            page_h: s.page_h,
+            margin: [left, right, top, s.bottom],
+            column: (left, s.page_w - left - right),
+            compat: self.ctx.env.text.compat,
+            cell: false,
+            odd: self.run.page_number % 2 == 1,
+        }
     }
 
     fn hf_obstacles(&self, si: usize, hf: &HfHeights, memos: &mut Memos) -> Result<Vec<super::float::Placed>, Yield> {
@@ -357,18 +375,10 @@ impl<'d> Paginator<'d, '_> {
         if self.run.pages.last().is_some_and(|p| p.blank) {
             return Ok(Vec::new());
         }
-        let (left, right, top) = margins(sec, &self.ctx, self.run.page_number);
+        let (left, right, _) = margins(sec, &self.ctx, self.run.page_number);
         let s = sec.section_in(view);
         let width = s.page_w - left - right;
-        let frames = super::float::Frames {
-            page_w: s.page_w,
-            page_h: s.page_h,
-            margin: [left, right, top, s.bottom],
-            column: (left, width),
-            compat: self.ctx.env.text.compat,
-            cell: false,
-            odd: self.run.page_number % 2 == 1,
-        };
+        let frames = self.hf_frames(si);
         let pis = self.page_in_section(si).saturating_sub(1);
         let fields = self.fields(si);
         let env = StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers };
@@ -384,7 +394,9 @@ impl<'d> Paginator<'d, '_> {
             if !blocks.iter().any(|b| matches!(b, Block::Para(p) if !self.ctx.floats_of(p).is_empty())) {
                 continue;
             }
-            let layout = super::story::layout(&blocks, width, &env, None, memos)?;
+            let limit = hf_limit(self.ctx.env.text.compat, s.page_h);
+            let top = |l: &super::story::StoryLayout| if footer { s.page_h - s.footer - stack_limited(l, 0.0, 0.0, limit).1 } else { s.header };
+            let layout = super::story::hf_layout(&blocks, width, &frames, top, &env, memos)?;
             let at = if footer { s.page_h - s.footer - hf[1].unwrap_or(layout.height) } else { s.header };
             for (i, (f, r, para)) in super::story::hf_float_rects(&blocks, &layout, &frames, at, &env, memos)?.into_iter().enumerate() {
                 let p = super::float::Placed::new((usize::MAX, k, i), para, &f, r[0], r[1], r[3] - r[1]);
