@@ -2,8 +2,9 @@
 
 One document per layout feature of the roadmap's layout phase, small and aimed so the feature moves something the
 layout snapshot records; a feature that lays out differently in compat <= 14 and compat 15 comes as a `-c12` / `-c15`
-(or `-c14` / `-c15`) pair with the same body. README.md lists every fixture and what its snapshot shows.
-hyph-en-US.dic is a small pattern set the layout gate supplies as the host's en-US hyphenation patterns.
+(or `-c14` / `-c15`) pair with the same body. `compat-2003`, `compat-2007`, `compat-2010` and `compat-2013` are one
+body in each compatibility mode. README.md lists every fixture and what its snapshot shows. hyph-en-US.dic is a small
+pattern set the layout gate supplies as the host's en-US hyphenation patterns.
 
 Standard library only, no randomness: the same bytes on every run. Every package is plain OOXML that Word opens
 without a repair prompt. Fonts: Calibri, Times New Roman and MS Mincho (CJK text, 漢 only), which the gate resolves
@@ -971,6 +972,92 @@ def number_forms(d):
     return "".join(body), sect()
 
 
+# ---- 1.9 compatibility modes and options --------------------------------------------------------------------------
+
+
+def compat_body(d):
+    """One body that shows the mode differences: justified breaking, page-top space, tab stops past the indent, lines
+    beside floats, table position, table-style font size, multiple spacing with a picture, minimum wrap gaps, notes in
+    columns, floats in cells and a rotated float."""
+    d.styles = STYLES.replace('<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>',
+                              '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/>'
+                              '<w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>').replace(
+        "</w:styles>",
+        '<w:style w:type="table" w:styleId="Big"><w:name w:val="Big"/><w:basedOn w:val="TableNormal"/><w:rPr><w:sz w:val="32"/></w:rPr>'
+        '<w:tblPr><w:tblBorders>' + "".join(bdr(s) for s in ("top", "left", "bottom", "right", "insideH", "insideV")) + "</w:tblBorders></w:tblPr></w:style></w:styles>")
+    words = ("Representative international administration responsibilities organisational considerations "
+             "notwithstanding comprehensive interpretation documentation ")
+    jc = '<w:jc w:val="both"/>'
+    flt = d.picture(1.6, 1.5, ("column", 0.0), ("paragraph", 0.0))
+    tight = poly("Tight", [(0, 0), (0, 21600), (21600, 21600), (21600, 0), (0, 0)])
+    cell_float = d.picture(0.8, 0.5, ("column", 0.1), ("paragraph", 0.1), in_cell=False)
+    contextual = '<w:pStyle w:val="ListParagraph"/>'
+    body = [
+        heading("Compatibility modes"),
+        P("Justified: compat 15 may shrink spaces to fit one more word on a line. " + filler(100, 1), jc),
+        p(r("A justified line ending in a line break " + filler(8, 2)) + BR + r("and the line after it."), jc),
+        p(r("Tabs: a left stop past the right indent ") + TAB + r("then text") + TAB + r("again."), '<w:tabs><w:tab w:val="left" w:pos="9900"/></w:tabs>'),
+        p(r("A right stop past the right indent") + TAB + r("right text"), '<w:tabs><w:tab w:val="right" w:pos="10080"/></w:tabs>'),
+        p(r("1.") + TAB + r("A hanging indent with a tab after the number: the indent is a tab stop unless an option says not."),
+          '<w:ind w:left="720" w:hanging="720"/>'),
+        p(flt + r("A float on the left, then a word too long for the gap beside it: ") + r("Pneumonoultramicroscopicsilicovolcanoconiosis" * 2)
+          + r(" " + filler(30, 3))),
+        p(d.picture(1.0, 1.0, ("column", 0.0), ("paragraph", 0.0), wrap=tight)
+          + r("Beside a tight float: compat 14 leaves a 9pt minimum gap, compat 15 18pt. " + filler(40, 4)), '<w:ind w:left="1440" w:hanging="720"/>'),
+        P("A table, its cells in the table style's size (16pt) only in compat 12 and 11:"),
+        table([row([cell("Cell one", 3000), cell("Cell two", 3000)])], [3000, 3000], style="Big", ind=0),
+        P("A table whose first cell holds a float with layoutInCell 0, and contextual spacing in its cells:"),
+        table([row([cell(p(cell_float + r("Float in a cell")), 3000), cell(P("Same style", contextual) + P("Same style", contextual), 3000)])],
+              [3000, 3000]),
+        p(d.picture(2.0, 0.6, ("column", 4.0), ("paragraph", 0.0), rot=5400000) + r("A float turned 90 degrees: compat 12 wraps its "
+          "unturned frame, the other modes the turned box. " + filler(50, 5))),
+        p(r("A line with a picture ") + d.inline_picture(0.3, 0.2) + r(" and 1.5 line spacing; its mark is 24pt. " + filler(30, 6)),
+          '<w:spacing w:after="0" w:line="360" w:lineRule="auto"/><w:rPr><w:sz w:val="48"/></w:rPr>'),
+        P("Exactly 20pt lines: the options move the baseline and the room below it. " + filler(30, 7), '<w:spacing w:after="0" w:line="400" w:lineRule="exact"/>'),
+        P("Automatic spacing before and after.", '<w:spacing w:before="100" w:beforeAutospacing="1" w:after="100" w:afterAutospacing="1"/>'),
+        P("Automatic spacing again.", '<w:spacing w:before="100" w:beforeAutospacing="1" w:after="100" w:afterAutospacing="1"/>'),
+        p(r("Small caps, ") + r("Raised Text", '<w:smallCaps/><w:position w:val="6"/>') + r(", and spaced ") + r("letters", '<w:spacing w:val="15"/>')
+          + r(" " + filler(30, 8))),
+        p(r("A paragraph ending in a page break.") + PAGE_BREAK),
+        P("Page-break-before with 24pt space before: compat 15 drops it at the page top.", '<w:pageBreakBefore/><w:spacing w:before="480"/>'),
+        P("An exact line at the top of a page after a break. " + filler(20, 9), '<w:spacing w:after="0" w:line="480" w:lineRule="exact"/>'),
+        P(filler(60, 10)),
+        section_break(sect(), ""),
+    ]
+    note_text = "A long note that runs on: " + filler(90, 11)
+    body += [p(r(filler(40, 12 + k)) + d.footnote(note_text if k == 0 else f"Note {k + 1}.")) for k in range(3)]
+    body += [P((words * 3).strip(), jc) for _ in range(6)]
+    body.append(section_break(sect(cols='<w:cols w:num="2" w:space="720"/>', kind="continuous"), ""))
+    body.append(P("A one-column section after the columns: compat 14 balances them unless noColumnBalance."))
+    return "".join(body), sect(kind="continuous")
+
+
+def compat_mode(mode, word_settings):
+    def build(d):
+        d.compat = mode
+        if word_settings:
+            d.compat_settings = "".join(
+                f'<w:compatSetting w:name="{n}" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/>'
+                for n in ("overrideTableStyleFontSizeAndJustification", "enableOpenTypeFeatures", "doNotFlipMirrorIndents"))
+        return compat_body(d)
+    return build
+
+
+COMPAT_OPTIONS = ("useSingleBorderforContiguousCells", "noTabHangInd", "noLeading", "noColumnBalance", "noExtraLineSpacing",
+                  "doNotExpandShiftReturn", "spacingInWholePoints", "showBreaksInFrames", "suppressBottomSpacing", "suppressTopSpacing",
+                  "suppressSpacingAtTopOfPage", "suppressSpBfAfterPgBrk", "mwSmallCaps", "noSpaceRaiseLower",
+                  "doNotUseHTMLParagraphAutoSpacing", "growAutofit", "doNotUseIndentAsNumberingTabStop", "allowSpaceOfSameStyleInTable",
+                  "doNotSuppressIndentation", "splitPgBreakAndParaMark")
+
+
+def compat_options(mode):
+    def build(d):
+        d.compat = mode
+        d.compat_opts = "".join(f"<w:{o}/>" for o in COMPAT_OPTIONS)
+        return compat_body(d)
+    return build
+
+
 # ---- 1.10 automatic hyphenation -----------------------------------------------------------------------------------
 
 HYPH_WORDS = ("representative hyphenation international administration responsibilities organisational considerations "
@@ -1101,6 +1188,7 @@ FIXTURES = [
     ("spec-vanish", spec_vanish, TWIN),
     ("date-time-elements", date_time, None),
     ("number-forms", number_forms, None),
+    ("compat-options", None, TWIN),
     ("hyphenation", hyphenation, TWIN),
     ("hyphenation-suppress", hyphenation_suppress, None),
     ("vertical-directions", vertical_directions, None),
@@ -1108,6 +1196,7 @@ FIXTURES = [
     ("vertical-glyphs", vertical_glyphs, None),
     ("vertical-model", vertical_model, TWIN),
 ]
+COMPAT_MODES = [("compat-2003", 11, False), ("compat-2007", 12, False), ("compat-2010", 14, True), ("compat-2013", 15, True)]
 
 
 def main():
@@ -1117,7 +1206,9 @@ def main():
     for name, build, modes in FIXTURES:
         for mode in modes or (None,):
             compat = int(mode[1:]) if mode else 15
-            jobs.append((f"{name}-{mode}" if mode else name, build, compat))
+            b = build or compat_options(compat)
+            jobs.append((f"{name}-{mode}" if mode else name, b, compat))
+    jobs += [(name, compat_mode(mode, word), mode) for name, mode, word in COMPAT_MODES]
     for name, build, compat in jobs:
         d = Pkg(compat)
         body, sect_pr = build(d)

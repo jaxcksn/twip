@@ -1,0 +1,248 @@
+page 0 12240 15840
+  1440 1936 Compatibility modes
+  1440 2217 Justified: compat 15 may shrink spaces to fit one more word on a line. Inventory
+  1440 2476 relevant group relief results region ledger brief usage cause colleague
+  1440 2735 partner. Section notice claim team export staff newsletter review matter
+  1440 2994 presenter advisor account. Served savings pilot receipt corporate
+  1440 3253 requirement standard fact that products distribution filed. Logistics
+  1440 3512 chapter plan regional maintenance accessibility tax finds record proposal
+  1440 3771 denied contract. Onboarding support network scheduled trend suggestions
+  1440 4030 board order update granted agreement marketing. Promotion division date
+  1440 4289 profitable insights the meeting forecast hereby vendors practical schedule.
+  1440 4548 State entry estimate management action budget inventory relevant group
+  1440 4807 relief results region. Ledger brief usage cause colleague partner section
+  1440 5066 notice claim team export staff. Newsletter review matter presenter.
+  1440 5485 A justified line ending in a line break Notice claim team export staff
+  1440 5744 newsletter review matter.
+  1440 6003 and the line after it.
+  1440 6422 Tabs: a left stop past the right indent
+  1440 6940 then text
+  1440 7458 again.
+  1440 7877 A right stop past the right indentright text
+  1440 8296 1.A hanging indent with a tab after the number: the indent is a tab stop
+  2160 8555 unless an option says not.
+  3924 8974 A float on the left, then a word too long for the gap
+  3924 9233 beside it:
+  1440 11134 PneumonoultramicroscopicsilicovolcanoconiosisPneumonoultramicroscopics
+  1440 11393 ilicovolcanoconiosis Pilot receipt corporate requirement standard fact
+  1440 11652 that products distribution filed logistics chapter. Plan regional
+  1440 11911 maintenance accessibility tax finds record proposal denied contract
+  1440 12170 onboarding support. Network scheduled trend suggestions board order.
+  float 1440 8782 3744 10942
+page 1 12240 15840
+  3060 1632 Beside a tight float: compat 14 leaves a 9pt minimum gap, compat
+  3060 1891 15 18pt. Regional maintenance accessibility tax finds record
+  3060 2150 proposal denied contract onboarding support network.
+  3060 2409 Scheduled trend suggestions board order update granted
+  3060 2668 agreement marketing promotion division date. Profitable
+  3060 2927 insights the meeting forecast hereby vendors practical
+  2880 3186 schedule state entry estimate. Management action budget
+  2880 3445 inventory.
+  1440 3864 A table, its cells in the table style's size (16pt) only in compat 12 and 11:
+  1553 4293 Cell one
+  4553 4293 Cell two
+  1440 4722 A table whose first cell holds a float with layoutInCell 0, and contextual
+  1440 4981 spacing in its cells:
+  3029 5410 Float in a
+  3029 5669 cell
+  5273 5410 Same style
+  5273 5669 Same style
+  1440 6284 A float turned 90 degrees: compat 12 wraps its
+  9252 6284 unturned
+  1440 6543 frame, the other modes the turned box. Trend
+  9252 6543 suggestions
+  1440 6802 board order update granted agreement marketing
+  9252 6802 promotion
+  1440 7061 division date profitable. Insights the meeting
+  9252 7061 forecast
+  1440 7320 hereby vendors practical schedule state entry
+  9252 7320 estimate
+  1440 7579 management. Action budget inventory relevant group
+  9252 7579 relief
+  1440 7838 results region ledger brief usage cause. Colleague
+  9252 7838 partner
+  1440 8097 section notice claim team export staff newsletter
+  9252 8097 review
+  1440 8356 matter presenter. Advisor account.
+  1440 8871 A line with a picture  and 1.5 line spacing; its mark is 24pt. The meeting
+  1440 9231 forecast hereby vendors practical schedule state entry estimate management
+  1440 9591 action. Budget inventory relevant group relief results region ledger brief
+  1440 9951 usage cause colleague. Partner section notice claim team export.
+  1440 10439 Exactly 20pt lines: the options move the baseline and the room below it.
+  1440 10839 Inventory relevant group relief results region ledger brief usage cause
+  1440 11239 colleague partner. Section notice claim team export staff newsletter review
+  1440 11639 matter presenter advisor account. Served savings pilot receipt corporate
+  1440 12039 requirement.
+  1440 12591 Automatic spacing before and after.
+  1440 13130 Automatic spacing again.
+  1440 13729 Small caps, RAISED TEXT, and spaced letters Notice claim team export staff
+  1440 13989 newsletter review matter presenter advisor account served. Savings pilot
+  cell 1445 4091 4445 4520
+  cell 4445 4091 7445 4520
+  cell 1445 5208 4445 6082
+  float 1697 5362 2849 6082
+  cell 4445 5208 7445 6082
+  float 1440 1440 2880 2880
+  float 8208 5084 9072 7964
+page 2 12240 15840
+  1440 1632 receipt corporate requirement standard fact that products distribution
+  1440 1891 filed logistics. Chapter plan regional maintenance accessibility tax.
+  1440 2310 A paragraph ending in a page break.
+page 3 12240 15840
+  1440 1632 Page-break-before with 24pt space before: compat 15 drops it at the page top.
+  1440 2243 An exact line at the top of a page after a break. Pilot receipt corporate
+  1440 2723 requirement standard fact that products distribution filed logistics
+  1440 3203 chapter. Plan regional maintenance accessibility tax finds record proposal.
+  1440 3491 Regional maintenance accessibility tax finds record proposal denied
+  1440 3750 contract onboarding support network. Scheduled trend suggestions board
+  1440 4009 order update granted agreement marketing promotion division date.
+  1440 4268 Profitable insights the meeting forecast hereby vendors practical schedule
+  1440 4527 state entry estimate. Management action budget inventory relevant group
+  1440 4786 relief results region ledger brief usage. Cause colleague partner section
+  1440 5045 notice claim team export staff newsletter review matter.
+  1440 5464 The meeting forecast hereby
+  1440 5723 vendors practical schedule state
+  1440 5982 entry estimate management action.
+  1440 6241 Budget inventory relevant group
+  1440 6500 relief results region ledger brief
+  1440 6759 usage cause colleague. Partner
+  1440 7018 section notice claim team export
+  1440 7277 staff newsletter review matter
+  1440 7536 presenter advisor. Account served
+  1440 7795 savings pilot.1
+  1440 8214 Inventory relevant group relief
+  1440 8473 results region ledger brief usage
+  1440 8732 cause colleague partner. Section
+  1440 8991 notice claim team export staff
+  1440 9250 newsletter review matter presenter
+  1440 9509 advisor account. Served savings
+  1440 9768 pilot receipt corporate
+  1440 10027 requirement standard fact that
+  1440 10286 products distribution filed.
+  1440 10545 Logistics chapter plan regional.2
+  1440 10964 Notice claim team export staff
+  1440 11223 newsletter review matter presenter
+  1440 11482 advisor account served. Savings
+  1440 11741 pilot receipt corporate
+  6480 5464 requirement standard fact that
+  6480 5723 products distribution filed
+  6480 5982 logistics. Chapter plan regional
+  6480 6241 maintenance accessibility tax
+  6480 6500 finds record proposal denied
+  6480 6759 contract onboarding. Support
+  6480 7018 network scheduled trend.3
+  6480 7437 Representative international
+  6480 7696 administration responsibilities
+  6480 7955 organisational considerations
+  6480 8214 notwithstanding comprehensive
+  6480 8473 interpretation documentation
+  6480 8732 Representative international
+  6480 8991 administration responsibilities
+  6480 9250 organisational considerations
+  6480 9509 notwithstanding comprehensive
+  6480 9768 interpretation documentation
+  6480 10027 Representative international
+  6480 10286 administration responsibilities
+  6480 10545 organisational considerations
+  6480 10804 notwithstanding comprehensive
+  6480 11063 interpretation documentation
+  6480 11482 Representative international
+  6480 11741 administration responsibilities
+  1440 12303 1 A long note that runs on: Trend
+  1440 12563 suggestions board order update granted
+  1440 12763 agreement marketing promotion division
+  1440 12963 date profitable. Insights the meeting
+  1440 13163 forecast hereby vendors practical
+  1440 13363 schedule state entry estimate management.
+  1440 13563 Action budget inventory relevant group
+  1440 13763 relief results region ledger brief usage
+  1440 13963 cause. Colleague partner section notice
+  1440 14163 claim team export staff newsletter review
+  1440 14363 matter presenter. Advisor account served
+  6480 12363 savings pilot receipt corporate
+  6480 12563 requirement standard fact that products.
+  6480 12763 Distribution filed logistics chapter plan
+  6480 12963 regional maintenance accessibility tax
+  6480 13163 finds record proposal. Denied contract
+  6480 13363 onboarding support network scheduled
+  6480 13563 trend suggestions board order update
+  6480 13763 granted. Agreement marketing promotion
+  6480 13963 division date profitable.
+  6480 14103 2 Note 2.
+  6480 14303 3 Note 3.
+page 4 12240 15840
+  1440 1632 organisational considerations
+  1440 1891 notwithstanding comprehensive
+  1440 2150 interpretation documentation
+  1440 2409 Representative international
+  1440 2668 administration responsibilities
+  1440 2927 organisational considerations
+  1440 3186 notwithstanding comprehensive
+  1440 3445 interpretation documentation
+  1440 3704 Representative international
+  1440 3963 administration responsibilities
+  1440 4222 organisational considerations
+  1440 4481 notwithstanding comprehensive
+  1440 4740 interpretation documentation
+  1440 5159 Representative international
+  1440 5418 administration responsibilities
+  1440 5677 organisational considerations
+  1440 5936 notwithstanding comprehensive
+  1440 6195 interpretation documentation
+  1440 6454 Representative international
+  1440 6713 administration responsibilities
+  1440 6972 organisational considerations
+  1440 7231 notwithstanding comprehensive
+  1440 7490 interpretation documentation
+  1440 7749 Representative international
+  1440 8008 administration responsibilities
+  1440 8267 organisational considerations
+  1440 8526 notwithstanding comprehensive
+  1440 8785 interpretation documentation
+  1440 9204 Representative international
+  1440 9463 administration responsibilities
+  1440 9722 organisational considerations
+  1440 9981 notwithstanding comprehensive
+  1440 10240 interpretation documentation
+  1440 10499 Representative international
+  1440 10758 administration responsibilities
+  1440 11017 organisational considerations
+  1440 11276 notwithstanding comprehensive
+  6480 1632 interpretation documentation
+  6480 1891 Representative international
+  6480 2150 administration responsibilities
+  6480 2409 organisational considerations
+  6480 2668 notwithstanding comprehensive
+  6480 2927 interpretation documentation
+  6480 3346 Representative international
+  6480 3605 administration responsibilities
+  6480 3864 organisational considerations
+  6480 4123 notwithstanding comprehensive
+  6480 4382 interpretation documentation
+  6480 4641 Representative international
+  6480 4900 administration responsibilities
+  6480 5159 organisational considerations
+  6480 5418 notwithstanding comprehensive
+  6480 5677 interpretation documentation
+  6480 5936 Representative international
+  6480 6195 administration responsibilities
+  6480 6454 organisational considerations
+  6480 6713 notwithstanding comprehensive
+  6480 6972 interpretation documentation
+  6480 7391 Representative international
+  6480 7650 administration responsibilities
+  6480 7909 organisational considerations
+  6480 8168 notwithstanding comprehensive
+  6480 8427 interpretation documentation
+  6480 8686 Representative international
+  6480 8945 administration responsibilities
+  6480 9204 organisational considerations
+  6480 9463 notwithstanding comprehensive
+  6480 9722 interpretation documentation
+  6480 9981 Representative international
+  6480 10240 administration responsibilities
+  6480 10499 organisational considerations
+  6480 10758 notwithstanding comprehensive
+  6480 11017 interpretation documentation
+  1440 11695 A one-column section after the columns: compat 14 balances them unless
+  1440 11954 noColumnBalance.

@@ -78,6 +78,13 @@ hyphenation on hyphenate in the gate.
 | `date-time-elements` | The run date and time elements | Line text at the gate's pinned clock (2026-11-09): `09`, `Monday`, `11`, `November`, `26`, `2026`, and a line broken by their widths |
 | `number-forms` | `w14:numForm`, `w14:numSpacing`, `w14:stylisticSets` | Nothing yet: the stand-in fonts have no `onum`, `pnum`, `tnum` or `ssNN` glyphs, so the runs measure as without the properties. The document pins that they still lay out and is ready for a font that has the features |
 
+## 1.9 Compatibility options and modes
+
+| Fixture | Bullet | What the snapshot shows |
+|---|---|---|
+| `compat-2003`, `compat-2007`, `compat-2010`, `compat-2013` | Documents in Word 2003, 2007, 2010 and 2013+ modes (compatibilityMode 11, 12, 14, 15) | One body: justified breaking (compat 15 shrinks), a justified line ending in `w:br`, tab stops past the right indent, a long word beside a square float, the minimum gap beside a tight float and a hanging first line beside it, a table style's 16pt cell text (compat 11 and 12 only: the 2010 and 2013 files carry `overrideTableStyleFontSizeAndJustification` as Word writes it), a `layoutInCell="0"` float in a cell, a float turned 90° (compat 12 wraps the unturned frame, so 2003 and 2007 differ), multiple spacing with a picture and a tall mark, exact lines, automatic spacing, a page break ending its paragraph, space before at the page top, footnotes (one long enough to continue) in a two-column section and its balancing before a continuous break. Twip treats 11, 12 and 14 as one legacy mode apart from the rules that name a mode |
+| `compat-options-c12`, `-c15` | Every `w:compat` option that changes layout | The same body with the layout-changing `w:compat` options on; diff against `compat-2007` / `compat-2013` for each option's effect (`noExtraLineSpacing` and `suppressBottomSpacing` on the exact lines, `doNotUseHTMLParagraphAutoSpacing` on the automatic spacing, `noTabHangInd` on the hanging tab, `splitPgBreakAndParaMark`, `noColumnBalance`, `allowSpaceOfSameStyleInTable`, `doNotSuppressIndentation`, …) |
+
 ## 1.10 Automatic hyphenation
 
 | Fixture | Bullet | What the snapshot shows |
