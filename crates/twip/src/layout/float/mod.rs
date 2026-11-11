@@ -46,6 +46,8 @@ pub struct Placed {
     pub contour: Option<Contour>,
     /// The distances text keeps from it: top, bottom, left, right.
     pub dist: [f64; 4],
+    /// Where its right side is for the lines before it in the flow, when that differs.
+    pub early_right: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -107,6 +109,7 @@ impl Placed {
             settled: true,
             contour,
             dist: f.dist,
+            early_right: None,
         }
     }
 
@@ -271,6 +274,7 @@ mod tests {
             settled: true,
             contour: None,
             dist: [0.0; 4],
+            early_right: None,
         }
     }
 

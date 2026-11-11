@@ -567,3 +567,37 @@ fn compat_15_moves_a_vertical_table_whose_note_cant_start_past_it_to_the_next_pa
     let (p1, _) = pages(12).unwrap();
     assert!(p1.iter().any(|t| t.starts_with("c0")), "{p1:?}");
 }
+
+/// A one-column table `w` twips wide whose rows, `prefix0`, `prefix1`, …, are exactly as many twips tall as given.
+fn exact_table(prefix: &str, heights: &[u32], w: u32) -> String {
+    let row = |(i, h): (usize, &u32)| {
+        format!(
+            r#"<w:tr><w:trPr><w:trHeight w:val="{h}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{prefix}{i}</w:t></w:r></w:p></w:tc></w:tr>"#
+        )
+    };
+    let rows: String = heights.iter().enumerate().map(row).collect();
+    format!(r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid>{rows}</w:tbl>"#)
+}
+
+#[test]
+fn compat_14_keeps_the_more_of_a_too_long_vertical_tables_rows_below_the_earlier_one_or_below_its_own_image() {
+    // Lines 11840 tw long from 1000 tw; the earlier table ends `t1` rows of 500 tw along them.
+    let kept = |t1: usize, t2: &[u32]| {
+        let body = format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &vec![500; t1], 2000), para("pb", ""), exact_table("s", t2, 2000), para("pc", ""));
+        let mut doc = section("tbRl", "0", &body)?;
+        doc.settings.compat_mode = 12;
+        Some((cells_on(&doc, 0).iter().filter(|c| c.0.starts_with('s')).count(), turned_runs(&doc)))
+    };
+    // 1840 tw below the earlier table hold no row of 3000; stacked below its own image twice the table leaves 5840,
+    // which hold six rows.
+    let mut t2 = vec![3000];
+    t2.extend([500; 6]);
+    let Some((n, _)) = kept(20, &t2) else { return };
+    assert_eq!(n, 6);
+    // Nineteen rows fit below an earlier table of four; reaching past its end, they push the lines before them to
+    // their end, and then all that fit the line stay.
+    let (n, runs) = kept(4, &[500; 30]).unwrap();
+    assert_eq!(n, 23);
+    let pb = runs.iter().find(|r| r.0 == "pb").expect("pb").1[1];
+    assert!((pb - 525.0).abs() < 0.01, "{pb}");
+}

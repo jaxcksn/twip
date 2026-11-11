@@ -1718,7 +1718,12 @@ impl<'d> PageFill<'d, '_> {
         let after = space_after(&self.ctx.env.text, style);
         let at_top = *empty;
         let top = *y + self.para_gap(p, pos, carry, *empty) - if at_top { self.top_lift(style, pb) } else { 0.0 };
-        let floats: Vec<Placed> = self.fixed.iter().chain(&self.at.known).cloned().collect();
+        let mut floats: Vec<Placed> = self.fixed.iter().chain(&self.at.known).cloned().collect();
+        for f in floats.iter_mut().filter(|f| f.key.0 == self.sec.index && f.key.1 > pos.block) {
+            if let Some(r) = f.early_right {
+                (f.rect[2], f.excl[2]) = (r, r);
+            }
+        }
         let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env: self.ctx.env.text.clone(), fit: false };
         let mut frame = Frame::new(&space);
         let sp: &ShapedPara = &pb.shaped;
@@ -2601,9 +2606,35 @@ impl<'d> PageFill<'d, '_> {
         let left = if v.flow == super::vertical::Flow::DownEast { y0 } else { self.page_h - y1 };
         let bottom = if fp.is_some() { Lu::MAX } else { Lu::round_half_up(end) };
         // Compat ≤ 14: one that runs past the line end below an earlier table is drawn from the line start, over
-        // it, with the rows that fit below it.
+        // it. It keeps the more of the rows that fit below that table (all that fit the line, when those reach past
+        // its end) and the rows that fit once the table is stacked below its own image until it no longer fits
+        // whole; at least one. When the rows that fit below that table reach past its end, the lines before meet
+        // those rows only.
+        let mut reach = None;
         let (along, bottom) = if legacy && along > col.x + EPS && along + h > end + EPS && fp.is_none() && joined.is_none() {
-            (col.x, Lu::round_half_up(end - (along - col.x)))
+            let hs: Vec<f64> = tb.rows.iter().skip(pos.at.index()).filter(|r| !r.hidden).map(|r| r.height).collect();
+            let bb = tb.bottom_border;
+            let fit = |room: f64| {
+                let mut s = bb;
+                hs.iter().take_while(|&&r| {
+                    s += r;
+                    s <= room + EPS
+                })
+                .count()
+            };
+            let mut under = fit(end - along);
+            let piece = hs[..under].iter().sum::<f64>() + bb;
+            if under > 0 && col.x + piece - bb > along + EPS {
+                reach = Some(piece);
+                under = fit(col.width);
+            }
+            let whole = hs.iter().sum::<f64>() + bb;
+            let mut room = col.width - whole;
+            while whole > EPS && room >= whole {
+                room -= whole;
+            }
+            let kept = under.max(fit(room)).max(1).min(hs.len());
+            (col.x, Lu::round_half_up(col.x + hs[..kept].iter().sum::<f64>() + bb))
         } else {
             (along, bottom)
         };
@@ -2650,7 +2681,9 @@ impl<'d> PageFill<'d, '_> {
         // Joined rows keep text as far off as the earlier rows do.
         let (o0, o1) = joined.map_or((y0, y1), |(r, _)| (y0.min(r[1]), y1.max(r[3])));
         let f = table_float(t.id, top - along, o1 - o0, [above, below, 0.0, 0.0], true);
-        self.at.found.push(Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, along, o0, o1 - o0));
+        let mut o = Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, along, o0, o1 - o0);
+        o.early_right = reach.map(|r| along + r);
+        self.at.found.push(o);
         Ok(stop)
     }
 
