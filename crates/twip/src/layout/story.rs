@@ -465,7 +465,8 @@ fn wrap_bands(
 
 pub fn float_height(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<f64, Yield> {
     Ok(match &f.text_box {
-        Some(tb) if tb.auto_fit => {
+        // Vertical text grows the box across instead (`fit_frame`).
+        Some(tb) if tb.auto_fit && vertical_box(f).is_none() => {
             let (w0, h0) = if f.rot_swap { (f.h, f.w) } else { (f.w, f.h) };
             let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, w0, h0]);
             let w = (fr[2] - fr[0]).max(1.0);
@@ -917,6 +918,12 @@ fn text_flow(tb: &crate::docx::TextBox, shape: Option<&crate::drawing::Shape>) -
     }
 }
 
+/// An unturned text box's story and its vertical flow.
+fn vertical_box(f: &Float) -> Option<(&crate::docx::TextBox, super::vertical::Vertical)> {
+    let tb = f.text_box.as_ref().filter(|_| f.shape.is_some() && !f.rot_swap)?;
+    Some((tb, text_flow(tb, f.shape.as_deref())?))
+}
+
 fn outline(o: f64, rect: [f64; 4], groups: &mut Vec<Child>) {
     if o <= 0.0 {
         return;
@@ -1062,6 +1069,14 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
         let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, f.w, f.h]);
         let longest = longest_line(tb, 1584.0, env, memos)?;
         return Ok(Some(Float { w: (f.w - (fr[2] - fr[0]) + longest).min(width.max(f.w)), ..f.clone() }));
+    }
+    // A text box that fits its vertical text: the lines stack across, so the width follows them.
+    if let Some((tb, v)) = vertical_box(f).filter(|(tb, _)| tb.auto_fit) {
+        let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, f.w, f.h]);
+        let blocks: Vec<&Block> = tb.blocks.iter().collect();
+        let fields = FieldValues::default();
+        let story = super::vertical::story(&blocks, fr[3] - fr[1], v, &StoryEnv { fields: &fields, ..*env }, None, memos)?;
+        return Ok(Some(Float { w: f.w - (fr[2] - fr[0]) + story.height.min(1584.0), ..f.clone() }));
     }
     let Some(tb) = f.text_box.as_ref().filter(|_| f.auto_w) else { return Ok(None) };
     let w = longest_line(tb, width, env, memos)?;

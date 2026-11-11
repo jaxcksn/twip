@@ -277,6 +277,16 @@ fn a_word_art_vertical_text_box_stacks_its_lines_from_the_left() {
 }
 
 #[test]
+fn a_vertical_text_box_that_fits_its_text_grows_across() {
+    let v = vertical_box(20, 200, r#"<wps:bodyPr vert="vert" lIns="91440" tIns="45720" rIns="91440" bIns="45720"><a:spAutoFit/></wps:bodyPr>"#, &["one two", "three"]);
+    let body = format!("<w:p>{}</w:p>", anchor(100, 100, 20, 200, 1, false, 1, &v));
+    let d = settings_doc(&body, 15).expect("the document reads");
+    let r = float_rect(&crate::layout::layout(&d, &fonts()));
+    // Two vertical lines and the insets (no pen): 23.6 + 14.4.
+    assert!((r[2] - r[0] - 38.0).abs() < 0.2 && (r[3] - r[1] - 200.0).abs() < 1e-6, "{r:?}");
+}
+
+#[test]
 fn effects_resolve_from_the_effect_list_and_the_style() {
     let effects = r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"><a:alpha val="40000"/></a:srgbClr></a:outerShdw><a:glow rad="101600"><a:srgbClr val="FFC000"/></a:glow><a:softEdge rad="63500"/></a:effectLst>"#;
     let star = sp(0, 0, 90, 60, "star5", "", "FF0000").replace("</a:ln></wps:spPr>", &format!("</a:ln>{effects}</wps:spPr>"));
