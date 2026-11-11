@@ -256,7 +256,7 @@ flowchart LR
     p4 -- "token matches<br/>old page 5" --> p5["Pages 5 … n<br/>reused as is"]:::kept
 ```
 
-Paragraphs the edit didn't touch keep their shaped text and line breaks from the layout caches, so even the pages that are laid out again mostly reuse lines. The renderer records each page once and records again only the pages whose drawing changed.
+Paragraphs the edit didn't touch keep their shaped text and line breaks from the layout caches, so even the pages that are laid out again mostly reuse lines. The renderer records each page once and records again only the pages whose drawing changed. Twip executes synchronously within its core engine and exposes asynchronous APIs at the SDK boundary. This allows extensive use of non-atomic reference counting (`Rc` instead of `Arc`) to avoid sync overhead. Combined with immutable layout fragments, this enables efficient structural sharing, pointer-identity caching, and reuse of previously computed results. There's also some cooperative scheduling involved, but that's a different topic.
 
 <details>
 <summary><strong>Repository map</strong></summary>
