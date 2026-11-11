@@ -2205,6 +2205,20 @@ impl<'d> PageFill<'d, '_> {
             pos.next_block();
             return Ok(Stop::Done);
         }
+        if pos.at.at_start() && !*empty {
+            *y += self.after_above_table(pos.block, carry);
+        }
+        // A vertical section's upright tables have their own placement.
+        let floating = matches!(self.sec.blocks.get(pos.block), Some(Block::Table(t)) if t.floating.is_some());
+        let spot = if pos.at.at_start() && !floating && self.ctx.env.text.vertical.is_none() { self.beside_floats(pos.block, tb, col, *y, memos)? } else { None };
+        let (beside, relaid) = match spot {
+            Some((x, top, relaid)) => {
+                *y = top;
+                (Some(x), relaid)
+            }
+            None => (None, None),
+        };
+        let tb: &TableLayout = relaid.as_deref().unwrap_or(tb);
         let mut rows = Vec::new();
         // A spaced table's outer frame is closed at the top and bottom of each part.
         let finish = |mut rows: Vec<RowFragment>, out: &mut Vec<Child>, left: f64, opened: Option<f64>, closed: bool| {
@@ -2220,9 +2234,6 @@ impl<'d> PageFill<'d, '_> {
                 out.push(Child::Table(TableFragment { table: tb.id, rows: rows.into_boxed_slice() }));
             }
         };
-        if pos.at.at_start() && !*empty {
-            *y += self.after_above_table(pos.block, carry);
-        }
         // A vertical section's tables are placed upright by their caller, floating or not.
         let fp = match self.sec.blocks.get(pos.block) {
             Some(Block::Table(t)) if self.ctx.env.text.vertical.is_none() => t.floating,
@@ -2237,7 +2248,7 @@ impl<'d> PageFill<'d, '_> {
                 Some(Jc::Right) => self.page_w - col.width,
                 _ => 0.0,
             },
-            _ => col.x,
+            _ => beside.unwrap_or(col.x),
         };
         let mut settled = true;
         if let Some(fp) = fp
@@ -2579,6 +2590,70 @@ impl<'d> PageFill<'d, '_> {
         pos.next_block();
         carry.first_para = false;
         Ok(Stop::Done)
+    }
+
+    /// Where an in-flow table starting at `y` goes beside the floats over its first row: in the first free piece of
+    /// the column there, its indent from the piece's start and its `jc` within the piece, when its first row fits
+    /// the piece; else lower, at the first float bottom where it does. Compat ≤ 14 lays an autofit table out again
+    /// at the piece's width. All its rows keep that place. `None` when no float meets the row.
+    fn beside_floats(
+        &mut self,
+        bi: usize,
+        tb: &TableLayout,
+        col: &ColumnSpace,
+        y: f64,
+        memos: &mut Memos,
+    ) -> Result<Option<(f64, f64, Option<Rc<TableLayout>>)>, Yield> {
+        let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return Ok(None) };
+        let Some(ri) = tb.rows.iter().position(|r| !r.hidden) else { return Ok(None) };
+        let si = self.sec.index;
+        let floats: Vec<Placed> = self.fixed.iter().chain(&self.at.known).filter(|f| (f.key.0, f.key.1) != (si, bi)).cloned().collect();
+        if tb.rtl || floats.is_empty() {
+            return Ok(None);
+        }
+        let text = &self.ctx.env.text;
+        let legacy = text.compat == Compat::Legacy;
+        let (cx0, cx1) = (col.x, col.x + col.width);
+        let (mut top, h) = (y, tb.rows[ri].height);
+        let mut moved = false;
+        while top < col.bottom.to_pt() - EPS {
+            if let Some((u, r)) = float::intervals(&floats, cx0, cx1, top, top + h, legacy).and_then(|iv| iv.first().copied()) {
+                if u <= cx0 + EPS && r >= cx1 - EPS {
+                    break;
+                }
+                let w = r - u;
+                let relaid = if legacy && !t.fixed {
+                    let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
+                    let prev = self.sec.blocks.neighbours(bi, bi, text.review.view).0;
+                    let laid = super::table::layout(&super::table::in_column(t, col.width, &env), w, &env, prev, false, memos)?;
+                    hold(&mut self.pass.held.tables, &laid);
+                    Some(laid)
+                } else {
+                    None
+                };
+                let shift = match t.jc {
+                    _ if relaid.is_some() => 0.0,
+                    Jc::Center => (w - col.width) / 2.0,
+                    Jc::Right => w - col.width,
+                    _ => 0.0,
+                };
+                let l = relaid.as_deref().unwrap_or(tb);
+                if let Some(row) = l.rows.get(ri)
+                    && let Some(z) = row.cells.last()
+                {
+                    // The width the row reports: from the piece's start to its last cell's content right edge.
+                    let reported = l.x0 + shift + z.x + z.w - z.margins[3];
+                    if reported <= w + EPS {
+                        return Ok(Some((u + shift, top, relaid)));
+                    }
+                }
+            }
+            match float::next_edge(&floats, cx0, cx1, top, top + h) {
+                Some(e) if e > top + EPS => (top, moved) = (e, true),
+                _ => break,
+            }
+        }
+        Ok(moved.then_some((cx0, top, None)))
     }
 
     /// A table in a vertical section, laid out horizontally and drawn upright: at the stack position the next line

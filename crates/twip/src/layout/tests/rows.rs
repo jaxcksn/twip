@@ -488,6 +488,57 @@ mod floats {
         assert!(at("center", "line") - at("top", "line") > 20.0, "line-relative: in the cell");
     }
 
+    /// The first glyph run holding `text`: its x and baseline.
+    fn start_of(d: &crate::docx::Document, text: &str) -> (f64, f64) {
+        let s = layout(d, &fonts());
+        paint_items(&s.pages()[0])
+            .iter()
+            .find_map(|i| match i {
+                Item::Glyphs(r) if r.chars.iter().map(|c| c.0).collect::<String>().contains(text) => Some((r.x, r.baseline)),
+                _ => None,
+            })
+            .expect("the text")
+    }
+
+    /// A one-cell table after a 100pt high box at the column's left, with or without wrapping around it.
+    fn after_box(square: bool, tbl_pr: &str, cell: &str, text: &str, compat: i64, options: &[&str]) -> (f64, f64) {
+        let wrap = if square { r#"<wp:wrapSquare wrapText="bothSides"/>"# } else { "<wp:wrapNone/>" };
+        let body = format!(
+            r#"{}<w:tbl><w:tblPr>{tbl_pr}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr>{cell}</w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#,
+            text_box(wrap, 100.0, "Boxed")
+        );
+        let mut d = doc(&body);
+        d.settings.compat_mode = compat;
+        for o in options {
+            d.settings.compat.insert((*o).into());
+        }
+        start_of(&d, &text[..4])
+    }
+
+    #[test]
+    fn an_in_flow_table_goes_beside_a_float_when_its_row_fits_else_below() {
+        let fixed = |w: u32, jc: &str| format!(r#"<w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/>{jc}"#);
+        for compat in [14, 15] {
+            let at = |square, w, jc: &str| after_box(square, &fixed(w, jc), "", "Cell text", compat, &[]);
+            let ((x, b), (x0, b0)) = (at(true, 4000, ""), at(false, 4000, ""));
+            assert!((x - x0 - 100.0).abs() < 0.05 && (b - b0).abs() < 0.01, "compat {compat}: beside {x} {b} vs {x0} {b0}");
+            let ((x, b), (x0, b0)) = (at(true, 4000, r#"<w:jc w:val="center"/>"#), at(false, 4000, r#"<w:jc w:val="center"/>"#));
+            assert!((x - x0 - 50.0).abs() < 0.05 && (b - b0).abs() < 0.01, "compat {compat}: centred in the piece {x} vs {x0}");
+            let ((x, b), (x0, b0)) = (at(true, 8000, ""), at(false, 8000, ""));
+            assert!((x - x0).abs() < 0.05 && b - b0 > 60.0, "compat {compat}: below {x} {b} vs {x0} {b0}");
+        }
+    }
+
+    #[test]
+    fn compat_14_fits_an_autofit_table_to_the_room_beside_a_float() {
+        let long = "Long text that would make the table wider than the room beside the box if it could ".repeat(2);
+        let at = |square, compat, options: &[&str]| after_box(square, r#"<w:tblW w:w="0" w:type="auto"/>"#, "", &long, compat, options);
+        let ((x, b), (x0, b0)) = (at(true, 14, &[]), at(false, 14, &[]));
+        assert!((x - x0 - 100.0).abs() < 0.05 && (b - b0).abs() < 0.01, "beside {x} {b} vs {x0} {b0}");
+        let ((x, b), (x0, b0)) = (at(true, 15, &[]), at(false, 15, &[]));
+        assert!((x - x0).abs() < 0.05 && b - b0 > 60.0, "compat 15: below {x} {b} vs {x0} {b0}");
+    }
+
     #[test]
     fn float_10_a_text_box_drops_glyphs_below_its_content_bottom() {
         let d = doc(&text_box("<wp:wrapNone/>", 4.0, "Hk."));

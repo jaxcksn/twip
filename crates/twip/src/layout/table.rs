@@ -1285,6 +1285,20 @@ fn layout_with(
     }
 }
 
+/// The table to lay out in less room than its column: its pct width and pct indent stay shares of the column.
+pub fn in_column(t: &Table, text_w: f64, env: &StoryEnv) -> Table {
+    let mut t = t.clone();
+    if let Some(p) = t.ind_pct.take() {
+        t.ind = ((p * 5000.0).round() as i64 * twips(text_w) / 5000) as f64 / 20.0;
+    }
+    if let Width::Pct(p) = t.width {
+        let (add_l, add_r) = edge_add(env.ctx.env.text.compat, &t);
+        let a = twips(text_w - t.ind + add_l + add_r);
+        t.width = Width::Dxa(autofit::rdiv(a, (p * 5000.0).round() as i64, 5000) as f64 / 20.0);
+    }
+    t
+}
+
 // Layout runs
 fn layout_runs(t: &Table) -> Option<Vec<std::ops::Range<usize>>> {
     if t.fixed || t.rows.iter().all(|r| r.run.is_none()) {
