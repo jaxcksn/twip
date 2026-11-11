@@ -1833,6 +1833,17 @@ fn a_compat_14_line_after_one_fitted_with_a_slack_stays_in_its_pieces() {
 }
 
 #[test]
+fn a_compat_14_line_after_one_moved_down_goes_below_a_float_it_would_overhang() {
+    // The third body line goes to A's bottom (2450.94 tw), 252 tw down; B (2451 to 3209.94) cuts the next three. The
+    // fourth line below it would start 0.06 tw inside B: it goes to B's bottom, full width.
+    let a = three_line_frame(2880, 2880, r#"w:vAnchor="page" w:y="1693""#, "", "A");
+    let b = three_line_frame(4320, 2880, r#"w:vAnchor="page" w:y="2452""#, "", "B");
+    let Some(l) = body_after_frames(&(a + &b)) else { return };
+    let low: Vec<(f64, f64)> = l.iter().filter(|x| x.1 > 3300.0 && x.1 < 3500.0).map(|x| (x.0, x.1)).collect();
+    assert!(low.len() == 1 && (low[0].1 - (3209.94 + 206.4)).abs() < 0.5, "{low:?}");
+}
+
+#[test]
 fn a_compat_14_line_blocked_by_a_frame_goes_just_below_it() {
     // Frames leaving only a piece too narrow for text: each body line goes to the bottom of the frame it meets.
     let frame = |y: u32| {

@@ -1860,12 +1860,15 @@ impl<'d> PageFill<'d, '_> {
         let mut guard = 0;
         // Compat ≤ 14 takes the floats in the order they were placed. The strip a line was fitted into with a slack
         // (its pieces and where they end) serves the next lines too while it ends below their top, by at least that
-        // slack when it was fitted in one piece.
+        // slack when it was fitted in one piece. Once a line went down in its own query, the paragraph's later queries
+        // take its height plus that drop as the slack.
         // ponytail: a strip found with no slack isn't kept (the next line's own query gives the same pieces where
-        // measured), and it resets with each paragraph.
+        // measured), one found with the paragraph's slack is kept to its end, both reset with each paragraph, and a
+        // second drop keeps the first slack.
         let mut ordered: Vec<&Placed> = floats.iter().collect();
         ordered.sort_by_key(|f| f.key);
         let mut strip_at: Option<(Vec<(f64, f64)>, f64, f64)> = None;
+        let mut slack_on = 0.0;
         while (s < n || bands.is_empty()) && guard < 4000 {
             guard += 1;
             let mut h = est;
@@ -1916,6 +1919,12 @@ impl<'d> PageFill<'d, '_> {
             let reuse = compat == Compat::Legacy && strip_at.as_ref().is_some_and(|(_, end, least)| end - yy > EPS && end - yy >= least - EPS);
             if reuse {
                 forced = strip_at.as_ref().map(|x| x.0.clone());
+            } else if compat == Compat::Legacy && slack_on > EPS {
+                if let Some((t, ok)) = query(yy, slack_on, h) {
+                    fitted = Some((pieces_of(&ok), end_of(&ok), 0.0, 0.0));
+                    forced = Some(pieces_of(&ok));
+                    yy = t;
+                }
             } else if compat == Compat::Legacy {
                 let near = || here.iter().filter(|f| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS);
                 let over: Vec<Placed> = near().filter(|f| f.excl[1] <= yy + EPS).cloned().collect();
@@ -2021,8 +2030,11 @@ impl<'d> PageFill<'d, '_> {
                     if segs.last().is_some_and(|l| !l.hyphen) {
                         frame.word_from = Some(e);
                     }
-                    if let Some((iv, end, stay, _)) = fitted {
+                    if let Some((iv, end, stay, drop)) = fitted {
                         strip_at = Some((iv, end, stay));
+                        if drop > EPS && slack_on <= EPS {
+                            slack_on = ph + drop;
+                        }
                     } else if !reuse {
                         strip_at = None;
                     }
