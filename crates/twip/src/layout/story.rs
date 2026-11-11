@@ -213,7 +213,6 @@ pub fn layout_with(
     let mut wrapping: Vec<(usize, usize, f64, f64)> = Vec::new();
     let mut float_bottom = 0.0f64;
     let mut held = 0.0f64;
-    let mut prev_table: Option<(&Table, f64)> = None;
     for (bi, b) in blocks.iter().enumerate() {
         // The part of a paragraph starting at a later line goes on without its space before.
         let from = if bi == start.0 { start.1 } else { 0 };
@@ -346,7 +345,6 @@ pub fn layout_with(
                 }
                 prev = Some(style);
                 prev_after = after;
-                prev_table = None;
             }
             LaidBlock::Table(t) => {
                 y += prev_after;
@@ -355,13 +353,6 @@ pub fn layout_with(
                     _ => super::table::layout(&as_nested(t, cell), width, env, None, false, memos)?,
                 };
                 let (rows, h) = super::table::table_units(&tl);
-                if !in_cell
-                    && let Some((p, bottom)) = prev_table
-                    && p.style_id == t.style_id
-                    && p.fixed == t.fixed
-                {
-                    y -= bottom;
-                }
                 let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
                 for mut u in rows {
                     u.block = bi;
@@ -375,7 +366,6 @@ pub fn layout_with(
                 y += h;
                 prev = None;
                 prev_after = 0.0;
-                prev_table = Some((*t, tl.bottom_border));
             }
         }
     }
