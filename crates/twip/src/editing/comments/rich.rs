@@ -94,6 +94,7 @@ impl RichText {
                     inlines,
                     src: None,
                     id: crate::docx::next_para_id(),
+                    div: None,
                     controls: Vec::new(),
                 })
             })

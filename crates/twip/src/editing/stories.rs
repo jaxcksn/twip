@@ -162,6 +162,7 @@ impl Editor {
                     inlines: Vec::new(),
                     src: None,
                     id: crate::docx::next_para_id(),
+                    div: None,
                     controls: Vec::new(),
                 };
                 let kind = if footer { "footer" } else { "header" };

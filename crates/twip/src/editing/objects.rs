@@ -657,6 +657,7 @@ impl Editor {
             inlines: Vec::new(),
             src: None,
             id: pid,
+            div: None,
             controls: Vec::new(),
         };
         let fid = crate::docx::next_para_id();

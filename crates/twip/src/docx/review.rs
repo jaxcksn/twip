@@ -494,7 +494,7 @@ impl Paragraph {
     pub fn para_style_in(&self, view: MarkupView) -> &Rc<ParaStyle> {
         match (&self.style.change, view) {
             (Some(c), MarkupView::Original) => &c.previous,
-            _ => &self.style,
+            _ => self.div.as_ref().map_or(&self.style, |d| d.over(&self.style)),
         }
     }
 

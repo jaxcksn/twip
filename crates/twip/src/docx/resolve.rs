@@ -19,6 +19,8 @@ pub struct Resolver {
     pub style_links: HashMap<(i64, i64), String>,
     /// The generic category of each family the document's font table describes, by lowercase name.
     pub categories: Rc<HashMap<String, super::font_table::GenericFamily>>,
+    /// The document's HTML divisions, by id.
+    pub divisions: Rc<HashMap<i64, Division>>,
 }
 
 impl std::fmt::Debug for Resolver {
@@ -39,9 +41,20 @@ pub struct ParaResolved {
     pub style_id: Option<String>,
 }
 
+/// A division and its ancestors, innermost first.
+pub(crate) fn div_chain(divs: &HashMap<i64, Division>, id: Option<i64>) -> Vec<i64> {
+    let mut out = Vec::new();
+    let mut at = id.filter(|i| divs.contains_key(i));
+    while let Some(i) = at.filter(|i| !out.contains(i)) {
+        out.push(i);
+        at = divs.get(&i).and_then(|d| d.parent);
+    }
+    out
+}
+
 impl Resolver {
     pub fn new(styles: Styles, numbering: Numbering, theme: ThemeFonts) -> Resolver {
-        let mut r = Resolver { styles, numbering, theme, style_links: HashMap::new(), categories: Rc::default() };
+        let mut r = Resolver { styles, numbering, theme, style_links: HashMap::new(), categories: Rc::default(), divisions: Rc::default() };
         r.compute_style_links();
         r
     }
@@ -257,6 +270,13 @@ impl Resolver {
         }
         if region.is_some_and(|t| t.mark_at_style) && direct.mark_size == Some(11.0) {
             style.mark_size = base.size;
+        }
+        // The margins of the paragraph's division and its ancestors add to its indents.
+        let chain = div_chain(&self.divisions, style.div);
+        if !chain.is_empty() {
+            let sum = |i: usize| chain.iter().map(|id| self.divisions[id].margins[i]).sum::<f64>();
+            style.ind_left += sum(0);
+            style.ind_right += sum(1);
         }
         ParaResolved { style, base, level, num_id, ilvl, from_style, style_id }
     }

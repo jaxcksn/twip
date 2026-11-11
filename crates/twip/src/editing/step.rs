@@ -687,6 +687,7 @@ impl Step {
                 let old_style = std::mem::replace(&mut p.style, style);
                 let old_mark = std::mem::replace(&mut p.mark, mark);
                 let old_list = std::mem::replace(&mut p.list, list);
+                p.refresh_div();
                 Ok(Applied {
                     inverse: Step::Para { para, style: old_style, mark: old_mark, list: old_list },
                     map: Map::Same,

@@ -10,7 +10,7 @@ use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
 use super::numbering::{Counters, Numbering};
 use super::props::*;
-use super::resolve::{ParaResolved, Resolver};
+use super::resolve::{ParaResolved, Resolver, div_chain};
 use super::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
     PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange,
@@ -253,6 +253,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let font_descriptions = part_of("fontTable").and_then(|p| pkg.read_str(&p)).map(|x| super::font_table::parse(&x)).unwrap_or_default();
     let mut res = Resolver::new(styles, numbering, theme);
     res.categories = Rc::new(super::font_table::categories(&font_descriptions));
+    res.divisions = Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours));
     let numbering_part = part_of("numbering");
     let mut r = Reader {
         res,
@@ -464,7 +465,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     super::fields::evaluate(&mut doc, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
-    let divs = read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
+    let divs = doc.resolver.as_ref().map(|r| r.divisions.clone()).unwrap_or_default();
     if !divs.is_empty() {
         doc.sections.iter_mut().for_each(|s| fold_divs(&mut s.blocks, &divs));
         doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()).for_each(|b| fold_divs(b, &divs));
@@ -564,16 +565,8 @@ impl Map {
 }
 
 // HTML divisions
-struct Div {
-    parent: Option<i64>,
-    /// Left, right, top and bottom margins.
-    margins: [f64; 4],
-    /// Top, left, bottom and right borders.
-    borders: [Option<Border>; 4],
-}
-
-fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Div> {
-    fn walk(parent: Option<i64>, n: Node, colours: &ThemeColours, out: &mut HashMap<i64, Div>) {
+fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Division> {
+    fn walk(parent: Option<i64>, n: Node, colours: &ThemeColours, out: &mut HashMap<i64, Division>) {
         for d in children(n, "div") {
             let Some(id) = int(attr(d, "id")) else { continue };
             let m = |name: &str| child(d, name).and_then(|e| twips(val(e))).unwrap_or(0.0);
@@ -581,7 +574,7 @@ fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Div> {
             let b = |name: &str| bdr.and_then(|x| child(x, name)).map(|e| Border::parse(e, colours)).filter(|b| b.visible());
             out.insert(
                 id,
-                Div {
+                Division {
                     parent,
                     margins: [m("marLeft"), m("marRight"), m("marTop"), m("marBottom")],
                     borders: [b("top"), b("left"), b("bottom"), b("right")],
@@ -600,18 +593,9 @@ fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Div> {
     out
 }
 
-/// A division and its ancestors, innermost first.
-fn div_chain(divs: &HashMap<i64, Div>, id: Option<i64>) -> Vec<i64> {
-    let mut out = Vec::new();
-    let mut at = id.filter(|i| divs.contains_key(i));
-    while let Some(i) = at.filter(|i| !out.contains(i)) {
-        out.push(i);
-        at = divs.get(&i).and_then(|d| d.parent);
-    }
-    out
-}
-
-fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Div>) {
+/// The neighbour-dependent part of the divisions around each paragraph (its indents come from the resolver), and each
+/// table row's.
+fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>) {
     let row_chain = |r: Option<&Row>| div_chain(divs, r.and_then(|r| r.div.as_ref()).map(|d| d.id));
     let ends: Vec<(Vec<i64>, Vec<i64>)> = blocks
         .iter()
@@ -679,13 +663,7 @@ fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Div>) {
                     continue;
                 }
                 let boxes = boxes(chain, prev, next, &again);
-                let sum = |i: usize| chain.iter().map(|id| divs[id].margins[i]).sum::<f64>();
-                let s = Rc::make_mut(&mut p.style);
-                s.ind_left += sum(0);
-                s.ind_right += sum(1);
-                s.space_before = s.space_before.max(before);
-                s.space_after = s.space_after.max(after);
-                s.div_boxes = boxes.into();
+                p.div = Some(Rc::new(DivEdge::new(&p.style, before, after, boxes.into())));
             }
             Block::Table(t) => {
                 let chains: Vec<Vec<i64>> = t.rows.iter().map(|r| row_chain(Some(r))).collect();
@@ -1198,6 +1176,7 @@ impl Reader {
                 inlines: Vec::new(),
                 src: None,
                 id,
+                div: None,
                 controls: Vec::new(),
             }));
         }
@@ -1530,7 +1509,7 @@ impl Reader {
         let (segs, lossy, simple) =
             (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1), std::mem::replace(&mut self.simple, outer.2));
         let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy }));
-        let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), controls: Vec::new() };
+        let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), div: None, controls: Vec::new() };
 
         let mut para = match self.pending_hidden.take() {
             // A vanished mark joins the paragraph to the next: the first one's indents, alignment, tabs and space
@@ -1576,6 +1555,7 @@ impl Reader {
                     inlines: prev.inlines,
                     src,
                     id: prev.id,
+                    div: None,
                     controls: para.controls,
                 }
             }

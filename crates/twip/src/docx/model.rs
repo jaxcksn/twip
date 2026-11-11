@@ -101,6 +101,42 @@ pub struct RowDiv {
     pub boxes: Rc<[DivBox]>,
 }
 
+/// An HTML division (`w:div` in `webSettings`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Division {
+    pub parent: Option<i64>,
+    /// Left, right, top and bottom margins.
+    pub margins: [f64; 4],
+    /// Top, left, bottom and right borders.
+    pub borders: [Option<Border>; 4],
+}
+
+/// What the divisions starting and ending at a paragraph add to it, which depends on its neighbours: space above and
+/// below at least `before` and `after`, and the boxes around it. `style` is `from` with them applied.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DivEdge {
+    pub before: f64,
+    pub after: f64,
+    pub boxes: Rc<[DivBox]>,
+    from: Rc<ParaStyle>,
+    style: Rc<ParaStyle>,
+}
+
+impl DivEdge {
+    pub fn new(from: &Rc<ParaStyle>, before: f64, after: f64, boxes: Rc<[DivBox]>) -> DivEdge {
+        let mut s = (**from).clone();
+        s.space_before = s.space_before.max(before);
+        s.space_after = s.space_after.max(after);
+        s.div_boxes = boxes.clone();
+        DivEdge { before, after, boxes, from: from.clone(), style: Rc::new(s) }
+    }
+
+    /// The paragraph's style with the edge applied, while `style` is the one it was built over.
+    pub fn over<'a>(&'a self, style: &'a Rc<ParaStyle>) -> &'a Rc<ParaStyle> {
+        if Rc::ptr_eq(&self.from, style) { &self.style } else { style }
+    }
+}
+
 /// A bordered HTML division's box, as one paragraph in it sees it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DivBox {
@@ -157,7 +193,8 @@ pub struct ParaStyle {
     pub mirror_indents: bool,
     /// The HTML division the paragraph is in (`w:divId`).
     pub div: Option<i64>,
-    /// The bordered divisions around the paragraph, outermost first.
+    /// The bordered divisions around the paragraph, outermost first (only in [`Paragraph::para_style_in`]'s style:
+    /// they come from the neighbours, [`DivEdge`]).
     pub div_boxes: Rc<[DivBox]>,
     pub tabs: Vec<Tab>,
     pub border_top: Option<Border>,
@@ -549,6 +586,17 @@ pub struct Paragraph {
     /// The block-level content controls around it, outermost first: consecutive blocks with an id are
     /// that control's content.
     pub controls: Vec<ControlId>,
+    /// What the HTML divisions starting and ending here add.
+    pub div: Option<Rc<DivEdge>>,
+}
+
+impl Paragraph {
+    /// The division edge built again over the paragraph's current style, after the style was replaced.
+    pub fn refresh_div(&mut self) {
+        if let Some(d) = self.div.as_ref().filter(|d| !Rc::ptr_eq(&d.from, &self.style)) {
+            self.div = Some(Rc::new(DivEdge::new(&self.style, d.before, d.after, d.boxes.clone())));
+        }
+    }
 }
 
 /// A new paragraph id (unique in the process).

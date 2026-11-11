@@ -33,6 +33,7 @@ pub(super) fn empty_cell(like: &Cell) -> Cell {
         inlines: vec![Inline::Text(String::new(), p.mark.clone())],
         src: None,
         id: crate::docx::next_para_id(),
+        div: None,
         controls: Vec::new(),
     })];
     c
@@ -505,6 +506,7 @@ impl Editor {
             inlines: vec![Inline::Text(String::new(), p.mark.clone())],
             src: None,
             id: crate::docx::next_para_id(),
+            div: None,
             controls: Vec::new(),
         };
         let border = Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None });

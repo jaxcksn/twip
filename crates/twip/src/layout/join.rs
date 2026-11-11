@@ -87,6 +87,7 @@ impl Joined {
             inlines,
             src: None,
             id: last.id,
+            div: last.div.clone(),
             controls: last.controls.clone(),
         };
         Some(Joined { para, map: Rc::new(JoinMap { first: ParaId(first.id), rest: rest.into() }) })

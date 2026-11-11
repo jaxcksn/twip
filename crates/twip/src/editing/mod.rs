@@ -1539,6 +1539,7 @@ impl Editor {
             inlines: Vec::new(),
             src: None,
             id: crate::docx::next_para_id(),
+            div: None,
             controls: p.controls.clone(),
         })
     }
@@ -1922,6 +1923,7 @@ impl Editor {
                 inlines: vec![Inline::Text(String::new(), p.mark.clone())],
                 src: None,
                 id: crate::docx::next_para_id(),
+                div: None,
                 controls: Vec::new(),
             };
             cell.blocks = vec![Block::Para(p)];

@@ -23,6 +23,7 @@ fn paragraph(style: Rc<crate::docx::ParaStyle>, run: Rc<RunStyle>, text: String)
         inlines: vec![Inline::Text(text, run)],
         src: None,
         id: next_para_id(),
+        div: None,
         controls: Vec::new(),
     })
 }

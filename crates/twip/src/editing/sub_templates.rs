@@ -112,6 +112,7 @@ fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Para
         inlines: Vec::new(),
         src: None,
         id: crate::docx::next_para_id(),
+        div: None,
         controls: Vec::new(),
     })
 }
