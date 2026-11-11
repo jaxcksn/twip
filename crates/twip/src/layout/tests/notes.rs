@@ -523,3 +523,18 @@ fn compat_15_section_end_endnotes_balance_over_the_columns() {
     assert!(first.0 < 100.0 && last.0 > 300.0, "six lines in each column: {first:?} {last:?}");
     assert!(tail.1 > last.1, "the next section below them: {tail:?}");
 }
+
+#[test]
+fn compat_14_a_note_going_on_in_a_later_column_takes_its_width() {
+    let words = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray";
+    let extra = format!(r#"<w:footnote w:id="10"><w:p><w:r><w:t>{words}</w:t></w:r></w:p></w:footnote>"#);
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let cols = format!(r#"{pr}<w:cols w:num="2" w:space="720" w:equalWidth="0"><w:col w:w="2000" w:space="720"/><w:col w:w="6640"/></w:cols>"#);
+    let mut body: String = (1..=6).map(|i| para(&format!("L{i:02}"), if i == 2 { &["f10"][..] } else { &[] })).collect();
+    body += &sect(&cols, false);
+    body += &(para("Tail", &[]) + &sect(&format!(r#"<w:type w:val="continuous"/>{pr}"#), true));
+    let Some(doc) = notes_doc_with(&body, "", &extra) else { return };
+    let page = &super::page_chars(&doc)[0];
+    let right = page.iter().map(|c| c.1).fold(0.0, f64::max);
+    assert!(right > 330.0, "the note goes on under column 2 at its width: {right}");
+}

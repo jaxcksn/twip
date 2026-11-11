@@ -891,6 +891,8 @@ impl<'d> PageFill<'d, '_> {
         area.sep = self.separator(true, col.width, memos)?.height;
         let mut rest = Vec::new();
         for part in std::mem::take(&mut carry.note_rest) {
+            // In a later column of the page the note goes on at that column's width.
+            let part = if self.column > 0 { self.rewrap(&part, col.width, memos)? } else { part };
             let room = col.bottom.to_pt() - col.top.to_pt() - area.total();
             let fit = part.units.iter().position(|x| x.top + x.height > room + EPS).unwrap_or(part.units.len());
             if fit == 0 || !rest.is_empty() {
