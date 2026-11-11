@@ -1743,9 +1743,9 @@ fn a_compat_14_frame_in_the_flow_drops_when_it_meets_the_earlier_ones_distance_f
     // After 28 single lines A ends 0.4 tw past a twip: B starts at the twip before it.
     let (ay, by) = b(28, 4500, 1000).unwrap();
     assert!(((by - ay) * 20.0 - 599.6).abs() < 0.05, "{ay} {by}");
-    // An earlier frame placed from the page counts too.
+    // Over an earlier frame placed from the page it stays at its flow y.
     let (ay, by) = pair(1, r#"w:vAnchor="page" w:y="1693""#, 4500, 1000).unwrap();
-    assert!((by - ay - 30.0).abs() < 0.1, "{ay} {by}");
+    assert!(((by - ay) * 20.0 - 0.98).abs() < 0.05, "{ay} {by}");
 }
 
 /// Three Arial 11 frame lines from `at`, `x` and `w` in twips, `sup` its `suppressOverlap`.
@@ -1766,6 +1766,16 @@ fn after_frames(frames: &str) -> Option<Vec<(f64, f64, String)>> {
     let body = format!(r#"<w:p><w:r><w:t>Lead paragraph.</w:t></w:r></w:p>{frames}<w:p><w:r><w:t>{FRAME_BODY}</w:t></w:r></w:p>"#);
     let l = baselines(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#, ARIAL_11, &body)?;
     Some(l.into_iter().map(|(x, t, _, y)| (x * 20.0, y * 20.0, t)).collect())
+}
+
+#[test]
+fn a_compat_14_frame_in_the_flow_that_may_not_overlap_goes_a_twip_short_of_a_page_frames_bottom() {
+    let a = three_line_frame(2880, 2880, r#"w:vAnchor="page" w:y="1693""#, "", "A");
+    let b = three_line_frame(4320, 2880, r#"w:vAnchor="text" w:y="0""#, "<w:suppressOverlap/>", "B");
+    let Some(l) = after_frames(&(a + &b)) else { return };
+    let at = |t: &str| l.iter().find(|x| x.2 == t).map(|x| x.1).expect("drawn");
+    // A is at 1692 tw, 758.94 tw high: B goes to 1692 + 759 - 1.
+    assert!((at("B one") - at("A one") - 758.0).abs() < 0.05, "{l:?}");
 }
 
 #[test]
