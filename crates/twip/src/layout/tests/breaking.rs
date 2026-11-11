@@ -120,6 +120,34 @@ fn the_first_line_indent_adds_to_a_floats_edge() {
     assert!((l[0].0 - 279.0).abs() < 0.01 && (l[1].0 - 252.0).abs() < 0.01, "{l:?}");
 }
 
+/// The first two lines' left edges of a paragraph with `ind` beside a 100pt float at the column's left edge.
+fn beside_left_float(settings: &str, ind: &str) -> Option<(f64, f64)> {
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = format!(r#"<w:p><w:pPr><w:ind {ind}/></w:pPr>{float}<w:r><w:t>{}</w:t></w:r></w:p>"#, "Alpha bravo charlie delta echo. ".repeat(6));
+    let l = lines(settings, ARIAL_12, &p)?;
+    Some((l[0].0, l[1].0))
+}
+
+#[test]
+fn a_hanging_first_line_beside_a_float_counts_from_the_piece_in_compat_14_and_stays_in_it_in_compat_15() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let ind = r#"w:left="1440" w:hanging="720""#;
+    let Some(c12) = beside_left_float("", ind) else { return };
+    let c15 = beside_left_float(c15, ind).unwrap();
+    assert!((c12.0 - 208.0).abs() < 0.01 && (c12.1 - 172.0).abs() < 0.01, "{c12:?}");
+    assert!((c15.0 - 172.0).abs() < 0.01 && (c15.1 - 172.0).abs() < 0.01, "{c15:?}");
+}
+
+#[test]
+fn compat_14_do_not_suppress_indentation_drops_the_left_indent_beside_a_float() {
+    let opt = r#"<w:compat><w:doNotSuppressIndentation/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
+    let Some(plain) = beside_left_float("", r#"w:left="2880""#) else { return };
+    let dropped = beside_left_float(opt, r#"w:left="2880""#).unwrap();
+    let first = beside_left_float(opt, r#"w:firstLine="720""#).unwrap();
+    assert!((plain.0 - 216.0).abs() < 0.01 && (dropped.0 - 172.0).abs() < 0.01 && (dropped.1 - 172.0).abs() < 0.01, "{plain:?} {dropped:?}");
+    assert!((first.0 - 208.0).abs() < 0.01 && (first.1 - 172.0).abs() < 0.01, "{first:?}");
+}
+
 #[test]
 fn a_tight_float_wraps_around_its_polygon_box() {
     let pt = r#"<wp:start x="0" y="0"/><wp:lineTo x="0" y="0"/><wp:lineTo x="0" y="0"/>"#;

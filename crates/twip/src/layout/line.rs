@@ -143,6 +143,7 @@ pub struct Frame {
     pub number_hang_stop: bool,
     pub exact_on_top: bool,
     pub exact_extra_after: bool,
+    pub drop_cut_indents: bool,
 }
 
 impl Frame {
@@ -170,6 +171,7 @@ impl Frame {
             number_hang_stop: !e.no_tab_hang_ind && !e.no_number_hang_stop,
             exact_on_top: e.exact_on_top,
             exact_extra_after: e.exact_extra_after,
+            drop_cut_indents: e.drop_cut_indents,
         }
     }
 }
@@ -679,8 +681,24 @@ pub fn band(
             break;
         }
         let first = if first_line && segs.is_empty() { style.ind_first } else { 0.0 };
-        let left = if a > EPS { a.max(style.ind_left) + first } else { a.max(style.ind_left + first) };
-        let right = if b >= frame.width - EPS { right_edge } else { b.min(right_edge) };
+        let l = style.ind_left;
+        // A piece cut on the left by a float: compat 15 keeps the indents measured from the column, within the piece.
+        // Compat ≤ 14 measures them from the piece: the left indent loses the cut, a hanging first line keeps its
+        // own indent from the piece's start; with the cut sides' indents dropped only a first-line indent stays.
+        let left = match (a > EPS, frame.compat) {
+            (false, _) => a.max(l + first),
+            (true, Compat::Generic) => (a.max(l) + first).max(a),
+            (true, Compat::Legacy) if frame.drop_cut_indents => a + first.max(0.0),
+            (true, Compat::Legacy) => {
+                let l2 = (l - a).max(0.0);
+                a + l2 + if first < 0.0 && l != l2 { first + l - l2 } else { first }
+            }
+        };
+        let right = match b >= frame.width - EPS {
+            true => right_edge,
+            false if frame.drop_cut_indents => b,
+            false => b.min(right_edge),
+        };
         if right - left <= EPS {
             continue;
         }

@@ -32,6 +32,8 @@ pub struct TextEnv {
     /// the part of the room under the baseline beyond the line's descent space below the text.
     pub exact_on_top: bool,
     pub exact_extra_after: bool,
+    /// `doNotSuppressIndentation`, compat ≤ 14: beside a float a line drops the indents of its cut sides.
+    pub drop_cut_indents: bool,
     /// The hanging indent is no tab stop: `noTabHangInd` (any tab) and `doNotUseIndentAsNumberingTabStop` (a
     /// list number's tab), compat ≤ 14.
     pub no_tab_hang_ind: bool,
@@ -103,6 +105,7 @@ impl TextEnv {
             wp_line_heights: s.compat() == Compat::Legacy && s.has("suppressTopSpacingWP"),
             exact_on_top: s.has("noExtraLineSpacing"),
             exact_extra_after: s.has("suppressBottomSpacing"),
+            drop_cut_indents: s.compat() == Compat::Legacy && s.has("doNotSuppressIndentation"),
             no_tab_hang_ind: s.compat() == Compat::Legacy && s.has("noTabHangInd"),
             no_number_hang_stop: s.compat() == Compat::Legacy && s.has("doNotUseIndentAsNumberingTabStop"),
             show_breaks_in_frames: s.compat() == Compat::Legacy && s.has("showBreaksInFrames"),
