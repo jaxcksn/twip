@@ -2191,6 +2191,8 @@ impl Reader {
             _ => "bothSides",
         };
         let twips = |v: f64| (v * 20.0).trunc() / 20.0;
+        let dflt = [0.0, 0.0, 9.0, 9.0];
+        let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
@@ -2210,7 +2212,7 @@ impl Reader {
                 v_offset: twips(st.y),
                 wrap,
                 wrap_text: wrap_text.into(),
-                dist: [0.0, 0.0, 9.0, 9.0],
+                dist,
                 effect: [0.0; 4],
                 poly: None,
                 behind: st.z < 0,

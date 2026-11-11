@@ -262,3 +262,21 @@ fn a_relative_width_and_a_percentage_position_follow_the_page() {
     let r = float_rect(&crate::layout::layout(&d, &fonts()));
     assert!(close(r, [189.0, 100.0, 495.0, 150.0]), "{r:?}");
 }
+
+/// The float a VML rectangle with `style` and `extra` attributes reads as, in a document of `compat`.
+fn vml_float(style: &str, extra: &str, wrap: &str, compat: u32) -> crate::docx::model::Float {
+    let rect = format!(
+        r#"<w:p><w:r><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w10="urn:schemas-microsoft-com:office:word" style="position:absolute;margin-left:72pt;margin-top:72pt;width:90pt;height:60pt;{style}" {extra}>{wrap}</v:rect></w:pict></w:r></w:p>"#
+    );
+    let d = settings_doc(&rect, compat).expect("the document reads");
+    let crate::docx::model::Block::Para(p) = &d.sections[0].blocks[0] else { panic!("a paragraph") };
+    p.inlines.iter().find_map(|i| if let crate::docx::model::Inline::Float(f, _) = i { Some((**f).clone()) } else { None }).expect("the VML float")
+}
+
+#[test]
+fn a_vml_floats_wrap_distances_round_to_twips_and_default_to_nine_points_beside() {
+    let square = r#"<w10:wrap type="square"/>"#;
+    assert_eq!(vml_float("", "", square, 15).dist, [0.0, 0.0, 9.0, 9.0]);
+    let f = vml_float("mso-wrap-distance-top:0.03in;mso-wrap-distance-left:0pt;mso-wrap-distance-right:24px", "", square, 15);
+    assert_eq!(f.dist, [2.15, 0.0, 0.0, 18.0]);
+}

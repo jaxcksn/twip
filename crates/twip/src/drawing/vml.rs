@@ -47,6 +47,8 @@ pub struct Style {
     pub size_percent: [Option<(String, i64)>; 2],
     /// `mso-left-percent`, `mso-top-percent`.
     pub pos_percent: [Option<i64>; 2],
+    /// `mso-wrap-distance-top`, `-bottom`, `-left`, `-right`.
+    pub wrap_dist: [Option<f64>; 4],
 }
 
 fn is(n: Node, ns: &str, name: &str) -> bool {
@@ -146,6 +148,10 @@ pub fn style(n: Node) -> Style {
             }
             "mso-left-percent" => s.pos_percent[0] = v.parse().ok(),
             "mso-top-percent" => s.pos_percent[1] = v.parse().ok(),
+            "mso-wrap-distance-top" => s.wrap_dist[0] = length(v),
+            "mso-wrap-distance-bottom" => s.wrap_dist[1] = length(v),
+            "mso-wrap-distance-left" => s.wrap_dist[2] = length(v),
+            "mso-wrap-distance-right" => s.wrap_dist[3] = length(v),
             _ => {}
         }
     }
