@@ -2098,3 +2098,23 @@ fn a_compat_15_line_meets_a_float_over_its_text_only_and_compat_14_over_its_whol
     let c15 = lines(c15, ARIAL_12, &p).unwrap();
     assert!((c12[0].0 - 172.0).abs() < 0.5 && (c15[0].0 - 72.0).abs() < 0.5 && (c15[1].0 - 172.0).abs() < 0.5, "{c12:?} {c15:?}");
 }
+
+#[test]
+fn a_compat_15_heading_between_floating_tables_meets_the_second_over_its_text_only() {
+    // Each table is placed at the top of the text, a little above where it stands: the second starts in the room the
+    // heading's spacing adds below its text, which the heading's line doesn't meet.
+    let table = |t: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text" w:tblpYSpec="top" w:tblOverlap="never"/><w:tblW w:w="9000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let body = format!(
+        r#"{}<w:p><w:pPr><w:spacing w:before="240" w:after="0" w:line="360" w:lineRule="auto"/></w:pPr><w:r><w:t>Heading</w:t></w:r></w:p>{}<w:p/>"#,
+        table("first"),
+        table("second")
+    );
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let Some(l) = baselines(c15, ARIAL_12, &body) else { return };
+    let y = |t: &str| l.iter().find(|l| l.1 == t).expect("drawn").3;
+    assert!(y("Heading") < y("second"), "{l:?}");
+}
