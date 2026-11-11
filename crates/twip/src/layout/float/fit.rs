@@ -5,8 +5,18 @@ use super::{Contour, EPS, Placed, Side, Wrap};
 /// The pieces of `[x0, x1]` the floats leave free over a band; a piece a float cuts is dropped when narrower than its
 /// [`Placed::gap`].
 pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64, legacy: bool) -> Option<Vec<(f64, f64)>> {
+    text_intervals(floats, x0, x1, top, bottom, bottom, legacy)
+}
+
+/// As [`intervals`], a wrap polygon cut over the band's text only: down to `text`, the room the line's spacing adds
+/// below its text left out. So is a bare text box's outline of lines in compat 15.
+pub fn text_intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64, text: f64, legacy: bool) -> Option<Vec<(f64, f64)>> {
     let mut free = vec![(x0, x1)];
-    for f in floats.iter().filter(|f| f.in_band(top, bottom)) {
+    for f in floats.iter() {
+        let bottom = if f.contour.as_ref().is_some_and(|c| !(legacy && c.lines)) { text } else { bottom };
+        if !f.in_band(top, bottom) {
+            continue;
+        }
         let gap = f.gap(legacy);
         for block in blocks(f, x0, x1, top, bottom)? {
             let mut next = Vec::new();

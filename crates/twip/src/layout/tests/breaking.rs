@@ -2051,3 +2051,20 @@ fn a_float_below_the_text_before_its_paragraph_doesnt_wrap_that_text_when_the_pa
     assert!((long.3 - 560.0 - 10.86).abs() < 1.0, "{l:?}");
     assert!(l.iter().any(|x| x.1.starts_with("Beside")), "{l:?}");
 }
+
+#[test]
+fn a_wrap_polygon_cuts_a_line_over_its_text_not_the_room_its_spacing_adds_below() {
+    let triangle = r#"<wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/><wp:lineTo x="0" y="0"/>"#;
+    let float = format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1828800" cy="1828800"/><wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="1">{triangle}</wp:wrapPolygon></wp:wrapTight><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+    );
+    let p = format!(r#"<w:p><w:pPr><w:spacing w:line="480" w:lineRule="auto"/></w:pPr>{float}<w:r><w:t>{}</w:t></w:r></w:p>"#, "Alpha bravo charlie delta echo. ".repeat(6));
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let Some(c12) = lines("", ARIAL_12, &p) else { return };
+    let c15 = lines(c15, ARIAL_12, &p).unwrap();
+    // The triangle's edge runs down at 45°: the first line starts where it is at the text's bottom (13.4pt down), not
+    // at the bottom of the double-spaced line (26.8pt down).
+    for l in [&c12, &c15] {
+        assert!(l[0].0 > 72.0 + 13.0 && l[0].0 < 72.0 + 14.5, "{l:?}");
+    }
+}

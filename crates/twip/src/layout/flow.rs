@@ -1863,6 +1863,7 @@ impl<'d> PageFill<'d, '_> {
         let pieces = pb.pieces();
         let n = pieces.len();
         let est = pb.lines.first().map_or(13.0, |l| l.pitch);
+        let est_below = pb.lines.first().map_or(0.0, |l| l.below);
         let top_extra = top_border_extra(style, pb.borders.0.as_deref(), first_part);
         let (cx0, cx1) = (col.x, col.x + col.width);
         let compat = self.ctx.env.text.compat;
@@ -1887,6 +1888,7 @@ impl<'d> PageFill<'d, '_> {
         while (s < n || bands.is_empty()) && guard < 4000 {
             guard += 1;
             let mut h = est;
+            let mut below = est_below;
             let mut got = None;
             let mut blocked = false;
             let mut trial = None;
@@ -1985,7 +1987,7 @@ impl<'d> PageFill<'d, '_> {
             for attempt in 0..2 {
                 let free = match &forced {
                     Some(iv) => Some(iv.clone()),
-                    None => float::intervals(cutting, cx0, cx1, yy, yy + h, compat == Compat::Legacy),
+                    None => float::text_intervals(cutting, cx0, cx1, yy, yy + h, yy + h - below, compat == Compat::Legacy),
                 };
                 match free {
                     None => {
@@ -2020,13 +2022,14 @@ impl<'d> PageFill<'d, '_> {
                                         l.baseline += top_extra;
                                     }
                                 }
-                                let ph = segs[0].pitch;
-                                let done = (ph - h).abs() < EPS || attempt == 1;
+                                let (ph, segs_below) = (segs[0].pitch, segs[0].below);
+                                let done = (ph - h).abs() < EPS && (segs_below - below).abs() < EPS || attempt == 1;
                                 got = Some((segs, e));
                                 if done {
                                     break;
                                 }
                                 h = ph;
+                                below = segs_below;
                             }
                             Err(t) => {
                                 blocked = true;
