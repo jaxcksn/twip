@@ -1748,6 +1748,39 @@ fn a_compat_14_frame_in_the_flow_drops_when_it_meets_the_earlier_ones_distance_f
     assert!((by - ay - 30.0).abs() < 0.1, "{ay} {by}");
 }
 
+/// Three Arial 11 frame lines from `at`, `x` and `w` in twips, `sup` its `suppressOverlap`.
+fn three_line_frame(x: u32, w: u32, at: &str, sup: &str, t: &str) -> String {
+    let p = |n: &str| format!(r#"<w:r><w:t>{t} {n}</w:t></w:r>"#);
+    format!(
+        r#"<w:p><w:pPr><w:framePr w:w="{w}" w:hSpace="180" w:vSpace="0" w:wrap="around" {at} w:hAnchor="page" w:x="{x}"/>{sup}<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>{}<w:r><w:br/></w:r>{}<w:r><w:br/></w:r>{}</w:p>"#,
+        p("one"),
+        p("two"),
+        p("three")
+    )
+}
+
+const FRAME_BODY: &str = "Body text runs on beside the box so that every line shows where the wrap edge lies, and the words are short enough to fill each gap well. Body text runs on beside the box so that every line shows where the wrap edge lies.";
+
+/// The lines of a lead line, `frames` and a body paragraph: x and baseline in twips, and the text.
+fn after_frames(frames: &str) -> Option<Vec<(f64, f64, String)>> {
+    let body = format!(r#"<w:p><w:r><w:t>Lead paragraph.</w:t></w:r></w:p>{frames}<w:p><w:r><w:t>{FRAME_BODY}</w:t></w:r></w:p>"#);
+    let l = baselines(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#, ARIAL_11, &body)?;
+    Some(l.into_iter().map(|(x, t, _, y)| (x * 20.0, y * 20.0, t)).collect())
+}
+
+#[test]
+fn a_compat_14_line_with_one_piece_left_stays_beside_a_float_starting_above_the_other_ones_bottom() {
+    // A (1692 to 2450.94 tw) leaves one piece of the lines beside it; B starts at 2450 in the third body line.
+    let frames = |by: u32| three_line_frame(2880, 2880, r#"w:vAnchor="page" w:y="1693""#, "", "A") + &three_line_frame(4320, 2880, &format!(r#"w:vAnchor="page" w:y="{by}""#), "", "B");
+    let third = |by: u32| after_frames(&frames(by)).map(|l| l.into_iter().filter(|x| !x.2.starts_with(['A', 'B', 'L']) || x.2.starts_with("Body")).nth(2).expect("drawn"));
+    let Some((x, y, _)) = third(2451) else { return };
+    // It keeps its top (baseline 2405.2 tw), right of B (7379 tw).
+    assert!((y - 2405.2).abs() < 0.5 && (x - 7379.0).abs() < 0.5, "{x} {y}");
+    // B starting a twip after A's bottom: the line goes to it.
+    let (_, y, _) = third(2452).unwrap();
+    assert!((y - 2656.8).abs() < 0.5, "{y}");
+}
+
 #[test]
 fn a_compat_14_line_blocked_by_a_frame_goes_just_below_it() {
     // Frames leaving only a piece too narrow for text: each body line goes to the bottom of the frame it meets.

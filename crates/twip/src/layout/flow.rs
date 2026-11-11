@@ -1869,10 +1869,24 @@ impl<'d> PageFill<'d, '_> {
                 let meets = |f: &Placed| left.iter().any(|&(a, b)| f.excl[0] < b - EPS && f.excl[2] > a + EPS);
                 let hidden = |f: &Placed| f.in_band(yy, yy + h) && f.excl[1] > yy + EPS && !meets(f);
                 // At their bottom, the line goes below such a float that ends no more than its height below the
-                // line's own top.
+                // line's own top. When they leave one piece of the line, a float starting above their bottom keeps the
+                // line at its top, cut by both, while a piece survives (else it goes to the nearer bottom); one starting
+                // lower sends it to their bottom.
                 if e < yy + h - EPS && near().any(|f| f.excl[1] > yy + EPS && meets(f)) {
-                    yy = near().filter(|f| f.excl[1] > yy + EPS && meets(f) && f.excl[3] - yy <= h + EPS).map(|f| f.excl[3]).fold(e, f64::max);
-                    continue;
+                    let starts = near().filter(|f| f.excl[1] > yy + EPS && meets(f)).map(|f| f.excl[1]).fold(f64::INFINITY, f64::min);
+                    if left.len() == 1 && starts < e - EPS {
+                        let covering: Vec<Placed> = near().filter(|f| f.excl[1] <= starts + EPS && (f.excl[1] <= yy + EPS || meets(f))).cloned().collect();
+                        if !float::intervals(&covering, cx0, cx1, yy, yy + h, true).is_some_and(|iv| !iv.is_empty()) {
+                            yy = covering.iter().map(|f| f.excl[3]).fold(e, f64::min);
+                            continue;
+                        }
+                    } else {
+                        yy = match left.len() {
+                            1 => e,
+                            _ => near().filter(|f| f.excl[1] > yy + EPS && meets(f) && f.excl[3] - yy <= h + EPS).map(|f| f.excl[3]).fold(e, f64::max),
+                        };
+                        continue;
+                    }
                 }
                 if here.iter().any(hidden) {
                     uncut = Some(here.iter().filter(|f| !hidden(f)).cloned().collect());
