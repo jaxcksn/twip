@@ -8,12 +8,13 @@ pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64, leg
     text_intervals(floats, x0, x1, top, bottom, bottom, legacy)
 }
 
-/// As [`intervals`], a wrap polygon cut over the band's text only: down to `text`, the room the line's spacing adds
-/// below its text left out. So is a bare text box's outline of lines in compat 15.
+/// As [`intervals`], the band tested only down to `text`, the room the line's spacing adds below its text left out:
+/// beside every float in compat 15; in compat ≤ 14 beside a wrap polygon only, not a bare text box's outline of lines
+/// nor a box.
 pub fn text_intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64, text: f64, legacy: bool) -> Option<Vec<(f64, f64)>> {
     let mut free = vec![(x0, x1)];
     for f in floats.iter() {
-        let bottom = if f.contour.as_ref().is_some_and(|c| !(legacy && c.lines)) { text } else { bottom };
+        let bottom = if !legacy || f.contour.as_ref().is_some_and(|c| !c.lines) { text } else { bottom };
         if !f.in_band(top, bottom) {
             continue;
         }

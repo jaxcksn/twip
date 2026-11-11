@@ -2068,3 +2068,15 @@ fn a_wrap_polygon_cuts_a_line_over_its_text_not_the_room_its_spacing_adds_below(
         assert!(l[0].0 > 72.0 + 13.0 && l[0].0 < 72.0 + 14.5, "{l:?}");
     }
 }
+
+#[test]
+fn a_compat_15_line_meets_a_float_over_its_text_only_and_compat_14_over_its_whole_height() {
+    // A double-spaced line: its text is 13.4pt tall, the line 26.8pt; the float starts 20pt down, in the room the
+    // spacing adds below the first line's text.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>254000</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let p = format!(r#"<w:p><w:pPr><w:spacing w:line="480" w:lineRule="auto"/></w:pPr>{float}<w:r><w:t>{}</w:t></w:r></w:p>"#, "Alpha bravo charlie delta echo. ".repeat(6));
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let Some(c12) = lines("", ARIAL_12, &p) else { return };
+    let c15 = lines(c15, ARIAL_12, &p).unwrap();
+    assert!((c12[0].0 - 172.0).abs() < 0.5 && (c15[0].0 - 72.0).abs() < 0.5 && (c15[1].0 - 172.0).abs() < 0.5, "{c12:?} {c15:?}");
+}
