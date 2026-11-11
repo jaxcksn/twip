@@ -535,8 +535,24 @@ mod floats {
         let at = |square, compat, options: &[&str]| after_box(square, r#"<w:tblW w:w="0" w:type="auto"/>"#, "", &long, compat, options);
         let ((x, b), (x0, b0)) = (at(true, 14, &[]), at(false, 14, &[]));
         assert!((x - x0 - 100.0).abs() < 0.05 && (b - b0).abs() < 0.01, "beside {x} {b} vs {x0} {b0}");
-        let ((x, b), (x0, b0)) = (at(true, 15, &[]), at(false, 15, &[]));
-        assert!((x - x0).abs() < 0.05 && b - b0 > 60.0, "compat 15: below {x} {b} vs {x0} {b0}");
+        for (compat, options) in [(15, &[][..]), (14, &["doNotAutofitConstrainedTables"][..])] {
+            let ((x, b), (x0, b0)) = (at(true, compat, options), at(false, compat, options));
+            assert!((x - x0).abs() < 0.05 && b - b0 > 60.0, "compat {compat} {options:?}: below {x} {b} vs {x0} {b0}");
+        }
+    }
+
+    #[test]
+    fn a_raw_table_width_leaves_the_indent_out_of_the_fit_beside_a_float() {
+        let pr = r#"<w:tblW w:w="7000" w:type="dxa"/><w:tblInd w:w="720" w:type="dxa"/><w:tblLayout w:type="fixed"/>"#;
+        let cell = r#"<w:tcW w:w="7000" w:type="dxa"/>"#;
+        for compat in [14, 15] {
+            let at = |square, options: &[&str]| after_box(square, pr, cell, "Cell text", compat, options);
+            let ((x, b), (x0, b0)) = (at(true, &[]), at(false, &[]));
+            assert!((x - x0).abs() < 0.05 && b - b0 > 60.0, "compat {compat}: below {x} {b} vs {x0} {b0}");
+            let raw = ["layoutRawTableWidth"];
+            let ((x, b), (x0, b0)) = (at(true, &raw), at(false, &raw));
+            assert!((x - x0 - 100.0).abs() < 0.05 && (b - b0).abs() < 0.01, "compat {compat}: beside {x} {b} vs {x0} {b0}");
+        }
     }
 
     #[test]

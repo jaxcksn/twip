@@ -33,7 +33,7 @@ The table says what each one does to layout.
 | `cachedColBalance` | No effect in Word. |
 | `convMailMergeEsc` | No effect in Word (mail merge). |
 | `displayHangulFixedWidth` | East Asian, after 1.0. |
-| `doNotAutofitConstrainedTables` | Not laid out yet: it changes the width of an autofit table beside a float, and tables beside floats aren't laid out yet. |
+| `doNotAutofitConstrainedTables` | Laid out, modes 14 and below: an autofit table beside a float keeps its column width instead of fitting the room beside the float. |
 | `doNotBreakConstrainedForcedTable` | No effect in Word. |
 | `doNotBreakWrappedTables` | Laid out, modes 14 and below: a floating table isn't split across pages. |
 | `doNotExpandShiftReturn` | Laid out, mode 15: a justified line ending in a line break isn't justified (in modes 14 and below it never is). |
@@ -50,7 +50,7 @@ The table says what each one does to layout.
 | `footnoteLayoutLikeWW8` | Not laid out yet: notes are placed by the mode's usual rules. |
 | `forgetLastTabAlignment` | No effect in Word. |
 | `growAutofit` | Laid out: an autofit table may grow wider than the room it is in. |
-| `layoutRawTableWidth` | Not laid out yet: it changes whether a table fits beside a float, and tables beside floats aren't laid out yet. |
+| `layoutRawTableWidth` | Laid out: a table fits beside a float by its cells' width, without its indent and its last cell's right margin. |
 | `layoutTableRowsApart` | No effect in Word. |
 | `lineWrapLikeWord6` | East Asian, after 1.0. |
 | `mwSmallCaps` | Laid out, modes 14 and below: small capitals at the Macintosh sizes. |

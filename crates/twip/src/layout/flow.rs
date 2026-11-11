@@ -2622,7 +2622,7 @@ impl<'d> PageFill<'d, '_> {
                     break;
                 }
                 let w = r - u;
-                let relaid = if legacy && !t.fixed {
+                let relaid = if legacy && !t.fixed && !text.no_constrained_autofit {
                     let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
                     let prev = self.sec.blocks.neighbours(bi, bi, text.review.view).0;
                     let laid = super::table::layout(&super::table::in_column(t, col.width, &env), w, &env, prev, false, memos)?;
@@ -2639,10 +2639,11 @@ impl<'d> PageFill<'d, '_> {
                 };
                 let l = relaid.as_deref().unwrap_or(tb);
                 if let Some(row) = l.rows.get(ri)
-                    && let Some(z) = row.cells.last()
+                    && let (Some(a), Some(z)) = (row.cells.first(), row.cells.last())
                 {
-                    // The width the row reports: from the piece's start to its last cell's content right edge.
-                    let reported = l.x0 + shift + z.x + z.w - z.margins[3];
+                    // The width the row reports: from the piece's start to its last cell's content right edge, or with
+                    // `layoutRawTableWidth` from its first cell's left edge to its last cell's right edge.
+                    let reported = if text.raw_table_width { z.x + z.w - a.x } else { l.x0 + shift + z.x + z.w - z.margins[3] };
                     if reported <= w + EPS {
                         return Ok(Some((u + shift, top, relaid)));
                     }
