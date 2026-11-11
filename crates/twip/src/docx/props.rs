@@ -63,6 +63,8 @@ pub struct RunProps {
     pub toggles_set: u16,
     pub toggles: u16,
     pub dstrike: Option<bool>,
+    /// `w:noProof`.
+    pub no_proof: Option<bool>,
     pub underline: Option<String>,
     /// `Some(None)` = auto.
     pub color: Option<Option<u32>>,
@@ -175,6 +177,7 @@ impl RunProps {
                 }
                 "sz" => p.size = half_points(val(e)),
                 "dstrike" => p.dstrike = Some(on_off(e)),
+                "noProof" => p.no_proof = Some(on_off(e)),
                 "u" => p.underline = Some(val(e).unwrap_or("single").to_string()),
                 "color" => p.color = Some(tc.colour(e, "val", "themeColor", "themeTint", "themeShade")),
                 "highlight" => {
@@ -243,6 +246,7 @@ impl RunProps {
             hint,
             size,
             dstrike,
+            no_proof,
             underline,
             color,
             highlight,

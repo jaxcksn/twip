@@ -1349,6 +1349,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         strike,
         dstrike,
         hidden,
+        no_proof,
         underline,
         color,
         highlight,
@@ -1388,6 +1389,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *strike == b.strike
             && *dstrike == b.dstrike
             && *hidden == b.hidden
+            && *no_proof == b.no_proof
             && *underline == b.underline
             && *color == b.color
             && *highlight == b.highlight

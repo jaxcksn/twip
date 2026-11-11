@@ -104,6 +104,7 @@ impl Resolver {
             strike: p.toggle(toggle::STRIKE),
             dstrike: p.dstrike.unwrap_or(false),
             hidden: p.toggle(toggle::VANISH),
+            no_proof: p.no_proof.unwrap_or(false),
             underline: p.underline.clone().filter(|u| u != "none"),
             color: p.color.flatten(),
             highlight: p.highlight.flatten(),

@@ -1161,6 +1161,13 @@ fn fit_line(
                 }
                 if soft {
                     let auto = !pieces[at - 1].soft_hyphen;
+                    // A word without proofing isn't hyphenated automatically: compat 15 asks the run of the word's
+                    // first letter, compat ≤ 14 that of the first character that doesn't fit.
+                    let asked = if frame.compat == Compat::Legacy { &pieces[i] } else { &all[(0..o + at).rev().find(|&k| !in_word(k)).unwrap_or(0)] };
+                    if auto && sp.styles[asked.style as usize].run.no_proof {
+                        breaks.pop();
+                        continue;
+                    }
                     let hy = hyphen_width(sp, &pieces[at - 1]);
                     let pen_at = xs[at - 1 - start] + if auto { ws[at - 1 - start] } else { 0.0 };
                     let fits = pen_at + hy <= right + EPS;

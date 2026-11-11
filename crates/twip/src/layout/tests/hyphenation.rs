@@ -180,3 +180,23 @@ fn compat_15_breaks_the_last_line_again_without_automatic_hyphenation() {
     assert_eq!((p1.len(), p1.last().map(String::as_str)), (51, Some("The plain cart ran")), "{p1:?}");
     assert_eq!(p2[0], "representative bottom text.", "{p2:?}");
 }
+
+#[test]
+fn a_word_without_proofing_isnt_hyphenated() {
+    if !super::fonts().is_installed("Courier New") {
+        return;
+    }
+    // The break would follow letter 10; letter 12 is the first that doesn't fit.
+    let first = |compat: i64, a: &str, b: &str| {
+        let t = format!(r#"<w:r><w:t xml:space="preserve">The plain cart ran </w:t></w:r><w:r>{a}<w:t>repre</w:t></w:r><w:r>{b}<w:t xml:space="preserve">sentative words go here.</w:t></w:r>"#);
+        courier_lines(&track_settings(compat, true, ""), 0, &t).map(|[p1, _]| p1[0].clone())
+    };
+    let Some(plain) = first(15, "", "") else { return };
+    assert_eq!(plain, "The plain cart ran representa-");
+    let np = "<w:rPr><w:noProof/></w:rPr>";
+    // Compat 15 asks the word's first letter, compat 12 the letter that doesn't fit.
+    assert_eq!(first(15, np, "").as_deref(), Some("The plain cart ran"));
+    assert_eq!(first(15, "", np).as_deref(), Some("The plain cart ran representa-"));
+    assert_eq!(first(12, np, "").as_deref(), Some("The plain cart ran representa-"));
+    assert_eq!(first(12, "", np).as_deref(), Some("The plain cart ran"));
+}

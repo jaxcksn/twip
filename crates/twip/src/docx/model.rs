@@ -29,6 +29,8 @@ pub struct RunStyle {
     pub strike: bool,
     pub dstrike: bool,
     pub hidden: bool,
+    /// `w:noProof`: no automatic hyphenation either.
+    pub no_proof: bool,
     pub underline: Option<String>,
     pub color: Option<u32>,
     pub highlight: Option<u32>,
