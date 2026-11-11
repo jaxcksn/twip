@@ -612,13 +612,16 @@ The workflows on top of a complete model, the framework packages, and the API fr
 - Equations (OMML)
 - Charts
 - Right-to-left and East Asian layout and editing, with IME (below)
+- The caret, selection and hit testing in vertical sections: vertical documents lay out and draw in 1.0, but editing
+  them places the caret as if the page weren't turned
 
 ### Right-to-left and East Asian
 
 Planned for the release after 1.0, together with IME, so these documents can be both laid out and typed in. Each
 item below is read and kept on save in 1.0 (2.2); it isn't laid out or settable yet. Some East Asian layout already
 works and stays: `kinsoku`, `wordWrap`, `overflowPunct`, `topLinePunct`, `autoSpaceDE`, `autoSpaceDN`,
-`strictFirstAndLastChars`, ruby annotations and `rtlGutter` are laid out, but not settable.
+`strictFirstAndLastChars`, ruby annotations and `rtlGutter` are laid out, but not settable. Their open details come
+with the rest: the autospace gap between some Latin and East Asian fonts, and `textAlignment` in vertical lines.
 
 - **Complex scripts and right-to-left:** complex-script run properties (`szCs`, `bCs`, `iCs`, `cs`, `rtl`); the
   bidirectional algorithm per line; font slots from `lang@bidi`; theme script fonts and `themeFontLang`; section
@@ -645,6 +648,7 @@ Pulled forward when a customer document needs one.
 - Style sets, themes and the Organizer.
 - SmartArt editing, inserting WordArt, editing OLE objects.
 - Drawing subdocuments and ink natively (ink draws from its fallback picture after 2.2).
+- `alignBordersAndEdges`: paragraph borders and table edges snapped to the page border (kept on save).
 
 ### Not planned
 
