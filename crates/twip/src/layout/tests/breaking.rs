@@ -1569,6 +1569,14 @@ fn a_distributed_line_spreads_its_characters_and_spaces_east_asian_text_from_lat
     let xs = distributed_xs(c15, "", &["abc def"]).expect("lays out");
     let g = (9020.0 - 770.0 - 55.0) / 6.0;
     assert!(near(&xs, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0].map(|k| 1440.0 + k * (110.0 + g) + if k > 3.5 { 55.0 } else { 0.0 })), "{xs:?}");
+    // A line 110 tw short of the margin with four spaces: each space takes half of its stretch, the letters keep
+    // their pitch.
+    let a = |n: usize| "a".repeat(n);
+    let text = [a(16), a(16), a(16), a(15), a(14)].join(" ");
+    let xs = distributed_xs(c15, "", &[&text]).expect("lays out");
+    let want: Vec<f64> = text.chars().enumerate().filter(|c| c.1 != ' ').map(|(i, _)| 1440.0 + i as f64 * 110.0 + 27.5 * text[..i].matches(' ').count() as f64).collect();
+    let ink: Vec<(char, f64)> = xs.into_iter().filter(|c| c.0 != ' ').collect();
+    assert!(near(&ink, &want), "{ink:?}");
 }
 
 #[test]

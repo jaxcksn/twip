@@ -1587,7 +1587,8 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
         }
         // Every line, the last too: equal gaps between the characters (spaces included), the first at the left edge
         // and the last ending at the right; a character alone is centred. Where East Asian text meets a Latin letter
-        // or a digit the gap takes half an em more. Compat 15: each space first stretches by half its width.
+        // or a digit the gap takes half an em more. Compat 15: each space first stretches by up to half its width, all
+        // spaces alike as far as the extra space goes.
         Jc::Distribute => {
             let chars: Vec<usize> = (0..content_end).filter(|&k| pieces[idx(k)].kind != Kind::Tab).collect();
             let extra = right - line_end_x;
@@ -1597,15 +1598,18 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 }
             } else if chars.len() > 1 {
                 let mut bonus: Vec<f64> = chars.windows(2).map(|w| auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style)).collect();
-                if frame.compat == Compat::Generic {
-                    for (j, &k) in chars[..chars.len() - 1].iter().enumerate() {
-                        if pieces[idx(k)].kind == Kind::Space {
-                            bonus[j] += line.widths[k] / 2.0;
-                        }
-                    }
-                }
                 let extra = extra - bonus.iter().sum::<f64>();
-                if extra > 0.0 {
+                let stretch: Vec<f64> = chars[..chars.len() - 1]
+                    .iter()
+                    .map(|&k| if frame.compat == Compat::Generic && pieces[idx(k)].kind == Kind::Space { line.widths[k] / 2.0 } else { 0.0 })
+                    .collect();
+                let total: f64 = stretch.iter().sum();
+                let share = if total > 0.0 { (extra / total).clamp(0.0, 1.0) } else { 0.0 };
+                for (b, s) in bonus.iter_mut().zip(&stretch) {
+                    *b += share * s;
+                }
+                let extra = extra - share * total;
+                if extra > 0.0 || share > 0.0 {
                     let q = extra / (chars.len() - 1) as f64;
                     for (j, &k) in chars[..chars.len() - 1].iter().enumerate() {
                         line.widths[k] += q + bonus[j];
