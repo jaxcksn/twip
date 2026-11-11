@@ -142,6 +142,7 @@ them out from a `.docx` either.
 - The run date and time elements (`dayShort` through `yearLong`).
 - OpenType number forms, number spacing and stylistic sets (`w14:numForm`, `w14:numSpacing`, `w14:stylisticSets`),
   which change glyph widths.
+- Legacy form fields as Word shows them: the FORMCHECKBOX box at its size and the FORMDROPDOWN's selected entry.
 
 </Chunk>
 
@@ -329,8 +330,8 @@ and save, and has a command to create, change and remove it. Where a construct h
 **Goal:** pre-2007 forms, common in court and government work, open, fill and save.
 
 - Form field data (`w:ffData`) in the model and on save.
-- FORMTEXT, FORMCHECKBOX and FORMDROPDOWN: draw them (the check box is missing today), fill them, insert them and set
-  their properties.
+- FORMTEXT, FORMCHECKBOX and FORMDROPDOWN: fill them, insert them and set their properties (they lay out and draw
+  from 1.8).
 - Form field shading and `doNotShadeFormData`.
 
 </Chunk>
