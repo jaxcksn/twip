@@ -975,6 +975,24 @@ fn a_row_whose_exception_fixes_its_layout_is_a_table_of_its_own() {
 }
 
 #[test]
+fn a_layout_run_merges_the_grid_columns_its_rows_have_no_edge_between() {
+    let cell = |t: &str, w: i64, span: i64| {
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/><w:gridSpan w:val="{span}"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)
+    };
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr>{}</w:tr><w:tr>{}{}</w:tr><w:tr><w:tblPrEx><w:tblLayout w:type="fixed"/></w:tblPrEx>{}{}</w:tr></w:tbl><w:p/>"#,
+        cell("all", 6000, 3),
+        cell("one", 2000, 1),
+        cell("uno", 4000, 2),
+        cell("two", 2000, 2),
+        cell("dos", 1000, 1)
+    );
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    let dx = at(&l, "uno").0 - at(&l, "one").0;
+    assert!((dx - 100.0).abs() < 0.01, "the first cell keeps its width: {dx}");
+}
+
+#[test]
 fn a_first_row_whose_exception_fixes_its_layout_is_a_table_of_its_own() {
     let cell = |t: &str, w: &str| format!(r#"<w:tc><w:tcPr><w:tcW {w}/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
     let auto = r#"w:w="0" w:type="auto""#;

@@ -1420,12 +1420,21 @@ fn layout_runs_of(
             sub.cell_spacing = spacing_of(t, run.start).unwrap_or(0.0);
             sub.rows.iter_mut().for_each(|r| r.run = None);
         }
+        let bounds = own_grid(&mut sub);
         let laid = layout_with(&sub, text_w, env, if k == 0 { prev } else { None }, measure, None, memos)?;
-        fit.extend(laid.fit.iter().cloned());
+        let old = |g: usize| bounds[g.min(bounds.len() - 1)];
+        let at = |c: usize, span: usize| (old(c), old(c + span) - old(c));
+        fit.extend(laid.fit.iter().cloned().map(|mut f| {
+            f.cells.iter_mut().for_each(|c| (c.first, c.span) = at(c.first, c.span));
+            f
+        }));
         let shift = merged.as_ref().map_or(0.0, |m| laid.x0 - m.x0);
         let mut rows: Vec<RowBox> = laid.rows.clone();
         for r in &mut rows {
-            r.cells.iter_mut().for_each(|c| c.x += shift);
+            r.cells.iter_mut().for_each(|c| {
+                c.x += shift;
+                (c.col, c.span) = at(c.col, c.span);
+            });
             r.seams.iter_mut().for_each(|s| {
                 s.0 += shift;
                 s.1 += shift;
@@ -1438,7 +1447,13 @@ fn layout_runs_of(
             last.trail += laid.bottom_border;
         }
         match merged.as_mut() {
-            None => merged = Some(TableLayout { rows, fit: Rc::from([]), ..clone_layout(&laid) }),
+            None => {
+                // A merged column's width goes to its first grid column.
+                let cols = (0..bounds[bounds.len() - 1])
+                    .map(|g| bounds.iter().position(|&b| b == g).and_then(|j| laid.cols.get(j)).copied().unwrap_or(0.0))
+                    .collect();
+                merged = Some(TableLayout { rows, cols, fit: Rc::from([]), ..clone_layout(&laid) });
+            }
             Some(m) => {
                 m.rows.extend(rows);
                 m.bottom_border = laid.bottom_border;
@@ -1448,6 +1463,45 @@ fn layout_runs_of(
     let mut m = merged.expect("a run");
     m.fit = fit.into();
     Ok(Rc::new(m))
+}
+
+/// Merges the grid columns no row of the table has an edge between, as a layout run's own grid; returns where each
+/// remaining column edge was on the old grid.
+fn own_grid(t: &mut Table) -> Vec<usize> {
+    let n = grid_columns(t);
+    if t.grid_change.is_some() {
+        return (0..=n).collect();
+    }
+    let mut edge = vec![false; n + 1];
+    (edge[0], edge[n]) = (true, true);
+    for r in &t.rows {
+        let mut x = r.grid_before.min(n);
+        edge[x] = true;
+        for c in &r.cells {
+            x = (x + c.span).min(n);
+            edge[x] = true;
+        }
+        edge[(x + r.grid_after).min(n)] = true;
+    }
+    let bounds: Vec<usize> = (0..=n).filter(|&g| edge[g]).collect();
+    if bounds.len() == n + 1 {
+        return bounds;
+    }
+    let new = |g: usize| bounds.partition_point(|&b| b < g);
+    t.grid = bounds.windows(2).map(|w| (w[0]..w[1]).filter_map(|g| t.grid.get(g)).sum()).collect();
+    for r in &mut t.rows {
+        let mut x = r.grid_before.min(n);
+        let gb = new(x);
+        for c in &mut r.cells {
+            let to = (x + c.span).min(n);
+            c.span = new(to) - new(x);
+            x = to;
+        }
+        let end = (x + r.grid_after).min(n);
+        r.grid_after = new(end) - new(x);
+        r.grid_before = gb;
+    }
+    bounds
 }
 
 fn clone_layout(tb: &TableLayout) -> TableLayout {

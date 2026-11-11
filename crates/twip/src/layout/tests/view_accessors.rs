@@ -8,7 +8,7 @@ const FIELDS: [&str; 8] = ["p.style", "para.style", "src.style", "n.style", "p.m
 
 const PAGE: [&str; 11] = ["page_w", "page_h", "top", "bottom", "left", "right", "header", "footer", "gutter", "columns", "title_pg"];
 
-const ALLOWED: [(&str, &str, &str); 10] = [
+const ALLOWED: [(&str, &str, &str); 11] = [
     ("text.rs", "self.style_index(p.style)", "a piece's style index"),
     ("text.rs", "self.east_asia_face(p.style)", "a piece's style index"),
     ("table.rs", "grid == t.grid.as_slice()", "`in_view` compares the view's grid with the model's"),
@@ -19,6 +19,7 @@ const ALLOWED: [(&str, &str, &str); 10] = [
     ("table.rs", "*grid == t.grid", "the table cache compares the model"),
     ("table.rs", "t.grid.len().max(", "the shown table's grid (`in_view` applied `table_grid_in`)"),
     ("table.rs", "t.grid.get(i)", "the shown table's grid (`in_view` applied `table_grid_in`)"),
+    ("table.rs", "t.grid = bounds.windows(2)", "a layout run's own grid, built only when the table has no grid change"),
 ];
 
 fn ident(c: Option<char>) -> bool {
