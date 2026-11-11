@@ -1602,8 +1602,10 @@ impl<'d> PageFill<'d, '_> {
         if take == 0 {
             // Under notes going on from an earlier column or page that leave no room for it, the line waits (in
             // compat 15 a balancing trial fails instead). So does a line with a footnote reference above an earlier
-            // section's closed footnote area.
-            let waits = fit == 0 && (area.carried > 0 && (!col.balance || self.ctx.env.text.compat == Compat::Legacy) || self.notes_closed);
+            // section's closed footnote area, and a section's first line below an earlier section that leaves no
+            // room for it on the page.
+            let under = area.carried > 0 && (!col.balance || self.ctx.env.text.compat == Compat::Legacy);
+            let waits = fit == 0 && (under || self.notes_closed || self.mid_page);
             if at_top && !waits {
                 self.at.forced = self.at.forced || col.balance;
                 take = fit.max(1).min(n);

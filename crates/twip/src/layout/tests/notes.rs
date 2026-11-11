@@ -714,3 +714,11 @@ fn compat_14_a_note_cut_at_a_balanced_sections_end_balances_on_its_last_page() {
     assert!(a.1 < 200.0 && b.1 > 300.0 && c.1 == b.1 && b.2 < a.2, "11 + 10: {:?}", pages[1]);
     assert!(t.1 < 200.0 && t.2 > a.2, "the next section below the notes: {:?}", pages[1]);
 }
+
+#[test]
+fn compat_14_a_section_after_a_note_that_fills_its_last_page_starts_on_the_next() {
+    let cols = r#"<w:cols w:num="2" w:space="720"/>"#;
+    let Some((first, full)) = note_pages(cols) else { return };
+    let Some(pages) = note_in_balanced(cols, 10, 10, first + full, false, 5) else { return };
+    let (Some((1, _)), Some((2, _))) = (find(&pages, &format!("Q{:03}", first + full)), find(&pages, "T001")) else { panic!("{pages:?}") };
+}
